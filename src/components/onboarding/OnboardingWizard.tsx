@@ -10,11 +10,10 @@ import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { OnboardingAvatarStep } from './OnboardingAvatarStep'
 import { OnboardingNameStep } from './OnboardingNameStep'
-import { OnboardingPhoneStep } from './OnboardingPhoneStep'
 
 const route = getRouteApi('/onboarding')
 
-const STEPS = ['name', 'phone', 'avatar'] as const
+const STEPS = ['name', 'avatar'] as const
 export type OnboardingStep = (typeof STEPS)[number]
 
 export function OnboardingWizard() {
@@ -50,20 +49,14 @@ export function OnboardingWizard() {
         <Wordmark />
         <StepDots current={step} />
         {step === 'name' ? (
-          <OnboardingNameStep onNext={() => goTo('phone')} />
-        ) : step === 'phone' ? (
-          <OnboardingPhoneStep
-            onNext={() => goTo('avatar')}
-            onSkip={() => goTo('avatar')}
-            onBack={() => goTo('name')}
-          />
+          <OnboardingNameStep onNext={() => goTo('avatar')} />
         ) : (
           // Avatar is the final step: next/skip both stamp onboardedAt and
           // navigate into the app.
           <OnboardingAvatarStep
             onNext={() => void finish()}
             onSkip={() => void finish()}
-            onBack={() => goTo('phone')}
+            onBack={() => goTo('name')}
           />
         )}
       </div>

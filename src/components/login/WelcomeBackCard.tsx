@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { GoogleSignInButton } from '~/components/login/GoogleSignInButton'
 import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar'
 import { Button } from '~/components/ui/button'
+import { Separator } from '~/components/ui/separator'
 import { Spinner } from '~/components/ui/spinner'
 import { authClient } from '~/lib/authClient'
 import { initials } from '~/lib/utils'
@@ -76,6 +78,14 @@ export function WelcomeBackCard({
           {isSending && <Spinner data-icon="inline-start" />}
           {isSending ? m.login_submit_pending() : m.login_submit()}
         </Button>
+
+        <div className="flex items-center gap-3">
+          <Separator className="flex-1" />
+          <span className="text-muted-foreground text-xs uppercase">{m.common_or()}</span>
+          <Separator className="flex-1" />
+        </div>
+
+        <GoogleSignInButton callbackURL={callbackURL} />
 
         <Button
           type="button"

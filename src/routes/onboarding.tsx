@@ -9,7 +9,7 @@ import { seo } from '~/utils/seo'
 // Step lives in the URL (ADR-0013) so browser back/forward work and a mid-flow
 // refresh stays put. `.catch` defaults a missing/invalid value to the first step.
 const onboardingSearchSchema = z.object({
-  step: z.enum(['name', 'phone', 'avatar']).catch('name'),
+  step: z.enum(['name', 'avatar']).catch('name'),
 })
 
 // Top-level (not under _authenticated) so the wizard renders full-screen with no

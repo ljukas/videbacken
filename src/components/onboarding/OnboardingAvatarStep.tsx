@@ -15,9 +15,10 @@ type Props = {
 
 export function OnboardingAvatarStep({ onNext, onSkip, onBack }: Props) {
   // AvatarUpload persists the image itself (mint → upload → confirm); this step
-  // only adds the next/skip + back chrome. `me.image` gates the primary "Next"
-  // button — disabled until a picture is present; the quiet footer "Skip" is the
-  // escape hatch for advancing without one.
+  // only adds the finish/skip + back chrome. Avatar is the wizard's final step,
+  // so the primary button reads as a completion action (`onboarding_finish`),
+  // not "Next". `me.image` gates it — disabled until a picture is present; the
+  // quiet footer "Skip" is the escape hatch for finishing without one.
   const { data: me } = useSuspenseQuery(orpc.user.me.queryOptions())
 
   // While AvatarUpload is mid-flow, freeze the nav buttons so advancing/leaving
@@ -48,7 +49,7 @@ export function OnboardingAvatarStep({ onNext, onSkip, onBack }: Props) {
           disabled={!me.image || uploading}
         >
           {uploading ? <Spinner data-icon="inline-start" /> : null}
-          {m.onboarding_next()}
+          {m.onboarding_finish()}
         </Button>
       </div>
 

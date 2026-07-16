@@ -1,6 +1,8 @@
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { GoogleSignInButton } from '~/components/login/GoogleSignInButton'
 import { FieldGroup } from '~/components/ui/field'
+import { Separator } from '~/components/ui/separator'
 import { useAppForm } from '~/hooks/form'
 import { authClient } from '~/lib/authClient'
 import { m } from '~/paraglide/messages'
@@ -39,6 +41,14 @@ export function LoginFormCard({ onSent, callbackURL }: Props) {
       </header>
 
       <div className="flex flex-col gap-5">
+        <GoogleSignInButton callbackURL={callbackURL} />
+
+        <div className="flex items-center gap-3">
+          <Separator className="flex-1" />
+          <span className="text-muted-foreground text-xs uppercase">{m.common_or()}</span>
+          <Separator className="flex-1" />
+        </div>
+
         <form
           className="flex flex-col gap-5"
           onSubmit={(e) => {
