@@ -219,6 +219,48 @@ test('inviteUser throws EMAIL_ALREADY_APPROVED for an already-active user', asyn
   ).rejects.toMatchObject({ code: 'EMAIL_ALREADY_APPROVED' })
 })
 
+// Regression for the revoke -> re-invite trap: revoking soft-deletes the user
+// row, and until re-invite clears that stamp, the _authenticated guard bounces
+// the re-invited person to /login forever even though they're back on the
+// allowlist (see the fix's changelog entry in user.ts / ADR-0017 amendment).
+test('inviteUser restores a previously revoked user (clears deletedAt, re-stamps role, keeps onboardedAt)', async () => {
+  const adminId = await insertAdmin('admin@test.videbacken.local', 'Admin')
+  await db.insert(approvedEmail).values({ email: 'alice@test.videbacken.local', role: 'user' })
+  const aliceId = await insertMember('alice@test.videbacken.local', 'Alice')
+  const onboardedAt = new Date('2021-06-01T00:00:00.000Z')
+  await db.update(user).set({ onboardedAt }).where(eq(user.id, aliceId))
+
+  await revokeUser({ email: 'alice@test.videbacken.local', actorUserId: adminId })
+
+  const created = await inviteUser({
+    email: 'alice@test.videbacken.local',
+    role: 'admin',
+    actorUserId: adminId,
+  })
+
+  expect(created.role).toBe('admin')
+
+  const [row] = await db
+    .select({ deletedAt: user.deletedAt, role: user.role, onboardedAt: user.onboardedAt })
+    .from(user)
+    .where(eq(user.id, aliceId))
+  expect(row.deletedAt).toBeNull()
+  expect(row.role).toBe('admin')
+  expect(row.onboardedAt).toEqual(onboardedAt)
+
+  // Shows up as a single ACTIVE row, not a duplicate pending entry.
+  const rows = await listUsersAndPending()
+  const aliceRows = rows.filter((r) => r.email === 'alice@test.videbacken.local')
+  expect(aliceRows).toEqual([
+    expect.objectContaining({
+      status: 'active',
+      id: aliceId,
+      email: 'alice@test.videbacken.local',
+      role: 'admin',
+    }),
+  ])
+})
+
 // ---------- assertPendingInvite ----------
 
 test('assertPendingInvite returns the email + role for a pending invite', async () => {

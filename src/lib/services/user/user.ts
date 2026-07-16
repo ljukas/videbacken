@@ -1,4 +1,4 @@
-import { and, asc, count, eq, isNull } from 'drizzle-orm'
+import { and, asc, count, eq, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
 import {
@@ -132,14 +132,25 @@ async function findActiveIdByEmail(email: string): Promise<string | null> {
  * (case-insensitive), so a re-invite of an email that's already on the
  * allowlist — whether still pending or already an active user — maps to
  * `EMAIL_ALREADY_APPROVED` instead of a raw unique-constraint error.
+ *
+ * Restore-on-reinvite: if this email previously belonged to a `user` row that
+ * `revokeUser` soft-deleted, clear that `deletedAt` stamp and re-apply the
+ * (possibly new) role now. Without this, the allowlist would say "approved"
+ * again while `deletedAt` still says "gone" — the `_authenticated` guard
+ * bounces the returning user to /login forever with no error shown to anyone.
+ * `onboardedAt` is left untouched so a returning user isn't forced back
+ * through the wizard. A never-signed-in email has no `user` row yet, so the
+ * update below is a no-op and role applies on first sign-in as usual (via the
+ * `create.before` hook).
  */
 export async function inviteUser(input: {
   email: string
   role: 'user' | 'admin'
   actorUserId: string
 }): Promise<ApprovedEmailRow> {
+  let created: ApprovedEmailRow
   try {
-    return await addApproved({
+    created = await addApproved({
       email: input.email,
       role: input.role,
       addedByUserId: input.actorUserId,
@@ -148,6 +159,13 @@ export async function inviteUser(input: {
     if (err instanceof ApprovedEmailDomainError) throw new UserDomainError('EMAIL_ALREADY_APPROVED')
     throw err
   }
+
+  await db
+    .update(user)
+    .set({ deletedAt: null, role: created.role })
+    .where(and(eq(user.email, created.email), isNotNull(user.deletedAt)))
+
+  return created
 }
 
 /**
