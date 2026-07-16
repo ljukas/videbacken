@@ -4,8 +4,6 @@ import { AppSidebar } from '~/components/AppSidebar'
 import { CommandPalette } from '~/components/command/CommandPalette'
 import { CommandTriggerButton } from '~/components/command/CommandTriggerButton'
 import { CommandPaletteProvider } from '~/components/command/useCommandPalette'
-import { UploadQueueBox } from '~/components/document/upload/UploadQueueBox'
-import { UploadQueueProvider } from '~/components/document/upload/UploadQueueProvider'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/sidebar'
 import { TooltipProvider } from '~/components/ui/tooltip'
 import { HeaderUserMenu } from '~/components/user/UserMenu'
@@ -46,25 +44,22 @@ function AuthenticatedLayout() {
 
   return (
     <CommandPaletteProvider>
-      <UploadQueueProvider>
-        <TooltipProvider>
-          <SidebarProvider className="h-svh overflow-hidden">
-            <AppSidebar user={user} />
-            <SidebarInset className="min-h-0 overflow-hidden bg-surface-page">
-              <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b bg-surface-page px-4 md:hidden">
-                <SidebarTrigger />
-                <div className="flex flex-1 justify-center px-3">
-                  <CommandTriggerButton className="max-w-xs" />
-                </div>
-                <HeaderUserMenu />
-              </header>
-              <Outlet />
-            </SidebarInset>
-            <CommandPalette role={user.role} />
-          </SidebarProvider>
-        </TooltipProvider>
-        <UploadQueueBox />
-      </UploadQueueProvider>
+      <TooltipProvider>
+        <SidebarProvider className="h-svh overflow-hidden">
+          <AppSidebar />
+          <SidebarInset className="min-h-0 overflow-hidden bg-surface-page">
+            <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b bg-surface-page px-4 md:hidden">
+              <SidebarTrigger />
+              <div className="flex flex-1 justify-center px-3">
+                <CommandTriggerButton className="max-w-xs" />
+              </div>
+              <HeaderUserMenu />
+            </header>
+            <Outlet />
+          </SidebarInset>
+          <CommandPalette role={user.role} />
+        </SidebarProvider>
+      </TooltipProvider>
     </CommandPaletteProvider>
   )
 }

@@ -15,24 +15,13 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as ApiLogRouteImport } from './routes/api/log'
-import { Route as AuthenticatedOwnersRouteImport } from './routes/_authenticated/owners'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
-import { Route as AuthenticatedRecommendationsIndexRouteImport } from './routes/_authenticated/recommendations.index'
-import { Route as AuthenticatedDocumentsIndexRouteImport } from './routes/_authenticated/documents.index'
 import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authenticated/account/index'
 import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as AuthenticatedRecommendationsNewRouteImport } from './routes/_authenticated/recommendations.new'
-import { Route as AuthenticatedDocumentsSplatRouteImport } from './routes/_authenticated/documents.$'
 import { Route as AuthenticatedAccountSecurityRouteImport } from './routes/_authenticated/account/security'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
-import { Route as AuthenticatedAdminSharesIndexRouteImport } from './routes/_authenticated/admin/shares.index'
-import { Route as ApiFilesViewIdRouteImport } from './routes/api/files/view.$id'
-import { Route as ApiFilesDownloadIdRouteImport } from './routes/api/files/download.$id'
-import { Route as AuthenticatedRecommendationsIdEditRouteImport } from './routes/_authenticated/recommendations.$id.edit'
-import { Route as AuthenticatedAdminDocumentsBinRouteImport } from './routes/_authenticated/admin/documents.bin'
-import { Route as AuthenticatedAdminSharesAssignShareCodeRouteImport } from './routes/_authenticated/admin/shares.assign.$shareCode'
 
 const SignedInRoute = SignedInRouteImport.update({
   id: '/signed-in',
@@ -63,11 +52,6 @@ const ApiLogRoute = ApiLogRouteImport.update({
   path: '/api/log',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedOwnersRoute = AuthenticatedOwnersRouteImport.update({
-  id: '/owners',
-  path: '/owners',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -78,18 +62,6 @@ const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
   path: '/account',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedRecommendationsIndexRoute =
-  AuthenticatedRecommendationsIndexRouteImport.update({
-    id: '/recommendations/',
-    path: '/recommendations/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedDocumentsIndexRoute =
-  AuthenticatedDocumentsIndexRouteImport.update({
-    id: '/documents/',
-    path: '/documents/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedAccountIndexRoute =
   AuthenticatedAccountIndexRouteImport.update({
     id: '/',
@@ -106,18 +78,6 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRecommendationsNewRoute =
-  AuthenticatedRecommendationsNewRouteImport.update({
-    id: '/recommendations/new',
-    path: '/recommendations/new',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedDocumentsSplatRoute =
-  AuthenticatedDocumentsSplatRouteImport.update({
-    id: '/documents/$',
-    path: '/documents/$',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedAccountSecurityRoute =
   AuthenticatedAccountSecurityRouteImport.update({
     id: '/security',
@@ -130,40 +90,6 @@ const AuthenticatedAccountProfileRoute =
     path: '/profile',
     getParentRoute: () => AuthenticatedAccountRoute,
   } as any)
-const AuthenticatedAdminSharesIndexRoute =
-  AuthenticatedAdminSharesIndexRouteImport.update({
-    id: '/shares/',
-    path: '/shares/',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const ApiFilesViewIdRoute = ApiFilesViewIdRouteImport.update({
-  id: '/api/files/view/$id',
-  path: '/api/files/view/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiFilesDownloadIdRoute = ApiFilesDownloadIdRouteImport.update({
-  id: '/api/files/download/$id',
-  path: '/api/files/download/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedRecommendationsIdEditRoute =
-  AuthenticatedRecommendationsIdEditRouteImport.update({
-    id: '/recommendations/$id/edit',
-    path: '/recommendations/$id/edit',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedAdminDocumentsBinRoute =
-  AuthenticatedAdminDocumentsBinRouteImport.update({
-    id: '/documents/bin',
-    path: '/documents/bin',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminSharesAssignShareCodeRoute =
-  AuthenticatedAdminSharesAssignShareCodeRouteImport.update({
-    id: '/shares/assign/$shareCode',
-    path: '/shares/assign/$shareCode',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -171,48 +97,26 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/signed-in': typeof SignedInRoute
   '/account': typeof AuthenticatedAccountRouteWithChildren
-  '/admin': typeof AuthenticatedAdminRouteWithChildren
-  '/owners': typeof AuthenticatedOwnersRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/api/log': typeof ApiLogRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/account/security': typeof AuthenticatedAccountSecurityRoute
-  '/documents/$': typeof AuthenticatedDocumentsSplatRoute
-  '/recommendations/new': typeof AuthenticatedRecommendationsNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/account/': typeof AuthenticatedAccountIndexRoute
-  '/documents/': typeof AuthenticatedDocumentsIndexRoute
-  '/recommendations/': typeof AuthenticatedRecommendationsIndexRoute
-  '/admin/documents/bin': typeof AuthenticatedAdminDocumentsBinRoute
-  '/recommendations/$id/edit': typeof AuthenticatedRecommendationsIdEditRoute
-  '/api/files/download/$id': typeof ApiFilesDownloadIdRoute
-  '/api/files/view/$id': typeof ApiFilesViewIdRoute
-  '/admin/shares/': typeof AuthenticatedAdminSharesIndexRoute
-  '/admin/shares/assign/$shareCode': typeof AuthenticatedAdminSharesAssignShareCodeRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/signed-in': typeof SignedInRoute
-  '/admin': typeof AuthenticatedAdminRouteWithChildren
-  '/owners': typeof AuthenticatedOwnersRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/api/log': typeof ApiLogRoute
   '/': typeof AuthenticatedIndexRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/account/security': typeof AuthenticatedAccountSecurityRoute
-  '/documents/$': typeof AuthenticatedDocumentsSplatRoute
-  '/recommendations/new': typeof AuthenticatedRecommendationsNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/account': typeof AuthenticatedAccountIndexRoute
-  '/documents': typeof AuthenticatedDocumentsIndexRoute
-  '/recommendations': typeof AuthenticatedRecommendationsIndexRoute
-  '/admin/documents/bin': typeof AuthenticatedAdminDocumentsBinRoute
-  '/recommendations/$id/edit': typeof AuthenticatedRecommendationsIdEditRoute
-  '/api/files/download/$id': typeof ApiFilesDownloadIdRoute
-  '/api/files/view/$id': typeof ApiFilesViewIdRoute
-  '/admin/shares': typeof AuthenticatedAdminSharesIndexRoute
-  '/admin/shares/assign/$shareCode': typeof AuthenticatedAdminSharesAssignShareCodeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -221,25 +125,14 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/signed-in': typeof SignedInRoute
   '/_authenticated/account': typeof AuthenticatedAccountRouteWithChildren
-  '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
-  '/_authenticated/owners': typeof AuthenticatedOwnersRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/api/log': typeof ApiLogRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
   '/_authenticated/account/security': typeof AuthenticatedAccountSecurityRoute
-  '/_authenticated/documents/$': typeof AuthenticatedDocumentsSplatRoute
-  '/_authenticated/recommendations/new': typeof AuthenticatedRecommendationsNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/_authenticated/account/': typeof AuthenticatedAccountIndexRoute
-  '/_authenticated/documents/': typeof AuthenticatedDocumentsIndexRoute
-  '/_authenticated/recommendations/': typeof AuthenticatedRecommendationsIndexRoute
-  '/_authenticated/admin/documents/bin': typeof AuthenticatedAdminDocumentsBinRoute
-  '/_authenticated/recommendations/$id/edit': typeof AuthenticatedRecommendationsIdEditRoute
-  '/api/files/download/$id': typeof ApiFilesDownloadIdRoute
-  '/api/files/view/$id': typeof ApiFilesViewIdRoute
-  '/_authenticated/admin/shares/': typeof AuthenticatedAdminSharesIndexRoute
-  '/_authenticated/admin/shares/assign/$shareCode': typeof AuthenticatedAdminSharesAssignShareCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -250,47 +143,25 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/account'
     | '/admin'
-    | '/owners'
     | '/api/log'
     | '/account/profile'
     | '/account/security'
-    | '/documents/$'
-    | '/recommendations/new'
     | '/api/auth/$'
     | '/api/rpc/$'
     | '/account/'
-    | '/documents/'
-    | '/recommendations/'
-    | '/admin/documents/bin'
-    | '/recommendations/$id/edit'
-    | '/api/files/download/$id'
-    | '/api/files/view/$id'
-    | '/admin/shares/'
-    | '/admin/shares/assign/$shareCode'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/onboarding'
     | '/signed-in'
     | '/admin'
-    | '/owners'
     | '/api/log'
     | '/'
     | '/account/profile'
     | '/account/security'
-    | '/documents/$'
-    | '/recommendations/new'
     | '/api/auth/$'
     | '/api/rpc/$'
     | '/account'
-    | '/documents'
-    | '/recommendations'
-    | '/admin/documents/bin'
-    | '/recommendations/$id/edit'
-    | '/api/files/download/$id'
-    | '/api/files/view/$id'
-    | '/admin/shares'
-    | '/admin/shares/assign/$shareCode'
   id:
     | '__root__'
     | '/_authenticated'
@@ -299,24 +170,13 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/_authenticated/account'
     | '/_authenticated/admin'
-    | '/_authenticated/owners'
     | '/api/log'
     | '/_authenticated/'
     | '/_authenticated/account/profile'
     | '/_authenticated/account/security'
-    | '/_authenticated/documents/$'
-    | '/_authenticated/recommendations/new'
     | '/api/auth/$'
     | '/api/rpc/$'
     | '/_authenticated/account/'
-    | '/_authenticated/documents/'
-    | '/_authenticated/recommendations/'
-    | '/_authenticated/admin/documents/bin'
-    | '/_authenticated/recommendations/$id/edit'
-    | '/api/files/download/$id'
-    | '/api/files/view/$id'
-    | '/_authenticated/admin/shares/'
-    | '/_authenticated/admin/shares/assign/$shareCode'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -327,8 +187,6 @@ export interface RootRouteChildren {
   ApiLogRoute: typeof ApiLogRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiRpcSplatRoute: typeof ApiRpcSplatRoute
-  ApiFilesDownloadIdRoute: typeof ApiFilesDownloadIdRoute
-  ApiFilesViewIdRoute: typeof ApiFilesViewIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -375,13 +233,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiLogRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/owners': {
-      id: '/_authenticated/owners'
-      path: '/owners'
-      fullPath: '/owners'
-      preLoaderRoute: typeof AuthenticatedOwnersRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -394,20 +245,6 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/account'
       preLoaderRoute: typeof AuthenticatedAccountRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/recommendations/': {
-      id: '/_authenticated/recommendations/'
-      path: '/recommendations'
-      fullPath: '/recommendations/'
-      preLoaderRoute: typeof AuthenticatedRecommendationsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/documents/': {
-      id: '/_authenticated/documents/'
-      path: '/documents'
-      fullPath: '/documents/'
-      preLoaderRoute: typeof AuthenticatedDocumentsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/account/': {
@@ -431,20 +268,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/recommendations/new': {
-      id: '/_authenticated/recommendations/new'
-      path: '/recommendations/new'
-      fullPath: '/recommendations/new'
-      preLoaderRoute: typeof AuthenticatedRecommendationsNewRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/documents/$': {
-      id: '/_authenticated/documents/$'
-      path: '/documents/$'
-      fullPath: '/documents/$'
-      preLoaderRoute: typeof AuthenticatedDocumentsSplatRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/account/security': {
       id: '/_authenticated/account/security'
       path: '/security'
@@ -458,48 +281,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/account/profile'
       preLoaderRoute: typeof AuthenticatedAccountProfileRouteImport
       parentRoute: typeof AuthenticatedAccountRoute
-    }
-    '/_authenticated/admin/shares/': {
-      id: '/_authenticated/admin/shares/'
-      path: '/shares'
-      fullPath: '/admin/shares/'
-      preLoaderRoute: typeof AuthenticatedAdminSharesIndexRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/api/files/view/$id': {
-      id: '/api/files/view/$id'
-      path: '/api/files/view/$id'
-      fullPath: '/api/files/view/$id'
-      preLoaderRoute: typeof ApiFilesViewIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/files/download/$id': {
-      id: '/api/files/download/$id'
-      path: '/api/files/download/$id'
-      fullPath: '/api/files/download/$id'
-      preLoaderRoute: typeof ApiFilesDownloadIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/recommendations/$id/edit': {
-      id: '/_authenticated/recommendations/$id/edit'
-      path: '/recommendations/$id/edit'
-      fullPath: '/recommendations/$id/edit'
-      preLoaderRoute: typeof AuthenticatedRecommendationsIdEditRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/documents/bin': {
-      id: '/_authenticated/admin/documents/bin'
-      path: '/documents/bin'
-      fullPath: '/admin/documents/bin'
-      preLoaderRoute: typeof AuthenticatedAdminDocumentsBinRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/shares/assign/$shareCode': {
-      id: '/_authenticated/admin/shares/assign/$shareCode'
-      path: '/shares/assign/$shareCode'
-      fullPath: '/admin/shares/assign/$shareCode'
-      preLoaderRoute: typeof AuthenticatedAdminSharesAssignShareCodeRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
     }
   }
 }
@@ -519,46 +300,16 @@ const AuthenticatedAccountRouteChildren: AuthenticatedAccountRouteChildren = {
 const AuthenticatedAccountRouteWithChildren =
   AuthenticatedAccountRoute._addFileChildren(AuthenticatedAccountRouteChildren)
 
-interface AuthenticatedAdminRouteChildren {
-  AuthenticatedAdminDocumentsBinRoute: typeof AuthenticatedAdminDocumentsBinRoute
-  AuthenticatedAdminSharesIndexRoute: typeof AuthenticatedAdminSharesIndexRoute
-  AuthenticatedAdminSharesAssignShareCodeRoute: typeof AuthenticatedAdminSharesAssignShareCodeRoute
-}
-
-const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
-  AuthenticatedAdminDocumentsBinRoute: AuthenticatedAdminDocumentsBinRoute,
-  AuthenticatedAdminSharesIndexRoute: AuthenticatedAdminSharesIndexRoute,
-  AuthenticatedAdminSharesAssignShareCodeRoute:
-    AuthenticatedAdminSharesAssignShareCodeRoute,
-}
-
-const AuthenticatedAdminRouteWithChildren =
-  AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
-
 interface AuthenticatedRouteChildren {
   AuthenticatedAccountRoute: typeof AuthenticatedAccountRouteWithChildren
-  AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
-  AuthenticatedOwnersRoute: typeof AuthenticatedOwnersRoute
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
-  AuthenticatedDocumentsSplatRoute: typeof AuthenticatedDocumentsSplatRoute
-  AuthenticatedRecommendationsNewRoute: typeof AuthenticatedRecommendationsNewRoute
-  AuthenticatedDocumentsIndexRoute: typeof AuthenticatedDocumentsIndexRoute
-  AuthenticatedRecommendationsIndexRoute: typeof AuthenticatedRecommendationsIndexRoute
-  AuthenticatedRecommendationsIdEditRoute: typeof AuthenticatedRecommendationsIdEditRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAccountRoute: AuthenticatedAccountRouteWithChildren,
-  AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
-  AuthenticatedOwnersRoute: AuthenticatedOwnersRoute,
+  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
-  AuthenticatedDocumentsSplatRoute: AuthenticatedDocumentsSplatRoute,
-  AuthenticatedRecommendationsNewRoute: AuthenticatedRecommendationsNewRoute,
-  AuthenticatedDocumentsIndexRoute: AuthenticatedDocumentsIndexRoute,
-  AuthenticatedRecommendationsIndexRoute:
-    AuthenticatedRecommendationsIndexRoute,
-  AuthenticatedRecommendationsIdEditRoute:
-    AuthenticatedRecommendationsIdEditRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -573,8 +324,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLogRoute: ApiLogRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiRpcSplatRoute: ApiRpcSplatRoute,
-  ApiFilesDownloadIdRoute: ApiFilesDownloadIdRoute,
-  ApiFilesViewIdRoute: ApiFilesViewIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

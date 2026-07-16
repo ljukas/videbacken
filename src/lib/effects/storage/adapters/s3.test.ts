@@ -103,9 +103,12 @@ test('copy issues a CopyObjectCommand with REPLACE metadata', async () => {
   expect(sendSpy).toHaveBeenCalledTimes(1)
   const command = sendSpy.mock.calls[0][0] as InstanceType<typeof CopyObjectCommand>
   expect(command).toBeInstanceOf(CopyObjectCommand)
+  // Bucket name comes from env (see `beforeAll` above) rather than a hardcoded
+  // literal — it must match whatever S3_BUCKET_PRIVATE actually resolves to.
+  const bucket = process.env.S3_BUCKET_PRIVATE
   expect(command.input).toMatchObject({
-    Bucket: 'oceanview-private',
-    CopySource: 'oceanview-private/documents/x/Batmanual.pdf',
+    Bucket: bucket,
+    CopySource: `${bucket}/documents/x/Batmanual.pdf`,
     Key: 'documents/x/Motor.pdf',
     ContentType: 'application/pdf',
     MetadataDirective: 'REPLACE',

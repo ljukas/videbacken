@@ -49,12 +49,12 @@ describe('inMemory realtime adapter', () => {
     const received = collect(realtime.subscribe({ signal: ctrl.signal, log: noopLogger }), 2)
 
     await Promise.resolve()
-    await realtime.publish({ kind: 'document.changed', ids: ['d'] }, { source: 'user-1' })
-    await realtime.publish({ kind: 'document.changed', ids: ['e'] })
+    await realtime.publish({ kind: 'user.changed', ids: ['d'] }, { source: 'user-1' })
+    await realtime.publish({ kind: 'user.changed', ids: ['e'] })
 
     expect(await received).toEqual([
-      { event: { kind: 'document.changed', ids: ['d'] }, source: 'user-1' },
-      { event: { kind: 'document.changed', ids: ['e'] }, source: undefined },
+      { event: { kind: 'user.changed', ids: ['d'] }, source: 'user-1' },
+      { event: { kind: 'user.changed', ids: ['e'] }, source: undefined },
     ])
     ctrl.abort()
   })

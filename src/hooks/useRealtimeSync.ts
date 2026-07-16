@@ -14,44 +14,6 @@ function dispatch(queryClient: QueryClient, event: RealtimeEvent) {
     case 'presence.changed':
       void queryClient.invalidateQueries({ queryKey: orpc.presence.key() })
       return
-    case 'share.changed':
-      void queryClient.invalidateQueries({ queryKey: orpc.share.key() })
-      // The Delägare table renders owned shares; keep that view in sync.
-      void queryClient.invalidateQueries({ queryKey: orpc.user.listContacts.key() })
-      return
-    case 'document.changed':
-      // Invalidate the document *list* and history, never the whole namespace:
-      // `document.thumbnail` is served from a stable public URL and must not be
-      // refetched (it would reload every tile). A newly-rendered thumbnail is
-      // picked up naturally — the list refetch surfaces its `thumbnailPathname`,
-      // which enables the tile's (first) thumbnail fetch.
-      void queryClient.invalidateQueries({ queryKey: orpc.document.listDocuments.key() })
-      void queryClient.invalidateQueries({ queryKey: orpc.document.documentHistory.key() })
-      // Uploads/renames/deletes add, rewrite, or remove search haystacks, so an
-      // open search palette must refetch too (same reasoning as folder.changed).
-      void queryClient.invalidateQueries({ queryKey: orpc.documentSearch.key() })
-      return
-    case 'folder.changed':
-      // A folder change rewrites descendant paths + document haystacks, so the
-      // document list and search results can shift too. Thumbnails are untouched
-      // (same reasoning as document.changed).
-      void queryClient.invalidateQueries({ queryKey: orpc.folder.key() })
-      void queryClient.invalidateQueries({ queryKey: orpc.document.listDocuments.key() })
-      void queryClient.invalidateQueries({ queryKey: orpc.document.documentHistory.key() })
-      void queryClient.invalidateQueries({ queryKey: orpc.documentSearch.key() })
-      return
-    case 'bin.changed':
-      // Soft-delete / restore / hard-delete move an item in or out of the
-      // (admin) bin. Published only by those mutations, so unrelated document
-      // and folder edits leave the bin query untouched.
-      void queryClient.invalidateQueries({ queryKey: orpc.bin.key() })
-      return
-    case 'recommendation.changed':
-      void queryClient.invalidateQueries({ queryKey: orpc.recommendation.key() })
-      return
-    case 'booking.changed':
-      void queryClient.invalidateQueries({ queryKey: orpc.booking.key() })
-      return
   }
 }
 

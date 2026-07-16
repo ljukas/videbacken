@@ -1,5 +1,5 @@
 import { linkOptions } from '@tanstack/react-router'
-import { AnchorIcon, CalendarIcon, FolderIcon, Trash2Icon, UserIcon, UsersIcon } from 'lucide-react'
+import { HomeIcon, UserIcon } from 'lucide-react'
 import { m } from '~/paraglide/messages'
 
 // The palette's static navigate group. Same `linkOptions` + Lucide icon pattern
@@ -11,23 +11,9 @@ import { m } from '~/paraglide/messages'
 export const NAVIGATE_COMMANDS = linkOptions([
   {
     to: '/',
-    label: m.nav_calendar,
-    keywords: m.cmd_kw_calendar,
-    icon: CalendarIcon,
-    adminOnly: false,
-  },
-  {
-    to: '/owners',
-    label: m.nav_owners,
-    keywords: m.cmd_kw_owners,
-    icon: UsersIcon,
-    adminOnly: false,
-  },
-  {
-    to: '/documents',
-    label: m.nav_documents,
-    keywords: m.cmd_kw_documents,
-    icon: FolderIcon,
+    label: m.nav_home,
+    keywords: m.cmd_kw_home,
+    icon: HomeIcon,
     adminOnly: false,
   },
   {
@@ -36,20 +22,6 @@ export const NAVIGATE_COMMANDS = linkOptions([
     keywords: m.cmd_kw_account,
     icon: UserIcon,
     adminOnly: false,
-  },
-  {
-    to: '/admin/shares',
-    label: m.nav_shares,
-    keywords: m.cmd_kw_shares,
-    icon: AnchorIcon,
-    adminOnly: true,
-  },
-  {
-    to: '/admin/documents/bin',
-    label: m.nav_bin,
-    keywords: m.cmd_kw_bin,
-    icon: Trash2Icon,
-    adminOnly: true,
   },
 ])
 

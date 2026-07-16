@@ -1,13 +1,5 @@
 import { Link, linkOptions, useMatchRoute } from '@tanstack/react-router'
-import {
-  AnchorIcon,
-  CalendarIcon,
-  FolderIcon,
-  MapPinIcon,
-  SearchIcon,
-  Trash2Icon,
-  UsersIcon,
-} from 'lucide-react'
+import { HomeIcon, SearchIcon } from 'lucide-react'
 import { useCommandPalette } from '~/components/command/useCommandPalette'
 import { Wordmark } from '~/components/Logo'
 import {
@@ -16,7 +8,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -27,33 +18,17 @@ import { SidebarUserMenu } from '~/components/user/UserMenu'
 import { useModKeyLabel } from '~/hooks/useModKeyLabel'
 import { m } from '~/paraglide/messages'
 
-type SidebarUser = {
-  role?: string | null
-}
-
 // label is a message function rather than a string: module scope evaluates
 // once per process, but the active locale is per request/render.
-const mainNavItems = linkOptions([
-  { to: '/', label: m.nav_calendar, icon: CalendarIcon },
-  { to: '/owners', label: m.nav_owners, icon: UsersIcon },
-  { to: '/recommendations', label: m.nav_recommendations, icon: MapPinIcon },
-  { to: '/documents', label: m.nav_documents, icon: FolderIcon },
-])
+const mainNavItems = linkOptions([{ to: '/', label: m.nav_home, icon: HomeIcon }])
 
-const adminNavItems = linkOptions([
-  { to: '/admin/shares', label: m.nav_shares, icon: AnchorIcon },
-  { to: '/admin/documents/bin', label: m.nav_bin, icon: Trash2Icon },
-])
+type NavItem = (typeof mainNavItems)[number]
 
-type NavItem = (typeof mainNavItems)[number] | (typeof adminNavItems)[number]
-
-export function AppSidebar({ user }: { user: SidebarUser }) {
+export function AppSidebar() {
   const matchRoute = useMatchRoute()
   const { setOpenMobile } = useSidebar()
   const { setOpen: setCommandOpen } = useCommandPalette()
   const hotkeyLabel = useModKeyLabel()
-
-  const isAdmin = user.role === 'admin'
 
   function renderItem(item: NavItem) {
     const isActive = !!matchRoute({ to: item.to, fuzzy: true })
@@ -102,14 +77,6 @@ export function AppSidebar({ user }: { user: SidebarUser }) {
             <SidebarMenu className="gap-1">{mainNavItems.map(renderItem)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {isAdmin ? (
-          <SidebarGroup>
-            <SidebarGroupLabel>{m.nav_admin_group()}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-1">{adminNavItems.map(renderItem)}</SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ) : null}
       </SidebarContent>
       {/* Hidden below md: the mobile header already shows HeaderUserMenu,
           so the drawer would duplicate it. */}

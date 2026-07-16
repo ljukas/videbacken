@@ -4,10 +4,8 @@ import { realtime } from '~/lib/effects'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import { inviteInputSchema } from '~/lib/orpc/userInviteSchema'
 import { nameField, phoneField, selfProfileSchema } from '~/lib/orpc/userProfileSchema'
-import * as shareService from '~/lib/services/share'
 import * as userService from '~/lib/services/user'
 import { UserDomainError, type UserDomainErrorCode } from '~/lib/services/user'
-import type { ShareCode } from '~/lib/shares/codes'
 
 function surnameKey(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -113,27 +111,14 @@ export const userRouter = {
 
   listContacts: protectedProcedure.handler(async ({ context }) => {
     const isAdmin = context.user.role === 'admin'
-    const [users, sharesWithOwner] = await Promise.all([
-      userService.listAll(),
-      shareService.listSharesWithCurrentOwner(),
-    ])
-
-    // listSharesWithCurrentOwner is A→J ordered, so per-user lists come out
-    // sorted without an extra sort.
-    const byUser = new Map<string, Array<ShareCode>>()
-    for (const s of sharesWithOwner) {
-      if (!s.currentUserId) continue
-      const list = byUser.get(s.currentUserId) ?? []
-      list.push(s.shareCode)
-      byUser.set(s.currentUserId, list)
-    }
+    const users = await userService.listAll()
 
     return (
       users
         // Pending invitees (emailVerified === false) are admin-only — a regular
-        // owner's client never receives their rows. See ADR-0017.
+        // user's client never receives their rows. See ADR-0017.
         .filter((u) => isAdmin || u.emailVerified)
-        .map((u) => ({ ...withInviteExpiry(u), shares: byUser.get(u.id) ?? [] }))
+        .map((u) => withInviteExpiry(u))
         .sort(
           (a, b) =>
             // Pending invitees (admin-only) sort as a group after accepted users;

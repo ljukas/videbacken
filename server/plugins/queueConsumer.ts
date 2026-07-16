@@ -3,7 +3,6 @@ import type { QueuePayloadMap } from '~/lib/effects/queue/queue'
 import { handleBlurhashMessage } from '~/lib/queue/handlers/blurhash'
 import { handleEmailUserInvitedMessage } from '~/lib/queue/handlers/emailUserInvited'
 import { handleHeicTranscodeMessage } from '~/lib/queue/handlers/heicTranscode'
-import { handleImageThumbnailMessage } from '~/lib/queue/handlers/imageThumbnail'
 
 /**
  * Vercel Queues consumer. Wired by Nitro's vercel preset via
@@ -17,9 +16,6 @@ export default definePlugin((nitro) => {
     switch (metadata.topicName) {
       case 'blurhash':
         await handleBlurhashMessage(message as QueuePayloadMap['blurhash'], meta)
-        return
-      case 'image_thumbnail':
-        await handleImageThumbnailMessage(message as QueuePayloadMap['image_thumbnail'], meta)
         return
       case 'email_user_invited':
         await handleEmailUserInvitedMessage(message as QueuePayloadMap['email_user_invited'], meta)

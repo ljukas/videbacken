@@ -1,50 +1,43 @@
-import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { BookingSection } from '~/components/booking/BookingSection'
+import { LayoutDashboardIcon } from 'lucide-react'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { PasskeySetupPrompt } from '~/components/passkey/PasskeySetupPrompt'
-import { DisponeringslistaTable } from '~/components/season/DisponeringslistaTable'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { usePasskeySetupPrompt } from '~/hooks/usePasskeys'
-import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 
+// Minimal placeholder landing page (the sailboat-specific calendar/booking
+// dashboard was removed with the domain strip — see Task 2 of the starter
+// template plan). Later tasks give this route real content; for now it's a
+// welcome heading + an on-brand empty state.
 export const Route = createFileRoute('/_authenticated/')({
-  loader: async ({ context: { queryClient } }) => {
-    await queryClient.ensureQueryData(orpc.season.listSchedules.queryOptions())
-    await queryClient.ensureQueryData(orpc.share.listMine.queryOptions())
-    await queryClient.ensureQueryData(orpc.booking.getActive.queryOptions())
-  },
-  component: Calendar,
+  component: Dashboard,
 })
 
-function Calendar() {
+function Dashboard() {
   const { user } = Route.useRouteContext()
-  const { data: seasons } = useSuspenseQuery(orpc.season.listSchedules.queryOptions())
-  const { data: ownedShares } = useSuspenseQuery(orpc.share.listMine.queryOptions())
-  const { data: booking } = useSuspenseQuery(orpc.booking.getActive.queryOptions())
 
-  const ownedShareCodes = new Set(ownedShares)
-
-  // Periodic passkey nudge: self-gates on zero passkeys + the per-device snooze window
-  // (see usePasskeySetupPrompt), so it re-appears "sometimes" for anyone without a passkey
-  // — including invitees who skipped the onboarding step — rather than only after sign-in.
+  // Periodic passkey nudge: self-gates on zero passkeys + the per-device
+  // snooze window (see usePasskeySetupPrompt), so it re-appears "sometimes"
+  // for anyone without a passkey — including invitees who skipped the
+  // onboarding step. Kept here since the dashboard is the first screen after
+  // sign-in.
   const passkeyPrompt = usePasskeySetupPrompt()
 
   return (
-    <PageContainer width="full" fill="lg">
+    <PageContainer>
       <h1 className="font-bold text-2xl tracking-tight text-balance md:text-3xl">
-        {m.nav_calendar()}
+        {m.dashboard_welcome_heading({ name: user.name })}
       </h1>
-      <BookingSection
-        data={booking}
-        isAdmin={user.role === 'admin'}
-        ownedShareCodes={ownedShareCodes}
-      />
-      <DisponeringslistaTable
-        schedules={seasons.schedules}
-        currentYear={seasons.currentYear}
-        ownedShareCodes={ownedShareCodes}
-      />
+      <Empty className="brand-wash rounded-lg border">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <LayoutDashboardIcon />
+          </EmptyMedia>
+          <EmptyTitle>{m.dashboard_empty_title()}</EmptyTitle>
+          <EmptyDescription>{m.dashboard_empty_description()}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
       <PasskeySetupPrompt
         open={passkeyPrompt.open}
         pending={passkeyPrompt.pending}

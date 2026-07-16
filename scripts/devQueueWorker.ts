@@ -6,7 +6,6 @@ import { logger } from '~/lib/logger/server'
 import { handleBlurhashMessage } from '~/lib/queue/handlers/blurhash'
 import { handleEmailUserInvitedMessage } from '~/lib/queue/handlers/emailUserInvited'
 import { handleHeicTranscodeMessage } from '~/lib/queue/handlers/heicTranscode'
-import { handleImageThumbnailMessage } from '~/lib/queue/handlers/imageThumbnail'
 
 /**
  * Local-dev consumer for the background-job topics. Run via
@@ -28,16 +27,6 @@ const workers = [
     'blurhash',
     async (job) => {
       await handleBlurhashMessage(job.data, {
-        messageId: job.id ?? 'local-unknown',
-        deliveryCount: job.attemptsMade + 1,
-      })
-    },
-    { connection: { url } },
-  ),
-  new Worker<QueuePayloadMap['image_thumbnail']>(
-    'image_thumbnail',
-    async (job) => {
-      await handleImageThumbnailMessage(job.data, {
         messageId: job.id ?? 'local-unknown',
         deliveryCount: job.attemptsMade + 1,
       })

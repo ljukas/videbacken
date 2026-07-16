@@ -108,7 +108,6 @@ export default defineConfig({
             queues: {
               triggers: [
                 { topic: 'blurhash' },
-                { topic: 'image_thumbnail' },
                 { topic: 'email_user_invited' },
                 { topic: 'heic_transcode' },
               ],
