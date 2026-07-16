@@ -88,7 +88,14 @@ const columns: Array<ColumnDef<UserListRow>> = [
   },
 ]
 
-export function UsersTable({ users, currentUserId, isAdmin, onEdit, onRevoke, onResendInvite }: Props) {
+export function UsersTable({
+  users,
+  currentUserId,
+  isAdmin,
+  onEdit,
+  onRevoke,
+  onResendInvite,
+}: Props) {
   const table = useReactTable({
     data: users,
     columns,
@@ -105,7 +112,11 @@ export function UsersTable({ users, currentUserId, isAdmin, onEdit, onRevoke, on
       <TableHeader className="sticky top-0 z-10 bg-surface-page">
         <TableRow>
           <SortableHead column={table.getColumn('name')} label={m.user_field_name()} />
-          <SortableHead column={table.getColumn('role')} label={m.user_field_role()} className={ROLE_CELL} />
+          <SortableHead
+            column={table.getColumn('role')}
+            label={m.user_field_role()}
+            className={ROLE_CELL}
+          />
           <SortableHead
             column={table.getColumn('status')}
             label={m.user_field_status()}

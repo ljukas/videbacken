@@ -1,6 +1,12 @@
-import { setupDatabase } from '~test/setup'
 import { describe, expect, it } from 'vitest'
-import { addApproved, isApproved, listApproved, normalizeEmail, removeApproved } from './approvedEmail'
+import { setupDatabase } from '~test/setup'
+import {
+  addApproved,
+  isApproved,
+  listApproved,
+  normalizeEmail,
+  removeApproved,
+} from './approvedEmail'
 
 setupDatabase()
 
@@ -20,8 +26,9 @@ describe('approvedEmail service', () => {
 
   it('addApproved rejects a duplicate (case-insensitive)', async () => {
     await addApproved({ email: 'dup@example.se', role: 'admin', addedByUserId: null })
-    await expect(addApproved({ email: 'DUP@example.se', role: 'user', addedByUserId: null }))
-      .rejects.toMatchObject({ code: 'EMAIL_ALREADY_APPROVED' })
+    await expect(
+      addApproved({ email: 'DUP@example.se', role: 'user', addedByUserId: null }),
+    ).rejects.toMatchObject({ code: 'EMAIL_ALREADY_APPROVED' })
   })
 
   it('removeApproved deletes the row', async () => {

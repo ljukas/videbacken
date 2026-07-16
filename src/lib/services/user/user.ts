@@ -2,13 +2,13 @@ import { and, asc, count, eq, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
 import {
-  addApproved,
   ApprovedEmailDomainError,
+  type ApprovedEmailRow,
+  addApproved,
   isApproved,
   listApproved,
   normalizeEmail,
   removeApproved,
-  type ApprovedEmailRow,
 } from '~/lib/services/approvedEmail'
 import { UserDomainError } from './errors'
 

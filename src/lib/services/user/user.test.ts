@@ -308,7 +308,10 @@ test('revokeUser soft-deletes the matching active user and removes the allowlist
   const result = await revokeUser({ email: 'alice@test.videbacken.local', actorUserId: adminId })
 
   expect(result).toEqual({ userId: aliceId })
-  const [row] = await db.select({ deletedAt: user.deletedAt }).from(user).where(eq(user.id, aliceId))
+  const [row] = await db
+    .select({ deletedAt: user.deletedAt })
+    .from(user)
+    .where(eq(user.id, aliceId))
   expect(row?.deletedAt).toBeInstanceOf(Date)
   expect(await isApproved('alice@test.videbacken.local')).toBeNull()
 })
@@ -369,7 +372,11 @@ test('listUsersAndPending returns active users tagged status "active"', async ()
   const rows = await listUsersAndPending()
 
   expect(rows).toEqual([
-    expect.objectContaining({ status: 'active', id: aliceId, email: 'alice@test.videbacken.local' }),
+    expect.objectContaining({
+      status: 'active',
+      id: aliceId,
+      email: 'alice@test.videbacken.local',
+    }),
   ])
 })
 

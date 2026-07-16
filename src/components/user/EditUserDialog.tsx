@@ -68,12 +68,17 @@ function EditUserDialogBody({ userId, onDone }: { userId: string; onDone: () => 
       // Paint the edited fields into the active list before the round-trip;
       // the updated row is the confirmation, so there's no success toast.
       onMutate: (vars) =>
-        optimisticPatch(queryClient, orpc.user.list.queryKey(), (u) => u.id === userId, (u) => ({
-          ...u,
-          name: vars.name,
-          phone: vars.phone,
-          role: vars.role,
-        })),
+        optimisticPatch(
+          queryClient,
+          orpc.user.list.queryKey(),
+          (u) => u.id === userId,
+          (u) => ({
+            ...u,
+            name: vars.name,
+            phone: vars.phone,
+            role: vars.role,
+          }),
+        ),
       // onError/onSettled live on useMutation (not the mutate call) so they still
       // run after the instant close below. onSettled re-syncs every user query,
       // reverting the optimistic patch on failure.
