@@ -79,7 +79,7 @@ export function applyEnvPrefix(pathname: string): string {
  *
  *   - **Dev** (s3/RustFS adapter — never prefixes its own uploads): the bytes
  *     were never written locally, so the file routes return a friendly "run
- *     `pnpm storage:sync`" page when `head` misses, and the UI shows a PROD badge.
+ *     `bun run storage:sync`" page when `head` misses, and the UI shows a PROD badge.
  *   - **Preview** (vercelBlob adapter — *shared* stores with prod): the bytes are
  *     readable (resolved verbatim by `applyEnvPrefix`), so the file renders — but
  *     prod *owns* the byte, so the adapter refuses to delete/overwrite it and the

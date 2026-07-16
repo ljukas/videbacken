@@ -19,7 +19,7 @@ export function setupDatabase() {
     throw new Error(
       `Refusing to run tests against non-local DATABASE_URL outside CI. Got: ${url || '<unset>'}. ` +
         `Tests CREATE/DROP schemas — locally they must only run against the local Postgres container. ` +
-        `Run \`pnpm db:up\` for local testing.`,
+        `Run \`bun run db:up\` for local testing.`,
     )
   }
   if (!__testClient) {

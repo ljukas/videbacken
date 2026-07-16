@@ -15,7 +15,7 @@
 
 ## Context
 
-Oceanview is a small internal app (10–20 users) deployed on Vercel Hobby. Before this ADR, logging meant scattered `console.log` calls — fine for local debugging, useless for production: messages were unstructured, browser errors had no path to the server, and there was no request scope tying multiple log lines from one HTTP call together.
+Videbacken is a small internal app (10–20 users) deployed on Vercel Hobby. Before this ADR, logging meant scattered `console.log` calls — fine for local debugging, useless for production: messages were unstructured, browser errors had no path to the server, and there was no request scope tying multiple log lines from one HTTP call together.
 
 Three things forced the question:
 
@@ -128,7 +128,7 @@ src/lib/logger/
 
 - Singleton `logger` via `createServerLogger()` at module load. Factory accepts an optional `DestinationStream` so tests can intercept JSON output without mocking pino.
 - Level defaults: `debug` when `NODE_ENV === 'development'`, `info` otherwise — note that `test` therefore runs at `info`, not `debug`. Override via `LOG_LEVEL` env.
-- Base fields baked in: `{ service: 'oceanview', env: NODE_ENV }`.
+- Base fields baked in: `{ service: 'videbacken', env: NODE_ENV }`.
 - `pino-pretty` transport in dev (keyed off the same `NODE_ENV === 'development'` flag as the level default) for colorized output; **transport is dropped when a destination is supplied** (pino-pretty spawns a worker that ignores custom destinations — the factory handles this so test code doesn't have to).
 - `child(fields)` is native pino — no allocation per request beyond the small fields object.
 
@@ -231,7 +231,7 @@ A reader can confirm the architecture is being followed without running anything
 
 Manual smoke test after a change in this area:
 
-1. `pnpm dev:log` then visit `/login` and submit a magic link. The `/tmp/oceanview-dev.log` file should contain a pretty-printed `magic-link sent` (or `magic-link (devLog)`) line with `email` and `url` fields.
+1. `bun run dev:log` then visit `/login` and submit a magic link. The `/tmp/videbacken-dev.log` file should contain a pretty-printed `magic-link sent` (or `magic-link (devLog)`) line with `email` and `url` fields.
 2. From browser devtools console, run `throw new Error('test')`. A `window.error` POST to `/api/log` should appear in the network tab, and the dev log should gain an `error` line with `source: 'browser'`.
 3. Trigger an oRPC procedure that throws inside a service. The dev log should gain one `orpc handler error` line — note it carries **no** `requestId`/`userId`, because the `onError` interceptor logs through the module singleton, outside the per-request context (see Architecture).
 4. Hit any oRPC procedure twice in quick succession. The two requests' log lines should be correlatable by distinct `requestId` values.

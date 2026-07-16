@@ -11,11 +11,11 @@
 // `getReadUrl('private', 'prod/…')` resolves to the object written here.
 //
 // Idempotent: objects already in RustFS are skipped, so it's cheap to re-run on
-// every `pnpm dev:up`. Safe re: the `vercel env pull` guard — the running app
+// every `bun run dev:up`. Safe re: the `vercel env pull` guard — the running app
 // still uses the s3 adapter (S3_ENDPOINT wins in the adapter selector); only
 // this script consumes the BLOB_* tokens, and only to read.
 //
-// Run via `pnpm storage:sync` (also chained into `pnpm dev:up`). Skips cleanly
+// Run via `bun run storage:sync` (also chained into `bun run dev:up`). Skips cleanly
 // when not in local dev or when the prod blob read tokens aren't configured.
 
 import { dirname, resolve } from 'node:path'

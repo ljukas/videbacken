@@ -9,7 +9,7 @@ import { IMAGE_SIZES } from './src/lib/image/sizes'
 
 const isTest = process.env.VITEST === 'true'
 
-// Local `pnpm test` is force-pointed at the local `db` service. With the plain
+// Local `bun run test` is force-pointed at the local `db` service. With the plain
 // Postgres container (Neon Local paused — see compose.yaml) there is no pooler,
 // so connections are direct sessions; the `max: 1` pinned connection in test
 // mode (`src/lib/db/index.ts`) keeps the `SET search_path` alive across queries.
@@ -33,7 +33,7 @@ export default defineConfig({
     : [
         devtools(),
         // Compiles messages/{sv,en}.json into typed functions in src/paraglide/
-        // (gitignored build artifact — `pnpm i18n:compile` covers editor/tests).
+        // (gitignored build artifact — `bun run i18n:compile` covers editor/tests).
         // Locale strategy is cookie-only: URLs stay English per CLAUDE.md.
         paraglideVitePlugin({
           project: './project.inlang',
@@ -82,7 +82,7 @@ export default defineConfig({
           plugins: ['./server/plugins/queueConsumer.ts', './server/plugins/seedApprovedEmails.ts'],
           // Activates Vercel Image Optimization for `/_vercel/image?url=…&w=…&q=…`.
           // The `unpic/providers/vercel` transformer (used by ~/lib/image/transformer)
-          // produces URLs that resolve here in production. In `pnpm dev` the
+          // produces URLs that resolve here in production. In `bun run dev` the
           // transformer falls back to the raw source URL — see that module.
           vercel: {
             config: {

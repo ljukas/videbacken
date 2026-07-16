@@ -9,12 +9,12 @@
 
 ## Context
 
-By mid-2026 Oceanview's UI was functional but read as **bland**: a flat default sidebar, full-bleed pages
+By mid-2026 Videbacken's UI was functional but read as **bland**: a flat default sidebar, full-bleed pages
 that each hand-rolled `flex flex-col gap-6 p-4 md:p-8`, a purely neutral palette whose only color
-(`--selected`) appeared in selection states, plain-text "Oceanview" branding, the default `@fontsource`
+(`--selected`) appeared in selection states, plain-text "Videbacken" branding, the default `@fontsource`
 Geist face, and instant 100 ms overlay fades. The brand blue `#156cdd` lived only in `public/favicon.svg`
 and the web manifest. The base is shadcn `radix-nova` + Tailwind v4 with oklch tokens in
-`src/styles/app.css`, dark mode via `.dark` + the `oceanview-theme` cookie.
+`src/styles/app.css`, dark mode via `.dark` + the `videbacken-theme` cookie.
 
 The goal is "striking but usable" for a calm internal tool used by ~10–20 sailboat co-owners. The risk with
 "make it bold" is loudness; the discipline adopted here is **three concentrated moves on a restrained
@@ -134,7 +134,7 @@ wrap; both read as a distinct surface (the standard inset look). Text contrast i
 
 Both faces are **self-hosted woff2 under `public/fonts/`** with `@font-face` declarations in `app.css`
 (`font-display: swap`). There is no `@fontsource` package for either — this manual hosting is the accepted
-cost of the chosen faces. (Oceanview is a non-commercial internal tool, so commercial-licensing concerns
+cost of the chosen faces. (Videbacken is a non-commercial internal tool, so commercial-licensing concerns
 don't apply; both faces are ITF-FFL anyway, which permits commercial + web embedding regardless — see
 Alternative E for why the originally-considered dafont route was dropped.)
 
@@ -204,7 +204,7 @@ after the scrim dims (perceived stagger — overlay is a pure fade, content fade
   vintage-warm grotesque character, but it's a dafont freeware face whose terms live in a bundled
   `licence.rtf`, so shipping it required *verifying web embedding + commercial use* — and it ships only fixed
   **400/700** (forcing semibold titles onto the body face) and needs manual **OTF→woff2** conversion. Since
-  Oceanview is non-commercial the commercial-use half of that gate was moot, which **widened the field**: the
+  Videbacken is non-commercial the commercial-use half of that gate was moot, which **widened the field**: the
   free-for-personal tier opened up, and — more usefully — Fontshare's own ITF-FFL **variable** grotesques
   (Switzer's home, so commercial-safe regardless) match the brief while dissolving *both* Alte Haas costs.
   **Cabinet Grotesk** was chosen (closest to the warm-grotesque character); **Clash Display** (more striking

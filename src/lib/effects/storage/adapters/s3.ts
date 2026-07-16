@@ -29,7 +29,7 @@ function envOrThrow(name: string): string {
   return v
 }
 
-// `pnpm dev --host` points this at the LAN IP so both the presigned PUT URL and
+// `bun run dev --host` points this at the LAN IP so both the presigned PUT URL and
 // the public read URL are reachable from a phone (dev-only; see devHost.ts).
 // Falls back to the configured S3_ENDPOINT for normal localhost dev.
 const ENDPOINT = devS3Endpoint() ?? envOrThrow('S3_ENDPOINT')

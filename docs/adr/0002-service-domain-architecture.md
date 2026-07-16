@@ -9,7 +9,7 @@
 
 ## Context
 
-Oceanview's read/write paths cross three layers: HTTP request → oRPC procedure → DB. Without a seam, three things drift:
+Videbacken's read/write paths cross three layers: HTTP request → oRPC procedure → DB. Without a seam, three things drift:
 
 1. **Domain invariants scatter.** "You can't delete the last admin," "you can't act on yourself," "you can't update a soft-deleted user" — each of these is true regardless of caller. If they live in the procedure that happens to need them first, the next caller (a server function, an auth callback, a future Slack command) re-implements them by hand and the rules silently fork.
 2. **DB primitives leak.** `db.select(...)` in a route loader looks innocent until the third place has to be kept in sync with a schema change. `db` becomes an ambient global; the schema becomes everyone's problem.
@@ -275,7 +275,7 @@ A reader can confirm the architecture is being followed without running anything
 
 Manual smoke test:
 
-1. `pnpm test src/lib/services/user/user.test.ts` — runs the user service against schema-per-test; asserts `UserDomainError.code` on each invariant violation.
+1. `bun run test src/lib/services/user/user.test.ts` — runs the user service against schema-per-test; asserts `UserDomainError.code` on each invariant violation.
 2. In `/admin/users`, try to soft-delete the last admin → expect a CONFLICT toast in Swedish ("Det måste finnas minst en administratör"), no DB change.
 3. As an admin, try to delete yourself → expect a FORBIDDEN toast in Swedish ("Du kan inte radera dig själv"), no DB change.
 
@@ -310,7 +310,7 @@ Manual smoke test:
    - Add a `rethrowAsORPC(err, context)` helper switching on `err.code`.
    - Procedures: `try { await <entity>Service.op(...) } catch (err) { rethrowAsORPC(err, '<op>') }`, then side effects, then `context.log.info(...)`.
 4. **Add the router** to `src/lib/orpc/router.ts` if it's a new entity.
-5. **Run `pnpm test src/lib/services/<entity>/`** — the colocated test runs against a fresh schema with every migration applied; no fixtures needed.
+5. **Run `bun run test src/lib/services/<entity>/`** — the colocated test runs against a fresh schema with every migration applied; no fixtures needed.
 
 ---
 
@@ -391,6 +391,6 @@ show the message.
 
 ## Amendment (2026-06-24): user service grows the invitation ops + two codes
 
-The `user` service gained three exports for the invitation flow ([ADR-0017](./0017-user-invitation-flow.md)), all following the patterns above: `inviteUser(email)` (a check-first guarded write — `findIdByEmail` → `EMAIL_TAKEN`, the unique constraint staying the silent backstop, per "Check first" §), `markInvited(id)` (a bare timestamp bump, no invariant), and `assertInviteResendable(id)` (a read-only guard that throws `NOT_FOUND` / `ALREADY_ACCEPTED`). `create` was reshaped into `invite` + `resendInvite` at the procedure layer.
+The `user` service gained three exports for the invitation flow ([ADR-0017](./0017-authentication.md)), all following the patterns above: `inviteUser(email)` (a check-first guarded write — `findIdByEmail` → `EMAIL_TAKEN`, the unique constraint staying the silent backstop, per "Check first" §), `markInvited(id)` (a bare timestamp bump, no invariant), and `assertInviteResendable(id)` (a read-only guard that throws `NOT_FOUND` / `ALREADY_ACCEPTED`). `create` was reshaped into `invite` + `resendInvite` at the procedure layer.
 
 The `UserDomainErrorCode` union grew two members — **`ALREADY_ACCEPTED`** (resend on an already-verified user) and **`EMAIL_TAKEN`** (invite for an existing email) — staying **code-only** per the 2026-06-14 amendment above: `userErrors` in `procedures/user.ts` declares them status-only (`satisfies Record<UserDomainErrorCode, …>` catches a missed key at build), and `src/lib/orpc/userErrorMessage.ts`'s exhaustive switch localizes them. No new Swedish in the procedure; the type system forced both the `userErrors` key and the `userErrorMessage` case the moment each code was added.

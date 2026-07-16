@@ -36,7 +36,7 @@ services:
   #     # upstream branch instead of creating a fresh one. Combined with the
   #     # git/HEAD mount below, each local git branch gets its own persistent
   #     # Neon branch. These accumulate (~32 MB each against the 512 MB free
-  #     # tier) — `pnpm neon:prune` deletes the ones whose git branch is gone.
+  #     # tier) — `bun run neon:prune` deletes the ones whose git branch is gone.
   #     - ./.neon_local:/tmp/.neon_local
   #     - ./.git/HEAD:/tmp/.git/HEAD:ro
   #   restart: unless-stopped
@@ -49,7 +49,7 @@ services:
   # --- end PAUSED Neon Local
   queue:
     # Local-dev broker for the blurhash queue. Producers go through the
-    # bullmqQueue adapter; consumed by `pnpm dev:worker`. Mirrors the
+    # bullmqQueue adapter; consumed by `bun run dev:worker`. Mirrors the
     # Vercel Queues + Nitro consumer flow we ship to production.
     image: redis:7.4-alpine
     ports:
@@ -68,7 +68,7 @@ services:
       start_period: 5s
   queue-studio:
     # BullMQ dashboard. Profile-gated so it doesn't auto-start with
-    # `pnpm dev:up` / `pnpm queue:up`. Activate with `pnpm queue:studio`.
+    # `bun run dev:up` / `bun run queue:up`. Activate with `bun run queue:studio`.
     # Auto-discovers queues from Redis — no per-topic config needed.
     profiles: [studio]
     image: emirce/bullstudio:1.4.0
@@ -98,8 +98,8 @@ services:
       # RustFS emits no CORS headers by default; without this the browser blocks
       # every presigned PUT from the Vite dev server. Wildcard because this is
       # local, ephemeral, dev-only storage (dev creds, throwaway data) and the
-      # app origin varies: localhost for `pnpm dev`, the Mac's LAN IP for
-      # `pnpm dev --host` (phone testing) — a fixed list would need the DHCP IP.
+      # app origin varies: localhost for `bun run dev`, the Mac's LAN IP for
+      # `bun run dev --host` (phone testing) — a fixed list would need the DHCP IP.
       # Presigned PUTs authenticate via query-string signature, not credentials,
       # so `*` carries no CSRF/credential exposure here.
       RUSTFS_CORS_ALLOWED_ORIGINS: "*"

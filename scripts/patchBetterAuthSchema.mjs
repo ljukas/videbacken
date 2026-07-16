@@ -7,7 +7,7 @@
 // database and .../adapters/drizzle), so we rewrite the generated file in
 // place. Idempotent: skips columns that already declare `withTimezone`.
 //
-// Run via `pnpm auth:schema`, which invokes the CLI first.
+// Run via `bun run auth:schema`, which invokes the CLI first.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'

@@ -6,14 +6,14 @@ afterEach(() => {
 })
 
 describe('devHost getters', () => {
-  it('return null / [] when DEV_HOST is unset (plain `pnpm dev`, prod)', () => {
+  it('return null / [] when DEV_HOST is unset (plain `bun run dev`, prod)', () => {
     delete process.env.DEV_HOST
     expect(devBaseUrl()).toBeNull()
     expect(devS3Endpoint()).toBeNull()
     expect(devTrustedOrigins()).toEqual([])
   })
 
-  it('build LAN URLs from DEV_HOST when set (`pnpm dev --host`)', () => {
+  it('build LAN URLs from DEV_HOST when set (`bun run dev --host`)', () => {
     process.env.DEV_HOST = '192.168.68.130'
     expect(devBaseUrl()).toBe('http://192.168.68.130:14600')
     expect(devS3Endpoint()).toBe('http://192.168.68.130:14623')

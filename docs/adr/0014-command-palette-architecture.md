@@ -9,7 +9,7 @@
 
 ## Context
 
-Oceanview is an internal CRUD app for ~10–20 users. It already ships a Cmd+K palette —
+Videbacken is an internal CRUD app for ~10–20 users. It already ships a Cmd+K palette —
 `src/components/document/shared/DocumentSearch.tsx` — but scoped to the documents views: it binds `Mod+K`
 (`@tanstack/react-hotkeys`), opens a cmdk `CommandDialog`, debounces input (`@tanstack/react-pacer`), and
 renders folder/document hits from the `documentSearch.search` oRPC procedure with `keepPreviousData`. It

@@ -9,7 +9,7 @@
 
 > **Amended 2026-05-23.** This ADR was written as a plan; implementation shipped over the following day with intentional departures. The Architecture, Verification, and Files sections were rewritten to match what landed. Decision rationale, Alternatives, Pricing, Consequences, and Revisit-triggers sections are unchanged. The load-bearing departures:
 >
-> - **Two Blob stores, not one** — `oceanview-public` (avatars) and `oceanview-private` (documents), with separate read-write tokens. Per-access routing inside the adapter; pathnames are also env-prefixed (`dev/`, `preview/`, `prod/`) so the same two stores serve all environments.
+> - **Two Blob stores, not one** — `videbacken-public` (avatars) and `videbacken-private` (documents), with separate read-write tokens. Per-access routing inside the adapter; pathnames are also env-prefixed (`dev/`, `preview/`, `prod/`) so the same two stores serve all environments.
 > - **Three-step oRPC upload flow, not `handleUpload`** — `orpc.{image|file}.mint*Upload` → browser PUTs to Blob with the client token → `orpc.{image|file}.confirm*Upload` writes the metadata row. No `handleUpload` helper, no `onUploadCompleted` webhook (which doesn't reach `localhost` in dev).
 > - **No Vercel Image Optimization** — avatars render against the raw Blob CDN URL. `/_vercel/image` isn't served by Vite locally and requires Build Output API + `remotePatterns` config in prod we don't maintain; at our scale (avatars ≤ 5 MB, rendered ≤ 160 px) it isn't worth wiring. Future option: client-side resize before upload.
 >
@@ -18,7 +18,7 @@
 > - **`mintUploadToken` returns a discriminated union** — `{ pathname, upload: { kind: 'vercel-blob-client'; clientToken } | { kind: 'presigned-put'; url; headers? } }`. Vercel Blob keeps the SDK's client-token flow (with progress events); S3 returns a presigned PUT URL the browser PUTs to directly.
 > - **Browser dispatcher** at `src/lib/effects/storage/clientUpload.ts` — `uploadFileToStorage(file, mint, opts)` switches on `mint.upload.kind` so `AvatarUpload.tsx` / `DocumentUpload.tsx` no longer touch `@vercel/blob/client.put()` directly. Progress events still work for the Vercel Blob path; the S3 path uses `fetch` + plain HTTPS PUT (no progress events without `XMLHttpRequest`, accepted tradeoff).
 > - **No env-prefix in the S3 adapter** — RustFS's dev bucket *is* the env boundary; one less moving part.
-> - **Public bucket → anonymous read** — `compose.yaml`'s `storage-init` sidecar runs `mc anonymous set download local/oceanview-public` so avatar URLs stored in `user.image` remain fetchable long-term without re-signing (parity with Vercel Blob's public-store behaviour). Private bucket stays auth-only and is presigned per read.
+> - **Public bucket → anonymous read** — `compose.yaml`'s `storage-init` sidecar runs `mc anonymous set download local/videbacken-public` so avatar URLs stored in `user.image` remain fetchable long-term without re-signing (parity with Vercel Blob's public-store behaviour). Private bucket stays auth-only and is presigned per read.
 > - **Adapter selector is now lazy** — `storage.ts` dynamically imports adapters on first use (mirrors `queue.ts`), so neither the AWS SDK nor `@vercel/blob` lands in the cold-start path of the other.
 >
 > **Amended 2026-06-10.** Partially superseded by **ADR-0010 (Document Management)**, which split document organization (name, folder, search, soft-delete/bin, history, thumbnails) into a 1:1 `document` table over `file` with its own routers. Read these sections as historical:
@@ -31,7 +31,7 @@
 
 > **Amended 2026-06-13. Prod-origin files in the Neon-branched dev DB.** Dev branches the prod Neon DB (per the dev-setup), so the dev database carries prod `file`/`document` rows — but their bytes live in the production Vercel Blob store, never in local RustFS, so opening one in dev would 404. The env-prefix is the discriminator: the `s3` adapter never prefixes its own uploads, so a `prod/` / `preview/` prefix on a pathname *is* the "byte is remote" signal. Codified as `isRemoteOriginPathname(pathname)` in `storage.ts` (true only when `S3_ENDPOINT` is set, i.e. local dev — always false in prod). Three pieces hang off it:
 >
-> - **`pnpm storage:sync`** (`scripts/syncProdStorage.mjs`, chained into `pnpm dev:up`) walks prod-prefixed pathnames in the dev DB, reads each byte from Vercel Blob (read-only, via the SDK directly — *not* the prefixing adapter), and PUTs it into RustFS under the same key. Idempotent (skips objects already present). Skips cleanly when `S3_ENDPOINT` or the `BLOB_*` read tokens are absent, so `dev:up` never breaks. Safe re: the `vercel env pull` guard — the running app still selects `s3` (S3_ENDPOINT wins); only this script consumes the blob tokens.
+> - **`bun run storage:sync`** (`scripts/syncProdStorage.mjs`, chained into `bun run dev:up`) walks prod-prefixed pathnames in the dev DB, reads each byte from Vercel Blob (read-only, via the SDK directly — *not* the prefixing adapter), and PUTs it into RustFS under the same key. Idempotent (skips objects already present). Skips cleanly when `S3_ENDPOINT` or the `BLOB_*` read tokens are absent, so `dev:up` never breaks. Safe re: the `vercel env pull` guard — the running app still selects `s3` (S3_ENDPOINT wins); only this script consumes the blob tokens.
 > - **A dev-only "PROD" badge** on document rows (`isRemoteOrigin` flag on `listDocuments`, rendered by `RemoteOriginBadge`) marks rows whose bytes are remote-origin.
 > - **A friendly fallback** in `/api/files/{view,download}` (`remoteOriginUnavailable()`): for a remote-origin file absent from RustFS, an explanatory page instead of a redirect to a URL that 404s.
 >
@@ -40,7 +40,7 @@
 > **Amended 2026-06-15. Prod-origin files in Vercel preview — read-through + write-protection.** Preview deployments also branch the prod Neon DB, so prod `file` rows surface in preview with their `prod/` pathname — and preview *shares the same two Vercel Blob stores* as prod (only the env prefix differs). Two bugs and a hazard:
 >
 > - **Read ("Blob not found").** The `vercelBlob` adapter only treated the *current* env's prefix as "already prefixed", so in preview a `prod/documents/x` was re-prefixed to `preview/prod/documents/x` → 404. Fixed by generalizing that helper to **`applyEnvPrefix`** (in `storage.ts`), which — mirroring `stripEnvPrefix` — leaves any `prod/`/`preview/`/`dev/`-prefixed pathname untouched and only prepends the current prefix to *logical* paths. Preview now reads prod bytes directly from the shared store. Also fixes prod-origin avatars/place photos in preview.
-> - **Marking.** `isRemoteOriginPathname` was `S3_ENDPOINT`-gated (dev-only). Redefined as "the pathname's env prefix ≠ the current env's" — now true in preview for prod files (and unchanged in dev). So the **PROD badge** shows in preview too; its tooltip is env-aware (`import.meta.env.DEV`): "run `pnpm storage:sync`" in dev, "read-only, shown from the shared prod store" in preview.
+> - **Marking.** `isRemoteOriginPathname` was `S3_ENDPOINT`-gated (dev-only). Redefined as "the pathname's env prefix ≠ the current env's" — now true in preview for prod files (and unchanged in dev). So the **PROD badge** shows in preview too; its tooltip is env-aware (`import.meta.env.DEV`): "run `bun run storage:sync`" in dev, "read-only, shown from the shared prod store" in preview.
 > - **Write-protection (the hazard).** Because the store is shared, a preview hard-delete / rename / avatar-replace would otherwise mutate the *real prod byte*. Guarded two ways: the `vercelBlob` adapter **no-ops `delete`/`copy` on a foreign-origin pathname** (a backstop that can never reach prod), and `renameDocument` skips the physical byte move for a foreign-origin file (display-name rename still commits; byte keeps its old basename — the same tolerated degradation as a storage failure). Soft-delete is a branch-local DB write, so it was already prod-safe. Net: preview is *read-through, write-isolated* against prod bytes — symmetric with dev's RustFS isolation.
 
 > **Amended 2026-06-30. Server-side HEIC transcode worker + the iPhone embedded-thumbnail caveat.** A new `heic_transcode` derived-asset worker (PR #61; design spec `docs/superpowers/specs/2026-06-29-server-side-heic-transcode-design.md`) moved the HEIC→JPEG transcode off the client — it used to run `heic-to` (libheif wasm, ~3 MB) in the browser and freeze the UI for seconds — into the queue, under this ADR's storage seam. It's the same **sanctioned derived-asset worker exception** as `image_thumbnail`/`blurhash` (see The byte-path): it `getReadUrl`s the uploaded HEIC, decodes with `heic-convert` (libheif wasm, Node — `sharp` can't decode HEIC, the prebuilt libvips omits libheif), and either *replaces* the file with a JPEG (avatar/recommendation: `put` the JPEG → repoint the `file` row → `delete` the original HEIC) or *derives* a public WebP thumbnail keeping the original (documents). Clients now upload **raw HEIC** (the mint allow-list gained `image/heic`/`image/heif`); a new nullable `file.transcode_failed_at` records a permanent decode failure so the UI shows a "couldn't process" state. Three notes that bear on this ADR's seam and the Avatars section:
@@ -53,7 +53,7 @@
 
 ## Context
 
-Oceanview has file storage scaffolded but **unwired**:
+Videbacken has file storage scaffolded but **unwired**:
 
 - `user.image` exists on the Better Auth schema (`src/lib/db/schema/betterAuth.ts:9`) but is unused — `UserCard` and `admin/users.tsx` render initials via `AvatarFallback` only.
 - `src/routes/_authenticated/documents.tsx` is a placeholder for a future file library.
@@ -77,7 +77,7 @@ Concretely:
 
 - `src/lib/effects/storage/` follows the `email/` template: a typed `StorageEffects` interface, one adapter per backend, a barrel.
 - Two adapters from day one — `adapters/vercelBlob.ts` (production, talks to both Blob stores) and `adapters/devLog.ts` (tests + offline dev). R2 lands as `adapters/r2.ts` *only if* a revisit trigger fires.
-- **Two Blob stores**: `oceanview-public` (avatars) and `oceanview-private` (documents), with `BLOB_PUBLIC_READ_WRITE_TOKEN` and `BLOB_PRIVATE_READ_WRITE_TOKEN` provisioned via the Marketplace integration. The adapter picks the right token from the `access` parameter on every call.
+- **Two Blob stores**: `videbacken-public` (avatars) and `videbacken-private` (documents), with `BLOB_PUBLIC_READ_WRITE_TOKEN` and `BLOB_PRIVATE_READ_WRITE_TOKEN` provisioned via the Marketplace integration. The adapter picks the right token from the `access` parameter on every call.
 - **Env-prefixed pathnames** — the adapter prepends `dev/`, `preview/`, or `prod/` to every pathname based on `VERCEL_ENV`. One pair of stores serves all environments with namespace isolation.
 - **Three-step upload flow**, all routed through oRPC:
   1. Client calls `orpc.image.mintAvatarUpload` / `orpc.file.mintDocumentUpload` — server generates the pathname, calls `storage.mintUploadToken`, returns `{ clientToken, pathname }`.
@@ -129,8 +129,8 @@ The seam is the deep module: small interface (`mintUploadToken`, `head`, `delete
 
 ### E. Self-host (MinIO on a VPS)
 - ➕ Total control. Free egress (modulo bandwidth caps).
-- ➖ Adds the only piece of infrastructure Oceanview currently lacks (a server to babysit). Conflicts with the "free tier first, no ops burden" posture in CLAUDE.md.
-- **Verdict**: don't. Not until Oceanview becomes a different kind of project.
+- ➖ Adds the only piece of infrastructure Videbacken currently lacks (a server to babysit). Conflicts with the "free tier first, no ops burden" posture in CLAUDE.md.
+- **Verdict**: don't. Not until Videbacken becomes a different kind of project.
 
 ---
 
@@ -384,13 +384,13 @@ A reader can confirm the architecture is being followed without running anything
 
 Manual smoke tests:
 
-1. **`/account`** — upload an avatar (JPEG, ~200 KB). DevTools Network shows three calls bracketing the byte transfer: `POST /api/rpc` (`image.mintAvatarUpload`) → `PUT https://{publicStoreId}.public.blob.vercel-storage.com/dev/avatars/{userId}/{uuid}` → `POST /api/rpc` (`image.confirmAvatarUpload`). The avatar renders immediately; `user.image` in Postgres holds the Blob URL; the `oceanview-public` dashboard shows a new object under `dev/avatars/...`.
+1. **`/account`** — upload an avatar (JPEG, ~200 KB). DevTools Network shows three calls bracketing the byte transfer: `POST /api/rpc` (`image.mintAvatarUpload`) → `PUT https://{publicStoreId}.public.blob.vercel-storage.com/dev/avatars/{userId}/{uuid}` → `POST /api/rpc` (`image.confirmAvatarUpload`). The avatar renders immediately; `user.image` in Postgres holds the Blob URL; the `videbacken-public` dashboard shows a new object under `dev/avatars/...`.
 2. **Avatar replacement** — upload a second avatar. The previous blob disappears from the public store dashboard; the previous `file` row is soft-deleted; `user.image` now points at the new URL (cookie cache refreshes because we go through `auth.api.updateUser`).
 3. **`/documents`** — upload a PDF as user A. Same three-call DevTools pattern against `document.mintDocumentUpload` + `PUT https://{privateStoreId}.private.blob.vercel-storage.com/...` + `document.confirmDocumentUpload`. Metadata row appears, file appears in the list, realtime event propagates to a second tab.
 4. **Shared library** — sign in as user B in another browser. User B sees A's document and can download it via `/api/files/download/{id}` (302 redirect to a 60-second signed URL). User B does NOT see a delete button on A's row; calling `orpc.document.deleteDocument({ id })` directly returns the Swedish `CANNOT_DELETE_OTHERS_DOCUMENT`-mapped error. As an admin, the delete succeeds.
 5. **Privacy** — `curl -I` the private store URL directly without a signed URL → 401/403. `curl -I` the public store URL → 200.
 6. **Quota visibility** — confirm both Vercel Blob dashboards show usage; configure alerts at ~80% of the Hobby quota (the primary mitigation for the hard-cap risk).
-7. **`pnpm test`** — colocated tests pass (91/91 at the time of writing); storage tests use the `devLog` adapter and never make a live Blob call.
+7. **`bun run test`** — colocated tests pass (91/91 at the time of writing); storage tests use the `devLog` adapter and never make a live Blob call.
 
 ---
 

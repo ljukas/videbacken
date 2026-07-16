@@ -1,10 +1,10 @@
-// Dev-only LAN hosting. `pnpm dev --host` (scripts/dev.ts) auto-detects the
+// Dev-only LAN hosting. `bun run dev --host` (scripts/dev.ts) auto-detects the
 // machine's LAN IP and injects it as the `DEV_HOST` env var so a phone on the
 // same Wi-Fi can reach auth + storage at that IP instead of `localhost`.
 //
 // DEV_HOST is set ONLY by that launcher and appears in NO `.env` file, so the
 // dev server's env loader has nothing to override it with (side-stepping the
-// `.env.local`-precedence trap). It is unset for plain `pnpm dev` and always
+// `.env.local`-precedence trap). It is unset for plain `bun run dev` and always
 // unset in production (there is no launcher) → every getter returns null/[] and
 // callers fall back to their normal localhost / BETTER_AUTH_URL / S3_ENDPOINT
 // configuration. Read fresh from `process.env` each call so it stays testable.

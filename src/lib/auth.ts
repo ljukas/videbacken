@@ -29,7 +29,7 @@ export const resolveBaseURL = () => {
     if (process.env.VERCEL_BRANCH_URL) return `https://${process.env.VERCEL_BRANCH_URL}`
     if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
   }
-  // `pnpm dev --host`: use the LAN IP so magic links + the origin check work
+  // `bun run dev --host`: use the LAN IP so magic links + the origin check work
   // from a phone (dev-only; null otherwise). See devHost.ts.
   return devBaseUrl() ?? process.env.BETTER_AUTH_URL
 }
@@ -46,7 +46,7 @@ const resolveTrustedOrigins = () => {
   if (process.env.VERCEL_URL) {
     origins.push(`https://${process.env.VERCEL_URL}`)
   }
-  // `pnpm dev --host`: trust localhost AND the LAN IP so the app works from both
+  // `bun run dev --host`: trust localhost AND the LAN IP so the app works from both
   // the dev machine and a phone at once (dev-only; empty otherwise).
   origins.push(...devTrustedOrigins())
   return origins

@@ -9,7 +9,7 @@
 // `main` (default/protected) and the Vercel integration's `preview/*`
 // branches are never touched — the integration manages those itself.
 //
-// Run via `pnpm neon:prune`, with the dev stack down (`pnpm dev:down`):
+// Run via `bun run neon:prune`, with the dev stack down (`bun run dev:down`):
 // deleting the branch a live Neon Local session is proxying to breaks it.
 //
 // Caveat: Neon Local keys mappings by a mangled git branch name (truncated,
@@ -36,7 +36,7 @@ const runningDb = execFileSync('docker', ['compose', 'ps', '--services', '--stat
   encoding: 'utf8',
 })
 if (runningDb.split('\n').includes('db')) {
-  console.error('[neon:prune] the db service is running — `pnpm dev:down` first')
+  console.error('[neon:prune] the db service is running — `bun run dev:down` first')
   process.exit(1)
 }
 

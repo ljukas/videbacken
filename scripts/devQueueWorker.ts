@@ -9,8 +9,8 @@ import { handleHeicTranscodeMessage } from '~/lib/queue/handlers/heicTranscode'
 
 /**
  * Local-dev consumer for the background-job topics. Run via
- * `pnpm dev:worker`. Connects to the Redis container declared in
- * `compose.yaml` (started by `pnpm queue:up`) and dispatches each job
+ * `bun run dev:worker`. Connects to the Redis container declared in
+ * `compose.yaml` (started by `bun run queue:up`) and dispatches each job
  * through the same handlers the Nitro `vercel:queue` plugin uses in
  * production (`server/plugins/queueConsumer.ts`). BullMQ owns polling, ack,
  * retry/backoff (configured on the producer in `bullmqQueue.ts`), and

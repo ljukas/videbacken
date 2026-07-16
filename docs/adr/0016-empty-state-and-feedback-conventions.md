@@ -9,7 +9,7 @@
 
 ## Context
 
-Oceanview is an internal CRUD app for ~10–20 owners. Empty states had drifted into two inconsistent shapes:
+Videbacken is an internal CRUD app for ~10–20 owners. Empty states had drifted into two inconsistent shapes:
 
 1. **Composed `Empty`** — `DocumentTable` (true-root empty) and `DocumentBin` already use the shadcn `Empty`
    composition (`EmptyHeader` → `EmptyMedia variant="icon"` → `EmptyTitle` → `EmptyDescription`): an icon, a

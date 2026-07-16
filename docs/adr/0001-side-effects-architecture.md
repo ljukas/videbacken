@@ -28,7 +28,7 @@
 
 ## Context
 
-Oceanview is a small internal app (10–20 users) for a sailboat co-ownership group, deployed on Vercel Hobby. The scaffold is complete; the codebase is disciplined: **services own DB access, oRPC procedures orchestrate, Better Auth owns sessions, no event bus or queue exists**. Today only one cross-system side effect actually executes — `auth.api.revokeUserSessions()` inline in `src/lib/orpc/procedures/user.ts` after `softDeleteAsAdmin`. The magic-link transport is `console.log` in `src/lib/auth.ts:46`. As Resend, R2, audit logs, scheduled boat-week reminders, and future webhooks come online, the codebase needs a **clear seat** for side-effect logic so it doesn't sprawl into procedures or hide in service files (which would break the "services own only the DB" rule).
+Videbacken is a small internal app (10–20 users) for a sailboat co-ownership group, deployed on Vercel Hobby. The scaffold is complete; the codebase is disciplined: **services own DB access, oRPC procedures orchestrate, Better Auth owns sessions, no event bus or queue exists**. Today only one cross-system side effect actually executes — `auth.api.revokeUserSessions()` inline in `src/lib/orpc/procedures/user.ts` after `softDeleteAsAdmin`. The magic-link transport is `console.log` in `src/lib/auth.ts:46`. As Resend, R2, audit logs, scheduled boat-week reminders, and future webhooks come online, the codebase needs a **clear seat** for side-effect logic so it doesn't sprawl into procedures or hide in service files (which would break the "services own only the DB" rule).
 
 The question worth answering now (rather than once five callers exist): **publish-and-listen, or call directly?** Get the seam right once; everything downstream becomes mechanical.
 
@@ -56,7 +56,7 @@ Pub/sub is the obvious-looking alternative, so it deserves a direct answer. The 
 
 1. **Decoupling** — Producer doesn't import consumer. Real benefit, but **within one monorepo it's cosmetic**: every listener still lives in the same codebase, in the same deploy, owned by the same team. A typed `effects.email.userInvited(...)` call behind a swappable interface gives the same "swap the implementation" benefit with stronger types and a control flow you can read top-to-bottom. The decoupling pub/sub is famous for matters at **system boundaries** (microservices, external subscribers) — not at the call-site boundary inside one app.
 
-2. **Multiple consumers** — Real benefit, but Oceanview has **zero cases** of it today and no obvious cases coming. When "user created → send welcome + log audit + sync CRM" actually appears, the simpler shape is a `onUserCreated(user)` orchestrator function that calls all three effects — explicit, typed, traceable. Three function calls beat three listener registrations every time the answer to "what fires when X happens?" matters (which is constantly, during debugging).
+2. **Multiple consumers** — Real benefit, but Videbacken has **zero cases** of it today and no obvious cases coming. When "user created → send welcome + log audit + sync CRM" actually appears, the simpler shape is a `onUserCreated(user)` orchestrator function that calls all three effects — explicit, typed, traceable. Three function calls beat three listener registrations every time the answer to "what fires when X happens?" matters (which is constantly, during debugging).
 
 3. **Async / don't block the request** — On Vercel Functions, **fire-and-forget after the response is unsafe**: the function can be frozen or killed once the response is sent. The listener's `await` may never resolve. The only safe "async" inside a request is to finish before returning — which is what direct calls already do, and which `runEffect` (tier 2) makes explicit for best-effort cases. In-process pub/sub doesn't change this physics.
 
@@ -227,7 +227,7 @@ The originally planned scaffolding (`effect_outbox` table, `enqueue.ts`, `drain.
 
 - **Services stay DB-only** (CLAUDE.md). Effects are called by procedures, never by services. Services receive a tx and **may** call `enqueueEffect(tx, …)` for tier 3 (because outbox writes are DB writes — that's the only reason a service touches the effects namespace, and only the `outbox/enqueue` helper, not the adapters).
 - **All non-auth server calls through oRPC** (CLAUDE.md). The `/api/cron/drain` route is the one exception, justified because cron is not an oRPC client; it should still verify a shared secret.
-- **Free tier first**: Resend free tier (3k/mo) covers Oceanview easily. R2 has no egress fees. Vercel cron on Hobby = 1/day; if tier-3 latency needs more, swap to a free external pinger before paying for Pro.
+- **Free tier first**: Resend free tier (3k/mo) covers Videbacken easily. R2 has no egress fees. Vercel cron on Hobby = 1/day; if tier-3 latency needs more, swap to a free external pinger before paying for Pro.
 - **Swedish user-facing text**: email templates are Swedish; subject lines, body, footer all in informal "du".
 
 ---
@@ -236,10 +236,10 @@ The originally planned scaffolding (`effect_outbox` table, `enqueue.ts`, `drain.
 
 After phase 1 lands *(historical checklist — kept as written except the two greps, replaced 2026-06-10 with ones that pass against today's tree)*:
 
-- `pnpm test` passes — `email.test.ts` exercises the interface contract against devLog.
-- `pnpm dev` — request a magic link from `/login`; in dev (no `RESEND_API_KEY`) the link prints to console as before; in a `.env` with `RESEND_API_KEY` set, the message arrives in the inbox.
+- `bun run test` passes — `email.test.ts` exercises the interface contract against devLog.
+- `bun run dev` — request a magic link from `/login`; in dev (no `RESEND_API_KEY`) the link prints to console as before; in a `.env` with `RESEND_API_KEY` set, the message arrives in the inbox.
 - Manually delete a user via `/admin/users` — confirm: (a) user is soft-deleted, (b) their session is revoked (existing behavior preserved), (c) no new errors in logs.
-- `pnpm check` — Biome lint passes.
+- `bun run check` — Biome lint passes.
 - `grep -ri "effects\|better-auth\|@vercel/blob\|resend" src/lib/services/` — zero hits (services stay DB-only: no effects namespace, no auth SDK, no transport SDK). *(The original `email`/`resend`/`r2` grep rotted — services legitimately contain `email` as a column/field name.)*
 - `grep -ri "resend\|nodemailer\|@vercel/blob\|@aws-sdk" src/lib/orpc/procedures/` — zero hits (procedures use the `effects` seam, never a transport SDK directly).
 

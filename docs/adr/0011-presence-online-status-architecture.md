@@ -201,7 +201,7 @@ Two accepted side effects of this design: every cold start makes all N clients r
 This subsystem is correctly wired when:
 
 - The `presence.changed` variant compiles in `realtimeEventSchema`, and TypeScript's exhaustive `switch` forces the matching `case` in `useRealtimeSync` — drop either and the build fails.
-- `pnpm test` passes — `src/lib/effects/presence/presence.test.ts` covers the adapter contract; no other test change is needed.
+- `bun run test` passes — `src/lib/effects/presence/presence.test.ts` covers the adapter contract; no other test change is needed.
 
 Drift checks for this ADR itself:
 
@@ -210,7 +210,7 @@ Drift checks for this ADR itself:
 - `grep -rn "listOnline" src/` — the effect (`effects/presence/`: interface, adapter, tests), the procedure (`procedures/presence.ts`), and one consuming route: `owners.tsx` (loader prefetch plus the `ActiveOwners` and `DeletedOwners` views). No service reads it.
 - `grep -rn "presence" src/lib/services/` — zero hits. Presence is an effect, not a service; services never touch it.
 
-Manual smoke (`pnpm dev`):
+Manual smoke (`bun run dev`):
 
 1. Sign in as user A in two tabs and user B in one tab. B's owners list (`/owners`) shows A with a green "Ansluten" dot.
 2. Close **one** of A's tabs — the dot stays (refcount 2→1, no broadcast).

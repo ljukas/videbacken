@@ -9,7 +9,7 @@
 
 ## Context
 
-At decision time (May 2026 baseline), Oceanview had three forms (`LoginFormCard`, `RenamePasskeyForm`, `UserForm`), each following the inline `<form.Field>` + render-prop pattern. The pattern worked, but the cost per field was ~16 lines of boilerplate:
+At decision time (May 2026 baseline), Videbacken had three forms (`LoginFormCard`, `RenamePasskeyForm`, `UserForm`), each following the inline `<form.Field>` + render-prop pattern. The pattern worked, but the cost per field was ~16 lines of boilerplate:
 
 ```tsx
 <form.Field name="email" children={(field) => {
@@ -76,7 +76,7 @@ This is a **deep module** in the architecture-skill sense: the public interface 
 ### C. Server-fn-driven forms via `createServerValidate`
 - ➕ Forms work without JavaScript (progressive enhancement). Server-side validation errors merge into form state via `useTransform` + `mergeForm`.
 - ➖ **Conflicts with the existing data layer** (decided 2026-05-15): mutations go through oRPC + TanStack Query. Adopting `serverValidate` would create a parallel mutation path purely for forms — duplicating an architecture seam.
-- ➖ Oceanview is an internal admin tool for 10–20 users where JS is always present. Progressive enhancement isn't a value here.
+- ➖ Videbacken is an internal admin tool for 10–20 users where JS is always present. Progressive enhancement isn't a value here.
 - **Verdict**: don't. Documented as a future door (see "Revisit triggers").
 
 ### D. react-hook-form
@@ -300,7 +300,7 @@ A reader can confirm the architecture is being followed without running anything
 
 Manual smoke tests after a migration:
 
-1. **`/login`** — type a bad email, blur, submit; see Swedish Zod error from `<FieldError>`. Type a valid email, submit; see "Skickar…" spinner, magic-link prints in `/tmp/oceanview-dev.log` (devLog adapter, ADR-0001).
+1. **`/login`** — type a bad email, blur, submit; see Swedish Zod error from `<FieldError>`. Type a valid email, submit; see "Skickar…" spinner, magic-link prints in `/tmp/videbacken-dev.log` (devLog adapter, ADR-0001).
 2. **`/account`** *(was `/konto`)* — click pencil on a passkey, type a new name, click save; name updates. Press Escape mid-edit; cancels. Try to save an empty name; field error appears.
 3. **`/admin/users`** — open "Ny användare" (`CreateUserDialog`), fill all four fields including the segmented role toggle (`ToggleField`), save; toast + dialog close + list refresh. Open "Redigera" on an existing user (`EditUserDialog`), change a field, save; same. Try to save with an invalid email; field error appears.
 
@@ -339,7 +339,7 @@ Manual smoke tests after a migration:
 4. **Each field** is one `<form.AppField name="..." children={(field) => <field.TextField label="..." />}` (or `<field.SelectField label="..." options={[...]}>`).
 5. **Submit gating** is `<form.AppForm><form.SubmitButton label="..." pendingLabel="..." /></form.AppForm>`. Cancel/close actions in the same form go through `<form.CancelButton>` inside the same `<form.AppForm>` (see the 2026-06-10 addendum).
 6. **Mutation errors** go to `toast.error(...)` in the mutation's `onError`; on success, `toast.success(...)` + invalidate the query keys + close any open dialog.
-7. **Test by hand** in `pnpm dev:log`: bad input → field error in Swedish; good input → success path.
+7. **Test by hand** in `bun run dev:log`: bad input → field error in Swedish; good input → success path.
 
 If you need a UI primitive the bound components don't expose (a textarea, a multi-select, a date picker), either (a) add a new bound component to `src/components/form/`, or (b) drop down to raw `<form.AppField>` + the primitive for a one-off. Don't invent a one-off bound component for a single caller.
 

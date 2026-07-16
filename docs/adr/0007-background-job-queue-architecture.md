@@ -5,7 +5,7 @@
 - **Deciders**: Lukas
 - **Decision in one line**: Heavy / deferred work runs on a queue. Producers call `queue.publish(topic, payload)` through `~/lib/effects/queue/`; the same handler in `src/lib/queue/handlers/<topic>.ts` runs in production (Vercel Queues → Nitro `vercel:queue` hook) and in local dev (BullMQ + Redis worker). The adapter is chosen at runtime from env; tests use a `devLog` no-op. **Supersedes the tier-3 / outbox passages in [ADR-0001](./0001-side-effects-architecture.md).**
 
-> **Amended 2026-06-24.** A fourth topic landed: **`email_user_invited`** (`{ to, inviteUrl, locale }`) — the first **email** topic, and the first producer that is **not** an oRPC procedure. It is published from Better Auth's `sendVerificationEmail` hook (`src/lib/auth.ts`), making user invitations tier-3 (delivery off the admin's request, with retry/backoff). Handler: `src/lib/queue/handlers/emailUserInvited.ts` (a thin `email.sendUserInvited(...)` — all token/link work happened on the producer side). Wired through all five places per *How to add a new topic*: the union/payload in `queue.ts`, the handler, the `vercel:queue` switch (`queueConsumer.ts`), the `vite.config.ts` trigger, and the dev `Worker` (`devQueueWorker.ts`). See [ADR-0008](./0008-email-architecture.md) (the email seam) and [ADR-0017](./0017-user-invitation-flow.md) (the invitation flow). Note this loosens the producer's "no auth hook" verification grep below — `publish('email_user_invited', …)` legitimately lives in `src/lib/auth.ts`.
+> **Amended 2026-06-24.** A fourth topic landed: **`email_user_invited`** (`{ to, inviteUrl, locale }`) — the first **email** topic, and the first producer that is **not** an oRPC procedure. It is published from Better Auth's `sendVerificationEmail` hook (`src/lib/auth.ts`), making user invitations tier-3 (delivery off the admin's request, with retry/backoff). Handler: `src/lib/queue/handlers/emailUserInvited.ts` (a thin `email.sendUserInvited(...)` — all token/link work happened on the producer side). Wired through all five places per *How to add a new topic*: the union/payload in `queue.ts`, the handler, the `vercel:queue` switch (`queueConsumer.ts`), the `vite.config.ts` trigger, and the dev `Worker` (`devQueueWorker.ts`). See [ADR-0008](./0008-email-architecture.md) (the email seam) and [ADR-0017](./0017-authentication.md) (the invitation flow). Note this loosens the producer's "no auth hook" verification grep below — `publish('email_user_invited', …)` legitimately lives in `src/lib/auth.ts`.
 
 > **Amended 2026-06-10.** Vercel Queues re-verified: it is **GA**, no longer public beta. Billing is per operation, metered in 4 KiB chunks, across five operation types (Send / Receive / Delete / Visibility change / Notify); operations are regionally priced against plan credits; sends with an idempotency key and push deliveries with max concurrency bill at 2× for that operation; functions invoked in push mode are billed as normal Fluid compute. Default message retention is 24 h (max 7 days) — which *simplifies* the swap path documented below: unprocessed messages for recomputable jobs like blurhash self-expire, so there is nothing to migrate. At ~20 users our volume is trivially inside Hobby plan credits. The "exits beta with surprising pricing" revisit trigger is retired and restated in measurable terms below. Sources: [vercel.com/docs/queues](https://vercel.com/docs/queues), [vercel.com/docs/queues/pricing](https://vercel.com/docs/queues/pricing).
 
@@ -32,7 +32,7 @@ The shape of the problem — *fire-and-forget durable work, executed out-of-band
 | Environment | Producer adapter | Broker | Consumer |
 |---|---|---|---|
 | Production (Vercel) | `vercelQueue` (`@vercel/queue`) | Vercel Queues | `server/plugins/queueConsumer.ts` — Nitro `vercel:queue` hook |
-| Local dev with broker (`REDIS_URL` set) | `bullmqQueue` | Redis (docker `compose.yaml` `queue` service) | `scripts/devQueueWorker.ts` (`pnpm dev:worker`) |
+| Local dev with broker (`REDIS_URL` set) | `bullmqQueue` | Redis (docker `compose.yaml` `queue` service) | `scripts/devQueueWorker.ts` (`bun run dev:worker`) |
 | Local dev without broker | `devLog` (no-op) | — | — (uploads succeed; blurhash skipped) |
 | Tests (`VITEST=true`) | `devLog` | — | — |
 
@@ -200,19 +200,19 @@ Two halves: a broker (docker) and a worker process (separate terminal). With `RE
 ```yaml
 queue:
   image: redis:7.4-alpine
-  ports: ["14521:6379"]
+  ports: ["14621:6379"]
   command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
   volumes: [redis_data:/data]
   healthcheck: { test: ["CMD", "redis-cli", "ping"], ... }
 
 queue-studio:
-  profiles: [studio]       # opt-in via `pnpm queue:studio`
+  profiles: [studio]       # opt-in via `bun run queue:studio`
   image: emirce/bullstudio:1.4.0
-  ports: ["14504:4000"]
+  ports: ["14604:4000"]
   environment: { REDIS_URL: redis://queue:6379 }
 ```
 
-AOF (`appendfsync everysec`) means queued jobs survive `docker compose down`. `queue-studio` is profile-gated so it doesn't auto-start with `pnpm dev:up`; activate via `pnpm queue:studio` and visit `http://localhost:14504`.
+AOF (`appendfsync everysec`) means queued jobs survive `docker compose down`. `queue-studio` is profile-gated so it doesn't auto-start with `bun run dev:up`; activate via `bun run queue:studio` and visit `http://localhost:14604`.
 
 **2. The worker** — `scripts/devQueueWorker.ts` wraps BullMQ's `Worker` around the same `handleBlurhashMessage` the prod plugin uses:
 
@@ -225,7 +225,7 @@ const worker = new Worker<QueuePayloadMap['blurhash']>(
       deliveryCount: job.attemptsMade + 1,
     })
   },
-  { connection: { url: process.env.REDIS_URL ?? 'redis://localhost:14521' } },
+  { connection: { url: process.env.REDIS_URL ?? 'redis://localhost:14621' } },
 )
 ```
 
@@ -235,19 +235,19 @@ BullMQ owns polling, ack, retries (`attempts: 3, backoff: exponential @ 500ms` �
 
 ```sh
 # Terminal 1 — DB + Redis
-pnpm dev:up
+bun run dev:up
 
 # Terminal 2 — local consumer
-pnpm dev:worker
+bun run dev:worker
 
 # Terminal 3 — app
-pnpm dev
+bun run dev
 
-# Optional — BullMQ dashboard at http://localhost:14504
-pnpm queue:studio
+# Optional — BullMQ dashboard at http://localhost:14604
+bun run queue:studio
 ```
 
-To skip the queue path entirely (e.g. iterating on UI), blank out `REDIS_URL` and skip `pnpm dev:worker`; the producer falls through to `devLog`, the upload procedure logs `queue publish (devLog)`, and the image renders without a placeholder. Note the current posture: `.env.example` ships `REDIS_URL=redis://localhost:14521` pre-filled, so a freshly copied `.env` opts *into* the BullMQ adapter — skipping the queue path is an opt-out, not the opt-in this section originally described.
+To skip the queue path entirely (e.g. iterating on UI), blank out `REDIS_URL` and skip `bun run dev:worker`; the producer falls through to `devLog`, the upload procedure logs `queue publish (devLog)`, and the image renders without a placeholder. Note the current posture: `.env.example` ships `REDIS_URL=redis://localhost:14621` pre-filled, so a freshly copied `.env` opts *into* the BullMQ adapter — skipping the queue path is an opt-out, not the opt-in this section originally described.
 
 ### Test setup
 
@@ -290,9 +290,9 @@ After this ADR's pattern lands or is touched:
 - `grep -rn "publish('blurhash" src/` — every producer-side hit must be an oRPC procedure file (currently `src/lib/orpc/procedures/image.ts` for avatars, `src/lib/orpc/procedures/document.ts` for documents); test files in `src/lib/effects/queue/` are also expected. No service, no auth hook, no React file.
 - `grep -rn "publish('image_thumbnail" src/` — only `src/lib/orpc/procedures/document.ts` (plus the queue test). Its handler is `src/lib/queue/handlers/imageThumbnail.ts`.
 - `grep -rn "vercel:queue" server/` — only `server/plugins/queueConsumer.ts` should match (no other hook subscribers).
-- `pnpm test` — `src/lib/effects/queue/queue.test.ts` passes; selects the `devLog` adapter regardless of `REDIS_URL`.
+- `bun run test` — `src/lib/effects/queue/queue.test.ts` passes; selects the `devLog` adapter regardless of `REDIS_URL`.
 - Manual smoke (dev, `REDIS_URL` unset + no worker): upload an avatar → 200; log shows `queue publish (devLog)`; avatar renders without a placeholder.
-- Manual smoke (dev, `REDIS_URL` set + `pnpm dev:worker` running): upload an avatar → 200; within a few seconds the worker logs `blurhash: stored` followed by `job completed` (`scripts/devQueueWorker.ts`), and the user row gains a `blurhash`. Don't look for the job in Bull Studio (`:14504`) — the producer enqueues with `removeOnComplete: true` (`src/lib/effects/queue/adapters/bullmqQueue.ts`), so completed jobs vanish from Redis; only failed jobs (kept at 100 via `removeOnFail`) show up there.
+- Manual smoke (dev, `REDIS_URL` set + `bun run dev:worker` running): upload an avatar → 200; within a few seconds the worker logs `blurhash: stored` followed by `job completed` (`scripts/devQueueWorker.ts`), and the user row gains a `blurhash`. Don't look for the job in Bull Studio (`:14604`) — the producer enqueues with `removeOnComplete: true` (`src/lib/effects/queue/adapters/bullmqQueue.ts`), so completed jobs vanish from Redis; only failed jobs (kept at 100 via `removeOnFail`) show up there.
 - Manual smoke (preview deploy): upload an avatar in a preview URL → Vercel Runtime Logs show `queue publish` on the producer Function and `blurhash: stored` on the consumer Function.
 
 ---
@@ -309,10 +309,10 @@ After this ADR's pattern lands or is touched:
 - `src/lib/queue/handlers/imageThumbnail.ts` — shared consumer handler (`image_thumbnail` topic; ADR-0010).
 - `src/lib/queue/handlers/emailUserInvited.ts` — shared consumer handler (`email_user_invited` topic; ADR-0017). Producer is Better Auth's `sendVerificationEmail` hook in `src/lib/auth.ts`, not an oRPC procedure.
 - `server/plugins/queueConsumer.ts` — Vercel Queues consumer (Nitro `vercel:queue` hook).
-- `scripts/devQueueWorker.ts` — local BullMQ consumer; run via `pnpm dev:worker`.
+- `scripts/devQueueWorker.ts` — local BullMQ consumer; run via `bun run dev:worker`.
 - `compose.yaml` — `queue` and `queue-studio` services.
 - `vite.config.ts` — Nitro plugin registration + `vercel.config.queues.triggers`.
-- `.env.example` — ships `REDIS_URL=redis://localhost:14521` pre-filled (opt-out posture: blank it to fall back to `devLog`).
+- `.env.example` — ships `REDIS_URL=redis://localhost:14621` pre-filled (opt-out posture: blank it to fall back to `devLog`).
 - `src/lib/orpc/procedures/image.ts` (`confirmAvatarUpload`), `src/lib/orpc/procedures/document.ts` (`confirmDocumentUpload`) — current producer call sites.
 
 ---

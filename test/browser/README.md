@@ -58,9 +58,9 @@ Reach for MSW only when testing the real fetch→error path (e.g. the
 
 ## Running
 
-- `pnpm test:components` — watch the browser project (the TDD loop).
-- `pnpm test` — run everything (node + browser) once.
-- `pnpm test:node` — just the DB/service suite.
+- `bun run test:components` — watch the browser project (the TDD loop).
+- `bun run test` — run everything (node + browser) once.
+- `bun run test:node` — just the DB/service suite.
 
-First-time setup downloads Chromium: `pnpm exec playwright install chromium`.
-CI must run that before `pnpm test` (add `pnpm exec playwright install --with-deps chromium`).
+First-time setup downloads Chromium: `bunx playwright install chromium`.
+CI must run that before `bun run test` (add `bunx playwright install --with-deps chromium`).

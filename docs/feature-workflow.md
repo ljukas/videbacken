@@ -19,13 +19,13 @@ Companion: **[refactor-workflow.md](./refactor-workflow.md)** for behavior-prese
 ### 0. Shape the idea
 **What:** Clarify intent, scope, constraints, and success criteria *before* any code. Decide the **first slice** (the smallest thing that delivers the core value) and what's explicitly deferred. Surface the open product decisions the idea glossed over.
 **Output:** An agreed scope, and a written **design record**:
-- A real *decision with alternatives* (a new seam, a non-obvious trade-off) → an **ADR** in `docs/adr/`. This is how every substantial oceanview feature starts (ADR-0010, 0012, 0017).
+- A real *decision with alternatives* (a new seam, a non-obvious trade-off) → an **ADR** in `docs/adr/`. This is how every substantial videbacken feature starts (ADR-0010, 0012, 0017).
 - Design detail that isn't a decision → a lightweight **spec** (brainstorming's default output location).
 **Skill:** `superpowers:brainstorming` — mandatory, even for "obviously simple" features; that's where unexamined assumptions surface. It ends by handing off to planning.
 **Judgment:** *Does the codebase already fight this feature?* If adding it cleanly would mean restructuring first, that restructuring is a **preparatory refactor** — "make the change easy, then make the easy change." Do it under [refactor-workflow.md](./refactor-workflow.md) **first**, in separate commits, then come back here. Never tangle the restructure into the feature.
 
 ### 1. Understand the seams
-**What:** Map what already exists that the feature will *consume or reuse*, at the line level, before replicating anything. oceanview leans hard on documented seams (storage, realtime, queue, services, forms — see the ADRs); a good design names the exact files to reuse "verbatim."
+**What:** Map what already exists that the feature will *consume or reuse*, at the line level, before replicating anything. videbacken leans hard on documented seams (storage, realtime, queue, services, forms — see the ADRs); a good design names the exact files to reuse "verbatim."
 **Output:** A short list of files/patterns to reuse and the current shapes to match.
 **Skills:**
 - `feature-dev:code-explorer` (agent) — trace execution paths and map the current shape of a subsystem you'll build on. **This is feature-dev's highest-value step here**, because our ADRs reference seams by name ("reuse the avatar flow", "follow the document/folder error pattern") and you need their real, current code first.
@@ -51,7 +51,7 @@ Companion: **[refactor-workflow.md](./refactor-workflow.md)** for behavior-prese
 - `superpowers:dispatching-parallel-agents` — for the independent leaves (pure helpers, i18n strings, static registries) that don't sit on the dependency spine.
 - **Testable layers → `superpowers:test-driven-development`.** Services and pure helpers get tests first (ADR-0002 mandates service tests). Every `<Entity>DomainError.code` literal must be exercised.
 - **Un-testable layers (client-only/WebGL/visual UI) → build then verify live** (Phase 6), not TDD.
-- `ralph-loop:ralph-loop` — **optional**, only for a well-scoped layer with an *automatic* success criterion (a TDD'd service whose failing test suite is already written): run an autonomous loop with `--completion-promise` tied to a green suite + `pnpm check`, and **always** set `--max-iterations` as a backstop. Write the tests first; the loop's output is still subject to one-hat-per-commit and small, reviewable diffs. Never for the design/judgment phases (0–2).
+- `ralph-loop:ralph-loop` — **optional**, only for a well-scoped layer with an *automatic* success criterion (a TDD'd service whose failing test suite is already written): run an autonomous loop with `--completion-promise` tied to a green suite + `bun run check`, and **always** set `--max-iterations` as a backstop. Write the tests first; the loop's output is still subject to one-hat-per-commit and small, reviewable diffs. Never for the design/judgment phases (0–2).
 - `superpowers:systematic-debugging` the moment something breaks — never guess-patch.
 - **Domain/library skills as you touch each area** — consult the CLAUDE.md **"Skill loading — when to load which"** router table (it maps task → skill/ADR). High-value ones: `shadcn` / `vercel:shadcn` (UI components), `vercel:react-best-practices` + `vercel-composition-patterns` (component structure), `supabase-postgres-best-practices` / `neon-postgres` (schema, queries, indexes), `better-auth-best-practices` + `better-auth-security-best-practices` (auth), `react-email` + `email-best-practices` (templates), `frontend-design` / `web-design-guidelines` (visual + UX/accessibility).
 
@@ -59,7 +59,7 @@ Companion: **[refactor-workflow.md](./refactor-workflow.md)** for behavior-prese
 **What:** Review each slice as it lands. The **project-specific agents catch what a generic reviewer misses** and come first:
 - `migration-guard` — run it whenever `drizzle/` or `src/lib/db/schema/` changed (missing `--name=`, timestamptz `USING … AT TIME ZONE`, destructive ops, `betterAuth.ts` hand-edits).
 - `test-completeness` — after any service/effect/`errors.ts` change; enforces ADR-0002's "every domain-error code is tested."
-- `code-reviewer` — the oceanview ADR-aware reviewer (avatar pattern, code-only error mapping, realtime conventions).
+- `code-reviewer` — the videbacken ADR-aware reviewer (avatar pattern, code-only error mapping, realtime conventions).
 - `/security-review` — the on-demand deep pass for auth, file-access, or anything touching session/permission boundaries. The `security-guidance` plugin (enabled in `.claude/settings.json`) now *also* runs **automatically** — pattern warnings on edits, an LLM diff review when a turn ends, and an agentic multi-file review at commit/push — so security feedback appears continuously through Build → Ship; `/security-review` stays the explicit, focused pass for sensitive boundaries.
 **Skills:** `superpowers:requesting-code-review` to frame the request; `superpowers:receiving-code-review` to act on feedback with rigor (verify, don't perform agreement). `feature-dev:code-reviewer` / `/code-review` for general correctness passes.
 

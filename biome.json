@@ -13,7 +13,7 @@
       "!**/src/paraglide/**",
       "!**/src/lib/db/schema/betterAuth.ts",
       "!**/drizzle/**",
-      "!**/pnpm-lock.yaml",
+      "!**/bun.lock",
       "!**/.vinxi/**",
       "!**/*.css"
     ]

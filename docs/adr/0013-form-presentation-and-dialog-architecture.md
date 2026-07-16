@@ -9,7 +9,7 @@
 
 ## Context
 
-Oceanview is an internal admin-heavy CRUD app for ~10–20 users. By June 2026 it had ~20 dialog
+Videbacken is an internal admin-heavy CRUD app for ~10–20 users. By June 2026 it had ~20 dialog
 components (user, season, share, document/folder, passkey) built on shadcn `Dialog` / `AlertDialog`,
 with forms following `useAppForm` (ADR-0005). Three things had drifted without ever being decided:
 

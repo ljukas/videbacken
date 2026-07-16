@@ -10,7 +10,7 @@
 // This is a placeholder lettermark, not final brand art — swap SVG_MARK below
 // (and src/components/Logo.tsx) when real branding is ready.
 //
-// Run via `pnpm favicons:generate`.
+// Run via `bun run favicons:generate`.
 
 import { writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'

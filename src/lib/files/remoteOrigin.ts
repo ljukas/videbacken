@@ -32,7 +32,7 @@ export function remoteOriginUnavailable(): Response {
       not in your local storage.
     </p>
     <p>To pull production files into local storage, run:</p>
-    <p><code>pnpm storage:sync</code></p>
+    <p><code>bun run storage:sync</code></p>
   </body>
 </html>`
   return new Response(html, {

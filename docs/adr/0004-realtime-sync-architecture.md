@@ -11,7 +11,7 @@
 
 ## Context
 
-Oceanview is a multi-user app (10–20 owners + admins) where most screens read shared state — the user roster, the season grid, share assignments, the document library; boat-week scheduling still to come. When one admin mutates state in one tab, every other tab that's currently viewing affected data needs to refetch within a small number of hundreds of milliseconds without anyone reloading the page. The existing data layer (oRPC + TanStack Query, [ADR-0002](./0002-service-domain-architecture.md)) already knows how to refetch — it just needs to be told *when*.
+Videbacken is a multi-user app (10–20 owners + admins) where most screens read shared state — the user roster, the season grid, share assignments, the document library; boat-week scheduling still to come. When one admin mutates state in one tab, every other tab that's currently viewing affected data needs to refetch within a small number of hundreds of milliseconds without anyone reloading the page. The existing data layer (oRPC + TanStack Query, [ADR-0002](./0002-service-domain-architecture.md)) already knows how to refetch — it just needs to be told *when*.
 
 The **user** entity adopted first (`src/lib/orpc/procedures/user.ts`; `user.changed` was the only variant when this was written). As of 2026-06 seven namespaces publish — `user`, `season`, `presence`, `share`, `document`, `folder`, `bin` (`src/lib/effects/realtime/types.ts`) — and the pattern spread exactly as intended: writing this down set the shape so each new entity owner didn't reinvent the event name, the publish site, or the dispatch hook.
 
@@ -288,9 +288,9 @@ That's the whole recipe. No new files in `effects/realtime/`. No changes to the 
 Adding a new event kind is correctly wired when:
 
 - The new variant compiles cleanly in `realtimeEventSchema` — TypeScript narrows the `switch` and forces the new `case` in `useRealtimeSync`'s dispatch.
-- `pnpm test` passes — no test change is required for new event kinds; the existing `realtime.test.ts` covers the publisher contract.
+- `bun run test` passes — no test change is required for new event kinds; the existing `realtime.test.ts` covers the publisher contract.
 - Grep `src/lib/orpc/procedures/<entity>.ts` for every mutation handler — each one ends with `await realtime.publish({ kind: '<namespace>.changed', ids: [...] })`.
-- `pnpm dev`, open the app in two tabs as an admin, mutate the entity in tab A — tab B's affected route refetches within a few hundred milliseconds with no manual reload.
+- `bun run dev`, open the app in two tabs as an admin, mutate the entity in tab A — tab B's affected route refetches within a few hundred milliseconds with no manual reload.
 - Disconnect the network on tab B briefly, then restore — the browser console logs `realtime connection lost` (warn) and `realtime subscription opened` (info); the next mutation propagates.
 
 Drift checks for this ADR itself:
