@@ -73,11 +73,13 @@ export default defineConfig({
               },
             },
           },
-          // TanStack Start manages Nitro's serverDir; declare the queue
-          // consumer plugin explicitly so it survives the rolldown bundle.
-          // The file uses the `vercel:queue` runtime hook — see
-          // `server/plugins/queueConsumer.ts`.
-          plugins: ['./server/plugins/queueConsumer.ts'],
+          // TanStack Start manages Nitro's serverDir; declare server plugins
+          // explicitly so they survive the rolldown bundle (this Nitro setup
+          // does NOT auto-discover server/plugins/*).
+          // - queueConsumer.ts uses the `vercel:queue` runtime hook.
+          // - seedApprovedEmails.ts seeds INITIAL_ADMIN_EMAILS into
+          //   approved_email at startup so the first admin can sign in.
+          plugins: ['./server/plugins/queueConsumer.ts', './server/plugins/seedApprovedEmails.ts'],
           // Activates Vercel Image Optimization for `/_vercel/image?url=…&w=…&q=…`.
           // The `unpic/providers/vercel` transformer (used by ~/lib/image/transformer)
           // produces URLs that resolve here in production. In `pnpm dev` the
