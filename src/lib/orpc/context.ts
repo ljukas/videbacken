@@ -1,6 +1,7 @@
 import { ORPCError, os } from '@orpc/server'
 import { auth } from '~/lib/auth'
 import type { Logger } from '~/lib/logger'
+import * as userService from '~/lib/services/user'
 
 type Session = Awaited<ReturnType<typeof auth.api.getSession>>
 type SessionUser = NonNullable<Session>['user']
@@ -25,6 +26,18 @@ const requireAuth = base
   .$context<{ session: SessionData | null; user: SessionUser | null }>()
   .middleware(async ({ context, next }) => {
     if (!context.session || !context.user) {
+      throw new ORPCError('UNAUTHORIZED')
+    }
+    // Fresh DB check on every authenticated request — do NOT trust the (up-to-5-
+    // min cookieCache) session user. `revokeUser` soft-deletes the row but leaves
+    // `role` and any minted/cached session intact, so a revoked user (esp. a
+    // revoked admin re-authenticating via Google, where the create.before gate
+    // never fires) would otherwise still pass here and reach admin mutations via
+    // /api/rpc. findActiveById filters `deletedAt`, so a revoked/deleted user
+    // reads back as null → reject. Closes both the Google-re-auth hole and the
+    // cookieCache staleness window. One extra read per request is fine at this
+    // scale; DB access stays in the service (context.ts owns no `db.`).
+    if (!(await userService.findActiveById(context.user.id))) {
       throw new ORPCError('UNAUTHORIZED')
     }
     return next({
