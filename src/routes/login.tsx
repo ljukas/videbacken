@@ -7,7 +7,6 @@ import { MagicLinkSentCard } from '~/components/login/MagicLinkSentCard'
 import { WelcomeBackCard } from '~/components/login/WelcomeBackCard'
 import { ModeToggle } from '~/components/ModeToggle'
 import { useAwaitSignIn } from '~/hooks/useAwaitSignIn'
-import { useSignInPasskey } from '~/hooks/usePasskeys'
 import { clearBrowserSession, getBrowserSession } from '~/lib/browserSessionFns'
 import { getSession } from '~/lib/getSession'
 import { sanitizeRedirect } from '~/lib/utils'
@@ -34,7 +33,6 @@ export const Route = createFileRoute('/login')({
       savedLogin: session?.email
         ? {
             email: session.email,
-            hasPasskey: session.hasPasskey,
             name: session.name,
             image: session.image,
             imageBlurhash: session.imageBlurhash,
@@ -65,12 +63,6 @@ function Login() {
     },
   })
 
-  const { signIn: signInPasskey, pending: passkeyPending } = useSignInPasskey({
-    onSignedIn: () => {
-      navigate({ to: destination })
-    },
-  })
-
   async function switchToOtherEmail() {
     await clearBrowserSession()
     setUseOther(true)
@@ -89,7 +81,6 @@ function Login() {
         ) : savedLogin ? (
           <WelcomeBackCard
             email={savedLogin.email}
-            hasPasskey={savedLogin.hasPasskey}
             name={savedLogin.name}
             image={savedLogin.image}
             imageBlurhash={savedLogin.imageBlurhash}
@@ -98,16 +89,9 @@ function Login() {
             onSwitchUser={() => {
               void switchToOtherEmail()
             }}
-            onPasskeySignIn={() => void signInPasskey()}
-            passkeyPending={passkeyPending}
           />
         ) : (
-          <LoginFormCard
-            onSent={setSentTo}
-            callbackURL={callbackURL}
-            onPasskeySignIn={() => void signInPasskey()}
-            passkeyPending={passkeyPending}
-          />
+          <LoginFormCard onSent={setSentTo} callbackURL={callbackURL} />
         )}
       </div>
     </div>

@@ -1,1 +1,0 @@
-ALTER TABLE "file" ADD COLUMN "blurhash" text;

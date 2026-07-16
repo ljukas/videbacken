@@ -1,1 +1,0 @@
-ALTER TABLE "user" ADD COLUMN "last_invited_at" timestamp with time zone;

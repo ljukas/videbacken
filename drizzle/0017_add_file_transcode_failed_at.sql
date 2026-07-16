@@ -1,1 +1,0 @@
-ALTER TABLE "file" ADD COLUMN "transcode_failed_at" timestamp with time zone;

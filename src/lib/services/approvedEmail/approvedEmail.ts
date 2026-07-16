@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
-import { db } from '../../db'
-import { approvedEmail } from '../../db/schema'
+import { db } from '~/lib/db'
+import { approvedEmail } from '~/lib/db/schema'
 import { ApprovedEmailDomainError } from './errors'
 
 export type ApprovedEmailRow = typeof approvedEmail.$inferSelect

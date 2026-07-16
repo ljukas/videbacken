@@ -1,9 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { LayoutDashboardIcon } from 'lucide-react'
 import { PageContainer } from '~/components/layout/PageContainer'
-import { PasskeySetupPrompt } from '~/components/passkey/PasskeySetupPrompt'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
-import { usePasskeySetupPrompt } from '~/hooks/usePasskeys'
 import { m } from '~/paraglide/messages'
 
 // Minimal placeholder landing page (the sailboat-specific calendar/booking
@@ -16,13 +14,6 @@ export const Route = createFileRoute('/_authenticated/')({
 
 function Dashboard() {
   const { user } = Route.useRouteContext()
-
-  // Periodic passkey nudge: self-gates on zero passkeys + the per-device
-  // snooze window (see usePasskeySetupPrompt), so it re-appears "sometimes"
-  // for anyone without a passkey — including invitees who skipped the
-  // onboarding step. Kept here since the dashboard is the first screen after
-  // sign-in.
-  const passkeyPrompt = usePasskeySetupPrompt()
 
   return (
     <PageContainer>
@@ -38,12 +29,6 @@ function Dashboard() {
           <EmptyDescription>{m.dashboard_empty_description()}</EmptyDescription>
         </EmptyHeader>
       </Empty>
-      <PasskeySetupPrompt
-        open={passkeyPrompt.open}
-        pending={passkeyPrompt.pending}
-        onCreate={passkeyPrompt.create}
-        onDismiss={passkeyPrompt.dismiss}
-      />
     </PageContainer>
   )
 }

@@ -20,7 +20,6 @@ import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authenticated/account/index'
 import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as AuthenticatedAccountSecurityRouteImport } from './routes/_authenticated/account/security'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
 
 const SignedInRoute = SignedInRouteImport.update({
@@ -78,12 +77,6 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedAccountSecurityRoute =
-  AuthenticatedAccountSecurityRouteImport.update({
-    id: '/security',
-    path: '/security',
-    getParentRoute: () => AuthenticatedAccountRoute,
-  } as any)
 const AuthenticatedAccountProfileRoute =
   AuthenticatedAccountProfileRouteImport.update({
     id: '/profile',
@@ -100,7 +93,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRoute
   '/api/log': typeof ApiLogRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
-  '/account/security': typeof AuthenticatedAccountSecurityRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/account/': typeof AuthenticatedAccountIndexRoute
@@ -113,7 +105,6 @@ export interface FileRoutesByTo {
   '/api/log': typeof ApiLogRoute
   '/': typeof AuthenticatedIndexRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
-  '/account/security': typeof AuthenticatedAccountSecurityRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/account': typeof AuthenticatedAccountIndexRoute
@@ -129,7 +120,6 @@ export interface FileRoutesById {
   '/api/log': typeof ApiLogRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
-  '/_authenticated/account/security': typeof AuthenticatedAccountSecurityRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/_authenticated/account/': typeof AuthenticatedAccountIndexRoute
@@ -145,7 +135,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/api/log'
     | '/account/profile'
-    | '/account/security'
     | '/api/auth/$'
     | '/api/rpc/$'
     | '/account/'
@@ -158,7 +147,6 @@ export interface FileRouteTypes {
     | '/api/log'
     | '/'
     | '/account/profile'
-    | '/account/security'
     | '/api/auth/$'
     | '/api/rpc/$'
     | '/account'
@@ -173,7 +161,6 @@ export interface FileRouteTypes {
     | '/api/log'
     | '/_authenticated/'
     | '/_authenticated/account/profile'
-    | '/_authenticated/account/security'
     | '/api/auth/$'
     | '/api/rpc/$'
     | '/_authenticated/account/'
@@ -268,13 +255,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/account/security': {
-      id: '/_authenticated/account/security'
-      path: '/security'
-      fullPath: '/account/security'
-      preLoaderRoute: typeof AuthenticatedAccountSecurityRouteImport
-      parentRoute: typeof AuthenticatedAccountRoute
-    }
     '/_authenticated/account/profile': {
       id: '/_authenticated/account/profile'
       path: '/profile'
@@ -287,13 +267,11 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAccountRouteChildren {
   AuthenticatedAccountProfileRoute: typeof AuthenticatedAccountProfileRoute
-  AuthenticatedAccountSecurityRoute: typeof AuthenticatedAccountSecurityRoute
   AuthenticatedAccountIndexRoute: typeof AuthenticatedAccountIndexRoute
 }
 
 const AuthenticatedAccountRouteChildren: AuthenticatedAccountRouteChildren = {
   AuthenticatedAccountProfileRoute: AuthenticatedAccountProfileRoute,
-  AuthenticatedAccountSecurityRoute: AuthenticatedAccountSecurityRoute,
   AuthenticatedAccountIndexRoute: AuthenticatedAccountIndexRoute,
 }
 

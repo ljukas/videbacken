@@ -1,12 +1,7 @@
-import { KeyRoundIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { Button } from '~/components/ui/button'
 import { FieldGroup } from '~/components/ui/field'
-import { Separator } from '~/components/ui/separator'
-import { Spinner } from '~/components/ui/spinner'
 import { useAppForm } from '~/hooks/form'
-import { usePasskeySupport } from '~/hooks/usePasskeys'
 import { authClient } from '~/lib/authClient'
 import { m } from '~/paraglide/messages'
 
@@ -17,12 +12,9 @@ const loginSchema = z.object({
 type Props = {
   onSent: (email: string) => void
   callbackURL: string
-  onPasskeySignIn: () => void
-  passkeyPending: boolean
 }
 
-export function LoginFormCard({ onSent, callbackURL, onPasskeySignIn, passkeyPending }: Props) {
-  const passkeySupported = usePasskeySupport()
+export function LoginFormCard({ onSent, callbackURL }: Props) {
   const form = useAppForm({
     defaultValues: { email: '' },
     validators: { onSubmit: loginSchema },
@@ -47,26 +39,6 @@ export function LoginFormCard({ onSent, callbackURL, onPasskeySignIn, passkeyPen
       </header>
 
       <div className="flex flex-col gap-5">
-        {passkeySupported && (
-          <>
-            <Button
-              type="button"
-              size="xl"
-              className="w-full font-normal"
-              disabled={passkeyPending}
-              onClick={onPasskeySignIn}
-            >
-              {passkeyPending ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon />}
-              {m.login_passkey_button()}
-            </Button>
-            <div className="flex items-center gap-3">
-              <Separator className="flex-1" />
-              <span className="text-muted-foreground text-xs">{m.common_or()}</span>
-              <Separator className="flex-1" />
-            </div>
-          </>
-        )}
-
         <form
           className="flex flex-col gap-5"
           onSubmit={(e) => {
@@ -91,7 +63,7 @@ export function LoginFormCard({ onSent, callbackURL, onPasskeySignIn, passkeyPen
             <form.SubmitButton
               label={m.login_submit()}
               pendingLabel={m.login_submit_pending()}
-              variant={passkeySupported ? 'outline' : 'default'}
+              variant="default"
               size="xl"
               className="w-full font-normal"
             />

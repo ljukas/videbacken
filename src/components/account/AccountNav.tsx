@@ -1,5 +1,5 @@
 import { Link, useMatchRoute } from '@tanstack/react-router'
-import { ShieldIcon, UserRoundIcon } from 'lucide-react'
+import { UserRoundIcon } from 'lucide-react'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
@@ -10,7 +10,6 @@ import { m } from '~/paraglide/messages'
 // outlives the request locale (see CLAUDE.md i18n note).
 const items = [
   { to: '/account/profile', label: m.account_nav_profile, icon: UserRoundIcon },
-  { to: '/account/security', label: m.account_nav_security, icon: ShieldIcon },
 ] as const
 
 // Inactive item: centered + flex-1 inside the mobile segmented control; left

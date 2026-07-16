@@ -1,11 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
-import { normalizeEmail } from '~/lib/adminAllowlist'
 import {
   clearBrowserSession as clearCookie,
   readBrowserSession,
   rememberUser,
 } from '~/lib/browserSession'
+import { normalizeEmail } from '~/lib/services/approvedEmail'
 import { findAvatarByEmail } from '~/lib/services/user'
 
 // Name and avatar are resolved here, server-side, from the cookie's own email —

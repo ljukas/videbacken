@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, isNotNull, isNull } from 'drizzle-orm'
-import { normalizeEmail } from '~/lib/adminAllowlist'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
+import { normalizeEmail } from '~/lib/services/approvedEmail'
 import { UserDomainError } from './errors'
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]

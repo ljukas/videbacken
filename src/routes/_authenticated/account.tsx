@@ -6,9 +6,9 @@ import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
 // Layout route for the Account section. Holds the page header + inner nav
-// (AccountNav) and renders the active subpage through <Outlet/>; the two
-// subpages live under src/routes/_authenticated/account/. The loader warms
-// `user.me` once for both subpages (ProfileCard + the security passkeys list).
+// (AccountNav) and renders the active subpage through <Outlet/>; the subpages
+// live under src/routes/_authenticated/account/. The loader warms `user.me`
+// once for the profile subpage (ProfileCard).
 export const Route = createFileRoute('/_authenticated/account')({
   head: () => ({
     meta: seo({

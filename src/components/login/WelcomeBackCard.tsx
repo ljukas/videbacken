@@ -1,19 +1,14 @@
-import { KeyRoundIcon } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar'
 import { Button } from '~/components/ui/button'
 import { Spinner } from '~/components/ui/spinner'
-import { usePasskeySupport } from '~/hooks/usePasskeys'
 import { authClient } from '~/lib/authClient'
 import { initials } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
 type Props = {
   email: string
-  // Cookie hint from the last authenticated visit; undefined means unknown
-  // (pre-hint cookie) and gets the optimistic passkey-first treatment.
-  hasPasskey: boolean | undefined
   // Resolved server-side by the login loader from the cookie's email — kept
   // out of the cookie itself so it never goes stale.
   name: string | null
@@ -21,24 +16,18 @@ type Props = {
   imageBlurhash: string | null
   onSent: (email: string) => void
   onSwitchUser: () => void
-  onPasskeySignIn: () => void
-  passkeyPending: boolean
   callbackURL: string
 }
 
 export function WelcomeBackCard({
   email,
-  hasPasskey,
   name,
   image,
   imageBlurhash,
   onSent,
   onSwitchUser,
-  onPasskeySignIn,
-  passkeyPending,
   callbackURL,
 }: Props) {
-  const passkeySupported = usePasskeySupport()
   const [isSending, setIsSending] = useState(false)
 
   async function sendMagicLink() {
@@ -54,40 +43,6 @@ export function WelcomeBackCard({
     }
     onSent(email)
   }
-
-  // Lead with the passkey unless we know the account doesn't have one — then the
-  // magic link is the path that actually works and the passkey button steps back.
-  const passkeyFirst = hasPasskey !== false
-
-  const passkeyButton = passkeySupported ? (
-    <Button
-      type="button"
-      variant={passkeyFirst ? 'default' : 'outline'}
-      size="xl"
-      className="w-full font-normal"
-      disabled={passkeyPending}
-      onClick={onPasskeySignIn}
-    >
-      {passkeyPending ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon />}
-      {m.login_passkey_button()}
-    </Button>
-  ) : null
-
-  const magicLinkButton = (
-    <Button
-      type="button"
-      variant={passkeySupported && passkeyFirst ? 'outline' : 'default'}
-      size="xl"
-      className="w-full font-normal"
-      disabled={isSending}
-      onClick={() => {
-        void sendMagicLink()
-      }}
-    >
-      {isSending && <Spinner data-icon="inline-start" />}
-      {isSending ? m.login_submit_pending() : m.login_submit()}
-    </Button>
-  )
 
   return (
     <div className="flex w-full flex-col items-center gap-6">
@@ -108,17 +63,19 @@ export function WelcomeBackCard({
       </div>
 
       <div className="flex w-full flex-col gap-4">
-        {passkeyFirst ? (
-          <>
-            {passkeyButton}
-            {magicLinkButton}
-          </>
-        ) : (
-          <>
-            {magicLinkButton}
-            {passkeyButton}
-          </>
-        )}
+        <Button
+          type="button"
+          variant="default"
+          size="xl"
+          className="w-full font-normal"
+          disabled={isSending}
+          onClick={() => {
+            void sendMagicLink()
+          }}
+        >
+          {isSending && <Spinner data-icon="inline-start" />}
+          {isSending ? m.login_submit_pending() : m.login_submit()}
+        </Button>
 
         <Button
           type="button"
