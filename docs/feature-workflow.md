@@ -19,7 +19,7 @@ Companion: **[refactor-workflow.md](./refactor-workflow.md)** for behavior-prese
 ### 0. Shape the idea
 **What:** Clarify intent, scope, constraints, and success criteria *before* any code. Decide the **first slice** (the smallest thing that delivers the core value) and what's explicitly deferred. Surface the open product decisions the idea glossed over.
 **Output:** An agreed scope, and a written **design record**:
-- A real *decision with alternatives* (a new seam, a non-obvious trade-off) → an **ADR** in `docs/adr/`. This is how every substantial videbacken feature starts (ADR-0010, 0012, 0017).
+- A real *decision with alternatives* (a new seam, a non-obvious trade-off) → an **ADR** in `docs/adr/`. This is how every substantial videbacken feature starts (ADR-0001, 0002, 0017).
 - Design detail that isn't a decision → a lightweight **spec** (brainstorming's default output location).
 **Skill:** `superpowers:brainstorming` — mandatory, even for "obviously simple" features; that's where unexamined assumptions surface. It ends by handing off to planning.
 **Judgment:** *Does the codebase already fight this feature?* If adding it cleanly would mean restructuring first, that restructuring is a **preparatory refactor** — "make the change easy, then make the easy change." Do it under [refactor-workflow.md](./refactor-workflow.md) **first**, in separate commits, then come back here. Never tangle the restructure into the feature.
@@ -36,7 +36,7 @@ Companion: **[refactor-workflow.md](./refactor-workflow.md)** for behavior-prese
 ### 2. Plan
 **What:** Turn the design (ADR/spec) + the exploration findings into a **checkpointed, layered** implementation plan, ordered by the dependency spine:
 `schema/migration → services (+errors +tests) → procedures (+error mappers) → effects wiring → UI → i18n`.
-**Output:** A plan in `docs/plans/<feature>/` (see the `redesign-2026-06/` precedent), with explicit review checkpoints between layers.
+**Output:** A plan in `docs/superpowers/plans/`, with explicit review checkpoints between layers.
 **Skills:** `superpowers:writing-plans` (the architect role for a designed feature); `Plan` (agent) as a lighter alternative for smaller features.
 
 ### 3. Isolate
@@ -90,7 +90,7 @@ Companion: **[refactor-workflow.md](./refactor-workflow.md)** for behavior-prese
 |---|---|---|
 | **ADR** | A decision *with alternatives* and why; a new seam | `docs/adr/NNNN-*.md` |
 | **Spec** | Design detail that isn't a standalone decision | brainstorming default (`docs/superpowers/specs/`) |
-| **Plan** | The checkpointed build sequence for one feature | `docs/plans/<feature>/` |
+| **Plan** | The checkpointed build sequence for one feature | `docs/superpowers/plans/` |
 | **Workflow** | The reusable process (this doc + the refactor one) | `docs/*-workflow.md` |
 
 ---

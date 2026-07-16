@@ -132,8 +132,7 @@ A normal route renders the `useAppForm` form verbatim (it's container-agnostic).
 - `src/hooks/useUrlDialog.ts` — shared URL dialog open/close/active state machine (owners, seasons, shares).
 - `src/hooks/useMobile.ts` (`useIsMobile`), `src/hooks/useDialogState.ts` (ephemeral bulk state).
 - `src/lib/orpc/optimistic.ts` — `optimisticInsert/Patch/Remove/Replace` for the mutation pattern.
-- `docs/adr/0005-form-architecture.md` — `useAppForm`; `docs/adr/0012-recommended-places.md` — places
-  editor should be a dedicated route per this ADR.
+- `docs/adr/0005-form-architecture.md` — `useAppForm`.
 
 ## Consequences
 

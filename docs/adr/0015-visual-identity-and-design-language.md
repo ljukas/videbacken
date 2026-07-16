@@ -24,8 +24,7 @@ decoration. Crucially, the inset machinery already exists in `src/components/ui/
 layout, not new infrastructure.
 
 This ADR owns the design **language** — shell, type, color, motion. It is consumed by ADR-0014 (command
-palette) and ADR-0016 (empty states), and by the login redesign. The implementation breakdown lives in
-`docs/plans/redesign-2026-06/`.
+palette) and ADR-0016 (empty states), and by the login redesign.
 
 ## Decision (TL;DR)
 

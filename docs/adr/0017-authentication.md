@@ -39,8 +39,10 @@ Columns: `id`, `email` (unique, normalized lowercase), `role`
 `resolveSignInDecision`).
 
 **Seeding:** `INITIAL_ADMIN_EMAILS` (CSV) is seeded as admin `approved_email`
-rows at server startup by `src/lib/seedApprovedEmails.ts`, registered as a Nitro
-plugin in `vite.config.ts` (this project's Nitro does **not** auto-discover
+rows at server startup by the `seedApprovedEmails` function in
+`src/lib/seedApprovedEmails.ts`, invoked from the Nitro plugin
+`server/plugins/seedApprovedEmails.ts`, which is registered explicitly in
+`vite.config.ts` (this project's Nitro does **not** auto-discover
 `server/plugins/*` — plugins must be listed explicitly). The seed is idempotent
 and fails soft (logs, never crashes). The table is the runtime source of truth
 thereafter; editing the env later does not retroactively change existing rows.

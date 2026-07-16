@@ -83,9 +83,9 @@ src/lib/services/
     index.ts             barrel: `export * from './<entity>'` (+ `./errors`)
 ```
 
-A service may additionally carry pure-function test files when logic warrants them (e.g. `season/logic.test.ts`) — same folder, no harness implications.
+A service may additionally carry pure-function test files when logic warrants them (e.g. `approvedEmail/gate.test.ts`) — same folder, no harness implications.
 
-Services today: `document/`, `documentEvent/`, `documentSearch/`, `file/`, `folder/`, `season/`, `share/`, `user/`. Their procedure-side counterparts live in `src/lib/orpc/procedures/`: `document.ts`, `documentBin.ts`, `documentSearch.ts`, `folder.ts`, `health.ts`, `image.ts`, `presence.ts`, `realtime.ts`, `season.ts`, `share.ts`, `user.ts` (not 1:1 — a service can back several procedure files, and `health`/`presence`/`realtime` need no service).
+Services today: `approvedEmail/`, `file/`, `user/`. Their procedure-side counterparts live in `src/lib/orpc/procedures/`: `health.ts`, `image.ts`, `presence.ts`, `realtime.ts`, `user.ts` (not 1:1 — a service can back several procedure files, and `health`/`presence`/`realtime` need no service; `approvedEmail`'s procedures are folded into `user.ts`).
 
 External code always imports through the barrel:
 
@@ -142,7 +142,7 @@ export async function createSeason(input: CreateSeasonInput): Promise<SeasonRow>
 
 What we deliberately do **not** do: let the insert fail and translate the Postgres error — neither by message-regexing (`/duplicate key|unique constraint/`) nor by SQLSTATE matching (`err.code === '23505'`). Both make the domain layer's behavior depend on driver error shapes, and the regex variant breaks the moment Postgres wording or locale changes. A check-first read keeps the rule readable in sequence with the other guards and throws the same `<Entity>DomainError` shape as every other invariant.
 
-The constraint itself stays in the schema as a backstop. The window between check and write means a racing duplicate surfaces as a raw DB error (a 500) instead of the Swedish message — accepted at this scale (one or two admins). The same acceptance applies to cross-row invariants with **no** constraint backstop (`LAST_ADMIN`, `LEAVES_USER_WITH_ONLY_HALVES`): the check runs inside the guarded operation's transaction, but concurrent admins could in principle interleave check-then-write. We don't serialize for it. If the `LAST_ADMIN` race ever fired, recovery is one manual `UPDATE "user" SET role = 'admin' …` — note the `ADMIN_EMAILS` allowlist grants admin only at account *creation*, so a zero-admin state does not self-heal. Should concurrent admin mutations ever become real (more admins, automation), serialize the guarded operation with `pg_advisory_xact_lock(hashtext('<entity>_guard'))` as the first statement of its transaction (the idiom the Supabase skill's `lock-advisory` rule recommends) — still no SQLSTATE translation, no SERIALIZABLE retries.
+The constraint itself stays in the schema as a backstop. The window between check and write means a racing duplicate surfaces as a raw DB error (a 500) instead of the Swedish message — accepted at this scale (one or two admins). The same acceptance applies to cross-row invariants with **no** constraint backstop (`LAST_ADMIN`, `LEAVES_USER_WITH_ONLY_HALVES`): the check runs inside the guarded operation's transaction, but concurrent admins could in principle interleave check-then-write. We don't serialize for it. If the `LAST_ADMIN` race ever fired, recovery is one manual `UPDATE "user" SET role = 'admin' …` — note the `approved_email` allowlist gates every sign-in (not just account creation), and `INITIAL_ADMIN_EMAILS` only seeds the *initial* admin row(s) at startup (see ADR-0017), so a zero-admin state does not self-heal. Should concurrent admin mutations ever become real (more admins, automation), serialize the guarded operation with `pg_advisory_xact_lock(hashtext('<entity>_guard'))` as the first statement of its transaction (the idiom the Supabase skill's `lock-advisory` rule recommends) — still no SQLSTATE translation, no SERIALIZABLE retries.
 
 ### Effect-boundary invariants (added 2026-06-10)
 
@@ -246,12 +246,9 @@ This is also why test files for the user service can build minimal admins and me
 
 ### When does a new service get an `errors.ts`?
 
-The instant the first invariant lands. Until then:
+The instant the first invariant lands. Until then, a service has no `errors.ts` — raw CRUD/reads, no rules to enforce. Today all three current services (`approvedEmail/`, `file/`, `user/`) already have at least one invariant and therefore an `errors.ts`.
 
-- `documentEvent/`, `documentSearch/` — no `errors.ts`. Raw CRUD/reads; no rules to enforce.
-- `user/`, `share/`, `season/`, `document/`, `file/`, `folder/` — each has `errors.ts`. `share/` started rule-free and grew invariants later (the whole-share rule from [ADR-0009](./0009-organization-rules.md) and date/ownership guards), which is exactly when its `errors.ts` appeared; `season/` followed on 2026-06-10 with `ALREADY_EXISTS | NOT_FOUND` (the week-21 default remains a soft fallback, not a guard — see [ADR-0009](./0009-organization-rules.md)).
-
-The pattern is symmetric: a service without invariants has no need to differentiate failures beyond "couldn't find it" (return `null`) and "DB-level error" (re-thrown unchanged). The moment you write a guard — `if (something) throw new XDomainError('...')` — you also add `errors.ts` and one barrel re-export. Don't add an empty errors file in anticipation. It works in reverse too: when a guard goes away, its code goes with it (`share/` dropped `PART_NOT_FOUND` on 2026-06-10), and an `errors.ts` whose last code disappears gets deleted.
+The pattern is symmetric: a service without invariants has no need to differentiate failures beyond "couldn't find it" (return `null`) and "DB-level error" (re-thrown unchanged). The moment you write a guard — `if (something) throw new XDomainError('...')` — you also add `errors.ts` and one barrel re-export. Don't add an empty errors file in anticipation. It works in reverse too: when a guard goes away, its code goes with it, and an `errors.ts` whose last code disappears gets deleted.
 
 ### Why this is a deep module (in the skill's terms)
 
@@ -270,7 +267,7 @@ A reader can confirm the architecture is being followed without running anything
 - **No `~/lib/db` imports outside services + the db module itself.** `grep -rn "from.*lib/db" src/ --include="*.ts" --include="*.tsx" | grep -v "src/lib/services/" | grep -v "src/lib/db/" | grep -v "\.test\.ts"` should produce **zero hits**. One sanctioned `db` import escapes this pattern entirely: `src/lib/auth.ts` imports `{ db } from './db'` (relative path) to hand the handle to `drizzleAdapter` — wiring, not querying; Better Auth issues its own queries through the adapter.
 - **No transport imports inside services.** `grep -rn "lib/auth\|lib/effects\|@resend" src/lib/services/` should produce zero hits.
 - **Procedures import services through the barrel.** `grep -rn "lib/services/[a-zA-Z]*/" src/lib/orpc/procedures/` — zero hits; only `lib/services/<entity>` (the folder, via the barrel).
-- **Domain errors carry typed codes.** `grep -rn "instanceof.*DomainError" src/ --include="*.ts" | grep -v "\.test\.ts"` — every match is inside a `rethrowAsORPC`-style helper in `src/lib/orpc/procedures/`, switching on `.code`. (Test files also match `instanceof` legitimately, hence the exclusion. Not every procedure file shows a match: `documentBin.ts` reuses the shared `rethrowDocumentErrorAsORPC` from `document.ts` instead of defining its own — sanctioned.)
+- **Domain errors carry typed codes.** `grep -rn "instanceof.*DomainError" src/ --include="*.ts" | grep -v "\.test\.ts"` — every match today is inside `src/lib/orpc/procedures/user.ts`, mapping `.code` to a typed oRPC error via `errors[err.code]()` (test files also match `instanceof` legitimately, hence the exclusion).
 - **`errors.ts` exists iff invariants exist.** A service folder with `errors.ts` must have at least one `throw new X DomainError(...)` in its `<entity>.ts`. A service folder *without* `errors.ts` must have zero `throw` statements in `<entity>.ts`.
 
 Manual smoke test:
@@ -287,12 +284,9 @@ Manual smoke test:
 - `src/lib/services/user/errors.ts` — canonical `<Entity>DomainError` shape.
 - `src/lib/services/user/user.test.ts` — canonical test pattern through the service interface.
 - `src/lib/services/user/index.ts` — canonical barrel.
-- `src/lib/orpc/procedures/user.ts` — canonical `rethrowAsORPC` helper + service+side-effect ordering.
+- `src/lib/orpc/procedures/user.ts` — canonical error-mapping (`errors[err.code]()`) + service+side-effect ordering.
 - `test/setup.ts` — schema-per-test harness that makes services testable in isolation.
-- `src/lib/services/documentEvent/`, `src/lib/services/documentSearch/` — services without invariants → no `errors.ts`. (`share/`, `season/`, `document/`, `file/`, `folder/` each grew an `errors.ts` once their first invariant landed.)
-- `src/lib/orpc/procedures/document.ts` + `documentBin.ts` — the shared-mapper variant: one exhaustive `rethrowDocumentErrorAsORPC` exported from `document.ts`, imported by `documentBin.ts`.
-
-> See [ADR-0009 — Organization rules](./0009-organization-rules.md) for the index of social invariants and which ones encode as hard `<Entity>DomainError` codes vs soft defaults; this ADR owns the *mechanism*, ADR-0009 owns the *catalogue of rules*.
+- `src/lib/services/approvedEmail/`, `src/lib/services/file/` — the other two current services, each with its own `errors.ts`.
 
 ---
 

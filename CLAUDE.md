@@ -48,7 +48,7 @@ src/
     auth.ts                     betterAuth(): drizzleAdapter + google + magicLink + admin; allowlist gate
     authClient.ts               createAuthClient() (signIn.social + signIn.magicLink)
     getSession.ts               server fn wrapping auth.api.getSession()
-    seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (Nitro plugin, registered in vite.config.ts)
+    seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (invoked by server/plugins/seedApprovedEmails.ts, a Nitro plugin registered in vite.config.ts)
     orpc/                       context (public/protected/admin procedures), router, client, procedures/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail}.ts + index barrel
     services/                   approvedEmail, user, file — own all DB access + domain rules (see ADR-0002)
@@ -109,7 +109,8 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
   magic-link. Only approved emails can create an account / sign in. No pre-created user rows —
   the row is created on first sign-in; role comes from the `approved_email` row.
 - **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → seeded as admin allowlist rows at startup by
-  `src/lib/seedApprovedEmails.ts`, **registered as a Nitro plugin in `vite.config.ts`**.
+  `src/lib/seedApprovedEmails.ts`, invoked from **`server/plugins/seedApprovedEmails.ts`**, the Nitro
+  plugin **registered in `vite.config.ts`**.
 - **Two roles:** `user`, `admin`.
 - **Authorization — admins mutate, users are read-only:** reads use `protectedProcedure`; every
   mutation uses `adminProcedure`; the **sole exception** is a user managing their **own account**
@@ -163,11 +164,12 @@ otherwise `bun run db:migrate` migrates **production**.
 - **Admins mutate; users are read-only** except their own account. Every mutating procedure is `adminProcedure`.
 - **Two roles:** `user`, `admin`.
 - **All `db` access through services.** No `db.select()` in routes/handlers/auth hooks. See ADR-0002.
+- **File blobs out-of-process.** User file bytes never traverse a Vercel Function; all file access goes through `src/lib/effects/storage/`. See ADR-0006.
 - **oRPC procedures are thin glue.** Gate with `protectedProcedure`/`adminProcedure` (never inline). Better Auth's own `/api/auth/*` routes stay on the Better Auth handler.
 - **All logging through `~/lib/logger/`.** Never `console.*`. See ADR-0003.
 - **Never hand-edit `src/lib/db/schema/betterAuth.ts`** — regenerate via `bun run auth:schema`.
 - **All timestamp columns use `timestamp({ withTimezone: true })`** (timestamptz). When drizzle-kit emits an `ALTER ... SET DATA TYPE timestamp with time zone` on existing data, hand-add `USING "<col>" AT TIME ZONE 'UTC'`.
-- **`seedApprovedEmails` must stay registered in `vite.config.ts`'s Nitro `plugins`** — Nitro does not auto-discover `server/plugins/*`; unregistered, the first admin never seeds.
+- **`server/plugins/seedApprovedEmails.ts`** (which invokes the seeding logic in `src/lib/seedApprovedEmails.ts`) **must stay registered in `vite.config.ts`'s Nitro `plugins`** — Nitro does not auto-discover `server/plugins/*`; unregistered, the first admin never seeds.
 - **User-facing text is Paraglide-localized** (`messages/{sv,en}.json`, sv source-of-truth + default, en key-complete). "Videbacken" stays untranslated. **Route URL paths stay English** (`/users`, `/account`).
 - **File naming:** routes lowercase + TanStack tokens; React components PascalCase in `src/components/<entity>/`; hooks `useX`; `src/components/ui/` kebab-case (shadcn-managed); everything else camelCase.
 - **Every screen is responsive** (desktop + mobile + tablet; no fixed pixel widths).
