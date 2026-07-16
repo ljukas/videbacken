@@ -12,7 +12,7 @@ const ip = pickLanIp(networkInterfaces())
 if (ip) {
   process.stderr.write(
     `\n  ▸ LAN host mode — on your phone (same Wi-Fi):\n` +
-      `      Mailpit (tap the sign-in link): http://${ip}:14502\n` +
+      `      Mailpit (tap the sign-in link): http://${ip}:14602\n` +
       `      (the app URL is Vite's "Network" line below)\n\n`,
   )
   process.stdout.write(ip)

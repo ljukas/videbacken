@@ -30,7 +30,7 @@ You are oceanview's migration safety specialist. Audit pending changes to `drizz
    - If any SQL file was renamed but `_journal.json` `tag` still references the old name → **blocker**.
 
 5. **`vercel env pull` hazard detection**:
-   - If `.env.local` exists, read its `DATABASE_URL`. If the host is not `localhost`, `127.0.0.1`, or doesn't look like Neon Local (port 14520) → **blocker** before any `pnpm db:migrate`. CLAUDE.md non-negotiable: prod URLs in `.env.local` cause Vite + Drizzle to migrate production. Fix: delete the `DATABASE_URL*` lines from `.env.local`.
+   - If `.env.local` exists, read its `DATABASE_URL`. If the host is not `localhost`, `127.0.0.1`, or doesn't look like Neon Local (port 14620) → **blocker** before any `pnpm db:migrate`. CLAUDE.md non-negotiable: prod URLs in `.env.local` cause Vite + Drizzle to migrate production. Fix: delete the `DATABASE_URL*` lines from `.env.local`.
 
 6. **Don't repeat tools.** Skip findings Biome or `tsc` would catch.
 

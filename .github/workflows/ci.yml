@@ -18,58 +18,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check:ci
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run check:ci
 
   audit:
     name: Audit (dependencies)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
       # Known high/critical advisories in production deps fail the run; dev
       # deps are excluded (build-time only, not shipped).
-      - run: pnpm audit --prod --audit-level high
+      - run: bun audit --prod --audit-level high
 
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
 
   test:
     name: Test
     runs-on: ubuntu-latest
     env:
       BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-      BETTER_AUTH_URL: http://localhost:14500
+      BETTER_AUTH_URL: http://localhost:14600
       ADMIN_EMAILS: ''
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
       - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
       - name: Create ephemeral Neon branch
         id: neon
         uses: neondatabase/create-branch-action@v6
@@ -81,7 +65,7 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: ${{ steps.neon.outputs.db_url }}
-        run: pnpm test
+        run: bun run test
       - name: Delete ephemeral Neon branch
         if: always()
         uses: neondatabase/delete-branch-action@v3

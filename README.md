@@ -11,24 +11,24 @@ Internal web app for the Oceanview sailboat co-ownership group.
 - **File storage:** [Cloudflare R2](https://developers.cloudflare.com/r2/) (planned)
 - **Email:** [Resend](https://resend.com) (planned)
 - **Hosting:** [Vercel](https://vercel.com) (Hobby)
-- **Package manager:** pnpm
+- **Package manager:** bun
 
 ## Develop
 
 ```bash
-pnpm install
+bun install
 cp .env.example .env
 # Fill in NEON_API_KEY (create one at https://console.neon.tech/app/settings/api-keys)
 
-pnpm db:up        # start Neon Local docker proxy → ephemeral DB branch
-pnpm db:migrate   # apply pending migrations (no-op until first table)
-pnpm dev          # http://localhost:14500
+bun run db:up        # start Neon Local docker proxy → ephemeral DB branch
+bun run db:migrate   # apply pending migrations (no-op until first table)
+bun run dev          # http://localhost:14600
 
-pnpm db:studio    # browse the DB at https://local.drizzle.studio
-pnpm db:down      # stop docker; ephemeral branch is auto-deleted
+bun run db:studio    # browse the DB at https://local.drizzle.studio
+bun run db:down      # stop docker; ephemeral branch is auto-deleted
 ```
 
-`pnpm build` produces the Nitro output in `.output/`.
+`bun run build` produces the Nitro output in `.output/`.
 
 ## Documentation
 

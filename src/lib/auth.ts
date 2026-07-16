@@ -164,9 +164,9 @@ export const auth = betterAuth({
     }),
     admin(),
     passkey({
-      rpID: new URL(process.env.BETTER_AUTH_URL ?? 'http://localhost:14500').hostname,
+      rpID: new URL(process.env.BETTER_AUTH_URL ?? 'http://localhost:14600').hostname,
       rpName: 'Oceanview',
-      origin: process.env.BETTER_AUTH_URL ?? 'http://localhost:14500',
+      origin: process.env.BETTER_AUTH_URL ?? 'http://localhost:14600',
     }),
     tanstackStartCookies(),
   ],

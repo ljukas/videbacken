@@ -22,9 +22,9 @@ These HTML comments don't render — fill in or delete each section.
 
 <!-- Evidence "done" is real — paste command output or describe the manual check. -->
 
-- [ ] `pnpm check` clean
-- [ ] `pnpm build` passes (tsc + bundle)
-- [ ] `pnpm test` passes — or _N/A (docs/config only)_
+- [ ] `bun run check` clean
+- [ ] `bun run build` passes (tsc + bundle)
+- [ ] `bun run test` passes — or _N/A (docs/config only)_
 - [ ] Responsive on desktop + mobile — _if UI_
 
 ## Risks / follow-ups

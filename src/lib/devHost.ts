@@ -9,8 +9,8 @@
 // callers fall back to their normal localhost / BETTER_AUTH_URL / S3_ENDPOINT
 // configuration. Read fresh from `process.env` each call so it stays testable.
 
-const APP_PORT = 14500
-const STORAGE_PORT = 14523
+const APP_PORT = 14600
+const STORAGE_PORT = 14623
 
 const host = (): string | null => process.env.DEV_HOST || null
 

@@ -27,9 +27,9 @@ export const InviteUserEmail = ({ inviteUrl, locale }: InviteUserEmailProps) => 
 )
 
 InviteUserEmail.PreviewProps = {
-  // localhost origin so the preview server (:14501) loads email-logo.png from
-  // the running dev app (:14500) when it's up.
-  inviteUrl: 'http://localhost:14500/api/auth/verify-email?token=preview&callbackURL=%2F',
+  // localhost origin so the preview server (:14601) loads email-logo.png from
+  // the running dev app (:14600) when it's up.
+  inviteUrl: 'http://localhost:14600/api/auth/verify-email?token=preview&callbackURL=%2F',
   locale: 'sv',
 } satisfies InviteUserEmailProps
 

@@ -39,7 +39,7 @@ test('sendMagicLink handles repeated calls without side-effects on the adapter',
 test('VITEST short-circuit selects devLog even when SMTP_HOST is set', async () => {
   // VITEST === 'true' under vitest; .env.example sets SMTP_HOST=localhost,
   // which would otherwise route through nodemailer. Confirming the call
-  // resolves (rather than failing because no SMTP server is on :14522) is
+  // resolves (rather than failing because no SMTP server is on :14622) is
   // proof the devLog adapter won.
   await expect(
     email.sendMagicLink({

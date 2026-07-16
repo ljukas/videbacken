@@ -9,7 +9,7 @@ function getTransport(): Transporter {
   if (transporter) return transporter
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT ?? 14522),
+    port: Number(process.env.SMTP_PORT ?? 14622),
     secure: false,
   })
   return transporter

@@ -15,11 +15,11 @@ const isTest = process.env.VITEST === 'true'
 // mode (`src/lib/db/index.ts`) keeps the `SET search_path` alive across queries.
 // Tests create per-test schemas (`test_w*`); the dev app's `public` schema is
 // untouched. In CI (`CI=true`) we inherit DATABASE_URL from the job env instead.
-const TEST_DATABASE_URL = 'postgres://neon:npg@localhost:14520/neondb'
+const TEST_DATABASE_URL = 'postgres://neon:npg@localhost:14620/neondb'
 
 export default defineConfig({
   server: {
-    port: 14500,
+    port: 14600,
   },
   resolve: {
     tsconfigPaths: true,

@@ -21,7 +21,7 @@ import { handleImageThumbnailMessage } from '~/lib/queue/handlers/imageThumbnail
  * one process, mirroring the single prod consumer that dispatches by topic.
  */
 const log = logger.child({ component: 'devQueueWorker' })
-const url = process.env.REDIS_URL ?? 'redis://localhost:14521'
+const url = process.env.REDIS_URL ?? 'redis://localhost:14621'
 
 const workers = [
   new Worker<QueuePayloadMap['blurhash']>(

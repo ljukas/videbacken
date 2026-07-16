@@ -25,9 +25,9 @@ export const MagicLinkEmail = ({ url, locale }: MagicLinkEmailProps) => (
 )
 
 MagicLinkEmail.PreviewProps = {
-  // localhost origin so the preview server (:14501) loads email-logo.png from
-  // the running dev app (:14500) when it's up.
-  url: 'http://localhost:14500/api/auth/magic-link/verify?token=preview',
+  // localhost origin so the preview server (:14601) loads email-logo.png from
+  // the running dev app (:14600) when it's up.
+  url: 'http://localhost:14600/api/auth/magic-link/verify?token=preview',
   locale: 'sv',
 } satisfies MagicLinkEmailProps
 

@@ -15,16 +15,16 @@ describe('devHost getters', () => {
 
   it('build LAN URLs from DEV_HOST when set (`pnpm dev --host`)', () => {
     process.env.DEV_HOST = '192.168.68.130'
-    expect(devBaseUrl()).toBe('http://192.168.68.130:14500')
-    expect(devS3Endpoint()).toBe('http://192.168.68.130:14523')
+    expect(devBaseUrl()).toBe('http://192.168.68.130:14600')
+    expect(devS3Endpoint()).toBe('http://192.168.68.130:14623')
   })
 
   it('trust localhost AND the LAN IP together, so both browsers work at once', () => {
     process.env.DEV_HOST = '192.168.68.130'
     expect(devTrustedOrigins()).toEqual([
-      'http://localhost:14500',
-      'http://127.0.0.1:14500',
-      'http://192.168.68.130:14500',
+      'http://localhost:14600',
+      'http://127.0.0.1:14600',
+      'http://192.168.68.130:14600',
     ])
   })
 })

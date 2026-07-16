@@ -8,7 +8,7 @@ services:
     # `neondb_session?sslmode=require` in vite.config.ts (TEST_DATABASE_URL).
     image: postgres:17-alpine
     ports:
-      - "14520:5432"
+      - "14620:5432"
     environment:
       POSTGRES_USER: neon
       POSTGRES_PASSWORD: npg
@@ -26,7 +26,7 @@ services:
   # db:
   #   image: neondatabase/neon_local:v1.5
   #   ports:
-  #     - "14520:5432"
+  #     - "14620:5432"
   #   environment:
   #     NEON_API_KEY: ${NEON_API_KEY}
   #     NEON_PROJECT_ID: ${NEON_PROJECT_ID}
@@ -53,7 +53,7 @@ services:
     # Vercel Queues + Nitro consumer flow we ship to production.
     image: redis:7.4-alpine
     ports:
-      - "14521:6379"
+      - "14621:6379"
     # AOF on so queued jobs survive `down`. everysec is the standard
     # tradeoff (≤1s loss window on hard crash) and matches BullMQ defaults.
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
@@ -73,7 +73,7 @@ services:
     profiles: [studio]
     image: emirce/bullstudio:1.4.0
     ports:
-      - "14504:4000"
+      - "14604:4000"
     environment:
       REDIS_URL: redis://queue:6379
     depends_on:
@@ -82,7 +82,7 @@ services:
     restart: unless-stopped
   storage:
     # Local S3-compatible storage for offline dev. MinIO-protocol-compatible
-    # (host :14523 = S3 API, host :14503 = web console). RustFS refuses
+    # (host :14623 = S3 API, host :14603 = web console). RustFS refuses
     # default `rustfsadmin` creds on non-loopback listeners, so we override
     # with the same values committed to `.env.example`. Production uses
     # Vercel Blob —
@@ -90,8 +90,8 @@ services:
     # `s3` adapter only when `S3_ENDPOINT` is set in the environment.
     image: rustfs/rustfs:1.0.0-beta.4
     ports:
-      - "14523:9000"
-      - "14503:9001"
+      - "14623:9000"
+      - "14603:9001"
     environment:
       RUSTFS_ACCESS_KEY: oceanview-dev
       RUSTFS_SECRET_KEY: oceanview-dev-secret-key
@@ -109,16 +109,16 @@ services:
       - storage_logs:/logs
     restart: unless-stopped
   mail:
-    # Local SMTP catcher for development. Accepts mail on host :14522 and
-    # shows it in a web UI on host :14502. In-memory ring buffer
+    # Local SMTP catcher for development. Accepts mail on host :14622 and
+    # shows it in a web UI on host :14602. In-memory ring buffer
     # (MP_MAX_MESSAGES) — no
     # persistence; messages disappear on container restart, which is the
     # right default for a transient inspector. Production uses Resend via
     # the adapter selector in `src/lib/effects/email/email.ts`.
     image: axllent/mailpit:latest
     ports:
-      - "14522:1025"
-      - "14502:8025"
+      - "14622:1025"
+      - "14602:8025"
     environment:
       MP_MAX_MESSAGES: 500
       MP_SMTP_AUTH_ACCEPT_ANY: 1
