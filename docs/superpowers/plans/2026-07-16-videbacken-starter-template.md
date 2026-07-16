@@ -430,21 +430,27 @@ git commit -m "feat(auth): add approved_email allowlist schema and service"
 
 ---
 
-## Task 4: Rebuild Better Auth — Google + magic-link, allowlist gate, seeding
+## Task 4: Rebuild Better Auth — remove passkeys, add Google, magic-link + allowlist gate, seed
+
+> **Consolidated passkey removal (build-ordering fix):** removing the passkey plugin from `authClient.ts` orphans every passkey caller, so ALL passkey code is removed in THIS task to keep the build green. Tasks 5 and 6 therefore do NOT touch passkeys. The **login page keeps building as magic-link-only** after this task; the "Sign in with Google" button is added in Task 6 (this task wires the Google *provider*, not the login UI).
 
 **Files:**
-- Modify: `src/lib/auth.ts`, `src/lib/adminAllowlist.ts` (→ becomes allowlist-table-backed or is removed), `src/lib/authClient.ts`
+- Modify: `src/lib/auth.ts`, `src/lib/adminAllowlist.ts` (→ delete; superseded by the allowlist table), `src/lib/authClient.ts`
+- **Remove ALL passkey code:** `src/components/passkey/`, `src/hooks/usePasskeys.ts` (+ `useSignInPasskey`), `src/lib/passkeyProviders.ts`, `src/lib/passkeyPrompt.ts`, `src/data/passkeyAaguids.json`, `src/lib/services/passkey/`, the passkey plugin in `auth.ts` + `authClient.ts`, the passkey section of `src/routes/_authenticated/account/security.tsx` (delete the route+file if passkey-only), the dashboard `PasskeySetupPrompt`/`usePasskeySetupPrompt` usage in `src/routes/_authenticated/index.tsx`, `hasPasskey` in `src/lib/browserSession*.ts`, and the passkey props threaded through `src/routes/login.tsx` + `src/components/login/{LoginFormCard,WelcomeBackCard,MagicLinkSentCard}.tsx` (leave login functioning with magic-link only).
+- Fold in Task 3's Minor: change `src/lib/services/approvedEmail/approvedEmail.ts` relative `../../db` imports to the `~/lib/db` / `~/lib/db/schema` aliases.
 - Create: `src/lib/seedApprovedEmails.ts` (startup seed from `INITIAL_ADMIN_EMAILS`)
 - Regenerate: `src/lib/db/schema/betterAuth.ts` (via `bun run auth:schema`), `drizzle/` (one clean initial migration)
-- Modify: `.env.example` (Google + seed vars) — full rewrite lands in Task 6; add the auth keys here
+- Modify: `.env.example` (Google + seed vars) — full rewrite lands in Task 7; add the auth keys here
 - Test: `src/lib/services/approvedEmail/gate.test.ts` (unit-test the allowlist decision helper)
 
 **Interfaces:**
 - Consumes: `isApproved`, `addApproved`, `normalizeEmail` (Task 3).
 - Produces:
-  - Better Auth configured with `socialProviders.google`, the `magicLink` plugin (allowlist-gated `sendMagicLink`), the `admin` plugin, `tanstackStartCookies()`; passkey plugin removed.
+  - Better Auth configured with `socialProviders.google`, the `magicLink` plugin (allowlist-gated `sendMagicLink`), the `admin` plugin, `tanstackStartCookies()`; **passkey plugin + all passkey code removed**.
+  - `authClient` exposing `signIn.social` (Google) and `signIn.magicLink`; no passkey client plugin.
   - `resolveSignInDecision(email): Promise<{ allowed: boolean; role: 'user'|'admin' }>` helper used by the create hook + magic-link.
   - `seedApprovedEmails(): Promise<void>` — idempotently inserts `INITIAL_ADMIN_EMAILS` as admin `approved_email` rows.
+  - Build green at task end: **no passkey references anywhere in `src`**; login renders magic-link only (Google button = Task 6).
 
 - [ ] **Step 1: Fetch current Better Auth docs**
 
@@ -452,10 +458,10 @@ Use context7 (`resolve-library-id` → `query-docs`) or WebFetch for: `socialPro
 
 - [ ] **Step 2: Write the gate decision + its test (TDD)**
 
-Create `src/lib/services/approvedEmail/gate.test.ts`:
+Create `src/lib/services/approvedEmail/gate.test.ts` (use the `~test/setup` alias — Task 3 confirmed that is the real path, not a relative one):
 ```ts
 import { describe, expect, it } from 'vitest'
-import { setupDatabase } from '../../../../test/setup'
+import { setupDatabase } from '~test/setup'
 import { addApproved } from './approvedEmail'
 import { resolveSignInDecision } from './gate'
 
@@ -484,7 +490,17 @@ export async function resolveSignInDecision(
   return match ? { allowed: true, role: match.role } : { allowed: false, role: 'user' }
 }
 ```
-Add `export * from './gate'` to the service `index.ts`. Run the test → expect PASS.
+Add `export * from './gate'` to the service `index.ts`. Run the test → expect PASS. Also apply the folded Task 3 fix now: change the `../../db`/`../../db/schema` imports in `approvedEmail.ts` to `~/lib/db` / `~/lib/db/schema`.
+
+- [ ] **Step 2.5: Remove ALL passkey code**
+
+Delete: `src/components/passkey/`, `src/hooks/usePasskeys.ts`, `src/lib/passkeyProviders.ts`, `src/lib/passkeyPrompt.ts`, `src/data/passkeyAaguids.json`, `src/lib/services/passkey/` (+ its tests). Then de-reference the callers so the build stays green:
+- `src/routes/_authenticated/index.tsx`: remove `PasskeySetupPrompt` + `usePasskeySetupPrompt` usage/imports (the dashboard placeholder no longer prompts passkey setup).
+- `src/routes/_authenticated/account/security.tsx`: if it only manages passkeys, delete the file + route and drop its tab from `account.tsx`; otherwise strip just the passkey section + imports.
+- `src/lib/browserSession*.ts`: remove the `hasPasskey` field and any passkey read/write.
+- `src/routes/login.tsx` + `src/components/login/{LoginFormCard,WelcomeBackCard,MagicLinkSentCard}.tsx`: remove `useSignInPasskey`, `passkeyPending`, `onPasskeySignIn`, `hasPasskey`, and all passkey buttons/props. **Leave login working with the magic-link form only** (the Google button is added in Task 6). `WelcomeBackCard` keeps its saved-email quick magic-link path.
+- Delete passkey `*.test.ts`/`*.browser.test.tsx` and any `messages` keys used only by passkey UI (keep sv/en in sync).
+Run `bun run build` and fix any remaining passkey orphan until clean. Confirm: `grep -rniE 'passkey' src` returns nothing but incidental comments (which you should also clear).
 
 - [ ] **Step 3: Rewrite `auth.ts`**
 
@@ -570,11 +586,12 @@ git commit -m "feat(auth): Google + magic-link sign-in gated by approved_email a
 - Create: `src/routes/_authenticated/users.tsx` (renamed from `owners.tsx` shape)
 - Modify: `src/lib/orpc/procedures/user.ts` (invite/revoke/list retargeted at `approved_email`; enforce authz rule)
 - Modify: `src/lib/services/user/*` (invite/revoke ops → allowlist-backed; drop magic-link-invite-row-creation)
-- Modify: user components (`src/components/user/*`) — invite dialog, edit dialog, list; drop passkey UI in `account/security`
+- Modify: user components (`src/components/user/*`) — invite dialog, edit dialog, list
 - Modify: `src/emails/InviteUserEmail.tsx` (+ its test) — reword for Google+magic-link access grant
 - Modify: `src/components/AppSidebar.tsx` + command palette (`/users` link)
-- Delete: passkey pieces missed in Task 2 — `src/components/passkey/`, `src/hooks/usePasskeys.ts`, `src/hooks/useSignInPasskey` usage, `src/lib/passkeyProviders.ts`, `src/lib/passkeyPrompt.ts`, `src/data/passkeyAaguids.json`, `src/lib/services/passkey/`, `src/routes/_authenticated/account/security.tsx` (or strip passkey from it)
 - Test: `src/lib/services/user/*.test.ts` (invite/revoke), browser tests for the users list where present
+
+> **Passkeys are already fully removed (Task 4).** This task does NOT touch passkey code. The user-management dialogs Task 2 kept uncalled are wired up here.
 
 **Interfaces:**
 - Consumes: `addApproved`, `removeApproved`, `listApproved`, `isApproved` (Task 3); `auth.api` session-revoke (Task 4).
@@ -586,11 +603,7 @@ git commit -m "feat(auth): Google + magic-link sign-in gated by approved_email a
   - `user.updateAsAdmin` (admin): edit name/phone/role of an existing user.
   - self-scoped `user.me` / `user.updateOwnProfile` / `user.completeOnboarding` stay (protected, own-account only).
 
-- [ ] **Step 1: Finish removing passkeys**
-
-Delete the passkey files listed above. For `account/security.tsx`: if it only managed passkeys, delete it and its route; if it also hosts other settings, strip the passkey section and its imports. Update `account.tsx` nav/tabs to drop the security→passkey entry. Run `bun run build` and fix orphaned imports (login components still reference passkey — handled in Task 6, but remove obvious dead imports now).
-
-- [ ] **Step 2: Read the reference invite/owners implementation**
+- [ ] **Step 1: Read the reference invite/owners implementation**
 
 Open in Oceanview: `src/lib/services/user/user.ts` (invite/`markInvited`/`resendInvite`/`updateAsAdmin`/`updateOwnProfile`/`completeOnboarding`), `src/lib/orpc/procedures/user.ts`, `src/routes/_authenticated/owners.tsx`, and `src/components/user/*` (invite dialog, edit dialog, list). Understand the current "invited = emailVerified false, row pre-created" model — you are replacing row-pre-creation with `approved_email` rows.
 
@@ -637,27 +650,25 @@ git commit -m "feat(users): allowlist-backed invite/revoke, admin-only mutations
 
 ---
 
-## Task 6: Login page — Google button + magic-link; trim onboarding to name + avatar
+## Task 6: Login page — add Google button; trim onboarding to name + avatar
+
+> **Passkeys are already gone (Task 4)** and login already builds as magic-link-only. This task adds the "Sign in with Google" button alongside the magic-link form, and trims onboarding.
 
 **Files:**
-- Modify: `src/routes/login.tsx`, `src/components/login/{LoginFormCard,WelcomeBackCard,MagicLinkSentCard}.tsx`
-- Modify: `src/hooks/*` (remove `usePasskeys`/`useSignInPasskey`/`useSavedLogin` passkey bits), `src/lib/browserSession*.ts` (drop `hasPasskey`)
+- Modify: `src/components/login/{LoginFormCard,WelcomeBackCard}.tsx` (add Google button)
 - Modify: `src/routes/onboarding.tsx`, `src/components/onboarding/*` (drop phone step)
+- Modify: `messages/{sv,en}.json` (add `login_google_button`)
 - Test: browser tests `src/components/login/*.browser.test.tsx`, onboarding tests
 
 **Interfaces:**
 - Consumes: `authClient.signIn.social({ provider: 'google', callbackURL })`, `authClient.signIn.magicLink({ email, callbackURL })` (Task 4).
 - Produces: a `/login` with a Google button + magic-link email form; a 2-step `/onboarding` (name → avatar).
 
-- [ ] **Step 1: Strip passkey from login**
+- [ ] **Step 1: Add the Google button**
 
-In `login.tsx`: remove `useSignInPasskey`, `passkeyPending`, `onPasskeySignIn`, and passkey props threaded into the cards. In `LoginFormCard`/`WelcomeBackCard`: remove passkey buttons/props; `WelcomeBackCard` keeps the saved-email quick magic-link. Remove `hasPasskey` from `browserSession`/`useSavedLogin`.
+In `LoginFormCard` (and `WelcomeBackCard` as a secondary option), add a "Sign in with Google" button calling `authClient.signIn.social({ provider: 'google', callbackURL })`. Add message keys `login_google_button` (sv/en). The magic-link email form + submit (`authClient.signIn.magicLink`) already exist from Task 4 — keep them. Verify the client API names against current Better Auth docs (context7).
 
-- [ ] **Step 2: Add the Google button**
-
-In `LoginFormCard` (and `WelcomeBackCard` as a secondary option), add a "Sign in with Google" button calling `authClient.signIn.social({ provider: 'google', callbackURL })`. Add message keys `login_google_button` (sv/en). Keep the existing magic-link email form + submit (`authClient.signIn.magicLink`). Verify the client API names against Task-4 Step-1 docs.
-
-- [ ] **Step 3: Trim onboarding to name → avatar**
+- [ ] **Step 2: Trim onboarding to name → avatar**
 
 In `onboarding.tsx` + `src/components/onboarding/*`: remove the phone step and its `?step=phone` branch; steps become `name` → `avatar`. Pre-fill name + avatar from the Google profile (`user.name`, `user.image`). `completeOnboarding` stamps `onboardedAt`. `phone` stays editable only in account settings. Update `validateSearch` step union and the wizard progress. Keep the `_authenticated` loader's `onboardedAt == null → /onboarding` redirect.
 
