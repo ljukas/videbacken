@@ -162,6 +162,13 @@
       "when": 1783383667360,
       "tag": "0022_add_season_booking",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784216972849,
+      "tag": "0023_approved_email",
+      "breakpoints": true
     }
   ]
 }
