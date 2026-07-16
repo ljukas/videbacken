@@ -1,6 +1,6 @@
 # Videbacken
 
-Internal web app for the Videbacken sailboat co-ownership group.
+Internal web app starter template for Videbacken.
 
 ## Stack
 
