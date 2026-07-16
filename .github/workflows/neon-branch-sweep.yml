@@ -1,0 +1,107 @@
+name: Neon branch sweep
+
+# Nightly safety net. Deletes orphaned Neon branches in the (single) project so
+# the free-tier branch/storage quota doesn't fill up. Catches what the per-PR
+# cleanup-preview workflow misses: branches from merged/closed PRs, abandoned
+# local-dev (Neon Local) branches, and orphaned ci/pr-* branches from killed CI
+# runs.
+#
+# A branch is deleted only when ALL hold:
+#   * not the default/primary/protected branch, and name != "main"
+#   * no OPEN PR matches its name (exact / preview-prefixed / truncation prefix)
+#   * idle: updated_at older than IDLE_DAYS
+# The "no open PR AND idle" combination protects in-flight PR branches and a
+# branch you're actively developing locally today.
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # 03:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List delete-candidates without deleting'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sweep:
+    name: Delete orphaned Neon branches
+    runs-on: ubuntu-latest
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      # Scheduled runs delete for real; manual runs honor the dry_run input
+      # (default true) so the first run can be inspected before going live.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      IDLE_DAYS: '3'
+    steps:
+      - name: Sweep orphaned branches
+        run: |
+          set -euo pipefail
+          if [ -z "${NEON_API_KEY:-}" ] || [ -z "${NEON_PROJECT_ID:-}" ]; then
+            echo "NEON_API_KEY / NEON_PROJECT_ID not set; nothing to do."
+            exit 0
+          fi
+          echo "DRY_RUN=$DRY_RUN  IDLE_DAYS=$IDLE_DAYS"
+
+          # Open PR head refs, one per line.
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --json headRefName --jq '.[].headRefName' > open_prs.txt || true
+          echo "Open PR head refs:"; cat open_prs.txt || true
+          echo "---"
+
+          cutoff_epoch=$(( $(date -u +%s) - IDLE_DAYS * 86400 ))
+
+          npx --yes neonctl@2 branches list \
+            --project-id "$NEON_PROJECT_ID" --output json \
+            | jq -c '.[]' | while read -r row; do
+            name="$(jq -r '.name' <<<"$row")"
+            id="$(jq -r '.id' <<<"$row")"
+            is_default="$(jq -r '.default' <<<"$row")"
+            is_primary="$(jq -r '.primary // false' <<<"$row")"
+            is_protected="$(jq -r '.protected // false' <<<"$row")"
+            updated="$(jq -r '.updated_at' <<<"$row")"
+
+            if [ "$is_default" = "true" ] || [ "$is_primary" = "true" ] \
+               || [ "$is_protected" = "true" ] || [ "$name" = "main" ]; then
+              echo "KEEP  $name (default/primary/protected)"
+              continue
+            fi
+
+            # Keep if an open PR matches this branch (same fuzzy match as the
+            # per-PR workflow, in both directions to handle truncation).
+            stripped="${name#preview/}"
+            matched=""
+            while IFS= read -r ref; do
+              [ -z "$ref" ] && continue
+              case "$ref" in
+                "$name"|"preview/$name") matched="$ref"; break;;
+                "$name"*)                matched="$ref"; break;;
+                "$stripped"*)            matched="$ref"; break;;
+              esac
+            done < open_prs.txt
+            if [ -n "$matched" ]; then
+              echo "KEEP  $name (open PR: $matched)"
+              continue
+            fi
+
+            # Idle guard.
+            updated_epoch="$(date -u -d "$updated" +%s 2>/dev/null || echo 0)"
+            if [ "$updated_epoch" -gt "$cutoff_epoch" ]; then
+              echo "KEEP  $name (active, updated $updated)"
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "WOULD DELETE  $name ($id, updated $updated)"
+            else
+              echo "DELETE  $name ($id, updated $updated)"
+              npx --yes neonctl@2 branches delete "$id" --project-id "$NEON_PROJECT_ID" \
+                || echo "::warning::Failed to delete $name ($id)"
+            fi
+          done

@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # @types/node major must track the Node.js runtime (Node 24 in CI + on
+      # Vercel). Holding the types ahead of the runtime would type APIs that
+      # don't exist at runtime. Bump this in lockstep when we move to a newer
+      # Node LTS.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TanStack Start is locked to a specific RC until 1.0 (CLAUDE.md
+      # non-negotiable), and the router packages must move in lockstep with
+      # it. Bump these manually as a set instead of via weekly PRs.
+      - dependency-name: "@tanstack/react-start"
+      - dependency-name: "@tanstack/react-router"
+      - dependency-name: "@tanstack/react-router-devtools"
+      - dependency-name: "@tanstack/react-router-with-query"
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"

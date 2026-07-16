@@ -1,0 +1,159 @@
+services:
+  db:
+    # Local dev DB — plain Postgres. Neon Local is PAUSED to avoid free-tier
+    # branch storage (it created one persistent ~32 MB cloud branch per local
+    # git branch). Same port/creds/db-name as Neon Local so URLs barely change.
+    # To re-enable Neon Local: uncomment the block below, delete this service +
+    # the `db_data` volume, restore `?sslmode=require` in .env, and restore
+    # `neondb_session?sslmode=require` in vite.config.ts (TEST_DATABASE_URL).
+    image: postgres:17-alpine
+    ports:
+      - "14520:5432"
+    environment:
+      POSTGRES_USER: neon
+      POSTGRES_PASSWORD: npg
+      POSTGRES_DB: neondb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neon -d neondb"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+  # --- PAUSED: Neon Local (re-enable per the comment on the `db` service above)
+  # db:
+  #   image: neondatabase/neon_local:v1.5
+  #   ports:
+  #     - "14520:5432"
+  #   environment:
+  #     NEON_API_KEY: ${NEON_API_KEY}
+  #     NEON_PROJECT_ID: ${NEON_PROJECT_ID}
+  #     PARENT_BRANCH_ID: ${PARENT_BRANCH_ID}
+  #   volumes:
+  #     # Persist Neon Local's branch metadata so `down`/`up` reuses the same
+  #     # upstream branch instead of creating a fresh one. Combined with the
+  #     # git/HEAD mount below, each local git branch gets its own persistent
+  #     # Neon branch. These accumulate (~32 MB each against the 512 MB free
+  #     # tier) — `pnpm neon:prune` deletes the ones whose git branch is gone.
+  #     - ./.neon_local:/tmp/.neon_local
+  #     - ./.git/HEAD:/tmp/.git/HEAD:ro
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -h localhost -U neon"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 12
+  #     start_period: 10s
+  # --- end PAUSED Neon Local
+  queue:
+    # Local-dev broker for the blurhash queue. Producers go through the
+    # bullmqQueue adapter; consumed by `pnpm dev:worker`. Mirrors the
+    # Vercel Queues + Nitro consumer flow we ship to production.
+    image: redis:7.4-alpine
+    ports:
+      - "14521:6379"
+    # AOF on so queued jobs survive `down`. everysec is the standard
+    # tradeoff (≤1s loss window on hard crash) and matches BullMQ defaults.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+  queue-studio:
+    # BullMQ dashboard. Profile-gated so it doesn't auto-start with
+    # `pnpm dev:up` / `pnpm queue:up`. Activate with `pnpm queue:studio`.
+    # Auto-discovers queues from Redis — no per-topic config needed.
+    profiles: [studio]
+    image: emirce/bullstudio:1.4.0
+    ports:
+      - "14504:4000"
+    environment:
+      REDIS_URL: redis://queue:6379
+    depends_on:
+      queue:
+        condition: service_healthy
+    restart: unless-stopped
+  storage:
+    # Local S3-compatible storage for offline dev. MinIO-protocol-compatible
+    # (host :14523 = S3 API, host :14503 = web console). RustFS refuses
+    # default `rustfsadmin` creds on non-loopback listeners, so we override
+    # with the same values committed to `.env.example`. Production uses
+    # Vercel Blob —
+    # the adapter selector in `src/lib/effects/storage/storage.ts` picks the
+    # `s3` adapter only when `S3_ENDPOINT` is set in the environment.
+    image: rustfs/rustfs:1.0.0-beta.4
+    ports:
+      - "14523:9000"
+      - "14503:9001"
+    environment:
+      RUSTFS_ACCESS_KEY: oceanview-dev
+      RUSTFS_SECRET_KEY: oceanview-dev-secret-key
+      # RustFS emits no CORS headers by default; without this the browser blocks
+      # every presigned PUT from the Vite dev server. Wildcard because this is
+      # local, ephemeral, dev-only storage (dev creds, throwaway data) and the
+      # app origin varies: localhost for `pnpm dev`, the Mac's LAN IP for
+      # `pnpm dev --host` (phone testing) — a fixed list would need the DHCP IP.
+      # Presigned PUTs authenticate via query-string signature, not credentials,
+      # so `*` carries no CSRF/credential exposure here.
+      RUSTFS_CORS_ALLOWED_ORIGINS: "*"
+    volumes:
+      # Container runs as UID 10001; named volumes handle ownership.
+      - storage_data:/data
+      - storage_logs:/logs
+    restart: unless-stopped
+  mail:
+    # Local SMTP catcher for development. Accepts mail on host :14522 and
+    # shows it in a web UI on host :14502. In-memory ring buffer
+    # (MP_MAX_MESSAGES) — no
+    # persistence; messages disappear on container restart, which is the
+    # right default for a transient inspector. Production uses Resend via
+    # the adapter selector in `src/lib/effects/email/email.ts`.
+    image: axllent/mailpit:latest
+    ports:
+      - "14522:1025"
+      - "14502:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/livez"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+  storage-init:
+    # One-shot bucket bootstrap. Waits for the RustFS S3 API, creates both
+    # buckets idempotently, and sets `oceanview-public` to allow anonymous
+    # read so avatar URLs (stored on `user.image`) stay fetchable without
+    # re-signing. Exits when done; re-runs on subsequent `dev:up`s are
+    # no-ops because of `--ignore-existing`.
+    image: minio/mc:latest
+    depends_on:
+      - storage
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mc alias set local http://storage:9000 oceanview-dev oceanview-dev-secret-key >/dev/null 2>&1; do
+          echo 'waiting for rustfs...';
+          sleep 2;
+        done;
+        mc mb --ignore-existing local/oceanview-public;
+        mc mb --ignore-existing local/oceanview-private;
+        mc anonymous set download local/oceanview-public || true;
+        echo 'storage init complete';
+    restart: "no"
+
+volumes:
+  db_data:
+  redis_data:
+  storage_data:
+  storage_logs:

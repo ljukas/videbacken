@@ -1,0 +1,379 @@
+@import 'tailwindcss' source('../');
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Self-hosted variable faces (Fontshare, ITF Free Font License — see the FFL.txt in each public/fonts subfolder). */
+@font-face {
+  font-family: 'Cabinet Grotesk';
+  src: url('/fonts/cabinet-grotesk/CabinetGrotesk-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Switzer';
+  src: url('/fonts/switzer/Switzer-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme inline {
+    --font-heading: 'Cabinet Grotesk', var(--font-sans);
+    --font-sans: 'Switzer', system-ui, sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-share-a: var(--share-a);
+    --color-share-b: var(--share-b);
+    --color-share-c: var(--share-c);
+    --color-share-d: var(--share-d);
+    --color-share-e: var(--share-e);
+    --color-share-f: var(--share-f);
+    --color-share-g: var(--share-g);
+    --color-share-h: var(--share-h);
+    --color-share-i: var(--share-i);
+    --color-share-j: var(--share-j);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-selected-foreground: var(--selected-foreground);
+    --color-selected: var(--selected);
+    --color-brand: var(--brand);
+    --color-brand-foreground: var(--brand-foreground);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    /* Semantic surface scale (app layout) — three Linear-style elevation tiers,
+       aliased onto the shadcn tokens so there's one source of truth per value.
+       Use these (not bg-background) for page-composition surfaces. See ADR-0015. */
+    --color-surface-sidebar: var(--sidebar);
+    --color-surface-page: var(--canvas);
+    --color-surface-raised: var(--card);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  /* Tier-2 page surface (exposed as bg-surface-page; the SidebarInset). Subtly
+     off-white so white bg-surface-raised (--card) panels lift on it, Linear-style.
+     --background stays pure white so dialogs/popovers/inputs are unaffected. */
+  --canvas: oklch(0.99 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.97 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --selected: oklch(0.55 0.19 258);
+  --selected-foreground: oklch(0.97 0 0);
+  /* Linear-style washed selection: a light blue tint (normal dark text on top),
+     used as the table row selection fill instead of the solid --selected. */
+  --selected-wash: color-mix(in oklab, var(--selected) 16%, transparent);
+  /* Signature nautical accent — used only on brand washes + the logo mark; kept
+     visually coherent with --selected (same blue family). --primary stays neutral. */
+  --brand: oklch(0.56 0.18 256);
+  --brand-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --success: oklch(0.62 0.17 145);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.75 0.16 75);
+  --warning-foreground: oklch(0.27 0.06 75);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.97 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.92 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  /* Share palette ("signal flags"): hues are assigned so consecutive letters
+     alternate warm/cool and light/dark — neighbouring calendar blocks stay
+     distinct, including under red-green color blindness. The letter→hue order
+     is deliberate, not spectral; keep A–J pairs in both themes in sync. */
+  --share-a: oklch(0.83 0.094 25);
+  --share-b: oklch(0.87 0.086 225);
+  --share-c: oklch(0.9 0.13 92);
+  --share-d: oklch(0.83 0.08 258);
+  --share-e: oklch(0.87 0.11 150);
+  --share-f: oklch(0.82 0.11 328);
+  --share-g: oklch(0.88 0.079 60);
+  --share-h: oklch(0.83 0.11 183);
+  --share-i: oklch(0.905 0.058 350);
+  --share-j: oklch(0.83 0.09 296);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  /* Tier-2 page surface (bg-surface-page). Sits between the darker --sidebar
+     (0.155) frame and the lighter --card (0.22) content, so all three tiers
+     read as distinct in dark mode too (Linear-style). --background stays 0.145
+     as the primitive base, so inputs/outline buttons read as slightly sunken. */
+  --canvas: oklch(0.185 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.22 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.97 0 0);
+  --selected: oklch(0.58 0.18 258);
+  --selected-foreground: oklch(0.97 0 0);
+  --selected-wash: color-mix(in oklab, var(--selected) 26%, transparent);
+  --brand: oklch(0.62 0.17 256);
+  --brand-foreground: oklch(0.145 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.70 0.16 150);
+  --success-foreground: oklch(0.18 0.04 150);
+  --warning: oklch(0.78 0.15 80);
+  --warning-foreground: oklch(0.20 0.05 80);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  /* Tier-1 chrome — the darkest surface (bg-surface-sidebar), below the page. */
+  --sidebar: oklch(0.155 0 0);
+  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  /* Share palette dark variants — same hues as :root, L alternating 0.44/0.50. */
+  --share-a: oklch(0.44 0.1 25);
+  --share-b: oklch(0.5 0.095 225);
+  --share-c: oklch(0.44 0.091 92);
+  --share-d: oklch(0.5 0.1 258);
+  --share-e: oklch(0.44 0.1 150);
+  --share-f: oklch(0.5 0.1 328);
+  --share-g: oklch(0.44 0.1 60);
+  --share-h: oklch(0.5 0.089 183);
+  --share-i: oklch(0.44 0.1 350);
+  --share-j: oklch(0.5 0.1 296);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  /* Linear-style body tuning: tight tracking + optical sizing on the variable face. */
+  html {
+    @apply font-sans;
+    letter-spacing: -0.011em;
+    font-optical-sizing: auto;
+  }
+  /* Headings render in Cabinet Grotesk; weight is set per-use (page h1 = bold,
+     dialog/section titles keep their own medium/semibold on this same face). */
+  h1,
+  h2,
+  h3 {
+    @apply font-heading tracking-tight;
+  }
+  /* Honour OS "Reduce Motion": near-instant overlays (dialog/alert-dialog/sheet). */
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot$='-overlay'],
+    [data-slot$='-content'] {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Soft top-anchored brand glow — applied only to the login wrapper and Empty
+     surfaces (the signature accent, used sparingly). */
+  .brand-wash {
+    background-image: radial-gradient(
+      120% 80% at 50% -20%,
+      color-mix(in oklch, var(--brand) 14%, transparent),
+      transparent 60%
+    );
+  }
+
+  /* One-shot brand ring on the document the command palette navigated to (the
+     `?focus=<id>` row/card). Honours Reduce Motion: no flash, just the scroll. */
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes doc-focus-flash {
+      0%,
+      60% {
+        box-shadow: inset 0 0 0 2px var(--brand);
+      }
+      100% {
+        box-shadow: inset 0 0 0 2px transparent;
+      }
+    }
+    .doc-focus-flash {
+      animation: doc-focus-flash 2.2s ease-out;
+    }
+  }
+
+  /* Row corner radii the cells consume (--row-rt top, --row-rb bottom). Keyed on
+     `[data-slot='table'] tbody tr` (the table + tag) rather than the row's own
+     `data-slot`: DocumentTableRow renders its <TableRow> as <ContextMenuTrigger
+     asChild>, and the trigger's `data-slot="context-menu-trigger"` clobbers the
+     row's `data-slot="table-row"`, so a row-data-slot selector would skip every
+     document row. The <table>'s data-slot and `aria-selected` both survive.
+     Defined here (not as a utility) so the merge overrides below — same layer —
+     out-specify the default; a utility would sit in the later `utilities` layer. */
+  [data-slot='table'] tbody tr {
+    /* `--radius` is the real :root token (== rounded-lg); `--radius-lg` lives in
+       `@theme inline` and isn't emitted as a custom property, so it'd be undefined here. */
+    --row-rt: var(--radius);
+    --row-rb: var(--radius);
+  }
+  /* Round the row pill's outer corners (the end cells). Plain CSS so the radius
+     reliably reads --row-rt/--row-rb; the bg (--row-bg) is clipped to it. */
+  [data-slot='table'] tbody tr > td:first-child {
+    border-top-left-radius: var(--row-rt);
+    border-bottom-left-radius: var(--row-rb);
+  }
+  [data-slot='table'] tbody tr > td:last-child {
+    border-top-right-radius: var(--row-rt);
+    border-bottom-right-radius: var(--row-rb);
+  }
+
+  /* Adjacent selected table rows merge into one rounded block: flatten the
+     corners where two selected rows meet, so only each run's outer corners
+     stay rounded (Linear-style). The cells read --row-rt/--row-rb. Scoped to
+     aria-selected rows, so non-selectable tables (Owners) are unaffected. */
+  [data-slot='table'] tbody tr[aria-selected='true'] + tr[aria-selected='true'] {
+    --row-rt: 0px;
+  }
+  [data-slot='table'] tbody tr[aria-selected='true']:has(+ tr[aria-selected='true']) {
+    --row-rb: 0px;
+  }
+}
+
+/* Colorful toasts — soft tint + bright icon (ADR-0015 transient accent).
+   Per type: a faint colored card + a soft colored border + a saturated icon,
+   with the title/description left at --normal-text (neutral) for readability.
+   Colors derive from the semantic tokens via color-mix, so light/dark adapt
+   automatically — no new tokens. info maps to --brand (no --info token exists).
+
+   Mix in OKLAB (rectangular), NOT oklch: --popover is oklch(1 0 0) with an
+   explicit hue 0 (red), so mixing a tint in the polar oklch space rotates the
+   result's hue toward red and every type's card comes out pink. oklab
+   interpolates L/a/b component-wise — no hue swing — matching --selected-wash.
+
+   Sonner (richColors off) paints each toast with `background: var(--normal-bg)`
+   and `border-color: var(--normal-border)`; re-declaring those custom properties
+   directly on the per-type toast element wins over the value inherited from the
+   toaster root, while leaving --normal-text untouched. Borders mix into
+   --popover (not --border) so they stay opaque/visible in dark mode, where
+   --border is translucent white. Kept UNLAYERED on purpose: sonner injects its
+   own unlayered <style>, and an unlayered rule beats any @layer rule regardless
+   of specificity, so the icon-color and var overrides reliably take. */
+[data-sonner-toast][data-type='success'] {
+  --normal-bg: color-mix(in oklab, var(--success) 12%, var(--popover));
+  --normal-border: color-mix(in oklab, var(--success) 40%, var(--popover));
+}
+[data-sonner-toast][data-type='success'] [data-icon] {
+  color: var(--success);
+}
+
+[data-sonner-toast][data-type='error'] {
+  --normal-bg: color-mix(in oklab, var(--destructive) 12%, var(--popover));
+  --normal-border: color-mix(in oklab, var(--destructive) 40%, var(--popover));
+}
+[data-sonner-toast][data-type='error'] [data-icon] {
+  color: var(--destructive);
+}
+
+[data-sonner-toast][data-type='warning'] {
+  --normal-bg: color-mix(in oklab, var(--warning) 14%, var(--popover));
+  --normal-border: color-mix(in oklab, var(--warning) 44%, var(--popover));
+}
+/* --warning is a light amber (L≈0.75); raw it's too low-contrast as an icon,
+   but darkening it toward the low-chroma --warning-foreground turned it muddy
+   (mustard). Instead derive a brighter, MORE saturated, slightly-yellower amber
+   from the token (relative color): bump chroma + nudge the hue toward yellow and
+   only slightly deepen the lightness, so it reads as yellow (not mustard) while
+   still standing off the pale card. Theme-adaptive via `from var(--warning)`. */
+[data-sonner-toast][data-type='warning'] [data-icon] {
+  color: oklch(from var(--warning) calc(l - 0.04) calc(c + 0.04) calc(h + 10));
+}
+
+[data-sonner-toast][data-type='info'] {
+  --normal-bg: color-mix(in oklab, var(--brand) 12%, var(--popover));
+  --normal-border: color-mix(in oklab, var(--brand) 40%, var(--popover));
+}
+[data-sonner-toast][data-type='info'] [data-icon] {
+  color: var(--brand);
+}
+
+/* loading: keep the card neutral, just tint the spinner brand. */
+[data-sonner-toast][data-type='loading'] [data-icon] {
+  color: var(--brand);
+}
+
+/* More breathing room between the icon and the text — sonner's default icon
+   margin is tight. The toaster-ancestor selector + !important guarantee this
+   beats sonner's own injected `[data-sonner-toast] [data-icon]` margin rule
+   regardless of source order. */
+[data-sonner-toaster] [data-sonner-toast] [data-icon] {
+  margin-inline-end: 1rem !important;
+}

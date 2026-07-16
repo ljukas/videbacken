@@ -1,0 +1,272 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "**",
+      "!**/src/routeTree.gen.ts",
+      "!**/src/paraglide/**",
+      "!**/src/lib/db/schema/betterAuth.ts",
+      "!**/drizzle/**",
+      "!**/pnpm-lock.yaml",
+      "!**/.vinxi/**",
+      "!**/*.css"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all",
+      "arrowParentheses": "always",
+      "bracketSpacing": true
+    }
+  },
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noConsole": {
+          "level": "warn",
+          "options": { "allow": ["error", "warn"] }
+        },
+        "useBiomeIgnoreFolder": "off"
+      },
+      "style": {
+        "useImportType": "error",
+        "useNodejsImportProtocol": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "@vercel/blob": "Import only from src/lib/effects/storage/**. Other code uses the storage effect (~/lib/effects).",
+              "@vercel/blob/client": "Import only from src/lib/effects/storage/**.",
+              "pino": "Import only from src/lib/logger/server.ts. Other code uses the logger (~/lib/logger).",
+              "~/lib/db": "Only services (~/lib/services/**) own DB access. See ADR-0002.",
+              "~/lib/db/schema": "Only services (~/lib/services/**) own DB schema imports. See ADR-0002."
+            }
+          }
+        }
+      },
+      "correctness": {
+        "noUnusedImports": {
+          "fix": "safe",
+          "level": "warn",
+          "options": {}
+        },
+        "noUnusedVariables": "warn",
+        "noChildrenProp": "off"
+      },
+      "nursery": {
+        "useSortedClasses": {
+          "level": "on",
+          "options": {
+            "attributes": ["class", "className"],
+            "functions": ["cn", "cva", "clsx", "tw"]
+          }
+        }
+      }
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/src/components/ui/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useExhaustiveDependencies": "off"
+          },
+          "suspicious": {
+            "noArrayIndexKey": "off",
+            "noDocumentCookie": "off"
+          },
+          "a11y": {
+            "useSemanticElements": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["scripts/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          },
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/lib/services/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@vercel/blob": "Use the storage effect (~/lib/effects).",
+                  "@vercel/blob/client": "Use the storage effect (~/lib/effects).",
+                  "pino": "Use the logger (~/lib/logger/server).",
+                  "~/lib/effects": "Services must not import effects (ADR-0001). Run effects from the procedure after the service call.",
+                  "~/lib/orpc": "Services must not import orpc. Services are below the procedure layer (ADR-0002)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/lib/db/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@vercel/blob": "Use the storage effect.",
+                  "@vercel/blob/client": "Use the storage effect.",
+                  "pino": "Use the logger (~/lib/logger/server).",
+                  "~/lib/services": "db is a leaf module — services depend on db, not the other way around.",
+                  "~/lib/effects": "db is a leaf module.",
+                  "~/lib/orpc": "db is a leaf module."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/lib/effects/storage/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "pino": "Use the logger (~/lib/logger/server).",
+                  "~/lib/db": "Only services own DB access (ADR-0002).",
+                  "~/lib/db/schema": "Only services own DB schema imports (ADR-0002).",
+                  "~/lib/services": "Effects must not import services (ADR-0001).",
+                  "~/lib/orpc": "Effects must not import orpc (ADR-0001)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/lib/effects/**", "!src/lib/effects/storage/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@vercel/blob": "Use the storage effect (~/lib/effects).",
+                  "@vercel/blob/client": "Use the storage effect (~/lib/effects).",
+                  "pino": "Use the logger (~/lib/logger/server).",
+                  "~/lib/db": "Only services own DB access (ADR-0002).",
+                  "~/lib/db/schema": "Only services own DB schema imports (ADR-0002).",
+                  "~/lib/services": "Effects must not import services (ADR-0001).",
+                  "~/lib/orpc": "Effects must not import orpc (ADR-0001)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/lib/logger/server.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@vercel/blob": "Use the storage effect.",
+                  "@vercel/blob/client": "Use the storage effect.",
+                  "~/lib/db": "Only services own DB access.",
+                  "~/lib/db/schema": "Only services own DB schema imports.",
+                  "~/lib/services": "Logger is a leaf module.",
+                  "~/lib/effects": "Logger is a leaf module.",
+                  "~/lib/orpc": "Logger is a leaf module."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/lib/queue/handlers/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@vercel/blob": "Use the storage effect.",
+                  "@vercel/blob/client": "Use the storage effect.",
+                  "pino": "Use the logger (~/lib/logger/server).",
+                  "~/lib/db": "Queue handlers go through services (ADR-0002).",
+                  "~/lib/db/schema": "Queue handlers go through services (ADR-0002).",
+                  "~/lib/orpc": "Queue handlers run in worker context, below the procedure layer."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx", "test/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    }
+  ]
+}

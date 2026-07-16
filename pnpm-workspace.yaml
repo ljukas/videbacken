@@ -1,0 +1,44 @@
+# Pin kysely to 0.28.x: @better-auth/kysely-adapter@1.6.14 (latest) still imports
+# DEFAULT_MIGRATION_TABLE / DEFAULT_MIGRATION_LOCK_TABLE from "kysely", but kysely
+# 0.29 moved them to the "kysely/migration" subpath, which breaks the build.
+# Fixed upstream by better-auth#9811 but not yet released — remove this override
+# once a better-auth release containing it lands. See better-auth#9810.
+overrides:
+  kysely: ^0.28.17
+
+allowBuilds:
+  '@prisma/client': false
+  better-sqlite3: false
+  esbuild: true
+  exifreader: false
+  msgpackr-extract: true
+  msw: false
+  sharp: true
+# pnpm auto-adds freshly-published versions here to bypass the 24h
+# minimumReleaseAge gate during install. Any entry whose version is now
+# >24h old is a no-op (it re-resolves fine without the exclude) and can be
+# pruned — only keep versions still inside the 24h window.
+minimumReleaseAgeExclude:
+  - '@react-email/render@2.0.9'
+  - react-email@6.6.3
+  - '@typescript/typescript-aix-ppc64@7.0.2'
+  - '@typescript/typescript-darwin-arm64@7.0.2'
+  - '@typescript/typescript-darwin-x64@7.0.2'
+  - '@typescript/typescript-freebsd-arm64@7.0.2'
+  - '@typescript/typescript-freebsd-x64@7.0.2'
+  - '@typescript/typescript-linux-arm64@7.0.2'
+  - '@typescript/typescript-linux-arm@7.0.2'
+  - '@typescript/typescript-linux-loong64@7.0.2'
+  - '@typescript/typescript-linux-mips64el@7.0.2'
+  - '@typescript/typescript-linux-ppc64@7.0.2'
+  - '@typescript/typescript-linux-riscv64@7.0.2'
+  - '@typescript/typescript-linux-s390x@7.0.2'
+  - '@typescript/typescript-linux-x64@7.0.2'
+  - '@typescript/typescript-netbsd-arm64@7.0.2'
+  - '@typescript/typescript-netbsd-x64@7.0.2'
+  - '@typescript/typescript-openbsd-arm64@7.0.2'
+  - '@typescript/typescript-openbsd-x64@7.0.2'
+  - '@typescript/typescript-sunos-x64@7.0.2'
+  - '@typescript/typescript-win32-arm64@7.0.2'
+  - '@typescript/typescript-win32-x64@7.0.2'
+  - typescript@7.0.2

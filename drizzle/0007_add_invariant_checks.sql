@@ -1,0 +1,4 @@
+ALTER TABLE "file" ADD CONSTRAINT "file_size_bytes_nonneg_check" CHECK ("file"."size_bytes" >= 0);--> statement-breakpoint
+ALTER TABLE "ownership_assignment" ADD CONSTRAINT "ownership_assignment_range_check" CHECK ("ownership_assignment"."assigned_to" IS NULL OR "ownership_assignment"."assigned_to" > "ownership_assignment"."assigned_from");--> statement-breakpoint
+ALTER TABLE "season" ADD CONSTRAINT "season_start_week_check" CHECK ("season"."start_week" BETWEEN 1 AND 53);--> statement-breakpoint
+ALTER TABLE "share_part" ADD CONSTRAINT "share_part_part_number_check" CHECK ("share_part"."part_number" IN (1, 2));

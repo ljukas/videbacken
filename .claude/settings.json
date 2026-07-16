@@ -1,0 +1,28 @@
+{
+  "skillOverrides": {
+    "react-native-best-practices:react-native-best-practices": "off",
+    "react-native-best-practices:upgrading-react-native": "off",
+    "react-native-best-practices:github": "off",
+    "expo-app-design:building-native-ui": "off",
+    "expo-app-design:expo-dev-client": "off",
+    "expo-app-design:use-dom": "off",
+    "expo-app-design:native-data-fetching": "off",
+    "expo-app-design:expo-api-routes": "off",
+    "expo-app-design:expo-tailwind-setup": "off",
+    "expo-deployment:expo-deployment": "off",
+    "expo-deployment:expo-cicd-workflows": "off",
+    "upgrading-expo:upgrading-expo": "off"
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true
+  }
+}

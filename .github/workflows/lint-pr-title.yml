@@ -1,0 +1,46 @@
+# Validates that every PR title is a valid Conventional Commit.
+# Under squash-merge the PR title becomes the commit subject on `main`
+# (CLAUDE.md -> Non-negotiables), so this gate keeps `git log` clean.
+#
+# Uses `pull_request` (not `pull_request_target`): this is a private,
+# fork-free repo and the action only reads the title + writes a status —
+# it never checks out PR code. Switch to `pull_request_target` if fork
+# PRs are ever accepted.
+name: Lint PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate Conventional Commit title
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to the v6 major; Dependabot (github-actions ecosystem) bumps it.
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Allowed types — must match CLAUDE.md -> Non-negotiables.
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            test
+            build
+            ci
+            perf
+            style
+            revert
+          # Subject must start lowercase and imperative ("add bulk move").
+          # Proper nouns mid-subject are still fine ("add OAuth login").
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: >-
+            The subject "{subject}" should start lowercase and be imperative,
+            e.g. "feat(document): add bulk move dialog".
