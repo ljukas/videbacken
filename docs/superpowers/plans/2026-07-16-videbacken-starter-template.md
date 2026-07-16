@@ -74,15 +74,49 @@ git commit -m "chore: copy Oceanview tree as Videbacken starting point"
 
 ---
 
-## Task 1: Migrate pnpm → bun
+## Task 1: Migrate to bun + isolate the local dev environment
 
 **Files:**
 - Delete: `pnpm-lock.yaml`, `pnpm-workspace.yaml`
-- Modify: `package.json`
-- Test: `bun install` + `bun run build` (the gate — proves the full stack builds under bun before anything changes)
+- Modify: `package.json`, `compose.yaml`, `vite.config.ts`, `drizzle.config.ts`, and any file with a `145xx`/`14327` port literal
+- Create: `.env` (machine-local, gitignored — not committed)
+- Test: `bun install` + `bun run build` (the gate — proves the full stack builds under bun before anything changes) + port-isolation grep
 
 **Interfaces:**
-- Produces: a `bun.lock`, a bun-native `package.json` (scripts use `bun run`/`bunx`; `overrides` + `trustedDependencies` replace the pnpm workspace file). Every later task runs commands as `bun run <script>`.
+- Produces: a `bun.lock`, a bun-native `package.json`; **all host ports remapped +100** so the local docker stack + DB never collide with a running Oceanview; a working local `.env`. Every later task runs commands as `bun run <script>` against the isolated stack.
+
+**Why ports first:** the strip task (Task 2) runs `bun run test:node`, and Tasks 3–5 run `db:up`/`db:migrate`. Those hit the local Postgres on its host port. Oceanview binds `14520`; unless we remap **before** the first DB use, a running Oceanview stack collides and tests target the wrong container. So the port remap + local `.env` happen here, not at branding time.
+
+- [ ] **Step 0a: Remap all host ports (+100) across the repo**
+
+Replace every occurrence in `compose.yaml`, `vite.config.ts`, `drizzle.config.ts`, `package.json`, `.env.example`, and any `scripts/`/`test/` file: `14500→14600`, `14501→14601`, `14502→14602`, `14503→14603`, `14504→14604`, `14520→14620`, `14521→14621`, `14522→14622`, `14523→14623`. Find the stray `14327` (`grep -rn 14327 . --include='*.ts' --include='*.yaml' --include='*.json'`, excluding `node_modules`) and bump it to `14627`. Include `vite.config.ts`'s `server.port` (14600), its `TEST_DATABASE_URL` (`...localhost:14620/...`), and `compose.yaml`'s port mappings. Verify none remain:
+```bash
+grep -rnE '1450[0-9]|1452[0-9]|14327' src test scripts *.ts *.yaml *.json .env.example
+```
+Expected: empty. (Name/accent/logo/bucket/cookie identity swaps are Task 7 — this step is ports only.)
+
+- [ ] **Step 0b: Create a machine-local `.env`**
+
+`.env` was intentionally not copied (secrets). Create it (it is gitignored — never commit it) with local-dev values:
+```
+DATABASE_URL=postgres://neon:npg@localhost:14620/neondb
+BETTER_AUTH_URL=http://localhost:14600
+BETTER_AUTH_SECRET=<generate: openssl rand -base64 32>
+INITIAL_ADMIN_EMAILS=mail@lukaslindqvist.se
+S3_ENDPOINT=http://localhost:14623
+S3_REGION=eu-north-1
+S3_ACCESS_KEY_ID=videbacken-dev
+S3_SECRET_ACCESS_KEY=videbacken-dev-secret-key
+S3_BUCKET_PUBLIC=videbacken-public
+S3_BUCKET_PRIVATE=videbacken-private
+REDIS_URL=redis://localhost:14621
+SMTP_HOST=localhost
+SMTP_PORT=14622
+EMAIL_FROM=Videbacken <no-reply@videbacken.local>
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+```
+Run `openssl rand -base64 32` and paste the result into `BETTER_AUTH_SECRET`. Confirm `git status` does NOT show `.env` (the `.gitignore` excludes it).
 
 - [ ] **Step 1: Read the current `package.json` and `pnpm-workspace.yaml`**
 
@@ -208,8 +242,9 @@ Expected: **this will fail** the first time with `tsc`/vite errors for imports o
 
 - [ ] **Step 9: Run the gate**
 
+Ensure the isolated local Postgres is up first (Task 1 remapped it to :14620): `bun run db:up` (starts the `db` container; migrations from the still-present Oceanview `drizzle/` apply — extra boat tables are harmless, they're cleaned in Task 4). Then:
 Run: `bun run build && bun run test:node`
-Expected: build clean; the node suite passes for the surviving services (user, file, effects, logger). If a browser test references a deleted component, delete that test. Bring `bun run test` (both projects) green.
+Expected: build clean; the node suite passes for the surviving services (user, file, effects, logger). Effect tests short-circuit to devLog/in-memory under `VITEST` (no storage/queue/mail container needed). If a browser test references a deleted component, delete that test. Bring `bun run test` (both projects) green.
 
 - [ ] **Step 10: Commit**
 
@@ -378,7 +413,7 @@ export * from './errors'
 - [ ] **Step 6: Generate the migration for the new table**
 
 (Deferred to Task 4 Step 7, where the full schema — auth changes + this table — is regenerated as one clean initial migration. For now the test relies on `setupDatabase()` running migrations; if no migration exists yet, generate a scoped one so the test can run:)
-Run: `bun run db:up` (starts local postgres on :14620 — added in Task 6; if compose still says 14520 here, that's fine, it's local-only) then `bun run db:generate --name=approved_email && bun run db:migrate`
+Run: `bun run db:up` (starts local postgres on :14620 — ports were isolated in Task 1) then `bun run db:generate --name=approved_email && bun run db:migrate`
 Expected: a migration adding `approved_email`.
 
 - [ ] **Step 7: Run the test — expect pass**
@@ -511,7 +546,7 @@ Expected: a single `0000_init.sql` creating: better-auth tables (user + addition
 
 - [ ] **Step 8: Apply + verify against a local DB**
 
-Run: `bun run db:up && bun run db:migrate` (local postgres — port per compose; remapped in Task 6).
+Run: `bun run db:up && bun run db:migrate` (local postgres on :14620 — ports isolated in Task 1).
 Then: `bun run test:node`
 Expected: migration applies; all node tests (approvedEmail, gate, user, file, effects) pass with the fresh schema.
 
@@ -644,14 +679,16 @@ git commit -m "feat(auth): Google + magic-link login; trim onboarding to name an
 
 ---
 
-## Task 7: Rebrand + remap ports + swap identity tokens
+## Task 7: Rebrand + swap identity tokens
+
+> **Ports were already remapped in Task 1.** This task does name/accent/logo + non-port identity tokens (cookies, buckets, creds, dev-log) + the `.env.example` rewrite. It must NOT re-touch ports except to re-verify none regressed.
 
 **Files:**
-- Modify: `package.json` (name), `README.md`, `src/components/Logo.tsx`, `src/emails/{theme,BrandEmailLayout}.tsx`, `src/styles/app.css` (or wherever `--brand` lives), `vite.config.ts` (port + cookieName), `compose.yaml` (ports + bucket/cred names), `.env.example`, `drizzle.config.ts`, all remaining `oceanview` string sites (~55 files), `scripts/generateFavicons.mjs`, `public/` favicons
+- Modify: `package.json` (name), `README.md`, `src/components/Logo.tsx`, `src/emails/{theme,BrandEmailLayout}.tsx`, `src/styles/app.css` (or wherever `--brand` lives), `vite.config.ts` (cookieName), `compose.yaml` (bucket/cred names), `.env.example`, all remaining `oceanview` string sites (~55 files), `scripts/generateFavicons.mjs`, `public/` favicons
 - Test: `bun run build`, grep sweeps
 
 **Interfaces:**
-- Produces: a fully rebranded, port-isolated app that boots on :14600 and coexists with Oceanview.
+- Produces: a fully rebranded app (name, muted-indigo accent, placeholder logo) with all `oceanview` identity tokens swapped to `videbacken`. Coexistence (ports) already holds from Task 1.
 
 - [ ] **Step 1: Swap the app name (code-safe sites first)**
 
@@ -669,13 +706,13 @@ Fix each file. Cookie/bucket/log identifiers handled in Steps 2–4 (don't miss 
 - Storage buckets + S3 creds in `compose.yaml`, `.env.example`, `src/lib/effects/storage/*`: `oceanview-public/private` → `videbacken-public/private`; `oceanview-dev`/`oceanview-dev-secret-key` → `videbacken-dev*`.
 - Dev log path: `package.json` `dev:log` + any ref — `/tmp/oceanview-dev.log` → `/tmp/videbacken-dev.log`.
 
-- [ ] **Step 3: Remap all ports (+100)**
+- [ ] **Step 3: Re-verify port isolation (regression check only)**
 
-Replace across `vite.config.ts`, `compose.yaml`, `drizzle.config.ts`, `package.json`, `.env.example`, and any script/test: `14500→14600`, `14501→14601`, `14502→14602`, `14503→14603`, `14504→14604`, `14520→14620`, `14521→14621`, `14522→14622`, `14523→14623`. Also replace the stray `14327` (find it: `grep -rn 14327 .` excluding node_modules — likely a test fixture; bump to `14627`). Verify none remain:
+Ports were remapped in Task 1. Confirm nothing reintroduced a 145xx literal:
 ```bash
 grep -rnE '1450[0-9]|1452[0-9]|14327' src test *.ts *.yaml *.json .env.example scripts
 ```
-Expected: empty.
+Expected: empty. If anything appears, remap it (+100) as in Task 1.
 
 - [ ] **Step 4: Muted-indigo `--brand` + placeholder logo/favicons**
 
