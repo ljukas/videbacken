@@ -1,0 +1,10 @@
+node_modules
+.output
+.tanstack
+.vercel
+.neon_local
+.vitest-attachments
+.env
+.env.local
+dist
+*.log
