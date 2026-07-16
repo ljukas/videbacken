@@ -28,7 +28,7 @@ test('renderInviteUser emits non-empty html and text', async () => {
 
 test('renderInviteUser includes the brand wordmark in html', async () => {
   const { html } = await renderInviteUser({ inviteUrl, locale: 'sv' })
-  expect(html).toContain('Oceanview')
+  expect(html).toContain('Videbacken')
 })
 
 test('renderInviteUser renders the body in the requested locale', async () => {

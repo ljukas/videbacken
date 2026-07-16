@@ -5,8 +5,8 @@ import { beforeAll, expect, test, vi } from 'vitest'
 // is mocked to capture the command instead of signing against a live server).
 beforeAll(() => {
   process.env.S3_ENDPOINT ??= 'http://localhost:14623'
-  process.env.S3_BUCKET_PUBLIC ??= 'oceanview-public'
-  process.env.S3_BUCKET_PRIVATE ??= 'oceanview-private'
+  process.env.S3_BUCKET_PUBLIC ??= 'videbacken-public'
+  process.env.S3_BUCKET_PRIVATE ??= 'videbacken-private'
   process.env.S3_ACCESS_KEY_ID ??= 'test-key'
   process.env.S3_SECRET_ACCESS_KEY ??= 'test-secret'
 })

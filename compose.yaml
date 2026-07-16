@@ -93,8 +93,8 @@ services:
       - "14623:9000"
       - "14603:9001"
     environment:
-      RUSTFS_ACCESS_KEY: oceanview-dev
-      RUSTFS_SECRET_KEY: oceanview-dev-secret-key
+      RUSTFS_ACCESS_KEY: videbacken-dev
+      RUSTFS_SECRET_KEY: videbacken-dev-secret-key
       # RustFS emits no CORS headers by default; without this the browser blocks
       # every presigned PUT from the Vite dev server. Wildcard because this is
       # local, ephemeral, dev-only storage (dev creds, throwaway data) and the
@@ -132,7 +132,7 @@ services:
       start_period: 5s
   storage-init:
     # One-shot bucket bootstrap. Waits for the RustFS S3 API, creates both
-    # buckets idempotently, and sets `oceanview-public` to allow anonymous
+    # buckets idempotently, and sets `videbacken-public` to allow anonymous
     # read so avatar URLs (stored on `user.image`) stay fetchable without
     # re-signing. Exits when done; re-runs on subsequent `dev:up`s are
     # no-ops because of `--ignore-existing`.
@@ -142,13 +142,13 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        until mc alias set local http://storage:9000 oceanview-dev oceanview-dev-secret-key >/dev/null 2>&1; do
+        until mc alias set local http://storage:9000 videbacken-dev videbacken-dev-secret-key >/dev/null 2>&1; do
           echo 'waiting for rustfs...';
           sleep 2;
         done;
-        mc mb --ignore-existing local/oceanview-public;
-        mc mb --ignore-existing local/oceanview-private;
-        mc anonymous set download local/oceanview-public || true;
+        mc mb --ignore-existing local/videbacken-public;
+        mc mb --ignore-existing local/videbacken-private;
+        mc anonymous set download local/videbacken-public || true;
         echo 'storage init complete';
     restart: "no"
 

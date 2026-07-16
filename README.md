@@ -1,6 +1,6 @@
-# Oceanview
+# Videbacken
 
-Internal web app for the Oceanview sailboat co-ownership group.
+Internal web app for the Videbacken sailboat co-ownership group.
 
 ## Stack
 

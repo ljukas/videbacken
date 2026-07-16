@@ -28,7 +28,7 @@ describe('server logger', () => {
     expect(entries[0].msg).toBe('hello')
     expect(entries[0].foo).toBe('bar')
     expect(entries[0].level).toBeTypeOf('number')
-    expect(entries[0].service).toBe('oceanview')
+    expect(entries[0].service).toBe('videbacken')
   })
 
   test('warn and error emit at higher levels than info', () => {

@@ -1,8 +1,8 @@
-// Email Tailwind config for Oceanview's brand ("quiet nautical confidence",
+// Email Tailwind config for Videbacken's brand ("quiet nautical confidence",
 // ADR-0015). The typographic scale + addUtilities plugin originate from Resend's
 // react-email demo (apps/demo/emails/05-Studio, MIT — © 2024 Plus Five Five,
-// Inc.); the colors and fonts are Oceanview's. Brand blue #156cdd is the sRGB of
-// --brand oklch(0.56 0.18 256) in src/styles/app.css. Fonts are a system stack
+// Inc.); the colors and fonts are Videbacken's. Brand indigo #5E6AB7 is the sRGB
+// of --brand oklch(0.55 0.12 275) in src/styles/app.css. Fonts are a system stack
 // only: custom web fonts don't render in Gmail/Outlook, so we don't ship them.
 
 import { pixelBasedPreset, type TailwindConfig } from 'react-email'
@@ -14,7 +14,7 @@ const colors = {
   fg: '#1C1D1F', // near-black body/heading text
   'fg-muted': '#6B7280', // secondary / supporting text
   border: '#E6E9EE',
-  brand: '#156CDD', // nautical-blue accent (CTA, logo mark)
+  brand: '#5E6AB7', // muted-indigo accent (CTA, logo mark)
   'brand-fg': '#FFFFFF', // text on the brand button
 } as const
 

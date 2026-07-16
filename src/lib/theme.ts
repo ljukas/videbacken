@@ -5,7 +5,7 @@ import { z } from 'zod'
 // to <html> before paint (no flash). Kept in its own cookie — independent of the
 // browser-session "welcome back" memo, which gets cleared on email switch and
 // must never reset the theme. See src/lib/browserSession.ts for the sibling pattern.
-export const THEME_COOKIE = 'oceanview-theme'
+export const THEME_COOKIE = 'videbacken-theme'
 
 const COOKIE_OPTIONS = {
   path: '/',

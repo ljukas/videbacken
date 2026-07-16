@@ -65,11 +65,11 @@ export function BrandEmailLayout({
             <Section
               className="overflow-hidden rounded-[16px] border border-border border-solid bg-card shadow-card"
               style={{
-                // Faint nautical-blue wash at the top, echoing /login's .brand-wash.
+                // Faint brand-indigo wash at the top, echoing /login's .brand-wash.
                 // Outlook ignores backgroundImage and falls back to the white bg.
                 backgroundColor: '#FFFFFF',
                 backgroundImage:
-                  'radial-gradient(120% 80% at 50% -10%, rgba(21,108,221,0.10), rgba(255,255,255,0) 60%)',
+                  'radial-gradient(120% 80% at 50% -10%, rgba(94,106,183,0.10), rgba(255,255,255,0) 60%)',
               }}
             >
               <Section className="px-10 pt-12 pb-10 text-center">
@@ -81,7 +81,7 @@ export function BrandEmailLayout({
                     height={48}
                     className="mx-auto block"
                   />
-                  <Text className="m-0 mt-3 font-24 font-sans text-fg">Oceanview</Text>
+                  <Text className="m-0 mt-3 font-24 font-sans text-fg">Videbacken</Text>
                 </Section>
 
                 <Section className="mx-auto max-w-[420px]">

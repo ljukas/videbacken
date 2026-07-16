@@ -11,7 +11,7 @@ type PinoOptions = Parameters<typeof pino>[0]
 function buildOptions(): PinoOptions {
   const base: PinoOptions = {
     level: process.env.LOG_LEVEL ?? defaultLevel,
-    base: { service: 'oceanview', env: NODE_ENV },
+    base: { service: 'videbacken', env: NODE_ENV },
     redact: { paths: serverRedactPaths, censor: '<redacted>' },
   }
   if (isDev) {

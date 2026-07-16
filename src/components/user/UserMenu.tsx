@@ -139,7 +139,7 @@ function ThemeRow() {
   )
 }
 
-// setLocale writes the oceanview-locale cookie and reloads the page, so the
+// setLocale writes the videbacken-locale cookie and reloads the page, so the
 // menu closing on its own is moot.
 function LanguageRow() {
   return (

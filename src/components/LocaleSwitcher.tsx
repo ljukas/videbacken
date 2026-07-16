@@ -2,7 +2,7 @@ import { FLAG_CLASSES, SwedenFlag, UnitedKingdomFlag } from '~/components/flags'
 import { Button } from '~/components/ui/button'
 import { getLocale, type Locale, setLocale } from '~/paraglide/runtime'
 
-// setLocale writes the oceanview-locale cookie and reloads the page — the
+// setLocale writes the videbacken-locale cookie and reloads the page — the
 // whole document (loader data, query cache, <html lang>) re-renders
 // server-side in the new locale, so no React state or provider is involved.
 

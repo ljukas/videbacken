@@ -1,16 +1,16 @@
 import { expect, test } from 'vitest'
 import { renderMagicLink } from './MagicLinkEmail'
 
-const url = 'https://oceanview.example/sign-in/magic-link?token=test-1234'
+const url = 'https://videbacken.example/sign-in/magic-link?token=test-1234'
 
 test('renderMagicLink returns a Swedish subject', async () => {
   const { subject } = await renderMagicLink({ url, locale: 'sv' })
-  expect(subject).toBe('Logga in på Oceanview')
+  expect(subject).toBe('Logga in på Videbacken')
 })
 
 test('renderMagicLink returns an English subject', async () => {
   const { subject } = await renderMagicLink({ url, locale: 'en' })
-  expect(subject).toBe('Sign in to Oceanview')
+  expect(subject).toBe('Sign in to Videbacken')
 })
 
 test('renderMagicLink embeds the URL in both html and text', async () => {
@@ -27,7 +27,7 @@ test('renderMagicLink emits non-empty html and text', async () => {
 
 test('renderMagicLink includes the brand wordmark in html', async () => {
   const { html } = await renderMagicLink({ url, locale: 'sv' })
-  expect(html).toContain('Oceanview')
+  expect(html).toContain('Videbacken')
 })
 
 test('renderMagicLink renders the body in the requested locale', async () => {

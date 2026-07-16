@@ -9,7 +9,7 @@ import { email } from './email'
 test('sendMagicLink resolves without throwing', async () => {
   await expect(
     email.sendMagicLink({
-      to: 'anna@test.oceanview.local',
+      to: 'anna@test.videbacken.local',
       url: 'https://example.test/m/abc',
       locale: 'sv',
     }),
@@ -18,18 +18,18 @@ test('sendMagicLink resolves without throwing', async () => {
 
 test('sendMagicLink handles repeated calls without side-effects on the adapter', async () => {
   await email.sendMagicLink({
-    to: 'bo@test.oceanview.local',
+    to: 'bo@test.videbacken.local',
     url: 'https://example.test/m/xyz',
     locale: 'sv',
   })
   await email.sendMagicLink({
-    to: 'cara@test.oceanview.local',
+    to: 'cara@test.videbacken.local',
     url: 'https://example.test/m/zzz',
     locale: 'sv',
   })
   await expect(
     email.sendMagicLink({
-      to: 'dan@test.oceanview.local',
+      to: 'dan@test.videbacken.local',
       url: 'https://example.test/m/qqq',
       locale: 'sv',
     }),
@@ -43,7 +43,7 @@ test('VITEST short-circuit selects devLog even when SMTP_HOST is set', async () 
   // proof the devLog adapter won.
   await expect(
     email.sendMagicLink({
-      to: 'eve@test.oceanview.local',
+      to: 'eve@test.videbacken.local',
       url: 'https://example.test/m/short',
       locale: 'sv',
     }),
@@ -53,7 +53,7 @@ test('VITEST short-circuit selects devLog even when SMTP_HOST is set', async () 
 test('sendUserInvited resolves without throwing', async () => {
   await expect(
     email.sendUserInvited({
-      to: 'fia@test.oceanview.local',
+      to: 'fia@test.videbacken.local',
       inviteUrl: 'https://example.test/login',
       locale: 'sv',
     }),

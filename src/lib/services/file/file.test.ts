@@ -31,7 +31,7 @@ async function insertPrivateFile(ownerId: string, pathname: string) {
 }
 
 test('replaceAvatarForUser inserts a new public row and soft-deletes previous public rows', async () => {
-  const userId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const userId = await insertMember('anna@test.videbacken.local', 'Anna')
   const [first] = await db
     .insert(file)
     .values({
@@ -56,7 +56,7 @@ test('replaceAvatarForUser inserts a new public row and soft-deletes previous pu
 })
 
 test('replaceAvatarForUser returns empty previousPathnames when no prior avatar exists', async () => {
-  const userId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const userId = await insertMember('anna@test.videbacken.local', 'Anna')
   const result = await replaceAvatarForUser({
     userId,
     newRow: { pathname: 'dev/avatars/anna-fresh', mime: 'image/jpeg', sizeBytes: 80 },
@@ -66,7 +66,7 @@ test('replaceAvatarForUser returns empty previousPathnames when no prior avatar 
 })
 
 test('softDelete marks deleted_at on the file row', async () => {
-  const ownerId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const ownerId = await insertMember('anna@test.videbacken.local', 'Anna')
   const row = await insertPrivateFile(ownerId, 'dev/documents/notes.pdf')
   const deleted = await softDelete(row.id)
   expect(deleted.deletedAt).not.toBeNull()
@@ -74,7 +74,7 @@ test('softDelete marks deleted_at on the file row', async () => {
 })
 
 test('softDelete is idempotent', async () => {
-  const ownerId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const ownerId = await insertMember('anna@test.videbacken.local', 'Anna')
   const row = await insertPrivateFile(ownerId, 'dev/documents/notes.pdf')
   await softDelete(row.id)
   const second = await softDelete(row.id)
@@ -86,7 +86,7 @@ test('softDelete on a missing file raises NOT_FOUND', async () => {
 })
 
 test('updatePathname repoints the file row at a new pathname', async () => {
-  const ownerId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const ownerId = await insertMember('anna@test.videbacken.local', 'Anna')
   const row = await insertPrivateFile(ownerId, 'dev/documents/uuid/Batmanual.pdf')
   await updatePathname({ fileId: row.id, pathname: 'dev/documents/uuid/Motormanual.pdf' })
   const after = await findById(row.id)
@@ -94,7 +94,7 @@ test('updatePathname repoints the file row at a new pathname', async () => {
 })
 
 test('setBlurhash writes the hash to an active row', async () => {
-  const ownerId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const ownerId = await insertMember('anna@test.videbacken.local', 'Anna')
   const row = await insertPrivateFile(ownerId, 'dev/documents/photo.png')
   expect(row.blurhash).toBeNull()
   await setBlurhash({ fileId: row.id, blurhash: 'LKO2?U%2Tw=w]~RBVZRi};RPxuwH' })
@@ -103,7 +103,7 @@ test('setBlurhash writes the hash to an active row', async () => {
 })
 
 test('setBlurhash leaves soft-deleted rows untouched', async () => {
-  const ownerId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const ownerId = await insertMember('anna@test.videbacken.local', 'Anna')
   const row = await insertPrivateFile(ownerId, 'dev/documents/old.png')
   await db.update(file).set({ deletedAt: new Date() }).where(eq(file.id, row.id))
   await setBlurhash({ fileId: row.id, blurhash: 'LKO2?U%2Tw=w]~RBVZRi};RPxuwH' })
@@ -112,7 +112,7 @@ test('setBlurhash leaves soft-deleted rows untouched', async () => {
 })
 
 test('replaceTranscoded repoints pathname, mime, sizeBytes', async () => {
-  const ownerId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const ownerId = await insertMember('anna@test.videbacken.local', 'Anna')
   const [row] = await db
     .insert(file)
     .values({ ownerId, pathname: 'p/x.heic', mime: 'image/heic', sizeBytes: 100, access: 'public' })
@@ -128,7 +128,7 @@ test('replaceTranscoded repoints pathname, mime, sizeBytes', async () => {
 })
 
 test('setTranscodeFailed stamps transcodeFailedAt', async () => {
-  const ownerId = await insertMember('anna@test.oceanview.local', 'Anna')
+  const ownerId = await insertMember('anna@test.videbacken.local', 'Anna')
   const [row] = await db
     .insert(file)
     .values({ ownerId, pathname: 'p/y.heic', mime: 'image/heic', sizeBytes: 100, access: 'public' })

@@ -6,7 +6,7 @@ import { z } from 'zod'
 // The avatar is resolved live from this email by the getBrowserSession server
 // fn so it never goes stale. Not the auth session (that's Better Auth's own
 // cookies); kept distinct to avoid confusion.
-export const BROWSER_SESSION_COOKIE = 'oceanview-browser-session'
+export const BROWSER_SESSION_COOKIE = 'videbacken-browser-session'
 
 const COOKIE_OPTIONS = {
   path: '/',

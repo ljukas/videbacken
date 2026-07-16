@@ -20,7 +20,7 @@ export default defineProject({
       project: './project.inlang',
       outdir: './src/paraglide',
       strategy: ['cookie', 'baseLocale'],
-      cookieName: 'oceanview-locale',
+      cookieName: 'videbacken-locale',
       cookieMaxAge: 60 * 60 * 24 * 365,
     }),
     // Rewrites `createServerFn` server functions into client RPC stubs and

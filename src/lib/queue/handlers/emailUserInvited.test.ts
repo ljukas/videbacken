@@ -10,8 +10,8 @@ test('handleEmailUserInvitedMessage dispatches the invite email without throwing
   await expect(
     handleEmailUserInvitedMessage(
       {
-        to: 'newbie@test.oceanview.local',
-        inviteUrl: 'https://oceanview.example/login',
+        to: 'newbie@test.videbacken.local',
+        inviteUrl: 'https://videbacken.example/login',
         locale: 'sv',
       },
       META,
