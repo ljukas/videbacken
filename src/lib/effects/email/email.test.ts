@@ -54,7 +54,7 @@ test('sendUserInvited resolves without throwing', async () => {
   await expect(
     email.sendUserInvited({
       to: 'fia@test.oceanview.local',
-      inviteUrl: 'https://example.test/api/auth/verify-email?token=abc&callbackURL=%2F',
+      inviteUrl: 'https://example.test/login',
       locale: 'sv',
     }),
   ).resolves.toBeUndefined()

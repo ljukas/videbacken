@@ -1,24 +1,20 @@
 import { z } from 'zod'
-import { auth } from '~/lib/auth'
-import { realtime } from '~/lib/effects'
+import { auth, resolveBaseURL } from '~/lib/auth'
+import { queue, realtime } from '~/lib/effects'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import { inviteInputSchema } from '~/lib/orpc/userInviteSchema'
 import { nameField, phoneField, selfProfileSchema } from '~/lib/orpc/userProfileSchema'
 import * as userService from '~/lib/services/user'
 import { UserDomainError, type UserDomainErrorCode } from '~/lib/services/user'
-
-function surnameKey(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  return parts.at(-1) ?? name
-}
+import { baseLocale } from '~/paraglide/runtime'
 
 const roleSchema = z.enum(['user', 'admin'])
 
-// Input for the admin `update` procedure. Email is intentionally omitted: it is
-// the magic-link login identity and immutable after invite (see ADR-0017), so it
-// is not part of the editable field set. Error callbacks (not literals) so each
-// parse resolves the active locale — the schema itself is module-level and
-// outlives any single request.
+// Input for the admin `updateAsAdmin` procedure. Email is intentionally
+// omitted: it is the sign-in identity and immutable after invite (see
+// ADR-0017), so it is not part of the editable field set. Error callbacks (not
+// literals) so each parse resolves the active locale — the schema itself is
+// module-level and outlives any single request.
 const userInputSchema = z.object({
   name: nameField,
   phone: phoneField,
@@ -28,26 +24,29 @@ const userInputSchema = z.object({
 // Code-only typed errors for the user mutating procedures. Status only; the
 // backend stays i18n-free and the client localizes by code (see
 // ~/lib/orpc/userErrorMessage). `satisfies` locks the keys to the domain code
-// union. CANNOT_ACT_ON_SELF stays a single code — its "delete-self" vs
-// "demote-self" phrasing is resolved client-side from the dialog's context.
+// union. CANNOT_ACT_ON_SELF stays a single code — its "can't revoke yourself"
+// vs "can't demote yourself" phrasing is resolved client-side from the
+// dialog's context.
 const userErrors = {
   NOT_FOUND: { status: 404 },
   TARGET_DELETED: { status: 409 },
   CANNOT_ACT_ON_SELF: { status: 403 },
   LAST_ADMIN: { status: 409 },
   ALREADY_ACCEPTED: { status: 409 },
-  EMAIL_TAKEN: { status: 409 },
+  EMAIL_ALREADY_APPROVED: { status: 409 },
 } satisfies Record<UserDomainErrorCode, { status: number }>
 
-// Derive the invite link's expiry from the last send + the shared TTL, so the
-// client never needs the constant (and can't drift from the real token life).
-function withInviteExpiry<T extends { lastInvitedAt: Date | null }>(row: T) {
-  return {
-    ...row,
-    inviteExpiresAt: row.lastInvitedAt
-      ? new Date(row.lastInvitedAt.getTime() + userService.INVITE_EXPIRY_SECONDS * 1000)
-      : null,
-  }
+// The invite/resend email links straight to /login rather than a minted
+// magic-link or verify token: per the Better Auth docs, the magic-link
+// plugin's only server entry point (`auth.api.signInMagicLink`) fires the
+// plugin's own configured `sendMagicLink` callback and does not return the
+// token/URL to the caller, so there is no supported way to mint a link here
+// for a *different* (invite-branded) email without re-implementing token
+// issuance. The invitee is already on the approved_email allowlist by the
+// time this link is sent, so /login's existing Google + magic-link paths just
+// work once they arrive. See ADR-0017 amendment.
+function buildInviteUrl(): string {
+  return `${resolveBaseURL()}/login`
 }
 
 export const userRouter = {
@@ -68,7 +67,7 @@ export const userRouter = {
       try {
         const updated = await userService.updateOwnProfile(context.user.id, input)
         context.log.info('user updated own profile', { userId: context.user.id })
-        // Name/phone show up in the contact list, so refresh other tabs.
+        // Name/phone show up in the users directory, so refresh other tabs.
         await realtime.publish(
           { kind: 'user.changed', ids: [updated.id] },
           { source: context.user.id },
@@ -89,7 +88,7 @@ export const userRouter = {
       // No realtime publish: this op only stamps `onboardedAt`, which isn't
       // rendered anywhere, so a `user.changed` would invalidate the whole
       // orpc.user namespace in every other tab for nothing. (updateProfile
-      // still publishes — name/phone DO show in the contact list.)
+      // still publishes — name/phone DO show in the users directory.)
       return updated
     } catch (err) {
       if (err instanceof UserDomainError) throw errors[err.code]()
@@ -97,109 +96,86 @@ export const userRouter = {
     }
   }),
 
-  findIdByEmail: adminProcedure
-    .input(z.object({ email: z.email() }))
-    .handler(({ input }) => userService.findIdByEmail(input.email)),
-
-  list: adminProcedure
-    .input(z.object({ filter: z.enum(['active', 'deleted']).default('active') }))
-    .handler(async ({ input }) => {
-      const rows =
-        input.filter === 'deleted' ? await userService.listDeleted() : await userService.listAll()
-      return rows.map(withInviteExpiry)
-    }),
-
-  listContacts: protectedProcedure.handler(async ({ context }) => {
-    const isAdmin = context.user.role === 'admin'
-    const users = await userService.listAll()
-
-    return (
-      users
-        // Pending invitees (emailVerified === false) are admin-only — a regular
-        // user's client never receives their rows. See ADR-0017.
-        .filter((u) => isAdmin || u.emailVerified)
-        .map((u) => withInviteExpiry(u))
-        .sort(
-          (a, b) =>
-            // Pending invitees (admin-only) sort as a group after accepted users;
-            // within each group, by surname.
-            Number(b.emailVerified) - Number(a.emailVerified) ||
-            surnameKey(a.name).localeCompare(surnameKey(b.name), 'sv-SE') ||
-            a.name.localeCompare(b.name, 'sv-SE'),
-        )
-    )
-  }),
-
-  getById: adminProcedure
-    .errors(userErrors)
-    .input(z.object({ id: z.uuid() }))
-    .handler(async ({ input, errors }) => {
-      const target = await userService.findActiveById(input.id)
-      if (!target) throw errors.NOT_FOUND()
-      return target
-    }),
+  // Read — any signed-in (approved) user, not just admins: the whole app is
+  // read-only for non-admins, reads are open. Active users + pending invites,
+  // each tagged `status` (see ADR-0017 amendment).
+  list: protectedProcedure.handler(() => userService.listUsersAndPending()),
 
   invite: adminProcedure
     .errors(userErrors)
     .input(inviteInputSchema)
     .handler(async ({ input, context, errors }) => {
-      // inviteUser normalizes the email itself (EMAIL_TAKEN check + insert).
       let created: Awaited<ReturnType<typeof userService.inviteUser>>
       try {
-        created = await userService.inviteUser(input.email)
+        created = await userService.inviteUser({
+          email: input.email,
+          role: input.role,
+          actorUserId: context.user.id,
+        })
       } catch (err) {
         if (err instanceof UserDomainError) throw errors[err.code]()
         throw err
       }
-      context.log.info('admin invited user', { targetId: created.id })
-      await realtime.publish(
-        { kind: 'user.changed', ids: [created.id] },
-        { source: context.user.id },
-      )
-      // Mint + send the verify-email invite. Called WITHOUT session headers: the
-      // no-session branch resolves the user by email and sends; the admin's
-      // headers would hit the session branch → EMAIL_MISMATCH (invitee ≠ admin).
-      // This resolves once the 7-day token is minted, but the email itself is
-      // enqueued by the sendVerificationEmail hook fire-and-forget (tier-3, see
-      // auth.ts) — so an enqueue/delivery failure is logged server-side, not
-      // surfaced here. The user row already exists; if no mail arrives the admin
-      // resends. The try/catch only guards a synchronous trigger error.
-      try {
-        await auth.api.sendVerificationEmail({ body: { email: created.email, callbackURL: '/' } })
-      } catch (err) {
-        context.log.warn('invite email trigger failed', { targetId: created.id, err })
-      }
-      return withInviteExpiry(created)
+      context.log.info('admin invited user', { email: created.email, role: created.role })
+      await realtime.publish({ kind: 'user.changed' }, { source: context.user.id })
+      // Courtesy email — a queued job renders + sends with retry/backoff (tier-3,
+      // see ADR-0007/0008); a failure here would only affect that email, so it
+      // isn't wrapped in a try/catch guard — the admin sees it fail loudly and
+      // can retry via resendInvite instead of silently losing the invite.
+      await queue.publish('email_user_invited', {
+        to: created.email,
+        inviteUrl: buildInviteUrl(),
+        locale: baseLocale,
+      })
+      return created
     }),
 
   resendInvite: adminProcedure
     .errors(userErrors)
-    .input(z.object({ id: z.uuid() }))
+    .input(z.object({ email: z.email() }))
     .handler(async ({ input, context, errors }) => {
-      let target: Awaited<ReturnType<typeof userService.assertInviteResendable>>
+      let target: Awaited<ReturnType<typeof userService.assertPendingInvite>>
       try {
-        target = await userService.assertInviteResendable(input.id)
+        target = await userService.assertPendingInvite(input.email)
       } catch (err) {
         if (err instanceof UserDomainError) throw errors[err.code]()
         throw err
       }
-      // sendVerificationEmail mints a fresh 7-day token synchronously; the email
-      // is then enqueued fire-and-forget (tier-3, see auth.ts), so enqueue/
-      // delivery failures are logged server-side rather than surfaced. markInvited
-      // resets the countdown to match the freshly-minted token. (If the invitee
-      // raced us and verified in between, the no-session branch no-ops; the stamp
-      // is harmless then — the pending badge/countdown only render while
-      // emailVerified is false.)
-      await auth.api.sendVerificationEmail({ body: { email: target.email, callbackURL: '/' } })
-      await userService.markInvited(target.id)
-      context.log.info('admin resent invite', { targetId: target.id })
+      context.log.info('admin resent invite', { email: target.email })
+      await queue.publish('email_user_invited', {
+        to: target.email,
+        inviteUrl: buildInviteUrl(),
+        locale: baseLocale,
+      })
+    }),
+
+  revoke: adminProcedure
+    .errors(userErrors)
+    .input(z.object({ email: z.email() }))
+    .handler(async ({ input, context, errors }) => {
+      let result: Awaited<ReturnType<typeof userService.revokeUser>>
+      try {
+        result = await userService.revokeUser({ email: input.email, actorUserId: context.user.id })
+      } catch (err) {
+        if (err instanceof UserDomainError) throw errors[err.code]()
+        throw err
+      }
+      // Only a real user (one who already signed in at least once) can have
+      // live sessions to revoke — a still-pending invite never had any.
+      if (result.userId) {
+        await auth.api.revokeUserSessions({
+          body: { userId: result.userId },
+          headers: context.headers,
+        })
+      }
+      context.log.info('admin revoked user access', { email: input.email, targetId: result.userId })
       await realtime.publish(
-        { kind: 'user.changed', ids: [target.id] },
+        { kind: 'user.changed', ids: result.userId ? [result.userId] : [] },
         { source: context.user.id },
       )
     }),
 
-  update: adminProcedure
+  updateAsAdmin: adminProcedure
     .errors(userErrors)
     .input(userInputSchema.extend({ id: z.uuid() }))
     .handler(async ({ input, context, errors }) => {
@@ -219,37 +195,5 @@ export const userRouter = {
         if (err instanceof UserDomainError) throw errors[err.code]()
         throw err
       }
-    }),
-
-  delete: adminProcedure
-    .errors(userErrors)
-    .input(z.object({ id: z.uuid() }))
-    .handler(async ({ input, context, errors }) => {
-      try {
-        await userService.softDeleteAsAdmin(context.user.id, input.id)
-      } catch (err) {
-        if (err instanceof UserDomainError) throw errors[err.code]()
-        throw err
-      }
-      await auth.api.revokeUserSessions({
-        body: { userId: input.id },
-        headers: context.headers,
-      })
-      context.log.info('admin soft-deleted user', { targetId: input.id })
-      await realtime.publish({ kind: 'user.changed', ids: [input.id] }, { source: context.user.id })
-    }),
-
-  restore: adminProcedure
-    .errors(userErrors)
-    .input(z.object({ id: z.uuid() }))
-    .handler(async ({ input, context, errors }) => {
-      try {
-        await userService.restoreAsAdmin(input.id)
-      } catch (err) {
-        if (err instanceof UserDomainError) throw errors[err.code]()
-        throw err
-      }
-      context.log.info('admin restored user', { targetId: input.id })
-      await realtime.publish({ kind: 'user.changed', ids: [input.id] }, { source: context.user.id })
     }),
 }

@@ -3,8 +3,8 @@ import { m } from '~/paraglide/messages'
 
 /**
  * Name/phone field validators shared by every user-profile form so the client
- * and server can't validate differently: the admin `user.update` procedure, the
- * self-service `user.updateProfile` procedure, and the onboarding wizard's
+ * and server can't validate differently: the admin `user.updateAsAdmin`
+ * procedure, the self-service `user.updateProfile` procedure, and the onboarding wizard's
  * per-step client forms. Pure Zod + Paraglide — no server/db imports — so it's
  * safe to pull into the client bundle (same convention as `userInviteSchema`).
  * Lazy message callbacks resolve the active locale per parse (the schemas are

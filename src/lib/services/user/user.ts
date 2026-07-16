@@ -1,22 +1,19 @@
-import { and, asc, count, desc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, asc, count, eq, isNull } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
-import { normalizeEmail } from '~/lib/services/approvedEmail'
+import {
+  addApproved,
+  ApprovedEmailDomainError,
+  isApproved,
+  listApproved,
+  normalizeEmail,
+  removeApproved,
+  type ApprovedEmailRow,
+} from '~/lib/services/approvedEmail'
 import { UserDomainError } from './errors'
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type DbOrTx = typeof db | DbTransaction
-
-/**
- * How long an invitation's sign-in link stays valid. Drives both Better Auth's
- * email-verification token TTL (`emailVerification.expiresIn` in auth.ts) and
- * the client-side "Inbjuden — går ut om …" countdown (`inviteExpiresAt` is
- * derived as `lastInvitedAt + INVITE_EXPIRY_SECONDS`). One source of truth for
- * the duration, so the displayed expiry tracks the token's real lifetime up to
- * the sub-second gap between stamping `lastInvitedAt` and Better Auth minting
- * the token.
- */
-export const INVITE_EXPIRY_SECONDS = 60 * 60 * 24 * 7 // 7 days
 
 export type UserRow = {
   id: string
@@ -28,20 +25,17 @@ export type UserRow = {
   imageBlurhash: string | null
   createdAt: Date
   deletedAt: Date | null
-  // `false` until the user completes their first sign-in (invite link or
-  // magic-link) — this is what "Inbjuden" / pending is derived from.
   emailVerified: boolean
-  // When the latest invite email was sent; null for self-signed-up users.
-  lastInvitedAt: Date | null
   // When the user finished (or skipped through) the onboarding wizard; null
   // until then. The _authenticated loader routes null-onboardedAt users to
   // /onboarding. See ADR-0017.
   onboardedAt: Date | null
 }
 
-// Email is intentionally absent: it is the magic-link login identity, so it is
-// immutable after invite (an admin typo would silently lock the user out — see
-// ADR-0017). To change an address, delete + re-invite.
+// Email is intentionally absent: it is the sign-in identity (Google + magic
+// link both resolve by email), so it is immutable after invite (an admin typo
+// would silently lock the user out — see ADR-0017). To change an address:
+// revoke + re-invite.
 export type UpdateUserInput = {
   name: string
   phone: string
@@ -67,13 +61,7 @@ const userSelection = {
   createdAt: user.createdAt,
   deletedAt: user.deletedAt,
   emailVerified: user.emailVerified,
-  lastInvitedAt: user.lastInvitedAt,
   onboardedAt: user.onboardedAt,
-}
-
-export async function findIdByEmail(email: string): Promise<string | null> {
-  const [row] = await db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1)
-  return row?.id ?? null
 }
 
 // Live name + avatar lookup for the "Välkommen tillbaka" login card, called by
@@ -99,14 +87,6 @@ export async function listAll(): Promise<Array<UserRow>> {
   return db.select(userSelection).from(user).where(isNull(user.deletedAt)).orderBy(asc(user.name))
 }
 
-export async function listDeleted(): Promise<Array<UserRow>> {
-  return db
-    .select(userSelection)
-    .from(user)
-    .where(isNotNull(user.deletedAt))
-    .orderBy(desc(user.deletedAt))
-}
-
 export async function findRowById(id: string, dbOrTx: DbOrTx = db): Promise<UserRow | null> {
   const [row] = await dbOrTx.select(userSelection).from(user).where(eq(user.id, id)).limit(1)
   return row ?? null
@@ -126,53 +106,156 @@ export async function countAdmins(dbOrTx: DbOrTx = db): Promise<number> {
   return Number(row?.value ?? 0)
 }
 
-/**
- * Create an invited user from an email alone. Name/phone/avatar are collected
- * later in onboarding, so `name` is seeded to the email (a sensible display
- * fallback everywhere the UI renders `user.name` until then) and `phone` is
- * blank. Every invitee starts as `user`; admins promote afterward. The row is
- * unverified (pending) and stamped `lastInvitedAt` so the list can show the
- * countdown immediately. The actual invite email is sent by the procedure via
- * Better Auth's `sendVerificationEmail` (tier-3 queue).
- */
-export async function inviteUser(email: string): Promise<UserRow> {
-  // Normalize here so the op is self-guarding regardless of caller: the
-  // EMAIL_TAKEN check and the stored row use the same lowercased form Better Auth
-  // stores, so a case-variant ("Foo@x") can't slip past the check and collide
-  // only at the case-sensitive unique index.
-  const normalized = normalizeEmail(email)
-  // Check-first (ADR-0002): the unique constraint is the backstop, but a clear
-  // domain error beats a raw 23505 — the admin should resend/restore instead.
-  if (await findIdByEmail(normalized)) throw new UserDomainError('EMAIL_TAKEN')
+// Any *active* (non-deleted) user row for this email — used to tell "still
+// pending" apart from "already accepted" without re-deriving it from
+// `emailVerified` (which no longer means "invite accepted"; see ADR-0017
+// amendment). A soft-deleted row (a previously revoked user) doesn't count —
+// its email is free to be re-invited as a fresh pending entry.
+async function findActiveIdByEmail(email: string): Promise<string | null> {
   const [row] = await db
-    .insert(user)
-    .values({
-      name: normalized,
-      email: normalized,
-      phone: '',
-      role: 'user',
-      emailVerified: false,
-      lastInvitedAt: new Date(),
-    })
-    .returning(userSelection)
-  return row
-}
-
-/** Bump the invite timestamp when an admin resends, so the countdown resets. */
-export async function markInvited(targetId: string): Promise<void> {
-  await db.update(user).set({ lastInvitedAt: new Date() }).where(eq(user.id, targetId))
+    .select({ id: user.id })
+    .from(user)
+    .where(and(eq(user.email, email), isNull(user.deletedAt)))
+    .limit(1)
+  return row?.id ?? null
 }
 
 /**
- * Guard a resend: the target must exist, be active, and still be pending.
- * `findActiveById` returns null for unknown *and* soft-deleted users (both
- * map to NOT_FOUND); an already-accepted (verified) user can't be re-invited.
+ * Invite = add the email to the `approved_email` allowlist. No `user` row is
+ * created here — first sign-in (Google or magic-link, both gated on the
+ * allowlist) is what creates it, stamped with the role recorded on this row
+ * (see `resolveSignInDecision` / `databaseHooks.user.create.before` in
+ * auth.ts). Replaces the old model's cold-inserted unverified user row (see
+ * ADR-0017 amendment).
+ *
+ * Check-first (ADR-0002): `addApproved` already guards duplicates itself
+ * (case-insensitive), so a re-invite of an email that's already on the
+ * allowlist — whether still pending or already an active user — maps to
+ * `EMAIL_ALREADY_APPROVED` instead of a raw unique-constraint error.
  */
-export async function assertInviteResendable(targetId: string): Promise<UserRow> {
-  const target = await findActiveById(targetId)
-  if (!target) throw new UserDomainError('NOT_FOUND')
-  if (target.emailVerified) throw new UserDomainError('ALREADY_ACCEPTED')
-  return target
+export async function inviteUser(input: {
+  email: string
+  role: 'user' | 'admin'
+  actorUserId: string
+}): Promise<ApprovedEmailRow> {
+  try {
+    return await addApproved({
+      email: input.email,
+      role: input.role,
+      addedByUserId: input.actorUserId,
+    })
+  } catch (err) {
+    if (err instanceof ApprovedEmailDomainError) throw new UserDomainError('EMAIL_ALREADY_APPROVED')
+    throw err
+  }
+}
+
+/**
+ * Guard a resend: the email must currently be a *pending* invite — approved,
+ * but with no active user row yet. `NOT_FOUND` covers an email that was never
+ * invited (or whose invite was already revoked); `ALREADY_ACCEPTED` covers one
+ * that has since signed in and has nothing left to resend.
+ */
+export async function assertPendingInvite(
+  email: string,
+): Promise<{ email: string; role: 'user' | 'admin' }> {
+  const normalized = normalizeEmail(email)
+  const approval = await isApproved(normalized)
+  if (!approval) throw new UserDomainError('NOT_FOUND')
+  if (await findActiveIdByEmail(normalized)) throw new UserDomainError('ALREADY_ACCEPTED')
+  return { email: normalized, role: approval.role }
+}
+
+/**
+ * Revoke = remove the allowlist entry and, if the email already became a real
+ * `user` (an active sign-in happened), soft-delete that row too — same guards
+ * as the old delete (`CANNOT_ACT_ON_SELF`, last-admin). Session revocation is
+ * an auth-boundary effect (`auth.api`) and lives in the procedure, not here —
+ * see ADR-0017 amendment. Returns the soft-deleted user's id (if any) so the
+ * procedure knows whether there are sessions to revoke.
+ *
+ * `NOT_FOUND` when the email was never approved and has no user row either —
+ * nothing to revoke (guards a stale/double-click on the admin's list).
+ */
+export async function revokeUser(input: {
+  email: string
+  actorUserId: string
+}): Promise<{ userId: string | null }> {
+  const normalized = normalizeEmail(input.email)
+  const wasApproved = await isApproved(normalized)
+
+  const userId = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select(userSelection)
+      .from(user)
+      .where(eq(user.email, normalized))
+      .limit(1)
+
+    if (!existing && !wasApproved) throw new UserDomainError('NOT_FOUND')
+    if (!existing || existing.deletedAt) return existing?.id ?? null
+
+    if (existing.id === input.actorUserId) throw new UserDomainError('CANNOT_ACT_ON_SELF')
+    if (existing.role === 'admin' && (await countAdmins(tx)) <= 1) {
+      throw new UserDomainError('LAST_ADMIN')
+    }
+
+    await tx.update(user).set({ deletedAt: new Date() }).where(eq(user.id, existing.id))
+    return existing.id
+  })
+
+  await removeApproved(normalized)
+  return { userId }
+}
+
+export type UserListRow = {
+  status: 'active' | 'pending'
+  id: string
+  email: string
+  name: string | null
+  phone: string | null
+  role: 'user' | 'admin'
+  image: string | null
+  imageBlurhash: string | null
+  createdAt: Date
+}
+
+/**
+ * The `/users` directory: active `user` rows (not deleted) plus `approved_email`
+ * rows that haven't been claimed by a sign-in yet, each tagged with `status`.
+ * Replaces the old model's "pending = emailVerified false" derivation — pending
+ * is now "approved but no active user row" (see ADR-0017 amendment).
+ */
+export async function listUsersAndPending(): Promise<Array<UserListRow>> {
+  const [activeUsers, approvedRows] = await Promise.all([listAll(), listApproved()])
+  const activeEmails = new Set(activeUsers.map((u) => u.email))
+
+  const active: Array<UserListRow> = activeUsers.map((u) => ({
+    status: 'active',
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    phone: u.phone,
+    role: u.role === 'admin' ? 'admin' : 'user',
+    image: u.image,
+    imageBlurhash: u.imageBlurhash,
+    createdAt: u.createdAt,
+  }))
+
+  const pending: Array<UserListRow> = approvedRows
+    .filter((row) => !activeEmails.has(row.email))
+    .map((row) => ({
+      status: 'pending',
+      id: row.id,
+      email: row.email,
+      name: null,
+      phone: null,
+      role: row.role,
+      image: null,
+      imageBlurhash: null,
+      createdAt: row.createdAt,
+    }))
+
+  return [...active, ...pending]
 }
 
 export async function updateAsAdmin(
@@ -253,30 +336,6 @@ export async function completeOnboarding(userId: string): Promise<UserRow> {
       .returning(userSelection)
     return row
   })
-}
-
-export async function softDeleteAsAdmin(actorId: string, targetId: string): Promise<void> {
-  if (actorId === targetId) throw new UserDomainError('CANNOT_ACT_ON_SELF')
-
-  await db.transaction(async (tx) => {
-    const target = await findRowById(targetId, tx)
-    if (!target) throw new UserDomainError('NOT_FOUND')
-    if (target.deletedAt) return
-
-    if (target.role === 'admin' && (await countAdmins(tx)) <= 1) {
-      throw new UserDomainError('LAST_ADMIN')
-    }
-
-    await tx.update(user).set({ deletedAt: new Date() }).where(eq(user.id, targetId))
-  })
-}
-
-export async function restoreAsAdmin(targetId: string): Promise<void> {
-  const target = await findRowById(targetId)
-  if (!target) throw new UserDomainError('NOT_FOUND')
-  if (!target.deletedAt) return
-
-  await db.update(user).set({ deletedAt: null }).where(eq(user.id, targetId))
 }
 
 export async function setImageBlurhash(userId: string, blurhash: string): Promise<boolean> {

@@ -1,5 +1,5 @@
 import { Link, linkOptions, useMatchRoute } from '@tanstack/react-router'
-import { HomeIcon, SearchIcon } from 'lucide-react'
+import { HomeIcon, SearchIcon, UsersIcon } from 'lucide-react'
 import { useCommandPalette } from '~/components/command/useCommandPalette'
 import { Wordmark } from '~/components/Logo'
 import {
@@ -20,7 +20,10 @@ import { m } from '~/paraglide/messages'
 
 // label is a message function rather than a string: module scope evaluates
 // once per process, but the active locale is per request/render.
-const mainNavItems = linkOptions([{ to: '/', label: m.nav_home, icon: HomeIcon }])
+const mainNavItems = linkOptions([
+  { to: '/', label: m.nav_home, icon: HomeIcon },
+  { to: '/users', label: m.nav_users, icon: UsersIcon },
+])
 
 type NavItem = (typeof mainNavItems)[number]
 

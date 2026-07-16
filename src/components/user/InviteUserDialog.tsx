@@ -10,11 +10,12 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '~/components/ui/responsive-dialog'
+import { roleOptions } from '~/components/user/UserFormFields'
 import { useAppForm } from '~/hooks/form'
 import { orpc } from '~/lib/orpc/client'
 import { userErrorMessage } from '~/lib/orpc/userErrorMessage'
-// Email only — name, phone and avatar are collected later in onboarding, and
-// every invitee starts as the `user` role. Shared with the procedure's
+// `{ email, role }` — name, phone and avatar are collected later in
+// onboarding once the invitee actually signs in. Shared with the procedure's
 // `.input(...)` so client and server validate identically.
 import { inviteInputSchema } from '~/lib/orpc/userInviteSchema'
 import { m } from '~/paraglide/messages'
@@ -41,11 +42,11 @@ export function InviteUserDialog({ open, onOpenChange }: Props) {
   )
 
   const form = useAppForm({
-    defaultValues: { email: '' },
+    defaultValues: { email: '', role: 'user' as 'user' | 'admin' },
     validators: { onSubmit: inviteInputSchema },
-    // Pessimistic close: EMAIL_TAKEN is user-fixable (ADR-0013), so only reset +
-    // close once the invite lands; on failure onError toasts and the dialog stays
-    // open so the admin can fix the address.
+    // Pessimistic close: EMAIL_ALREADY_APPROVED is user-fixable (ADR-0013), so
+    // only reset + close once the invite lands; on failure onError toasts and
+    // the dialog stays open so the admin can fix the address.
     onSubmit: ({ value, formApi }) => {
       inviteMutation.mutate(value, {
         onSuccess: () => {
@@ -74,6 +75,12 @@ export function InviteUserDialog({ open, onOpenChange }: Props) {
               name="email"
               children={(field) => (
                 <field.TextField label={m.user_field_email()} type="email" autoComplete="email" />
+              )}
+            />
+            <form.AppField
+              name="role"
+              children={(field) => (
+                <field.ToggleField label={m.user_field_role()} options={roleOptions()} />
               )}
             />
           </FieldGroup>

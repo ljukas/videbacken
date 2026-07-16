@@ -11,7 +11,7 @@ test('handleEmailUserInvitedMessage dispatches the invite email without throwing
     handleEmailUserInvitedMessage(
       {
         to: 'newbie@test.oceanview.local',
-        inviteUrl: 'https://oceanview.example/api/auth/verify-email?token=abc&callbackURL=%2F',
+        inviteUrl: 'https://oceanview.example/login',
         locale: 'sv',
       },
       META,

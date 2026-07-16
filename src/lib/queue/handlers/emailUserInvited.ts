@@ -12,11 +12,11 @@ export type EmailUserInvitedJobMetadata = {
  * `vercel:queue` plugin (production) and the local BullMQ worker
  * (`scripts/devQueueWorker.ts`), so one function backs both runtimes.
  *
- * The payload carries the already-generated verify-email link (built by Better
- * Auth's `sendVerificationEmail` hook in src/lib/auth.ts) plus the recipient
- * and locale, so the handler is a thin send — all auth/token work happened on
- * the producer side. A throw here lets the queue retry the SMTP/Resend send.
- * See ADR-0007 (queue) / ADR-0008 (email) / ADR-0017 (invitations).
+ * The payload carries the already-built /login link (see ADR-0017 amendment —
+ * invites are approved_email allowlist rows, not a minted token) plus the
+ * recipient and locale, so the handler is a thin send. A throw here lets the
+ * queue retry the SMTP/Resend send. See ADR-0007 (queue) / ADR-0008 (email) /
+ * ADR-0017 (invitations).
  */
 export async function handleEmailUserInvitedMessage(
   msg: QueuePayloadMap['email_user_invited'],

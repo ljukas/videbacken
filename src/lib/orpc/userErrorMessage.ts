@@ -7,12 +7,12 @@ import { m } from '~/paraglide/messages'
 // switch makes a missing case a compile error.
 /**
  * Localize a typed user error code. `selfAction` picks the phrasing for the single
- * contextual code `CANNOT_ACT_ON_SELF` — "can't delete yourself" in the delete
+ * contextual code `CANNOT_ACT_ON_SELF` — "can't revoke yourself" in the revoke
  * flow vs "can't demote yourself" in the update flow (the dialog knows which).
  */
 export function userErrorMessage(
   code: UserDomainErrorCode,
-  selfAction: 'delete' | 'demote' = 'demote',
+  selfAction: 'revoke' | 'demote' = 'demote',
 ): string {
   switch (code) {
     case 'NOT_FOUND':
@@ -20,12 +20,12 @@ export function userErrorMessage(
     case 'TARGET_DELETED':
       return m.user_error_target_deleted()
     case 'CANNOT_ACT_ON_SELF':
-      return selfAction === 'delete' ? m.user_error_delete_self() : m.user_error_demote_self()
+      return selfAction === 'revoke' ? m.user_error_revoke_self() : m.user_error_demote_self()
     case 'LAST_ADMIN':
       return m.user_error_last_admin()
     case 'ALREADY_ACCEPTED':
       return m.user_error_already_accepted()
-    case 'EMAIL_TAKEN':
-      return m.user_error_email_taken()
+    case 'EMAIL_ALREADY_APPROVED':
+      return m.user_error_email_already_approved()
   }
 }

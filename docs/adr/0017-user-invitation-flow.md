@@ -213,3 +213,65 @@ No new error codes — both reuse `NOT_FOUND` / `TARGET_DELETED`.
 - `drizzle/0014_add_user_onboarded_at.sql` — column + backfill.
 
 **Deferred (still out of scope):** none for the basic flow. A future account-page self-edit of name/phone can reuse `updateProfile`.
+
+---
+
+## Amendment — allowlist-based invitations (Videbacken starter template)
+
+The email-verification-as-invite mechanism above is **superseded**. Videbacken
+(the starter template forked from Oceanview) adds Google OAuth alongside
+magic-link, both gated by a new `approved_email` allowlist table (own ADR —
+see the allowlist/auth rework tasks). Layering the old model on top would mean
+two separate "is this person allowed in" mechanisms (a cold-inserted
+unverified `user` row **and** an allowlist row) that could drift out of sync,
+plus a Google sign-in had no equivalent to "click the verify link" to accept
+an invite. Better Auth's own `admin` plugin also already gave us a real
+`role` field and session-revocation API, further reducing what the old model
+needed to hand-roll.
+
+**New decision: an invitation is nothing more than an `approved_email` row.**
+No `user` row is created at invite time. `userService.inviteUser({ email,
+role, actorUserId })` calls `addApproved(...)` — the same allowlist check
+consulted by `databaseHooks.user.create.before` (Google + magic-link, first
+sign-in) and by the magic-link plugin's `sendMagicLink` gate. The first
+successful sign-in creates the `user` row itself, stamped with the role
+recorded on the allowlist entry — there is no separate "accept" step to wire.
+"Pending" is now **"approved, but no active `user` row yet"** — computed by
+`listUsersAndPending()`, not derived from `emailVerified` (which reverts to
+its ordinary Better-Auth meaning and is no longer read anywhere in the app).
+
+**Consequences for this ADR's prior decisions:**
+- `emailVerification` is **removed entirely** from `auth.ts` — nothing calls
+  `auth.api.sendVerificationEmail` anymore, so the block, `INVITE_EXPIRY_SECONDS`,
+  and the `/send-verification-email` rate-limit rule were all vestigial.
+- `lastInvitedAt` (the one stored column this ADR introduced) is **dropped**
+  (`drizzle/0001_drop_user_last_invited_at.sql`) along with `markInvited` and
+  the countdown UI it drove — there is no minted token whose expiry needs
+  displaying anymore.
+- `assertInviteResendable`/`softDeleteAsAdmin`/`restoreAsAdmin`/`listDeleted`
+  are replaced by `assertPendingInvite` and `revokeUser` (email-keyed, not
+  id-keyed — a pending invite has no user id yet). Revoke = `removeApproved`
+  + soft-delete the matching `user` row (if any); there is no restore/delete
+  toggle in the new `/users` list — an admin re-invites instead.
+- The invite/resend email no longer carries a minted accept link. Per Better
+  Auth's docs, the magic-link plugin's only server entry point
+  (`auth.api.signInMagicLink`) fires its own configured `sendMagicLink`
+  callback and does not return the token/URL to the caller, so a *different*
+  (invite-branded) email can't carry a Better-Auth-minted link without
+  reimplementing token issuance. The invite email now just links to `/login`
+  — the invitee is already on the allowlist, so Google or a self-requested
+  magic link both just work.
+- Session revocation on revoke uses the admin plugin's
+  `auth.api.revokeUserSessions({ body: { userId } })`, called from the
+  `user.revoke` procedure only when a real `user` row existed (a still-pending
+  invite has no sessions).
+
+**Files (superseding the ones listed above):** `src/lib/auth.ts`,
+`src/lib/db/schema/betterAuth.ts`, `src/lib/services/user/user.ts` (+ test),
+`src/lib/services/user/errors.ts`, `src/lib/orpc/procedures/user.ts`,
+`src/lib/orpc/userInviteSchema.ts`, `src/lib/orpc/userErrorMessage.ts`,
+`src/components/user/{InviteUserDialog,EditUserDialog,UsersTable}.tsx`,
+`src/components/user/RevokeUserDialog.tsx` (replaces `DeleteUserDialog`/
+`RestoreUserDialog`), `src/routes/_authenticated/users.tsx` (replaces
+`owners.tsx`), `src/emails/InviteUserEmail.tsx` (+ test),
+`drizzle/0001_drop_user_last_invited_at.sql`.

@@ -1,0 +1,1 @@
+ALTER TABLE "user" DROP COLUMN "last_invited_at";

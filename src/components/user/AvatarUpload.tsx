@@ -120,7 +120,6 @@ export function AvatarUpload({ onUploadingChange, variant = 'default' }: Props =
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: orpc.user.me.key() }),
         queryClient.invalidateQueries({ queryKey: orpc.user.list.key() }),
-        queryClient.invalidateQueries({ queryKey: orpc.user.listContacts.key() }),
       ])
       toast.success(m.avatar_updated())
     } catch (err) {

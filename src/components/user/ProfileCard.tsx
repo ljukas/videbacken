@@ -40,13 +40,12 @@ export function ProfileCard() {
         toast.error(m.user_update_error())
         return
       }
-      // Name/phone surface in the contact list and the avatar initials. Refetch
-      // `me` (not just invalidate) so this tab reflects the change immediately —
-      // useRealtimeSync ignores events from its own source — and invalidate the
-      // owner lists so they're fresh on next visit (mirrors AvatarUpload).
+      // Name/phone surface in the users directory and the avatar initials.
+      // Refetch `me` (not just invalidate) so this tab reflects the change
+      // immediately — useRealtimeSync ignores events from its own source — and
+      // invalidate the user list so it's fresh on next visit (mirrors AvatarUpload).
       await queryClient.refetchQueries({ queryKey: orpc.user.me.key() })
       queryClient.invalidateQueries({ queryKey: orpc.user.list.key() })
-      queryClient.invalidateQueries({ queryKey: orpc.user.listContacts.key() })
       toast.success(m.account_profile_saved())
     },
   })

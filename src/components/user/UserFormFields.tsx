@@ -34,14 +34,19 @@ export const userFieldsMap = {
   role: 'role',
 } as const
 
+// Built by a function, not at module level, so the labels follow the active
+// locale. Shared with `InviteUserDialog`, which asks for `{ email, role }`
+// only (no name/phone yet — those are collected at onboarding).
+export function roleOptions() {
+  return [
+    { value: 'user', label: m.user_role_user() },
+    { value: 'admin', label: m.user_role_admin() },
+  ] as const
+}
+
 export const UserFormFields = withFieldGroup({
   defaultValues: userFieldsDefaults,
   render: function Render({ group }) {
-    // Built in render, not at module level, so the labels follow the active locale.
-    const roleOptions = [
-      { value: 'user', label: m.user_role_sailor() },
-      { value: 'admin', label: m.user_role_admin() },
-    ] as const
     return (
       <FieldGroup>
         <group.AppField
@@ -55,7 +60,7 @@ export const UserFormFields = withFieldGroup({
         <group.AppField
           name="role"
           children={(field) => (
-            <field.ToggleField label={m.user_field_role()} options={roleOptions} />
+            <field.ToggleField label={m.user_field_role()} options={roleOptions()} />
           )}
         />
       </FieldGroup>

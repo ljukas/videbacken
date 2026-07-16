@@ -21,7 +21,7 @@ import {
 } from '~/components/user/UserFormFields'
 import { useAppForm } from '~/hooks/form'
 import { orpc } from '~/lib/orpc/client'
-import { optimisticPatch, optimisticReplace } from '~/lib/orpc/optimistic'
+import { optimisticPatch } from '~/lib/orpc/optimistic'
 import { userErrorMessage } from '~/lib/orpc/userErrorMessage'
 import { m } from '~/paraglide/messages'
 
@@ -57,39 +57,23 @@ export function EditUserDialog({ open, userId, onOpenChange }: Props) {
 
 function EditUserDialogBody({ userId, onDone }: { userId: string; onDone: () => void }) {
   const queryClient = useQueryClient()
-  const { data: user } = useSuspenseQuery(orpc.user.getById.queryOptions({ input: { id: userId } }))
+  // Edit only ever targets an *active* row, already present in the `user.list`
+  // cache the route loader ensured — no separate detail fetch needed (unlike
+  // the old model, reads are the same list everyone already has).
+  const { data: users } = useSuspenseQuery(orpc.user.list.queryOptions())
+  const target = users.find((u) => u.id === userId)
 
   const updateMutation = useMutation(
-    orpc.user.update.mutationOptions({
-      // Paint the edited fields into the active owners list AND the getById detail
-      // cache before the round-trip; the updated row is the confirmation, so
-      // there's no success toast. Patching getById too is what keeps a second edit
-      // from prefilling stale values — onSettled only marks it stale, and nothing
-      // refetches it while the (instant-closed) dialog is unmounted.
+    orpc.user.updateAsAdmin.mutationOptions({
+      // Paint the edited fields into the active list before the round-trip;
+      // the updated row is the confirmation, so there's no success toast.
       onMutate: (vars) =>
-        Promise.all([
-          optimisticPatch(
-            queryClient,
-            orpc.user.listContacts.queryKey(),
-            (u) => u.id === userId,
-            (u) => ({
-              ...u,
-              name: vars.name,
-              phone: vars.phone,
-              role: vars.role,
-            }),
-          ),
-          optimisticReplace(
-            queryClient,
-            orpc.user.getById.queryKey({ input: { id: userId } }),
-            (u) => ({
-              ...u,
-              name: vars.name,
-              phone: vars.phone,
-              role: vars.role,
-            }),
-          ),
-        ]),
+        optimisticPatch(queryClient, orpc.user.list.queryKey(), (u) => u.id === userId, (u) => ({
+          ...u,
+          name: vars.name,
+          phone: vars.phone,
+          role: vars.role,
+        })),
       // onError/onSettled live on useMutation (not the mutate call) so they still
       // run after the instant close below. onSettled re-syncs every user query,
       // reverting the optimistic patch on failure.
@@ -103,11 +87,9 @@ function EditUserDialogBody({ userId, onDone }: { userId: string; onDone: () => 
   )
 
   const defaultValues: UserFieldsValues = {
-    // Invited (unverified) users carry a name=email placeholder (ADR-0017); show an
-    // empty field so the admin enters a real name rather than editing the email.
-    name: user.emailVerified ? user.name : '',
-    phone: user.phone ?? '',
-    role: user.role === 'admin' ? 'admin' : 'user',
+    name: target?.name ?? '',
+    phone: target?.phone ?? '',
+    role: target?.role === 'admin' ? 'admin' : 'user',
   }
 
   const form = useAppForm({
@@ -122,6 +104,8 @@ function EditUserDialogBody({ userId, onDone }: { userId: string; onDone: () => 
     },
   })
 
+  if (!target) return null
+
   return (
     <form
       onSubmit={(e) => {
@@ -130,12 +114,11 @@ function EditUserDialogBody({ userId, onDone }: { userId: string; onDone: () => 
       }}
     >
       <div className="flex flex-col gap-5">
-        {/* Email is the magic-link login identity, so it's immutable after invite
-            (ADR-0017) — shown read-only for context. Change of address = delete +
-            re-invite. */}
+        {/* Email is the sign-in identity, so it's immutable after invite —
+            shown read-only for context. Change of address = revoke + re-invite. */}
         <Field>
           <FieldLabel htmlFor="edit-user-email">{m.user_field_email()}</FieldLabel>
-          <Input id="edit-user-email" type="email" value={user.email} disabled readOnly />
+          <Input id="edit-user-email" type="email" value={target.email} disabled readOnly />
           <FieldDescription>{m.user_field_email_locked_hint()}</FieldDescription>
         </Field>
         <UserFormFields form={form} fields={userFieldsMap} />

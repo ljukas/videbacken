@@ -1,16 +1,16 @@
 import { expect, test } from 'vitest'
 import { renderInviteUser } from './InviteUserEmail'
 
-const inviteUrl = 'https://oceanview.example/api/auth/verify-email?token=test-1234&callbackURL=%2F'
+const inviteUrl = 'https://videbacken.example/login'
 
 test('renderInviteUser returns a Swedish subject', async () => {
   const { subject } = await renderInviteUser({ inviteUrl, locale: 'sv' })
-  expect(subject).toBe('Du har blivit inbjuden till Oceanview')
+  expect(subject).toBe('Du har fått åtkomst till Videbacken')
 })
 
 test('renderInviteUser returns an English subject', async () => {
   const { subject } = await renderInviteUser({ inviteUrl, locale: 'en' })
-  expect(subject).toBe("You've been invited to Oceanview")
+  expect(subject).toBe("You've been granted access to Videbacken")
 })
 
 test('renderInviteUser embeds the invite URL in both html and text', async () => {
@@ -37,7 +37,7 @@ test('renderInviteUser renders the body in the requested locale', async () => {
     renderInviteUser({ inviteUrl, locale: 'en' }),
   ])
   expect(sv.html).toContain('lang="sv"')
-  expect(sv.text).toContain('inbjuden till Oceanview')
+  expect(sv.text).toContain('åtkomst till Videbacken')
   expect(en.html).toContain('lang="en"')
-  expect(en.text).toContain('invited to Oceanview')
+  expect(en.text).toContain('access to Videbacken')
 })

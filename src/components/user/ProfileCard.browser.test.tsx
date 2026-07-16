@@ -24,7 +24,6 @@ const fakeMe: Me = {
   phone: '+46701234567',
   deletedAt: null,
   imageBlurhash: null,
-  lastInvitedAt: null,
   onboardedAt: new Date('2026-01-02T00:00:00Z'),
 }
 

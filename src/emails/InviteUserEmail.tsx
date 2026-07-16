@@ -4,9 +4,10 @@ import type { Locale } from '~/paraglide/runtime'
 import { BrandEmailLayout } from './BrandEmailLayout'
 
 export interface InviteUserEmailProps {
-  // The Better Auth verify-email link. Clicking it verifies the address and
-  // (autoSignInAfterVerification) signs the invitee in, then redirects into
-  // the app — i.e. accepting the invite is a single click.
+  // Link to /login: the invitee is already on the approved_email allowlist by
+  // the time this is sent, so Google sign-in or requesting a magic link there
+  // just works — there's no token/accept step to carry (see ADR-0017
+  // amendment).
   inviteUrl: string
   // Explicit rather than read from the Paraglide request scope: the invite email
   // is rendered by the queue worker, outside any request. See ADR-0008/0017.
@@ -29,7 +30,7 @@ export const InviteUserEmail = ({ inviteUrl, locale }: InviteUserEmailProps) => 
 InviteUserEmail.PreviewProps = {
   // localhost origin so the preview server (:14601) loads email-logo.png from
   // the running dev app (:14600) when it's up.
-  inviteUrl: 'http://localhost:14600/api/auth/verify-email?token=preview&callbackURL=%2F',
+  inviteUrl: 'http://localhost:14600/login',
   locale: 'sv',
 } satisfies InviteUserEmailProps
 
