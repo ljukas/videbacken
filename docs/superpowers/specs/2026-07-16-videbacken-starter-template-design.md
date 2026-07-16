@@ -9,16 +9,17 @@ Videbacken is a **stack + design copy of Oceanview** (`~/prog/priv/oceanview`), 
 to a **reusable starter template**. It keeps everything app-agnostic — framework,
 design system, database, data layer, effects architecture, i18n, testing — strips all
 of Oceanview's sailboat-specific domain features, replaces the auth model with
-**Google-only sign-in gated by an email allowlist**, switches the package manager from
-**pnpm to bun**, and re-brands with **placeholders** (keeping the visual design language
-intact).
+**Google + email-magic-link sign-in, both gated by an admin-managed email allowlist**,
+switches the package manager from **pnpm to bun**, and re-brands with **placeholders**
+(keeping the visual design language intact).
 
 The result is a polished, batteries-included foundation to build new internal apps on.
 
 ## Goals
 
 - Faithful copy of Oceanview's stack and design language.
-- Google sign-in only; access gated by an admin-managed email allowlist.
+- Two sign-in methods — **Google OAuth and email magic-link** — both gated by an
+  admin-managed email allowlist (so invitees who don't use Google can still get in).
 - Global authorization rule: **admins mutate, users are read-only** (except own account).
 - Package manager is **bun**.
 - Placeholder branding (name `Videbacken`, neutral accent, placeholder logo).
@@ -28,7 +29,7 @@ The result is a polished, batteries-included foundation to build new internal ap
 ## Non-goals
 
 - No sailboat domain features (shares, seasons, booking, documents, recommendations, maps).
-- No passkeys, no magic-link.
+- No passkeys (Google + magic-link are the two supported methods).
 - No live Neon / Vercel / Google OAuth provisioning in this pass.
 - No production-ready visual brand (placeholders only).
 
@@ -40,7 +41,8 @@ The result is a polished, batteries-included foundation to build new internal ap
 - **UI:** Tailwind CSS v4 + shadcn/ui (`radix-nova` style, Radix primitives), `components.json`.
 - **Design language:** self-hosted Cabinet Grotesk (headings) + Switzer (body); inset-sidebar
   app shell; shared `PageContainer`; reduced-motion-aware overlay motion; empty-state conventions.
-- **Auth:** Better Auth (self-hosted) — **reconfigured** (see §4).
+- **Auth:** Better Auth (self-hosted) — **reconfigured** to Google OAuth + magic-link,
+  both allowlist-gated; passkeys removed (see §4).
 - **Database:** Neon Postgres + Drizzle ORM; `postgres-js` driver; snake_case.
 - **Data layer:** oRPC + TanStack Query; SSR via in-process router client.
 - **Architecture:** services own DB access + domain rules; cross-system effects isolated;
@@ -106,9 +108,11 @@ dev stack, CI workflows.
   - Routes: all `documents.*`, `recommendations.*`, `admin/shares.*`, `admin/documents.bin`,
     `owners` (→ replaced by `users`).
   - Components: `src/components/{booking,document,recommendation,season,share}/`.
-- **Auth methods:** passkeys (`@better-auth/passkey`, passkey schema table, `passkey` service,
-  `src/components/passkey/`, `usePasskeys` hook, `passkeyProviders.ts`, `passkeyPrompt.ts`,
-  `data/passkeyAaguids.json`, `account/security` passkey UI) and magic-link.
+- **Auth methods:** **passkeys only** (`@better-auth/passkey`, passkey schema table, `passkey`
+  service, `src/components/passkey/`, `usePasskeys` hook, `passkeyProviders.ts`,
+  `passkeyPrompt.ts`, `data/passkeyAaguids.json`, `account/security` passkey UI). **Magic-link
+  is kept** (see §4) — `LoginFormCard`, the `magicLink` plugin, and the email/verification
+  invite mechanism stay.
 - **Dependencies** consequently removed from `package.json`: `maplibre-gl`,
   `@vis.gl/react-maplibre`, `exifreader`, `@dnd-kit/*`, `embla-carousel-react`,
   `react-phone-number-input`, `@better-auth/passkey`, `cmdk`-adjacent doc-search bits (keep
@@ -122,17 +126,26 @@ carrying Oceanview's boat-feature migration history). Better Auth tables regener
 
 ---
 
-## 4. Auth: Google-only + email allowlist + global authorization
+## 4. Auth: Google + magic-link, email allowlist, global authorization
 
-### Sign-in
-- Better Auth: **remove** `magicLink` and `passkey` plugins; **add** `socialProviders.google`
-  (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`). Keep `admin()` plugin (roles `user`/`admin`)
-  and `tanstackStartCookies()`.
+### Sign-in (two methods, both allowlist-gated)
+- Better Auth: **remove** the `passkey` plugin; **add** `socialProviders.google`
+  (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`); **keep** the `magicLink` plugin, the `admin()`
+  plugin (roles `user`/`admin`), and `tanstackStartCookies()`.
 - Regenerate `betterAuth.ts` via the Better Auth CLI: adds the OAuth `account` table, drops the
   passkey table. Keep the `timestamptz` patch script.
-- `/login` becomes a single **"Sign in with Google"** button, keeping the branded login-wash design.
-- Exact Better Auth hook/config APIs (social provider config, sign-in denial, session revoke)
-  **verified against current Better Auth docs during implementation** — APIs change.
+- `/login` keeps the branded login-wash design and offers **both** a "Sign in with Google"
+  button **and** the email magic-link form (`LoginFormCard`).
+- **Both methods are gated by the `approved_email` allowlist:**
+  - Magic-link: the `sendMagicLink` handler already denies unknown emails in Oceanview — adapt
+    its check from `findIdByEmail || isAllowlistedAdmin` to "email exists in `approved_email`".
+  - Google: a `databaseHooks.user.create.before` hook (+ sign-in guard) denies emails absent
+    from `approved_email`.
+- **No pre-created user rows.** `approved_email` is the gate; the user row is created by Better
+  Auth on first sign-in via *either* method, taking the `role` from its `approved_email` row.
+  "Pending" = an `approved_email` row with no matching user yet.
+- Exact Better Auth hook/config APIs (social provider config, magic-link expiry, sign-in denial,
+  session revoke) **verified against current Better Auth docs during implementation** — APIs change.
 
 ### Allowlist (the access gate)
 - New DB table **`approved_email`**: `id`, `email` (unique, normalized lowercase),
@@ -146,11 +159,14 @@ carrying Oceanview's boat-feature migration history). Better Auth tables regener
 
 ### Invite / revoke (admin-only)
 - **Invite user** dialog (admin only): enter email + choose role (default read-only `user`) →
-  inserts an `approved_email` row → enqueues an **optional** invite-notification email
-  ("you've been granted access; sign in with Google at <url>"), reusing the email effect +
-  `email_user_invited` topic + rebranded `InviteUser` template. The email is a courtesy, not
-  part of the auth flow (Google is the auth); it can be disabled.
-- **Resend invite:** re-enqueues the notification email for a pending entry.
+  inserts an `approved_email` row → sends an invite email, reusing the email effect +
+  `email_user_invited` topic + rebranded `InviteUser` template. Because magic-link is available,
+  the invite email carries a **magic sign-in link** (one-click entry for non-Google invitees)
+  and also notes that Google sign-in works. Link expiry suited to an invite (Oceanview uses a
+  7-day verification link, decoupled from the short login magic-link) — exact mechanism resolved
+  against Better Auth docs during implementation, reusing Oceanview's proven invite/verification
+  flow where it fits the no-pre-created-row model.
+- **Resend invite:** re-sends the invite email for a pending entry.
 - `/users` directory shows **active users** (signed in at least once) and **pending invites**
   (`approved_email` rows with no matching user yet), mirroring Oceanview's owners+pending UX.
 - **Revoke user** (admin only): remove the `approved_email` row, soft-delete the matching user
@@ -159,12 +175,10 @@ carrying Oceanview's boat-feature migration history). Better Auth tables regener
 ### Global authorization rule (template-wide invariant)
 - **Reads:** any authenticated, approved user → `protectedProcedure`.
 - **Mutations:** **admin only** → every mutating oRPC procedure uses `adminProcedure`.
-- **Sole exception — own account:** a `user` may complete their own onboarding (set name +
-  avatar) and edit their own account profile (name, avatar, phone) via self-scoped procedures
-  (`updateOwnProfile`, `completeOnboarding`). They cannot mutate any other/shared data.
+- **Sole exception — own account (confirmed):** a `user` may complete their own onboarding (set
+  name + avatar) and edit their own account profile (name, avatar, phone) via self-scoped
+  procedures (`updateOwnProfile`, `completeOnboarding`). They cannot mutate any other/shared data.
 - Documented as a non-negotiable in `CLAUDE.md`.
-  - **⚠ Review point:** confirm the "own account" carve-out is acceptable given "users are
-    read-only." Without it, the kept onboarding wizard and account settings cannot function.
 
 ### Onboarding wizard (kept, trimmed)
 - Full-screen flow at `/onboarding`: **name** step + **avatar** step, both pre-filled from the
@@ -209,7 +223,7 @@ countdown — decided during implementation).
 - **Design language kept intact** — fonts, shell, motion, empty-states unchanged.
 - Name `Oceanview` → `Videbacken` everywhere (stays untranslated per i18n rule): `package.json`
   name, README, CLAUDE.md, UI strings, `Logo`/wordmark, email layout, SEO.
-- `--brand` token: nautical-blue → **neutral placeholder accent** (obvious-to-replace value).
+- `--brand` token: nautical-blue → **muted indigo** placeholder accent (light + dark variants).
   `--primary` stays neutral as today. Trivially re-themed later.
 - Placeholder **logo/wordmark** (lettermark "V") + regenerated favicons.
 - Identity tokens (avoid collisions with a running Oceanview):
@@ -243,9 +257,9 @@ countdown — decided during implementation).
   visual-identity, empty-states.
 - **Drop:** organization-rules, document-management, recommended-places, indivisible-shares,
   season-eras, season-booking.
-- **Rewrite:** the user-invitation ADR → a new **"Authentication: Google + email allowlist +
-  admin-only mutation"** ADR (covers sign-in, allowlist, invite/revoke, the global authz rule,
-  onboarding).
+- **Rewrite:** the user-invitation ADR → a new **"Authentication: Google + magic-link, email
+  allowlist, admin-only mutation"** ADR (covers both sign-in methods, the allowlist gate,
+  invite/revoke, the global authz rule, onboarding).
 - **`CLAUDE.md`** rewritten as a router for the trimmed ADR set and updated for bun + the new
   auth/authz model + Videbacken branding. README rewritten for bun + Google setup.
 
@@ -279,10 +293,12 @@ section documents: creating a Neon project, a Vercel project, and a Google OAuth
 
 ---
 
-## 10. Open questions / review points
+## 10. Resolved decisions
 
-1. **Own-account carve-out** (§4): confirm `user`s may manage their own name/avatar/phone despite
-   the "users are read-only" rule (required for the kept onboarding wizard + account settings).
-2. **Invite notification email** (§4): keep the optional courtesy email on invite, or omit it
-   entirely (Google is the real auth path)?
-3. **Neutral accent color** (§6): any preferred placeholder hue, or a generic neutral is fine?
+1. **Own-account carve-out** (§4): **confirmed** — `user`s may manage only their own
+   name/avatar/phone; everything else is admin-only.
+2. **Invite email** (§4): **kept** — invite sends an email carrying a magic sign-in link and
+   noting Google is available.
+3. **Sign-in methods** (§4): **Google + magic-link**, both allowlist-gated (magic-link kept so
+   non-Google invitees can sign in). Passkeys removed.
+4. **Accent color** (§6): **muted indigo** placeholder.
