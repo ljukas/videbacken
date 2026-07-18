@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type { LoginMethod } from '~/lib/lastLoginMethodFns'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { WelcomeBackCard } from './WelcomeBackCard'
@@ -25,18 +26,38 @@ vi.mock('~/lib/authClient', () => ({
 const MAGIC_LINK_CALLBACK_URL = '/signed-in?redirect=%2F'
 const GOOGLE_CALLBACK_URL = '/'
 
-function renderCard() {
+function renderCard(
+  lastMethod: LoginMethod | null = null,
+  onSent: (email: string) => void = () => {},
+) {
   return renderWithProviders(
     <WelcomeBackCard
       email="alice@example.se"
       name="Alice Svensson"
       image={null}
       imageBlurhash={null}
+      lastMethod={lastMethod}
       magicLinkCallbackURL={MAGIC_LINK_CALLBACK_URL}
       googleCallbackURL={GOOGLE_CALLBACK_URL}
-      onSent={() => {}}
+      onSent={onSent}
       onSwitchUser={() => {}}
     />,
+  )
+}
+
+// DOM index of each action button (-1 if absent). Lower index = earlier in the
+// document = the primary position / earlier keyboard traversal.
+function buttonOrder(container: Element) {
+  const buttons = Array.from(container.querySelectorAll('button'))
+  return {
+    google: buttons.findIndex((b) => b.textContent?.includes(m.login_google_button())),
+    magicLink: buttons.findIndex((b) => b.textContent?.includes(m.login_submit())),
+  }
+}
+
+function findButton(container: Element, label: string) {
+  return Array.from(container.querySelectorAll('button')).find((b) =>
+    b.textContent?.includes(label),
   )
 }
 
@@ -48,6 +69,36 @@ test('offers the Google button as a secondary option alongside the one-click mag
   await expect.element(screen.getByRole('button', { name: m.login_switch_user() })).toBeVisible()
 
   expect(screen.container.textContent?.toLowerCase()).not.toContain('passkey')
+})
+
+test('defaults to magic-link as the primary (filled, first) action with the last-used caption', async () => {
+  const { screen } = await renderCard(null)
+  const order = buttonOrder(screen.container)
+  expect(order.magicLink).toBeLessThan(order.google)
+
+  const magic = findButton(screen.container, m.login_submit())
+  const google = findButton(screen.container, m.login_google_button())
+  expect(magic?.getAttribute('data-variant')).toBe('default')
+  expect(google?.getAttribute('data-variant')).toBe('outline')
+
+  const describedBy = magic?.getAttribute('aria-describedby')
+  expect(describedBy).toBeTruthy()
+  expect(screen.container.querySelector(`#${describedBy}`)?.textContent).toBe(m.login_last_used())
+})
+
+test('promotes Google to the primary (filled, first) action when it was last used', async () => {
+  const { screen } = await renderCard('google')
+  const order = buttonOrder(screen.container)
+  expect(order.google).toBeLessThan(order.magicLink)
+
+  const google = findButton(screen.container, m.login_google_button())
+  const magic = findButton(screen.container, m.login_submit())
+  expect(google?.getAttribute('data-variant')).toBe('default')
+  expect(magic?.getAttribute('data-variant')).toBe('outline')
+
+  const describedBy = google?.getAttribute('aria-describedby')
+  expect(describedBy).toBeTruthy()
+  expect(screen.container.querySelector(`#${describedBy}`)?.textContent).toBe(m.login_last_used())
 })
 
 test('clicking the Google button calls signIn.social with the provider and the same-tab destination', async () => {
@@ -66,18 +117,7 @@ test('clicking the Google button calls signIn.social with the provider and the s
 test('clicking the primary button still resends a magic link to the saved email', async () => {
   signInMagicLink.mockResolvedValue({ error: null })
   const onSent = vi.fn()
-  const { screen } = await renderWithProviders(
-    <WelcomeBackCard
-      email="alice@example.se"
-      name="Alice Svensson"
-      image={null}
-      imageBlurhash={null}
-      magicLinkCallbackURL={MAGIC_LINK_CALLBACK_URL}
-      googleCallbackURL={GOOGLE_CALLBACK_URL}
-      onSent={onSent}
-      onSwitchUser={() => {}}
-    />,
-  )
+  const { screen } = await renderCard(null, onSent)
 
   await screen.getByRole('button', { name: m.login_submit() }).click()
 

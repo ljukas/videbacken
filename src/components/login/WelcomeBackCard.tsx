@@ -6,8 +6,12 @@ import { Button } from '~/components/ui/button'
 import { Separator } from '~/components/ui/separator'
 import { Spinner } from '~/components/ui/spinner'
 import { authClient } from '~/lib/authClient'
+import type { LoginMethod } from '~/lib/lastLoginMethodFns'
 import { initials } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
+
+// Links the "last used" caption to whichever button it describes (aria-describedby).
+const LAST_USED_HINT_ID = 'welcome-back-last-used'
 
 type Props = {
   email: string
@@ -16,6 +20,9 @@ type Props = {
   name: string | null
   image: string | null
   imageBlurhash: string | null
+  // Which method this browser last successfully signed in with; promotes that
+  // button to the primary (filled, first) action. null → magic-link default.
+  lastMethod: LoginMethod | null
   onSent: (email: string) => void
   onSwitchUser: () => void
   // Magic link opens in a new tab and lands on /signed-in; Google stays in this
@@ -29,12 +36,14 @@ export function WelcomeBackCard({
   name,
   image,
   imageBlurhash,
+  lastMethod,
   onSent,
   onSwitchUser,
   magicLinkCallbackURL,
   googleCallbackURL,
 }: Props) {
   const [isSending, setIsSending] = useState(false)
+  const googleIsPrimary = lastMethod === 'google'
 
   async function sendMagicLink() {
     setIsSending(true)
@@ -49,6 +58,31 @@ export function WelcomeBackCard({
     }
     onSent(email)
   }
+
+  const magicLinkButton = (
+    <Button
+      type="button"
+      variant={googleIsPrimary ? 'outline' : 'default'}
+      size="xl"
+      className="w-full font-normal"
+      disabled={isSending}
+      aria-describedby={googleIsPrimary ? undefined : LAST_USED_HINT_ID}
+      onClick={() => {
+        void sendMagicLink()
+      }}
+    >
+      {isSending && <Spinner data-icon="inline-start" />}
+      {isSending ? m.login_submit_pending() : m.login_submit()}
+    </Button>
+  )
+
+  const googleButton = (
+    <GoogleSignInButton
+      callbackURL={googleCallbackURL}
+      variant={googleIsPrimary ? 'default' : 'outline'}
+      aria-describedby={googleIsPrimary ? LAST_USED_HINT_ID : undefined}
+    />
+  )
 
   return (
     <div className="flex w-full flex-col items-center gap-6">
@@ -69,19 +103,12 @@ export function WelcomeBackCard({
       </div>
 
       <div className="flex w-full flex-col gap-4">
-        <Button
-          type="button"
-          variant="default"
-          size="xl"
-          className="w-full font-normal"
-          disabled={isSending}
-          onClick={() => {
-            void sendMagicLink()
-          }}
-        >
-          {isSending && <Spinner data-icon="inline-start" />}
-          {isSending ? m.login_submit_pending() : m.login_submit()}
-        </Button>
+        <div className="flex flex-col gap-1.5">
+          <span id={LAST_USED_HINT_ID} className="text-center text-muted-foreground text-xs">
+            {m.login_last_used()}
+          </span>
+          {googleIsPrimary ? googleButton : magicLinkButton}
+        </div>
 
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
@@ -89,7 +116,7 @@ export function WelcomeBackCard({
           <Separator className="flex-1" />
         </div>
 
-        <GoogleSignInButton callbackURL={googleCallbackURL} />
+        {googleIsPrimary ? magicLinkButton : googleButton}
 
         <Button
           type="button"
