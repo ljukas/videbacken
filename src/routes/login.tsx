@@ -9,6 +9,7 @@ import { ModeToggle } from '~/components/ModeToggle'
 import { useAwaitSignIn } from '~/hooks/useAwaitSignIn'
 import { clearBrowserSession, getBrowserSession } from '~/lib/browserSessionFns'
 import { getSession } from '~/lib/getSession'
+import { getLastLoginMethod } from '~/lib/lastLoginMethodFns'
 import { sanitizeRedirect } from '~/lib/utils'
 
 // The magic link lands in a *new* tab on the /signed-in confirmation page,
@@ -29,15 +30,16 @@ export const Route = createFileRoute('/login')({
   },
   loader: async () => {
     const session = await getBrowserSession()
+    if (!session?.email) return { savedLogin: null }
+    const lastMethod = await getLastLoginMethod()
     return {
-      savedLogin: session?.email
-        ? {
-            email: session.email,
-            name: session.name,
-            image: session.image,
-            imageBlurhash: session.imageBlurhash,
-          }
-        : null,
+      savedLogin: {
+        email: session.email,
+        name: session.name,
+        image: session.image,
+        imageBlurhash: session.imageBlurhash,
+        lastMethod,
+      },
     }
   },
   component: Login,
@@ -88,6 +90,7 @@ function Login() {
             name={savedLogin.name}
             image={savedLogin.image}
             imageBlurhash={savedLogin.imageBlurhash}
+            lastMethod={savedLogin.lastMethod}
             magicLinkCallbackURL={magicLinkCallbackURL}
             googleCallbackURL={destination}
             onSent={setSentTo}
