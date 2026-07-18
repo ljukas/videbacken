@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
 import { SensorDomainError } from './errors'
@@ -171,12 +171,26 @@ export async function getSeries(input: {
 }): Promise<{ buckets: SeriesBucket[] }> {
   const now = input.now ?? new Date()
 
+  // Contract: `undefined` deviceIds = all devices; an explicit empty array =
+  // "no devices selected" → empty result (never silently "show everything").
+  if (input.deviceIds && input.deviceIds.length === 0) return { buckets: [] }
+  const deviceFilter =
+    input.deviceIds && input.deviceIds.length > 0
+      ? inArray(sensorReading.deviceId, input.deviceIds)
+      : undefined
+
   let sinceSec: number
   let bucketSec: number
   if (input.range === 'all') {
+    // The min() MUST honor the same device + point-in-time filters as the main
+    // query — otherwise an unrequested device's old data would dictate this
+    // device's bucket width (daily vs weekly) and silently coarsen its series.
+    const minFilters = [lte(sensorReading.recordedAt, now)]
+    if (deviceFilter) minFilters.push(deviceFilter)
     const [{ first }] = await db
-      .select({ first: sql<Date | null>`min(${sensorReading.recordedAt})` })
+      .select({ first: sql<string | null>`min(${sensorReading.recordedAt})` })
       .from(sensorReading)
+      .where(and(...minFilters))
     if (!first) return { buckets: [] }
     sinceSec = Math.floor(new Date(first).getTime() / 1000)
     const spanSec = Math.floor(now.getTime() / 1000) - sinceSec
@@ -188,10 +202,10 @@ export async function getSeries(input: {
   }
   const since = new Date(sinceSec * 1000)
 
-  const filters = [gte(sensorReading.recordedAt, since)]
-  if (input.deviceIds && input.deviceIds.length > 0) {
-    filters.push(inArray(sensorReading.deviceId, input.deviceIds))
-  }
+  // Bounded on both sides: `now` is injectable for point-in-time correctness, so
+  // a reading stamped after it must not leak in.
+  const filters = [gte(sensorReading.recordedAt, since), lte(sensorReading.recordedAt, now)]
+  if (deviceFilter) filters.push(deviceFilter)
 
   // epoch-floor bucketing — date_trunc can't do arbitrary 10-min / 3-h widths.
   const bucketExpr = sql<Date>`to_timestamp(floor(extract(epoch from ${sensorReading.recordedAt}) / ${bucketSec}) * ${bucketSec})`
