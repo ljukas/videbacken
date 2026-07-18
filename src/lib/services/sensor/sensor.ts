@@ -9,6 +9,15 @@ export function normalizeMac(raw: string): string {
   return raw.toLowerCase().replace(/[^a-f0-9]/g, '')
 }
 
+// A normalized MAC must be a full 12-hex identity (Shelly emits a bare
+// `${config.sys.device.mac}` of exactly 12 hex chars). Rejecting anything else
+// stops garbage input (which strips to "" or a stub) from silently colliding
+// distinct callers onto one phantom device row on the unique `mac` column.
+const MAC_RE = /^[0-9a-f]{12}$/
+export function isValidMac(normalized: string): boolean {
+  return MAC_RE.test(normalized)
+}
+
 function displayNameFor(name: string | null, mac: string): string {
   return name ?? `Sensor ${mac.slice(-4)}`
 }
@@ -25,6 +34,7 @@ export type RecordReadingInput = {
 // webhook without a battery reading keeps the previously-stored battery.
 export async function recordReading(input: RecordReadingInput): Promise<{ deviceId: string }> {
   const mac = normalizeMac(input.mac)
+  if (!isValidMac(mac)) throw new SensorDomainError('INVALID_MAC')
   const now = new Date()
   return db.transaction(async (tx) => {
     const updateSet: { lastSeenAt: Date; batteryPct?: number } = { lastSeenAt: now }
@@ -34,11 +44,14 @@ export async function recordReading(input: RecordReadingInput): Promise<{ device
       .values({ mac, lastSeenAt: now, batteryPct: input.batteryPct ?? null })
       .onConflictDoUpdate({ target: sensorDevice.mac, set: updateSet })
       .returning({ id: sensorDevice.id })
+    // recordedAt set explicitly to the same `now` as lastSeenAt so the device's
+    // last-seen and its newest reading timestamp are identical for one event.
     await tx.insert(sensorReading).values({
       deviceId: device.id,
       temperatureC: input.temperatureC ?? null,
       humidityPct: input.humidityPct ?? null,
       batteryPct: input.batteryPct ?? null,
+      recordedAt: now,
     })
     return { deviceId: device.id }
   })
@@ -65,8 +78,15 @@ export type SensorDeviceRow = {
 // current-value tiles. Two queries + an in-memory join — trivial at 4 devices,
 // and avoids any lateral-join API surprises.
 export async function listDevices(): Promise<SensorDeviceRow[]> {
-  const devices = await db.select().from(sensorDevice).orderBy(sensorDevice.createdAt)
+  // `id` tiebreaks createdAt so ordering is deterministic even if two devices
+  // auto-register in the same instant.
+  const devices = await db
+    .select()
+    .from(sensorDevice)
+    .orderBy(sensorDevice.createdAt, sensorDevice.id)
 
+  // DISTINCT ON (device_id) + this ORDER BY takes the newest reading per device;
+  // `desc(id)` tiebreaks an exact recorded_at collision so the pick is stable.
   const latestRows = await db
     .selectDistinctOn([sensorReading.deviceId], {
       deviceId: sensorReading.deviceId,
@@ -75,7 +95,7 @@ export async function listDevices(): Promise<SensorDeviceRow[]> {
       recordedAt: sensorReading.recordedAt,
     })
     .from(sensorReading)
-    .orderBy(sensorReading.deviceId, desc(sensorReading.recordedAt))
+    .orderBy(sensorReading.deviceId, desc(sensorReading.recordedAt), desc(sensorReading.id))
 
   const latestByDevice = new Map(latestRows.map((r) => [r.deviceId, r]))
 
