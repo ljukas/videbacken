@@ -51,7 +51,11 @@ function Login() {
   const [useOther, setUseOther] = useState(false)
 
   const savedLogin = useOther ? null : initialSavedLogin
-  const callbackURL = buildCallbackURL(redirectPath)
+  // Magic link opens in a new tab and lands on the /signed-in confirmation (see
+  // buildCallbackURL). Google completes in this same tab, so it skips /signed-in
+  // and goes straight to the in-app destination — the _authenticated onboarding
+  // guard takes over from there for first-time users.
+  const magicLinkCallbackURL = buildCallbackURL(redirectPath)
   const destination = redirectPath ?? '/'
 
   // Once the link has been sent, watch for the browser becoming authenticated in
@@ -84,14 +88,19 @@ function Login() {
             name={savedLogin.name}
             image={savedLogin.image}
             imageBlurhash={savedLogin.imageBlurhash}
-            callbackURL={callbackURL}
+            magicLinkCallbackURL={magicLinkCallbackURL}
+            googleCallbackURL={destination}
             onSent={setSentTo}
             onSwitchUser={() => {
               void switchToOtherEmail()
             }}
           />
         ) : (
-          <LoginFormCard onSent={setSentTo} callbackURL={callbackURL} />
+          <LoginFormCard
+            onSent={setSentTo}
+            magicLinkCallbackURL={magicLinkCallbackURL}
+            googleCallbackURL={destination}
+          />
         )}
       </div>
     </div>

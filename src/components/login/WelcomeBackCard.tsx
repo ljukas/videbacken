@@ -18,7 +18,10 @@ type Props = {
   imageBlurhash: string | null
   onSent: (email: string) => void
   onSwitchUser: () => void
-  callbackURL: string
+  // Magic link opens in a new tab and lands on /signed-in; Google stays in this
+  // tab and goes straight to the destination. See src/routes/login.tsx.
+  magicLinkCallbackURL: string
+  googleCallbackURL: string
 }
 
 export function WelcomeBackCard({
@@ -28,7 +31,8 @@ export function WelcomeBackCard({
   imageBlurhash,
   onSent,
   onSwitchUser,
-  callbackURL,
+  magicLinkCallbackURL,
+  googleCallbackURL,
 }: Props) {
   const [isSending, setIsSending] = useState(false)
 
@@ -36,7 +40,7 @@ export function WelcomeBackCard({
     setIsSending(true)
     const { error } = await authClient.signIn.magicLink({
       email,
-      callbackURL,
+      callbackURL: magicLinkCallbackURL,
     })
     setIsSending(false)
     if (error) {
@@ -85,7 +89,7 @@ export function WelcomeBackCard({
           <Separator className="flex-1" />
         </div>
 
-        <GoogleSignInButton callbackURL={callbackURL} />
+        <GoogleSignInButton callbackURL={googleCallbackURL} />
 
         <Button
           type="button"

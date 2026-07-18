@@ -20,7 +20,10 @@ vi.mock('~/lib/authClient', () => ({
   },
 }))
 
-const CALLBACK_URL = '/signed-in?redirect=%2F'
+// Magic link lands on /signed-in in a new tab; Google stays in this tab and
+// goes straight to the destination. The two callbacks are deliberately distinct.
+const MAGIC_LINK_CALLBACK_URL = '/signed-in?redirect=%2F'
+const GOOGLE_CALLBACK_URL = '/'
 
 function renderCard() {
   return renderWithProviders(
@@ -29,7 +32,8 @@ function renderCard() {
       name="Alice Svensson"
       image={null}
       imageBlurhash={null}
-      callbackURL={CALLBACK_URL}
+      magicLinkCallbackURL={MAGIC_LINK_CALLBACK_URL}
+      googleCallbackURL={GOOGLE_CALLBACK_URL}
       onSent={() => {}}
       onSwitchUser={() => {}}
     />,
@@ -46,13 +50,17 @@ test('offers the Google button as a secondary option alongside the one-click mag
   expect(screen.container.textContent?.toLowerCase()).not.toContain('passkey')
 })
 
-test('clicking the Google button calls signIn.social with the provider and callbackURL', async () => {
+test('clicking the Google button calls signIn.social with the provider and the same-tab destination', async () => {
   signInSocial.mockResolvedValue({ error: null })
   const { screen } = await renderCard()
 
   await screen.getByRole('button', { name: m.login_google_button() }).click()
 
-  expect(signInSocial).toHaveBeenCalledWith({ provider: 'google', callbackURL: CALLBACK_URL })
+  // Google must NOT route through /signed-in — it uses the plain destination.
+  expect(signInSocial).toHaveBeenCalledWith({
+    provider: 'google',
+    callbackURL: GOOGLE_CALLBACK_URL,
+  })
 })
 
 test('clicking the primary button still resends a magic link to the saved email', async () => {
@@ -64,7 +72,8 @@ test('clicking the primary button still resends a magic link to the saved email'
       name="Alice Svensson"
       image={null}
       imageBlurhash={null}
-      callbackURL={CALLBACK_URL}
+      magicLinkCallbackURL={MAGIC_LINK_CALLBACK_URL}
+      googleCallbackURL={GOOGLE_CALLBACK_URL}
       onSent={onSent}
       onSwitchUser={() => {}}
     />,
@@ -75,7 +84,7 @@ test('clicking the primary button still resends a magic link to the saved email'
   await vi.waitFor(() => {
     expect(signInMagicLink).toHaveBeenCalledWith({
       email: 'alice@example.se',
-      callbackURL: CALLBACK_URL,
+      callbackURL: MAGIC_LINK_CALLBACK_URL,
     })
     expect(onSent).toHaveBeenCalledWith('alice@example.se')
   })
