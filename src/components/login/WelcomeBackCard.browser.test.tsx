@@ -86,6 +86,21 @@ test('defaults to magic-link as the primary (filled, first) action with the last
   expect(screen.container.querySelector(`#${describedBy}`)?.textContent).toBe(m.login_last_used())
 })
 
+test('keeps magic-link primary (filled, first) when it was the last method used', async () => {
+  const { screen } = await renderCard('magic-link')
+  const order = buttonOrder(screen.container)
+  expect(order.magicLink).toBeLessThan(order.google)
+
+  const magic = findButton(screen.container, m.login_submit())
+  const google = findButton(screen.container, m.login_google_button())
+  expect(magic?.getAttribute('data-variant')).toBe('default')
+  expect(google?.getAttribute('data-variant')).toBe('outline')
+
+  const describedBy = magic?.getAttribute('aria-describedby')
+  expect(describedBy).toBeTruthy()
+  expect(screen.container.querySelector(`#${describedBy}`)?.textContent).toBe(m.login_last_used())
+})
+
 test('promotes Google to the primary (filled, first) action when it was last used', async () => {
   const { screen } = await renderCard('google')
   const order = buttonOrder(screen.container)
