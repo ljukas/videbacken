@@ -20,11 +20,18 @@ vi.mock('~/lib/authClient', () => ({
   },
 }))
 
-const CALLBACK_URL = '/signed-in?redirect=%2F'
+// Magic link lands on /signed-in in a new tab; Google stays in this tab and
+// goes straight to the destination. The two callbacks are deliberately distinct.
+const MAGIC_LINK_CALLBACK_URL = '/signed-in?redirect=%2F'
+const GOOGLE_CALLBACK_URL = '/'
 
 test('renders a Google sign-in button alongside the magic-link email form (no passkey)', async () => {
   const { screen } = await renderWithProviders(
-    <LoginFormCard onSent={() => {}} callbackURL={CALLBACK_URL} />,
+    <LoginFormCard
+      onSent={() => {}}
+      magicLinkCallbackURL={MAGIC_LINK_CALLBACK_URL}
+      googleCallbackURL={GOOGLE_CALLBACK_URL}
+    />,
   )
 
   await expect.element(screen.getByRole('button', { name: m.login_google_button() })).toBeVisible()
@@ -36,22 +43,34 @@ test('renders a Google sign-in button alongside the magic-link email form (no pa
   expect(screen.container.textContent?.toLowerCase()).not.toContain('passkey')
 })
 
-test('clicking the Google button calls signIn.social with the provider and callbackURL', async () => {
+test('clicking the Google button calls signIn.social with the provider and the same-tab destination', async () => {
   signInSocial.mockResolvedValue({ error: null })
   const { screen } = await renderWithProviders(
-    <LoginFormCard onSent={() => {}} callbackURL={CALLBACK_URL} />,
+    <LoginFormCard
+      onSent={() => {}}
+      magicLinkCallbackURL={MAGIC_LINK_CALLBACK_URL}
+      googleCallbackURL={GOOGLE_CALLBACK_URL}
+    />,
   )
 
   await screen.getByRole('button', { name: m.login_google_button() }).click()
 
-  expect(signInSocial).toHaveBeenCalledWith({ provider: 'google', callbackURL: CALLBACK_URL })
+  // Google must NOT route through /signed-in — it uses the plain destination.
+  expect(signInSocial).toHaveBeenCalledWith({
+    provider: 'google',
+    callbackURL: GOOGLE_CALLBACK_URL,
+  })
 })
 
-test('submitting the email form still sends a magic link', async () => {
+test('submitting the email form still sends a magic link via the /signed-in callback', async () => {
   signInMagicLink.mockResolvedValue({ error: null })
   const onSent = vi.fn()
   const { screen } = await renderWithProviders(
-    <LoginFormCard onSent={onSent} callbackURL={CALLBACK_URL} />,
+    <LoginFormCard
+      onSent={onSent}
+      magicLinkCallbackURL={MAGIC_LINK_CALLBACK_URL}
+      googleCallbackURL={GOOGLE_CALLBACK_URL}
+    />,
   )
 
   await screen.getByLabelText(m.login_email_label()).fill('alice@example.se')
@@ -60,7 +79,7 @@ test('submitting the email form still sends a magic link', async () => {
   await vi.waitFor(() => {
     expect(signInMagicLink).toHaveBeenCalledWith({
       email: 'alice@example.se',
-      callbackURL: CALLBACK_URL,
+      callbackURL: MAGIC_LINK_CALLBACK_URL,
     })
     expect(onSent).toHaveBeenCalledWith('alice@example.se')
   })

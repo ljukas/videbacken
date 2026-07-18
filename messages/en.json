@@ -62,6 +62,7 @@
   "login_description": "Sign in with a link to your email.",
   "login_email_label": "Email",
   "login_google_button": "Sign in with Google",
+  "login_last_used": "Last used",
   "login_send_error": "Couldn't send the sign-in link",
   "login_sent_description": "The sign-in link is on its way.",
   "login_sent_instructions": "Check your inbox (or the server log for now) and follow the link to continue.",

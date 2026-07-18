@@ -2,7 +2,7 @@ import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { waitUntil } from '@vercel/functions'
 import { betterAuth } from 'better-auth'
 import { APIError } from 'better-auth/api'
-import { admin, magicLink } from 'better-auth/plugins'
+import { admin, lastLoginMethod, magicLink } from 'better-auth/plugins'
 import { tanstackStartCookies } from 'better-auth/tanstack-start'
 import { m } from '~/paraglide/messages'
 import { getLocale } from '~/paraglide/runtime'
@@ -145,6 +145,12 @@ export const auth = betterAuth({
       },
     }),
     admin(),
+    // Records the last successful sign-in method in a plain, client-readable
+    // cookie (better-auth.last_used_login_method). The /login loader reads it
+    // (see src/lib/lastLoginMethodFns.ts) to promote that method on the
+    // welcome-back card. storeInDatabase stays false → no schema change.
+    // maxAge matches the 1-year welcome-back email cookie so the two agree.
+    lastLoginMethod({ maxAge: 60 * 60 * 24 * 365 }),
     tanstackStartCookies(),
   ],
   advanced: {

@@ -9,6 +9,7 @@ import { ModeToggle } from '~/components/ModeToggle'
 import { useAwaitSignIn } from '~/hooks/useAwaitSignIn'
 import { clearBrowserSession, getBrowserSession } from '~/lib/browserSessionFns'
 import { getSession } from '~/lib/getSession'
+import { getLastLoginMethod } from '~/lib/lastLoginMethodFns'
 import { sanitizeRedirect } from '~/lib/utils'
 
 // The magic link lands in a *new* tab on the /signed-in confirmation page,
@@ -29,15 +30,16 @@ export const Route = createFileRoute('/login')({
   },
   loader: async () => {
     const session = await getBrowserSession()
+    if (!session?.email) return { savedLogin: null }
+    const lastMethod = await getLastLoginMethod()
     return {
-      savedLogin: session?.email
-        ? {
-            email: session.email,
-            name: session.name,
-            image: session.image,
-            imageBlurhash: session.imageBlurhash,
-          }
-        : null,
+      savedLogin: {
+        email: session.email,
+        name: session.name,
+        image: session.image,
+        imageBlurhash: session.imageBlurhash,
+        lastMethod,
+      },
     }
   },
   component: Login,
@@ -51,7 +53,11 @@ function Login() {
   const [useOther, setUseOther] = useState(false)
 
   const savedLogin = useOther ? null : initialSavedLogin
-  const callbackURL = buildCallbackURL(redirectPath)
+  // Magic link opens in a new tab and lands on the /signed-in confirmation (see
+  // buildCallbackURL). Google completes in this same tab, so it skips /signed-in
+  // and goes straight to the in-app destination — the _authenticated onboarding
+  // guard takes over from there for first-time users.
+  const magicLinkCallbackURL = buildCallbackURL(redirectPath)
   const destination = redirectPath ?? '/'
 
   // Once the link has been sent, watch for the browser becoming authenticated in
@@ -84,14 +90,20 @@ function Login() {
             name={savedLogin.name}
             image={savedLogin.image}
             imageBlurhash={savedLogin.imageBlurhash}
-            callbackURL={callbackURL}
+            lastMethod={savedLogin.lastMethod}
+            magicLinkCallbackURL={magicLinkCallbackURL}
+            googleCallbackURL={destination}
             onSent={setSentTo}
             onSwitchUser={() => {
               void switchToOtherEmail()
             }}
           />
         ) : (
-          <LoginFormCard onSent={setSentTo} callbackURL={callbackURL} />
+          <LoginFormCard
+            onSent={setSentTo}
+            magicLinkCallbackURL={magicLinkCallbackURL}
+            googleCallbackURL={destination}
+          />
         )}
       </div>
     </div>

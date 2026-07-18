@@ -62,6 +62,7 @@
   "login_description": "Logga in med en länk till din e-post.",
   "login_email_label": "E-post",
   "login_google_button": "Logga in med Google",
+  "login_last_used": "Senast använd",
   "login_send_error": "Kunde inte skicka inloggningslänken",
   "login_sent_description": "Inloggningslänken är på väg.",
   "login_sent_instructions": "Kolla din inkorg (eller serverloggen tills vidare) och följ länken för att fortsätta.",

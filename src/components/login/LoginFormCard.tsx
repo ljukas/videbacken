@@ -13,17 +13,20 @@ const loginSchema = z.object({
 
 type Props = {
   onSent: (email: string) => void
-  callbackURL: string
+  // Magic link opens in a new tab and lands on /signed-in; Google stays in this
+  // tab and goes straight to the destination. See src/routes/login.tsx.
+  magicLinkCallbackURL: string
+  googleCallbackURL: string
 }
 
-export function LoginFormCard({ onSent, callbackURL }: Props) {
+export function LoginFormCard({ onSent, magicLinkCallbackURL, googleCallbackURL }: Props) {
   const form = useAppForm({
     defaultValues: { email: '' },
     validators: { onSubmit: loginSchema },
     onSubmit: async ({ value }) => {
       const { error } = await authClient.signIn.magicLink({
         email: value.email,
-        callbackURL,
+        callbackURL: magicLinkCallbackURL,
       })
       if (error) {
         toast.error(error.message ?? m.login_send_error())
@@ -41,7 +44,7 @@ export function LoginFormCard({ onSent, callbackURL }: Props) {
       </header>
 
       <div className="flex flex-col gap-5">
-        <GoogleSignInButton callbackURL={callbackURL} />
+        <GoogleSignInButton callbackURL={googleCallbackURL} />
 
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
