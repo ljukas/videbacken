@@ -54,3 +54,11 @@ test('temperature below -60 is rejected by the check constraint', async () => {
     'sensor_reading_temp_range_check',
   )
 })
+
+test('battery outside 0..100 is rejected by the check constraint', async () => {
+  const deviceId = await insertDevice('aabbccddee03')
+  await expectConstraintViolation(
+    db.insert(sensorReading).values({ deviceId, batteryPct: 150 }),
+    'sensor_reading_battery_range_check',
+  )
+})
