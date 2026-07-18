@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '~/components/ui/button'
@@ -10,12 +11,21 @@ import { GoogleIcon } from './GoogleIcon'
 type Props = {
   callbackURL: string
   className?: string
+  // Defaults to the outline (secondary) look; the welcome-back card passes
+  // 'default' to render Google as the primary, filled action.
+  variant?: ComponentProps<typeof Button>['variant']
+  'aria-describedby'?: string
 }
 
 // Shared by LoginFormCard (primary sign-in surface) and WelcomeBackCard
-// (secondary option alongside the one-click magic-link resend) so both
-// stay wired to the exact same `signIn.social` call and error handling.
-export function GoogleSignInButton({ callbackURL, className }: Props) {
+// (either the primary or secondary option) so both stay wired to the exact
+// same `signIn.social` call and error handling.
+export function GoogleSignInButton({
+  callbackURL,
+  className,
+  variant = 'outline',
+  'aria-describedby': ariaDescribedBy,
+}: Props) {
   const [isPending, setIsPending] = useState(false)
 
   async function signInWithGoogle() {
@@ -32,10 +42,11 @@ export function GoogleSignInButton({ callbackURL, className }: Props) {
   return (
     <Button
       type="button"
-      variant="outline"
+      variant={variant}
       size="xl"
       className={cn('w-full font-normal', className)}
       disabled={isPending}
+      aria-describedby={ariaDescribedBy}
       onClick={() => {
         void signInWithGoogle()
       }}
