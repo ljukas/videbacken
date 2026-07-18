@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
 import { SensorDomainError } from './errors'
@@ -138,4 +138,92 @@ export async function deleteDevice(id: string): Promise<void> {
     .where(eq(sensorDevice.id, id))
     .returning({ id: sensorDevice.id })
   if (deleted.length === 0) throw new SensorDomainError('DEVICE_NOT_FOUND')
+}
+
+export const SERIES_RANGES = ['24h', '1m', '3m', '6m', '1y', 'all'] as const
+export type SeriesRange = (typeof SERIES_RANGES)[number]
+
+export type SeriesBucket = {
+  t: number
+  perDevice: Record<string, { tempAvg: number | null; humAvg: number | null }>
+}
+
+const DAY = 86_400
+// window (seconds) + bucket (seconds) per range. `all` is resolved dynamically.
+const RANGE_CONFIG: Record<
+  Exclude<SeriesRange, 'all'>,
+  { windowSec: number; bucketSec: number }
+> = {
+  '24h': { windowSec: DAY, bucketSec: 600 }, //          10 min → ~144 pts
+  '1m': { windowSec: 30 * DAY, bucketSec: 3 * 3600 }, //  3 h   → ~240 pts
+  '3m': { windowSec: 90 * DAY, bucketSec: 12 * 3600 }, // 12 h  → ~180 pts
+  '6m': { windowSec: 180 * DAY, bucketSec: DAY }, //      1 day → ~180 pts
+  '1y': { windowSec: 365 * DAY, bucketSec: DAY }, //     1 day → ~365 pts
+}
+
+// Server-side time-bucketed averages, one series point per (device, bucket).
+// Bucketing keeps the payload ~100-400 points regardless of range. `now` is
+// injectable purely so tests are deterministic.
+export async function getSeries(input: {
+  range: SeriesRange
+  deviceIds?: string[]
+  now?: Date
+}): Promise<{ buckets: SeriesBucket[] }> {
+  const now = input.now ?? new Date()
+
+  let sinceSec: number
+  let bucketSec: number
+  if (input.range === 'all') {
+    const [{ first }] = await db
+      .select({ first: sql<Date | null>`min(${sensorReading.recordedAt})` })
+      .from(sensorReading)
+    if (!first) return { buckets: [] }
+    sinceSec = Math.floor(new Date(first).getTime() / 1000)
+    const spanSec = Math.floor(now.getTime() / 1000) - sinceSec
+    bucketSec = spanSec > 400 * DAY ? 7 * DAY : DAY // weekly if very long, else daily
+  } else {
+    const cfg = RANGE_CONFIG[input.range]
+    sinceSec = Math.floor(now.getTime() / 1000) - cfg.windowSec
+    bucketSec = cfg.bucketSec
+  }
+  const since = new Date(sinceSec * 1000)
+
+  const filters = [gte(sensorReading.recordedAt, since)]
+  if (input.deviceIds && input.deviceIds.length > 0) {
+    filters.push(inArray(sensorReading.deviceId, input.deviceIds))
+  }
+
+  // epoch-floor bucketing — date_trunc can't do arbitrary 10-min / 3-h widths.
+  const bucketExpr = sql<Date>`to_timestamp(floor(extract(epoch from ${sensorReading.recordedAt}) / ${bucketSec}) * ${bucketSec})`
+
+  const rows = await db
+    .select({
+      deviceId: sensorReading.deviceId,
+      bucket: bucketExpr,
+      tempAvg: sql<number | null>`avg(${sensorReading.temperatureC})`,
+      humAvg: sql<number | null>`avg(${sensorReading.humidityPct})`,
+    })
+    .from(sensorReading)
+    .where(and(...filters))
+    // Group/order by the SELECT's 2nd column (the bucket) positionally: drizzle
+    // renders the bucket expression with a qualified column in GROUP BY but an
+    // unqualified one in SELECT, which Postgres rejects as a mismatch. Ordinals
+    // reference the SELECT position, so the expression is written exactly once.
+    .groupBy(sensorReading.deviceId, sql`2`)
+    .orderBy(sql`2`)
+
+  const byBucket = new Map<number, SeriesBucket>()
+  for (const r of rows) {
+    const t = new Date(r.bucket).getTime()
+    let bucket = byBucket.get(t)
+    if (!bucket) {
+      bucket = { t, perDevice: {} }
+      byBucket.set(t, bucket)
+    }
+    bucket.perDevice[r.deviceId] = {
+      tempAvg: r.tempAvg == null ? null : Number(r.tempAvg),
+      humAvg: r.humAvg == null ? null : Number(r.humAvg),
+    }
+  }
+  return { buckets: [...byBucket.values()].sort((a, b) => a.t - b.t) }
 }
