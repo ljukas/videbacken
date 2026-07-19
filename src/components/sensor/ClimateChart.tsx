@@ -52,16 +52,8 @@ export function ClimateChart({ rows, devices, unit, formatTick }: Props) {
         />
         <YAxis width={44} unit={unit} tickMargin={4} domain={['auto', 'auto']} />
         <ChartTooltip
-          // No position transition — otherwise the box slides in from the
-          // chart's top-left corner on first hover instead of appearing at the
-          // point (Recharts animates the tooltip transform by default).
-          isAnimationActive={false}
           content={
             <ChartTooltipContent
-              // Entrance animation that plays AT the point (fade + slight zoom),
-              // rather than the transform-slide from the corner that Recharts'
-              // own tooltip animation produces.
-              className="fade-in-0 zoom-in-95 animate-in duration-150"
               labelFormatter={(_, items) => formatTick(Number(items?.[0]?.payload?.t))}
               // Custom row: device name on the left, value + unit on the right,
               // clearly spaced (the default cramps them and omits the unit).
