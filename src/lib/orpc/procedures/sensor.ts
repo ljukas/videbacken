@@ -13,12 +13,22 @@ const sensorErrors = {
 
 const rangeSchema = z.enum(SERIES_RANGES)
 
+// An optional free-text label: trims, bounds length, and collapses empty →
+// null so "no name" / "no location" has a single representation.
+const labelField = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .transform((v) => v || null)
+
 export const sensorRouter = {
   // Reads — any signed-in (approved) user; the app is read-only for non-admins.
   listDevices: protectedProcedure.handler(() => sensorService.listDevices()),
 
   series: protectedProcedure
-    .input(z.object({ range: rangeSchema, deviceIds: z.array(z.uuid()).optional() }))
+    .input(z.object({ range: rangeSchema, deviceIds: z.array(z.uuid()).max(64).optional() }))
     .handler(({ input }) => sensorService.getSeries(input)),
 
   renameDevice: adminProcedure
@@ -26,8 +36,10 @@ export const sensorRouter = {
     .input(
       z.object({
         id: z.uuid(),
-        name: z.string().trim().min(1).max(80).nullable(),
-        location: z.string().trim().max(120).nullable(),
+        // A blank/whitespace label means "clear it" → null (one canonical
+        // representation of "unset", so displayName falls back to the MAC).
+        name: labelField(80),
+        location: labelField(120),
       }),
     )
     .handler(async ({ input, context, errors }) => {

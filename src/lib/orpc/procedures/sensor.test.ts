@@ -81,6 +81,20 @@ test('series returns bucketed data to a signed-in user', async () => {
   expect(result.buckets.length).toBeGreaterThan(0)
 })
 
+test('series rejects an unauthenticated caller', async () => {
+  await expect(
+    call(sensorRouter.series, { range: '24h' }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+})
+
+test('series rejects an unknown range value', async () => {
+  await signIn('user')
+  await expect(
+    // @ts-expect-error — 'bogus' is not a SeriesRange; the input schema must reject it
+    call(sensorRouter.series, { range: 'bogus' }, { context: baseContext() }),
+  ).rejects.toBeDefined()
+})
+
 test('renameDevice lets an admin set the name and location', async () => {
   const { deviceId } = await recordReading({ mac: 'aabbccddeeff' })
   await signIn('admin')
@@ -94,6 +108,25 @@ test('renameDevice lets an admin set the name and location', async () => {
   expect(devices[0].location).toBe('Under kitchen')
 })
 
+test('renameDevice with a blank name clears it back to the fallback displayName', async () => {
+  const { deviceId } = await recordReading({ mac: 'aabbccddeeff' })
+  await signIn('admin')
+  await call(
+    sensorRouter.renameDevice,
+    { id: deviceId, name: 'NW corner', location: 'Under kitchen' },
+    { context: baseContext() },
+  )
+  // A blank name is the "clear it" signal → displayName reverts to the MAC.
+  await call(
+    sensorRouter.renameDevice,
+    { id: deviceId, name: '  ', location: null },
+    { context: baseContext() },
+  )
+  const devices = await call(sensorRouter.listDevices, undefined, { context: baseContext() })
+  expect(devices[0].displayName).toBe('Sensor eeff')
+  expect(devices[0].name).toBeNull()
+})
+
 test('renameDevice maps a missing device to a DEVICE_NOT_FOUND error', async () => {
   await signIn('admin')
   await expect(
@@ -103,6 +136,16 @@ test('renameDevice maps a missing device to a DEVICE_NOT_FOUND error', async () 
       { context: baseContext() },
     ),
   ).rejects.toMatchObject({ code: 'DEVICE_NOT_FOUND' })
+})
+
+test('renameDevice rejects an unauthenticated caller', async () => {
+  await expect(
+    call(
+      sensorRouter.renameDevice,
+      { id: UNKNOWN_ID, name: 'x', location: null },
+      { context: baseContext() },
+    ),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
 })
 
 test('renameDevice is forbidden for a non-admin user', async () => {
@@ -130,4 +173,18 @@ test('deleteDevice maps a missing device to a DEVICE_NOT_FOUND error', async () 
   await expect(
     call(sensorRouter.deleteDevice, { id: UNKNOWN_ID }, { context: baseContext() }),
   ).rejects.toMatchObject({ code: 'DEVICE_NOT_FOUND' })
+})
+
+test('deleteDevice is forbidden for a non-admin user', async () => {
+  const { deviceId } = await recordReading({ mac: 'aabbccddeeff' })
+  await signIn('user')
+  await expect(
+    call(sensorRouter.deleteDevice, { id: deviceId }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+})
+
+test('deleteDevice rejects an unauthenticated caller', async () => {
+  await expect(
+    call(sensorRouter.deleteDevice, { id: UNKNOWN_ID }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
 })
