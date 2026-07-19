@@ -48,7 +48,12 @@ export function CurrentReadingTiles({
             <div className="text-muted-foreground text-sm tabular-nums">
               {d.latest?.humidityPct != null ? `${d.latest.humidityPct.toFixed(0)}%` : '—'}
             </div>
-            <div className="mt-2 text-muted-foreground text-xs">
+            {/* The "last seen" distance is measured against `new Date()`, which
+                differs by ~1s between SSR and hydration — an expected, benign
+                mismatch, so suppress the hydration warning (React's documented
+                use for timestamps). The 60s poll re-renders it with the fresh
+                value. */}
+            <div className="mt-2 text-muted-foreground text-xs" suppressHydrationWarning>
               {d.batteryPct != null ? m.sensors_battery({ pct: d.batteryPct }) : null}
               {d.batteryPct != null && d.lastSeenAt ? ' · ' : null}
               {d.lastSeenAt
