@@ -58,6 +58,10 @@ export function ClimateChart({ rows, devices, unit, formatTick }: Props) {
           isAnimationActive={false}
           content={
             <ChartTooltipContent
+              // Entrance animation that plays AT the point (fade + slight zoom),
+              // rather than the transform-slide from the corner that Recharts'
+              // own tooltip animation produces.
+              className="fade-in-0 zoom-in-95 animate-in duration-150"
               labelFormatter={(_, items) => formatTick(Number(items?.[0]?.payload?.t))}
               // Custom row: device name on the left, value + unit on the right,
               // clearly spaced (the default cramps them and omits the unit).
