@@ -1,7 +1,13 @@
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
+import { SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
 import { SensorDomainError } from './errors'
+
+// Re-exported so server-side consumers (procedures, tests) still get the range
+// enum from the service barrel. The client route imports it from
+// `~/lib/sensor/range` directly to avoid pulling this (db-importing) module.
+export { SERIES_RANGES, type SeriesRange }
 
 // Lowercase + keep hex only, so "AA:BB:CC...", "aa-bb-cc..." and "aabbcc..."
 // all resolve to one device.
@@ -139,9 +145,6 @@ export async function deleteDevice(id: string): Promise<void> {
     .returning({ id: sensorDevice.id })
   if (deleted.length === 0) throw new SensorDomainError('DEVICE_NOT_FOUND')
 }
-
-export const SERIES_RANGES = ['24h', '1m', '3m', '6m', '1y', 'all'] as const
-export type SeriesRange = (typeof SERIES_RANGES)[number]
 
 export type SeriesBucket = {
   t: number

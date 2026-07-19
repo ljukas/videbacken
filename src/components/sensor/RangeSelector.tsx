@@ -1,5 +1,5 @@
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
-import type { SeriesRange } from '~/lib/services/sensor'
+import type { SeriesRange } from '~/lib/sensor/range'
 import { m } from '~/paraglide/messages'
 
 const RANGE_LABEL: Record<SeriesRange, () => string> = {

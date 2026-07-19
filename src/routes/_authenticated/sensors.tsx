@@ -14,7 +14,7 @@ import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { getIntlLocale } from '~/lib/i18n/format'
 import { orpc } from '~/lib/orpc/client'
 import { colorForIndex, toChartRows } from '~/lib/sensor/chartData'
-import { SERIES_RANGES, type SeriesRange } from '~/lib/services/sensor'
+import { SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
