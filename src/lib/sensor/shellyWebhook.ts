@@ -21,14 +21,23 @@ export type ParsedShellyReading = {
   batteryPct: number | null
 }
 
+// An empty/whitespace query value means "the placeholder produced nothing" —
+// treat it as absent (→ null), NOT as 0. Otherwise `t=` would coerce to a
+// phantom 0 °C reading. A real zero still arrives as the string "0".
+function numParam(raw: string | null): string | undefined {
+  if (raw == null) return undefined
+  const trimmed = raw.trim()
+  return trimmed === '' ? undefined : trimmed
+}
+
 export function parseShellyQuery(
   params: URLSearchParams,
 ): { ok: true; value: ParsedShellyReading } | { ok: false } {
   const parsed = querySchema.safeParse({
     mac: params.get('mac') ?? undefined,
-    t: params.get('t') ?? undefined,
-    h: params.get('h') ?? undefined,
-    batt: params.get('batt') ?? undefined,
+    t: numParam(params.get('t')),
+    h: numParam(params.get('h')),
+    batt: numParam(params.get('batt')),
   })
   if (!parsed.success) return { ok: false }
   return {
@@ -75,6 +84,10 @@ export async function handleShellyWebhook(request: Request): Promise<Response> {
     if (err instanceof SensorDomainError && err.code === 'INVALID_MAC') {
       return new Response(null, { status: 400 })
     }
+    // Everything else (e.g. DB unavailable) is a server fault — log it (a Shelly
+    // wakes rarely, so a silent ingest failure could go unnoticed for a long
+    // time) before letting it surface as a 500.
+    logger.error('shelly webhook failed to store reading', { error: err })
     throw err
   }
 }
