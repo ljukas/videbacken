@@ -140,6 +140,22 @@ test('getSeries includes a reading exactly at the since edge, excludes one just 
   expect(temps).toEqual([10])
 })
 
+test('getSeries floors `now` to whole seconds when computing the window edge', async () => {
+  // With a sub-second `now`, the window start is floored to the whole second, so
+  // a reading just inside that floored edge is included. (Regression guard: an
+  // unfloored `since` would push the edge ~500ms later and drop the reading.)
+  const now = new Date('2026-07-18T12:00:00.500Z') // floored since = 2026-07-17T12:00:00.000Z
+  const d = await device('aa23')
+  await db.insert(sensorReading).values({
+    deviceId: d,
+    temperatureC: 42,
+    recordedAt: new Date('2026-07-17T12:00:00.200Z'), // after floored since, before unfloored
+  })
+  const { buckets } = await getSeries({ range: '24h', now })
+  const temps = buckets.flatMap((b) => Object.values(b.perDevice).map((v) => v.tempAvg))
+  expect(temps).toEqual([42])
+})
+
 test('getSeries averages each metric independently, skipping NULLs', async () => {
   const now = new Date('2026-07-18T12:00:00Z')
   const d = await device('aa23')

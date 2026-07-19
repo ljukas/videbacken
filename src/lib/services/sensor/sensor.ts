@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lte, type SQL, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
 import { SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
@@ -151,96 +151,132 @@ export type SeriesBucket = {
   perDevice: Record<string, { tempAvg: number | null; humAvg: number | null }>
 }
 
-const DAY = 86_400
-// window (seconds) + bucket (seconds) per range. `all` is resolved dynamically.
-const RANGE_CONFIG: Record<
+type SeriesWindow = { since: Date; bucketSec: number }
+
+type BucketRow = {
+  deviceId: string
+  bucket: Date
+  tempAvg: number | null
+  humAvg: number | null
+}
+
+const DAY_SEC = 86_400
+
+// Fixed ranges → lookback window + bucket width, chosen so each range yields a
+// bounded number of points (~100-400). `all` is resolved from the data instead.
+const FIXED_RANGES: Record<
   Exclude<SeriesRange, 'all'>,
   { windowSec: number; bucketSec: number }
 > = {
-  '24h': { windowSec: DAY, bucketSec: 600 }, //          10 min → ~144 pts
-  '1m': { windowSec: 30 * DAY, bucketSec: 3 * 3600 }, //  3 h   → ~240 pts
-  '3m': { windowSec: 90 * DAY, bucketSec: 12 * 3600 }, // 12 h  → ~180 pts
-  '6m': { windowSec: 180 * DAY, bucketSec: DAY }, //      1 day → ~180 pts
-  '1y': { windowSec: 365 * DAY, bucketSec: DAY }, //     1 day → ~365 pts
+  '24h': { windowSec: DAY_SEC, bucketSec: 600 }, // 10 min → ~144 pts
+  '1m': { windowSec: 30 * DAY_SEC, bucketSec: 3 * 3600 }, // 3 h → ~240 pts
+  '3m': { windowSec: 90 * DAY_SEC, bucketSec: 12 * 3600 }, // 12 h → ~180 pts
+  '6m': { windowSec: 180 * DAY_SEC, bucketSec: DAY_SEC }, // 1 day → ~180 pts
+  '1y': { windowSec: 365 * DAY_SEC, bucketSec: DAY_SEC }, // 1 day → ~365 pts
 }
 
-// Server-side time-bucketed averages, one series point per (device, bucket).
-// Bucketing keeps the payload ~100-400 points regardless of range. `now` is
-// injectable purely so tests are deterministic.
+// Restrict to the requested devices; `undefined`/empty means no restriction.
+function deviceFilter(deviceIds: string[] | undefined): SQL | undefined {
+  return deviceIds && deviceIds.length > 0 ? inArray(sensorReading.deviceId, deviceIds) : undefined
+}
+
+// Earliest reading at-or-before `now`, restricted to the SAME device filter as
+// the main query. Threading the filter through is load-bearing: for the `all`
+// range this timestamp fixes the span that picks daily-vs-weekly bucketing, so
+// an unrequested device's older data must not be allowed to coarsen this
+// device's series. null = no matching readings.
+async function earliestReadingAt(now: Date, filter: SQL | undefined): Promise<Date | null> {
+  const [{ first }] = await db
+    .select({ first: sql<string | null>`min(${sensorReading.recordedAt})` })
+    .from(sensorReading)
+    .where(and(lte(sensorReading.recordedAt, now), filter))
+  return first ? new Date(first) : null
+}
+
+// The [since, bucketSec] window for a range. `now` (and the earliest reading for
+// `all`) is floored to whole seconds before the window math, so `since` always
+// lands on a second boundary regardless of `now`'s sub-second component. `all`
+// spans from the first matching reading and widens to weekly buckets past ~400
+// days to keep the point count bounded; null when there's nothing to show.
+async function resolveWindow(
+  range: SeriesRange,
+  now: Date,
+  filter: SQL | undefined,
+): Promise<SeriesWindow | null> {
+  const nowSec = Math.floor(now.getTime() / 1000)
+  if (range !== 'all') {
+    const { windowSec, bucketSec } = FIXED_RANGES[range]
+    return { since: new Date((nowSec - windowSec) * 1000), bucketSec }
+  }
+  const first = await earliestReadingAt(now, filter)
+  if (!first) return null
+  const sinceSec = Math.floor(first.getTime() / 1000)
+  const spanSec = nowSec - sinceSec
+  return {
+    since: new Date(sinceSec * 1000),
+    bucketSec: spanSec > 400 * DAY_SEC ? 7 * DAY_SEC : DAY_SEC,
+  }
+}
+
+// One row per (device, bucket) with the bucket's average temperature/humidity.
+// Bounded on both sides: `now` is injectable for point-in-time correctness, so a
+// reading stamped after it must not leak in.
+function queryBucketAverages(win: SeriesWindow, now: Date, filter: SQL | undefined) {
+  // epoch-floor bucketing — date_trunc can't do arbitrary 10-min / 3-h widths.
+  const bucket = sql<Date>`to_timestamp(floor(extract(epoch from ${sensorReading.recordedAt}) / ${win.bucketSec}) * ${win.bucketSec})`
+  return (
+    db
+      .select({
+        deviceId: sensorReading.deviceId,
+        bucket,
+        tempAvg: sql<number | null>`avg(${sensorReading.temperatureC})`,
+        humAvg: sql<number | null>`avg(${sensorReading.humidityPct})`,
+      })
+      .from(sensorReading)
+      .where(
+        and(gte(sensorReading.recordedAt, win.since), lte(sensorReading.recordedAt, now), filter),
+      )
+      // Group/order by the bucket via its SELECT ordinal (`2`): drizzle renders the
+      // expression differently in SELECT vs GROUP BY, which Postgres rejects.
+      .groupBy(sensorReading.deviceId, sql`2`)
+      .orderBy(sql`2`)
+  )
+}
+
+// postgres-js returns avg() as a numeric string; preserve null (never coerce to 0).
+function toNumber(v: number | string | null): number | null {
+  return v == null ? null : Number(v)
+}
+
+// Pivot (device, bucket) rows into one SeriesBucket per timestamp, ascending.
+function toBuckets(rows: BucketRow[]): SeriesBucket[] {
+  const byTime = new Map<number, SeriesBucket>()
+  for (const row of rows) {
+    const t = new Date(row.bucket).getTime()
+    const bucket = byTime.get(t) ?? { t, perDevice: {} }
+    bucket.perDevice[row.deviceId] = {
+      tempAvg: toNumber(row.tempAvg),
+      humAvg: toNumber(row.humAvg),
+    }
+    byTime.set(t, bucket)
+  }
+  return [...byTime.values()].sort((a, b) => a.t - b.t)
+}
+
+// Server-side time-bucketed averages, one point per (device, bucket). `now` is
+// injectable so tests are deterministic.
 export async function getSeries(input: {
   range: SeriesRange
   deviceIds?: string[]
   now?: Date
 }): Promise<{ buckets: SeriesBucket[] }> {
   const now = input.now ?? new Date()
+  // Explicit empty selection = no devices → empty (distinct from undefined = all).
+  if (input.deviceIds?.length === 0) return { buckets: [] }
 
-  // Contract: `undefined` deviceIds = all devices; an explicit empty array =
-  // "no devices selected" → empty result (never silently "show everything").
-  if (input.deviceIds && input.deviceIds.length === 0) return { buckets: [] }
-  const deviceFilter =
-    input.deviceIds && input.deviceIds.length > 0
-      ? inArray(sensorReading.deviceId, input.deviceIds)
-      : undefined
+  const filter = deviceFilter(input.deviceIds)
+  const win = await resolveWindow(input.range, now, filter)
+  if (!win) return { buckets: [] }
 
-  let sinceSec: number
-  let bucketSec: number
-  if (input.range === 'all') {
-    // The min() MUST honor the same device + point-in-time filters as the main
-    // query — otherwise an unrequested device's old data would dictate this
-    // device's bucket width (daily vs weekly) and silently coarsen its series.
-    const minFilters = [lte(sensorReading.recordedAt, now)]
-    if (deviceFilter) minFilters.push(deviceFilter)
-    const [{ first }] = await db
-      .select({ first: sql<string | null>`min(${sensorReading.recordedAt})` })
-      .from(sensorReading)
-      .where(and(...minFilters))
-    if (!first) return { buckets: [] }
-    sinceSec = Math.floor(new Date(first).getTime() / 1000)
-    const spanSec = Math.floor(now.getTime() / 1000) - sinceSec
-    bucketSec = spanSec > 400 * DAY ? 7 * DAY : DAY // weekly if very long, else daily
-  } else {
-    const cfg = RANGE_CONFIG[input.range]
-    sinceSec = Math.floor(now.getTime() / 1000) - cfg.windowSec
-    bucketSec = cfg.bucketSec
-  }
-  const since = new Date(sinceSec * 1000)
-
-  // Bounded on both sides: `now` is injectable for point-in-time correctness, so
-  // a reading stamped after it must not leak in.
-  const filters = [gte(sensorReading.recordedAt, since), lte(sensorReading.recordedAt, now)]
-  if (deviceFilter) filters.push(deviceFilter)
-
-  // epoch-floor bucketing — date_trunc can't do arbitrary 10-min / 3-h widths.
-  const bucketExpr = sql<Date>`to_timestamp(floor(extract(epoch from ${sensorReading.recordedAt}) / ${bucketSec}) * ${bucketSec})`
-
-  const rows = await db
-    .select({
-      deviceId: sensorReading.deviceId,
-      bucket: bucketExpr,
-      tempAvg: sql<number | null>`avg(${sensorReading.temperatureC})`,
-      humAvg: sql<number | null>`avg(${sensorReading.humidityPct})`,
-    })
-    .from(sensorReading)
-    .where(and(...filters))
-    // Group/order by the SELECT's 2nd column (the bucket) positionally: drizzle
-    // renders the bucket expression with a qualified column in GROUP BY but an
-    // unqualified one in SELECT, which Postgres rejects as a mismatch. Ordinals
-    // reference the SELECT position, so the expression is written exactly once.
-    .groupBy(sensorReading.deviceId, sql`2`)
-    .orderBy(sql`2`)
-
-  const byBucket = new Map<number, SeriesBucket>()
-  for (const r of rows) {
-    const t = new Date(r.bucket).getTime()
-    let bucket = byBucket.get(t)
-    if (!bucket) {
-      bucket = { t, perDevice: {} }
-      byBucket.set(t, bucket)
-    }
-    bucket.perDevice[r.deviceId] = {
-      tempAvg: r.tempAvg == null ? null : Number(r.tempAvg),
-      humAvg: r.humAvg == null ? null : Number(r.humAvg),
-    }
-  }
-  return { buckets: [...byBucket.values()].sort((a, b) => a.t - b.t) }
+  return { buckets: toBuckets(await queryBucketAverages(win, now, filter)) }
 }
