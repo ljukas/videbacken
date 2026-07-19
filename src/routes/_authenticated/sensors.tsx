@@ -144,23 +144,11 @@ function SensorsPage() {
       </section>
 
       <ChartSection title={m.sensors_temp_chart_title()} hasData={hasData}>
-        <ClimateChart
-          rows={tempRows}
-          devices={chartDevices}
-          unit="°C"
-          formatTick={formatTick}
-          title={m.sensors_temp_chart_desc()}
-        />
+        <ClimateChart rows={tempRows} devices={chartDevices} unit="°C" formatTick={formatTick} />
       </ChartSection>
 
       <ChartSection title={m.sensors_humidity_chart_title()} hasData={hasData}>
-        <ClimateChart
-          rows={humRows}
-          devices={chartDevices}
-          unit="%"
-          formatTick={formatTick}
-          title={m.sensors_humidity_chart_desc()}
-        />
+        <ClimateChart rows={humRows} devices={chartDevices} unit="%" formatTick={formatTick} />
       </ChartSection>
 
       {isAdmin ? (

@@ -7,7 +7,6 @@ test('renders one line per visible device with stable per-device colors', async 
     // A fixed-size wrapper so Recharts' ResponsiveContainer has a box to measure.
     <div style={{ width: 600, height: 300 }}>
       <ClimateChart
-        title="Temperature over time"
         rows={[
           { t: 1000, a: 20, b: 25, c: 30 },
           { t: 2000, a: 21, b: 26, c: 31 },
