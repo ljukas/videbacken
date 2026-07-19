@@ -104,6 +104,7 @@
   "search_no_results": "Inga träffar.",
   "sensors_battery": "Batteri {pct}%",
   "sensors_chart_empty": "Ingen data i vald period.",
+  "sensors_current_heading": "Nuvarande värden",
   "sensors_description": "Temperatur och luftfuktighet under huset.",
   "sensors_devices_label": "Sensorer",
   "sensors_edit_description": "Ge sensorn ett namn och en plats.",

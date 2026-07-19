@@ -11,6 +11,7 @@ import { EditDeviceDialog } from '~/components/sensor/EditDeviceDialog'
 import { RangeSelector } from '~/components/sensor/RangeSelector'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
+import { getIntlLocale } from '~/lib/i18n/format'
 import { orpc } from '~/lib/orpc/client'
 import { colorForIndex, toChartRows } from '~/lib/sensor/chartData'
 import { SERIES_RANGES, type SeriesRange } from '~/lib/services/sensor'
@@ -59,7 +60,12 @@ function SensorsPage() {
     clearKeys: ['deviceId'],
   })
 
-  const { data: devices } = useSuspenseQuery(orpc.sensor.listDevices.queryOptions())
+  const { data: devices } = useSuspenseQuery({
+    ...orpc.sensor.listDevices.queryOptions(),
+    // The tiles show live latest/battery/last-seen, so poll on the same cadence
+    // as the short-range charts (spec §7).
+    refetchInterval: 60_000,
+  })
   const { data: series } = useQuery({
     ...orpc.sensor.series.queryOptions({ input: { range } }),
     refetchInterval: POLLED_RANGES.includes(range) ? 60_000 : false,
@@ -128,11 +134,14 @@ function SensorsPage() {
         <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
       </div>
 
-      <CurrentReadingTiles
-        devices={devices}
-        isAdmin={isAdmin}
-        onEdit={(id) => open('edit', { deviceId: id })}
-      />
+      <section className="flex flex-col gap-2">
+        <h2 className="sr-only">{m.sensors_current_heading()}</h2>
+        <CurrentReadingTiles
+          devices={devices}
+          isAdmin={isAdmin}
+          onEdit={(id) => open('edit', { deviceId: id })}
+        />
+      </section>
 
       <ChartSection title={m.sensors_temp_chart_title()} hasData={hasData}>
         <ClimateChart
@@ -201,11 +210,13 @@ function ChartSection({
   )
 }
 
-// Range-aware x-axis label: time-of-day for the 24h view, else a short date.
+// Range-aware x-axis label in the active UI locale: time-of-day for the 24h
+// view, else a short date.
 function makeTickFormatter(range: SeriesRange): (t: number) => string {
-  return (t: number) => {
-    const d = new Date(t)
-    if (range === '24h') return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  }
+  const locale = getIntlLocale()
+  const fmt =
+    range === '24h'
+      ? new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' })
+      : new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
+  return (t: number) => fmt.format(new Date(t))
 }

@@ -29,6 +29,16 @@ test('shows the latest reading and an admin-only edit button', async () => {
   expect(onEdit).toHaveBeenCalledWith('a')
 })
 
+test('shows the battery percentage and last-seen line', async () => {
+  const { screen } = await renderWithProviders(
+    <CurrentReadingTiles devices={[device]} isAdmin={false} onEdit={() => {}} />,
+  )
+  // Battery + last-seen share one line joined by " · "; match the battery part.
+  await expect
+    .element(screen.getByText(m.sensors_battery({ pct: 88 }), { exact: false }))
+    .toBeVisible()
+})
+
 test('renders an em-dash when a device has no reading yet', async () => {
   const noReading: Device = { ...device, latest: null }
   const { screen } = await renderWithProviders(

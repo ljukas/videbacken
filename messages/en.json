@@ -104,6 +104,7 @@
   "search_no_results": "No results.",
   "sensors_battery": "Battery {pct}%",
   "sensors_chart_empty": "No data in the selected period.",
+  "sensors_current_heading": "Current readings",
   "sensors_description": "Temperature and humidity under the house.",
   "sensors_devices_label": "Sensors",
   "sensors_edit_description": "Give the sensor a name and a location.",

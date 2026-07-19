@@ -1,6 +1,6 @@
 import { PencilIcon } from 'lucide-react'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { formatDistanceShort } from '~/lib/i18n/format'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -22,18 +22,23 @@ export function CurrentReadingTiles({
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
       {devices.map((d) => (
         <Card key={d.id}>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          {/* CardHeader is a grid that only makes room for a trailing action
+              when a CardAction (data-slot="card-action") is present, so the edit
+              button must be wrapped in CardAction to sit beside the title. */}
+          <CardHeader className="pb-2">
             <CardTitle className="truncate text-sm">{d.displayName}</CardTitle>
             {isAdmin ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="-mr-2 size-7 shrink-0"
-                onClick={() => onEdit(d.id)}
-                aria-label={m.sensors_edit_device()}
-              >
-                <PencilIcon className="size-3.5" />
-              </Button>
+              <CardAction>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  onClick={() => onEdit(d.id)}
+                  aria-label={m.sensors_edit_device()}
+                >
+                  <PencilIcon className="size-3.5" />
+                </Button>
+              </CardAction>
             ) : null}
           </CardHeader>
           <CardContent>
