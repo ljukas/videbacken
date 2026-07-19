@@ -16,9 +16,11 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as ApiLogRouteImport } from './routes/api/log'
 import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
+import { Route as AuthenticatedSensorsRouteImport } from './routes/_authenticated/sensors'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
 import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authenticated/account/index'
+import { Route as ApiWebhooksShellyRouteImport } from './routes/api/webhooks/shelly'
 import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
@@ -57,6 +59,11 @@ const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSensorsRoute = AuthenticatedSensorsRouteImport.update({
+  id: '/sensors',
+  path: '/sensors',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -73,6 +80,11 @@ const AuthenticatedAccountIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedAccountRoute,
   } as any)
+const ApiWebhooksShellyRoute = ApiWebhooksShellyRouteImport.update({
+  id: '/api/webhooks/shelly',
+  path: '/api/webhooks/shelly',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRpcSplatRoute = ApiRpcSplatRouteImport.update({
   id: '/api/rpc/$',
   path: '/api/rpc/$',
@@ -97,11 +109,13 @@ export interface FileRoutesByFullPath {
   '/signed-in': typeof SignedInRoute
   '/account': typeof AuthenticatedAccountRouteWithChildren
   '/admin': typeof AuthenticatedAdminRoute
+  '/sensors': typeof AuthenticatedSensorsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
+  '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account/': typeof AuthenticatedAccountIndexRoute
 }
 export interface FileRoutesByTo {
@@ -109,12 +123,14 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/signed-in': typeof SignedInRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/sensors': typeof AuthenticatedSensorsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
   '/': typeof AuthenticatedIndexRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
+  '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account': typeof AuthenticatedAccountIndexRoute
 }
 export interface FileRoutesById {
@@ -125,12 +141,14 @@ export interface FileRoutesById {
   '/signed-in': typeof SignedInRoute
   '/_authenticated/account': typeof AuthenticatedAccountRouteWithChildren
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
+  '/_authenticated/sensors': typeof AuthenticatedSensorsRoute
   '/_authenticated/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
+  '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/_authenticated/account/': typeof AuthenticatedAccountIndexRoute
 }
 export interface FileRouteTypes {
@@ -142,11 +160,13 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/account'
     | '/admin'
+    | '/sensors'
     | '/users'
     | '/api/log'
     | '/account/profile'
     | '/api/auth/$'
     | '/api/rpc/$'
+    | '/api/webhooks/shelly'
     | '/account/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -154,12 +174,14 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/signed-in'
     | '/admin'
+    | '/sensors'
     | '/users'
     | '/api/log'
     | '/'
     | '/account/profile'
     | '/api/auth/$'
     | '/api/rpc/$'
+    | '/api/webhooks/shelly'
     | '/account'
   id:
     | '__root__'
@@ -169,12 +191,14 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/_authenticated/account'
     | '/_authenticated/admin'
+    | '/_authenticated/sensors'
     | '/_authenticated/users'
     | '/api/log'
     | '/_authenticated/'
     | '/_authenticated/account/profile'
     | '/api/auth/$'
     | '/api/rpc/$'
+    | '/api/webhooks/shelly'
     | '/_authenticated/account/'
   fileRoutesById: FileRoutesById
 }
@@ -186,6 +210,7 @@ export interface RootRouteChildren {
   ApiLogRoute: typeof ApiLogRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiRpcSplatRoute: typeof ApiRpcSplatRoute
+  ApiWebhooksShellyRoute: typeof ApiWebhooksShellyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -239,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedUsersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/sensors': {
+      id: '/_authenticated/sensors'
+      path: '/sensors'
+      fullPath: '/sensors'
+      preLoaderRoute: typeof AuthenticatedSensorsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -259,6 +291,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/account/'
       preLoaderRoute: typeof AuthenticatedAccountIndexRouteImport
       parentRoute: typeof AuthenticatedAccountRoute
+    }
+    '/api/webhooks/shelly': {
+      id: '/api/webhooks/shelly'
+      path: '/api/webhooks/shelly'
+      fullPath: '/api/webhooks/shelly'
+      preLoaderRoute: typeof ApiWebhooksShellyRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/rpc/$': {
       id: '/api/rpc/$'
@@ -300,6 +339,7 @@ const AuthenticatedAccountRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedAccountRoute: typeof AuthenticatedAccountRouteWithChildren
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
+  AuthenticatedSensorsRoute: typeof AuthenticatedSensorsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
@@ -307,6 +347,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAccountRoute: AuthenticatedAccountRouteWithChildren,
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
+  AuthenticatedSensorsRoute: AuthenticatedSensorsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
@@ -323,6 +364,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLogRoute: ApiLogRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiRpcSplatRoute: ApiRpcSplatRoute,
+  ApiWebhooksShellyRoute: ApiWebhooksShellyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

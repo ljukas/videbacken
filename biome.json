@@ -103,6 +103,9 @@
           "correctness": {
             "useExhaustiveDependencies": "off"
           },
+          "security": {
+            "noDangerouslySetInnerHtml": "off"
+          },
           "suspicious": {
             "noArrayIndexKey": "off",
             "noDocumentCookie": "off"

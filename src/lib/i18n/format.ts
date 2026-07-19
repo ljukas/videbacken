@@ -9,6 +9,12 @@ const INTL_LOCALES: Record<Locale, string> = {
   en: 'en-GB',
 }
 
+// The active UI locale as a BCP 47 tag (sv → sv-SE, en → en-GB), for ad-hoc
+// Intl formatters (e.g. chart axis ticks) that need to match the page locale.
+export function getIntlLocale(): string {
+  return INTL_LOCALES[getLocale()]
+}
+
 const dateFormatters = new Map<Locale, Intl.DateTimeFormat>()
 
 // Locale is resolved per call, not at module scope — a module-level formatter
