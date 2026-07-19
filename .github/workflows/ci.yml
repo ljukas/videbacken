@@ -10,32 +10,48 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR runs, but never cancel a post-merge run on main.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check:
-    name: Check (Biome)
+    name: Check (${{ matrix.name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lint
+            cmd: check:ci
+          - name: types
+            cmd: typecheck
+          - name: build
+            cmd: build
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Cache bun install cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
-      - run: bun run check:ci
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run build
+      # src/paraglide/ is generated (gitignored). tsc (types) and vite build
+      # both import from it, so compile it before any leg runs. Idempotent.
+      - name: Compile i18n messages
+        run: bun run i18n:compile
+      - run: bun run ${{ matrix.cmd }}
 
   test:
     name: Test
     runs-on: ubuntu-latest
-    # Self-contained Postgres service (no Neon secrets). Mirrors the local dev
-    # container: plain postgres:17-alpine, same neon/npg/neondb creds, no SSL.
+    timeout-minutes: 15
+    # Self-contained Postgres service (no Neon secrets). Mirrors local dev:
+    # plain postgres:17-alpine, same neon/npg/neondb creds, no SSL.
     services:
       postgres:
         image: postgres:17-alpine
@@ -58,6 +74,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Cache bun install cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - name: Install Playwright Chromium
         run: bunx playwright install --with-deps chromium
@@ -65,3 +89,21 @@ jobs:
         run: bun run db:migrate
       - name: Run tests
         run: bun run test
+
+  # Single aggregate gate — the ONLY required status check on `main`.
+  # Named jobs / matrix legs can be added or renamed without touching the
+  # ruleset, as long as this job keeps failing when any dependency does not
+  # succeed (failure, cancellation, OR skip — a skipped required check would
+  # otherwise count as satisfied and let a broken merge through).
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [check, test]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any dependency did not succeed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+        run: |
+          echo "A required CI job failed, was cancelled, or was skipped."
+          exit 1
