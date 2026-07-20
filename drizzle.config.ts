@@ -1,6 +1,9 @@
 import { defineConfig } from 'drizzle-kit'
+import { resolveUnpooledUrl } from './src/lib/db/connectionString'
 
-const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? ''
+// Migrations use the unpooled/direct connection (:5432); on Vercel that arrives
+// as POSTGRES_URL_NON_POOLING from the Supabase integration. See connectionString.ts.
+const url = resolveUnpooledUrl() ?? ''
 const isLocal = url.includes('localhost') || url.includes('127.0.0.1')
 
 if (isLocal) {

@@ -1,9 +1,13 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres, { type Sql } from 'postgres'
+import { resolvePooledUrl } from './connectionString'
 import * as schema from './schema'
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is not set')
+// `POSTGRES_URL` is the fallback the Supabase↔Vercel integration provisions;
+// `DATABASE_URL` (local dev, CI, explicit override) wins. See connectionString.ts.
+const connectionString = resolvePooledUrl()
+if (!connectionString) {
+  throw new Error('DATABASE_URL (or POSTGRES_URL) environment variable is not set')
 }
 
 // In tests: pin to one connection so the `SET search_path` issued in
@@ -11,7 +15,7 @@ if (!process.env.DATABASE_URL) {
 // tests run against a plain Postgres container (Neon Local paused — see
 // compose.yaml + vite.config.ts), so there's no pooler: connections are direct
 // sessions and the single pinned connection (`max: 1`) keeps the SET alive.
-const client = postgres(process.env.DATABASE_URL, {
+const client = postgres(connectionString, {
   prepare: false,
   // In tests: silence Postgres NOTICEs (e.g. the "drop cascades to N other
   // objects" emitted by `afterEach`'s DROP SCHEMA CASCADE). Production keeps
