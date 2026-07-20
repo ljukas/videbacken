@@ -6,6 +6,8 @@ yarn.lock
 .cache
 .env
 .vercel
+# Local MCP server config (e.g. Supabase MCP) — machine-specific, not shared
+.mcp.json
 .output
 .nitro
 /build/
