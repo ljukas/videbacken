@@ -77,20 +77,34 @@ export function ClimateChart({ rows, devices, unit, formatTick }: Props) {
           }
         />
         <ChartLegend content={<ChartLegendContent />} />
-        {devices.map((d) => (
-          <Line
-            key={d.id}
-            dataKey={d.id}
-            name={d.displayName}
-            hide={d.hidden}
-            type="monotone"
-            stroke={`var(--color-${d.id})`}
-            dot={false}
-            strokeWidth={2}
-            connectNulls={false}
-            isAnimationActive={false}
-          />
-        ))}
+        {devices.map((d) => {
+          // A device with a single reading in the window has no neighbour to
+          // connect to, so connectNulls can't form a line — surface its lone point
+          // as a dot instead of leaving it invisible. Lines with 2+ readings stay
+          // dot-free for a clean trace.
+          const readingCount = rows.reduce((n, r) => n + (r[d.id] != null ? 1 : 0), 0)
+          return (
+            <Line
+              key={d.id}
+              dataKey={d.id}
+              name={d.displayName}
+              hide={d.hidden}
+              type="monotone"
+              stroke={`var(--color-${d.id})`}
+              dot={readingCount === 1 ? { r: 3 } : false}
+              strokeWidth={2}
+              // Independent battery sensors report on their own schedules and rarely
+              // share a time bucket, so the wide-format pivot interleaves them: every
+              // row has one device's value and null for the others. Those nulls are a
+              // structural artifact of the shared row set, NOT real gaps in this
+              // device's data — so bridge them, otherwise each point is an isolated
+              // (invisible, dots-off) segment and the line never renders. See
+              // `toChartRows` in ~/lib/sensor/chartData.
+              connectNulls={true}
+              isAnimationActive={false}
+            />
+          )
+        })}
       </LineChart>
     </ChartContainer>
   )
