@@ -85,6 +85,19 @@ export default defineConfig({
           // produces URLs that resolve here in production. In `bun run dev` the
           // transformer falls back to the raw source URL — see that module.
           vercel: {
+            // Pin the serverless function to Stockholm (arn1), co-located with
+            // the Supabase Postgres (eu-north-1) AND the app's Swedish users.
+            // Without this, Nitro's Vercel preset leaves the region to Vercel's
+            // account default (iad1 / US-East), so every request crossed the
+            // Atlantic twice: once edge→function, then again on each DB round
+            // trip — a ~610ms floor on every authenticated RPC (measured against
+            // empty tables). `functions.regions` is written into the function's
+            // `.vc-config.json` (Build Output API), which is authoritative here;
+            // the sibling `vercel.regions` is edge-only and does NOT apply. If
+            // the DB region ever moves, change this to match it.
+            functions: {
+              regions: ['arn1'],
+            },
             config: {
               version: 3,
               // `sizes` is the optimizer's allow-list — any `?w=` not in the
