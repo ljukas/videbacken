@@ -17,7 +17,7 @@ For *why* a pattern exists, follow the ADR link.
 - **UI:** Tailwind CSS v4 + shadcn/ui (`components.json`, style `radix-nova`, **Radix** primitives — not Base UI).
 - **Auth:** Better Auth (self-hosted) — **Google OAuth + email magic-link**, both gated by an
   admin-managed email allowlist. See ADR-0017.
-- **Database:** Neon Postgres (prod, via Vercel Marketplace) / plain `postgres:17-alpine` (local + CI) + Drizzle ORM; `postgres-js` driver; snake_case.
+- **Database:** Supabase Postgres (prod, via Vercel Marketplace) / plain `postgres:17-alpine` (local + CI) + Drizzle ORM; `postgres-js` driver; snake_case.
 - **Data layer:** oRPC + TanStack Query; SSR via an in-process router client.
 - **Effects:** email (Resend / Mailpit-SMTP / devLog), file storage (Vercel Blob / S3-RustFS / devLog),
   queue (Vercel Queue / BullMQ+Redis / devLog), realtime (SSE), presence — all in `src/lib/effects/`.
@@ -123,7 +123,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 
 ## Scripts
 
-Local dev runs a plain `postgres:17-alpine` container (no Neon Local). Sign in with an
+Local dev runs a plain `postgres:17-alpine` container (no cloud DB locally). Sign in with an
 `INITIAL_ADMIN_EMAILS` address to bootstrap the first admin.
 
 | Command | What it does |
@@ -147,7 +147,7 @@ mailpit UI 14602, storage console 14603, bull studio 14604; postgres 14620, redi
 ## Environment variables
 
 `.env.example` lists everything. Key vars:
-- `DATABASE_URL` (auto-provisioned by Neon Marketplace in prod; local `postgres://neon:npg@localhost:14620/neondb`).
+- `DATABASE_URL` (prod: auto-provisioned as `POSTGRES_URL` by the Supabase Vercel integration, bridged in `src/lib/db/connectionString.ts`; local `postgres://neon:npg@localhost:14620/neondb`).
 - `BETTER_AUTH_SECRET` (32+ chars; `openssl rand -base64 32`), `BETTER_AUTH_URL`.
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (Google OAuth client).
 - `INITIAL_ADMIN_EMAILS` (CSV; seeds the first admin(s) into `approved_email`).
@@ -184,7 +184,7 @@ otherwise `bun run db:migrate` migrates **production**.
 
 - **Framework:** TanStack Start (RC, locked) on Vite. **Hosting:** Vercel, Stockholm (`arn1`).
 - **Package manager:** bun.
-- **DB:** Neon Postgres (prod) / plain Postgres (local+CI); `postgres-js` driver; Drizzle ORM. All timestamps `timestamptz`.
+- **DB:** Supabase Postgres (prod) / plain Postgres (local+CI); `postgres-js` driver; Drizzle ORM. All timestamps `timestamptz`.
 - **Data layer:** oRPC + TanStack Query; SSR via in-process router client. Domain rules in services (ADR-0002); effects isolated (ADR-0001).
 - **Auth:** Better Auth, **Google OAuth + email magic-link, both gated by the `approved_email` allowlist**; two roles; **admins mutate, users read-only except own account**; first admin seeded from `INITIAL_ADMIN_EMAILS`. No passwords/passkeys. See ADR-0017.
 - **Ports:** offset **+100** (14600/14620…) so this template coexists with sibling projects on one machine.
