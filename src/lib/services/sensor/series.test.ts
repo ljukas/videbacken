@@ -252,6 +252,23 @@ test('getSeries "all" with deviceIds ignores other devices when choosing bucket 
   expect(buckets[1].perDevice[a].tempAvg).toBe(20)
 })
 
+test('getSeries returns the resolved bucket width', async () => {
+  const now = new Date('2026-07-18T12:00:00Z')
+  const d = await device('aa40')
+  await db.insert(sensorReading).values({
+    deviceId: d,
+    temperatureC: 20,
+    recordedAt: new Date('2026-07-18T11:00:00Z'),
+  })
+  expect((await getSeries({ range: '24h', now })).bucketSec).toBe(600) // 10 min
+  expect((await getSeries({ range: '1m', now })).bucketSec).toBe(10800) // 3 h
+})
+
+test('getSeries returns bucketSec 0 when there is nothing to show', async () => {
+  const now = new Date('2026-07-18T12:00:00Z')
+  expect((await getSeries({ range: 'all', now })).bucketSec).toBe(0)
+})
+
 test('getSeries with an explicit empty deviceIds returns no buckets', async () => {
   const now = new Date('2026-07-18T12:00:00Z')
   const d = await device('aa30')
