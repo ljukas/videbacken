@@ -7,10 +7,23 @@ type Session = Awaited<ReturnType<typeof auth.api.getSession>>
 type SessionUser = NonNullable<Session>['user']
 type SessionData = NonNullable<Session>['session']
 
-export const base = os.$context<{ headers: Headers; log: Logger; requestId: string }>()
+// A mutable per-request bag the RPC handler (src/routes/api/rpc/$.ts) passes in
+// and reads back after the chain resolves, so it can log where a request's time
+// went (auth round-trips vs. the procedure's own queries). Optional: in-process
+// SSR calls and tests build a context without it, and the writes below no-op.
+export type RequestTimings = Record<string, number>
+
+export const base = os.$context<{
+  headers: Headers
+  log: Logger
+  requestId: string
+  timings?: RequestTimings
+}>()
 
 const sessionMiddleware = base.middleware(async ({ context, next }) => {
+  const startedAt = performance.now()
   const data = await auth.api.getSession({ headers: context.headers })
+  if (context.timings) context.timings.getSessionMs = Math.round(performance.now() - startedAt)
   const user = data?.user ?? null
   const log = user ? context.log.child({ userId: user.id }) : context.log
   return next({
@@ -23,7 +36,7 @@ const sessionMiddleware = base.middleware(async ({ context, next }) => {
 })
 
 const requireAuth = base
-  .$context<{ session: SessionData | null; user: SessionUser | null }>()
+  .$context<{ session: SessionData | null; user: SessionUser | null; timings?: RequestTimings }>()
   .middleware(async ({ context, next }) => {
     if (!context.session || !context.user) {
       throw new ORPCError('UNAUTHORIZED')
@@ -37,7 +50,11 @@ const requireAuth = base
     // reads back as null → reject. Closes both the Google-re-auth hole and the
     // cookieCache staleness window. One extra read per request is fine at this
     // scale; DB access stays in the service (context.ts owns no `db.`).
-    if (!(await userService.findActiveById(context.user.id))) {
+    const startedAt = performance.now()
+    const activeUser = await userService.findActiveById(context.user.id)
+    if (context.timings)
+      context.timings.findActiveByIdMs = Math.round(performance.now() - startedAt)
+    if (!activeUser) {
       throw new ORPCError('UNAUTHORIZED')
     }
     return next({
