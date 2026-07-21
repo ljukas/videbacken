@@ -72,6 +72,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 - **Cross-system effects in `src/lib/effects/`.** Services never import Better Auth / Blob / Resend;
   effect adapters run *after* a successful service call. See **ADR-0001**.
 - **Logging via `~/lib/logger/`.** `context.log` in oRPC; `logger` singleton elsewhere. Never `console.*`. See **ADR-0003**.
+- **Timing: every RPC is auto-timed — instrument new work.** The `/api/rpc` handler logs one `rpc timing` line per request (`region`, `totalMs`, sub-timings) to Vercel Runtime Logs (filter by msg `"rpc timing"`). For anything heavier than a single query (multiple queries, external calls, expensive compute), record named sub-timings into `context.timings` (`if (context.timings) context.timings.<label>Ms = …`) so slow paths surface early. Pattern: `getSessionMs`/`findActiveByIdMs` in `src/lib/orpc/context.ts`. See **ADR-0003**.
 - **Realtime via `realtime.publish(...)`.** Procedures publish `<ns>.changed`; `useRealtimeSync()` invalidates queries. See **ADR-0004**.
 - **Forms via `useAppForm`.** Never `useState` for field values; canonical example `src/components/login/LoginFormCard.tsx`. See **ADR-0005**.
 
@@ -79,7 +80,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 - **Add a schema:** `src/lib/db/schema/<x>.ts` → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`.
 - **Add a service:** copy `services/user/` shape (`<x>.ts`, `<x>.test.ts` with `setupDatabase()` first, `index.ts`; `errors.ts` when an invariant lands).
 - **Add an effect:** copy `effects/email/` shape (`<domain>.ts` selector + `adapters/<name>.ts` + barrel + test; register in `effects/index.ts`).
-- **Add a procedure:** edit `src/lib/orpc/procedures/<x>.ts`; pick `protectedProcedure` (reads) or `adminProcedure` (mutations); `.input(zodSchema)`; thin glue → service → run effects after success; register in `orpc/router.ts`.
+- **Add a procedure:** edit `src/lib/orpc/procedures/<x>.ts`; pick `protectedProcedure` (reads) or `adminProcedure` (mutations); `.input(zodSchema)`; thin glue → service → run effects after success; register in `orpc/router.ts`. Auto-timed via the `rpc timing` log; add `context.timings.<label>Ms` sub-timings for heavier work (see the timing rule above).
 - **Add a UI component:** `bunx shadcn@latest add <name>` (Radix variant per `components.json` — never `shadcn init --base`).
 - **Regenerate Better Auth schema:** `bun run auth:schema` (runs the CLI + `scripts/patchBetterAuthSchema.mjs` for `timestamptz`). Never hand-edit `betterAuth.ts`.
 
@@ -170,6 +171,7 @@ otherwise `bun run db:migrate` migrates **production**.
 - **Never hand-edit `src/lib/db/schema/betterAuth.ts`** — regenerate via `bun run auth:schema`.
 - **All timestamp columns use `timestamp({ withTimezone: true })`** (timestamptz). When drizzle-kit emits an `ALTER ... SET DATA TYPE timestamp with time zone` on existing data, hand-add `USING "<col>" AT TIME ZONE 'UTC'`.
 - **`server/plugins/seedApprovedEmails.ts`** (which invokes the seeding logic in `src/lib/seedApprovedEmails.ts`) **must stay registered in `vite.config.ts`'s Nitro `plugins`** — Nitro does not auto-discover `server/plugins/*`; unregistered, the first admin never seeds.
+- **The Vercel function region is pinned to `arn1` (Stockholm) in `vite.config.ts`** (Nitro `vercel.functions.regions`), co-located with the Supabase DB (`eu-north-1`) and the users. **Never remove it** — without a pin the region silently falls back to Vercel's US default (`iad1`), adding a transatlantic hop to every request *and* every DB round-trip (~610ms/RPC vs. ~60ms — ~10× slower). If the DB region moves, change this to match.
 - **User-facing text is Paraglide-localized** (`messages/{sv,en}.json`, sv source-of-truth + default, en key-complete). "Videbacken" stays untranslated. **Route URL paths stay English** (`/users`, `/account`).
 - **File naming:** routes lowercase + TanStack tokens; React components PascalCase in `src/components/<entity>/`; hooks `useX`; `src/components/ui/` kebab-case (shadcn-managed); everything else camelCase.
 - **Every screen is responsive** (desktop + mobile + tablet; no fixed pixel widths).
