@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SeriesBucket } from '~/lib/services/sensor'
-import { colorForIndex, DEVICE_COLORS, toDeviceSeries } from './chartData'
+import { colorForIndex, DEVICE_COLORS, timeDomain, toDeviceSeries } from './chartData'
 
 describe('colorForIndex', () => {
   it('wraps around the palette', () => {
@@ -133,7 +133,47 @@ describe('toDeviceSeries', () => {
     ])
   })
 
+  it('scales the break threshold by bucketSec, not the cadence', () => {
+    // bucketSec 10 * maxGapBuckets 2 = 20 → a 15-wide gap connects. If the
+    // threshold used cadenceSec (5 * 2 = 10) instead, 15 would wrongly break.
+    const opts = { bucketSec: 10, cadenceSec: 5, maxGapBuckets: 2 }
+    const buckets = [
+      bucket(0, { a: { tempAvg: 20, humAvg: 0 } }),
+      bucket(15, { a: { tempAvg: 21, humAvg: 0 } }),
+    ]
+    expect(toDeviceSeries(buckets, 'temp', opts)).toEqual([
+      {
+        id: 'a',
+        points: [
+          { t: 0, a: 20 },
+          { t: 15, a: 21 },
+        ],
+      },
+    ])
+  })
+
   it('returns an empty array for no buckets', () => {
     expect(toDeviceSeries([], 'temp', BREAK)).toEqual([])
+  })
+})
+
+describe('timeDomain', () => {
+  it('spans every device, including hidden ones, so toggling never rescales', () => {
+    // The hidden device has the widest span; it must still bound the axis.
+    expect(
+      timeDomain([
+        {
+          points: [
+            { t: 0, a: 1 },
+            { t: 1000, a: 2 },
+          ],
+        },
+        { points: [{ t: 400, b: 3 }] },
+      ]),
+    ).toEqual([0, 1000])
+  })
+
+  it('returns undefined when there are no points', () => {
+    expect(timeDomain([{ points: [] }])).toBeUndefined()
   })
 })

@@ -93,6 +93,51 @@ test('breaks the line at an outage marker while keeping each cluster connected',
   })
 })
 
+test('x-axis spans hidden devices so toggling a device does not rescale time', async () => {
+  // A hidden device with the widest time span must still bound the x-axis, so
+  // toggling visibility never rescales the time axis. Device A (hidden) spans
+  // 0–1000; device B (visible) only 400–500. The axis must still reach past 500.
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 600, height: 300 }}>
+      <ClimateChart
+        devices={[
+          {
+            id: 'a',
+            displayName: 'A',
+            color: 'var(--chart-1)',
+            hidden: true,
+            points: [
+              { t: 0, a: 1 },
+              { t: 1000, a: 2 },
+            ],
+          },
+          {
+            id: 'b',
+            displayName: 'B',
+            color: 'var(--chart-2)',
+            points: [
+              { t: 400, b: 3 },
+              { t: 500, b: 4 },
+            ],
+          },
+        ]}
+        unit="°C"
+        formatTick={(t) => String(t)}
+      />
+    </div>,
+  )
+
+  // The visible device B (t=400–500) is the only rendered line. If the axis domain
+  // spans the hidden device (0–1000), B's segment sits mid-axis (first x well right
+  // of the left edge, ~48px). If the domain wrongly rescaled to B's own 400–500,
+  // its first point would pin to the left edge instead.
+  await vi.waitFor(() => {
+    const d = screen.container.querySelector('.recharts-line-curve')?.getAttribute('d') ?? ''
+    const firstX = Number(d.match(/M([\d.]+)/)?.[1])
+    expect(firstX).toBeGreaterThan(100)
+  })
+})
+
 test('renders a dot for an isolated reading so it is not invisible', async () => {
   const { screen } = await renderWithProviders(
     <div style={{ width: 600, height: 300 }}>

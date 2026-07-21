@@ -7,7 +7,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '~/components/ui/chart'
-import type { SeriesPoint } from '~/lib/sensor/chartData'
+import { type SeriesPoint, timeDomain } from '~/lib/sensor/chartData'
 
 export type ClimateChartDevice = {
   id: string
@@ -45,6 +45,12 @@ export function ClimateChart({ devices, unit, formatTick }: Props) {
   const config: ChartConfig = Object.fromEntries(
     devices.map((d) => [d.id, { label: d.displayName, color: d.color }]),
   )
+  // Explicit domain over ALL devices (incl. hidden) so toggling never rescales the
+  // time axis — per-<Line> data otherwise derives the domain from visible lines.
+  const domain: [number, number] | ['dataMin', 'dataMax'] = timeDomain(devices) ?? [
+    'dataMin',
+    'dataMax',
+  ]
   return (
     // Height is inline (not a Tailwind class) so the chart has a measurable box
     // even before CSS loads / in the (Tailwind-less) browser-test env; width stays
@@ -55,7 +61,7 @@ export function ClimateChart({ devices, unit, formatTick }: Props) {
         <XAxis
           dataKey="t"
           type="number"
-          domain={['dataMin', 'dataMax']}
+          domain={domain}
           tickFormatter={(t) => formatTick(Number(t))}
           tickMargin={8}
           minTickGap={32}

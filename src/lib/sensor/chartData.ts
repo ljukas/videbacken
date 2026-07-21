@@ -18,6 +18,22 @@ export function colorForIndex(i: number): string {
   return DEVICE_COLORS[i % DEVICE_COLORS.length]
 }
 
+// The chart's x-axis must span EVERY device's readings, including hidden ones, so
+// toggling a device's visibility never rescales the time axis. (With per-<Line>
+// `data`, Recharts otherwise recomputes the domain from visible lines only.)
+// Returns [min, max] over all points, or undefined when there are none.
+export function timeDomain(devices: { points: SeriesPoint[] }[]): [number, number] | undefined {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (const d of devices) {
+    for (const p of d.points) {
+      if (p.t < min) min = p.t
+      if (p.t > max) max = p.t
+    }
+  }
+  return min <= max ? [min, max] : undefined
+}
+
 export type SeriesPoint = {
   t: number
   isolated?: boolean
