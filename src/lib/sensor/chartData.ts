@@ -21,9 +21,12 @@ export function colorForIndex(i: number): string {
 export type ChartRow = { t: number } & Record<string, number | null>
 
 // Pivot [{ t, perDevice: { id: {tempAvg,humAvg} } }] → [{ t, <id>: value }] for
-// Recharts' wide-format multi-series. A device absent from a bucket becomes null
-// (so the line shows a gap), but only for devices that appear somewhere in the
-// set — keeping the column keys stable across rows.
+// Recharts' wide-format multi-series. A device absent from a bucket becomes null,
+// but only for devices that appear somewhere in the set — keeping the column keys
+// stable across rows. These nulls are mostly structural: when devices report on
+// independent schedules they rarely share a bucket, so most rows carry one
+// device's value and null for the rest. ClimateChart therefore renders lines with
+// connectNulls so a device's own readings join up across the other devices' rows.
 export function toChartRows(buckets: Buckets, metric: 'temp' | 'hum'): ChartRow[] {
   const key = metric === 'temp' ? 'tempAvg' : 'humAvg'
   const deviceIds = new Set<string>()

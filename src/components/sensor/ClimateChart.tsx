@@ -87,7 +87,14 @@ export function ClimateChart({ rows, devices, unit, formatTick }: Props) {
             stroke={`var(--color-${d.id})`}
             dot={false}
             strokeWidth={2}
-            connectNulls={false}
+            // Independent battery sensors report on their own schedules and rarely
+            // share a time bucket, so the wide-format pivot interleaves them: every
+            // row has one device's value and null for the others. Those nulls are a
+            // structural artifact of the shared row set, NOT real gaps in this
+            // device's data — so bridge them, otherwise each point is an isolated
+            // (invisible, dots-off) segment and the line never renders. See
+            // `toChartRows` in ~/lib/sensor/chartData.
+            connectNulls={true}
             isAnimationActive={false}
           />
         ))}
