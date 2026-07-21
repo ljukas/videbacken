@@ -13,7 +13,7 @@ test('the range enum is importable client-side', async () => {
 
 test('the chart-data reshape is importable client-side', async () => {
   const mod = await import('~/lib/sensor/chartData')
-  expect(typeof mod.toChartRows).toBe('function')
+  expect(typeof mod.toDeviceSeries).toBe('function')
 })
 
 test('the /sensors route module evaluates client-side without a db leak', async () => {
