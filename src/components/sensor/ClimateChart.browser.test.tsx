@@ -78,3 +78,34 @@ test('draws a connected line per device when series interleave with no shared bu
     }
   })
 })
+
+test('renders a visible dot for a device with a single reading in the window', async () => {
+  // A just-registered or barely-reporting sensor can have exactly ONE reading in
+  // the window. connectNulls has nothing to bridge — the line is a bare moveTo — so
+  // with dots off the device would be invisible, the very "data exists but nothing
+  // renders" symptom this feature must avoid. A lone reading must show as a dot.
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 600, height: 300 }}>
+      <ClimateChart
+        rows={[
+          { t: 1, a: 20, b: 30 },
+          { t: 2, a: null, b: 31 },
+          { t: 3, a: null, b: 32 },
+        ]}
+        devices={[
+          { id: 'a', displayName: 'Sensor A', color: 'var(--chart-1)' }, // one reading
+          { id: 'b', displayName: 'Sensor B', color: 'var(--chart-2)' }, // three readings
+        ]}
+        unit="°C"
+        formatTick={(t) => new Date(t).toISOString()}
+      />
+    </div>,
+  )
+
+  // Device A's single reading renders a dot; device B (a real line) stays dot-free,
+  // so exactly one dot is present — the lone point is not swallowed.
+  await vi.waitFor(() => {
+    const dots = screen.container.querySelectorAll('.recharts-dot')
+    expect(dots.length).toBe(1)
+  })
+})
