@@ -7,45 +7,61 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '~/components/ui/chart'
-import type { ChartRow } from '~/lib/sensor/chartData'
+import { type SeriesPoint, timeDomain } from '~/lib/sensor/chartData'
 
 export type ClimateChartDevice = {
   id: string
   displayName: string
-  // Stable color assigned by the parent from the FULL device roster, so a
-  // device keeps its color regardless of which siblings are toggled off.
+  // Stable color assigned by the parent from the FULL device roster, so a device
+  // keeps its color regardless of which siblings are toggled off.
   color: string
   hidden?: boolean
+  // This device's own readings (ascending t) with outage break markers already
+  // inserted by toDeviceSeries — `<id>: null` is a real gap, not structural noise.
+  points: SeriesPoint[]
 }
 
 type Props = {
-  rows: ChartRow[]
-  // The full roster in stable order — hidden devices stay in the list (their
-  // line is `hide`-d) so colors never shift when toggling visibility.
   devices: ClimateChartDevice[]
   unit: string // "°C" | "%"
   formatTick: (t: number) => string // range-aware x-axis time formatter
 }
 
-// Presentational multi-line chart (one colored line per device). Data fetching
-// lives in the route; this component only renders whatever rows it is handed.
-// The section's visible <h2> names the chart, so no SVG <title> is set (it would
-// render a second, overlapping native tooltip on hover).
-export function ClimateChart({ rows, devices, unit, formatTick }: Props) {
+// A dot only for a reading with no connected neighbour (a lone reading, or a short
+// resumption between two outages); otherwise the line already shows the point and
+// dots would clutter a dense trace. Recharts clones this element per point,
+// injecting cx/cy/payload; `color` is supplied per-<Line> so the dot matches.
+function IsolatedDot(props: { cx?: number; cy?: number; color?: string; payload?: SeriesPoint }) {
+  const { cx, cy, color, payload } = props
+  if (!payload?.isolated || cx == null || cy == null) return null
+  return <circle className="recharts-dot" cx={cx} cy={cy} r={3} fill={color} stroke={color} />
+}
+
+// Presentational multi-line chart (one colored line per device). Each line reads
+// its own `data`, so nulls are only intentional outage breaks (connectNulls off).
+// Data fetching + reshape live in the route. The section's visible <h2> names the
+// chart, so no SVG <title> is set (it would render a second, overlapping tooltip).
+export function ClimateChart({ devices, unit, formatTick }: Props) {
   const config: ChartConfig = Object.fromEntries(
     devices.map((d) => [d.id, { label: d.displayName, color: d.color }]),
   )
+  // Explicit domain over ALL devices (incl. hidden) so toggling never rescales the
+  // time axis — per-<Line> data otherwise derives the domain from visible lines.
+  const domain: [number, number] | ['dataMin', 'dataMax'] = timeDomain(devices) ?? [
+    'dataMin',
+    'dataMax',
+  ]
   return (
     // Height is inline (not a Tailwind class) so the chart has a measurable box
-    // even before CSS loads / in the (Tailwind-less) browser-test env; width
-    // stays responsive via the block-level container filling its parent.
+    // even before CSS loads / in the (Tailwind-less) browser-test env; width stays
+    // responsive via the block-level container filling its parent.
     <ChartContainer config={config} className="aspect-auto w-full" style={{ height: 260 }}>
-      <LineChart data={rows} margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
+      <LineChart margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
         <CartesianGrid vertical={false} />
         <XAxis
           dataKey="t"
           type="number"
-          domain={['dataMin', 'dataMax']}
+          domain={domain}
           tickFormatter={(t) => formatTick(Number(t))}
           tickMargin={8}
           minTickGap={32}
@@ -77,34 +93,21 @@ export function ClimateChart({ rows, devices, unit, formatTick }: Props) {
           }
         />
         <ChartLegend content={<ChartLegendContent />} />
-        {devices.map((d) => {
-          // A device with a single reading in the window has no neighbour to
-          // connect to, so connectNulls can't form a line — surface its lone point
-          // as a dot instead of leaving it invisible. Lines with 2+ readings stay
-          // dot-free for a clean trace.
-          const readingCount = rows.reduce((n, r) => n + (r[d.id] != null ? 1 : 0), 0)
-          return (
-            <Line
-              key={d.id}
-              dataKey={d.id}
-              name={d.displayName}
-              hide={d.hidden}
-              type="monotone"
-              stroke={`var(--color-${d.id})`}
-              dot={readingCount === 1 ? { r: 3 } : false}
-              strokeWidth={2}
-              // Independent battery sensors report on their own schedules and rarely
-              // share a time bucket, so the wide-format pivot interleaves them: every
-              // row has one device's value and null for the others. Those nulls are a
-              // structural artifact of the shared row set, NOT real gaps in this
-              // device's data — so bridge them, otherwise each point is an isolated
-              // (invisible, dots-off) segment and the line never renders. See
-              // `toChartRows` in ~/lib/sensor/chartData.
-              connectNulls={true}
-              isAnimationActive={false}
-            />
-          )
-        })}
+        {devices.map((d) => (
+          <Line
+            key={d.id}
+            data={d.points}
+            dataKey={d.id}
+            name={d.displayName}
+            hide={d.hidden}
+            type="monotone"
+            stroke={`var(--color-${d.id})`}
+            dot={<IsolatedDot color={`var(--color-${d.id})`} />}
+            strokeWidth={2}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        ))}
       </LineChart>
     </ChartContainer>
   )

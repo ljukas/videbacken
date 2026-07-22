@@ -13,8 +13,8 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { getIntlLocale } from '~/lib/i18n/format'
 import { orpc } from '~/lib/orpc/client'
-import { colorForIndex, toChartRows } from '~/lib/sensor/chartData'
-import { SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
+import { colorForIndex, type DeviceSeries, toDeviceSeries } from '~/lib/sensor/chartData'
+import { CADENCE_SEC, MAX_GAP_BUCKETS, SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
@@ -86,19 +86,40 @@ function SensorsPage() {
   }
 
   const buckets = series?.buckets ?? []
-  const tempRows = useMemo(() => toChartRows(buckets, 'temp'), [buckets])
-  const humRows = useMemo(() => toChartRows(buckets, 'hum'), [buckets])
+  const bucketSec = series?.bucketSec ?? 0
   const formatTick = useMemo(() => makeTickFormatter(range), [range])
 
-  // Colors are derived from the FULL roster position (stable order from the
-  // service), so a device keeps its color regardless of which siblings are
-  // toggled off. The charts get every device (hidden ones are `hide`-d).
-  const chartDevices = devices.map((d, i) => ({
-    id: d.id,
-    displayName: d.displayName,
-    color: colorForIndex(i),
-    hidden: hidden.has(d.id),
-  }))
+  // Each metric gets its own per-device series (with outage breaks inserted by
+  // toDeviceSeries). Colors derive from the FULL roster position (stable order
+  // from the service), so a device keeps its color regardless of which siblings
+  // are toggled off; hidden devices stay in the list (their line is `hide`-d).
+  const tempDevices = useMemo(
+    () =>
+      toChartDevices(
+        devices,
+        hidden,
+        toDeviceSeries(buckets, 'temp', {
+          bucketSec,
+          maxGapBuckets: MAX_GAP_BUCKETS,
+          cadenceSec: CADENCE_SEC,
+        }),
+      ),
+    [devices, hidden, buckets, bucketSec],
+  )
+  const humDevices = useMemo(
+    () =>
+      toChartDevices(
+        devices,
+        hidden,
+        toDeviceSeries(buckets, 'hum', {
+          bucketSec,
+          maxGapBuckets: MAX_GAP_BUCKETS,
+          cadenceSec: CADENCE_SEC,
+        }),
+      ),
+    [devices, hidden, buckets, bucketSec],
+  )
+
   const toggleDevices = devices.map((d, i) => ({
     id: d.id,
     displayName: d.displayName,
@@ -144,11 +165,11 @@ function SensorsPage() {
       </section>
 
       <ChartSection title={m.sensors_temp_chart_title()} hasData={hasData}>
-        <ClimateChart rows={tempRows} devices={chartDevices} unit="°C" formatTick={formatTick} />
+        <ClimateChart devices={tempDevices} unit="°C" formatTick={formatTick} />
       </ChartSection>
 
       <ChartSection title={m.sensors_humidity_chart_title()} hasData={hasData}>
-        <ClimateChart rows={humRows} devices={chartDevices} unit="%" formatTick={formatTick} />
+        <ClimateChart devices={humDevices} unit="%" formatTick={formatTick} />
       </ChartSection>
 
       {isAdmin ? (
@@ -196,6 +217,24 @@ function ChartSection({
       )}
     </section>
   )
+}
+
+// Merge the per-metric device series onto the full roster (for stable colors +
+// hidden toggling), so every device has a line and the ones absent from the data
+// carry an empty series.
+function toChartDevices(
+  roster: { id: string; displayName: string }[],
+  hidden: Set<string>,
+  deviceSeries: DeviceSeries[],
+) {
+  const byId = new Map(deviceSeries.map((s) => [s.id, s.points]))
+  return roster.map((d, i) => ({
+    id: d.id,
+    displayName: d.displayName,
+    color: colorForIndex(i),
+    hidden: hidden.has(d.id),
+    points: byId.get(d.id) ?? [],
+  }))
 }
 
 // Range-aware x-axis label in the active UI locale: time-of-day for the 24h

@@ -269,14 +269,17 @@ export async function getSeries(input: {
   range: SeriesRange
   deviceIds?: string[]
   now?: Date
-}): Promise<{ buckets: SeriesBucket[] }> {
+}): Promise<{ buckets: SeriesBucket[]; bucketSec: number }> {
   const now = input.now ?? new Date()
   // Explicit empty selection = no devices → empty (distinct from undefined = all).
-  if (input.deviceIds?.length === 0) return { buckets: [] }
+  if (input.deviceIds?.length === 0) return { buckets: [], bucketSec: 0 }
 
   const filter = deviceFilter(input.deviceIds)
   const win = await resolveWindow(input.range, now, filter)
-  if (!win) return { buckets: [] }
+  if (!win) return { buckets: [], bucketSec: 0 }
 
-  return { buckets: toBuckets(await queryBucketAverages(win, now, filter)) }
+  return {
+    buckets: toBuckets(await queryBucketAverages(win, now, filter)),
+    bucketSec: win.bucketSec,
+  }
 }

@@ -4,17 +4,37 @@ import { ClimateChart } from './ClimateChart'
 
 test('renders one line per visible device with stable per-device colors', async () => {
   const { screen } = await renderWithProviders(
-    // A fixed-size wrapper so Recharts' ResponsiveContainer has a box to measure.
     <div style={{ width: 600, height: 300 }}>
       <ClimateChart
-        rows={[
-          { t: 1000, a: 20, b: 25, c: 30 },
-          { t: 2000, a: 21, b: 26, c: 31 },
-        ]}
         devices={[
-          { id: 'a', displayName: 'NW corner', color: 'var(--chart-1)' },
-          { id: 'b', displayName: 'Kitchen', color: 'var(--chart-2)' },
-          { id: 'c', displayName: 'Boiler', color: 'var(--chart-3)', hidden: true },
+          {
+            id: 'a',
+            displayName: 'NW corner',
+            color: 'var(--chart-1)',
+            points: [
+              { t: 1, a: 20 },
+              { t: 2, a: 21 },
+            ],
+          },
+          {
+            id: 'b',
+            displayName: 'Kitchen',
+            color: 'var(--chart-2)',
+            points: [
+              { t: 1, b: 25 },
+              { t: 2, b: 26 },
+            ],
+          },
+          {
+            id: 'c',
+            displayName: 'Boiler',
+            color: 'var(--chart-3)',
+            hidden: true,
+            points: [
+              { t: 1, c: 30 },
+              { t: 2, c: 31 },
+            ],
+          },
         ]}
         unit="°C"
         formatTick={(t) => new Date(t).toISOString()}
@@ -29,83 +49,124 @@ test('renders one line per visible device with stable per-device colors', async 
   await vi.waitFor(() => {
     const curves = screen.container.querySelectorAll('.recharts-line-curve')
     expect(curves.length).toBe(2)
-    const paths = [...curves].map((p) => p.getAttribute('d'))
-    expect(new Set(paths).size).toBe(2) // distinct dataKeys, not one line drawn twice
+    for (const curve of curves) expect(curve.getAttribute('d') ?? '').toMatch(/[CL]/)
   })
 
-  // Each device gets its OWN stable color CSS var from the config (proves the
-  // per-device color wiring, which the legend text alone can't catch).
+  // Each device gets its OWN stable color CSS var from the config.
   const style = screen.container.querySelector('style')?.textContent ?? ''
   expect(style).toContain('--color-a: var(--chart-1)')
   expect(style).toContain('--color-b: var(--chart-2)')
 })
 
-test('draws a connected line per device when series interleave with no shared buckets', async () => {
-  // Real-world shape: two battery sensors reporting on independent schedules never
-  // land in the same time bucket, so the wide-format pivot interleaves them — every
-  // row has exactly ONE device non-null and the other null. Regression test for the
-  // prod "data points exist but no line renders" bug: with the nulls left
-  // unbridged, each real point is an isolated zero-length "M x,y Z" subpath that
-  // (with dots off) draws nothing.
+test('breaks the line at an outage marker while keeping each cluster connected', async () => {
+  // A device offline mid-window: a null break marker separates two clusters. With
+  // connectNulls off, the path splits into two move-to sub-paths (a visible gap),
+  // and neither cluster endpoint is isolated, so no dots.
   const { screen } = await renderWithProviders(
     <div style={{ width: 600, height: 300 }}>
       <ClimateChart
-        rows={[
-          { t: 1, a: 20, b: null },
-          { t: 2, a: null, b: 25 },
-          { t: 3, a: 21, b: null },
-          { t: 4, a: null, b: 26 },
-        ]}
         devices={[
-          { id: 'a', displayName: 'Sensor A', color: 'var(--chart-1)' },
-          { id: 'b', displayName: 'Sensor B', color: 'var(--chart-2)' },
+          {
+            id: 'a',
+            displayName: 'Sensor A',
+            color: 'var(--chart-1)',
+            points: [
+              { t: 0, a: 20 },
+              { t: 1, a: 21 },
+              { t: 5, a: null },
+              { t: 9, a: 22 },
+              { t: 10, a: 23 },
+            ],
+          },
         ]}
         unit="°C"
-        formatTick={(t) => new Date(t).toISOString()}
+        formatTick={(t) => String(t)}
       />
     </div>,
   )
 
-  // Every visible device must render an actual drawn segment. A real line contains
-  // a line/curve command (L or C); the broken state emits only isolated "M …, Z"
-  // move+close subpaths (no L/C) — which is invisible.
   await vi.waitFor(() => {
-    const curves = screen.container.querySelectorAll('.recharts-line-curve')
-    expect(curves.length).toBe(2)
-    for (const curve of curves) {
-      const d = curve.getAttribute('d') ?? ''
-      expect(d).toMatch(/[CL]/)
-    }
+    const d = screen.container.querySelector('.recharts-line-curve')?.getAttribute('d') ?? ''
+    expect((d.match(/M/gi) || []).length).toBe(2) // two segments, gap between
+    expect(d).toMatch(/[CL]/) // each cluster is a real drawn segment
+    expect(screen.container.querySelectorAll('.recharts-dot').length).toBe(0)
   })
 })
 
-test('renders a visible dot for a device with a single reading in the window', async () => {
-  // A just-registered or barely-reporting sensor can have exactly ONE reading in
-  // the window. connectNulls has nothing to bridge — the line is a bare moveTo — so
-  // with dots off the device would be invisible, the very "data exists but nothing
-  // renders" symptom this feature must avoid. A lone reading must show as a dot.
+test('x-axis spans hidden devices so toggling a device does not rescale time', async () => {
+  // A hidden device with the widest time span must still bound the x-axis, so
+  // toggling visibility never rescales the time axis. Device A (hidden) spans
+  // 0–1000; device B (visible) only 400–500. The axis must still reach past 500.
   const { screen } = await renderWithProviders(
     <div style={{ width: 600, height: 300 }}>
       <ClimateChart
-        rows={[
-          { t: 1, a: 20, b: 30 },
-          { t: 2, a: null, b: 31 },
-          { t: 3, a: null, b: 32 },
-        ]}
         devices={[
-          { id: 'a', displayName: 'Sensor A', color: 'var(--chart-1)' }, // one reading
-          { id: 'b', displayName: 'Sensor B', color: 'var(--chart-2)' }, // three readings
+          {
+            id: 'a',
+            displayName: 'A',
+            color: 'var(--chart-1)',
+            hidden: true,
+            points: [
+              { t: 0, a: 1 },
+              { t: 1000, a: 2 },
+            ],
+          },
+          {
+            id: 'b',
+            displayName: 'B',
+            color: 'var(--chart-2)',
+            points: [
+              { t: 400, b: 3 },
+              { t: 500, b: 4 },
+            ],
+          },
         ]}
         unit="°C"
-        formatTick={(t) => new Date(t).toISOString()}
+        formatTick={(t) => String(t)}
       />
     </div>,
   )
 
-  // Device A's single reading renders a dot; device B (a real line) stays dot-free,
-  // so exactly one dot is present — the lone point is not swallowed.
+  // The visible device B (t=400–500) is the only rendered line. If the axis domain
+  // spans the hidden device (0–1000), B's segment sits mid-axis (first x well right
+  // of the left edge, ~48px). If the domain wrongly rescaled to B's own 400–500,
+  // its first point would pin to the left edge instead.
   await vi.waitFor(() => {
-    const dots = screen.container.querySelectorAll('.recharts-dot')
-    expect(dots.length).toBe(1)
+    const d = screen.container.querySelector('.recharts-line-curve')?.getAttribute('d') ?? ''
+    const firstX = Number(d.match(/M([\d.]+)/)?.[1])
+    expect(firstX).toBeGreaterThan(100)
+  })
+})
+
+test('renders a dot for an isolated reading so it is not invisible', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 600, height: 300 }}>
+      <ClimateChart
+        devices={[
+          {
+            id: 'a',
+            displayName: 'Sensor A',
+            color: 'var(--chart-1)',
+            points: [{ t: 5, a: 20, isolated: true }],
+          },
+          {
+            id: 'b',
+            displayName: 'Sensor B',
+            color: 'var(--chart-2)',
+            points: [
+              { t: 1, b: 30 },
+              { t: 2, b: 31 },
+            ],
+          },
+        ]}
+        unit="°C"
+        formatTick={(t) => String(t)}
+      />
+    </div>,
+  )
+
+  // Only the isolated reading draws a dot; the continuous line draws none.
+  await vi.waitFor(() => {
+    expect(screen.container.querySelectorAll('.recharts-dot').length).toBe(1)
   })
 })
