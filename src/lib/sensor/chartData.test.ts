@@ -1,6 +1,106 @@
 import { describe, expect, it } from 'vitest'
 import type { SeriesBucket } from '~/lib/services/sensor'
-import { colorForIndex, DEVICE_COLORS, timeDomain, toDeviceSeries } from './chartData'
+import {
+  colorForIndex,
+  DEVICE_COLORS,
+  niceYScale,
+  timeDomain,
+  toDeviceSeries,
+  valueRange,
+} from './chartData'
+
+// A tick step is "nice" when it is 1, 2, or 5 × 10ⁿ — the increments axes read in.
+function niceFractionOf(step: number): number {
+  return step / 10 ** Math.floor(Math.log10(step))
+}
+
+describe('niceYScale', () => {
+  it('turns a narrow range into round, evenly-spaced, single-value ticks', () => {
+    // The bug: 24.49–24.60 got equal-divided into 24.48/24.51/24.54/… (step
+    // 0.03). Nice ticks land on a round 0.05 step instead.
+    const { ticks, decimals, domain } = niceYScale(24.49, 24.6)
+    expect(decimals).toBe(2)
+    expect(ticks).toEqual([24.45, 24.5, 24.55, 24.6])
+    expect(domain).toEqual([24.45, 24.6])
+    expect(niceFractionOf(0.05)).toBeCloseTo(5)
+  })
+
+  it('always produces distinct labels once formatted', () => {
+    const { ticks, decimals } = niceYScale(24.49, 24.6)
+    const labels = ticks.map((t) => t.toFixed(decimals))
+    expect(new Set(labels).size).toBe(labels.length)
+  })
+
+  it('uses whole numbers for a wide range', () => {
+    const { ticks, decimals } = niceYScale(-10, 30)
+    expect(decimals).toBe(0)
+    expect(ticks).toEqual([-10, 0, 10, 20, 30])
+  })
+
+  it('pads a flat series into a one-unit band around the value', () => {
+    const { ticks, domain } = niceYScale(24.5, 24.5)
+    expect(domain[0]).toBeLessThanOrEqual(24.5)
+    expect(domain[1]).toBeGreaterThanOrEqual(24.5)
+    expect(new Set(ticks).size).toBe(ticks.length)
+  })
+
+  it('brackets the data so no reading sits off the chart', () => {
+    const { domain } = niceYScale(24.49, 24.6)
+    expect(domain[0]).toBeLessThanOrEqual(24.49)
+    expect(domain[1]).toBeGreaterThanOrEqual(24.6)
+  })
+
+  it('spaces ticks on a genuinely nice step', () => {
+    for (const [lo, hi] of [
+      [24.49, 24.6],
+      [0.1, 0.35],
+      [980, 1030],
+      [-3.2, 4.8],
+    ]) {
+      const { ticks } = niceYScale(lo, hi)
+      const step = ticks[1] - ticks[0]
+      expect(niceFractionOf(step)).toBeCloseTo(Math.round(niceFractionOf(step)))
+      expect([1, 2, 5]).toContain(Math.round(niceFractionOf(step)))
+    }
+  })
+})
+
+describe('valueRange', () => {
+  it('spans only visible devices, reading each value under its own id key', () => {
+    expect(
+      valueRange([
+        {
+          id: 'a',
+          points: [
+            { t: 1, a: 20 },
+            { t: 2, a: 22 },
+          ],
+        },
+        { id: 'b', points: [{ t: 1, b: 5 }] },
+      ]),
+    ).toEqual([5, 22])
+  })
+
+  it('ignores hidden devices and null/break markers', () => {
+    expect(
+      valueRange([
+        {
+          id: 'a',
+          points: [
+            { t: 1, a: 20 },
+            { t: 2, a: null },
+          ],
+        },
+        { id: 'b', hidden: true, points: [{ t: 1, b: 99 }] },
+      ]),
+    ).toEqual([20, 20])
+  })
+
+  it('returns undefined when nothing is visible', () => {
+    expect(valueRange([{ id: 'a', hidden: true, points: [{ t: 1, a: 1 }] }])).toBeUndefined()
+    expect(valueRange([{ id: 'a', points: [] }])).toBeUndefined()
+  })
+})
 
 describe('colorForIndex', () => {
   it('wraps around the palette', () => {
