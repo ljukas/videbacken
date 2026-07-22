@@ -110,7 +110,13 @@ describe('colorForIndex', () => {
   })
 })
 
-// opts that put us in "break" mode: bucketSec >= cadenceSec → maxGapSec = 2.
+// Bucket timestamps are epoch MILLISECONDS (Date.getTime()) but bucketSec/
+// cadenceSec are seconds, so the gap threshold is `maxGapBuckets * bucketSec`
+// seconds → ×1000 ms. These fixtures use S to express bucket times in whole
+// seconds-worth-of-ms, mirroring production units.
+const S = 1000
+// opts that put us in "break" mode: bucketSec >= cadenceSec → threshold =
+// 2 buckets × 1s = 2s = 2000 ms.
 const BREAK = { bucketSec: 1, cadenceSec: 1, maxGapBuckets: 2 }
 // opts finer than the cadence (the 24h case) → connect across any gap.
 const CONNECT_ALL = { bucketSec: 1, cadenceSec: 5, maxGapBuckets: 2 }
@@ -123,17 +129,41 @@ function bucket(
 }
 
 describe('toDeviceSeries', () => {
+  it('connects readings hours apart on a coarse range (epoch-ms gap threshold)', () => {
+    // Regression: `b.t` is epoch ms but the threshold was compared as seconds,
+    // so every realistic gap "broke" and non-24h ranges rendered disconnected
+    // dots. On the 1m range (3h buckets, 4-bucket = 12h tolerance) two readings
+    // 3h apart must stay one connected line — neither isolated, no null marker.
+    const HOUR = 3_600_000
+    const t0 = 1_784_000_000_000
+    const buckets = [
+      bucket(t0, { a: { tempAvg: 14.5, humAvg: 80 } }),
+      bucket(t0 + 3 * HOUR, { a: { tempAvg: 14.4, humAvg: 79 } }),
+    ]
+    expect(
+      toDeviceSeries(buckets, 'temp', { bucketSec: 3 * 3600, maxGapBuckets: 4, cadenceSec: 7200 }),
+    ).toEqual([
+      {
+        id: 'a',
+        points: [
+          { t: t0, a: 14.5 },
+          { t: t0 + 3 * HOUR, a: 14.4 },
+        ],
+      },
+    ])
+  })
+
   it('connects readings within the gap threshold', () => {
     const buckets = [
       bucket(0, { a: { tempAvg: 20, humAvg: 40 } }),
-      bucket(2, { a: { tempAvg: 21, humAvg: 41 } }), // Δ2, not > 2 → connected
+      bucket(2 * S, { a: { tempAvg: 21, humAvg: 41 } }), // Δ2s = the tolerance, not > it → connected
     ]
     expect(toDeviceSeries(buckets, 'temp', BREAK)).toEqual([
       {
         id: 'a',
         points: [
           { t: 0, a: 20 },
-          { t: 2, a: 21 },
+          { t: 2 * S, a: 21 },
         ],
       },
     ])
@@ -142,15 +172,15 @@ describe('toDeviceSeries', () => {
   it('inserts a break marker when silence exceeds the threshold', () => {
     const buckets = [
       bucket(0, { a: { tempAvg: 20, humAvg: 40 } }),
-      bucket(5, { a: { tempAvg: 25, humAvg: 45 } }), // Δ5 > 2 → break
+      bucket(5 * S, { a: { tempAvg: 25, humAvg: 45 } }), // Δ5s > 2s → break
     ]
     expect(toDeviceSeries(buckets, 'temp', BREAK)).toEqual([
       {
         id: 'a',
         points: [
           { t: 0, a: 20, isolated: true },
-          { t: 2.5, a: null },
-          { t: 5, a: 25, isolated: true },
+          { t: 2.5 * S, a: null },
+          { t: 5 * S, a: 25, isolated: true },
         ],
       },
     ])
@@ -215,38 +245,38 @@ describe('toDeviceSeries', () => {
   it('breaks a device into two connected clusters around an outage', () => {
     const buckets = [
       bucket(0, { a: { tempAvg: 10, humAvg: 0 } }),
-      bucket(1, { a: { tempAvg: 11, humAvg: 0 } }), // cluster 1
-      bucket(9, { a: { tempAvg: 12, humAvg: 0 } }), // Δ8 > 2 → break before
-      bucket(10, { a: { tempAvg: 13, humAvg: 0 } }), // cluster 2
+      bucket(1 * S, { a: { tempAvg: 11, humAvg: 0 } }), // cluster 1
+      bucket(9 * S, { a: { tempAvg: 12, humAvg: 0 } }), // Δ8s > 2s → break before
+      bucket(10 * S, { a: { tempAvg: 13, humAvg: 0 } }), // cluster 2
     ]
     expect(toDeviceSeries(buckets, 'temp', BREAK)).toEqual([
       {
         id: 'a',
         points: [
           { t: 0, a: 10 },
-          { t: 1, a: 11 },
-          { t: 5, a: null },
-          { t: 9, a: 12 },
-          { t: 10, a: 13 },
+          { t: 1 * S, a: 11 },
+          { t: 5 * S, a: null },
+          { t: 9 * S, a: 12 },
+          { t: 10 * S, a: 13 },
         ],
       },
     ])
   })
 
   it('scales the break threshold by bucketSec, not the cadence', () => {
-    // bucketSec 10 * maxGapBuckets 2 = 20 → a 15-wide gap connects. If the
-    // threshold used cadenceSec (5 * 2 = 10) instead, 15 would wrongly break.
+    // bucketSec 10 * maxGapBuckets 2 = 20s → a 15s gap connects. If the threshold
+    // used cadenceSec (5 * 2 = 10s) instead, 15s would wrongly break.
     const opts = { bucketSec: 10, cadenceSec: 5, maxGapBuckets: 2 }
     const buckets = [
       bucket(0, { a: { tempAvg: 20, humAvg: 0 } }),
-      bucket(15, { a: { tempAvg: 21, humAvg: 0 } }),
+      bucket(15 * S, { a: { tempAvg: 21, humAvg: 0 } }),
     ]
     expect(toDeviceSeries(buckets, 'temp', opts)).toEqual([
       {
         id: 'a',
         points: [
           { t: 0, a: 20 },
-          { t: 15, a: 21 },
+          { t: 15 * S, a: 21 },
         ],
       },
     ])
