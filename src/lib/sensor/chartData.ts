@@ -34,6 +34,79 @@ export function timeDomain(devices: { points: SeriesPoint[] }[]): [number, numbe
   return min <= max ? [min, max] : undefined
 }
 
+// Round a raw step up to the nearest "nice" number (1, 2, or 5 × 10ⁿ), the
+// increments people read axes in.
+function niceStep(raw: number): number {
+  if (!Number.isFinite(raw) || raw <= 0) return 1
+  const exp = Math.floor(Math.log10(raw))
+  const pow = 10 ** exp
+  const frac = raw / pow
+  const niceFrac = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10
+  return niceFrac * pow
+}
+
+// Decimals a nice step needs (0.5 → 1, 0.05 → 2, 2 → 0). Loop-based to dodge the
+// float error `-log10` accumulates.
+function decimalsForStep(step: number): number {
+  if (!Number.isFinite(step) || step >= 1) return 0
+  let d = 0
+  let s = step
+  while (s < 1 && d < 6) {
+    s *= 10
+    d++
+  }
+  return d
+}
+
+function roundTo(v: number, decimals: number): number {
+  const f = 10 ** decimals
+  return Math.round(v * f) / f
+}
+
+export type YScale = { domain: [number, number]; ticks: number[]; decimals: number }
+
+// A "nice" y-axis for a value range: round bounds and evenly-spaced ticks on a
+// round step. Recharts equal-divides a narrow auto-domain into arbitrary
+// fractional ticks (24.595, 24.49, …) that overflow a fixed-width axis and read
+// as noise; supplying round ticks keeps labels short, aligned to sensible
+// increments, and free of rounding collisions. A flat series (all readings
+// equal) is padded to a 1-unit band so its line sits mid-axis.
+export function niceYScale(min: number, max: number, targetCount = 5): YScale {
+  if (!(max > min)) {
+    min -= 0.5
+    max += 0.5
+  }
+  const step = niceStep((max - min) / Math.max(1, targetCount - 1))
+  const decimals = decimalsForStep(step)
+  const niceMin = Math.floor(min / step) * step
+  const niceMax = Math.ceil(max / step) * step
+  const count = Math.round((niceMax - niceMin) / step) + 1
+  const ticks: number[] = []
+  for (let i = 0; i < count; i++) ticks.push(roundTo(niceMin + i * step, decimals))
+  return { domain: [ticks[0], ticks[ticks.length - 1]], ticks, decimals }
+}
+
+// Min/max of every visible device's own readings, for the y-axis scale. Hidden
+// devices are excluded so the axis matches what's drawn (Recharts' per-<Line>
+// auto-domain does the same). Returns undefined when nothing is visible.
+export function valueRange(
+  devices: { id: string; hidden?: boolean; points: SeriesPoint[] }[],
+): [number, number] | undefined {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (const d of devices) {
+    if (d.hidden) continue
+    for (const p of d.points) {
+      const v = p[d.id]
+      if (typeof v === 'number') {
+        if (v < min) min = v
+        if (v > max) max = v
+      }
+    }
+  }
+  return min <= max ? [min, max] : undefined
+}
+
 export type SeriesPoint = {
   t: number
   isolated?: boolean

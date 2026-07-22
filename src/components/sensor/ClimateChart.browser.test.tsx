@@ -138,6 +138,63 @@ test('x-axis spans hidden devices so toggling a device does not rescale time', a
   })
 })
 
+test('formats y-axis tick labels to one decimal for a narrow value range', async () => {
+  // Regression: with a tiny spread (a stable room), Recharts equal-divides the
+  // auto-domain into arbitrary fractional ticks (24.595, 24.49, …). Unformatted +
+  // the unit those labels overflow the axis and get clipped. Every tick must read
+  // as at most one decimal plus the unit, matching the tooltip's precision.
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 600, height: 300 }}>
+      <ClimateChart
+        devices={[
+          {
+            id: 'a',
+            displayName: 'NW corner',
+            color: 'var(--chart-1)',
+            points: [
+              { t: 1, a: 24.49 },
+              { t: 2, a: 24.55 },
+              { t: 3, a: 24.58 },
+            ],
+          },
+          {
+            id: 'b',
+            displayName: 'Kitchen',
+            color: 'var(--chart-2)',
+            points: [
+              { t: 1, b: 24.6 },
+              { t: 2, b: 24.55 },
+              { t: 3, b: 24.5 },
+            ],
+          },
+        ]}
+        unit="°C"
+        formatTick={(t) => String(t)}
+      />
+    </div>,
+  )
+
+  await vi.waitFor(() => {
+    // Y-axis ticks carry the unit suffix ("24.5°C"); x-axis ticks are bare numbers.
+    const yTicks = [...screen.container.querySelectorAll('.recharts-cartesian-axis-tick-value')]
+      .map((t) => t.textContent ?? '')
+      .filter((text) => text.endsWith('°C'))
+    expect(yTicks.length).toBeGreaterThan(1)
+    // Distinct labels — rounding must never collapse ticks into repeats.
+    expect(new Set(yTicks).size).toBe(yTicks.length)
+    // Clean formatting: at most two decimals + the unit, never the arbitrary
+    // three-decimal noise ("24.595°C") the auto-domain produced.
+    for (const text of yTicks) expect(text).toMatch(/^-?\d+(\.\d{1,2})?°C$/)
+    // Evenly spaced on a genuinely "nice" step (1, 2, or 5 × 10ⁿ) — the buggy
+    // auto-domain used a 0.03 step, which fails this.
+    const nums = yTicks.map((t) => Number.parseFloat(t)).sort((a, b) => a - b)
+    const step = nums[1] - nums[0]
+    for (let i = 1; i < nums.length; i++) expect(nums[i] - nums[i - 1]).toBeCloseTo(step, 6)
+    const niceFraction = Math.round(step / 10 ** Math.floor(Math.log10(step)))
+    expect([1, 2, 5]).toContain(niceFraction)
+  })
+})
+
 test('renders a dot for an isolated reading so it is not invisible', async () => {
   const { screen } = await renderWithProviders(
     <div style={{ width: 600, height: 300 }}>

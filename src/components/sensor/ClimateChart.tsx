@@ -7,7 +7,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '~/components/ui/chart'
-import { type SeriesPoint, timeDomain } from '~/lib/sensor/chartData'
+import { niceYScale, type SeriesPoint, timeDomain, valueRange } from '~/lib/sensor/chartData'
 
 export type ClimateChartDevice = {
   id: string
@@ -51,6 +51,12 @@ export function ClimateChart({ devices, unit, formatTick }: Props) {
     'dataMin',
     'dataMax',
   ]
+  // Nice, round y-axis ticks. Recharts equal-divides a narrow auto-domain into
+  // arbitrary fractional ticks (24.595, 24.49, …) that overflow the axis; a
+  // computed nice scale keeps labels short, round, and consistent with the
+  // tooltip. Falls back to Recharts' auto scale when nothing is visible.
+  const range = valueRange(devices)
+  const y = range ? niceYScale(range[0], range[1]) : undefined
   return (
     // Height is inline (not a Tailwind class) so the chart has a measurable box
     // even before CSS loads / in the (Tailwind-less) browser-test env; width stays
@@ -66,7 +72,16 @@ export function ClimateChart({ devices, unit, formatTick }: Props) {
           tickMargin={8}
           minTickGap={32}
         />
-        <YAxis width={44} unit={unit} tickMargin={4} domain={['auto', 'auto']} />
+        <YAxis
+          // width="auto" sizes the axis to its labels (Recharts 3), so a negative
+          // temperature or a wider tick never spills past the chart's left edge.
+          width="auto"
+          unit={unit}
+          tickMargin={4}
+          domain={y?.domain ?? ['auto', 'auto']}
+          ticks={y?.ticks}
+          tickFormatter={y ? (value) => Number(value).toFixed(y.decimals) : undefined}
+        />
         <ChartTooltip
           content={
             <ChartTooltipContent
