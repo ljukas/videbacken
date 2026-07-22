@@ -1,6 +1,48 @@
 import { expect, test, vi } from 'vitest'
+import { toDeviceSeries } from '~/lib/sensor/chartData'
+import { CADENCE_SEC, MAX_GAP_BUCKETS } from '~/lib/sensor/range'
+import type { SeriesBucket } from '~/lib/services/sensor'
 import { renderWithProviders } from '~test/browser/render'
 import { ClimateChart } from './ClimateChart'
+
+test('draws connected lines for hours-apart readings on a coarse range', async () => {
+  // End-to-end guard for the epoch-ms gap-threshold bug: buckets → toDeviceSeries
+  // → chart. On the 1m range (3h buckets) readings a few hours apart must render
+  // as a continuous line, not a scatter of isolated dots.
+  const HOUR = 3_600_000
+  const t0 = 1_784_000_000_000
+  const bucketSec = 3 * 3600
+  const buckets: SeriesBucket[] = Array.from({ length: 8 }, (_, i) => ({
+    t: t0 + i * 3 * HOUR,
+    perDevice: { dev: { tempAvg: 14.4 + (i % 3) * 0.1, humAvg: 80 } },
+  }))
+  const [series] = toDeviceSeries(buckets, 'temp', {
+    bucketSec,
+    maxGapBuckets: MAX_GAP_BUCKETS,
+    cadenceSec: CADENCE_SEC,
+  })
+
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 600, height: 300 }}>
+      <ClimateChart
+        devices={[
+          { id: 'dev', displayName: 'Sensor', color: 'var(--chart-1)', points: series.points },
+        ]}
+        unit="°C"
+        formatTick={(t) => String(t)}
+      />
+    </div>,
+  )
+
+  await vi.waitFor(() => {
+    // One continuous curve (a single move-to) with real line segments, and no
+    // isolated-reading dots — proof the points connected rather than broke apart.
+    const d = screen.container.querySelector('.recharts-line-curve')?.getAttribute('d') ?? ''
+    expect((d.match(/M/gi) || []).length).toBe(1)
+    expect(d).toMatch(/[CL]/)
+    expect(screen.container.querySelectorAll('.recharts-dot').length).toBe(0)
+  })
+})
 
 test('renders one line per visible device with stable per-device colors', async () => {
   const { screen } = await renderWithProviders(

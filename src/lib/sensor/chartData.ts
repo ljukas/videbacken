@@ -144,10 +144,13 @@ export function toDeviceSeries(
 
   // When the bucket is finer than the reporting cadence (the 24h range), empty
   // buckets are normal sparseness → never break (connect across the window).
-  const maxGapSec =
+  // `bucketSec`/`cadenceSec` are seconds but `b.t` is epoch MILLISECONDS, so the
+  // threshold is converted to ms — comparing ms gaps against a seconds value made
+  // every realistic gap "break", collapsing non-24h ranges to disconnected dots.
+  const maxGapMs =
     opts.bucketSec < opts.cadenceSec
       ? Number.POSITIVE_INFINITY
-      : opts.maxGapBuckets * opts.bucketSec
+      : opts.maxGapBuckets * opts.bucketSec * 1000
 
   return ids.map((id) => {
     const readings: { t: number; v: number }[] = []
@@ -161,9 +164,9 @@ export function toDeviceSeries(
       const prev = readings[i - 1]
       const cur = readings[i]
       const next = readings[i + 1]
-      const brokeBefore = prev ? cur.t - prev.t > maxGapSec : true
-      const brokeAfter = next ? next.t - cur.t > maxGapSec : true
-      if (prev && cur.t - prev.t > maxGapSec) {
+      const brokeBefore = prev ? cur.t - prev.t > maxGapMs : true
+      const brokeAfter = next ? next.t - cur.t > maxGapMs : true
+      if (prev && cur.t - prev.t > maxGapMs) {
         points.push({ t: (prev.t + cur.t) / 2, [id]: null })
       }
       points.push(
