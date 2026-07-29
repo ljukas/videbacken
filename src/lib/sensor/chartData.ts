@@ -117,6 +117,68 @@ export type SeriesPoint = {
 }
 export type DeviceSeries = { id: string; points: SeriesPoint[] }
 
+export type ClimateTooltipRow = {
+  id: string
+  displayName: string
+  color: string
+  value: number
+  t: number // the ACTUAL reading time (may differ from the hovered time)
+}
+
+// Resolve a hover at time `hoverT` to one row per visible device: that device's
+// reading closest to the hover, kept only when it lands within `windowMs`.
+//
+// Why this exists: each <Line> carries its OWN points, and on the 24h range the
+// 10-min bucket is far finer than the ~2h reporting cadence, so different
+// devices' readings almost never share a bucket timestamp. Recharts' axis
+// tooltip snaps to a single x tick and only reports lines that have a point at
+// exactly that x — so a hover shows just the one sensor that owns the tick.
+// Snapping each line independently to its nearest reading restores "all sensors
+// at this moment" without changing the bucket. The `windowMs` guard (≈ one
+// reporting cadence) is the "not 10h away" rule: a device silent longer than a
+// cadence is omitted rather than shown with a stale value, and on coarser ranges
+// (bucket ≥ cadence) the window is narrower than a bucket, so aligned points
+// resolve to an exact match and behaviour is unchanged. Null break markers are
+// skipped — only real readings can win. Roster order is preserved so the tooltip
+// rows match the legend regardless of which line owns the hovered tick.
+export function nearestReadings(
+  devices: readonly {
+    id: string
+    displayName: string
+    color: string
+    hidden?: boolean
+    points: SeriesPoint[]
+  }[],
+  hoverT: number,
+  windowMs: number,
+): ClimateTooltipRow[] {
+  const rows: ClimateTooltipRow[] = []
+  for (const d of devices) {
+    if (d.hidden) continue
+    let best: { value: number; t: number } | null = null
+    let bestDist = Number.POSITIVE_INFINITY
+    for (const p of d.points) {
+      const v = p[d.id]
+      if (typeof v !== 'number') continue // skip outage break markers
+      const dist = Math.abs(p.t - hoverT)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = { value: v, t: p.t }
+      }
+    }
+    if (best && bestDist <= windowMs) {
+      rows.push({
+        id: d.id,
+        displayName: d.displayName,
+        color: d.color,
+        value: best.value,
+        t: best.t,
+      })
+    }
+  }
+  return rows
+}
+
 // Reshape server buckets into one series per device for Recharts' per-<Line>
 // `data`. Each device carries only its OWN readings, so a null means exactly one
 // thing — a real outage — which we insert as a break marker only when a device was

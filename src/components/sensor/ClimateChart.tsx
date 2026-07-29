@@ -5,9 +5,15 @@ import {
   ChartLegend,
   ChartLegendContent,
   ChartTooltip,
-  ChartTooltipContent,
 } from '~/components/ui/chart'
-import { niceYScale, type SeriesPoint, timeDomain, valueRange } from '~/lib/sensor/chartData'
+import {
+  nearestReadings,
+  niceYScale,
+  type SeriesPoint,
+  timeDomain,
+  valueRange,
+} from '~/lib/sensor/chartData'
+import { CADENCE_SEC } from '~/lib/sensor/range'
 
 export type ClimateChartDevice = {
   id: string
@@ -35,6 +41,62 @@ function IsolatedDot(props: { cx?: number; cy?: number; color?: string; payload?
   const { cx, cy, color, payload } = props
   if (!payload?.isolated || cx == null || cy == null) return null
   return <circle className="recharts-dot" cx={cx} cy={cy} r={3} fill={color} stroke={color} />
+}
+
+// Nearest-neighbour tooltip: one row per visible device, each snapped to its
+// reading closest to the hovered time (see nearestReadings). It replaces
+// Recharts' default axis tooltip, which — because each line has its own
+// unaligned timestamps on the 24h range (10-min bucket ≪ ~2h cadence) — lists
+// only the single line that owns the hovered x tick, so a hover shows just one
+// sensor. `hoverT` is the snapped tick's real reading time. Each row shows its
+// own reading time only when it differs from `hoverT` (the header), so the
+// small per-line time offset stays visible without repeating the anchor.
+function ClimateTooltipContent({
+  active,
+  hoverT,
+  devices,
+  unit,
+  formatTick,
+}: {
+  active: boolean
+  hoverT: number
+  devices: ClimateChartDevice[]
+  unit: string
+  formatTick: (t: number) => string
+}) {
+  if (!active || !Number.isFinite(hoverT)) return null
+  const rows = nearestReadings(devices, hoverT, CADENCE_SEC * 1000)
+  if (rows.length === 0) return null
+  return (
+    <div className="grid min-w-32 items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+      <div className="font-medium">{formatTick(hoverT)}</div>
+      <div className="grid gap-1.5">
+        {rows.map((row) => (
+          <div key={row.id} className="flex w-full items-center justify-between gap-6">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <span
+                aria-hidden
+                className="inline-block size-2.5 shrink-0 rounded-[2px]"
+                style={{ backgroundColor: row.color }}
+              />
+              {row.displayName}
+            </span>
+            <span className="flex items-baseline gap-2">
+              {row.t !== hoverT ? (
+                <span className="text-[10px] text-muted-foreground tabular-nums">
+                  {formatTick(row.t)}
+                </span>
+              ) : null}
+              <span className="font-medium font-mono text-foreground tabular-nums">
+                {row.value.toFixed(1)}
+                <span className="ml-0.5 font-sans text-muted-foreground">{unit}</span>
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // Presentational multi-line chart (one colored line per device). Each line reads
@@ -83,29 +145,21 @@ export function ClimateChart({ devices, unit, formatTick }: Props) {
           tickFormatter={y ? (value) => Number(value).toFixed(y.decimals) : undefined}
         />
         <ChartTooltip
-          content={
-            <ChartTooltipContent
-              labelFormatter={(_, items) => formatTick(Number(items?.[0]?.payload?.t))}
-              // Custom row: device name on the left, value + unit on the right,
-              // clearly spaced (the default cramps them and omits the unit).
-              formatter={(value, name, item) => (
-                <div className="flex w-full items-center justify-between gap-6">
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <span
-                      aria-hidden
-                      className="inline-block size-2.5 shrink-0 rounded-[2px]"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    {name}
-                  </span>
-                  <span className="font-medium font-mono text-foreground tabular-nums">
-                    {typeof value === 'number' ? value.toFixed(1) : value}
-                    <span className="ml-0.5 font-sans text-muted-foreground">{unit}</span>
-                  </span>
-                </div>
-              )}
-            />
-          }
+          content={(props) => {
+            // Prefer the snapped tick's own reading time; fall back to the axis
+            // label. Both resolve to the hovered moment for a numeric x-axis.
+            const first = props.payload?.[0]?.payload as SeriesPoint | undefined
+            const hoverT = Number(first?.t ?? props.label)
+            return (
+              <ClimateTooltipContent
+                active={props.active ?? false}
+                hoverT={hoverT}
+                devices={devices}
+                unit={unit}
+                formatTick={formatTick}
+              />
+            )
+          }}
         />
         <ChartLegend content={<ChartLegendContent />} />
         {devices.map((d) => (
