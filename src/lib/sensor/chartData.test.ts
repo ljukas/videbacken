@@ -3,7 +3,9 @@ import type { SeriesBucket } from '~/lib/services/sensor'
 import {
   colorForIndex,
   DEVICE_COLORS,
+  nearestReadings,
   niceYScale,
+  type SeriesPoint,
   timeDomain,
   toDeviceSeries,
   valueRange,
@@ -284,6 +286,96 @@ describe('toDeviceSeries', () => {
 
   it('returns an empty array for no buckets', () => {
     expect(toDeviceSeries([], 'temp', BREAK)).toEqual([])
+  })
+})
+
+describe('nearestReadings', () => {
+  const dev = (id: string, points: SeriesPoint[], extra?: { hidden?: boolean }) => ({
+    id,
+    displayName: id.toUpperCase(),
+    color: `var(--${id})`,
+    hidden: extra?.hidden,
+    points,
+  })
+
+  it('snaps each visible line to its own reading nearest the hovered time', () => {
+    // The 24h bug: a hover lands on ONE line's timestamp; the other line has no
+    // point at that exact t, so Recharts drops it. Nearest-neighbour resolves
+    // BOTH lines to their closest reading so the tooltip shows every sensor.
+    const rows = nearestReadings(
+      [
+        dev('a', [
+          { t: 0, a: 20 },
+          { t: 100, a: 21 },
+          { t: 200, a: 22 },
+        ]),
+        dev('b', [
+          { t: 40, b: 5 },
+          { t: 150, b: 6 },
+        ]),
+      ],
+      110, // hovered near a@100 — b has no point there
+      1000,
+    )
+    expect(rows).toEqual([
+      { id: 'a', displayName: 'A', color: 'var(--a)', value: 21, t: 100 },
+      { id: 'b', displayName: 'B', color: 'var(--b)', value: 6, t: 150 },
+    ])
+  })
+
+  it('omits a line whose nearest reading is outside the window (not "10h away")', () => {
+    const rows = nearestReadings(
+      [dev('a', [{ t: 100, a: 21 }]), dev('b', [{ t: 5000, b: 6 }])],
+      100,
+      1000,
+    )
+    expect(rows).toEqual([{ id: 'a', displayName: 'A', color: 'var(--a)', value: 21, t: 100 }])
+  })
+
+  it('includes a reading exactly at the window edge', () => {
+    // dist 1000 == window → shown (inclusive bound).
+    expect(nearestReadings([dev('a', [{ t: 1100, a: 9 }])], 100, 1000).map((r) => r.id)).toEqual([
+      'a',
+    ])
+  })
+
+  it('skips hidden devices', () => {
+    const rows = nearestReadings(
+      [dev('a', [{ t: 100, a: 21 }]), dev('b', [{ t: 100, b: 6 }], { hidden: true })],
+      100,
+      1000,
+    )
+    expect(rows.map((r) => r.id)).toEqual(['a'])
+  })
+
+  it('ignores outage break markers, snapping to the nearest real reading', () => {
+    // The null at t=100 is a break marker (closest to the hover) — it must be
+    // skipped in favour of the nearest numeric reading, a@0.
+    const rows = nearestReadings(
+      [
+        dev('a', [
+          { t: 0, a: 20 },
+          { t: 100, a: null },
+          { t: 400, a: 24 },
+        ]),
+      ],
+      120,
+      1000,
+    )
+    expect(rows).toEqual([{ id: 'a', displayName: 'A', color: 'var(--a)', value: 20, t: 0 }])
+  })
+
+  it('preserves roster order regardless of which line owns the hovered point', () => {
+    const rows = nearestReadings(
+      [dev('a', [{ t: 200, a: 1 }]), dev('b', [{ t: 0, b: 2 }])],
+      0,
+      1000,
+    )
+    expect(rows.map((r) => r.id)).toEqual(['a', 'b'])
+  })
+
+  it('returns an empty list when nothing is in range', () => {
+    expect(nearestReadings([dev('a', [{ t: 9999, a: 1 }])], 0, 100)).toEqual([])
   })
 })
 

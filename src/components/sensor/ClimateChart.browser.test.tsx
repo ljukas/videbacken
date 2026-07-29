@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS } from '~/lib/sensor/range'
 import type { SeriesBucket } from '~/lib/services/sensor'
@@ -235,6 +236,65 @@ test('formats y-axis tick labels to one decimal for a narrow value range', async
     const niceFraction = Math.round(step / 10 ** Math.floor(Math.log10(step)))
     expect([1, 2, 5]).toContain(niceFraction)
   })
+})
+
+test('a single hover lists every visible sensor at its nearest reading', async () => {
+  // The 24h regression: sensors report on different minutes, so each x tick
+  // belongs to ONE line and Recharts' axis tooltip listed only that sensor. The
+  // custom tooltip snaps each line to its nearest reading within the cadence
+  // window, so one hover shows BOTH sensors — even with fully unaligned times.
+  const MIN = 60_000
+  const t0 = 1_784_000_000_000
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 600, height: 300 }}>
+      <ClimateChart
+        devices={[
+          {
+            id: 'a',
+            displayName: 'Fack 1',
+            color: 'var(--chart-1)',
+            points: [
+              { t: t0 + 0 * MIN, a: 15.1 },
+              { t: t0 + 20 * MIN, a: 15.3 },
+              { t: t0 + 40 * MIN, a: 15.5 },
+            ],
+          },
+          {
+            id: 'b',
+            displayName: 'Fack 3',
+            color: 'var(--chart-2)',
+            // Offset by minutes from device a — never sharing a timestamp.
+            points: [
+              { t: t0 + 7 * MIN, b: 14.2 },
+              { t: t0 + 27 * MIN, b: 14.4 },
+              { t: t0 + 47 * MIN, b: 14.6 },
+            ],
+          },
+        ]}
+        unit="°C"
+        formatTick={(t) => new Date(t).toISOString().slice(11, 16)}
+      />
+    </div>,
+  )
+
+  // Hover the plot surface to activate the tooltip (axis mode → any x in range).
+  const surface = screen.container.querySelector('.recharts-surface')
+  if (!surface) throw new Error('chart surface not rendered')
+  await userEvent.hover(surface)
+
+  // Both sensors appear together IN THE TOOLTIP (not just the legend, which is
+  // outside .recharts-tooltip-wrapper) — the behaviour this fix restores.
+  await vi.waitFor(() => {
+    const tip = screen.container.querySelector('.recharts-tooltip-wrapper')?.textContent ?? ''
+    expect(tip).toContain('Fack 1')
+    expect(tip).toContain('Fack 3')
+    // Two readings shown, each to one decimal + unit.
+    expect((tip.match(/°C/g) || []).length).toBe(2)
+  })
+
+  // Move the cursor off the chart so the shared browser page doesn't carry a
+  // lingering hover (and its active dot) into the next test.
+  await userEvent.unhover(surface)
 })
 
 test('renders a dot for an isolated reading so it is not invisible', async () => {
