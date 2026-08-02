@@ -4,6 +4,7 @@ import { m } from '~/paraglide/messages'
 
 const RANGE_LABEL: Record<SeriesRange, () => string> = {
   '24h': m.sensors_range_24h,
+  '1w': m.sensors_range_1w,
   '1m': m.sensors_range_1m,
   '3m': m.sensors_range_3m,
   '6m': m.sensors_range_6m,
@@ -12,7 +13,7 @@ const RANGE_LABEL: Record<SeriesRange, () => string> = {
 }
 
 // Display order (matches the spec's 24h → all time progression).
-const ORDER: SeriesRange[] = ['24h', '1m', '3m', '6m', '1y', 'all']
+const ORDER: SeriesRange[] = ['24h', '1w', '1m', '3m', '6m', '1y', 'all']
 
 export function RangeSelector({
   value,

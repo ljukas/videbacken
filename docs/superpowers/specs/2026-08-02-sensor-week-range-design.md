@@ -49,7 +49,9 @@ consequences, both wanted:
    stay on with a threshold of `MAX_GAP_BUCKETS × 2h = 8h` of silence. A 1h
    bucket would have silently turned outage gaps off for this range only.
 
-This equality is load-bearing and currently unguarded, so it gets its own test.
+The equality is load-bearing, so it gets its own named test asserting the
+invariant (`bucketSec >= CADENCE_SEC`) rather than the constant — that is what
+would break if someone "improved" the resolution to 1h.
 
 `resolveWindow` and `queryBucketAverages` are already range-generic; neither
 changes.
@@ -64,8 +66,11 @@ a week *number* in Swedish, so the word is spelled out.
 
 ### X-axis and tooltip format
 
-`makeTickFormatter` (`sensors.tsx`) currently branches 24h vs everything else. It
-gains a middle branch:
+`makeTickFormatter` moves out of `sensors.tsx` into `src/lib/sensor/tickFormat.ts`
+and takes the BCP 47 locale as a parameter (the route still supplies
+`getIntlLocale()`). It was private to the route and therefore untestable, and it
+is pure formatting logic that belongs beside the other client-safe sensor helpers.
+It branches 24h vs everything else today; it gains a middle branch:
 
 | range | format | example |
 |---|---|---|
@@ -90,15 +95,22 @@ Tests are written before the implementation.
   - `1w` buckets by 2h: two readings inside one 2h bucket are averaged, a third
     in the next bucket stays separate.
   - the 7-day window excludes an older reading and keeps one inside it.
+  - `1w`'s bucket is no finer than `CADENCE_SEC` (the outage-break invariant).
   - `bucketSec` is 7200 for `1w` (extends the existing resolved-width test).
-- `src/lib/sensor/chartData.test.ts`
-  - `bucketSec === cadenceSec` still inserts a break marker after >8h of
-    silence — pins the boundary the bucket choice depends on.
+- `src/lib/sensor/tickFormat.test.ts` (new)
+  - each range's label collapses exactly what it should and distinguishes
+    exactly what it must: 24h collapses the calendar day, `1w` separates both
+    ticks within a day and the same clock time across days, coarse ranges
+    collapse the time of day. Labels are compared to each other, not to literal
+    ICU output, so the tests survive a Node/ICU bump.
 - `src/components/sensor/RangeSelector.browser.test.tsx`
   - the `1w` option renders and reports `'1w'` when picked.
 
 No change needed in `procedures/sensor.test.ts` — the input schema derives from
-the enum.
+the enum. No new `chartData.test.ts` case: its `BREAK` fixture already exercises
+`bucketSec === cadenceSec`, so the boundary itself is covered; what was missing
+was the guard that `1w` stays on the break-enabled side, which is the
+`series.test.ts` invariant above.
 
 ## Out of scope
 

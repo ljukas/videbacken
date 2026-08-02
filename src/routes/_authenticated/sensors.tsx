@@ -15,6 +15,7 @@ import { getIntlLocale } from '~/lib/i18n/format'
 import { orpc } from '~/lib/orpc/client'
 import { colorForIndex, type DeviceSeries, toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS, SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
+import { makeTickFormatter } from '~/lib/sensor/tickFormat'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
@@ -28,7 +29,7 @@ type SensorsDialog = NonNullable<SensorsSearch['dialog']>
 
 // Only the shorter ranges poll — a new reading won't visibly move a 1-year daily
 // chart, so longer ranges just refetch on focus/mount.
-const POLLED_RANGES: SeriesRange[] = ['24h', '1m']
+const POLLED_RANGES: SeriesRange[] = ['24h', '1w', '1m']
 
 export const Route = createFileRoute('/_authenticated/sensors')({
   head: () => ({
@@ -87,7 +88,7 @@ function SensorsPage() {
 
   const buckets = series?.buckets ?? []
   const bucketSec = series?.bucketSec ?? 0
-  const formatTick = useMemo(() => makeTickFormatter(range), [range])
+  const formatTick = useMemo(() => makeTickFormatter(range, getIntlLocale()), [range])
 
   // Each metric gets its own per-device series (with outage breaks inserted by
   // toDeviceSeries). Colors derive from the FULL roster position (stable order
@@ -235,15 +236,4 @@ function toChartDevices(
     hidden: hidden.has(d.id),
     points: byId.get(d.id) ?? [],
   }))
-}
-
-// Range-aware x-axis label in the active UI locale: time-of-day for the 24h
-// view, else a short date.
-function makeTickFormatter(range: SeriesRange): (t: number) => string {
-  const locale = getIntlLocale()
-  const fmt =
-    range === '24h'
-      ? new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' })
-      : new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
-  return (t: number) => fmt.format(new Date(t))
 }
