@@ -169,6 +169,11 @@ const FIXED_RANGES: Record<
   { windowSec: number; bucketSec: number }
 > = {
   '24h': { windowSec: DAY_SEC, bucketSec: 600 }, // 10 min → ~144 pts
+  // 2 h → ~84 pts. Deliberately AT the reporting cadence (CADENCE_SEC), not
+  // below it: roughly one reading per bucket (little averaging), while staying
+  // coarse enough that toDeviceSeries keeps outage breaks on — under the cadence
+  // it treats empty buckets as sparseness and stops breaking. See series.test.ts.
+  '1w': { windowSec: 7 * DAY_SEC, bucketSec: 2 * 3600 },
   '1m': { windowSec: 30 * DAY_SEC, bucketSec: 3 * 3600 }, // 3 h → ~240 pts
   '3m': { windowSec: 90 * DAY_SEC, bucketSec: 12 * 3600 }, // 12 h → ~180 pts
   '6m': { windowSec: 180 * DAY_SEC, bucketSec: DAY_SEC }, // 1 day → ~180 pts

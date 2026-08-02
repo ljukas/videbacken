@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
+import { CADENCE_SEC } from '~/lib/sensor/range'
 import { setupDatabase } from '~test/setup'
 import { getSeries } from './sensor'
 
@@ -94,6 +95,50 @@ test('getSeries "all" spans from the first reading with daily buckets', async ()
   expect(buckets).toHaveLength(2)
   expect(buckets[0].perDevice[d].tempAvg).toBe(10)
   expect(buckets[1].perDevice[d].tempAvg).toBe(12)
+})
+
+test('getSeries "1w" buckets by 2 hours', async () => {
+  const now = new Date('2026-07-18T12:00:00Z')
+  const d = await device('aa10')
+  await db.insert(sensorReading).values([
+    // 06:00 & 07:00 fall in the same [06:00,08:00) 2h bucket → averaged.
+    { deviceId: d, temperatureC: 10, recordedAt: new Date('2026-07-18T06:00:00Z') },
+    { deviceId: d, temperatureC: 20, recordedAt: new Date('2026-07-18T07:00:00Z') },
+    // 09:00 falls in the next [08:00,10:00) bucket.
+    { deviceId: d, temperatureC: 30, recordedAt: new Date('2026-07-18T09:00:00Z') },
+  ])
+  const { buckets } = await getSeries({ range: '1w', now })
+  expect(buckets).toHaveLength(2)
+  expect(buckets[0].perDevice[d].tempAvg).toBe(15) // avg(10, 20)
+  expect(buckets[1].perDevice[d].tempAvg).toBe(30)
+})
+
+test('getSeries excludes readings outside the 7-day window', async () => {
+  const now = new Date('2026-07-18T12:00:00Z')
+  const d = await device('aa11')
+  await db.insert(sensorReading).values([
+    { deviceId: d, temperatureC: 10, recordedAt: new Date('2026-07-10T12:00:00Z') }, // 8 days old
+    { deviceId: d, temperatureC: 20, recordedAt: new Date('2026-07-13T12:00:00Z') }, // in window
+  ])
+  const { buckets } = await getSeries({ range: '1w', now })
+  const temps = buckets.flatMap((b) => Object.values(b.perDevice).map((v) => v.tempAvg))
+  expect(temps).toEqual([20])
+})
+
+// Load-bearing invariant, not a coincidence: toDeviceSeries turns outage breaks
+// OFF when bucketSec < cadenceSec (below the cadence, empty buckets are normal
+// sparseness — the 24h case). Making the 1w bucket finer than the cadence would
+// therefore silently hide real outages on this range alone.
+test('getSeries "1w" buckets no finer than the reporting cadence', async () => {
+  const now = new Date('2026-07-18T12:00:00Z')
+  const d = await device('aa12')
+  await db.insert(sensorReading).values({
+    deviceId: d,
+    temperatureC: 20,
+    recordedAt: new Date('2026-07-18T11:00:00Z'),
+  })
+  const { bucketSec } = await getSeries({ range: '1w', now })
+  expect(bucketSec).toBeGreaterThanOrEqual(CADENCE_SEC)
 })
 
 test('getSeries "1m" buckets by 3 hours', async () => {
@@ -261,6 +306,7 @@ test('getSeries returns the resolved bucket width', async () => {
     recordedAt: new Date('2026-07-18T11:00:00Z'),
   })
   expect((await getSeries({ range: '24h', now })).bucketSec).toBe(600) // 10 min
+  expect((await getSeries({ range: '1w', now })).bucketSec).toBe(7200) // 2 h
   expect((await getSeries({ range: '1m', now })).bucketSec).toBe(10800) // 3 h
 })
 

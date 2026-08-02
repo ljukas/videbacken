@@ -14,6 +14,14 @@ test('renders every range and reports the picked value', async () => {
   expect(onChange).toHaveBeenCalledWith('3m')
 })
 
+test('offers the 1-week range and reports it when picked', async () => {
+  const onChange = vi.fn()
+  const { screen } = await renderWithProviders(<RangeSelector value="24h" onChange={onChange} />)
+
+  await screen.getByText(m.sensors_range_1w()).click()
+  expect(onChange).toHaveBeenCalledWith('1w')
+})
+
 test('re-pressing the active range does not report an empty value', async () => {
   const onChange = vi.fn()
   const { screen } = await renderWithProviders(<RangeSelector value="24h" onChange={onChange} />)

@@ -117,6 +117,7 @@
   "sensors_humidity_chart_title": "Luftfuktighet (%)",
   "sensors_last_seen": "Senast sedd {time}",
   "sensors_range_1m": "1 mån",
+  "sensors_range_1w": "1 vecka",
   "sensors_range_1y": "1 år",
   "sensors_range_24h": "24 tim",
   "sensors_range_3m": "3 mån",

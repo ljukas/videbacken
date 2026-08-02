@@ -4,7 +4,7 @@
 // `postgres` — and its `Buffer` usage — into the browser bundle. Importing a
 // runtime value from the service would evaluate `sensor.ts` → `~/lib/db` in the
 // browser and crash with "Buffer is not defined". Keep this file dependency-free.
-export const SERIES_RANGES = ['24h', '1m', '3m', '6m', '1y', 'all'] as const
+export const SERIES_RANGES = ['24h', '1w', '1m', '3m', '6m', '1y', 'all'] as const
 export type SeriesRange = (typeof SERIES_RANGES)[number]
 
 // Chart gap-break tuning (client-safe; imported by chartData + the /sensors route).
