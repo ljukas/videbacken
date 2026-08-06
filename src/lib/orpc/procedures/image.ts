@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { ORPCError } from '@orpc/server'
 import { z } from 'zod'
 import { auth } from '~/lib/auth'
-import { queue, realtime, storage } from '~/lib/effects'
+import { queue, storage } from '~/lib/effects'
 import { stripEnvPrefix } from '~/lib/effects/storage'
 import { HEIC_MIME } from '~/lib/image/heicMime'
 import { transcodeHeicToPreviewJpeg } from '~/lib/image/heicTranscode'
@@ -121,10 +121,6 @@ export const imageRouter = {
         pathname: input.pathname,
         replacedCount: previousPathnames.length,
       })
-      await realtime.publish(
-        { kind: 'user.changed', ids: [context.user.id] },
-        { source: context.user.id },
-      )
       return { imageUrl: isHeic ? null : blob.url, pending: isHeic }
     }),
 }

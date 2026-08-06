@@ -1,4 +1,4 @@
-import { queue, realtime, storage } from '~/lib/effects'
+import { queue, storage } from '~/lib/effects'
 import type { QueuePayloadMap } from '~/lib/effects/queue/queue'
 import { HEIC_MIME } from '~/lib/image/heicMime'
 import { transcodeHeicToJpeg } from '~/lib/image/heicTranscode'
@@ -60,11 +60,11 @@ export async function handleHeicTranscodeMessage(
   try {
     jpeg = await transcodeHeicToJpeg(buf)
   } catch (error) {
-    // Undecodable bytes — mark permanently failed and ack (no retry churn). Still
-    // notify subscribers so a failed/placeholder state can render.
+    // Undecodable bytes — mark permanently failed and ack (no retry churn).
+    // The uploader's tab learns of the outcome on its next `user.me` refetch
+    // (window focus / poll) rather than a push — see ADR-0018.
     await fileService.setTranscodeFailed(fileId)
     log.warn('heic_transcode: decode failed, marked failed', { error })
-    await realtime.publish({ kind: 'user.changed', ids: [msg.userId] })
     return
   }
 
@@ -103,7 +103,6 @@ export async function handleHeicTranscodeMessage(
 
   const blob = await storage.head(row.access, jpegPath)
   if (blob) await userService.setImage(msg.userId, blob.url)
-  await realtime.publish({ kind: 'user.changed', ids: [msg.userId] })
   log.info('heic_transcode: replaced with JPEG', { jpegPath })
 }
 

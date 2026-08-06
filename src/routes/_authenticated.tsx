@@ -7,7 +7,6 @@ import { CommandPaletteProvider } from '~/components/command/useCommandPalette'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/sidebar'
 import { TooltipProvider } from '~/components/ui/tooltip'
 import { HeaderUserMenu } from '~/components/user/UserMenu'
-import { useRealtimeSync } from '~/hooks/useRealtimeSync'
 import { rememberBrowserUser } from '~/lib/browserSessionFns'
 import { getSession } from '~/lib/getSession'
 import { orpc } from '~/lib/orpc/client'
@@ -40,7 +39,6 @@ export const Route = createFileRoute('/_authenticated')({
 
 function AuthenticatedLayout() {
   const { user } = Route.useRouteContext()
-  useRealtimeSync()
 
   return (
     <CommandPaletteProvider>

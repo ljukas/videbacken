@@ -51,7 +51,8 @@ export function AvatarUpload({ onUploadingChange, variant = 'default' }: Props =
   // thumbnail (object URL) when the file carries one. Native iPhone HEICs usually
   // DON'T (their preview is an HEVC `thmb` item), so this is normally null and we
   // simply keep showing the current avatar / initials until the server transcode
-  // lands and `user.changed` realtime invalidation swaps in the new image.
+  // lands and the next `user.me` refetch (window focus / poll) swaps in the new
+  // image — there is no realtime push any more, see ADR-0018.
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   const { data: me } = useSuspenseQuery(orpc.user.me.queryOptions())

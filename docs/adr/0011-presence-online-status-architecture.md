@@ -1,6 +1,13 @@
 # ADR 0011 — Presence / Online-Status Architecture
 
-- **Status**: Accepted
+> **SUPERSEDED 2026-08-06 by [ADR-0018](./0018-polled-sync-replaces-realtime-sse.md).**
+> The `presence` effect has been deleted. It was refcounted off the SSE
+> connection lifecycle described in ADR-0004, and that connection is exactly
+> what exhausted the Vercel Fluid provisioned-memory allowance. The green dots
+> this ADR was written for were never built — `listOnline` had no UI consumer.
+> **This document is retained for history only; do not build on it.**
+
+- **Status**: Superseded by ADR-0018
 - **Date**: 2026-06-04
 - **Deciders**: Lukas
 - **Decision in one line**: Track who is online with a typed `presence` effect that is reference-counted off the SSE connection lifecycle — the realtime subscription procedure calls `presence.acquire(userId)` on connect and `presence.release(userId)` on disconnect, publishes a `presence.changed` realtime event only on the `0→1` and `1→0` transitions, and a single `presenceRouter.listOnline` read model feeds green "Ansluten" dots in the UI. The store is an in-process refcount `Map`, single-instance like the realtime bus it rides on.
