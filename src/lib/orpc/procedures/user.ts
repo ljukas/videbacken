@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { auth, resolveBaseURL } from '~/lib/auth'
-import { queue, realtime } from '~/lib/effects'
+import { queue } from '~/lib/effects'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import { inviteInputSchema } from '~/lib/orpc/userInviteSchema'
 import { nameField, phoneField, selfProfileSchema } from '~/lib/orpc/userProfileSchema'
@@ -67,11 +67,9 @@ export const userRouter = {
       try {
         const updated = await userService.updateOwnProfile(context.user.id, input)
         context.log.info('user updated own profile', { userId: context.user.id })
-        // Name/phone show up in the users directory, so refresh other tabs.
-        await realtime.publish(
-          { kind: 'user.changed', ids: [updated.id] },
-          { source: context.user.id },
-        )
+        // Name/phone show up in the users directory. The caller's own tab
+        // invalidates locally; other tabs pick this up on the /users poll or
+        // their next window focus (see ADR-0018).
         return updated
       } catch (err) {
         if (err instanceof UserDomainError) throw errors[err.code]()
@@ -85,10 +83,6 @@ export const userRouter = {
     try {
       const updated = await userService.completeOnboarding(context.user.id)
       context.log.info('user completed onboarding', { userId: context.user.id })
-      // No realtime publish: this op only stamps `onboardedAt`, which isn't
-      // rendered anywhere, so a `user.changed` would invalidate the whole
-      // orpc.user namespace in every other tab for nothing. (updateProfile
-      // still publishes — name/phone DO show in the users directory.)
       return updated
     } catch (err) {
       if (err instanceof UserDomainError) throw errors[err.code]()
@@ -117,7 +111,6 @@ export const userRouter = {
         throw err
       }
       context.log.info('admin invited user', { email: created.email, role: created.role })
-      await realtime.publish({ kind: 'user.changed' }, { source: context.user.id })
       // Courtesy email — a queued job renders + sends with retry/backoff (tier-3,
       // see ADR-0007/0008); a failure here would only affect that email, so it
       // isn't wrapped in a try/catch guard — the admin sees it fail loudly and
@@ -169,10 +162,6 @@ export const userRouter = {
         })
       }
       context.log.info('admin revoked user access', { email: input.email, targetId: result.userId })
-      await realtime.publish(
-        { kind: 'user.changed', ids: result.userId ? [result.userId] : [] },
-        { source: context.user.id },
-      )
     }),
 
   updateAsAdmin: adminProcedure
@@ -186,10 +175,6 @@ export const userRouter = {
           role: input.role,
         })
         context.log.info('admin updated user', { targetId: input.id, role: input.role })
-        await realtime.publish(
-          { kind: 'user.changed', ids: [updated.id] },
-          { source: context.user.id },
-        )
         return updated
       } catch (err) {
         if (err instanceof UserDomainError) throw errors[err.code]()

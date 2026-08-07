@@ -64,7 +64,14 @@ function Users() {
   const editUserId = isEdit ? userId : undefined
   const revokeEmail = isRevoke ? email : undefined
 
-  const { data: users } = useSuspenseQuery(orpc.user.list.queryOptions())
+  // The directory is the one screen where another admin's invite/edit/revoke
+  // should surface without a manual reload. Polling — not a push — because an
+  // open SSE stream keeps a Vercel Fluid instance (and its 2 GB of provisioned
+  // memory) billing 24/7; see ADR-0018. Same cadence as the sensors tiles.
+  const { data: users } = useSuspenseQuery({
+    ...orpc.user.list.queryOptions(),
+    refetchInterval: 60_000,
+  })
   const revokeUserRow = revokeEmail ? users.find((u) => u.email === revokeEmail) : undefined
   const revokeTarget: RevokeTarget | undefined = revokeUserRow
     ? { email: revokeUserRow.email, name: revokeUserRow.name, status: revokeUserRow.status }

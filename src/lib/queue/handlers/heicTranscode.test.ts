@@ -4,28 +4,25 @@ import { beforeEach, expect, test, vi } from 'vitest'
 
 // Unit-test of the handler's orchestration: every collaborator is mocked so the
 // branches (avatar replace + decode failure + idempotent no-op) are exercised
-// without real storage, queue, realtime, or wasm decode. Mirrors the codebase's
+// without real storage, queue, or wasm decode. Mirrors the codebase's
 // `vi.mock(...)` adapter-test idiom (see s3.test.ts).
 
 // `vi.mock` factories are hoisted above the file, so the mock objects they
 // reference must be declared in `vi.hoisted` (also hoisted) rather than as
 // ordinary top-level consts (which would be in the TDZ when the factory runs).
-const { storage, queue, realtime, fileService, userService, transcodeHeicToJpeg } = vi.hoisted(
-  () => ({
-    storage: { getReadUrl: vi.fn(), put: vi.fn(), delete: vi.fn(), head: vi.fn() },
-    queue: { publish: vi.fn() },
-    realtime: { publish: vi.fn() },
-    fileService: {
-      findActiveById: vi.fn(),
-      replaceTranscoded: vi.fn(),
-      setTranscodeFailed: vi.fn(),
-    },
-    userService: { setImage: vi.fn() },
-    transcodeHeicToJpeg: vi.fn(),
-  }),
-)
+const { storage, queue, fileService, userService, transcodeHeicToJpeg } = vi.hoisted(() => ({
+  storage: { getReadUrl: vi.fn(), put: vi.fn(), delete: vi.fn(), head: vi.fn() },
+  queue: { publish: vi.fn() },
+  fileService: {
+    findActiveById: vi.fn(),
+    replaceTranscoded: vi.fn(),
+    setTranscodeFailed: vi.fn(),
+  },
+  userService: { setImage: vi.fn() },
+  transcodeHeicToJpeg: vi.fn(),
+}))
 
-vi.mock('~/lib/effects', () => ({ storage, queue, realtime }))
+vi.mock('~/lib/effects', () => ({ storage, queue }))
 vi.mock('~/lib/services/file', () => fileService)
 vi.mock('~/lib/services/user', () => userService)
 vi.mock('~/lib/image/heicTranscode', () => ({ transcodeHeicToJpeg }))
@@ -92,7 +89,6 @@ test('avatar: replaces file, repoints user.image to new url, enqueues blurhash',
   })
   expect(storage.head).toHaveBeenCalledWith('public', 'avatars/u1/me.jpg')
   expect(userService.setImage).toHaveBeenCalledWith('u1', 'https://blob.example/avatars/u1/me.jpg')
-  expect(realtime.publish).toHaveBeenCalledWith({ kind: 'user.changed', ids: ['u1'] })
 })
 
 test('replace: skips deleting the original when the jpeg path equals it (suffix absent)', async () => {
@@ -130,8 +126,6 @@ test('permanent decode failure: stamps transcodeFailedAt, no throw', async () =>
   expect(fileService.setTranscodeFailed).toHaveBeenCalledWith('f1')
   expect(storage.put).not.toHaveBeenCalled()
   expect(fileService.replaceTranscoded).not.toHaveBeenCalled()
-  // Still notifies subscribers so a failed/placeholder state can render.
-  expect(realtime.publish).toHaveBeenCalledWith({ kind: 'user.changed', ids: ['u1'] })
 })
 
 test('already JPEG (idempotent re-delivery): no-op', async () => {

@@ -20,7 +20,7 @@ For *why* a pattern exists, follow the ADR link.
 - **Database:** Supabase Postgres (prod, via Vercel Marketplace) / plain `postgres:17-alpine` (local + CI) + Drizzle ORM; `postgres-js` driver; snake_case.
 - **Data layer:** oRPC + TanStack Query; SSR via an in-process router client.
 - **Effects:** email (Resend / Mailpit-SMTP / devLog), file storage (Vercel Blob / S3-RustFS / devLog),
-  queue (Vercel Queue / BullMQ+Redis / devLog), realtime (SSE), presence — all in `src/lib/effects/`.
+  queue (Vercel Queue / BullMQ+Redis / devLog) — all in `src/lib/effects/`. No realtime/presence: sync is polled (ADR-0018).
 - **i18n:** Paraglide JS — Swedish (source of truth + default) + English; `videbacken-locale` cookie, no URL prefix.
 - **Testing:** Vitest — a `node` project (per-test Postgres schema) + a `browser` project (Chromium via Playwright).
 - **Tooling:** Biome (format/lint/organize-imports); docker compose dev stack; GitHub Actions CI.
@@ -52,7 +52,7 @@ src/
     orpc/                       context (public/protected/admin procedures), router, client, procedures/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail}.ts + index barrel
     services/                   approvedEmail, user, file — own all DB access + domain rules (see ADR-0002)
-    effects/                    email, storage, queue, realtime, presence (see ADR-0001)
+    effects/                    email, storage, queue (see ADR-0001)
     logger/                     pino on server, console+POST /api/log in browser (see ADR-0003)
     i18n/, zodLocale.ts, theme.ts, browserSession.ts, utils.ts
   components/  {AppSidebar, command/, form/, layout/, login/, onboarding/, user/, ui/}
@@ -73,7 +73,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
   effect adapters run *after* a successful service call. See **ADR-0001**.
 - **Logging via `~/lib/logger/`.** `context.log` in oRPC; `logger` singleton elsewhere. Never `console.*`. See **ADR-0003**.
 - **Timing: every RPC is auto-timed — instrument new work.** The `/api/rpc` handler logs one `rpc timing` line per request (`region`, `totalMs`, sub-timings) to Vercel Runtime Logs (filter by msg `"rpc timing"`). For anything heavier than a single query (multiple queries, external calls, expensive compute), record named sub-timings into `context.timings` (`if (context.timings) context.timings.<label>Ms = …`) so slow paths surface early. Pattern: `getSessionMs`/`findActiveByIdMs` in `src/lib/orpc/context.ts`. See **ADR-0003**.
-- **Realtime via `realtime.publish(...)`.** Procedures publish `<ns>.changed`; `useRealtimeSync()` invalidates queries. See **ADR-0004**.
+- **Never hold a connection open on a Vercel Function.** No SSE, no WebSockets, no long-polling. Fluid Compute bills **provisioned memory for the entire lifetime of an in-flight request** — one open stream pins a 2 GB instance 24/7 and exhausted the whole Hobby allowance in ~7 days (production was blocked 2026-08-05). Cross-user freshness comes from TanStack Query: `refetchInterval` on the few screens that need it, plus the default focus refetch. See **ADR-0018**.
 - **Forms via `useAppForm`.** Never `useState` for field values; canonical example `src/components/login/LoginFormCard.tsx`. See **ADR-0005**.
 
 ### Recipes
@@ -90,12 +90,12 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 | Side effects (email, storage, queue) | 0001 |
 | Services, domain rules, error mapping | 0002 |
 | Logging | 0003 |
-| Realtime sync | 0004 |
+| ~~Realtime sync (SSE)~~ — superseded | ~~0004~~ → 0018 |
 | Forms | 0005 |
 | File storage (avatars + private store) | 0006 |
 | Background jobs / queue | 0007 |
 | Email templates | 0008 |
-| Presence (online status) | 0011 |
+| ~~Presence (online status)~~ — superseded | ~~0011~~ → 0018 |
 | Form presentation (dialogs vs pages) | 0013 |
 | Command palette | 0014 |
 | Visual identity / design language | 0015 |
@@ -189,7 +189,7 @@ otherwise `bun run db:migrate` migrates **production**.
 - **Auth:** Better Auth, **Google OAuth + email magic-link, both gated by the `approved_email` allowlist**; two roles; **admins mutate, users read-only except own account**; first admin seeded from `INITIAL_ADMIN_EMAILS`. No passwords/passkeys. See ADR-0017.
 - **Ports:** offset **+100** (14600/14620…) so this template coexists with sibling projects on one machine.
 - **Logging:** pino → stdout (Vercel Runtime Logs); browser warn/error POSTs `/api/log` (ADR-0003).
-- **Realtime:** SSE + in-process pub/sub, single-instance (ADR-0004). **Presence:** in-process refcount on the SSE lifecycle (ADR-0011).
+- **Sync: polled, never pushed** (ADR-0018, supersedes ADR-0004 + ADR-0011). SSE/WebSockets are off the table on Vercel Fluid — a held connection bills provisioned memory for its whole lifetime. Presence was deleted with it (it had no UI consumer).
 - **Forms:** `@tanstack/react-form` v1 `createFormHook` + bound shadcn `<Field>` (ADR-0005). **Form presentation:** responsive overlay (URL dialog state) for small CRUD; dedicated route for large forms (ADR-0013).
 - **File storage:** Vercel Blob (prod) / RustFS S3 (dev) / devLog (test); public store (avatars) + private store; client-direct upload (ADR-0006). **Queue:** Vercel Queue (prod) / BullMQ+Redis (dev) / devLog (test) (ADR-0007). **Email:** Resend (prod) / Mailpit (dev) / devLog (test); React Email templates (ADR-0008).
 - **UI:** shadcn/ui (style `radix-nova`, base `slate`) + Tailwind v4 — **Radix primitives, not Base UI**. **Design language:** self-hosted Cabinet Grotesk (headings) + Switzer (body); inset-sidebar shell + shared `PageContainer`; one `--brand` accent (muted indigo placeholder); reduced-motion-aware overlay motion (ADR-0015). **Empty states:** shared `Empty` component (ADR-0016). **Command palette:** global Cmd+K on cmdk (ADR-0014).

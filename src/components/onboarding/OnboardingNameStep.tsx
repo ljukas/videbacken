@@ -35,8 +35,7 @@ export function OnboardingNameStep({ onNext }: Props) {
         return
       }
       // Refetch (not just invalidate) so the avatar step's initials reflect the
-      // new name immediately — useRealtimeSync isn't mounted outside the
-      // authenticated shell, and a background refetch would render stale first.
+      // new name immediately — a background refetch would render stale first.
       await queryClient.refetchQueries({ queryKey: orpc.user.me.key() })
       onNext()
     },

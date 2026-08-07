@@ -28,8 +28,7 @@ const getORPCClient = createIsomorphicFn()
               // Batch ONLY the per-tile thumbnail URL lookups: a folder of image
               // tiles fires its `document.thumbnail` queries in the same tick,
               // which then leave as a single request. Everything else —
-              // mutations, listDocuments, and especially the realtime SSE
-              // stream (`realtime.events`) — stays unbatched.
+              // mutations, listDocuments — stays unbatched.
               groups: [
                 {
                   condition: (options) => options.path.join('.') === 'document.thumbnail',

@@ -1,6 +1,13 @@
 # ADR 0004 — Realtime Sync Architecture
 
-- **Status**: Accepted
+> **SUPERSEDED 2026-08-06 by [ADR-0018](./0018-polled-sync-replaces-realtime-sse.md).**
+> The SSE bus described below no longer exists. An open SSE stream is a
+> permanently in-flight request to Vercel Fluid Compute, which bills 2 GB of
+> provisioned memory for the entire connection lifetime — it exhausted the
+> Hobby allowance and took production offline on 2026-08-05. Sync is now
+> polled. **This document is retained for history only; do not build on it.**
+
+- **Status**: Superseded by ADR-0018
 - **Date**: 2026-05-21
 - **Deciders**: Lukas
 - **Decision in one line**: Push state changes to every authenticated tab through a typed `realtime` effect — oRPC mutation procedures call `realtime.publish(event)` after the service commit, a single SSE procedure forwards events to subscribers, and one per-tab `useRealtimeSync()` hook turns each event into a `queryClient.invalidateQueries({ queryKey: orpc.<namespace>.key() })`. The bus is an in-process `MemoryPublisher` because we run as a single Vercel function instance.

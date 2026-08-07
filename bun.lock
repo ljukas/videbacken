@@ -10,7 +10,6 @@
         "@better-auth/drizzle-adapter": "^1.6.23",
         "@better-auth/passkey": "^1.6.23",
         "@orpc/client": "^1.14.7",
-        "@orpc/experimental-publisher": "^1.14.7",
         "@orpc/server": "^1.14.7",
         "@orpc/tanstack-query": "^1.14.7",
         "@tanstack/react-devtools": "^0.10.8",
@@ -429,8 +428,6 @@
     "@orpc/client": ["@orpc/client@1.14.8", "", { "dependencies": { "@orpc/shared": "1.14.8", "@orpc/standard-server": "1.14.8", "@orpc/standard-server-fetch": "1.14.8", "@orpc/standard-server-peer": "1.14.8" } }, "sha512-Gu9pttl8BvOdU0skSwsYWWL31e+qpLXmHTHTy990vEbrWncVFulOtWJtwY/rV1nX7AfWnSyJZJwCFZvMcFnQgA=="],
 
     "@orpc/contract": ["@orpc/contract@1.14.8", "", { "dependencies": { "@orpc/client": "1.14.8", "@orpc/shared": "1.14.8", "@standard-schema/spec": "^1.1.0", "openapi-types": "^12.1.3" } }, "sha512-Z+CnA6z6mBUUgHjfdMk82QvOocADgVxz5ZoS13BmqLsWuEO8dFm9eVTHRJ0NJDJ2KEHApR+1vshA0bXBQRuClw=="],
-
-    "@orpc/experimental-publisher": ["@orpc/experimental-publisher@1.14.8", "", { "dependencies": { "@orpc/client": "1.14.8", "@orpc/shared": "1.14.8", "@orpc/standard-server": "1.14.8" }, "peerDependencies": { "@upstash/redis": ">=1.35.6", "ioredis": ">=5.8.1" }, "optionalPeers": ["@upstash/redis", "ioredis"] }, "sha512-vbwc0VAB27gEoEwIiILFiJSyjPTiEztB1GAarvDaT0cGniKnaOVaOPUlA7UxwkKzOVIWw9XXZuStM+OLaYpkpg=="],
 
     "@orpc/interop": ["@orpc/interop@1.14.8", "", {}, "sha512-DgLjqMVMUEqtDWVgd3L3rScoAmO5uHumpwaxcCmQygAgGrCMiJ8S48ePOgkVajpxt5eC25tybd2veY4hnKRtUQ=="],
 
