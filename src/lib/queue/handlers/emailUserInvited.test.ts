@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest'
+import { logger } from '~/lib/logger/server'
 import { handleEmailUserInvitedMessage } from './emailUserInvited'
 
-const META = { messageId: 'test-msg', deliveryCount: 1 }
+const META = { meta: { messageId: 'test-msg', deliveryCount: 1 }, log: logger }
 
 // The email effect short-circuits to devLog under VITEST, so the handler is a
 // pure pass-through here — we assert the contract (resolves, no throw). The

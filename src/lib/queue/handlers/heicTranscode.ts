@@ -2,18 +2,15 @@ import { queue, storage } from '~/lib/effects'
 import type { QueuePayloadMap } from '~/lib/effects/queue/queue'
 import { HEIC_MIME } from '~/lib/image/heicMime'
 import { transcodeHeicToJpeg } from '~/lib/image/heicTranscode'
-import { logger } from '~/lib/logger/server'
+import type { QueueHandler, QueueHandlerContext } from '~/lib/queue/dispatch'
 import * as fileService from '~/lib/services/file'
 import * as userService from '~/lib/services/user'
 
 const READ_URL_TTL_SECONDS = 60
 
-export type HeicTranscodeJobMetadata = { messageId: string; deliveryCount: number }
-
 /**
- * Shared handler for the `heic_transcode` job (Nitro `vercel:queue` plugin in
- * prod + the dev BullMQ worker — one source of truth for both runtimes, like
- * `handlers/blurhash.ts`).
+ * Handler for the `heic_transcode` job, dispatched by `~/lib/queue` in both the
+ * production consumer and the dev BullMQ worker.
  *
  * Decodes the uploaded HEIC and REPLACES the file with a JPEG (write the JPEG,
  * repoint the row, delete the original). Best-effort: a transport failure
@@ -22,16 +19,9 @@ export type HeicTranscodeJobMetadata = { messageId: string; deliveryCount: numbe
  */
 export async function handleHeicTranscodeMessage(
   msg: QueuePayloadMap['heic_transcode'],
-  metadata: HeicTranscodeJobMetadata,
+  { log }: QueueHandlerContext,
 ): Promise<void> {
-  const { fileId, kind } = msg
-  const log = logger.child({
-    topic: 'heic_transcode',
-    kind,
-    fileId,
-    messageId: metadata.messageId,
-    deliveryCount: metadata.deliveryCount,
-  })
+  const { fileId } = msg
 
   const row = await fileService.findActiveById(fileId)
   if (!row) {
@@ -112,3 +102,8 @@ export async function handleHeicTranscodeMessage(
 // no-ops and `jpegPath === row.pathname` — the replace branch guards against
 // that before deleting the original (a delete would erase the just-written JPEG).
 const toJpegPathname = (p: string) => p.replace(/\.(heic|heif)$/i, '.jpg')
+
+export const heicTranscodeHandler: QueueHandler<'heic_transcode'> = {
+  handle: handleHeicTranscodeMessage,
+  logFields: (msg) => ({ kind: msg.kind, fileId: msg.fileId }),
+}

@@ -1,70 +1,48 @@
 import './loadEnv'
 
 import { Worker } from 'bullmq'
-import type { QueuePayloadMap, QueueTopic } from '~/lib/effects/queue/queue'
+import type { QueueTopic } from '~/lib/effects/queue/queue'
 import { logger } from '~/lib/logger/server'
-import { handleBlurhashMessage } from '~/lib/queue/handlers/blurhash'
-import { handleEmailUserInvitedMessage } from '~/lib/queue/handlers/emailUserInvited'
-import { handleHeicTranscodeMessage } from '~/lib/queue/handlers/heicTranscode'
+import { dispatchQueueMessage, queueHandlers } from '~/lib/queue'
 
 /**
  * Local-dev consumer for the background-job topics. Run via
  * `bun run dev:worker`. Connects to the Redis container declared in
- * `compose.yaml` (started by `bun run queue:up`) and dispatches each job
- * through the same handlers the Nitro `vercel:queue` plugin uses in
- * production (`server/plugins/queueConsumer.ts`). BullMQ owns polling, ack,
- * retry/backoff (configured on the producer in `bullmqQueue.ts`), and
- * graceful shutdown.
+ * `compose.yaml` (started by `bun run queue:up`) and hands each job to the
+ * same dispatcher the Nitro `vercel:queue` plugin uses in production
+ * (`server/plugins/queueConsumer.ts`), which logs one `queue message` line per
+ * job and decides retry vs drop. BullMQ owns polling, ack, redelivery with
+ * backoff (configured on the producer in `bullmqQueue.ts`), and graceful
+ * shutdown.
  *
- * One BullMQ `Worker` per topic — they share one Redis connection url and
- * one process, mirroring the single prod consumer that dispatches by topic.
+ * One BullMQ `Worker` per topic in the handler table — they share one Redis
+ * connection url and one process, mirroring the single prod consumer.
  */
 const log = logger.child({ component: 'devQueueWorker' })
 const url = process.env.REDIS_URL ?? 'redis://localhost:14621'
 
-const workers = [
-  new Worker<QueuePayloadMap['blurhash']>(
-    'blurhash',
-    async (job) => {
-      await handleBlurhashMessage(job.data, {
-        messageId: job.id ?? 'local-unknown',
-        deliveryCount: job.attemptsMade + 1,
-      })
-    },
-    { connection: { url } },
-  ),
-  new Worker<QueuePayloadMap['email_user_invited']>(
-    'email_user_invited',
-    async (job) => {
-      await handleEmailUserInvitedMessage(job.data, {
-        messageId: job.id ?? 'local-unknown',
-        deliveryCount: job.attemptsMade + 1,
-      })
-    },
-    { connection: { url } },
-  ),
-  new Worker<QueuePayloadMap['heic_transcode']>(
-    'heic_transcode',
-    async (job) => {
-      await handleHeicTranscodeMessage(job.data, {
-        messageId: job.id ?? 'local-unknown',
-        deliveryCount: job.attemptsMade + 1,
-      })
-    },
-    { connection: { url } },
-  ),
-]
+const topics = Object.keys(queueHandlers) as QueueTopic[]
+
+const workers = topics.map(
+  (topic) =>
+    new Worker(
+      topic,
+      (job) =>
+        dispatchQueueMessage(topic, job.data, {
+          messageId: job.id ?? 'local-unknown',
+          deliveryCount: job.attemptsMade + 1,
+        }),
+      { connection: { url } },
+    ),
+)
 
 for (const worker of workers) {
-  const topic = worker.name as QueueTopic
-  worker.on('completed', (job) => log.info('job completed', { topic, jobId: job.id }))
-  worker.on('failed', (job, err) =>
-    log.error('job failed', { topic, jobId: job?.id, attempts: job?.attemptsMade, err }),
-  )
-  worker.on('error', (err) => log.error('worker error', { topic, err }))
+  // Job outcomes are logged by the dispatcher; this covers the worker's own
+  // failures (e.g. lost Redis connection).
+  worker.on('error', (error) => log.error('worker error', { topic: worker.name, error }))
 }
 
-log.info('worker ready', { topics: workers.map((w) => w.name), url })
+log.info('worker ready', { topics, url })
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, async () => {
