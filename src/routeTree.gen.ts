@@ -22,6 +22,7 @@ import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authenticated/account/index'
 import { Route as ApiWebhooksShellyRouteImport } from './routes/api/webhooks/shelly'
 import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
+import { Route as ApiCronZaptecSyncRouteImport } from './routes/api/cron/zaptec-sync'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
 
@@ -90,6 +91,11 @@ const ApiRpcSplatRoute = ApiRpcSplatRouteImport.update({
   path: '/api/rpc/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronZaptecSyncRoute = ApiCronZaptecSyncRouteImport.update({
+  id: '/api/cron/zaptec-sync',
+  path: '/api/cron/zaptec-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/api/log': typeof ApiLogRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account/': typeof AuthenticatedAccountIndexRoute
@@ -129,6 +136,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account': typeof AuthenticatedAccountIndexRoute
@@ -147,6 +155,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/_authenticated/account/': typeof AuthenticatedAccountIndexRoute
@@ -165,6 +174,7 @@ export interface FileRouteTypes {
     | '/api/log'
     | '/account/profile'
     | '/api/auth/$'
+    | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
     | '/account/'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account/profile'
     | '/api/auth/$'
+    | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
     | '/account'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/account/profile'
     | '/api/auth/$'
+    | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
     | '/_authenticated/account/'
@@ -209,6 +221,7 @@ export interface RootRouteChildren {
   SignedInRoute: typeof SignedInRoute
   ApiLogRoute: typeof ApiLogRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiCronZaptecSyncRoute: typeof ApiCronZaptecSyncRoute
   ApiRpcSplatRoute: typeof ApiRpcSplatRoute
   ApiWebhooksShellyRoute: typeof ApiWebhooksShellyRoute
 }
@@ -306,6 +319,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRpcSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/zaptec-sync': {
+      id: '/api/cron/zaptec-sync'
+      path: '/api/cron/zaptec-sync'
+      fullPath: '/api/cron/zaptec-sync'
+      preLoaderRoute: typeof ApiCronZaptecSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -363,6 +383,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignedInRoute: SignedInRoute,
   ApiLogRoute: ApiLogRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiCronZaptecSyncRoute: ApiCronZaptecSyncRoute,
   ApiRpcSplatRoute: ApiRpcSplatRoute,
   ApiWebhooksShellyRoute: ApiWebhooksShellyRoute,
 }

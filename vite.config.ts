@@ -113,6 +113,10 @@ export default defineConfig({
                 formats: ['image/webp'],
                 minimumCacheTTL: 2_678_400,
               },
+              // Hourly Zaptec sync (ADR-0019). Vercel Cron GETs the path with
+              // `Authorization: Bearer $CRON_SECRET`; the handler rejects
+              // anything else (src/lib/evCharging/zaptecSyncCron.ts).
+              crons: [{ path: '/api/cron/zaptec-sync', schedule: '0 * * * *' }],
             },
             // Subscribes the Vercel preset's queue handler to each topic.
             // Producers call `queue.publish('<topic>', …)` from oRPC
