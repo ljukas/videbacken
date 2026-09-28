@@ -36,6 +36,8 @@ export const INTEGRATION_ERROR_CODES = ['auth_failed', 'forbidden', 'rate_limite
 export type IntegrationErrorCode = (typeof INTEGRATION_ERROR_CODES)[number]
 export const SYNC_TRIGGERS = ['cron', 'admin'] as const
 export type SyncTrigger = (typeof SYNC_TRIGGERS)[number]
+export const SYNC_RUN_OUTCOMES = ['ok', 'failed', 'error'] as const
+export type SyncRunOutcome = (typeof SYNC_RUN_OUTCOMES)[number]
 export type HealthTransition = 'none' | 'started_failing' | 'recovered'
 export type HealthState = 'never_synced' | 'not_configured' | 'ok' | 'stale' | 'failing'
 
@@ -166,7 +168,9 @@ authorizedUser: {id,email,fullName} | null, tokenName, voided, replacedBySession
 `:00:00` points, last at session end; each point's `energy` is the kWh delivered in the interval ending
 at that point; points sum to `energy`. Normalize to `ChargeInterval[]` by pairing consecutive points
 (interval i = [p[i].timestamp, p[i+1].timestamp) with energy p[i+1].energy), sorted, clamp negative
-float noise to 0, drop zero-length intervals. State: `GET /api/chargers/{id}/state` →
+float noise to 0, drop zero-length intervals and duplicate timestamps (the result must satisfy the
+`ev_charge_interval` CHECKs: `end_at > start_at`, `energy_kwh >= 0`, unique `start_at` per session).
+Session-level `energy` / `endAt` are passed through as-is (the importer validates them). State: `GET /api/chargers/{id}/state` →
 `[{ StateId, ValueAsString, Timestamp? }]`; 710 = mode (1 disconnected, 2 connected_requesting,
 3 charging, 5 connected_finished, else unknown), 513 = charge power **kW**, 553 = session kWh.
 Send header `User-Agent: videbacken/1.0 (private home dashboard)`.
@@ -226,7 +230,7 @@ export type RunRow = { id: string; trigger: SyncTrigger; startedAt: Date; finish
   outcome: 'ok' | 'failed' | 'error'; errorCode: IntegrationErrorCode | null; errorMessage: string | null;
   upserted: number; sessionsSeen: number; pages: number }
 
-beginAttempt(source, { now }): Promise<{ acquired: true; attemptId: Date } | { acquired: false; runningSince: Date }>
+beginAttempt(source, { now }): Promise<{ acquired: true; attemptId: string } | { acquired: false; runningSince: Date }>
 recordOutcome(source, outcome: SyncOutcome, { attemptId, trigger, startedAt, now }):
   Promise<{ transition: HealthTransition; health: IntegrationHealth }>
 getHealth(source, { now, includeAdminDetail }): Promise<IntegrationHealth>
@@ -236,10 +240,11 @@ listRecentRuns(source, { limit }): Promise<RunRow[]>
 
 Rules: row created lazily (`INSERT … ON CONFLICT DO NOTHING`). Lease: `UPDATE integration_sync SET
 running_since = $now, lease_until = $now + interval '5 minutes' WHERE source = $1 AND (lease_until IS
-NULL OR lease_until < $now) RETURNING running_since`; `attemptId` = the `running_since` written.
-`recordOutcome` in ONE transaction: `SELECT … FOR UPDATE`; if `running_since ≠ attemptId` → return
+NULL OR lease_until < $now) RETURNING lease_token` also setting `lease_token = gen_random_uuid()`;
+`attemptId` = that `lease_token` (a uuid string — never compare timestamps).
+`recordOutcome` in ONE transaction: `SELECT … FOR UPDATE`; if `lease_token ≠ attemptId` → return
 `transition: 'none'`, write nothing (lease lost; log warn); else compute with pure
-`nextRow(prev, outcome, now)` (`transition.ts`), UPDATE (clear lease, set last_attempt_at; on ok set
+`nextRow(prev, outcome, now)` (`transition.ts`), UPDATE (clear lease: running_since, lease_until, lease_token → null; set last_attempt_at; on ok set
 last_success_at/last_success_started_at = startedAt, consecutive_failures 0, error_code/failing_since/
 last_error_message null; on failure increment, set code, failing_since if newly failing, message),
 INSERT the `integration_sync_run` row, then prune runs older than 90 days for the source (DELETE; on
@@ -277,11 +282,19 @@ Implement the spec's "Charging overview (candidate 07)" section plus the import 
 ```ts
 upsertChargers(chargers: ZaptecCharger[]): Promise<void>
 listChargers(): Promise<{ id: string; name: string; installationId: string }[]>
-importSessions(sessions: ZaptecSession[]): Promise<{ upserted: number; voided: number }>
-  // ONE transaction for the batch (the sync run calls it once per page): upsert by zaptec_session_id
-  // (update all mutable fields incl. voided/replaced/energy/end_at, bump updated_at), then delete and
-  // re-insert that session's intervals. `voided` = count of sessions in the batch with voided=true.
-  // Sessions referencing an unknown charger_id: skip them and count as not upserted (log warn).
+importSessions(sessions: ZaptecSession[], ctx: { installationId: string }):
+  Promise<{ upserted: number; voided: number; skipped: number }>
+  // ONE transaction for the batch (the sync run calls it once per page). First validate each session
+  // in JS against the table CHECK predicates (energyKwh >= 0, endAt >= startAt, every interval
+  // endAt > startAt and energyKwh >= 0): invalid → skip, count in `skipped`, log warn with the Zaptec
+  // session id only (a bad row must never roll back the page — the DB CHECKs stay as a backstop).
+  // Unknown charger_id → upsert a stub ev_charger row (id = charger id, name = charger id,
+  // installation_id = ctx.installationId) instead of skipping; `upsertChargers` later fills real
+  // names for chargers Zaptec still lists. Upsert by zaptec_session_id updating ONLY an explicit
+  // allow-list of Zaptec-owned columns (start_at, end_at, energy_kwh, authorized_user_*, token_name,
+  // voided, replaced_by_zaptec_session_id, offline, reliable_clock, charger_id, updated_at) — later
+  // phases add admin-owned columns that must never be overwritten. Then delete and re-insert that
+  // session's intervals. `voided` = count of imported sessions with voided = true.
 getOverview({ year?, now? }): Promise<ChargingOverview>
 listSessions({ limit }): Promise<{ sessions: SessionRow[]; hasMore: boolean }>
 
@@ -312,7 +325,10 @@ tiles; 0.49 kWh excluded / 0.5 counted; voided and replaced excluded; overnight 
 start month; empty selected year → zeros; invariant: months sum = thisYear for the current year,
 allTime ≥ thisYear; `listSessions` order/hasMore/peakKw (1 kWh over 1 h + 3 kWh over 1 h → 3; a
 0.5 kWh 15-min interval → 2); `importSessions` idempotent re-import, void flip updates in place,
-changed intervals replaced (no duplicates), unknown charger skipped.
+changed intervals replaced (no duplicates), unknown charger → stub charger created and the session
+imported; one invalid session (end before start, or negative energy) in a batch of three → the other
+two imported, `skipped = 1`, no throw. Year filtering uses a `start_at` range in Stockholm time
+(not `extract(year) =`).
 
 **Done when:** check/tsc/tests pass; one commit `feat(charging): add charging service`.
 
@@ -403,7 +419,8 @@ export function runZaptecSync(opts: { trigger: SyncTrigger; now?: () => Date;
 Flow: `beginAttempt` (not acquired → `skipped`, no Zaptec calls); `zaptec.chargers()` →
 `upsertChargers`; `since = (getLastSuccessStartedAt) − 7 days`, first run `2020-01-01T00:00:00Z`;
 for each charger installation (dedupe installationIds) iterate `sessionsEndedSince(since, { installationId,
-until: now, stats })` → `importSessions(page)` per page (cap 20 pages → `unexpected_response`);
+until: now, stats })` → `importSessions(page, { installationId })` per page (add its `skipped` to a `skipped` count on
+the run and in the log line) (cap 20 pages → `unexpected_response`);
 `recordOutcome` with stats; on `started_failing`/`recovered` publish `email_integration_sync_alert`
 **one message per active admin** (`userService.listAll()` filtered `role === 'admin' && !deletedAt`,
 locale `baseLocale` from `~/paraglide/runtime`) with the tier-2 pattern
