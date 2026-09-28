@@ -2,6 +2,7 @@ import { QUEUE_MAX_DELIVERIES } from '~/lib/effects/queue/queue'
 import { logger } from '~/lib/logger/server'
 import { createQueueDispatcher, type QueueHandlerTable } from './dispatch'
 import { blurhashHandler } from './handlers/blurhash'
+import { emailIntegrationSyncAlertHandler } from './handlers/emailIntegrationSyncAlert'
 import { emailUserInvitedHandler } from './handlers/emailUserInvited'
 import { heicTranscodeHandler } from './handlers/heicTranscode'
 
@@ -17,6 +18,7 @@ export const queueHandlers: QueueHandlerTable = {
   blurhash: blurhashHandler,
   email_user_invited: emailUserInvitedHandler,
   heic_transcode: heicTranscodeHandler,
+  email_integration_sync_alert: emailIntegrationSyncAlertHandler,
 }
 
 /**

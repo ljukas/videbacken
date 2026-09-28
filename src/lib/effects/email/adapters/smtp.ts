@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer'
+import { renderIntegrationSyncAlert } from '~/emails/IntegrationSyncAlertEmail'
 import { renderInviteUser } from '~/emails/InviteUserEmail'
 import { renderMagicLink } from '~/emails/MagicLinkEmail'
 import { logger } from '~/lib/logger/server'
@@ -37,5 +38,21 @@ export const smtp: EmailEffects = {
       text,
     })
     logger.info('invite sent (smtp)', { to })
+  },
+  async sendIntegrationSyncAlert({ to, source, transition, code, locale }) {
+    const { subject, html, text } = await renderIntegrationSyncAlert({
+      source,
+      transition,
+      code,
+      locale,
+    })
+    await getTransport().sendMail({
+      from: process.env.EMAIL_FROM,
+      to,
+      subject,
+      html,
+      text,
+    })
+    logger.info('integration sync alert sent (smtp)', { to, source, transition })
   },
 }

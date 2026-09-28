@@ -1,3 +1,4 @@
+import type { IntegrationErrorCode, IntegrationSource } from '~/lib/integrationHealth'
 import type { Locale } from '~/paraglide/runtime'
 import { lazy } from '../lazy'
 
@@ -31,6 +32,18 @@ export interface EmailEffects {
   // calls this. `inviteUrl` is the verify-email link; clicking it accepts the
   // invite (verifies + auto-signs-in). See ADR-0008/0017.
   sendUserInvited(input: { to: string; inviteUrl: string; locale: Locale }): Promise<void>
+  // Integration sync health alert (tier-3): delivered via the
+  // `email_integration_sync_alert` queue topic — one message per admin, on
+  // the first failure of a streak and again on recovery. `code`/`failingSince`
+  // are null on `recovered`. See ADR-0008/0019.
+  sendIntegrationSyncAlert(input: {
+    to: string
+    source: IntegrationSource
+    transition: 'started_failing' | 'recovered'
+    code: IntegrationErrorCode | null
+    failingSince: string | null
+    locale: Locale
+  }): Promise<void>
 }
 
 const getAdapter = lazy(async (): Promise<EmailEffects> => {
@@ -58,5 +71,9 @@ export const email: EmailEffects = {
   async sendUserInvited(input) {
     const adapter = await getAdapter()
     return adapter.sendUserInvited(input)
+  },
+  async sendIntegrationSyncAlert(input) {
+    const adapter = await getAdapter()
+    return adapter.sendIntegrationSyncAlert(input)
   },
 }

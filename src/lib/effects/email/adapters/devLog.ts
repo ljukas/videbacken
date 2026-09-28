@@ -14,4 +14,7 @@ export const devLog: EmailEffects = {
     const safeUrl = process.env.NODE_ENV === 'production' ? '[redacted]' : inviteUrl
     logger.info('invite (devLog)', { to, inviteUrl: safeUrl, locale })
   },
+  async sendIntegrationSyncAlert({ to, source, transition, code }) {
+    logger.info('integration sync alert (devLog)', { to, source, transition, code })
+  },
 }
