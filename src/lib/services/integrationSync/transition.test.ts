@@ -103,6 +103,41 @@ describe('nextRow transitions', () => {
   })
 })
 
+// Mixed-code streaks. The row keeps only the current error code, so each streak
+// edge is judged by the code at that edge. These unpaired alerts are deliberate
+// and accepted (see ADR-0019); the tests pin them so a change is a conscious one.
+describe('mixed-code streaks (accepted unpaired alerts)', () => {
+  function run(steps: SyncOutcome[]) {
+    let prev = healthy
+    return steps.map((outcome, i) => {
+      const result = nextRow(prev, outcome, new Date(NOW.getTime() + i * 1000), STARTED)
+      prev = result.row
+      return result.transition
+    })
+  }
+
+  test('ok → auth_failed → not_configured → ok: start alert, no recovery alert', () => {
+    // Accepted: the streak alerted on auth_failed but ends while not_configured,
+    // so no `recovered` is sent.
+    expect(run([fail('auth_failed'), fail('not_configured'), ok])).toEqual([
+      'started_failing',
+      'none',
+      'none',
+    ])
+  })
+
+  test('ok → not_configured → auth_failed → ok: no start alert, recovery alert', () => {
+    // Accepted: the streak started as not_configured (no alert) and the code
+    // change mid-streak does not alert, but it ends from auth_failed, so a
+    // `recovered` is sent.
+    expect(run([fail('not_configured'), fail('auth_failed'), ok])).toEqual([
+      'none',
+      'none',
+      'recovered',
+    ])
+  })
+})
+
 describe('deriveState', () => {
   const stale = STALE_AFTER_MS.zaptec
 
