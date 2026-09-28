@@ -46,6 +46,9 @@ export const tokenErrorSchema = z.object({ error: z.string() })
 // --- chargers ----------------------------------------------------------------
 
 const chargersSchema = z.object({
+  // Absent → one page. More than one page is never read (we don't page
+  // /api/chargers), so it fails loudly rather than silently dropping chargers.
+  Pages: z.number().int().nonnegative().optional(),
   Data: z.array(
     z.object({
       Id: z.string(),
@@ -57,7 +60,13 @@ const chargersSchema = z.object({
 })
 
 export function parseChargers(body: unknown): ZaptecCharger[] {
-  return parse('chargers', chargersSchema, body).Data.map((c) => ({
+  const parsed = parse('chargers', chargersSchema, body)
+  if (parsed.Pages !== undefined && parsed.Pages > 1) {
+    throw new ZaptecError('unexpected_response', 'chargers', undefined, {
+      message: `Zaptec chargers response spans ${parsed.Pages} pages; only one is supported`,
+    })
+  }
+  return parsed.Data.map((c) => ({
     id: c.Id,
     name: c.Name,
     installationId: c.InstallationId,
@@ -103,8 +112,9 @@ export function parseSessionsPage(body: unknown): SessionsPage {
     sessions: page.sessions.map((s) => ({
       id: s.id,
       chargerId: s.chargerId,
-      // Session-level energy / end are passed through as-is; the importer
-      // validates them against the intervals.
+      // Session-level energy / start / end are passed through as-is (not
+      // reconciled with the intervals). The charging service's import skips a
+      // session with negative energy, end before start, or an invalid interval.
       startAt: s.startDateTime,
       endAt: s.endDateTime,
       energyKwh: s.energy,

@@ -389,6 +389,23 @@ describe('status mapping and retries', () => {
 })
 
 describe('chargers', () => {
+  test('a multi-page chargers response fails unexpected_response instead of dropping chargers', async () => {
+    const { client } = setup({
+      [CHARGERS]: () => jsonResponse({ ...chargersBody(), Pages: 2 }),
+    })
+
+    const err = await caught(client.chargers())
+
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'chargers' })
+    expect(err.message).toContain('2 pages')
+  })
+
+  test('a response without Pages is read as one page', async () => {
+    const { Pages: _, ...body } = chargersBody()
+    const { client } = setup({ [CHARGERS]: () => jsonResponse(body) })
+    await expect(client.chargers()).resolves.toHaveLength(1)
+  })
+
   test('maps PascalCase fields to ZaptecCharger', async () => {
     const { client } = setup({
       [CHARGERS]: () =>
