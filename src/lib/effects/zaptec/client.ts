@@ -18,6 +18,12 @@ const TOKEN_EXPIRY_MARGIN_MS = 300_000
 const TIMEOUT_MS = 10_000
 const LIVE_TIMEOUT_MS = 5_000
 const LIVE_TTL_MS = 15_000
+/** A rejected login (or 403) blocks new login attempts — protects the Zaptec account from lockout. */
+const AUTH_FAILURE_TTL_MS = 300_000
+/** An unreachable / rate-limited live read is answered from cache instead of re-hitting Zaptec. */
+const LIVE_FAILURE_TTL_MS = 60_000
+const AUTH_CODES: ReadonlySet<string> = new Set(['auth_failed', 'forbidden'])
+const TRANSIENT_CODES: ReadonlySet<string> = new Set(['unreachable', 'rate_limited'])
 
 const MAX_RETRIES = 2
 const MAX_RETRY_AFTER_MS = 10_000
@@ -56,7 +62,10 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
 
   let token: { value: string; expiresAt: number } | null = null
   let login: Promise<string> | null = null
+  /** Set when a login was rejected; new logins are refused until `until`. */
+  let loginBlock: { error: ZaptecError; until: number } | null = null
   const liveCache = new Map<string, { state: ZaptecLiveState; at: number }>()
+  const liveFailures = new Map<string, { error: ZaptecError; until: number }>()
 
   /** One HTTP request with timeout + retries. Returns the final response (any status). */
   async function send(url: string, init: RequestInit, o: SendOpts): Promise<Response> {
@@ -159,12 +168,36 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
     return parsed.access_token
   }
 
-  function getToken(stats: ZaptecCallStats): Promise<string> {
-    if (token && now().getTime() < token.expiresAt) return Promise.resolve(token.value)
-    login ??= obtainToken(stats).finally(() => {
-      login = null
-    })
-    return login
+  /**
+   * The current token, or the shared in-flight login. A caller's `signal` only
+   * stops *its* wait (→ `unreachable`); the login keeps running for the others.
+   */
+  function getToken(stats: ZaptecCallStats, op: ZaptecOp, signal?: AbortSignal): Promise<string> {
+    const at = now().getTime()
+    if (token && at < token.expiresAt) return Promise.resolve(token.value)
+    if (loginBlock && at < loginBlock.until) return Promise.reject(loginBlock.error)
+    if (!login) {
+      const shared = obtainToken(stats)
+        .then(
+          (value) => {
+            loginBlock = null
+            return value
+          },
+          (err: unknown) => {
+            if (err instanceof ZaptecError && AUTH_CODES.has(err.code)) {
+              loginBlock = { error: err, until: now().getTime() + AUTH_FAILURE_TTL_MS }
+            }
+            throw err
+          },
+        )
+        .finally(() => {
+          login = null
+        })
+      // Every waiter may have aborted — the shared rejection must never go unhandled.
+      shared.catch(() => {})
+      login = shared
+    }
+    return signal ? abortable(login, signal, op) : login
   }
 
   /** Authenticated GET → parsed JSON, with one re-login on 401. */
@@ -187,12 +220,12 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
     const request = (value: string) =>
       send(`${BASE_URL}${path}`, { headers: { Authorization: `Bearer ${value}` } }, sendOpts)
 
-    let used = await getToken(stats)
+    let used = await getToken(stats, op, o.signal)
     let res = await request(used)
     if (res.status === 401) {
       await discard(res)
       if (token?.value === used) token = null // don't clobber a concurrent refresh
-      used = await getToken(stats)
+      used = await getToken(stats, op, o.signal)
       res = await request(used)
     }
     if (!res.ok) throw statusError(op, res)
@@ -237,21 +270,61 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
     },
 
     async liveState(chargerId, o = {}) {
+      const at = now().getTime()
+      const failed = liveFailures.get(chargerId)
+      if (failed && at < failed.until) throw failed.error
       const cached = liveCache.get(chargerId)
-      if (cached && now().getTime() - cached.at < LIVE_TTL_MS) return cached.state
-      const body = await getJson(
-        `/api/chargers/${encodeURIComponent(chargerId)}/state`,
-        'state',
-        o,
-        LIVE_TIMEOUT_MS,
-        false,
-      )
+      if (cached && at - cached.at < LIVE_TTL_MS) return cached.state
+      let body: unknown
+      try {
+        body = await getJson(
+          `/api/chargers/${encodeURIComponent(chargerId)}/state`,
+          'state',
+          o,
+          LIVE_TIMEOUT_MS,
+          false,
+        )
+      } catch (err) {
+        // Cache the failure so a polling dashboard can't hammer a down (or
+        // credential-rejecting) Zaptec: auth failures 5 min, transient 60 s.
+        if (err instanceof ZaptecError) {
+          const ttl = AUTH_CODES.has(err.code)
+            ? AUTH_FAILURE_TTL_MS
+            : TRANSIENT_CODES.has(err.code)
+              ? LIVE_FAILURE_TTL_MS
+              : 0
+          if (ttl > 0) liveFailures.set(chargerId, { error: err, until: now().getTime() + ttl })
+        }
+        throw err
+      }
       const observedAt = now()
       const state = parseLiveState(body, observedAt)
+      liveFailures.delete(chargerId)
       liveCache.set(chargerId, { state, at: observedAt.getTime() })
       return state
     },
   }
+}
+
+/** Races `p` against the caller's `signal`; an abort rejects with `unreachable`. */
+function abortable<T>(p: Promise<T>, signal: AbortSignal, op: ZaptecOp): Promise<T> {
+  const abortError = () =>
+    new ZaptecError('unreachable', op, undefined, { cause: networkCause(signal.reason) })
+  if (signal.aborted) return Promise.reject(abortError())
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    p.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(err)
+      },
+    )
+  })
 }
 
 function statusError(op: ZaptecOp, res: Response): ZaptecError {

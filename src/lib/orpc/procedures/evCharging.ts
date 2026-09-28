@@ -6,6 +6,8 @@ import * as evChargingService from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 
 const SOURCE = 'zaptec' as const
+/** Upper bound on how long `liveStatus` may wait on Zaptec. */
+const LIVE_BUDGET_MS = 6_000
 
 export const evChargingRouter = {
   // Reads — any signed-in (approved) user; the app is read-only for
@@ -42,12 +44,15 @@ export const evChargingRouter = {
   // Live charger power/mode for the dashboard tile. Deliberately independent
   // of the sync health snapshot: a `ZaptecError` here (including
   // `not_configured`) just means "no live tile", not a health transition.
+  // The whole Zaptec wait (shared login included) is capped at 6 s so a slow
+  // Zaptec can never hold this polled request open (ADR-0018); failures are
+  // cached in the client, so the poll doesn't re-hit a down/rejecting Zaptec.
   liveStatus: protectedProcedure.handler(async ({ context }) => {
     const chargers = await evChargingService.listChargers()
     const charger = chargers[0]
     if (!charger) return null
     try {
-      return await zaptec.liveState(charger.id)
+      return await zaptec.liveState(charger.id, { signal: AbortSignal.timeout(LIVE_BUDGET_MS) })
     } catch (err) {
       if (err instanceof ZaptecError) {
         context.log.debug('evCharging: liveStatus unavailable', { code: err.code })

@@ -171,16 +171,58 @@ describe('login', () => {
     expect(err.message).toContain('grant retired')
   })
 
-  test('a failed login is not cached: the next call logs in again', async () => {
-    const { client, ff } = setup({
+  test('a rejected login blocks new logins for 5 min, then logs in again', async () => {
+    const { client, ff, advance } = setup({
       [TOKEN]: (req, call) =>
         call === 0 ? new Response(null, { status: 401 }) : tokenOk(req, call),
       [CHARGERS]: chargersOk,
     })
 
     await caught(client.chargers())
+    advance(300_000 - 1)
+    expect(await caught(client.chargers())).toMatchObject({ code: 'auth_failed', op: 'token' })
+    expect(ff.callsTo(TOKEN)).toHaveLength(1)
+
+    advance(1)
     await expect(client.chargers()).resolves.toHaveLength(1)
     expect(ff.callsTo(TOKEN)).toHaveLength(2)
+  })
+
+  test('a transient login failure is not cached: the next call logs in again', async () => {
+    const { client, ff } = setup({
+      [TOKEN]: (req, call) => (call < 3 ? new Response(null, { status: 503 }) : tokenOk(req, call)),
+      [CHARGERS]: chargersOk,
+    })
+
+    expect(await caught(client.chargers())).toMatchObject({ code: 'unreachable', op: 'token' })
+    await expect(client.chargers()).resolves.toHaveLength(1)
+    expect(ff.callsTo(TOKEN)).toHaveLength(4)
+  })
+
+  test("a caller's signal stops its wait on a shared login; other waiters still get the token", async () => {
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const { client, ff } = setup({
+      [TOKEN]: async (req, call) => {
+        await gate
+        return tokenOk(req, call)
+      },
+      [CHARGERS]: chargersOk,
+    })
+    const controller = new AbortController()
+
+    const aborted = client.chargers({ signal: controller.signal })
+    const patient = client.chargers()
+    await Promise.resolve()
+    controller.abort()
+
+    expect(await caught(aborted)).toMatchObject({ code: 'unreachable', op: 'chargers' })
+    release?.()
+    await expect(patient).resolves.toHaveLength(1)
+    expect(ff.callsTo(TOKEN)).toHaveLength(1)
+    expect(ff.callsTo(CHARGERS)).toHaveLength(1)
   })
 
   test('malformed token response → unexpected_response', async () => {
@@ -620,8 +662,8 @@ describe('liveState', () => {
     expect(ff.callsTo(STATE)).toHaveLength(2)
   })
 
-  test('is never retried, and failures are not cached', async () => {
-    const { client, ff, sleeps } = setup({
+  test('is never retried; an unreachable read is cached for 60 s', async () => {
+    const { client, ff, sleeps, advance } = setup({
       [STATE]: (_req, call) =>
         call === 0 ? new Response(null, { status: 503 }) : jsonResponse(chargingStateBody()),
     })
@@ -633,6 +675,74 @@ describe('liveState', () => {
     expect(ff.callsTo(STATE)).toHaveLength(1)
     expect(sleeps).toEqual([])
 
+    advance(59_999)
+    expect(await caught(client.liveState(CHARGER_ID))).toMatchObject({ code: 'unreachable' })
+    expect(ff.callsTo(STATE)).toHaveLength(1)
+
+    advance(1)
+    await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
+    expect(ff.callsTo(STATE)).toHaveLength(2)
+  })
+
+  test('a rate-limited read is cached for 60 s', async () => {
+    const { client, ff, advance } = setup({
+      [STATE]: (_req, call) =>
+        call === 0 ? new Response(null, { status: 429 }) : jsonResponse(chargingStateBody()),
+    })
+
+    expect(await caught(client.liveState(CHARGER_ID))).toMatchObject({ code: 'rate_limited' })
+    advance(30_000)
+    await caught(client.liveState(CHARGER_ID))
+    expect(ff.callsTo(STATE)).toHaveLength(1)
+    advance(30_000)
+    await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
+  })
+
+  test('after an auth failure, repeated reads make no new login for 5 min', async () => {
+    const { client, ff, advance } = setup({
+      [TOKEN]: (req, call) =>
+        call === 0 ? new Response(null, { status: 401 }) : tokenOk(req, call),
+      [STATE]: () => jsonResponse(chargingStateBody()),
+    })
+
+    expect(await caught(client.liveState(CHARGER_ID))).toMatchObject({ code: 'auth_failed' })
+    for (let i = 0; i < 20; i++) {
+      advance(14_999)
+      await caught(client.liveState(CHARGER_ID))
+    }
+    advance(300_000 - 20 * 14_999 - 1)
+    await caught(client.liveState(CHARGER_ID))
+    expect(ff.callsTo(TOKEN)).toHaveLength(1)
+    expect(ff.callsTo(STATE)).toHaveLength(0)
+
+    advance(1)
+    await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
+    expect(ff.callsTo(TOKEN)).toHaveLength(2)
+  })
+
+  test('a 403 read is cached for 5 min', async () => {
+    const { client, ff, advance } = setup({
+      [STATE]: (_req, call) =>
+        call === 0 ? new Response(null, { status: 403 }) : jsonResponse(chargingStateBody()),
+    })
+
+    expect(await caught(client.liveState(CHARGER_ID))).toMatchObject({ code: 'forbidden' })
+    advance(300_000 - 1)
+    await caught(client.liveState(CHARGER_ID))
+    expect(ff.callsTo(STATE)).toHaveLength(1)
+    advance(1)
+    await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
+  })
+
+  test('an unexpected response is not cached', async () => {
+    const { client, ff } = setup({
+      [STATE]: (_req, call) =>
+        call === 0 ? jsonResponse({ nope: true }) : jsonResponse(chargingStateBody()),
+    })
+
+    expect(await caught(client.liveState(CHARGER_ID))).toMatchObject({
+      code: 'unexpected_response',
+    })
     await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
     expect(ff.callsTo(STATE)).toHaveLength(2)
   })

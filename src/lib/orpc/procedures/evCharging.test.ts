@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
 import { evCharger, user } from '~/lib/db/schema'
+import { zaptec } from '~/lib/effects/zaptec'
 import type { Logger } from '~/lib/logger'
 import { setupDatabase } from '~test/setup'
 import { evChargingRouter } from './evCharging'
@@ -128,6 +129,16 @@ test('liveStatus returns null under the notConfigured zaptec client (VITEST)', a
   await signIn('user')
   const result = await call(evChargingRouter.liveStatus, undefined, { context: baseContext() })
   expect(result).toBeNull()
+})
+
+test('liveStatus bounds the Zaptec wait with an abort signal', async () => {
+  await db
+    .insert(evCharger)
+    .values({ id: 'charger-1', name: 'Charger 1', installationId: 'inst-1' })
+  await signIn('user')
+  const spy = vi.spyOn(zaptec, 'liveState')
+  await call(evChargingRouter.liveStatus, undefined, { context: baseContext() })
+  expect(spy).toHaveBeenCalledWith('charger-1', { signal: expect.any(AbortSignal) })
 })
 
 test('recentRuns rejects an unauthenticated caller', async () => {
