@@ -17,7 +17,7 @@ import {
   tokenBody,
 } from './fixtures'
 import { type FakeRoute, fakeFetch, jsonResponse } from './testing/fakeFetch'
-import { newCallStats, zaptec } from './zaptec'
+import { newCallStats, selectZaptecAdapter, zaptec } from './zaptec'
 
 const T0 = Date.parse('2026-09-28T10:00:00Z')
 const TOKEN = 'POST /oauth/token'
@@ -833,6 +833,8 @@ describe('secrets', () => {
 })
 
 describe('adapter selection', () => {
+  const credsEnv = { ZAPTEC_USERNAME: 'u', ZAPTEC_PASSWORD: 'p' }
+
   test('notConfigured throws not_configured from every method', async () => {
     expect(await caught(notConfigured.chargers())).toMatchObject({
       code: 'not_configured',
@@ -847,6 +849,20 @@ describe('adapter selection', () => {
         collect(notConfigured.sessionsEndedSince(new Date(), { installationId: INSTALLATION_ID })),
       ),
     ).toMatchObject({ code: 'not_configured', op: 'sessions' })
+  })
+
+  test.each([
+    [{ VITEST: 'true', ZAPTEC_ADAPTER: 'fake' }, 'notConfigured'],
+    [{ ZAPTEC_ADAPTER: 'fake' }, 'fake'],
+    [{ ZAPTEC_ADAPTER: 'fake', NODE_ENV: 'development', VERCEL_ENV: 'preview' }, 'fake'],
+    [{ ZAPTEC_ADAPTER: 'fake', VERCEL_ENV: 'production' }, 'notConfigured'],
+    [{ ZAPTEC_ADAPTER: 'fake', NODE_ENV: 'production' }, 'notConfigured'],
+    [{ ZAPTEC_ADAPTER: 'fake', VERCEL_ENV: 'production', ...credsEnv }, 'http'],
+    [credsEnv, 'http'],
+    [{ ZAPTEC_USERNAME: 'u' }, 'notConfigured'],
+    [{}, 'notConfigured'],
+  ] as const)('selects the adapter from env %o → %s', (env, kind) => {
+    expect(selectZaptecAdapter(env)).toBe(kind)
   })
 
   test('under Vitest the lazily selected client is notConfigured', async () => {

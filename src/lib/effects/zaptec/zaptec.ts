@@ -6,7 +6,7 @@ import { lazy } from '../lazy'
  *   - `http` — the real REST client (`createZaptecClient` in `./client`).
  *     Selected when `ZAPTEC_USERNAME` + `ZAPTEC_PASSWORD` are set.
  *   - `fake` — synthetic chargers/sessions/state for local UI work. Selected
- *     by `ZAPTEC_ADAPTER=fake`.
+ *     by `ZAPTEC_ADAPTER=fake`, which is ignored in production.
  *   - `notConfigured` — throws `ZaptecError('not_configured')` from every
  *     method. Used in tests (VITEST short-circuit) and whenever credentials
  *     are missing. Deliberately **no devLog adapter**: a silent no-op would
@@ -47,12 +47,27 @@ export interface ZaptecClient {
   liveState(chargerId: string, o?: CallOpts): Promise<ZaptecLiveState>
 }
 
+type Env = Record<string, string | undefined>
+
+/**
+ * Which adapter the env selects. `ZAPTEC_ADAPTER=fake` is a dev-only escape
+ * hatch: in production it is ignored (silently) and selection falls through to
+ * the real credentials check, so a stray env var can never fake prod data.
+ */
+export function selectZaptecAdapter(env: Env): 'notConfigured' | 'fake' | 'http' {
+  if (env.VITEST === 'true') return 'notConfigured'
+  const production = env.VERCEL_ENV === 'production' || env.NODE_ENV === 'production'
+  if (env.ZAPTEC_ADAPTER === 'fake' && !production) return 'fake'
+  if (env.ZAPTEC_USERNAME && env.ZAPTEC_PASSWORD) return 'http'
+  return 'notConfigured'
+}
+
 const getAdapter = lazy(async (): Promise<ZaptecClient> => {
-  if (process.env.VITEST === 'true') return (await import('./adapters/notConfigured')).notConfigured
-  if (process.env.ZAPTEC_ADAPTER === 'fake') return (await import('./adapters/fake')).fake
+  const kind = selectZaptecAdapter(process.env)
+  if (kind === 'fake') return (await import('./adapters/fake')).fake
   const username = process.env.ZAPTEC_USERNAME
   const password = process.env.ZAPTEC_PASSWORD
-  if (username && password) {
+  if (kind === 'http' && username && password) {
     const { createZaptecClient } = await import('./client')
     return createZaptecClient({ fetch: globalThis.fetch, creds: { username, password } })
   }
