@@ -1,3 +1,4 @@
+import type { IntegrationErrorCode, IntegrationSource } from '~/lib/integrationHealth'
 import type { Locale } from '~/paraglide/runtime'
 import { lazy } from '../lazy'
 
@@ -12,7 +13,11 @@ import { lazy } from '../lazy'
  * first publish via dynamic import so each runtime only ships the adapter
  * it actually uses (BullMQ stays out of the prod Nitro bundle, etc.).
  */
-export type QueueTopic = 'blurhash' | 'email_user_invited' | 'heic_transcode'
+export type QueueTopic =
+  | 'blurhash'
+  | 'email_user_invited'
+  | 'heic_transcode'
+  | 'email_integration_sync_alert'
 
 /**
  * Per-topic payload shape. The blurhash payload carries a `kind` discriminant
@@ -35,6 +40,19 @@ export type QueuePayloadMap = {
   // row, delete the original). `userId` carries the avatar's user so the
   // worker can repoint user.image without a session.
   heic_transcode: { fileId: string; kind: 'avatar'; userId: string }
+  // Integration sync health alert (tier-3): published by the Zaptec sync run
+  // (`src/lib/evCharging/sync.ts`), one message per admin, on the first
+  // failure of a streak and again on recovery — never on every failed run
+  // (see `src/lib/integrationHealth.ts` and ADR-0019). `code`/`failingSince`
+  // are null on `recovered` (health is back to `ok`, nothing to explain).
+  email_integration_sync_alert: {
+    to: string
+    source: IntegrationSource
+    transition: 'started_failing' | 'recovered'
+    code: IntegrationErrorCode | null
+    failingSince: string | null // ISO
+    locale: Locale
+  }
 }
 
 /**

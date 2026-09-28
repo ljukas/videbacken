@@ -125,6 +125,7 @@ export default defineConfig({
                 { topic: 'blurhash' },
                 { topic: 'email_user_invited' },
                 { topic: 'heic_transcode' },
+                { topic: 'email_integration_sync_alert' },
               ],
             },
           },
