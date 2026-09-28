@@ -10,6 +10,7 @@
   history — so a broken integration is visible on the page and in one log line, instead of quietly stale.
 
 **Spec**: [EV charging Phase 1 design, "PR C"](../superpowers/specs/2026-09-28-ev-charging-phase1-design.md).
+**Plan**: [EV charging Phase 1 implementation plan](../superpowers/plans/2026-09-28-ev-charging-phase1.md).
 **Research**: [EV charging scope map](../superpowers/specs/2026-09-28-ev-charging-scope-map.md).
 **Glossary**: [`CONTEXT.md`](../../CONTEXT.md).
 
@@ -165,6 +166,47 @@ read or a CHECK-constrained invariant. Snapshot answers "is it healthy right now
 row read; history answers "what happened, and when" for the admin who needs to debug a streak.
 `recordOutcome` writes both in one transaction so they never disagree about the outcome of a given
 run.
+
+**The `stale` state's threshold is per-source, not a single constant.** `getHealth` derives `stale`
+from `lastSuccessAt` age against a threshold looked up in `policy.ts` (`src/lib/services/integrationSync/`)
+by source — a domain rule, not a schema column, so it can change without a migration. Zaptec's
+threshold is **3 hours** against its hourly cron: comfortably more than one missed run (covers a
+single skipped/failed cron tick plus scheduler jitter) but short enough that "stale" still means
+something has actually gone wrong, not "the last run happened to land 61 minutes ago." `elpris` and
+`skoda` get their own thresholds in the same file once they land, sized to their own schedules.
+
+### Session import: validate-and-skip, stub parents, allow-listed columns
+
+The Zaptec sync writes rows a human never gets to approve first, on a schedule, from an API whose
+shape can drift — so the importer (`src/lib/evCharging/sync.ts`, writing through
+`src/lib/services/evCharging/`) treats every incoming session as untrusted input, not as pre-validated
+data:
+
+- **Validate each record against the table's own CHECKs, in JS, before the write** — the same
+  constraints `src/lib/db/schema/evCharging.ts` enforces in Postgres (non-negative `energyKwh`,
+  `endAt >= startAt`, and the interval equivalents), re-checked in application code so a single bad
+  record can be **skipped and counted** rather than aborting the page's transaction. One malformed
+  session (a clock glitch, an API bug) must never roll back an otherwise-good page of imports or wedge
+  the sync into `failing` forever on every retry — the DB constraint stays as the backstop for
+  whatever the JS check misses, per this repo's "check first, constraint as backstop" convention
+  (ADR-0002), not as the primary gate.
+- **Create a stub `ev_charger` row for an unknown charger id** instead of dropping the session's
+  history. Zaptec sessions carry `chargerId`; if the sync sees an id it hasn't recorded yet (a new
+  charger added on the Zaptec side between `chargers()` calls, or a delayed metadata sync), inserting
+  a minimal placeholder charger row lets the session import proceed and its energy count toward
+  totals — the alternative (drop the session until the charger metadata catches up) silently loses
+  real kWh from the totals the page shows.
+- **Upsert only an explicit allow-list of source-owned columns.** The importer's `ON CONFLICT` update
+  touches only the columns Zaptec is the source of truth for (energy, timestamps, `voided`,
+  `replacedByZaptecSessionId`, offline/reliableClock flags, …) — never a blanket
+  `ON CONFLICT DO UPDATE SET *`. This is what keeps a future admin-owned column (e.g. a manual
+  `vehicle` attribution tag, scoped for Phase 5) safe: an hourly re-sync of an already-tagged session
+  must not silently overwrite an admin's tag just because the column exists on the same row.
+
+(Session energy (`energyKwh`) is stored as `double precision`, not `real`, in
+`src/lib/db/schema/evCharging.ts` — `real`'s ~7 significant digits produced visible drift once many
+sessions were summed in SQL for the overview totals, and fixing that after the fact means an
+`ALTER … TYPE` that cannot recover precision already lost in rows written as `real`.)
 
 ### Lease, not `pg_advisory_xact_lock`
 
@@ -333,48 +375,18 @@ itself be the thing that's broken.
 
 ## Amendments to other ADRs
 
-### ADR-0001 (Side-Effects Architecture)
+Full rationale lives in each amended ADR itself (this repo's convention: one substantive copy, not
+a duplicate here) — these are pointers, not summaries to read instead of them.
 
-- **Domain orchestrators in `src/lib/<domain>/` are a sanctioned effect-calling location alongside
-  oRPC procedures.** `src/lib/evCharging/sync.ts` (`runZaptecSync`) calls `zaptec.chargers()` /
-  `zaptec.sessionsEndedSince()` directly and publishes `queue.publish('email_integration_sync_alert',
-  …)` on transitions — it is not itself an oRPC procedure (both the cron route and the `syncNow`
-  admin procedure call into it), but it is the same kind of caller ADR-0001 already sanctions:
-  validate → service/effect → side effect, in order, with no hidden listener. Read "oRPC procedures"
-  in ADR-0001's caller-class list as including "or the domain orchestrator an oRPC procedure and a
-  cron route both call into," not literally only files under `orpc/procedures/`.
-- **`/api/cron/*` and `/api/webhooks/shelly` are non-oRPC entrypoints**, alongside the existing list
-  in the 2026-06-10 amendment (`/api/files/*`, `/api/log`, the `vercel:queue` consumer plugin). Both
-  are unauthenticated-by-transport routes that verify a shared secret themselves (`CRON_SECRET`,
-  `SHELLY_WEBHOOK_TOKEN`) because their callers (Vercel Cron, a Shelly device) are not oRPC clients
-  and cannot carry a session.
-- **The hosting plan is Vercel Pro, not Hobby.** ADR-0001's Context paragraph and non-negotiables
-  section describe a Hobby-plan app; the project has since moved to Pro (see the CLAUDE.md and
-  ADR-0018 cross-references this ADR updates below). This matters here specifically because Hobby
-  cron is capped at once per day — this feature's hourly Zaptec sync requires Pro's unlimited cron
-  schedules.
-
-### ADR-0002 (Service + Domain-Error Architecture)
-
-- **Row locking (`SELECT … FOR UPDATE`) inside a service's own transaction is a sanctioned pattern**,
-  not just the advisory-lock escape hatch the "Check first" section already describes.
-  `integrationSync`'s `recordOutcome` (`src/lib/services/integrationSync/`) takes the row lock as its
-  first statement specifically to serialize concurrent *finishers* of a sync run (the lease already
-  prevents concurrent *starts*) — two attempts racing to write the transition at the same instant
-  must not both observe "was healthy" and both fire a `started_failing` alert. This is a different
-  problem from the `LAST_ADMIN` race ADR-0002 already accepts as unserialized-by-default: there, a
-  lost race is a rare manual-recovery inconvenience; here, an unserialized race would double-send an
-  admin alert email on every transition, which is exactly the noise this feature exists to avoid.
-  `FOR UPDATE` inside the same transaction as the lease check and the write is the minimal fix, still
-  with no SQLSTATE translation and no SERIALIZABLE retries.
-- **Role-shaped reads take an explicit flag, never the caller's role.** `getHealth(source, { now,
-  includeAdminDetail })` takes `includeAdminDetail: boolean` rather than a `role: 'user' | 'admin'`
-  parameter. The service has no business knowing about auth roles — ADR-0002 already keeps
-  `~/lib/auth` out of services entirely — so the procedure (`syncStatus` in
-  `src/lib/orpc/procedures/evCharging.ts`) computes `includeAdminDetail = context.user.role ===
-  'admin'` and passes the boolean down. This is the same shape as an existing convention (a service
-  taking a plain data flag, never a transport concept) made explicit because it's the first service
-  whose read shape actually varies by caller.
+- **[ADR-0001](./0001-side-effects-architecture.md) amended 2026-09-28**: domain orchestrators in
+  `src/lib/<domain>/` (e.g. `src/lib/evCharging/sync.ts`) are a sanctioned effect-calling location
+  alongside oRPC procedures; `/api/cron/*` and `/api/webhooks/shelly` join the sanctioned non-oRPC
+  entrypoint list; hosting plan is Vercel Pro, not Hobby (Hobby's 1/day cron cap is why it matters
+  here). See that ADR's 2026-09-28 amendment block.
+- **[ADR-0002](./0002-service-domain-architecture.md) amended 2026-09-28**: `SELECT … FOR UPDATE`
+  inside a service's own transaction is a sanctioned pattern generally, not only the advisory-lock
+  escape hatch; role-shaped reads take an explicit flag (`includeAdminDetail: boolean`), never a
+  `role` parameter. See that ADR's "Amendment (2026-09-28)" section.
 
 ---
 
@@ -388,7 +400,10 @@ itself be the thing that's broken.
   snapshot + history, `FOR UPDATE`), `getHealth`, `listRecentRuns`.
 - `src/lib/db/schema/integrationSync.ts` — `integration_sync` (snapshot + lease) and
   `integration_sync_run` (append-only history) tables and their CHECK constraints.
+- `src/lib/db/schema/evCharging.ts` — `ev_charger` / `ev_charge_session` / `ev_charge_interval`; the
+  `double precision` energy columns and their CHECKs the importer re-validates in JS before writing.
 - `src/lib/evCharging/sync.ts` — `runZaptecSync`, the domain orchestrator that ties the client, the
-  service, and the alert email together; the one `integration sync run` log line.
+  service, and the alert email together; the one `integration sync run` log line; the
+  validate-skip/stub-parent/allow-listed-upsert import behavior.
 - `src/lib/integrationHealthMessage.ts` — client-side, code-only → Swedish/English message mapping,
   reused by the alert email template.
