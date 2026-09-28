@@ -1,10 +1,13 @@
+import { serializeError } from './serializeError'
 import type { LogFields, Logger } from './types'
 
-function serializeError(err: unknown): unknown {
-  if (err instanceof Error) {
-    return { name: err.name, message: err.message, stack: err.stack }
-  }
-  return err
+// JSON.stringify turns an Error into `{}`, so serialize the error keys (same
+// contract as the server adapter) before the fields leave the browser.
+function toWireFields(fields: LogFields): LogFields {
+  const out: LogFields = { ...fields }
+  if ('error' in out) out.error = serializeError(out.error)
+  if ('err' in out) out.err = serializeError(out.err)
+  return out
 }
 
 function forward(level: 'warn' | 'error', msg: string, fields: LogFields): void {
@@ -14,7 +17,7 @@ function forward(level: 'warn' | 'error', msg: string, fields: LogFields): void 
       method: 'POST',
       keepalive: true,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ level, msg, fields }),
+      body: JSON.stringify({ level, msg, fields: toWireFields(fields) }),
     }).catch(() => {})
   } catch {
     // Never let the logger throw.
@@ -61,7 +64,7 @@ export function installGlobalHandlers(): void {
       filename: event.filename,
       lineno: event.lineno,
       colno: event.colno,
-      error: serializeError(event.error),
+      error: event.error,
     })
   })
   window.addEventListener('unhandledrejection', (event) => {

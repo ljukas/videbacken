@@ -1,5 +1,6 @@
 import { type DestinationStream, pino } from 'pino'
 import { serverRedactPaths } from './redact'
+import { serializeError } from './serializeError'
 import type { LogFields, Logger } from './types'
 
 const NODE_ENV = process.env.NODE_ENV ?? 'development'
@@ -13,6 +14,10 @@ function buildOptions(): PinoOptions {
     level: process.env.LOG_LEVEL ?? defaultLevel,
     base: { service: 'videbacken', env: NODE_ENV },
     redact: { paths: serverRedactPaths, censor: '<redacted>' },
+    // Without these, pino serializes only `err` and `{ error }` logs as `{}`.
+    // Registered on the pino options (not in `wrap`) so child loggers inherit
+    // them and redaction still runs on the serialized output.
+    serializers: { error: serializeError, err: serializeError },
   }
   if (isDev) {
     return {

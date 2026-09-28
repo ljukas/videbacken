@@ -71,4 +71,14 @@ describe('browser logger', () => {
     const body = JSON.parse(init.body as string)
     expect(body.fields).toEqual({ userId: 'u-1', route: '/admin' })
   })
+
+  test('an Error under `error` is forwarded serialized, not as {}', async () => {
+    const { logger } = await importFreshBrowserLogger()
+    logger.error('render failed', { error: new Error('boom'), route: '/x' })
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    expect(body.fields.route).toBe('/x')
+    expect(body.fields.error).toMatchObject({ type: 'Error', message: 'boom' })
+    expect(body.fields.error.stack).toContain('boom')
+  })
 })
