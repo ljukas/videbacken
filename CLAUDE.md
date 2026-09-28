@@ -77,7 +77,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 - **Forms via `useAppForm`.** Never `useState` for field values; canonical example `src/components/login/LoginFormCard.tsx`. See **ADR-0005**.
 
 ### Recipes
-- **Add a schema:** `src/lib/db/schema/<x>.ts` → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`.
+- **Add a schema:** `src/lib/db/schema/<x>.ts` → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`. Then get the **schema-design review** (Non-negotiables) before building on it.
 - **Add a service:** copy `services/user/` shape (`<x>.ts`, `<x>.test.ts` with `setupDatabase()` first, `index.ts`; `errors.ts` when an invariant lands).
 - **Add an effect:** copy `effects/email/` shape (`<domain>.ts` selector + `adapters/<name>.ts` + barrel + test; register in `effects/index.ts`).
 - **Add a procedure:** edit `src/lib/orpc/procedures/<x>.ts`; pick `protectedProcedure` (reads) or `adminProcedure` (mutations); `.input(zodSchema)`; thin glue → service → run effects after success; register in `orpc/router.ts`. Auto-timed via the `rpc timing` log; add `context.timings.<label>Ms` sub-timings for heavier work (see the timing rule above).
@@ -169,6 +169,7 @@ otherwise `bun run db:migrate` migrates **production**.
 - **oRPC procedures are thin glue.** Gate with `protectedProcedure`/`adminProcedure` (never inline). Better Auth's own `/api/auth/*` routes stay on the Better Auth handler.
 - **All logging through `~/lib/logger/`.** Never `console.*`. See ADR-0003.
 - **Never hand-edit `src/lib/db/schema/betterAuth.ts`** — regenerate via `bun run auth:schema`.
+- **Every database change gets a Postgres schema-design review before it merges** — new/altered tables, columns, constraints, indexes, or migrations under `src/lib/db/schema/` / `drizzle/`. The reviewer (a subagent) must load the `supabase-postgres-best-practices` skill and judge the change against the queries that will actually run (indexes, constraints vs. every valid write, types, FK/cascade, evolvability). Run it alongside `migration-guard` (which checks the mechanical migration gotchas); fix or explicitly rule on every finding before code builds on the schema.
 - **All timestamp columns use `timestamp({ withTimezone: true })`** (timestamptz). When drizzle-kit emits an `ALTER ... SET DATA TYPE timestamp with time zone` on existing data, hand-add `USING "<col>" AT TIME ZONE 'UTC'`.
 - **`server/plugins/seedApprovedEmails.ts`** (which invokes the seeding logic in `src/lib/seedApprovedEmails.ts`) **must stay registered in `vite.config.ts`'s Nitro `plugins`** — Nitro does not auto-discover `server/plugins/*`; unregistered, the first admin never seeds.
 - **The Vercel function region is pinned to `arn1` (Stockholm) in `vite.config.ts`** (Nitro `vercel.functions.regions`), co-located with the Supabase DB (`eu-north-1`) and the users. **Never remove it** — without a pin the region silently falls back to Vercel's US default (`iad1`), adding a transatlantic hop to every request *and* every DB round-trip (~610ms/RPC vs. ~60ms — ~10× slower). If the DB region moves, change this to match.
