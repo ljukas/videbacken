@@ -24,6 +24,26 @@
 > - **Tier classification of the in-process effects.** `realtime` and `presence` are awaited inline at every publish/acquire site with no catch — sound only because the in-memory adapters are infallible by construction (they cannot throw). If a fallible adapter (Redis/Postgres pub/sub) ever replaces them, every publish site moves to the tier-2 contract: catch + log, never fail the request.
 > - **The Verification section is the phase-1 checklist** — see the in-place notes there; the original greps no longer pass and are replaced with ones that do.
 
+> **Amended 2026-09-28** (pulled integrations — [ADR-0019](./0019-external-data-integrations.md)):
+> - **Domain orchestrators in `src/lib/<domain>/` are a sanctioned effect-calling location alongside
+>   oRPC procedures.** `src/lib/evCharging/sync.ts` (`runZaptecSync`) calls the Zaptec client and
+>   publishes an alert queue message directly; it isn't itself an oRPC procedure (both the hourly
+>   cron route and the `syncNow` admin procedure call into it), but it follows the same order — a
+>   service/effect call, then a side effect, then a log line — that "sanctioned caller classes" above
+>   already requires of oRPC procedures. Read that list as including "or the domain orchestrator an
+>   oRPC procedure and a cron route both call into," not literally only files under `orpc/procedures/`.
+> - **Sanctioned caller classes gain a fifth and sixth entrant**: `/api/cron/*` (currently
+>   `/api/cron/zaptec-sync`) and `/api/webhooks/shelly` (already shipped, undocumented here until
+>   now) — both unauthenticated-by-transport routes that verify their own shared secret
+>   (`CRON_SECRET`, `SHELLY_WEBHOOK_TOKEN`) because their callers (Vercel Cron, a Shelly device) carry
+>   no session and aren't oRPC clients.
+> - **The hosting plan is Vercel Pro, not Hobby.** The Context paragraph below and CLAUDE.md's
+>   non-negotiables describe a Hobby-plan app; the project has since upgraded. This matters here
+>   because Hobby cron is capped at once per day and the Zaptec sync needs hourly. The Hobby-era
+>   incident narrative in [ADR-0018](./0018-polled-sync-replaces-realtime-sse.md) (the SSE memory
+>   blow-up) stays as written — it's a historical account of what happened on Hobby, not a
+>   description of the current plan.
+
 ---
 
 ## Context
