@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, expect, test, vi } from 'vitest'
+import { logger } from '~/lib/logger/server'
 
 // Unit-test of the handler's orchestration: every collaborator is mocked so the
 // branches (avatar replace + decode failure + idempotent no-op) are exercised
@@ -29,7 +30,7 @@ vi.mock('~/lib/image/heicTranscode', () => ({ transcodeHeicToJpeg }))
 
 import { handleHeicTranscodeMessage } from './heicTranscode'
 
-const META = { messageId: 'm1', deliveryCount: 1 }
+const META = { meta: { messageId: 'm1', deliveryCount: 1 }, log: logger }
 const heic = readFileSync(
   fileURLToPath(new URL('../../../../test/fixtures/geotagged.heic', import.meta.url)),
 )

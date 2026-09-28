@@ -37,6 +37,15 @@ export type QueuePayloadMap = {
   heic_transcode: { fileId: string; kind: 'avatar'; userId: string }
 }
 
+/**
+ * How many times a message is delivered before the dispatcher gives up and
+ * drops it (`src/lib/queue/dispatch.ts`). Vercel Queues itself has no
+ * max-delivery count — a throwing handler would be retried until the message
+ * expires (24 h) — and the dev BullMQ producer uses the same number as its
+ * `attempts`, so prod and dev give up at the same point.
+ */
+export const QUEUE_MAX_DELIVERIES = 5
+
 export interface QueueEffects {
   publish<T extends QueueTopic>(topic: T, payload: QueuePayloadMap[T]): Promise<void>
 }

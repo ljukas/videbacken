@@ -1,30 +1,19 @@
 import { definePlugin } from 'nitro'
-import type { QueuePayloadMap } from '~/lib/effects/queue/queue'
-import { handleBlurhashMessage } from '~/lib/queue/handlers/blurhash'
-import { handleEmailUserInvitedMessage } from '~/lib/queue/handlers/emailUserInvited'
-import { handleHeicTranscodeMessage } from '~/lib/queue/handlers/heicTranscode'
+import { dispatchQueueMessage } from '~/lib/queue'
 
 /**
  * Vercel Queues consumer. Wired by Nitro's vercel preset via
  * `vercel.queues.triggers` in vite.config.ts (one trigger per topic). The
- * real work lives in `~/lib/queue/handlers/*` so the local BullMQ worker
- * (`scripts/devQueueWorker.ts`) can call the exact same functions.
+ * dispatcher (`~/lib/queue`) owns handler lookup, the one-line outcome log,
+ * and retry-vs-drop — the same module the local BullMQ worker
+ * (`scripts/devQueueWorker.ts`) calls. A throw from here makes Vercel redeliver;
+ * returning acks.
  */
 export default definePlugin((nitro) => {
   nitro.hooks.hook('vercel:queue', async ({ message, metadata }) => {
-    const meta = { messageId: metadata.messageId, deliveryCount: metadata.deliveryCount }
-    switch (metadata.topicName) {
-      case 'blurhash':
-        await handleBlurhashMessage(message as QueuePayloadMap['blurhash'], meta)
-        return
-      case 'email_user_invited':
-        await handleEmailUserInvitedMessage(message as QueuePayloadMap['email_user_invited'], meta)
-        return
-      case 'heic_transcode':
-        await handleHeicTranscodeMessage(message as QueuePayloadMap['heic_transcode'], meta)
-        return
-      default:
-        return
-    }
+    await dispatchQueueMessage(metadata.topicName, message, {
+      messageId: metadata.messageId,
+      deliveryCount: metadata.deliveryCount,
+    })
   })
 })

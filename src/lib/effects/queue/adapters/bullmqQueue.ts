@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq'
-import type { QueueEffects, QueueTopic } from '../queue'
+import { QUEUE_MAX_DELIVERIES, type QueueEffects, type QueueTopic } from '../queue'
 
 /**
  * Local-dev producer adapter backed by BullMQ + Redis. Selected by
@@ -29,7 +29,7 @@ export const bullmqQueue: QueueEffects = {
     await getQueue(topic).add(topic, payload, {
       removeOnComplete: true,
       removeOnFail: 100,
-      attempts: 3,
+      attempts: QUEUE_MAX_DELIVERIES,
       backoff: { type: 'exponential', delay: 500 },
     })
   },

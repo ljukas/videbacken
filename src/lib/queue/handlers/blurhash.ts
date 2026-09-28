@@ -1,22 +1,16 @@
 import { storage } from '~/lib/effects'
 import type { QueuePayloadMap } from '~/lib/effects/queue/queue'
 import { generateBlurhash, SHARP_DECODABLE_MIME_SET } from '~/lib/image/blurhash'
-import { logger } from '~/lib/logger/server'
+import type { QueueHandler, QueueHandlerContext } from '~/lib/queue/dispatch'
 import * as fileService from '~/lib/services/file'
 import * as userService from '~/lib/services/user'
 
 const READ_URL_TTL_SECONDS = 60
 
-export type BlurhashJobMetadata = {
-  messageId: string
-  deliveryCount: number
-}
-
 /**
- * Shared handler for the `blurhash` job. Invoked by both the Nitro
- * `vercel:queue` plugin (production) and the local BullMQ worker
- * (`scripts/devQueueWorker.ts`) so a single source of truth backs both
- * runtimes.
+ * Handler for the `blurhash` job, dispatched by `~/lib/queue` in both the
+ * production consumer and the local BullMQ worker (see `../dispatch.ts` for the
+ * retry/ack contract).
  *
  * The producer carries the `kind` of the file in the payload so downstream
  * side-effects (mirroring onto `user.image_blurhash`, etc.) are explicit at
@@ -30,16 +24,9 @@ export type BlurhashJobMetadata = {
  */
 export async function handleBlurhashMessage(
   msg: QueuePayloadMap['blurhash'],
-  metadata: BlurhashJobMetadata,
+  { log }: QueueHandlerContext,
 ): Promise<void> {
   const { fileId } = msg
-  const log = logger.child({
-    topic: 'blurhash',
-    kind: msg.kind,
-    fileId,
-    messageId: metadata.messageId,
-    deliveryCount: metadata.deliveryCount,
-  })
 
   const row = await fileService.findActiveById(fileId)
   if (!row) {
@@ -79,4 +66,9 @@ export async function handleBlurhashMessage(
       log.warn('blurhash: target user gone, skipped denormalization', { userId: msg.userId })
     }
   }
+}
+
+export const blurhashHandler: QueueHandler<'blurhash'> = {
+  handle: handleBlurhashMessage,
+  logFields: (msg) => ({ kind: msg.kind, fileId: msg.fileId }),
 }
