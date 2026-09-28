@@ -1,0 +1,122 @@
+import { AlertTriangleIcon, InfoIcon } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert'
+import {
+  integrationErrorMessage,
+  integrationHealthTitle,
+  integrationSourceName,
+} from '~/lib/integrationHealthMessage'
+import type { RouterOutputs } from '~/lib/orpc/client'
+import { m } from '~/paraglide/messages'
+import { formatDateTime } from './format'
+import { SyncNowButton } from './SyncNowButton'
+
+type Health = RouterOutputs['evCharging']['syncStatus']
+
+// Sync health banner, driven by `state` alone (never re-derived from the
+// timestamps client-side — the server owns the stale/failing policy). `ok`
+// renders nothing. Admins additionally see the raw (sanitized) last error and
+// a retry, which is the same `syncNow` mutation as the heading button.
+export function SyncHealthAlert({
+  health,
+  isAdmin,
+  onRetry,
+  retrying,
+}: {
+  health: Health
+  isAdmin: boolean
+  onRetry: () => void
+  retrying: boolean
+}) {
+  const title = m.charging_health_title({
+    source: integrationSourceName(health.source),
+    state: integrationHealthTitle(health.state),
+  })
+
+  switch (health.state) {
+    case 'ok':
+      return null
+    case 'never_synced':
+      return (
+        <HealthAlert variant="default" title={title}>
+          <div>{m.charging_health_never_synced()}</div>
+          {isAdmin ? <RetryRow onRetry={onRetry} retrying={retrying} /> : null}
+        </HealthAlert>
+      )
+    case 'not_configured':
+      // Retrying can't fix missing credentials, so no retry here.
+      return (
+        <HealthAlert variant="default" title={title}>
+          <div>{integrationErrorMessage('not_configured')}</div>
+        </HealthAlert>
+      )
+    case 'stale':
+      return (
+        <HealthAlert variant="default" title={title}>
+          <div>{m.charging_health_stale()}</div>
+          {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
+        </HealthAlert>
+      )
+    case 'failing':
+      return (
+        <HealthAlert variant="destructive" title={title}>
+          <div>
+            {integrationErrorMessage(health.code ?? 'internal_error')}
+            {health.failingSince ? (
+              <> {m.charging_health_failing_since({ time: formatDateTime(health.failingSince) })}</>
+            ) : null}
+          </div>
+          {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
+        </HealthAlert>
+      )
+  }
+}
+
+function HealthAlert({
+  variant,
+  title,
+  children,
+}: {
+  variant: 'default' | 'destructive'
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <Alert variant={variant}>
+      {variant === 'destructive' ? <AlertTriangleIcon /> : <InfoIcon />}
+      <AlertTitle>{title}</AlertTitle>
+      {/* Children are divs, not <p>: AlertDescription adds a large bottom margin between paragraphs. */}
+      <AlertDescription className="flex flex-col gap-2">{children}</AlertDescription>
+    </Alert>
+  )
+}
+
+function AdminDetail({
+  health,
+  onRetry,
+  retrying,
+}: {
+  health: Health
+  onRetry: () => void
+  retrying: boolean
+}) {
+  const message = health.adminDetail?.lastErrorMessage
+  return (
+    <>
+      {message ? (
+        <div className="text-muted-foreground">
+          {m.charging_health_admin_detail()}{' '}
+          <code className="break-all font-mono text-xs">{message}</code>
+        </div>
+      ) : null}
+      <RetryRow onRetry={onRetry} retrying={retrying} />
+    </>
+  )
+}
+
+function RetryRow({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
+  return (
+    <div>
+      <SyncNowButton onSync={onRetry} pending={retrying} label={m.common_try_again()} />
+    </div>
+  )
+}

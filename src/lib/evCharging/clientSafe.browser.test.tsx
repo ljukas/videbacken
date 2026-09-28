@@ -1,0 +1,27 @@
+import { expect, test } from 'vitest'
+
+// Regression guard for the "Buffer is not defined" crash (see
+// `src/lib/sensor/clientSafe.browser.test.tsx`): the /charging route and the
+// client-safe modules it relies on must evaluate in a REAL browser without
+// pulling a server-only module (`~/lib/services/*` → `~/lib/db` → postgres, or
+// `~/lib/effects/*`). A runtime value import of one of those creeping in makes
+// the import below throw exactly as it would in the browser.
+test('the noise threshold is importable client-side', async () => {
+  const mod = await import('~/lib/evCharging/counting')
+  expect(mod.NOISE_THRESHOLD_KWH).toBe(0.5)
+})
+
+test('the integration-health vocabulary is importable client-side', async () => {
+  const mod = await import('~/lib/integrationHealth')
+  expect(mod.INTEGRATION_SOURCES).toContain('zaptec')
+})
+
+test('the integration-health copy is importable client-side', async () => {
+  const mod = await import('~/lib/integrationHealthMessage')
+  expect(typeof mod.integrationErrorMessage).toBe('function')
+})
+
+test('the /charging route module evaluates client-side without a db leak', async () => {
+  const mod = await import('~/routes/_authenticated/charging')
+  expect(mod.Route).toBeDefined()
+})

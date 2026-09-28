@@ -17,6 +17,7 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as ApiLogRouteImport } from './routes/api/log'
 import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
 import { Route as AuthenticatedSensorsRouteImport } from './routes/_authenticated/sensors'
+import { Route as AuthenticatedChargingRouteImport } from './routes/_authenticated/charging'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
 import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authenticated/account/index'
@@ -63,6 +64,11 @@ const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
 const AuthenticatedSensorsRoute = AuthenticatedSensorsRouteImport.update({
   id: '/sensors',
   path: '/sensors',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedChargingRoute = AuthenticatedChargingRouteImport.update({
+  id: '/charging',
+  path: '/charging',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
@@ -115,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/signed-in': typeof SignedInRoute
   '/account': typeof AuthenticatedAccountRouteWithChildren
   '/admin': typeof AuthenticatedAdminRoute
+  '/charging': typeof AuthenticatedChargingRoute
   '/sensors': typeof AuthenticatedSensorsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/signed-in': typeof SignedInRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/charging': typeof AuthenticatedChargingRoute
   '/sensors': typeof AuthenticatedSensorsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/signed-in': typeof SignedInRoute
   '/_authenticated/account': typeof AuthenticatedAccountRouteWithChildren
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
+  '/_authenticated/charging': typeof AuthenticatedChargingRoute
   '/_authenticated/sensors': typeof AuthenticatedSensorsRoute
   '/_authenticated/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/account'
     | '/admin'
+    | '/charging'
     | '/sensors'
     | '/users'
     | '/api/log'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/signed-in'
     | '/admin'
+    | '/charging'
     | '/sensors'
     | '/users'
     | '/api/log'
@@ -202,6 +213,7 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/_authenticated/account'
     | '/_authenticated/admin'
+    | '/_authenticated/charging'
     | '/_authenticated/sensors'
     | '/_authenticated/users'
     | '/api/log'
@@ -284,6 +296,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSensorsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/charging': {
+      id: '/_authenticated/charging'
+      path: '/charging'
+      fullPath: '/charging'
+      preLoaderRoute: typeof AuthenticatedChargingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -359,6 +378,7 @@ const AuthenticatedAccountRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedAccountRoute: typeof AuthenticatedAccountRouteWithChildren
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
+  AuthenticatedChargingRoute: typeof AuthenticatedChargingRoute
   AuthenticatedSensorsRoute: typeof AuthenticatedSensorsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -367,6 +387,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAccountRoute: AuthenticatedAccountRouteWithChildren,
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
+  AuthenticatedChargingRoute: AuthenticatedChargingRoute,
   AuthenticatedSensorsRoute: AuthenticatedSensorsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
