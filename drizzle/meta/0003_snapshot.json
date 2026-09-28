@@ -1,5 +1,5 @@
 {
-  "id": "872583ed-4a7e-407e-a871-9f8bb95da72d",
+  "id": "26d7ae8c-4cc1-44aa-99b0-231944409617",
   "prevId": "c615953f-9fbe-483c-bbcd-52b96be1e276",
   "version": "7",
   "dialect": "postgresql",
@@ -522,13 +522,6 @@
       "name": "ev_charge_interval",
       "schema": "",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
         "session_id": {
           "name": "session_id",
           "type": "uuid",
@@ -549,34 +542,12 @@
         },
         "energy_kwh": {
           "name": "energy_kwh",
-          "type": "real",
+          "type": "double precision",
           "primaryKey": false,
           "notNull": true
         }
       },
-      "indexes": {
-        "ev_charge_interval_session_start_uq": {
-          "name": "ev_charge_interval_session_start_uq",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "start_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "ev_charge_interval_session_id_ev_charge_session_id_fk": {
           "name": "ev_charge_interval_session_id_ev_charge_session_id_fk",
@@ -592,7 +563,15 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "ev_charge_interval_pk": {
+          "name": "ev_charge_interval_pk",
+          "columns": [
+            "session_id",
+            "start_at"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
@@ -644,7 +623,7 @@
         },
         "energy_kwh": {
           "name": "energy_kwh",
-          "type": "real",
+          "type": "double precision",
           "primaryKey": false,
           "notNull": true
         },
@@ -714,21 +693,6 @@
           "columns": [
             {
               "expression": "start_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ev_charge_session_end_at_idx": {
-          "name": "ev_charge_session_end_at_idx",
-          "columns": [
-            {
-              "expression": "end_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1003,6 +967,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "consecutive_failures": {
           "name": "consecutive_failures",
           "type": "integer",
@@ -1067,6 +1037,10 @@
         "integration_sync_running_since_lease_until_check": {
           "name": "integration_sync_running_since_lease_until_check",
           "value": "(\"integration_sync\".\"running_since\" IS NULL) = (\"integration_sync\".\"lease_until\" IS NULL)"
+        },
+        "integration_sync_lease_until_token_check": {
+          "name": "integration_sync_lease_until_token_check",
+          "value": "(\"integration_sync\".\"lease_until\" IS NULL) = (\"integration_sync\".\"lease_token\" IS NULL)"
         }
       },
       "isRLSEnabled": false

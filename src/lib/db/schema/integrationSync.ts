@@ -3,6 +3,7 @@ import { check, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'dr
 import {
   INTEGRATION_ERROR_CODES,
   INTEGRATION_SOURCES,
+  SYNC_RUN_OUTCOMES,
   SYNC_TRIGGERS,
 } from '../../integrationHealth'
 
@@ -18,8 +19,10 @@ function sqlList(values: readonly string[]) {
 
 // Current health snapshot + sync lease, one row per integration source. Updated
 // in place by every sync run (never appended); `integration_sync_run` below is
-// the append-only history. The lease (`running_since`/`lease_until`) prevents
-// overlapping runs of the same source.
+// the append-only history. The lease (`running_since`/`lease_until`/
+// `lease_token`) prevents overlapping runs of the same source; `lease_token`
+// (not a timestamp comparison) is what a run compares against to confirm it
+// still holds the lease before writing its result.
 export const integrationSync = pgTable(
   'integration_sync',
   {
@@ -30,12 +33,16 @@ export const integrationSync = pgTable(
     failingSince: timestamp('failing_since', { withTimezone: true }),
     runningSince: timestamp('running_since', { withTimezone: true }),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    leaseToken: uuid('lease_token'),
     consecutiveFailures: integer('consecutive_failures').notNull().default(0),
     // `not_configured` is a code like the others: a failing row with that code
     // (e.g. missing credentials), not a distinct non-failing state.
     errorCode: text('error_code'),
     lastErrorMessage: text('last_error_message'),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
   },
   (table) => [
     check(
@@ -70,6 +77,10 @@ export const integrationSync = pgTable(
       'integration_sync_running_since_lease_until_check',
       sql`(${table.runningSince} IS NULL) = (${table.leaseUntil} IS NULL)`,
     ),
+    check(
+      'integration_sync_lease_until_token_check',
+      sql`(${table.leaseUntil} IS NULL) = (${table.leaseToken} IS NULL)`,
+    ),
   ],
 )
 
@@ -92,7 +103,7 @@ export const integrationSyncRun = pgTable(
     sessionsSeen: integer('sessions_seen').notNull().default(0),
     upserted: integer('upserted').notNull().default(0),
     voided: integer('voided').notNull().default(0),
-    timings: jsonb('timings').notNull().default({}),
+    timings: jsonb('timings').$type<Record<string, number>>().notNull().default({}),
   },
   (table) => [
     index('integration_sync_run_source_started_idx').on(table.source, table.startedAt.desc()),
@@ -105,7 +116,10 @@ export const integrationSyncRun = pgTable(
       sql`${table.trigger} IN (${sqlList(SYNC_TRIGGERS)})`,
     ),
     check('integration_sync_run_duration_ms_nonneg_check', sql`${table.durationMs} >= 0`),
-    check('integration_sync_run_outcome_check', sql`${table.outcome} IN ('ok', 'failed', 'error')`),
+    check(
+      'integration_sync_run_outcome_check',
+      sql`${table.outcome} IN (${sqlList(SYNC_RUN_OUTCOMES)})`,
+    ),
     check(
       'integration_sync_run_error_code_check',
       sql`${table.errorCode} IS NULL OR ${table.errorCode} IN (${sqlList(INTEGRATION_ERROR_CODES)})`,

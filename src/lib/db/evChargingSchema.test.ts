@@ -9,6 +9,7 @@ import {
   integrationSyncRun,
 } from '~/lib/db/schema'
 import { INTEGRATION_ERROR_CODES } from '~/lib/integrationHealth'
+import { expectConstraintViolation } from '~test/expectConstraintViolation'
 import { setupDatabase } from '~test/setup'
 
 // Lives in src/lib/db/ (not src/lib/db/schema/) because drizzle-kit scans the
@@ -40,25 +41,6 @@ async function insertSession(
   return row.id
 }
 
-// drizzle wraps the driver error: its `.message` is "Failed query: ...", and the
-// violated constraint name lives on the postgres-js cause (`constraint_name` /
-// message). Assert against that so the test pins the *specific* constraint.
-async function expectConstraintViolation(promise: Promise<unknown>, constraint: string) {
-  let error: unknown = null
-  try {
-    await promise
-  } catch (e) {
-    error = e
-  }
-  expect(error, 'expected the insert to be rejected').not.toBeNull()
-  const cause = (error as { cause?: unknown }).cause ?? error
-  const detail =
-    (cause as { constraint_name?: string }).constraint_name ??
-    (cause as { message?: string }).message ??
-    String(error)
-  expect(detail).toContain(constraint)
-}
-
 test('a session with end_at < start_at is rejected', async () => {
   const chargerId = await insertCharger('charger-1')
   await expectConstraintViolation(
@@ -81,6 +63,27 @@ test('an interval with energy_kwh < 0 is rejected', async () => {
       energyKwh: -1,
     }),
     'ev_charge_interval_energy_kwh_nonneg_check',
+  )
+})
+
+test('a duplicate (session_id, start_at) interval is rejected', async () => {
+  const chargerId = await insertCharger('charger-dup')
+  const sessionId = await insertSession(chargerId, 'session-dup')
+  const startAt = new Date('2026-01-01T10:00:00Z')
+  await db.insert(evChargeInterval).values({
+    sessionId,
+    startAt,
+    endAt: new Date('2026-01-01T10:15:00Z'),
+    energyKwh: 1,
+  })
+  await expectConstraintViolation(
+    db.insert(evChargeInterval).values({
+      sessionId,
+      startAt,
+      endAt: new Date('2026-01-01T10:20:00Z'),
+      energyKwh: 2,
+    }),
+    'ev_charge_interval_pk',
   )
 })
 
@@ -114,6 +117,18 @@ test('an integration_sync row with consecutive_failures = 1 and error_code = nul
   )
 })
 
+test('an integration_sync row with lease_until set but no lease_token is rejected', async () => {
+  await expectConstraintViolation(
+    db.insert(integrationSync).values({
+      source: 'zaptec',
+      runningSince: new Date(),
+      leaseUntil: new Date(Date.now() + 60_000),
+      leaseToken: null,
+    }),
+    'integration_sync_lease_until_token_check',
+  )
+})
+
 test("an integration_sync_run with outcome = 'ok' and an error_code is rejected", async () => {
   await expectConstraintViolation(
     db.insert(integrationSyncRun).values({
@@ -131,6 +146,7 @@ test("an integration_sync_run with outcome = 'ok' and an error_code is rejected"
 
 test('every INTEGRATION_ERROR_CODES value is accepted by integration_sync.error_code', async () => {
   const sources = ['zaptec', 'elpris', 'skoda'] as const
+  const stored = new Map<(typeof sources)[number], string | null>()
   for (const [index, errorCode] of INTEGRATION_ERROR_CODES.entries()) {
     const source = sources[index % sources.length]
     await db
@@ -140,5 +156,16 @@ test('every INTEGRATION_ERROR_CODES value is accepted by integration_sync.error_
         target: integrationSync.source,
         set: { consecutiveFailures: 1, errorCode, failingSince: new Date() },
       })
+    // Only the LAST write per source (3 sources, 7 codes) survives the upsert
+    // cycle; track that expectation instead of asserting mid-loop.
+    stored.set(source, errorCode)
+  }
+
+  const rows = await db
+    .select({ source: integrationSync.source, errorCode: integrationSync.errorCode })
+    .from(integrationSync)
+  expect(rows).toHaveLength(stored.size)
+  for (const row of rows) {
+    expect(row.errorCode).toBe(stored.get(row.source as (typeof sources)[number]))
   }
 })

@@ -20,5 +20,8 @@ export type IntegrationErrorCode = (typeof INTEGRATION_ERROR_CODES)[number]
 export const SYNC_TRIGGERS = ['cron', 'admin'] as const
 export type SyncTrigger = (typeof SYNC_TRIGGERS)[number]
 
+export const SYNC_RUN_OUTCOMES = ['ok', 'failed', 'error'] as const
+export type SyncRunOutcome = (typeof SYNC_RUN_OUTCOMES)[number]
+
 export type HealthTransition = 'none' | 'started_failing' | 'recovered'
 export type HealthState = 'never_synced' | 'not_configured' | 'ok' | 'stale' | 'failing'

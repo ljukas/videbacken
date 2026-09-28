@@ -2,12 +2,12 @@ import { relations, sql } from 'drizzle-orm'
 import {
   boolean,
   check,
+  doublePrecision,
   index,
   pgTable,
-  real,
+  primaryKey,
   text,
   timestamp,
-  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 
@@ -18,11 +18,17 @@ export const evCharger = pgTable('ev_charger', {
   name: text('name').notNull(),
   installationId: text('installation_id').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
 })
 
 // One row per completed (or voided/replaced) Zaptec charge session, upserted by
-// the sync run keyed on `zaptecSessionId`.
+// the sync run keyed on `zaptecSessionId`. `energyKwh` is `doublePrecision`
+// (float8), not `real` (float4): sessions are summed repeatedly (totals,
+// per-charger rollups), and float4 rounding drift compounds across sums in a
+// way that would later force a lossy `ALTER ... TYPE` migration.
 export const evChargeSession = pgTable(
   'ev_charge_session',
   {
@@ -33,7 +39,7 @@ export const evChargeSession = pgTable(
       .references(() => evCharger.id),
     startAt: timestamp('start_at', { withTimezone: true }).notNull(),
     endAt: timestamp('end_at', { withTimezone: true }).notNull(),
-    energyKwh: real('energy_kwh').notNull(),
+    energyKwh: doublePrecision('energy_kwh').notNull(),
     authorizedUserEmail: text('authorized_user_email'),
     authorizedUserName: text('authorized_user_name'),
     tokenName: text('token_name'),
@@ -42,31 +48,37 @@ export const evChargeSession = pgTable(
     offline: boolean('offline').notNull().default(false),
     reliableClock: boolean('reliable_clock').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
   },
   (table) => [
+    // No end_at index: nothing queries by end_at alone (start_at covers the
+    // recency/range queries the overview and health views need).
     index('ev_charge_session_start_at_idx').on(table.startAt),
-    index('ev_charge_session_end_at_idx').on(table.endAt),
     check('ev_charge_session_energy_kwh_nonneg_check', sql`${table.energyKwh} >= 0`),
     check('ev_charge_session_end_at_check', sql`${table.endAt} >= ${table.startAt}`),
   ],
 )
 
-// Sub-session power intervals (Zaptec's per-charge "ChargerSessions" line items)
-// used to reconstruct a session's charging profile.
+// Sub-session power intervals (Zaptec's per-charge "ChargerSessions" line
+// items) used to reconstruct a session's charging profile. No synthetic id:
+// `(session_id, start_at)` is already the natural key the sync run upserts on,
+// so it doubles as the primary key instead of a redundant separate uuid + a
+// separate unique index over the same columns.
 export const evChargeInterval = pgTable(
   'ev_charge_interval',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
     sessionId: uuid('session_id')
       .notNull()
       .references(() => evChargeSession.id, { onDelete: 'cascade' }),
     startAt: timestamp('start_at', { withTimezone: true }).notNull(),
     endAt: timestamp('end_at', { withTimezone: true }).notNull(),
-    energyKwh: real('energy_kwh').notNull(),
+    energyKwh: doublePrecision('energy_kwh').notNull(),
   },
   (table) => [
-    uniqueIndex('ev_charge_interval_session_start_uq').on(table.sessionId, table.startAt),
+    primaryKey({ name: 'ev_charge_interval_pk', columns: [table.sessionId, table.startAt] }),
     check('ev_charge_interval_end_at_check', sql`${table.endAt} > ${table.startAt}`),
     check('ev_charge_interval_energy_kwh_nonneg_check', sql`${table.energyKwh} >= 0`),
   ],

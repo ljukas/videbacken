@@ -1,9 +1,9 @@
 CREATE TABLE "ev_charge_interval" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"session_id" uuid NOT NULL,
 	"start_at" timestamp with time zone NOT NULL,
 	"end_at" timestamp with time zone NOT NULL,
-	"energy_kwh" real NOT NULL,
+	"energy_kwh" double precision NOT NULL,
+	CONSTRAINT "ev_charge_interval_pk" PRIMARY KEY("session_id","start_at"),
 	CONSTRAINT "ev_charge_interval_end_at_check" CHECK ("ev_charge_interval"."end_at" > "ev_charge_interval"."start_at"),
 	CONSTRAINT "ev_charge_interval_energy_kwh_nonneg_check" CHECK ("ev_charge_interval"."energy_kwh" >= 0)
 );
@@ -14,7 +14,7 @@ CREATE TABLE "ev_charge_session" (
 	"charger_id" text NOT NULL,
 	"start_at" timestamp with time zone NOT NULL,
 	"end_at" timestamp with time zone NOT NULL,
-	"energy_kwh" real NOT NULL,
+	"energy_kwh" double precision NOT NULL,
 	"authorized_user_email" text,
 	"authorized_user_name" text,
 	"token_name" text,
@@ -45,6 +45,7 @@ CREATE TABLE "integration_sync" (
 	"failing_since" timestamp with time zone,
 	"running_since" timestamp with time zone,
 	"lease_until" timestamp with time zone,
+	"lease_token" uuid,
 	"consecutive_failures" integer DEFAULT 0 NOT NULL,
 	"error_code" text,
 	"last_error_message" text,
@@ -56,7 +57,8 @@ CREATE TABLE "integration_sync" (
 	CONSTRAINT "integration_sync_failures_error_code_check" CHECK (("integration_sync"."consecutive_failures" = 0) = ("integration_sync"."error_code" IS NULL)),
 	CONSTRAINT "integration_sync_error_code_failing_since_check" CHECK (("integration_sync"."error_code" IS NULL) = ("integration_sync"."failing_since" IS NULL)),
 	CONSTRAINT "integration_sync_last_error_message_error_code_check" CHECK ("integration_sync"."last_error_message" IS NULL OR "integration_sync"."error_code" IS NOT NULL),
-	CONSTRAINT "integration_sync_running_since_lease_until_check" CHECK (("integration_sync"."running_since" IS NULL) = ("integration_sync"."lease_until" IS NULL))
+	CONSTRAINT "integration_sync_running_since_lease_until_check" CHECK (("integration_sync"."running_since" IS NULL) = ("integration_sync"."lease_until" IS NULL)),
+	CONSTRAINT "integration_sync_lease_until_token_check" CHECK (("integration_sync"."lease_until" IS NULL) = ("integration_sync"."lease_token" IS NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "integration_sync_run" (
@@ -86,7 +88,5 @@ CREATE TABLE "integration_sync_run" (
 --> statement-breakpoint
 ALTER TABLE "ev_charge_interval" ADD CONSTRAINT "ev_charge_interval_session_id_ev_charge_session_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."ev_charge_session"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ev_charge_session" ADD CONSTRAINT "ev_charge_session_charger_id_ev_charger_id_fk" FOREIGN KEY ("charger_id") REFERENCES "public"."ev_charger"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "ev_charge_interval_session_start_uq" ON "ev_charge_interval" USING btree ("session_id","start_at");--> statement-breakpoint
 CREATE INDEX "ev_charge_session_start_at_idx" ON "ev_charge_session" USING btree ("start_at");--> statement-breakpoint
-CREATE INDEX "ev_charge_session_end_at_idx" ON "ev_charge_session" USING btree ("end_at");--> statement-breakpoint
 CREATE INDEX "integration_sync_run_source_started_idx" ON "integration_sync_run" USING btree ("source","started_at" DESC NULLS LAST);
