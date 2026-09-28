@@ -29,5 +29,10 @@ test('labels the x-axis with localized short month names', async () => {
   const jan = new Intl.DateTimeFormat('sv-SE', { month: 'short', timeZone: 'UTC' }).format(
     new Date(Date.UTC(2000, 0, 15, 12)),
   )
-  await expect.element(screen.getByText(jan)).toBeInTheDocument()
+  // Scoped to the SVG axis ticks: a hover tooltip (the pointer can rest over the chart
+  // between tests) also renders the month label.
+  await vi.waitFor(() => {
+    const ticks = [...screen.container.querySelectorAll('svg tspan')]
+    expect(ticks.map((t) => t.textContent)).toContain(jan)
+  })
 })
