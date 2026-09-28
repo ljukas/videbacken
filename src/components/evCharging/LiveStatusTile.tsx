@@ -1,7 +1,8 @@
+import { useQuery } from '@tanstack/react-query'
 import { PlugZapIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Skeleton } from '~/components/ui/skeleton'
-import type { RouterOutputs } from '~/lib/orpc/client'
+import { orpc, type RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { formatOneDecimal } from './format'
@@ -15,6 +16,18 @@ const MODE_LABEL: Record<LiveMode, () => string> = {
   charging: m.charging_live_mode_charging,
   connected_finished: m.charging_live_mode_connected_finished,
   unknown: m.charging_live_mode_unknown,
+}
+
+// The polled live status for `LiveStatusTile`. Client-only (not in the route
+// loader) so a live Zaptec call never blocks SSR. A failed request (network,
+// 5xx) reads as `null` — "unavailable" — rather than leaving the tile on its
+// loading skeleton forever.
+export function useLiveStatus(): LiveStatus | undefined {
+  const query = useQuery({
+    ...orpc.evCharging.liveStatus.queryOptions(),
+    refetchInterval: 60_000,
+  })
+  return query.isError ? null : query.data
 }
 
 // The charger's live mode + power. `undefined` = still loading (the query is

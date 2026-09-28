@@ -1,8 +1,28 @@
-import { expect, test } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
-import { LiveStatusTile } from './LiveStatusTile'
+import { LiveStatusTile, useLiveStatus } from './LiveStatusTile'
+
+// Mock the oRPC client so `useLiveStatus` runs a scripted query function.
+const { liveFn } = vi.hoisted(() => ({ liveFn: vi.fn() }))
+vi.mock('~/lib/orpc/client', () => ({
+  orpc: {
+    evCharging: {
+      liveStatus: {
+        queryOptions: () => ({ queryKey: ['evCharging', 'liveStatus'], queryFn: liveFn }),
+      },
+    },
+  },
+}))
+
+beforeEach(() => {
+  liveFn.mockReset()
+})
+
+function Harness() {
+  return <LiveStatusTile live={useLiveStatus()} />
+}
 
 type Live = NonNullable<RouterOutputs['evCharging']['liveStatus']>
 
@@ -37,4 +57,16 @@ test('undefined (loading): renders the title without a reading', async () => {
   const { screen } = await renderWithProviders(<LiveStatusTile live={undefined} />)
   await expect.element(screen.getByText(m.charging_live_title())).toBeVisible()
   expect(screen.getByText(m.charging_live_unavailable()).elements()).toHaveLength(0)
+})
+
+test('a failed liveStatus request shows unavailable instead of an endless skeleton', async () => {
+  liveFn.mockRejectedValue(new Error('network down'))
+  const { screen } = await renderWithProviders(<Harness />)
+  await expect.element(screen.getByText(m.charging_live_unavailable())).toBeVisible()
+})
+
+test('a successful liveStatus request renders the reading', async () => {
+  liveFn.mockResolvedValue({ mode: 'charging', powerKw: 7.36, sessionKwh: null, observedAt })
+  const { screen } = await renderWithProviders(<Harness />)
+  await expect.element(screen.getByText('7,4 kW')).toBeVisible()
 })

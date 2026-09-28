@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
-import { LiveStatusTile } from '~/components/evCharging/LiveStatusTile'
+import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
 import { MonthlyChart } from '~/components/evCharging/MonthlyChart'
 import { RecentRunsCard } from '~/components/evCharging/RecentRunsCard'
 import { SessionList } from '~/components/evCharging/SessionList'
@@ -73,11 +73,7 @@ function ChargingPage() {
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
   })
-  // Client-only (not in the loader): a live Zaptec call shouldn't block SSR.
-  const { data: live } = useQuery({
-    ...orpc.evCharging.liveStatus.queryOptions(),
-    refetchInterval: 60_000,
-  })
+  const live = useLiveStatus()
   const { data: runs } = useQuery({
     ...orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
     enabled: isAdmin,
