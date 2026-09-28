@@ -21,7 +21,7 @@ test('renders this month / this year / all time with kWh and session counts', as
   await expect.element(screen.getByText('42,3 kWh')).toBeVisible()
   await expect.element(screen.getByText('812,5 kWh')).toBeVisible()
   await expect.element(screen.getByText(/^2\s345,0 kWh$/)).toBeVisible()
-  await expect.element(screen.getByText(m.charging_tile_sessions({ count: '51' }))).toBeVisible()
+  await expect.element(screen.getByText(m.charging_tile_sessions({ count: 51 }))).toBeVisible()
 })
 
 test('zero totals render as 0,0 kWh and 0 sessions', async () => {
@@ -30,5 +30,20 @@ test('zero totals render as 0,0 kWh and 0 sessions', async () => {
     <TotalsTiles tiles={{ thisMonth: zero, thisYear: zero, allTime: zero }} />,
   )
   expect(screen.getByText('0,0 kWh').elements()).toHaveLength(3)
-  expect(screen.getByText(m.charging_tile_sessions({ count: '0' })).elements()).toHaveLength(3)
+  expect(screen.getByText(m.charging_tile_sessions({ count: 0 })).elements()).toHaveLength(3)
+})
+
+test('session counts use the singular for one and group thousands', async () => {
+  const { screen } = await renderWithProviders(
+    <TotalsTiles
+      tiles={{
+        thisMonth: { kwh: 2, sessions: 1 },
+        thisYear: { kwh: 12_345, sessions: 2 },
+        allTime: { kwh: 12_345, sessions: 12_345 },
+      }}
+    />,
+  )
+  await expect.element(screen.getByText('1 session', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('2 sessioner', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText(/^12\s345 sessioner$/)).toBeVisible()
 })

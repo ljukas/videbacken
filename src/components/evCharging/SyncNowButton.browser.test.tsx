@@ -47,6 +47,17 @@ test('an ok run toasts success with the upserted count and invalidates evChargin
   await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['evCharging'] }))
 })
 
+test('a one-session run toasts the singular', async () => {
+  syncFn.mockResolvedValue({ outcome: 'ok', code: null, upserted: 1 })
+  const { screen } = await renderWithProviders(<Harness />)
+
+  await screen.getByRole('button', { name: m.charging_sync_now() }).click()
+
+  await vi.waitFor(() =>
+    expect(toastMock.success).toHaveBeenCalledWith('Synkningen är klar (1 session uppdaterad)'),
+  )
+})
+
 test('a failed run toasts the localized error for its code', async () => {
   syncFn.mockResolvedValue({ outcome: 'failed', code: 'auth_failed', upserted: 0 })
   const { screen } = await renderWithProviders(<Harness />)

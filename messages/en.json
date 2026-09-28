@@ -65,10 +65,36 @@
   "charging_sessions_show_more": "Show more",
   "charging_sync_failed": "The sync failed",
   "charging_sync_now": "Sync now",
-  "charging_sync_ok": "Sync complete ({count} sessions updated)",
+  "charging_sync_ok": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Sync complete ({countFormatted} session updated)",
+        "countPlural=other": "Sync complete ({countFormatted} sessions updated)"
+      }
+    }
+  ],
   "charging_sync_skipped": "A sync is already running",
   "charging_tile_all_time": "All time",
-  "charging_tile_sessions": "{count} sessions",
+  "charging_tile_sessions": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session",
+        "countPlural=other": "{countFormatted} sessions"
+      }
+    }
+  ],
   "charging_tile_this_month": "This month",
   "charging_tile_this_year": "This year",
   "charging_title": "Charging",

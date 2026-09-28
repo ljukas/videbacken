@@ -65,10 +65,36 @@
   "charging_sessions_show_more": "Visa fler",
   "charging_sync_failed": "Synkningen misslyckades",
   "charging_sync_now": "Synka nu",
-  "charging_sync_ok": "Synkningen är klar ({count} sessioner uppdaterade)",
+  "charging_sync_ok": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Synkningen är klar ({countFormatted} session uppdaterad)",
+        "countPlural=other": "Synkningen är klar ({countFormatted} sessioner uppdaterade)"
+      }
+    }
+  ],
   "charging_sync_skipped": "En synkning pågår redan",
   "charging_tile_all_time": "Totalt",
-  "charging_tile_sessions": "{count} sessioner",
+  "charging_tile_sessions": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session",
+        "countPlural=other": "{countFormatted} sessioner"
+      }
+    }
+  ],
   "charging_tile_this_month": "Denna månad",
   "charging_tile_this_year": "I år",
   "charging_title": "Laddning",
