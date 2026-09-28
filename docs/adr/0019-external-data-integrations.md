@@ -64,7 +64,9 @@ credentials. A pulled integration **does not get one**. `src/lib/effects/zaptec/
 - Credentials present (`ZAPTEC_USERNAME` / `ZAPTEC_PASSWORD`) → the real HTTP adapter.
 - Credentials missing → `notConfigured`, whose every method throws `ZaptecError('not_configured')`.
 - `ZAPTEC_ADAPTER=fake` (dev-only escape hatch) → synthetic data, for UI work without real Zaptec
-  access — deliberately opt-in, never the default.
+  access — deliberately opt-in, never the default, and **ignored in production** (`VERCEL_ENV` or
+  `NODE_ENV` = `production`): there selection silently falls through to the credentials check, so
+  a stray env var can never serve fake data on the live site.
 
 A `devLog` adapter here would return success for a sync that did nothing, which is
 indistinguishable on the health snapshot from a real successful sync. For a push effect (send this
@@ -135,6 +137,19 @@ per-integration knobs, and elpris/Škoda are expected to want the same shape:
   Backoff without a Retry-After header: 0.5 s then 1.5 s, plus jitter.
 - No retry on a token-endpoint 4xx (a wrong password doesn't get more right on retry) and no retry
   on `liveState` (it's polled again in 60 s anyway; retrying just adds latency to a UI request).
+- **Failures are cached, not re-attempted on every poll.** A rejected login (`auth_failed` /
+  `forbidden`) blocks new login attempts for 5 minutes — repeated password-grant failures risk
+  locking the Zaptec account. A failed `liveState` is cached per charger and rethrown without a
+  network call: auth failures for 5 minutes, `unreachable` / `rate_limited` for 60 s (successes keep
+  their 15 s TTL). The login is shared by concurrent callers; a caller's `signal` only stops *its*
+  wait on it (→ `unreachable`), the login keeps running for the others.
+- **`liveStatus` has a 6 s budget.** The procedure passes `AbortSignal.timeout(6_000)` covering the
+  whole Zaptec wait (shared login included), so the polled RPC can never hold a Vercel Function open
+  longer than that (ADR-0018).
+- **The sync run has a 240 s overall deadline.** One deadline signal goes to every Zaptec call via
+  `CallOpts.signal`, and each call is also raced against it, so a slow or hung Zaptec fails the run
+  as `unreachable` — which still records its outcome and emits its run line — before Vercel's 300 s
+  default function limit kills the invocation mid-write.
 - Status → code mapping is fixed inside the client (`token 400/401` → `auth_failed`; `403` →
   `forbidden`; `429` → `rate_limited`; `5xx`/network/timeout → `unreachable`), so every caller gets
   the same classification without re-deriving it.
@@ -155,8 +170,9 @@ Two tables, not one:
 - **`integration_sync_run`** — append-only, one row per attempt (`id`, `source`, `trigger`,
   `startedAt`/`finishedAt`/`durationMs`, `outcome`, `errorCode`, `errorMessage`, `since`, `pages`,
   `sessionsSeen`, `upserted`, `voided`, `timings` jsonb), indexed on `(source, startedAt desc)` for
-  the admin-only "last 20 runs" view. Pruned to 90 days inside the same transaction that inserts the
-  new row and updates the snapshot; a pruning failure is logged as a warning and never fails the run
+  the admin-only "last 20 runs" view. Pruned to 90 days right **after** the transaction that inserts
+  the new row and updates the snapshot commits (not inside it, so a failing `DELETE` can never roll
+  back or abort the outcome write); a pruning failure is logged as a warning and never fails the run
   — history is diagnostic, not load-bearing, so it degrading gracefully matters more than it being
   perfectly bounded on every single write.
 
@@ -178,9 +194,10 @@ something has actually gone wrong, not "the last run happened to land 61 minutes
 ### Session import: validate-and-skip, stub parents, allow-listed columns
 
 The Zaptec sync writes rows a human never gets to approve first, on a schedule, from an API whose
-shape can drift — so the importer (`src/lib/evCharging/sync.ts`, writing through
-`src/lib/services/evCharging/`) treats every incoming session as untrusted input, not as pre-validated
-data:
+shape can drift — so the importer treats every incoming session as untrusted input, not as
+pre-validated data. The orchestrator (`src/lib/evCharging/sync.ts`) only pages and hands each page to
+`importSessions`; the validate/skip, stub-parent and allow-listed-upsert logic below all lives in the
+charging service, `src/lib/services/evCharging/evCharging.ts`:
 
 - **Validate each record against the table's own CHECKs, in JS, before the write** — the same
   constraints `src/lib/db/schema/evCharging.ts` enforces in Postgres (non-negative `energyKwh`,
@@ -224,8 +241,9 @@ WHERE source = $1 AND (lease_until IS NULL OR lease_until < now())
 RETURNING lease_token
 ```
 
-Five minutes is comfortably longer than the sync's own timeout/retry budget and the Vercel function's
-`maxDuration`, so a lease only survives past its holder if that holder crashed outright — the next
+Five minutes is comfortably longer than the run's own 240 s deadline (see "Timeout and retry policy")
+and Vercel's 300 s default function `maxDuration`, so a lease only survives past its holder if that
+holder crashed outright — the next
 attempt (cron or admin) reclaims it once `lease_until` passes, self-healing without an operator.
 
 **The lease is a `lease_token uuid` (an attempt id), not a timestamp comparison.** An earlier design
@@ -247,7 +265,8 @@ from "was ok" to "now failing."
 
 Every run — regardless of outcome — emits **exactly one** structured log line
 (`log.<level>('integration sync run', { source, trigger, outcome, code, transition, since, durationMs,
-authMs, fetchMs, importMs, pages, chargers, sessionsSeen, upserted, voided })`), graded `info` for
+authMs, fetchMs, importMs, pages, chargers, sessionsSeen, upserted, voided, skipped })`; the
+timings are whole milliseconds), graded `info` for
 `ok`/`skipped`, `warn` for `failed`, `error` (with the `error` key, ADR-0003's serialization contract)
 for an unexpected `error` outcome. One line per run — not one per page, not one per retry inside the
 client — keeps "how did last night's sync go" a single log search away, the same reasoning ADR-0007
@@ -395,7 +414,7 @@ a duplicate here) — these are pointers, not summaries to read instead of them.
 - `src/lib/integrationHealth.ts` — the shared vocabulary (sources, error codes, triggers, outcomes,
   health states, transitions); dependency-free and client-safe.
 - `src/lib/effects/zaptec/` — the fail-closed client: `notConfigured` / http / `fake` adapter
-  selection, injected `fetch`, zod parsing, retry/timeout policy, `stats` reporting.
+  selection, injected `fetch`, zod parsing, retry/timeout policy, login + live-state failure caches, `stats` reporting.
 - `src/lib/services/integrationSync/` — `beginAttempt` (lease acquire), `recordOutcome` (transition +
   snapshot + history, `FOR UPDATE`), `getHealth`, `listRecentRuns`.
 - `src/lib/db/schema/integrationSync.ts` — `integration_sync` (snapshot + lease) and
@@ -403,7 +422,9 @@ a duplicate here) — these are pointers, not summaries to read instead of them.
 - `src/lib/db/schema/evCharging.ts` — `ev_charger` / `ev_charge_session` / `ev_charge_interval`; the
   `double precision` energy columns and their CHECKs the importer re-validates in JS before writing.
 - `src/lib/evCharging/sync.ts` — `runZaptecSync`, the domain orchestrator that ties the client, the
-  service, and the alert email together; the one `integration sync run` log line; the
-  validate-skip/stub-parent/allow-listed-upsert import behavior.
+  service, and the alert email together; the 240 s run deadline; the one `integration sync run` log
+  line.
+- `src/lib/services/evCharging/evCharging.ts` — `importSessions` / `upsertChargers`: the
+  validate-skip / stub-parent / allow-listed-upsert import behavior.
 - `src/lib/integrationHealthMessage.ts` — client-side, code-only → Swedish/English message mapping,
   reused by the alert email template.
