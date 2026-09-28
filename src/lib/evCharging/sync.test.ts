@@ -405,6 +405,90 @@ test('more than 20 pages fails as unexpected_response', async () => {
   expect(runLines()).toHaveLength(1)
 })
 
+test('a Zaptec call that never settles fails as unreachable at the deadline, with one run line', async () => {
+  const signals: (AbortSignal | undefined)[] = []
+  const client: ZaptecClient = {
+    chargers: (o) => {
+      signals.push(o?.signal)
+      return new Promise(() => {})
+    },
+    sessionsEndedSince: () => {
+      throw new Error('not reached')
+    },
+    liveState: () => Promise.reject(new Error('not used')),
+  }
+  const { log, runLines } = capturingLogger()
+  const started = performance.now()
+
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deadlineMs: 50,
+    deps: { zaptec: client, log },
+  })
+
+  expect(performance.now() - started).toBeLessThan(5_000)
+  expect(run).toMatchObject({ outcome: 'failed', code: 'unreachable' })
+  expect(signals[0]).toBeInstanceOf(AbortSignal)
+  expect(signals[0]?.aborted).toBe(true)
+  const health = await getHealth('zaptec', { now: T1, includeAdminDetail: false })
+  expect(health).toMatchObject({ state: 'failing', code: 'unreachable', running: false })
+  const lines = runLines()
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toMatchObject({ level: WARN, outcome: 'failed', code: 'unreachable' })
+})
+
+test('a sessions page that never arrives fails at the deadline and keeps earlier pages', async () => {
+  let sessionsSignal: AbortSignal | undefined
+  const client: ZaptecClient = {
+    chargers: async () => CHARGERS,
+    async *sessionsEndedSince(_since, o) {
+      sessionsSignal = o.signal
+      yield [session('s1', new Date(T1.getTime() - DAY))]
+      await new Promise(() => {})
+    },
+    liveState: () => Promise.reject(new Error('not used')),
+  }
+  const { log, runLines } = capturingLogger()
+
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deadlineMs: 50,
+    deps: { zaptec: client, log },
+  })
+
+  expect(run).toMatchObject({ outcome: 'failed', code: 'unreachable', pages: 1, upserted: 1 })
+  expect(sessionsSignal?.aborted).toBe(true)
+  expect((await sessionRows()).map((r) => r.zaptecSessionId)).toEqual(['s1'])
+  expect(await getLastSuccessStartedAt('zaptec')).toBeNull()
+  expect(runLines()).toHaveLength(1)
+})
+
+test('run-line timings are integers', async () => {
+  const { client } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  const fractional: ZaptecClient = {
+    ...client,
+    async chargers(o) {
+      if (o?.stats) o.stats.authMs += 1.7
+      return client.chargers(o)
+    },
+  }
+  const { log, runLines } = capturingLogger()
+
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: fractional, log },
+  })
+
+  expect(run.authMs).toBe(5)
+  for (const key of ['authMs', 'fetchMs', 'importMs'] as const) {
+    expect(Number.isInteger(run[key])).toBe(true)
+    expect(Number.isInteger(runLines()[0][key])).toBe(true)
+  }
+})
+
 test('a held lease → skipped, with zero Zaptec calls', async () => {
   await beginAttempt('zaptec', { now: new Date(T1.getTime() - 60_000) })
   const { client, state } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])

@@ -4,6 +4,7 @@ import {
   type ZaptecCallStats,
   type ZaptecClient,
   ZaptecError,
+  type ZaptecOp,
   zaptec,
 } from '~/lib/effects/zaptec'
 import type { HealthTransition, IntegrationErrorCode, SyncTrigger } from '~/lib/integrationHealth'
@@ -58,10 +59,18 @@ const LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
 const FIRST_RUN_SINCE = new Date('2020-01-01T00:00:00Z')
 /** Per installation. More pages than this means the paging went wrong. */
 const MAX_PAGES = 20
+/**
+ * Overall budget for the run's Zaptec calls. Well under Vercel's 300 s function
+ * limit, so a slow run still fails as `unreachable`, records its outcome and
+ * emits its run line (the lease is 5 min).
+ */
+const RUN_DEADLINE_MS = 240_000
 
 export async function runZaptecSync(opts: {
   trigger: SyncTrigger
   now?: () => Date
+  /** Overrides the 240 s Zaptec deadline (tests). */
+  deadlineMs?: number
   deps?: { zaptec?: ZaptecClient; log?: Logger }
 }): Promise<SyncRun> {
   const now = opts.now ?? (() => new Date())
@@ -90,6 +99,12 @@ export async function runZaptecSync(opts: {
   }
   let attemptId: string | null = null
   let thrown: unknown
+  const deadlineMs = opts.deadlineMs ?? RUN_DEADLINE_MS
+  const deadline = new AbortController()
+  const deadlineTimer = setTimeout(
+    () => deadline.abort(new DOMException('sync deadline exceeded', 'TimeoutError')),
+    deadlineMs,
+  )
 
   try {
     const attempt = await beginAttempt(SOURCE, { now: startedAt })
@@ -99,7 +114,7 @@ export async function runZaptecSync(opts: {
 
     let outcome: SyncOutcome
     try {
-      await fetchAndImport(client, run, stats)
+      await fetchAndImport(client, run, stats, deadline.signal)
       run.outcome = 'ok'
       outcome = { ok: true, stats: runStats(run, stats) }
     } catch (error) {
@@ -155,9 +170,10 @@ export async function runZaptecSync(opts: {
     }
     throw error
   } finally {
+    clearTimeout(deadlineTimer)
     run.durationMs = Math.max(0, now().getTime() - startedAt.getTime())
-    run.authMs = stats.authMs
-    run.fetchMs = stats.fetchMs
+    run.authMs = Math.round(stats.authMs)
+    run.fetchMs = Math.round(stats.fetchMs)
     run.importMs = Math.round(run.importMs)
     const fields = {
       source: run.source,
@@ -186,12 +202,15 @@ export async function runZaptecSync(opts: {
 // Chargers → sessions per installation, one charging-service transaction per
 // page. Mutates `run` as it goes, so a failure part-way still reports what
 // landed (earlier pages stay imported; only the watermark waits for success).
+// Every Zaptec call gets the run's deadline `signal` and is also raced against
+// it, so even a client that ignores the signal can't outlast the deadline.
 async function fetchAndImport(
   client: ZaptecClient,
   run: SyncRun,
   stats: ZaptecCallStats,
+  signal: AbortSignal,
 ): Promise<void> {
-  const chargers = await client.chargers({ stats })
+  const chargers = await withDeadline(client.chargers({ stats, signal }), signal, 'chargers')
   run.chargers = chargers.length
   await upsertChargers(chargers)
 
@@ -204,27 +223,60 @@ async function fetchAndImport(
   const installationIds = [...new Set(chargers.map((c) => c.installationId))]
   for (const installationId of installationIds) {
     let pages = 0
-    for await (const page of client.sessionsEndedSince(since, {
-      installationId,
-      until: run.startedAt,
-      stats,
-    })) {
-      pages++
-      if (pages > MAX_PAGES) {
-        throw new ZaptecError('unexpected_response', 'sessions', undefined, {
-          message: `Zaptec sessions exceeded ${MAX_PAGES} pages for one installation`,
-        })
+    const iterator = client
+      .sessionsEndedSince(since, { installationId, until: run.startedAt, stats, signal })
+      [Symbol.asyncIterator]()
+    try {
+      for (;;) {
+        const next = await withDeadline(iterator.next(), signal, 'sessions')
+        if (next.done) break
+        const page = next.value
+        pages++
+        if (pages > MAX_PAGES) {
+          throw new ZaptecError('unexpected_response', 'sessions', undefined, {
+            message: `Zaptec sessions exceeded ${MAX_PAGES} pages for one installation`,
+          })
+        }
+        run.pages++
+        run.sessionsSeen += page.length
+        const importStart = performance.now()
+        const result = await importSessions(page, { installationId })
+        run.importMs += performance.now() - importStart
+        run.upserted += result.upserted
+        run.voided += result.voided
+        run.skipped += result.skipped
       }
-      run.pages++
-      run.sessionsSeen += page.length
-      const importStart = performance.now()
-      const result = await importSessions(page, { installationId })
-      run.importMs += performance.now() - importStart
-      run.upserted += result.upserted
-      run.voided += result.voided
-      run.skipped += result.skipped
+    } finally {
+      // Not awaited: a generator stuck past the deadline would never settle.
+      iterator.return?.()?.catch(() => {})
     }
   }
+}
+
+/** Races a Zaptec call against the run deadline; a hit → `unreachable`. */
+function withDeadline<T>(p: Promise<T>, signal: AbortSignal, op: ZaptecOp): Promise<T> {
+  // A call that settles after the deadline must not surface as unhandled.
+  p.catch(() => {})
+  const deadlineError = () =>
+    new ZaptecError('unreachable', op, undefined, {
+      cause: { name: 'TimeoutError' },
+      message: `Zaptec ${op} did not finish within the sync deadline`,
+    })
+  if (signal.aborted) return Promise.reject(deadlineError())
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(deadlineError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    p.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(err)
+      },
+    )
+  })
 }
 
 function runStats(run: SyncRun, stats: ZaptecCallStats): RunStats {
@@ -235,8 +287,8 @@ function runStats(run: SyncRun, stats: ZaptecCallStats): RunStats {
     upserted: run.upserted,
     voided: run.voided,
     timings: {
-      authMs: stats.authMs,
-      fetchMs: stats.fetchMs,
+      authMs: Math.round(stats.authMs),
+      fetchMs: Math.round(stats.fetchMs),
       importMs: Math.round(run.importMs),
       requests: stats.requests,
       retries: stats.retries,
