@@ -12,4 +12,12 @@ export const serverRedactPaths = [
   '*.headers.cookie',
   'request.headers.authorization',
   'request.headers.cookie',
+  // Credentials of outbound integrations (e.g. the Zaptec password grant). A
+  // backstop only — adapters must not log credentials or token responses at all.
+  'password',
+  '*.password',
+  'access_token',
+  '*.access_token',
+  'refresh_token',
+  '*.refresh_token',
 ]

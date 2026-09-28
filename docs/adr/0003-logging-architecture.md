@@ -11,11 +11,17 @@
 > - **`runEffect` was never built** (see ADR-0001's 2026-06-04 amendment). Where this ADR says tier-2 `runEffect` "swallows errors" (Context, point 1) and "logs with the effect's tag" (*What to log*, "Significant business events"), read the real tier-2 contract instead: inline `effects.x.y(...).catch((error) => context.log.warn('failed to …', { error }))` at the call site. Live examples: the blurhash and thumbnail enqueues in `src/lib/orpc/procedures/document.ts`.
 > - **`/api/log` is deliberately open ingest.** The route is unauthenticated and has no rate limit — an accepted risk at ~20 users on a URL nobody knows. The guardrails are payload-shaped, not identity-shaped: levels restricted to `warn`/`error`, `msg` ≤ 500 chars, an 8 KB body cap (byte-accurate via `Buffer.byteLength(text, 'utf8')` as of 2026-06-10 — `text.length` would undercount multibyte bodies), and `source: 'browser'` appended server-side so spoofed entries are at least filterable. Revisit if abuse is observed in the log stream or the app becomes known on the public internet.
 
+> **Amended 2026-09-28** (error serialization + graded rpc errors):
+> - **Errors are serialized by the logger, not the caller.** Both adapters share `src/lib/logger/serializeError.ts`; the server registers it as pino `serializers` for `error` and `err`, the browser applies it before forwarding to `/api/log`. Before this, pino only serialized `err`, so the codebase-wide `log.error('…', { error })` convention logged `"error": {}` (no message, no stack) — and the browser forward had the same bug via `JSON.stringify`. Contract: put the error at the top-level `error` key; the output is an **allow-list** — `{ type, name?, message, stack, code?, status?, defined?, data?, cause?, errors? }` with a recursive `cause` chain (depth ≤ 5, cycle-safe) — so an error carrying a `request`/`response` can't leak headers or bodies. The same holds down the chain: a non-Error `cause`/`AggregateError` member is reduced to its `message`/`code`, and `data` is kept only for *defined* oRPC errors. The serializer never throws (a hostile error yields `[unserializable error]`). Errors nested deeper than the top level of the fields are not serialized.
+> - **`onError` is request-scoped and graded** (`src/lib/orpc/logRpcError.ts`): it logs through `context.log` (carries `requestId`/`path`; still no `userId`, which sessionMiddleware adds downstream). `ORPCError` 401 → `debug`; input-validation `BAD_REQUEST` → `warn('rpc input rejected', { …, issues })` with each issue's path + message only (never the submitted input); other `ORPCError` < 500 → `info('rpc rejected', { code, status, defined })`; anything else → `error('orpc handler error', { error })`. Expected auth/validation/domain rejections no longer flood error level.
+> - **Redaction** also covers `password`, `access_token`, `refresh_token` (root and one level deep) — a backstop for outbound integrations such as the Zaptec password grant.
+> - **Retention corrected**: the project is on Vercel **Pro**, where Runtime Logs keep **1 day** (Hobby: 1 hour). Anything that must be answerable later (e.g. integration sync history) is persisted in the database, not left to logs.
+
 ---
 
 ## Context
 
-Videbacken is a small internal app (10–20 users) deployed on Vercel Hobby. Before this ADR, logging meant scattered `console.log` calls — fine for local debugging, useless for production: messages were unstructured, browser errors had no path to the server, and there was no request scope tying multiple log lines from one HTTP call together.
+Videbacken is a small internal app (10–20 users) deployed on Vercel (Hobby when this ADR was written; Pro since 2026-09 — see the 2026-09-28 amendment). Before this ADR, logging meant scattered `console.log` calls — fine for local debugging, useless for production: messages were unstructured, browser errors had no path to the server, and there was no request scope tying multiple log lines from one HTTP call together.
 
 Three things forced the question:
 
@@ -89,14 +95,14 @@ This is a **deep seam** in the architecture-skill sense: small interface (5 meth
 - ➖ Adds a vendor, a secret, a paid plan threshold to monitor, and a separate dashboard to alt-tab to.
 - ➖ At ~20 users the free-tier quotas are fine, but the cognitive cost of "log somewhere other than the platform you're already in" is paid forever.
 - ➖ The non-negotiable **"free tier first"** isn't violated — but it's adjacent: a second account and SDK to maintain is exactly the kind of fixed cost the project should avoid until it pays for itself.
-- **Verdict**: don't. Revisit if Vercel's 1-day Hobby retention bites or if alerting becomes a real need (see revisit triggers).
+- **Verdict**: don't. Revisit if Vercel's 1-day Runtime Logs retention bites or if alerting becomes a real need (see revisit triggers).
 
 ### C. pino → stdout → Vercel Runtime Logs ← **chosen**
 - ➕ One transport. Vercel captures stdout for free; no SDK, no secret, no extra vendor.
 - ➕ pino is the lowest-overhead Node logger and supports `child(fields)` natively (zero-cost request scoping).
 - ➕ `pino-pretty` in dev gives colorized human output without changing call sites.
 - ➕ Browser side stays tiny: a console wrapper that fetches `/api/log` on warn/error. No SDK weight in the bundle.
-- ➖ Vercel Hobby retention is 1 day. Fine for ~20 users — a problem someone reports in the morning can still be diagnosed; longer-running mysteries can't.
+- ➖ Vercel Runtime Logs retention is 1 day (Pro). Fine for ~20 users — a problem someone reports in the morning can still be diagnosed; longer-running mysteries can't.
 - ➖ No alerting. Acceptable: no on-call rotation exists.
 - **Verdict**: matches the project's scale. The seam is built so swapping to (B) later means changing two adapter files, not the call sites.
 
@@ -143,7 +149,7 @@ Net effect inside any handler: `context.log` already carries `{ requestId, path,
 
 The oRPC catch-all is not the only `createRequestLogger` construction site. The SSR in-process oRPC client (`src/lib/orpc/client.ts`) builds the same `{ log, requestId }` context for server-side renders, and the file routes (`src/routes/api/files/download.$id.ts`, `src/routes/api/files/view.$id.ts`) call it for their auth-gated redirects.
 
-The oRPC handler is constructed with an `onError` interceptor that calls `logger.error('orpc handler error', { error })`, so any thrown exception in a procedure leaves exactly one error log on the way out, regardless of whether the handler caught and rethrew it. Because the interceptor logs through the module singleton — it runs outside the per-request context — that line carries **no** `requestId`/`userId`. Moving error logging into a context-aware middleware is a candidate future improvement, not a commitment.
+The oRPC handler is constructed with an `onError` interceptor that calls `logRpcError(context.log, error)`, so any thrown exception in a procedure leaves exactly one log line on the way out, graded by severity (see the 2026-09-28 amendment). It logs through the request-scoped `context.log`, so the line carries `requestId`/`path` — but not `userId`, which sessionMiddleware adds to a context the interceptor can't see.
 
 ### Browser adapter — `~/lib/logger/browser`
 
@@ -186,7 +192,7 @@ These are what callers must follow to keep logs greppable:
 
 - **Errors** — every caught exception that isn't immediately rethrown as a typed user-facing error. `context.log.error('orpc handler error', { error })`. The oRPC `onError` interceptor already handles thrown handler errors; you only need explicit `.error(...)` calls when *catching* an exception and continuing.
 - **Significant business events** — admin actions (`'admin created user'`, `'admin soft-deleted user'`), auth lifecycle (`'magic-link sent'`, `'auth session created'`, `'magic-link denied (unknown email)'`), effect failures (when a tier-2 `runEffect` swallows an error, it logs with the effect's tag).
-- **Skip**: per-request access logs (Vercel's request log already covers this and Hobby retention isn't worth burning on it), debug breadcrumbs that mirror the code, anything you'd remove the next day.
+- **Skip**: per-request access logs (Vercel's request log already covers this and the 1-day retention isn't worth burning on it), debug breadcrumbs that mirror the code, anything you'd remove the next day.
 
 The implicit rule: if a future you reading the production log stream wouldn't care about this line, it shouldn't exist.
 
@@ -233,7 +239,7 @@ Manual smoke test after a change in this area:
 
 1. `bun run dev:log` then visit `/login` and submit a magic link. The `/tmp/videbacken-dev.log` file should contain a pretty-printed `magic-link sent` (or `magic-link (devLog)`) line with `email` and `url` fields.
 2. From browser devtools console, run `throw new Error('test')`. A `window.error` POST to `/api/log` should appear in the network tab, and the dev log should gain an `error` line with `source: 'browser'`.
-3. Trigger an oRPC procedure that throws inside a service. The dev log should gain one `orpc handler error` line — note it carries **no** `requestId`/`userId`, because the `onError` interceptor logs through the module singleton, outside the per-request context (see Architecture).
+3. Trigger an oRPC procedure that throws inside a service. The dev log should gain one `orpc handler error` line with a `requestId` and a serialized `error` (`type`, `message`, `stack`). Calling a protected procedure while signed out should log only a `debug` `rpc rejected` line.
 4. Hit any oRPC procedure twice in quick succession. The two requests' log lines should be correlatable by distinct `requestId` values.
 
 ---
@@ -244,6 +250,8 @@ Manual smoke test after a change in this area:
 - `src/lib/logger/server.ts` — pino factory, singleton, `createRequestLogger`.
 - `src/lib/logger/browser.ts` — console + forward, `installGlobalHandlers`.
 - `src/lib/logger/redact.ts` — redact paths.
+- `src/lib/logger/serializeError.ts` — shared error serializer (allow-list).
+- `src/lib/orpc/logRpcError.ts` — severity grading for the `onError` interceptor.
 - `src/routes/api/log.ts` — browser log sink, Zod-validated.
 - `src/routes/api/rpc/$.ts` — `createRequestLogger(request)` + oRPC `onError` interceptor.
 - `src/lib/orpc/client.ts` — SSR in-process client; second `createRequestLogger` call site.
@@ -263,13 +271,13 @@ Manual smoke test after a change in this area:
 - Swapping to Sentry / Axiom / etc. later means rewriting two adapter files; no call sites change.
 
 **Negative**:
-- Vercel Hobby retention is 1 day. Long-running mysteries that surface after 24h are unrecoverable.
+- Vercel Runtime Logs retention is 1 day (Pro). Long-running mysteries that surface after 24h are unrecoverable.
 - No alerting. A production error log waits to be noticed; nothing pages anyone. Acceptable while there's no on-call rotation.
 - No search UI beyond Vercel's runtime-logs viewer. Filtering by structured fields is grep-style.
 
 **Revisit triggers** — re-open this ADR if any of these change:
 - The user count grows past the "internal tool" boundary, or external compliance enters scope (PII redaction policy then needs tightening).
-- Hobby retention bites — a real bug couldn't be diagnosed because the logs had rolled off.
+- Log retention bites — a real bug couldn't be diagnosed because the logs had rolled off.
 - `/api/log` abuse appears in the stream (spoofed or garbage browser entries), or the app becomes known on the public internet — the open-ingest decision (2026-06-10 amendment) then needs auth and/or rate limiting.
 - Alerting becomes a real need (the team gains an on-call rotation).
 - A second piece of telemetry (metrics, traces) lands; at that point it may be cheaper to adopt one vendor (Sentry, Axiom, Datadog) for everything than to stitch three free tiers together.
