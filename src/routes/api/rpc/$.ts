@@ -2,8 +2,9 @@ import { onError } from '@orpc/server'
 import { RPCHandler } from '@orpc/server/fetch'
 import { BatchHandlerPlugin } from '@orpc/server/plugins'
 import { createFileRoute } from '@tanstack/react-router'
-import { createRequestLogger, logger } from '~/lib/logger/server'
+import { createRequestLogger } from '~/lib/logger/server'
 import type { RequestTimings } from '~/lib/orpc/context'
+import { logRpcError } from '~/lib/orpc/logRpcError'
 import { appRouter } from '~/lib/orpc/router'
 
 const handler = new RPCHandler(appRouter, {
@@ -11,8 +12,11 @@ const handler = new RPCHandler(appRouter, {
   // per-tile `document.thumbnail` lookups (see orpc/client.ts).
   plugins: [new BatchHandlerPlugin()],
   interceptors: [
-    onError((error) => {
-      logger.error('orpc handler error', { error })
+    // `context` is the object passed to `handler.handle` below, so the line
+    // carries this request's requestId/path (not userId — that is added later
+    // by sessionMiddleware, whose context this interceptor can't see).
+    onError((error, { context }) => {
+      logRpcError(context.log, error)
     }),
   ],
 })
