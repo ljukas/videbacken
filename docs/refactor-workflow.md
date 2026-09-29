@@ -7,6 +7,8 @@ Companion: **[feature-workflow.md](./feature-workflow.md)** for adding capabilit
 > **The prime directive — one hat at a time (Kent Beck's "Two Hats").**
 > A refactor changes *internal structure only*; observable behavior stays identical and tests stay green throughout (Fowler). Adding a feature or fixing a bug is the *other* hat. **Never wear both in the same commit.** If your change alters behavior, it isn't a refactor — it belongs in [feature-workflow.md](./feature-workflow.md) (or is a bugfix). Keep refactor commits pure so any diff is *all-structure* or *all-behavior*; that's what makes review and rollback tractable.
 
+> **Run it:** `/refactor-workflow <target>` (`.claude/skills/refactor-workflow/`) loads this doc and starts at Phase 0. Edit the process here, not in the skill.
+
 > **How to read the skill callouts.** Phase names are durable; the specific tools live once in [Current toolchain mapping](#current-toolchain-mapping) — update that section when tooling changes, not the prose.
 
 ---
