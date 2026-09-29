@@ -17,7 +17,7 @@ const CommandPaletteContext = createContext<CommandPaletteContextValue | null>(n
 
 /**
  * Holds the single global command-palette open state so the dialog (mounted once
- * in the authenticated shell) and every trigger (sidebar header, documents views)
+ * in the authenticated shell) and every trigger (sidebar header, mobile header)
  * share it. The `Mod+K` hotkey owner lives in `CommandPalette` itself.
  */
 export function CommandPaletteProvider({ children }: PropsWithChildren) {
