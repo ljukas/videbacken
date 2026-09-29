@@ -30,3 +30,9 @@ export const { useAppForm, withForm, withFieldGroup } = createFormHook({
   },
   formComponents: { SubmitButton, CancelButton },
 })
+
+// App code that needs reactive form state outside a bound component (e.g. an
+// effect keyed on `isSubmitting`) reads it through this re-export, so
+// `@tanstack/react-form` stays imported only here and in `src/components/form/*`
+// (ADR-0005).
+export { useStore } from '@tanstack/react-form'

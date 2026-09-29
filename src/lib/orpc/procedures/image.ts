@@ -5,34 +5,14 @@ import { auth } from '~/lib/auth'
 import { queue, storage } from '~/lib/effects'
 import { stripEnvPrefix } from '~/lib/effects/storage'
 import { HEIC_MIME } from '~/lib/image/heicMime'
-import { transcodeHeicToPreviewJpeg } from '~/lib/image/heicTranscode'
 import { protectedProcedure } from '~/lib/orpc/context'
 import { UPLOAD_IMAGE_EXT, UPLOAD_IMAGE_MIME } from '~/lib/orpc/imageUpload'
 import * as fileService from '~/lib/services/file'
 import { m } from '~/paraglide/messages'
 
 const AVATAR_MAX_BYTES = 5_000_000
-// Matches the recommendation photo cap (recommendation.ts MAX_PHOTO_BYTES); a
-// server backstop for the client's own size gate before it reaches this endpoint.
-const PREVIEW_MAX_BYTES = 15_000_000
 
 export const imageRouter = {
-  // Stateless HEIC→small-JPEG transcode for an in-editor preview. The client sends
-  // the picked HEIC `File` (in parallel with its storage upload) and gets back a
-  // base64 data URL to show while the post-save `heic_transcode` worker derives the
-  // canonical asset. Nothing is read from or written to storage. Browsers can't
-  // render an iPhone HEIC's HEVC `thmb`, so without this the tile shows a bare
-  // placeholder that reads as an error (ADR-0006 / ADR-0012). Errors are swallowed
-  // by the caller (falls back to the placeholder), so no localized message is needed.
-  previewHeic: protectedProcedure
-    .input(z.object({ file: z.instanceof(File) }))
-    .handler(async ({ input }) => {
-      if (input.file.size > PREVIEW_MAX_BYTES) throw new ORPCError('PAYLOAD_TOO_LARGE')
-      const buf = Buffer.from(await input.file.arrayBuffer())
-      const jpeg = await transcodeHeicToPreviewJpeg(buf)
-      return { dataUrl: `data:image/jpeg;base64,${jpeg.toString('base64')}` }
-    }),
-
   mintAvatarUpload: protectedProcedure
     .input(
       z.object({
