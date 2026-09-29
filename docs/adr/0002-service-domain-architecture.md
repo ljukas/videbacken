@@ -137,6 +137,8 @@ Rules read in sequence; the `tx.update` is the last line and everything above it
 
 ### Check first — never translate Postgres errors (added 2026-06-10)
 
+> Narrowed by the [2026-09-29 amendment](#amendment-2026-09-29-a-lost-check-first-race-may-map-to-the-same-code): check first stays mandatory, but a lost race may be mapped to the same domain error through `isUniqueViolation`.
+
 When an invariant is also backed by a DB constraint (a unique index, a CHECK), the service still enforces it **check-first**: an explicit read, then the typed domain error.
 
 ```ts
@@ -426,3 +428,12 @@ service that needs it.
 ## Amendment (2026-09-29): pruned to the current template
 
 References to features the template removed (documents/folders/document bin, seasons, shares, their procedures and `*ErrorMessage.ts` files, the `presence`/`realtime` procedures) were removed or replaced with current examples (`user`, `approvedEmail`, `tariff`, `evCharging`/`integrationSync`), and the `user` service's since-renamed operations and codes (`revokeUser`, `assertPendingInvite`, `EMAIL_ALREADY_APPROVED`) are cited by their current names. The document and season extensions of the 2026-06-13 amendment are marked as no longer governing code. No decision changed.
+
+## Amendment (2026-09-29): a lost check-first race may map to the same code
+
+**Check first stays mandatory.** The explicit read is still what enforces the rule and produces the domain error in the normal case, in sequence with the other guards.
+
+What changes: a service **may** also catch the one unique violation a lost check-first race can produce and rethrow it as the **same** domain error the check throws. It may do so only through `isUniqueViolation(error, '<constraint_name>')` from `src/lib/db/pgError.ts`. That server-only helper matches SQLSTATE `23505` **and** the named constraint, walking Drizzle's `cause` chain. It never matches message text, never a bare SQLSTATE, and never stands in for the check. The original objection, that the domain layer would depend on driver error shapes, is answered by keeping that knowledge in one tested helper in `src/lib/db/`, keyed to a constraint the service names.
+
+First and only use today: the `tariff` service's `mapValidFromRace` maps `electricity_tariff_valid_from_unique` to `TARIFF_VALID_FROM_TAKEN` (#25). Without it, two admins saving the same start date at once would get a 500 instead of the inline field error. Services without the backstop keep the 500-on-race behavior accepted above; adding it is optional, per constraint, and needs no new ADR.
+
