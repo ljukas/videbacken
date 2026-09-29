@@ -19,14 +19,20 @@ export type RunStats = {
   timings: Record<string, number>
 }
 
+// `syncedUntil` is how far the run imported every session: the next run's
+// fetch window starts from it (`lastSuccessStartedAt`, the watermark). A
+// success defaults it to the run's start; a failure that still finished some
+// windows (a long backfill hitting the deadline) passes it so that progress is
+// kept rather than refetched from scratch.
 export type SyncOutcome =
-  | { ok: true; stats: RunStats }
+  | { ok: true; stats: RunStats; syncedUntil?: Date }
   | {
       ok: false
       kind: 'failed' | 'error'
       code: IntegrationErrorCode
       message: string
       stats: RunStats
+      syncedUntil?: Date
     }
 
 // The health-bearing columns of an `integration_sync` row (lease columns are
@@ -36,16 +42,19 @@ export type HealthSnapshot = {
   lastSuccessAt: Date | null
   lastSuccessStartedAt: Date | null
   failingSince: Date | null
+  alertedAt: Date | null
   consecutiveFailures: number
   errorCode: IntegrationErrorCode | null
   lastErrorMessage: string | null
 }
 
-// Alert transitions: a streak starting (0 → ≥1 failures) or ending (≥1 → 0).
-// `not_configured` (e.g. missing credentials) is its own state and never alerts
-// — neither when it starts nor when it clears. A code change mid-streak is the
-// same outage and never re-alerts. The row keeps only the current code, so
-// "a not_configured streak" is judged by the code at the edge in question.
+// Alert transitions: an alert opens on the first alertable failure of a
+// streak (`started_failing`) and closes on the next success (`recovered`), so
+// every `recovered` pairs with a `started_failing`. `not_configured` (e.g.
+// missing credentials) never opens an alert, but it doesn't close one either —
+// `auth_failed` → `not_configured` → ok still sends `recovered`, and
+// `not_configured` → `auth_failed` sends `started_failing`. A code change
+// between alertable codes is the same outage and never re-alerts.
 export function nextRow(
   prev: HealthSnapshot,
   outcome: SyncOutcome,
@@ -53,31 +62,35 @@ export function nextRow(
   startedAt: Date,
 ): { row: HealthSnapshot; transition: HealthTransition } {
   const wasFailing = prev.consecutiveFailures > 0
+  const alertOpen = prev.alertedAt !== null
   if (outcome.ok) {
     return {
       row: {
         lastAttemptAt: now,
         lastSuccessAt: now,
-        lastSuccessStartedAt: startedAt,
+        lastSuccessStartedAt: outcome.syncedUntil ?? startedAt,
         failingSince: null,
+        alertedAt: null,
         consecutiveFailures: 0,
         errorCode: null,
         lastErrorMessage: null,
       },
-      transition: wasFailing && prev.errorCode !== 'not_configured' ? 'recovered' : 'none',
+      transition: alertOpen ? 'recovered' : 'none',
     }
   }
+  const opensAlert = !alertOpen && outcome.code !== 'not_configured'
   return {
     row: {
       lastAttemptAt: now,
       lastSuccessAt: prev.lastSuccessAt,
-      lastSuccessStartedAt: prev.lastSuccessStartedAt,
+      lastSuccessStartedAt: outcome.syncedUntil ?? prev.lastSuccessStartedAt,
       failingSince: wasFailing ? prev.failingSince : now,
+      alertedAt: opensAlert ? now : prev.alertedAt,
       consecutiveFailures: prev.consecutiveFailures + 1,
       errorCode: outcome.code,
       lastErrorMessage: sanitizeErrorMessage(outcome.message),
     },
-    transition: !wasFailing && outcome.code !== 'not_configured' ? 'started_failing' : 'none',
+    transition: opensAlert ? 'started_failing' : 'none',
   }
 }
 

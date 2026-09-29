@@ -63,6 +63,7 @@
   "charging_sessions_empty_title": "No charging sessions yet",
   "charging_sessions_heading": "Charging sessions",
   "charging_sessions_show_more": "Show more",
+  "charging_sessions_show_more_failed": "Couldn't load more sessions",
   "charging_sync_failed": "The sync failed",
   "charging_sync_now": "Sync now",
   "charging_sync_ok": [

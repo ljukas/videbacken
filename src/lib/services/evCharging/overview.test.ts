@@ -204,6 +204,25 @@ test('invariant: months sum equals thisYear for the current year, and allTime is
   expect(overview.tiles.allTime.sessions).toBeGreaterThanOrEqual(overview.tiles.thisYear.sessions)
 })
 
+test('years outside what the overview procedure accepts are left out of years, not of all-time', async () => {
+  const now = new Date('2026-06-15T12:00:00Z')
+  // A charger with a broken clock, and a session that starts in Stockholm's 2019.
+  await insertSession({
+    startAt: new Date('1970-01-01T00:10:00Z'),
+    endAt: new Date('1970-01-01T01:00:00Z'),
+    reliableClock: false,
+  })
+  await insertSession({
+    startAt: new Date('2019-12-31T22:30:00Z'),
+    endAt: new Date('2020-01-01T01:00:00Z'),
+  })
+
+  const overview = await getOverview({ now })
+
+  expect(overview.years).toEqual([2026])
+  expect(overview.tiles.allTime).toEqual({ kwh: 10, sessions: 2 })
+})
+
 test('years is sorted descending and always includes the current Stockholm year', async () => {
   const now = new Date('2026-06-15T12:00:00Z')
   const chargerId = await insertCharger()

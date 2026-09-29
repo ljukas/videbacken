@@ -56,9 +56,14 @@ export function formatDateTime(date: Date): string {
   }).format(date)
 }
 
-// "för 5 minuter sedan" / "5 minutes ago".
+// "för 5 minuter sedan" / "5 minutes ago". A server timestamp slightly ahead
+// of a lagging client clock reads as "just now", never "in 3 seconds".
 export function formatAgo(date: Date): string {
-  return formatDistanceStrict(date, new Date(), { addSuffix: true, locale: getDateFnsLocale() })
+  const now = new Date()
+  return formatDistanceStrict(date > now ? now : date, now, {
+    addSuffix: true,
+    locale: getDateFnsLocale(),
+  })
 }
 
 // Wall-clock length of a session, rounded to whole minutes.

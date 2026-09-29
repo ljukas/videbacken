@@ -120,7 +120,12 @@ migration-time or insert-time error, never a silent value nobody validates). `no
 shape as any other failing row, it's just never alerted on (below) and maps to its own `HealthState`.
 
 Responses are parsed with zod (`src/lib/effects/zaptec/`); a parse failure becomes
-`unexpected_response` with a message that lists field paths only, never the payload — Zaptec
+`unexpected_response` with a message that lists field paths only, never the payload. Sessions are
+parsed **one by one**: a single session that doesn't match the schema (a `null` energy, a missing
+flag) is dropped and counted (`stats.rejected`, folded into the run's `skipped`) instead of failing
+its page — which, since the watermark only moves past a page that imported, would fail every later
+run on the same record. A page where *every* session fails still throws: that's a shape change, not
+one odd record, and must not read as a healthy run that imported nothing. Zaptec
 sessions carry `sessionSignature` (OCMF, embeds meter readings) and the owner's email/name, and the
 client **never logs**, only reports through a `stats` sink (`authMs`, `fetchMs`, `requests`,
 `retries`, `pages`) that the sync run folds into its one log line.
@@ -141,7 +146,11 @@ per-integration knobs, and elpris/Škoda are expected to want the same shape:
   `forbidden`) blocks new login attempts for 5 minutes — repeated password-grant failures risk
   locking the Zaptec account. A failed `liveState` is cached per charger and rethrown without a
   network call: auth failures for 5 minutes, `unreachable` / `rate_limited` for 60 s (successes keep
-  their 15 s TTL). The login is shared by concurrent callers; a caller's `signal` only stops *its*
+  their 15 s TTL). A read cut off by the *caller's own* signal (the 6 s `liveStatus` budget running
+  out on a cold login) is not cached — that's the caller's budget, not Zaptec being down.
+- The access token is reused until 5 minutes before `expires_in` — or until halfway through its
+  lifetime for a token that lives 10 minutes or less, so a short-lived token is still reused
+  instead of every call doing a fresh password-grant login. The login is shared by concurrent callers; a caller's `signal` only stops *its*
   wait on it (→ `unreachable`), the login keeps running for the others.
 - **`liveStatus` has a 6 s budget.** The procedure passes `AbortSignal.timeout(6_000)` covering the
   whole Zaptec wait (shared login included), so the polled RPC can never hold a Vercel Function open
@@ -150,6 +159,12 @@ per-integration knobs, and elpris/Škoda are expected to want the same shape:
   `CallOpts.signal`, and each call is also raced against it, so a slow or hung Zaptec fails the run
   as `unreachable` — which still records its outcome and emits its run line — before Vercel's 300 s
   default function limit kills the invocation mid-write.
+- **Sessions are fetched in windows of at most 90 days, oldest first**, from 7 days before the
+  watermark (`lastSuccessStartedAt`; `2020-01-01` on the first run) to the run's start. Every window
+  that fully imports moves the run's `syncedUntil`, and that becomes the next watermark — on success
+  *and* on failure. So a multi-year first backfill checkpoints instead of restarting from 2020 each
+  time it hits the deadline or the 20-page cap, and no new window starts after 120 s of run time (the
+  next run continues). An hourly run is a single window.
 - Status → code mapping is fixed inside the client (`token 400/401` → `auth_failed`; `403` →
   `forbidden`; `429` → `rate_limited`; `5xx`/network/timeout → `unreachable`), so every caller gets
   the same classification without re-deriving it.
@@ -160,13 +175,17 @@ Two tables, not one:
 
 - **`integration_sync`** — one row per source (`source` is the primary key, CHECK-constrained to
   `INTEGRATION_SOURCES`), **updated in place** by every run. This is what the page reads on every
-  view: `lastAttemptAt`, `lastSuccessAt`, `lastSuccessStartedAt`, `failingSince`, `consecutiveFailures`,
-  `errorCode`, `lastErrorMessage` (admin-only, ≤ 500 chars, sanitized before write — control chars
+  view: `lastAttemptAt`, `lastSuccessAt`, `lastSuccessStartedAt` (the fetch watermark: how far every
+  session has been imported — the run's start, or the end of the last finished window), `failingSince`,
+  `alertedAt` (when this streak's `started_failing` alert went out; null while no alert is open),
+  `consecutiveFailures`, `errorCode`, `lastErrorMessage` (admin-only, ≤ 500 chars; for a failed
+  database query it's the Postgres error, never drizzle's own message, which is the SQL plus its bound
+  params — session emails and names; sanitized before write — control chars
   stripped, `Bearer \S+`/`password=\S+` redacted — a defense-in-depth backstop; the client itself
   never logs credentials, so this guards against a future bug, not today's expected path), plus the
   lease fields below. Cross-column CHECKs keep it internally consistent: `consecutiveFailures = 0`
-  iff `errorCode IS NULL` iff `failingSince IS NULL`; `runningSince IS NULL` iff `leaseUntil IS NULL`
-  iff `leaseToken IS NULL`.
+  iff `errorCode IS NULL` iff `failingSince IS NULL`; `alertedAt` only while `errorCode` is set;
+  `runningSince IS NULL` iff `leaseUntil IS NULL` iff `leaseToken IS NULL`.
 - **`integration_sync_run`** — append-only, one row per attempt (`id`, `source`, `trigger`,
   `startedAt`/`finishedAt`/`durationMs`, `outcome`, `errorCode`, `errorMessage`, `since`, `pages`,
   `sessionsSeen`, `upserted`, `voided`, `timings` jsonb), indexed on `(source, startedAt desc)` for
@@ -264,7 +283,7 @@ from "was ok" to "now failing."
 ### One `integration sync run` log line, alert on transitions only
 
 Every run — regardless of outcome — emits **exactly one** structured log line
-(`log.<level>('integration sync run', { source, trigger, outcome, code, transition, since, durationMs,
+(`log.<level>('integration sync run', { source, trigger, outcome, code, transition, since, syncedUntil, durationMs,
 authMs, fetchMs, importMs, pages, chargers, sessionsSeen, upserted, voided, skipped })`; the
 timings are whole milliseconds), graded `info` for
 `ok`/`skipped`, `warn` for `failed`, `error` (with the `error` key, ADR-0003's serialization contract)
@@ -272,11 +291,19 @@ for an unexpected `error` outcome. One line per run — not one per page, not on
 client — keeps "how did last night's sync go" a single log search away, the same reasoning ADR-0007
 applies to its one `queue message` line per delivery.
 
-The **admin alert email** fires only on `HealthTransition` — `started_failing` (the first failure of
-a streak) or `recovered` (the first success after one) — never on every failed run and never for
-`not_configured` (an environment that was never set up isn't a regression to page an admin about; a
-mid-streak error-code change, e.g. `auth_failed` → `unreachable`, also does not re-alert — it's the
-same streak). This is the one place a sync failure reaches a human outside the logs, and it earns
+The **admin alert email** fires only on `HealthTransition` — `started_failing` (the first alertable
+failure of a streak) or `recovered` (the first success after an alerted streak) — never on every
+failed run and never for `not_configured` (an environment that was never set up isn't a regression
+to page an admin about; a mid-streak error-code change, e.g. `auth_failed` → `unreachable`, also does
+not re-alert — it's the same streak). Whether the streak alerted is its own column, `alertedAt`, not
+derived from the current code: `not_configured` neither opens nor closes an alert, so
+`not_configured` → `auth_failed` (credentials added, but wrong) opens one, and `auth_failed` →
+`not_configured` → ok still closes it with `recovered`. Every `recovered` pairs with a
+`started_failing`.
+
+The outcome is written once. If that write itself throws (a database blip), the run rethrows without
+recording a second `internal_error` outcome — the fetch may have succeeded, and whether the first
+write committed is unknown. The lease expires and the next run redoes the window. This is the one place a sync failure reaches a human outside the logs, and it earns
 that reach precisely by being rare: an hourly cron with a real outage would otherwise send 24
 identical emails a day.
 
@@ -364,21 +391,10 @@ itself be the thing that's broken.
 - The lease's 5-minute window is a magic number tuned to "longer than one function invocation can
   run." If a future integration's sync genuinely needs longer than that per attempt, the lease
   duration (not the pattern) needs revisiting per-source.
-- **A failure streak whose error code changes to or from `not_configured` can produce an unpaired
-  alert email.** The snapshot row keeps only the *current* code, not the sequence of codes a streak
-  passed through, and `not_configured` is deliberately never alerted on (see "fail closed" and "one
-  log line, alert on transitions only" above). So: `auth_failed` → `not_configured` (an admin removes
-  the credentials mid-outage) → `ok` sends the original `started_failing` email but no `recovered`
-  email, because `not_configured`'s own transition into `ok` doesn't alert; `not_configured` →
-  `auth_failed` (an admin adds wrong credentials) → `ok` sends a `recovered` email with no preceding
-  `started_failing` one, because the streak's first alertable code appeared partway through. Accepted:
-  both paths require an admin action (removing or adding Zaptec credentials) to occur *during* an
-  active outage, which is already the moment an admin is looking at the integration directly — the
-  email is a convenience notification, not the source of truth (the `/charging` page and
-  `listRecentRuns` are). Fixing this precisely would mean tracking "has this streak ever sent a
-  start-of-streak email" as its own column (independent of `errorCode`/`consecutiveFailures`) rather
-  than deriving it from the current code — worth adding if a real streak like this is ever observed
-  in practice, not worth the schema complexity speculatively.
+- ~~A failure streak whose error code changes to or from `not_configured` can produce an unpaired
+  alert email.~~ Accepted in the first version; fixed by the `alertedAt` column (see "alert on
+  transitions only"). The first-time setup made it real: credentials start unset (`not_configured`)
+  and are then entered wrong, which under the old rule never alerted at all.
 
 **Revisit triggers** — re-open this ADR if any of these change:
 - A pulled integration emerges that has a genuine, safe fallback value (unlike Zaptec, where "no

@@ -96,38 +96,70 @@ const sessionSchema = z.object({
   reliableClock: z.boolean(),
 })
 
+// Sessions are validated one by one (`sessions` is `unknown[]` here): one odd
+// session (a null `energy`, a missing flag) is rejected on its own instead of
+// failing the page — and with it every later run, since the watermark only
+// moves past a page once it imports.
 const sessionsPageSchema = z.object({
-  sessions: z.array(sessionSchema),
+  sessions: z.array(z.unknown()),
   cursor: nullableString,
   hasMore: z.boolean(),
 })
 
-export type SessionsPage = { sessions: ZaptecSession[]; cursor: string | null; hasMore: boolean }
+export type SessionsPage = {
+  sessions: ZaptecSession[]
+  /** Sessions dropped because they didn't match the schema. */
+  rejected: number
+  cursor: string | null
+  hasMore: boolean
+}
 
 export function parseSessionsPage(body: unknown): SessionsPage {
   const page = parse('sessions', sessionsPageSchema, body)
+  const sessions: ZaptecSession[] = []
+  const rejectedPaths = new Set<string>()
+  for (const [index, raw] of page.sessions.entries()) {
+    const result = sessionSchema.safeParse(raw)
+    if (result.success) {
+      sessions.push(toSession(result.data))
+    } else {
+      for (const issue of result.error.issues) {
+        rejectedPaths.add(['sessions', index, ...issue.path].join('.'))
+      }
+    }
+  }
+  // Every session rejected → the shape changed, not one odd record. Fail
+  // loudly rather than report a healthy run that imported nothing.
+  if (page.sessions.length > 0 && sessions.length === 0) {
+    throw shapeError('sessions', [...rejectedPaths])
+  }
   return {
+    sessions,
+    rejected: page.sessions.length - sessions.length,
     cursor: page.cursor,
     hasMore: page.hasMore,
-    sessions: page.sessions.map((s) => ({
-      id: s.id,
-      chargerId: s.chargerId,
-      // Session-level energy / start / end are passed through as-is (not
-      // reconciled with the intervals). The charging service's import skips a
-      // session with negative energy, end before start, or an invalid interval.
-      startAt: s.startDateTime,
-      endAt: s.endDateTime,
-      energyKwh: s.energy,
-      intervals: toIntervals(s.energyDetails),
-      authorizedUser: s.authorizedUser
-        ? { email: s.authorizedUser.email, name: s.authorizedUser.fullName }
-        : null,
-      tokenName: s.tokenName,
-      voided: s.voided,
-      replacedBySessionId: s.replacedBySessionId,
-      offline: s.offline,
-      reliableClock: s.reliableClock,
-    })),
+  }
+}
+
+function toSession(s: z.output<typeof sessionSchema>): ZaptecSession {
+  return {
+    id: s.id,
+    chargerId: s.chargerId,
+    // Session-level energy / start / end are passed through as-is (not
+    // reconciled with the intervals). The charging service's import skips a
+    // session with negative energy, end before start, or an invalid interval.
+    startAt: s.startDateTime,
+    endAt: s.endDateTime,
+    energyKwh: s.energy,
+    intervals: toIntervals(s.energyDetails),
+    authorizedUser: s.authorizedUser
+      ? { email: s.authorizedUser.email, name: s.authorizedUser.fullName }
+      : null,
+    tokenName: s.tokenName,
+    voided: s.voided,
+    replacedBySessionId: s.replacedBySessionId,
+    offline: s.offline,
+    reliableClock: s.reliableClock,
   }
 }
 
@@ -194,10 +226,18 @@ function toNumber(value: string | null | undefined): number | null {
 export function parse<S extends z.ZodType>(op: ZaptecOp, schema: S, body: unknown): z.output<S> {
   const result = schema.safeParse(body)
   if (result.success) return result.data
-  const paths = [...new Set(result.error.issues.map((i) => i.path.join('.') || '(root)'))]
+  throw shapeError(
+    op,
+    result.error.issues.map((i) => i.path.join('.') || '(root)'),
+  )
+}
+
+// Lists field paths only — never a value.
+function shapeError(op: ZaptecOp, issuePaths: string[]): ZaptecError {
+  const paths = [...new Set(issuePaths)]
   const shown = paths.slice(0, 10).join(', ')
   const more = paths.length > 10 ? ` (+${paths.length - 10} more)` : ''
-  throw new ZaptecError('unexpected_response', op, undefined, {
+  return new ZaptecError('unexpected_response', op, undefined, {
     message: `Zaptec ${op} response has an unexpected shape at: ${shown}${more}`,
   })
 }

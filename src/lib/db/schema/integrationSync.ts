@@ -31,6 +31,11 @@ export const integrationSync = pgTable(
     lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
     lastSuccessStartedAt: timestamp('last_success_started_at', { withTimezone: true }),
     failingSince: timestamp('failing_since', { withTimezone: true }),
+    // When this failure streak sent its `started_failing` alert; null while no
+    // alert is open. Tracked on its own (not derived from `errorCode`) because a
+    // streak can pass through `not_configured`, which never alerts — only this
+    // column knows whether a `recovered` email is owed.
+    alertedAt: timestamp('alerted_at', { withTimezone: true }),
     runningSince: timestamp('running_since', { withTimezone: true }),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
     leaseToken: uuid('lease_token'),
@@ -68,6 +73,10 @@ export const integrationSync = pgTable(
     check(
       'integration_sync_error_code_failing_since_check',
       sql`(${table.errorCode} IS NULL) = (${table.failingSince} IS NULL)`,
+    ),
+    check(
+      'integration_sync_alerted_at_error_code_check',
+      sql`${table.alertedAt} IS NULL OR ${table.errorCode} IS NOT NULL`,
     ),
     check(
       'integration_sync_last_error_message_error_code_check',

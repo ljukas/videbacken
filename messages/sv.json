@@ -63,6 +63,7 @@
   "charging_sessions_empty_title": "Inga laddsessioner ännu",
   "charging_sessions_heading": "Laddsessioner",
   "charging_sessions_show_more": "Visa fler",
+  "charging_sessions_show_more_failed": "Kunde inte ladda fler sessioner",
   "charging_sync_failed": "Synkningen misslyckades",
   "charging_sync_now": "Synka nu",
   "charging_sync_ok": [

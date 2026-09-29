@@ -1,6 +1,7 @@
-import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
@@ -12,6 +13,7 @@ import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
@@ -19,7 +21,7 @@ import { seo } from '~/utils/seo'
 // Same bounds as the `overview` procedure input; an out-of-range or garbage
 // `?year=` falls back to the current year instead of erroring the loader.
 const searchSchema = z.object({
-  year: z.number().int().min(2020).max(2100).optional().catch(undefined),
+  year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
 })
 
 const SESSIONS_PAGE = 20
@@ -56,7 +58,9 @@ function ChargingPage() {
   const isAdmin = user.role === 'admin'
   const navigate = Route.useNavigate()
   const year = Route.useSearch({ select: (s) => s.year })
+  const queryClient = useQueryClient()
   const [sessionLimit, setSessionLimit] = useState(SESSIONS_PAGE)
+  const [loadingMore, setLoadingMore] = useState(false)
   const syncNow = useSyncNow()
 
   // Hourly data: no polling on overview/sessions — the default focus refetch
@@ -65,10 +69,9 @@ function ChargingPage() {
     ...orpc.evCharging.overview.queryOptions({ input: { year } }),
     placeholderData: keepPreviousData, // keep the old chart while another year loads
   })
-  const sessions = useQuery({
-    ...orpc.evCharging.sessions.queryOptions({ input: { limit: sessionLimit } }),
-    placeholderData: keepPreviousData, // keep the rows while "Visa fler" loads
-  })
+  const sessions = useQuery(
+    orpc.evCharging.sessions.queryOptions({ input: { limit: sessionLimit } }),
+  )
   const { data: health } = useSuspenseQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
@@ -78,6 +81,24 @@ function ChargingPage() {
     ...orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
     enabled: isAdmin,
   })
+
+  // "Visa fler" fetches the longer page first and only then switches to it, so
+  // a failed fetch leaves the rows on screen (with a toast; the button stays
+  // for a retry) instead of swapping the list for an errored, empty query.
+  async function showMore() {
+    const next = Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX)
+    setLoadingMore(true)
+    try {
+      await queryClient.fetchQuery(
+        orpc.evCharging.sessions.queryOptions({ input: { limit: next } }),
+      )
+      setSessionLimit(next)
+    } catch {
+      toast.error(m.charging_sessions_show_more_failed())
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   function setYear(y: number) {
     navigate({ to: '.', search: (s) => ({ ...s, year: y }), replace: true, resetScroll: false })
@@ -129,8 +150,8 @@ function ChargingPage() {
         <SessionList
           sessions={sessions.data?.sessions ?? []}
           hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
-          onShowMore={() => setSessionLimit((l) => Math.min(l + SESSIONS_PAGE, SESSIONS_MAX))}
-          loadingMore={sessions.isPlaceholderData}
+          onShowMore={showMore}
+          loadingMore={loadingMore}
           onSync={isAdmin ? syncNow.sync : undefined}
           syncing={syncNow.isPending}
         />

@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm'
 import { queue } from '~/lib/effects'
 import {
   newCallStats,
@@ -40,6 +41,11 @@ export type SyncRun = {
   transition: HealthTransition
   startedAt: Date
   since: Date | null
+  /**
+   * End of the last fetch window that fully imported — the next watermark.
+   * Before `startedAt` when a backfill ran out of budget (or failed) part-way.
+   */
+  syncedUntil: Date | null
   durationMs: number
   authMs: number
   fetchMs: number
@@ -49,15 +55,32 @@ export type SyncRun = {
   sessionsSeen: number
   upserted: number
   voided: number
-  /** Sessions the charging service rejected as invalid (never imported). */
+  /**
+   * Sessions never imported because they were invalid: dropped by the Zaptec
+   * parser (unexpected shape) or rejected by the charging service.
+   */
   skipped: number
 }
 
 const SOURCE = 'zaptec'
+const DAY_MS = 24 * 60 * 60 * 1000
 /** Re-fetch window before the last success, to catch late/offline sessions. */
-const LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
+const LOOKBACK_MS = 7 * DAY_MS
 const FIRST_RUN_SINCE = new Date('2020-01-01T00:00:00Z')
-/** Per installation. More pages than this means the paging went wrong. */
+/**
+ * Sessions are fetched in windows of at most this length, oldest first, and
+ * every finished window moves the watermark — so a multi-year first backfill
+ * makes progress across runs instead of restarting from 2020 on each failure.
+ * An hourly run is a single window. Must exceed `LOOKBACK_MS`, so a window
+ * always ends past the previous watermark.
+ */
+const WINDOW_MS = 90 * DAY_MS
+/**
+ * No new window starts once the run is this old; the next run continues from
+ * the watermark. Leaves the rest of `RUN_DEADLINE_MS` for the window in flight.
+ */
+const WINDOW_BUDGET_MS = 120_000
+/** Per installation and window. More pages than this means the paging went wrong. */
 const MAX_PAGES = 20
 /**
  * Overall budget for the run's Zaptec calls. Well under Vercel's 300 s function
@@ -86,6 +109,7 @@ export async function runZaptecSync(opts: {
     transition: 'none',
     startedAt,
     since: null,
+    syncedUntil: null,
     durationMs: 0,
     authMs: 0,
     fetchMs: 0,
@@ -106,6 +130,12 @@ export async function runZaptecSync(opts: {
     deadlineMs,
   )
 
+  // Set just before the outcome is written. From then on a throw (a db blip
+  // in `recordOutcome`) must not record a second, `internal_error` outcome:
+  // the fetch may well have succeeded, and whether the first write committed
+  // is unknown. The lease expires and the next run redoes the window.
+  let recording = false
+
   try {
     const attempt = await beginAttempt(SOURCE, { now: startedAt })
     // Another run holds the lease (also absorbs duplicate cron deliveries).
@@ -114,9 +144,9 @@ export async function runZaptecSync(opts: {
 
     let outcome: SyncOutcome
     try {
-      await fetchAndImport(client, run, stats, deadline.signal)
+      await fetchAndImport(client, run, stats, deadline.signal, now)
       run.outcome = 'ok'
-      outcome = { ok: true, stats: runStats(run, stats) }
+      outcome = { ok: true, stats: runStats(run, stats), syncedUntil: run.syncedUntil ?? startedAt }
     } catch (error) {
       if (!(error instanceof ZaptecError)) throw error
       run.outcome = 'failed'
@@ -127,9 +157,11 @@ export async function runZaptecSync(opts: {
         code: error.code,
         message: error.message,
         stats: runStats(run, stats),
+        syncedUntil: run.syncedUntil ?? undefined,
       }
     }
 
+    recording = true
     const recorded = await recordOutcome(SOURCE, outcome, {
       attemptId,
       trigger: opts.trigger,
@@ -144,7 +176,7 @@ export async function runZaptecSync(opts: {
     thrown = error
     run.outcome = 'error'
     run.code = 'internal_error'
-    if (attemptId !== null) {
+    if (attemptId !== null && !recording) {
       // Best effort: the health snapshot should show the failure, but a
       // failure to record it must not mask the original error.
       try {
@@ -154,8 +186,9 @@ export async function runZaptecSync(opts: {
             ok: false,
             kind: 'error',
             code: 'internal_error',
-            message: error instanceof Error ? error.message : String(error),
+            message: internalErrorMessage(error),
             stats: runStats(run, stats),
+            syncedUntil: run.syncedUntil ?? undefined,
           },
           { attemptId, trigger: opts.trigger, startedAt, now: now(), log },
         )
@@ -175,6 +208,7 @@ export async function runZaptecSync(opts: {
     run.authMs = Math.round(stats.authMs)
     run.fetchMs = Math.round(stats.fetchMs)
     run.importMs = Math.round(run.importMs)
+    run.skipped += stats.rejected
     const fields = {
       source: run.source,
       trigger: run.trigger,
@@ -182,6 +216,7 @@ export async function runZaptecSync(opts: {
       code: run.code,
       transition: run.transition,
       since: run.since,
+      syncedUntil: run.syncedUntil,
       durationMs: run.durationMs,
       authMs: run.authMs,
       fetchMs: run.fetchMs,
@@ -199,9 +234,10 @@ export async function runZaptecSync(opts: {
   }
 }
 
-// Chargers → sessions per installation, one charging-service transaction per
-// page. Mutates `run` as it goes, so a failure part-way still reports what
-// landed (earlier pages stay imported; only the watermark waits for success).
+// Chargers, then sessions window by window (oldest first) and installation by
+// installation, one charging-service transaction per page. Mutates `run` as it
+// goes, so a failure part-way still reports what landed: earlier pages stay
+// imported, and `run.syncedUntil` marks the last window that fully did.
 // Every Zaptec call gets the run's deadline `signal` and is also raced against
 // it, so even a client that ignores the signal can't outlast the deadline.
 async function fetchAndImport(
@@ -209,6 +245,7 @@ async function fetchAndImport(
   run: SyncRun,
   stats: ZaptecCallStats,
   signal: AbortSignal,
+  now: () => Date,
 ): Promise<void> {
   const chargers = await withDeadline(client.chargers({ stats, signal }), signal, 'chargers')
   run.chargers = chargers.length
@@ -221,36 +258,73 @@ async function fetchAndImport(
   run.since = since
 
   const installationIds = [...new Set(chargers.map((c) => c.installationId))]
-  for (const installationId of installationIds) {
-    let pages = 0
-    const iterator = client
-      .sessionsEndedSince(since, { installationId, until: run.startedAt, stats, signal })
-      [Symbol.asyncIterator]()
-    try {
-      for (;;) {
-        const next = await withDeadline(iterator.next(), signal, 'sessions')
-        if (next.done) break
-        const page = next.value
-        pages++
-        if (pages > MAX_PAGES) {
-          throw new ZaptecError('unexpected_response', 'sessions', undefined, {
-            message: `Zaptec sessions exceeded ${MAX_PAGES} pages for one installation`,
-          })
-        }
-        run.pages++
-        run.sessionsSeen += page.length
-        const importStart = performance.now()
-        const result = await importSessions(page, { installationId })
-        run.importMs += performance.now() - importStart
-        run.upserted += result.upserted
-        run.voided += result.voided
-        run.skipped += result.skipped
-      }
-    } finally {
-      // Not awaited: a generator stuck past the deadline would never settle.
-      iterator.return?.()?.catch(() => {})
+  let windowStart = since
+  while (windowStart < run.startedAt) {
+    // Always at least one window per run, so a run can never make no progress.
+    const elapsed = now().getTime() - run.startedAt.getTime()
+    if (run.syncedUntil !== null && elapsed >= WINDOW_BUDGET_MS) return
+    const windowEnd = new Date(Math.min(windowStart.getTime() + WINDOW_MS, run.startedAt.getTime()))
+    for (const installationId of installationIds) {
+      await importWindow(client, run, stats, signal, {
+        installationId,
+        since: windowStart,
+        until: windowEnd,
+      })
     }
+    run.syncedUntil = windowEnd
+    windowStart = windowEnd
   }
+}
+
+async function importWindow(
+  client: ZaptecClient,
+  run: SyncRun,
+  stats: ZaptecCallStats,
+  signal: AbortSignal,
+  window: { installationId: string; since: Date; until: Date },
+): Promise<void> {
+  const { installationId, since, until } = window
+  let pages = 0
+  const iterator = client
+    .sessionsEndedSince(since, { installationId, until, stats, signal })
+    [Symbol.asyncIterator]()
+  try {
+    for (;;) {
+      const next = await withDeadline(iterator.next(), signal, 'sessions')
+      if (next.done) break
+      const page = next.value
+      pages++
+      if (pages > MAX_PAGES) {
+        throw new ZaptecError('unexpected_response', 'sessions', undefined, {
+          message: `Zaptec sessions exceeded ${MAX_PAGES} pages for one installation`,
+        })
+      }
+      run.pages++
+      run.sessionsSeen += page.length
+      const importStart = performance.now()
+      const result = await importSessions(page, { installationId })
+      run.importMs += performance.now() - importStart
+      run.upserted += result.upserted
+      run.voided += result.voided
+      run.skipped += result.skipped
+    }
+  } finally {
+    // Not awaited: a generator stuck past the deadline would never settle.
+    iterator.return?.()?.catch(() => {})
+  }
+}
+
+// The admin-facing message for an unexpected error. A failed drizzle query's
+// own message is the SQL plus its bound params (session emails and names); the
+// Postgres error that actually explains it is the `cause`.
+function internalErrorMessage(error: unknown): string {
+  if (error instanceof DrizzleQueryError) {
+    const cause = error.cause as (Error & { code?: unknown }) | undefined
+    if (!cause) return 'Database query failed'
+    const code = typeof cause.code === 'string' ? ` (SQLSTATE ${cause.code})` : ''
+    return `Database query failed${code}: ${cause.message}`
+  }
+  return error instanceof Error ? error.message : String(error)
 }
 
 /** Races a Zaptec call against the run deadline; a hit → `unreachable`. */

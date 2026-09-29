@@ -5,6 +5,7 @@ import { queue } from '~/lib/effects'
 import { type CallOpts, type ZaptecClient, ZaptecError } from '~/lib/effects/zaptec'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
 import { createServerLogger, logger } from '~/lib/logger/server'
+import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, getLastSuccessStartedAt } from '~/lib/services/integrationSync'
 import { setupDatabase } from '~test/setup'
 import { runZaptecSync } from './sync'
@@ -20,6 +21,7 @@ const T1 = new Date('2026-09-20T10:00:00Z')
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 const FIRST_RUN_SINCE = new Date('2020-01-01T00:00:00Z')
+const WINDOW = 90 * DAY
 
 function session(id: string, endAt: Date, overrides: Partial<ZaptecSession> = {}): ZaptecSession {
   const startAt = new Date(endAt.getTime() - 2 * HOUR)
@@ -53,6 +55,10 @@ function fakeZaptec(initial: ZaptecSession[] = []) {
     sessions: [...initial],
     chargersError: null as Error | null,
     failOnPage: null as number | null,
+    /** Every sessions call whose window starts at or after this fails. */
+    failFrom: null as Date | null,
+    /** Added to the stats sink per page, like the real client's parser rejects. */
+    rejectedPerPage: 0,
     calls: { chargers: 0, sessions: [] as SessionsCall[], liveState: 0 },
   }
   const client: ZaptecClient = {
@@ -67,6 +73,9 @@ function fakeZaptec(initial: ZaptecSession[] = []) {
       const chargerIds = new Set(
         state.chargers.filter((c) => c.installationId === o.installationId).map((c) => c.id),
       )
+      if (state.failFrom && since >= state.failFrom) {
+        throw new ZaptecError('unreachable', 'sessions', 503)
+      }
       const until = o.until ?? new Date()
       const matching = state.sessions
         .filter((s) => chargerIds.has(s.chargerId) && s.endAt >= since && s.endAt < until)
@@ -78,6 +87,7 @@ function fakeZaptec(initial: ZaptecSession[] = []) {
         if (o.stats) {
           o.stats.pages++
           o.stats.fetchMs += 5
+          o.stats.rejected += state.rejectedPerPage
         }
         yield matching.slice(i, i + 2)
       }
@@ -122,6 +132,17 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+// The sessions calls of one run: contiguous windows of at most 90 days.
+function expectContiguousWindows(calls: SessionsCall[], since: Date, until: Date) {
+  expect(calls[0].since).toEqual(since)
+  expect(calls.at(-1)?.until).toEqual(until)
+  for (const [i, call] of calls.entries()) {
+    expect(call.until?.getTime()).toBeGreaterThan(call.since.getTime())
+    expect((call.until?.getTime() ?? 0) - call.since.getTime()).toBeLessThanOrEqual(WINDOW)
+    if (i > 0) expect(call.since).toEqual(calls[i - 1].until)
+  }
+}
+
 async function sessionRows() {
   return db
     .select({
@@ -136,7 +157,7 @@ async function insertUser(email: string, role: string, deletedAt: Date | null = 
   await db.insert(user).values({ name: email, email, role, deletedAt })
 }
 
-test('2-page backfill imports every session and records the watermark', async () => {
+test('the first run backfills from 2020 in 90-day windows and records the watermark', async () => {
   const { client, state } = fakeZaptec([
     session('s1', new Date('2026-09-01T12:00:00Z')),
     session('s2', new Date('2026-09-02T12:00:00Z')),
@@ -146,6 +167,13 @@ test('2-page backfill imports every session and records the watermark', async ()
 
   const run = await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
 
+  // One installation shared by both chargers → one sessions iteration per window.
+  const calls = state.calls.sessions
+  expect(calls.length).toBe(Math.ceil((T1.getTime() - FIRST_RUN_SINCE.getTime()) / WINDOW))
+  expectContiguousWindows(calls, FIRST_RUN_SINCE, T1)
+  expect(new Set(calls.map((c) => c.installationId))).toEqual(new Set([INSTALLATION]))
+  // Every window yields one (maybe empty) page; the one holding s1–s3 yields two.
+  const pages = calls.length + 1
   expect(run).toMatchObject({
     source: 'zaptec',
     trigger: 'cron',
@@ -154,19 +182,16 @@ test('2-page backfill imports every session and records the watermark', async ()
     transition: 'none',
     startedAt: T1,
     since: FIRST_RUN_SINCE,
-    pages: 2,
+    syncedUntil: T1,
+    pages,
     chargers: 2,
     sessionsSeen: 3,
     upserted: 3,
     voided: 0,
     skipped: 0,
     authMs: 3,
-    fetchMs: 10,
+    fetchMs: pages * 5,
   })
-  // One installation shared by both chargers → one sessions iteration.
-  expect(state.calls.sessions).toEqual([
-    { since: FIRST_RUN_SINCE, until: T1, installationId: INSTALLATION },
-  ])
   expect((await sessionRows()).map((r) => r.zaptecSessionId)).toEqual(['s1', 's2', 's3'])
   expect(await db.select().from(evChargeInterval)).toHaveLength(6)
   expect(await getLastSuccessStartedAt('zaptec')).toEqual(T1)
@@ -181,7 +206,8 @@ test('2-page backfill imports every session and records the watermark', async ()
     code: null,
     transition: 'none',
     since: FIRST_RUN_SINCE.toISOString(),
-    pages: 2,
+    syncedUntil: T1.toISOString(),
+    pages,
     chargers: 2,
     sessionsSeen: 3,
     upserted: 3,
@@ -191,6 +217,69 @@ test('2-page backfill imports every session and records the watermark', async ()
   expect(lines[0]).toHaveProperty('durationMs')
   expect(lines[0]).toHaveProperty('importMs')
   expect(publish).not.toHaveBeenCalled()
+})
+
+test('a backfill that outlasts the window budget checkpoints, and the next run continues', async () => {
+  const { client, state } = fakeZaptec([
+    session('old', new Date('2020-02-01T12:00:00Z')),
+    session('new', new Date(T1.getTime() - DAY)),
+  ])
+  const { log } = capturingLogger()
+  // Each clock read is 50 s later: windows start at 50 s and 100 s of run
+  // time, then the 150 s read is past the 120 s budget.
+  let clock = T1.getTime()
+  const now = () => {
+    const at = new Date(clock)
+    clock += 50_000
+    return at
+  }
+
+  const first = await runZaptecSync({ trigger: 'cron', now, deps: { zaptec: client, log } })
+
+  const firstUntil = new Date(FIRST_RUN_SINCE.getTime() + 2 * WINDOW)
+  expect(first).toMatchObject({ outcome: 'ok', syncedUntil: firstUntil, upserted: 1 })
+  expect(state.calls.sessions).toHaveLength(2)
+  expect(await getLastSuccessStartedAt('zaptec')).toEqual(firstUntil)
+  expect((await sessionRows()).map((r) => r.zaptecSessionId)).toEqual(['old'])
+
+  // A run with time to spare picks up 7 days before the checkpoint.
+  state.calls.sessions = []
+  const T2 = new Date(T1.getTime() + HOUR)
+  const second = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T2,
+    deps: { zaptec: client, log },
+  })
+
+  expect(second).toMatchObject({ outcome: 'ok', syncedUntil: T2 })
+  expectContiguousWindows(state.calls.sessions, new Date(firstUntil.getTime() - 7 * DAY), T2)
+  expect(await getLastSuccessStartedAt('zaptec')).toEqual(T2)
+  expect((await sessionRows()).map((r) => r.zaptecSessionId)).toEqual(['new', 'old'])
+})
+
+test('a backfill that fails part-way keeps the windows it finished', async () => {
+  const { client, state } = fakeZaptec([session('early', new Date('2020-02-01T12:00:00Z'))])
+  state.failFrom = new Date('2021-01-01T00:00:00Z')
+  const { log } = capturingLogger()
+
+  const run = await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
+
+  // Windows start every 90 days from 2020-01-01; the sixth (2021-03-26) fails.
+  const kept = new Date(FIRST_RUN_SINCE.getTime() + 5 * WINDOW)
+  expect(run).toMatchObject({ outcome: 'failed', code: 'unreachable', syncedUntil: kept })
+  expect(await getLastSuccessStartedAt('zaptec')).toEqual(kept)
+  const health = await getHealth('zaptec', { now: T1, includeAdminDetail: false })
+  expect(health).toMatchObject({ state: 'failing', code: 'unreachable', lastSuccessAt: null })
+
+  // The next run resumes 7 days before the kept watermark, not from 2020.
+  state.failFrom = null
+  state.calls.sessions = []
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + HOUR),
+    deps: { zaptec: client, log },
+  })
+  expect(state.calls.sessions[0].since).toEqual(new Date(kept.getTime() - 7 * DAY))
 })
 
 test('a rerun is idempotent and fetches from the watermark minus 7 days', async () => {
@@ -209,7 +298,7 @@ test('a rerun is idempotent and fetches from the watermark minus 7 days', async 
   })
 
   expect(run).toMatchObject({ outcome: 'ok', since: new Date(T1.getTime() - 7 * DAY), upserted: 2 })
-  expect(state.calls.sessions[1]).toEqual({
+  expect(state.calls.sessions.at(-1)).toEqual({
     since: new Date(T1.getTime() - 7 * DAY),
     until: T2,
     installationId: INSTALLATION,
@@ -272,6 +361,27 @@ test('invalid sessions are counted as skipped on the run and in the log line', a
   expect(runLines()).toHaveLength(1)
   expect(runLines()[0]).toMatchObject({ sessionsSeen: 2, upserted: 1, skipped: 1 })
   expect(serviceWarn).toHaveBeenCalledOnce()
+})
+
+test('sessions the Zaptec parser rejected are counted as skipped too', async () => {
+  const { client, state } = fakeZaptec([session('ok', new Date(T1.getTime() - DAY))])
+  // Seed a watermark so the run is a single window (one page).
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, log: capturingLogger().log },
+  })
+  state.rejectedPerPage = 2
+  const { log, runLines } = capturingLogger()
+
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + HOUR),
+    deps: { zaptec: client, log },
+  })
+
+  expect(run).toMatchObject({ outcome: 'ok', upserted: 1, skipped: 2 })
+  expect(runLines()[0]).toMatchObject({ skipped: 2 })
 })
 
 test('auth_failed twice → one alert per active admin; success → one recovered alert per admin', async () => {
@@ -390,19 +500,26 @@ test('a page-2 failure keeps page 1 and does not advance the watermark', async (
   expect(runLines()[1]).toMatchObject({ level: WARN, outcome: 'failed', code: 'unreachable' })
 })
 
-test('more than 20 pages fails as unexpected_response', async () => {
-  const sessions = Array.from({ length: 42 }, (_, i) =>
-    session(`s${String(i).padStart(2, '0')}`, new Date(T1.getTime() - (i + 1) * HOUR)),
-  )
-  const { client } = fakeZaptec(sessions)
+test('more than 20 pages in one window fails as unexpected_response', async () => {
+  const { client, state } = fakeZaptec()
   const { log, runLines } = capturingLogger()
+  await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
 
-  const run = await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
+  const T2 = new Date(T1.getTime() + HOUR)
+  state.sessions = Array.from({ length: 42 }, (_, i) =>
+    session(`s${String(i).padStart(2, '0')}`, new Date(T2.getTime() - (i + 1) * HOUR)),
+  )
+  const run = await runZaptecSync({ trigger: 'cron', now: () => T2, deps: { zaptec: client, log } })
 
-  expect(run).toMatchObject({ outcome: 'failed', code: 'unexpected_response', pages: 20 })
+  expect(run).toMatchObject({
+    outcome: 'failed',
+    code: 'unexpected_response',
+    pages: 20,
+    syncedUntil: null,
+  })
   expect(await sessionRows()).toHaveLength(40)
-  expect(await getLastSuccessStartedAt('zaptec')).toBeNull()
-  expect(runLines()).toHaveLength(1)
+  expect(await getLastSuccessStartedAt('zaptec')).toEqual(T1)
+  expect(runLines()).toHaveLength(2)
 })
 
 test('a Zaptec call that never settles fails as unreachable at the deadline, with one run line', async () => {
@@ -534,6 +651,63 @@ test('an unknown error is rethrown, recorded as internal_error and logged at err
   expect(lines).toHaveLength(1)
   expect(lines[0]).toMatchObject({ level: ERROR, outcome: 'error', code: 'internal_error' })
   expect(lines[0].error).toMatchObject({ type: 'TypeError', message: 'boom' })
+})
+
+test('a failed query is recorded by its Postgres error, never its SQL or params', async () => {
+  const { client, state } = fakeZaptec()
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, log: capturingLogger().log },
+  })
+  // The same session twice in one page: the upsert can't touch a row twice.
+  const owner = { email: 'owner@example.com', name: 'Owner Name' }
+  state.sessions = [
+    session('dup', new Date(T1.getTime() - DAY), { authorizedUser: owner }),
+    session('dup', new Date(T1.getTime() - DAY), { authorizedUser: owner }),
+  ]
+  const { log } = capturingLogger()
+
+  await expect(
+    runZaptecSync({
+      trigger: 'cron',
+      now: () => new Date(T1.getTime() + HOUR),
+      deps: { zaptec: client, log },
+    }),
+  ).rejects.toThrow()
+
+  const health = await getHealth('zaptec', { now: T1, includeAdminDetail: true })
+  const message = health.adminDetail?.lastErrorMessage ?? ''
+  expect(health.code).toBe('internal_error')
+  expect(message).toMatch(/^Database query failed \(SQLSTATE 21000\): ON CONFLICT DO UPDATE/)
+  for (const leak of ['insert into', 'params', owner.email, owner.name]) {
+    expect(message.toLowerCase()).not.toContain(leak.toLowerCase())
+  }
+})
+
+test('a failure writing a successful outcome is not recorded again as internal_error', async () => {
+  await insertUser('admin-a@example.com', 'admin')
+  const { client } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  const recordOutcome = vi
+    .spyOn(integrationSyncService, 'recordOutcome')
+    .mockRejectedValueOnce(new Error('connection reset'))
+  const { log, entries, runLines } = capturingLogger()
+
+  await expect(
+    runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } }),
+  ).rejects.toThrow('connection reset')
+
+  // One write attempt (the success), no internal_error retry, no alert.
+  expect(recordOutcome).toHaveBeenCalledOnce()
+  expect(recordOutcome.mock.calls[0][1]).toMatchObject({ ok: true })
+  expect(publish).not.toHaveBeenCalled()
+  const health = await getHealth('zaptec', { now: T1, includeAdminDetail: false })
+  expect(health).toMatchObject({ state: 'never_synced', code: null, running: true })
+  expect(entries().some((e) => e.msg === 'integration sync outcome could not be recorded')).toBe(
+    false,
+  )
+  expect(runLines()).toHaveLength(1)
+  expect(runLines()[0]).toMatchObject({ level: ERROR, outcome: 'error' })
 })
 
 test('default client in tests is notConfigured → failed / not_configured, no alert', async () => {

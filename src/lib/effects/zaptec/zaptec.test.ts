@@ -110,6 +110,22 @@ describe('login', () => {
     expect(ff.callsTo(TOKEN)).toHaveLength(2)
   })
 
+  test('a short-lived token is refreshed halfway instead of 300 s early', async () => {
+    const { client, ff, advance } = setup({
+      [TOKEN]: () => jsonResponse(tokenBody({ expires_in: 300 })),
+      [CHARGERS]: chargersOk,
+    })
+
+    await client.chargers()
+    advance(150_000 - 1)
+    await client.chargers()
+    expect(ff.callsTo(TOKEN)).toHaveLength(1)
+
+    advance(1)
+    await client.chargers()
+    expect(ff.callsTo(TOKEN)).toHaveLength(2)
+  })
+
   test('a data-call 401 triggers one re-login, then succeeds', async () => {
     const { client, ff } = setup({
       [CHARGERS]: (_req, call) =>
@@ -603,6 +619,27 @@ describe('sessionsEndedSince', () => {
     expect(partial.authorizedUser).toEqual({ email: null, name: null })
   })
 
+  test('one malformed session is skipped and counted; the rest of the page imports', async () => {
+    const stats = newCallStats()
+    const { client } = setup({
+      [SESSIONS]: () =>
+        jsonResponse(
+          sessionsPage([
+            sessionJson({ id: 's1' }),
+            sessionJson({ id: 's2', energy: null }),
+            sessionJson({ id: 's3', reliableClock: undefined }),
+          ]),
+        ),
+    })
+
+    const pages = await collect(
+      client.sessionsEndedSince(since, { installationId: INSTALLATION_ID, until, stats }),
+    )
+
+    expect(pages.flat().map((s) => s.id)).toEqual(['s1'])
+    expect(stats.rejected).toBe(2)
+  })
+
   test('payload drift → unexpected_response listing field paths, never values', async () => {
     const drifted = sessionJson({ energy: 'twelve-kWh', chargerId: undefined })
     const { client } = setup({ [SESSIONS]: () => jsonResponse(sessionsPage([drifted])) })
@@ -697,6 +734,33 @@ describe('liveState', () => {
     expect(ff.callsTo(STATE)).toHaveLength(1)
 
     advance(1)
+    await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
+    expect(ff.callsTo(STATE)).toHaveLength(2)
+  })
+
+  test("a read cut off by the caller's own signal is not cached", async () => {
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const { client, ff } = setup({
+      [STATE]: async (_req, call) => {
+        if (call === 0) {
+          await gate
+          throw new DOMException('aborted', 'AbortError')
+        }
+        return jsonResponse(chargingStateBody())
+      },
+    })
+    const controller = new AbortController()
+
+    const read = client.liveState(CHARGER_ID, { signal: controller.signal })
+    await new Promise((r) => setTimeout(r, 0))
+    controller.abort(new DOMException('budget', 'TimeoutError'))
+    release?.()
+    expect(await caught(read)).toMatchObject({ code: 'unreachable', op: 'state' })
+
+    // The next poll (no budget pressure) goes straight to Zaptec.
     await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
     expect(ff.callsTo(STATE)).toHaveLength(2)
   })

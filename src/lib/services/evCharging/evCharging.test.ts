@@ -1,10 +1,10 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
 import { setupDatabase } from '~test/setup'
-import { importSessions, listChargers, upsertChargers } from './evCharging'
+import { findLiveCharger, importSessions, listChargers, upsertChargers } from './evCharging'
 
 setupDatabase()
 
@@ -247,4 +247,62 @@ test('importSessions skips a session with an invalid interval (end before start)
     { installationId: 'install-1' },
   )
   expect(result).toEqual({ upserted: 0, voided: 0, skipped: 1 })
+})
+
+test('findLiveCharger picks the charger with the newest session over stubs and old chargers', async () => {
+  expect(await findLiveCharger()).toBeNull()
+
+  await upsertChargers([
+    { id: 'a-old', name: 'A old', installationId: 'install-1', isOnline: false },
+    { id: 'b-new', name: 'B new', installationId: 'install-1', isOnline: true },
+  ])
+  // No sessions yet → first by name.
+  expect(await findLiveCharger()).toEqual({ id: 'a-old' })
+
+  await importSessions(
+    [
+      session({ id: 'z1', chargerId: 'a-old' }),
+      // A stub charger named after its id ('0-stub' sorts first by name).
+      session({
+        id: 'z2',
+        chargerId: '0-stub',
+        startAt: new Date('2025-01-10T10:00:00Z'),
+        endAt: new Date('2025-01-10T12:00:00Z'),
+      }),
+      session({
+        id: 'z3',
+        chargerId: 'b-new',
+        startAt: new Date('2026-03-01T10:00:00Z'),
+        endAt: new Date('2026-03-01T12:00:00Z'),
+      }),
+    ],
+    { installationId: 'install-1' },
+  )
+  expect(await findLiveCharger()).toEqual({ id: 'b-new' })
+})
+
+test('importSessions inserts more intervals than one statement can bind', async () => {
+  // 4 params per interval: 20,000 rows would need 80,000 bound params, past
+  // postgres-js's 65,534 cap for a single statement.
+  const start = new Date('2026-01-10T00:00:00Z').getTime()
+  const intervals = Array.from({ length: 20_000 }, (_, i) => ({
+    startAt: new Date(start + i * 1000),
+    endAt: new Date(start + (i + 1) * 1000),
+    energyKwh: 0.001,
+  }))
+  const result = await importSessions(
+    [
+      session({
+        id: 'long',
+        startAt: new Date(start),
+        endAt: new Date(start + 20_000 * 1000),
+        energyKwh: 20,
+        intervals,
+      }),
+    ],
+    { installationId: 'install-1' },
+  )
+  expect(result).toEqual({ upserted: 1, voided: 0, skipped: 0 })
+  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(evChargeInterval)
+  expect(count).toBe(20_000)
 })

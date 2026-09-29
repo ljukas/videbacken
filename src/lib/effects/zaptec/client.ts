@@ -161,9 +161,12 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
     }
     if (!res.ok) throw statusError('token', res)
     const parsed = parse('token', tokenSchema, await readJson('token', res))
+    // Refresh 5 min early — or halfway, for a token that lives 10 min or less,
+    // so a short-lived token is still reused instead of re-logging in per call.
+    const lifetimeMs = parsed.expires_in * 1000
     token = {
       value: parsed.access_token,
-      expiresAt: now().getTime() + parsed.expires_in * 1000 - TOKEN_EXPIRY_MARGIN_MS,
+      expiresAt: now().getTime() + lifetimeMs - Math.min(TOKEN_EXPIRY_MARGIN_MS, lifetimeMs / 2),
     }
     return parsed.access_token
   }
@@ -258,6 +261,7 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
           ),
         )
         stats.pages++
+        stats.rejected += page.rejected
         yield page.sessions
         if (!page.hasMore) return
         if (page.cursor === null || page.cursor === cursor) {
@@ -287,7 +291,9 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
       } catch (err) {
         // Cache the failure so a polling dashboard can't hammer a down (or
         // credential-rejecting) Zaptec: auth failures 5 min, transient 60 s.
-        if (err instanceof ZaptecError) {
+        // Not when the caller's own signal aborted: that is the caller's
+        // budget running out (e.g. a cold login), not Zaptec being down.
+        if (err instanceof ZaptecError && !o.signal?.aborted) {
           const ttl = AUTH_CODES.has(err.code)
             ? AUTH_FAILURE_TTL_MS
             : TRANSIENT_CODES.has(err.code)
