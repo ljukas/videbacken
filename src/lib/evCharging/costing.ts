@@ -42,7 +42,7 @@ export type CostTimings = {
   energyMs?: number
   slotsMs?: number
   tariffMs?: number
-  costMs?: number
+  computeMs?: number
 }
 
 function summarize(t: CostTotals): CostSummary {
@@ -68,25 +68,29 @@ async function timed<T>(
   }
 }
 
-// Loads the slots overlapping these sessions' windows and all tariff periods,
-// in parallel, as the cost math wants them.
-async function pricingInputs(sessions: SessionEnergy[], timings?: CostTimings) {
+// Loads the slots overlapping these sessions' energy — the stretches' own
+// span (an interval-less session's one stretch already is its whole window),
+// never the session's start/end, which could only over-fetch.
+async function loadSlots(sessions: SessionEnergy[], timings?: CostTimings) {
   const ranges = sessions.map((s) => ({
-    startMs: Math.min(s.startAt.getTime(), ...s.stretches.map((x) => x.startMs)),
-    endMs: Math.max(s.endAt.getTime(), ...s.stretches.map((x) => x.endMs)),
+    startMs: Math.min(...s.stretches.map((x) => x.startMs)),
+    endMs: Math.max(...s.stretches.map((x) => x.endMs)),
   }))
-  const [slots, tariffs] = await Promise.all([
-    timed(timings, 'slotsMs', () => listSlotsOverlapping(SPOT_ZONE, ranges)),
-    timed(timings, 'tariffMs', () => tariffService.list()),
-  ])
-  const tariffsAsc: TariffPeriod[] = tariffs.map((t) => ({
+  return new SlotIndex(
+    await timed(timings, 'slotsMs', () => listSlotsOverlapping(SPOT_ZONE, ranges)),
+  )
+}
+
+// All tariff periods, oldest first, as the cost math wants them.
+async function loadTariffs(timings?: CostTimings): Promise<TariffPeriod[]> {
+  const tariffs = await timed(timings, 'tariffMs', () => tariffService.list())
+  return tariffs.map((t) => ({
     validFrom: t.validFrom,
     retailMarkupOre: t.retailMarkupOre,
     gridTransferOre: t.gridTransferOre,
     energyTaxOre: t.energyTaxOre,
     vatPercent: t.vatPercent,
   }))
-  return { index: new SlotIndex(slots), tariffsAsc }
 }
 
 /**
@@ -103,8 +107,12 @@ export async function getCostOverview(input: {
   const current = stockholmYearMonth(now.getTime())
   const year = input.year ?? current.year
 
-  const sessions = await timed(input.timings, 'energyMs', () => listSessionEnergy({ all: true }))
-  const { index, tariffsAsc } = await pricingInputs(sessions, input.timings)
+  // Tariffs don't depend on the sessions, so they load alongside them.
+  const [sessions, tariffsAsc] = await Promise.all([
+    timed(input.timings, 'energyMs', () => listSessionEnergy({ all: true })),
+    loadTariffs(input.timings),
+  ])
+  const index = await loadSlots(sessions, input.timings)
 
   const costStart = performance.now()
   // year*100+month → that month's intervals.
@@ -138,7 +146,7 @@ export async function getCostOverview(input: {
       ...summarize(monthTotals(year, i + 1)),
     })),
   }
-  if (input.timings) input.timings.costMs = Math.round(performance.now() - costStart)
+  if (input.timings) input.timings.computeMs = Math.round(performance.now() - costStart)
   return overview
 }
 
@@ -147,17 +155,19 @@ export async function getSessionCosts(input: {
   sessionIds: readonly string[]
   timings?: CostTimings
 }): Promise<SessionCost[]> {
-  const sessions = await timed(input.timings, 'energyMs', () =>
-    listSessionEnergy({ sessionIds: input.sessionIds }),
-  )
+  if (input.sessionIds.length === 0) return []
+  const [sessions, tariffsAsc] = await Promise.all([
+    timed(input.timings, 'energyMs', () => listSessionEnergy({ sessionIds: input.sessionIds })),
+    loadTariffs(input.timings),
+  ])
   if (sessions.length === 0) return []
-  const { index, tariffsAsc } = await pricingInputs(sessions, input.timings)
+  const index = await loadSlots(sessions, input.timings)
   const costStart = performance.now()
   const costs = sessions.map((s) => ({
     sessionId: s.sessionId,
     estimated: s.estimated,
     ...summarize(priceIntervals(toIntervals(s), index, tariffsAsc)),
   }))
-  if (input.timings) input.timings.costMs = Math.round(performance.now() - costStart)
+  if (input.timings) input.timings.computeMs = Math.round(performance.now() - costStart)
   return costs
 }

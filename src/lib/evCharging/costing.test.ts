@@ -171,6 +171,72 @@ test('records sub-timings when asked', async () => {
     energyMs: expect.any(Number),
     slotsMs: expect.any(Number),
     tariffMs: expect.any(Number),
-    costMs: expect.any(Number),
+    computeMs: expect.any(Number),
   })
+})
+
+test('a tariff change mid-month prices each side with its own period', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-10',
+    daySlots('2026-09-10', 15, () => 0),
+  )
+  await replaceDay(
+    'SE3',
+    '2026-09-20',
+    daySlots('2026-09-20', 15, () => 0),
+  )
+  await tariffService.create(TARIFF)
+  await tariffService.create({ ...TARIFF, validFrom: '2026-09-15', gridTransferOre: 135.6 })
+  await session('2026-09-10T08:00:00Z', '2026-09-10T09:00:00Z', 1, [
+    ['2026-09-10T08:00:00Z', '2026-09-10T09:00:00Z', 1],
+  ])
+  await session('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 1, [
+    ['2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 1],
+  ])
+
+  const sep = (await getCostOverview({ now: NOW })).months[8]
+  expect(sep.feesSek).toBeCloseTo(((FEES_ORE + (FEES_ORE + 100)) / 100) * 1.25)
+})
+
+test('months follow the selected year; tiles stay on now’s year; all time spans years', async () => {
+  await session('2025-06-10T08:00:00Z', '2025-06-10T09:00:00Z', 3)
+  await session('2026-09-10T08:00:00Z', '2026-09-10T09:00:00Z', 5)
+
+  const cost = await getCostOverview({ year: 2025, now: NOW })
+
+  expect(cost.year).toBe(2025)
+  expect(cost.months[5].kwh).toBe(3) // June 2025
+  expect(cost.months[8].kwh).toBe(0) // September 2025
+  expect(cost.tiles.thisYear.kwh).toBe(5) // 2026
+  expect(cost.tiles.thisMonth.kwh).toBe(5) // September 2026
+  expect(cost.tiles.allTime.kwh).toBe(8)
+})
+
+test('a single interval across a month boundary is bucketed by its start, like the overview', async () => {
+  // Local 23:30 Aug 31 → 00:30 Sep 1 (CEST), one interval.
+  await session('2026-08-31T21:30:00Z', '2026-08-31T22:30:00Z', 2, [
+    ['2026-08-31T21:30:00Z', '2026-08-31T22:30:00Z', 2],
+  ])
+  const [kwh, cost] = await Promise.all([
+    getOverview({ year: 2026, now: NOW }),
+    getCostOverview({ year: 2026, now: NOW }),
+  ])
+  expect(cost.months[7].kwh).toBe(2)
+  expect(cost.months[8].kwh).toBe(0)
+  expect(kwh.months[7].kwh).toBe(2)
+})
+
+test('an interval-less session is priced over its whole span in the overview', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-24',
+    daySlots('2026-09-24', 15, () => 2),
+  )
+  await tariffService.create(TARIFF)
+  await session('2026-09-24T08:00:00Z', '2026-09-24T10:00:00Z', 4)
+
+  const sep = (await getCostOverview({ now: NOW })).months[8]
+  expect(sep).toMatchObject({ kwh: 4, complete: true })
+  expect(sep.spotSek).toBeCloseTo(4 * 2 * 1.25)
 })
