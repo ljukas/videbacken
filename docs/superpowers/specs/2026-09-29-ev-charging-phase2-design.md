@@ -149,12 +149,16 @@ avgOre(t) / isComplete(t) / emptyTotals() / mergeTotals(a, b)
     no watermark — self-healing). Newest first, cap per run, sequential, no new day after 120 s, 240 s deadline.
   - 404: future day → `notPublished` (fine); older than yesterday → counted `gaps`, warned, retried next run;
     **today/yesterday → run `failed` (`unexpected_response`) after the loop** so the backfill still lands.
+  - A payload that fails validation (`unexpected_response`) on a day older than yesterday is counted `rejected`,
+    warned and skipped — one bad archive day must not wedge the backfill; network-level failures still fail the run.
   - RunStats mapping: `pages` = day requests, `sessionsSeen` = slots parsed, `upserted` = slots written, `voided` = 0,
-    `timings` = `{ fetchMs, importMs, requests, retries, notPublished, gaps }`.
+    `timings` = `{ fetchMs, importMs, requests, retries, days, daysFetched, notPublished, gaps, rejected }`.
 - Cron `src/routes/api/cron/elpris-sync.ts` via `cronHandler`; `vite.config.ts` crons: `{ path: '/api/cron/elpris-sync', schedule: '30 12,15 * * *' }`
   (UTC → 13:30/14:30 local, plus a late retry; verify Vercel accepts the list syntax, else two entries).
-- Procedures: `syncStatus` → `{ zaptec, elpris }`; `recentRuns({ source, limit })`; `syncNow` runs both with `Promise.allSettled`,
-  returns `{ zaptec, elpris }`, rethrows the first unexpected error after both settle; `context.timings.elpris*Ms`.
+- Procedures (as built — additive, so existing callers keep their meaning): `syncStatus({ source? })` (default
+  `zaptec`), `recentRuns({ source?, limit })`; `syncNow` runs both with `Promise.allSettled`, keeps Zaptec's fields at
+  the top level and adds `elpris: { outcome, code, upserted }`, rethrows the first unexpected error after both settle;
+  `context.timings.elpris*Ms`.
 - UI: `SyncHealthAlerts` (one alert per unhealthy source); `RecentRunsCard` per source (admin); toasts per source.
   Verify `integrationHealthMessage.ts` wording and the alert email for `elpris`.
 

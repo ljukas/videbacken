@@ -43,7 +43,7 @@ test('a failed run is still a 200 with its summary', async () => {
   expect(await res.json()).toEqual({
     outcome: 'failed',
     code: 'not_configured',
-    days: 0,
+    daysFetched: 0,
     upserted: 0,
   })
 })

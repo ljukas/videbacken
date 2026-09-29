@@ -4,7 +4,7 @@ import { evCharger, evChargeSession, spotPrice } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { type ElprisClient, ElprisError } from '~/lib/effects/elpris'
 import { createServerLogger } from '~/lib/logger/server'
-import { getHealth, listRecentRuns } from '~/lib/services/integrationSync'
+import { beginAttempt, getHealth, listRecentRuns } from '~/lib/services/integrationSync'
 import { daysWithSlots } from '~/lib/services/spotPrice'
 import type { PriceSlot } from '~/lib/spotPrice/slots'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
@@ -245,7 +245,8 @@ test('records one run row with the elpris stats mapping', async () => {
   const { client } = fakeElpris({ publishedThrough: TOMORROW })
   await run(client)
   const [row] = await listRecentRuns('elpris', { limit: 5 })
-  expect(row).toMatchObject({ outcome: 'ok', pages: 2, sessionsSeen: 2, upserted: 192 })
+  // Zaptec-era columns: pages = day requests, sessionsSeen = slots parsed.
+  expect(row).toMatchObject({ outcome: 'ok', pages: 2, sessionsSeen: 192, upserted: 192 })
 })
 
 test('backfill pauses between requests to be polite', async () => {
@@ -258,4 +259,74 @@ test('backfill pauses between requests to be polite', async () => {
   })
   expect(sleeps.length).toBeGreaterThan(0)
   expect(sleeps.every((ms) => ms > 0)).toBe(true)
+})
+
+test('an older day that fails validation is skipped and warned; the backfill goes on', async () => {
+  await insertSession(new Date('2026-09-20T18:00:00Z'))
+  const good = fakeElpris()
+  const client: ElprisClient = {
+    async dayPrices(day, zone, o) {
+      if (day === '2026-09-22') {
+        throw new ElprisError('unexpected_response', 'prices', undefined, { message: 'bad day' })
+      }
+      return good.client.dayPrices(day, zone, o)
+    },
+  }
+  const warns: unknown[] = []
+  const { log } = capturingLogger()
+  const spyLog = { ...log, warn: (msg: string, fields?: unknown) => warns.push([msg, fields]) }
+
+  const result = await run(client, { log: spyLog as typeof log })
+
+  expect(result).toMatchObject({ outcome: 'ok', rejected: 1, daysFetched: 8 })
+  expect(warns).toEqual([['elpris day rejected', expect.objectContaining({ day: '2026-09-22' })]])
+})
+
+test('a recent day that fails validation still fails the run', async () => {
+  const client: ElprisClient = {
+    async dayPrices() {
+      throw new ElprisError('unexpected_response', 'prices')
+    },
+  }
+  const result = await run(client)
+  expect(result).toMatchObject({ outcome: 'failed', code: 'unexpected_response', rejected: 0 })
+})
+
+test('a network failure on an old day still fails the run', async () => {
+  await insertSession(new Date('2026-09-20T18:00:00Z'))
+  const good = fakeElpris()
+  const client: ElprisClient = {
+    async dayPrices(day, zone, o) {
+      if (day === '2026-09-22') throw new ElprisError('unreachable', 'prices', 503)
+      return good.client.dayPrices(day, zone, o)
+    },
+  }
+  const result = await run(client)
+  expect(result).toMatchObject({ outcome: 'failed', code: 'unreachable' })
+})
+
+test('a success after a failure is a recovered transition, alerting admins', async () => {
+  const { user } = await import('~/lib/db/schema')
+  await db.insert(user).values({ name: 'A', email: 'a@example.com', role: 'admin' })
+  const failing: ElprisClient = {
+    async dayPrices() {
+      throw new ElprisError('unreachable', 'prices', 503)
+    },
+  }
+  await run(failing)
+  const recovered = await run(fakeElpris({ publishedThrough: TOMORROW }).client)
+
+  expect(recovered).toMatchObject({ outcome: 'ok', transition: 'recovered' })
+  expect(publish).toHaveBeenLastCalledWith(
+    'email_integration_sync_alert',
+    expect.objectContaining({ source: 'elpris', transition: 'recovered' }),
+  )
+})
+
+test('a held lease skips the run without calling elpris', async () => {
+  await beginAttempt('elpris', { now: NOW })
+  const { client, requested } = fakeElpris()
+  const result = await run(client)
+  expect(result.outcome).toBe('skipped')
+  expect(requested).toEqual([])
 })

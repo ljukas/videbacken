@@ -14,6 +14,10 @@ import { daysWithSlots, replaceDay } from '~/lib/services/spotPrice'
 import { addDays, stockholmDayBounds, stockholmDayOf } from '~/lib/time/stockholm'
 import { SPOT_ZONE } from './zones'
 
+// Server-only (db, effects). Never import it from client code — and keep
+// `src/lib/spotPrice/` free of an index barrel, so the client-safe modules
+// beside it (zones.ts, slots.ts) stay importable on their own.
+
 /**
  * The elpris sync run (ADR-0019), inside the shared `runPulledSync`
  * lifecycle: fetch every missing Stockholm day of SE3 spot prices — from the
@@ -33,8 +37,12 @@ export type ElprisSyncRun = RunBase & {
   daysFetched: number
   /** Future days not published yet (tomorrow before ~13:00) — normal. */
   notPublished: number
-  /** Older days the API has no prices for; retried next run. */
+  /** Older days the API has no prices for (404); retried next run. */
   gaps: number
+  /** Older days whose payload failed validation; skipped, retried next run. */
+  rejected: number
+  /** Day requests made (one per planned day reached, retries not counted). */
+  dayRequests: number
   /** Slots written. */
   upserted: number
   requests: number
@@ -96,15 +104,19 @@ export async function runElprisSync(opts: {
       daysFetched: 0,
       notPublished: 0,
       gaps: 0,
+      rejected: 0,
+      dayRequests: 0,
       upserted: 0,
       requests: 0,
       retries: 0,
     }),
-    execute: ({ run, signal, now }) => fetchMissingDays(client, run, stats, signal, now, sleep),
+    execute: ({ run, signal, now, log }) =>
+      fetchMissingDays(client, run, stats, { signal, now, sleep, log }),
     toRunStats: (run) => ({
       since: run.since,
-      pages: stats.requests,
-      sessionsSeen: run.daysFetched,
+      // Zaptec-era column names: pages = day requests, sessionsSeen = slots parsed.
+      pages: run.dayRequests,
+      sessionsSeen: run.upserted,
       upserted: run.upserted,
       voided: 0,
       timings: {
@@ -113,8 +125,10 @@ export async function runElprisSync(opts: {
         requests: stats.requests,
         retries: stats.retries,
         days: run.days,
+        daysFetched: run.daysFetched,
         notPublished: run.notPublished,
         gaps: run.gaps,
+        rejected: run.rejected,
       },
     }),
     finalize: (run) => {
@@ -130,6 +144,7 @@ export async function runElprisSync(opts: {
       daysFetched: run.daysFetched,
       notPublished: run.notPublished,
       gaps: run.gaps,
+      rejected: run.rejected,
       upserted: run.upserted,
       requests: run.requests,
       retries: run.retries,
@@ -138,17 +153,20 @@ export async function runElprisSync(opts: {
 }
 
 // Newest missing day first, one request and one stored day at a time. Mutates
-// `run` as it goes, so a failure part-way still reports what landed. A missing
-// today/yesterday fails the run — but only after the loop, so the rest of the
-// backfill still lands and the health snapshot shows "missing spot prices".
+// `run` as it goes, so a failure part-way still reports what landed.
+// - A missing today/yesterday fails the run — but only after the loop, so the
+//   rest of the backfill still lands and health shows "missing spot prices".
+// - An older day that 404s or fails validation is counted, warned and skipped:
+//   one bad archive day must never wedge the whole backfill. A network-level
+//   failure (unreachable, rate limited, forbidden) still fails the run — it
+//   isn't about that day.
 async function fetchMissingDays(
   client: ElprisClient,
   run: ElprisSyncRun,
   stats: ElprisCallStats,
-  signal: AbortSignal,
-  now: () => Date,
-  sleep: (ms: number) => Promise<void>,
+  ctx: { signal: AbortSignal; now: () => Date; sleep: (ms: number) => Promise<void>; log: Logger },
 ): Promise<void> {
+  const { signal, now, sleep, log } = ctx
   const today = stockholmDayOf(now().getTime())
   const yesterday = addDays(today, -1)
   const tomorrow = addDays(today, 1)
@@ -157,27 +175,41 @@ async function fetchMissingDays(
   const have = await daysWithSlots(SPOT_ZONE, first < FLOOR_DAY ? FLOOR_DAY : first, tomorrow)
   const planned = planDays({ today, first, have, max: MAX_DAYS_PER_RUN })
   run.days = planned.length
-  if (planned.length > 0)
-    run.since = new Date(stockholmDayBounds(planned[planned.length - 1]).startMs)
 
   const missingRecent: string[] = []
   for (const [i, day] of planned.entries()) {
     // Always at least one day per run, so a run can never make no progress.
     if (i > 0 && now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS) break
     if (i > 0 && planned.length > 5) await sleep(BACKFILL_PAUSE_MS)
-    const slots = await withDeadline(
-      client.dayPrices(day, SPOT_ZONE, { signal, stats }),
-      signal,
-      () =>
-        new ElprisError('unreachable', 'prices', undefined, {
-          cause: { name: 'TimeoutError' },
-          message: 'elpris prices did not finish within the sync deadline',
-        }),
-    )
+    run.dayRequests++
+    run.since = new Date(stockholmDayBounds(day).startMs)
+    const recent = day >= yesterday
+    let slots: Awaited<ReturnType<ElprisClient['dayPrices']>>
+    try {
+      slots = await withDeadline(
+        client.dayPrices(day, SPOT_ZONE, { signal, stats }),
+        signal,
+        () =>
+          new ElprisError('unreachable', 'prices', undefined, {
+            cause: { name: 'TimeoutError' },
+            message: 'elpris prices did not finish within the sync deadline',
+          }),
+      )
+    } catch (error) {
+      if (recent || !(error instanceof ElprisError) || error.code !== 'unexpected_response') {
+        throw error
+      }
+      run.rejected++
+      log.warn('elpris day rejected', { day, error })
+      continue
+    }
     if (slots === null) {
       if (day > today) run.notPublished++
-      else if (day >= yesterday) missingRecent.push(day)
-      else run.gaps++
+      else if (recent) missingRecent.push(day)
+      else {
+        run.gaps++
+        log.warn('elpris day missing', { day })
+      }
       continue
     }
     const importStart = performance.now()
