@@ -235,6 +235,18 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
     return readJson(op, res)
   }
 
+  // Caches a failed live read so a polling dashboard can't hammer a down (or
+  // credential-rejecting) Zaptec: auth failures 5 min, transient 60 s.
+  function cacheLiveFailure(chargerId: string, err: unknown) {
+    if (!(err instanceof ZaptecError)) return
+    const ttl = AUTH_CODES.has(err.code)
+      ? AUTH_FAILURE_TTL_MS
+      : TRANSIENT_CODES.has(err.code)
+        ? LIVE_FAILURE_TTL_MS
+        : 0
+    if (ttl > 0) liveFailures.set(chargerId, { error: err, until: now().getTime() + ttl })
+  }
+
   return {
     async chargers(o = {}) {
       return parseChargers(await getJson('/api/chargers', 'chargers', o, TIMEOUT_MS, true))
@@ -289,17 +301,14 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
           false,
         )
       } catch (err) {
-        // Cache the failure so a polling dashboard can't hammer a down (or
-        // credential-rejecting) Zaptec: auth failures 5 min, transient 60 s.
-        // Not when the caller's own signal aborted: that is the caller's
-        // budget running out (e.g. a cold login), not Zaptec being down.
-        if (err instanceof ZaptecError && !o.signal?.aborted) {
-          const ttl = AUTH_CODES.has(err.code)
-            ? AUTH_FAILURE_TTL_MS
-            : TRANSIENT_CODES.has(err.code)
-              ? LIVE_FAILURE_TTL_MS
-              : 0
-          if (ttl > 0) liveFailures.set(chargerId, { error: err, until: now().getTime() + ttl })
+        if (o.signal?.aborted) {
+          // The caller's own budget ran out (e.g. the 6 s `liveStatus` budget
+          // on a slow login) — that alone says nothing about Zaptec. But if a
+          // shared login is still in flight and then fails, cache that, so
+          // the next poll fails fast instead of starting another login.
+          login?.catch((loginErr: unknown) => cacheLiveFailure(chargerId, loginErr))
+        } else {
+          cacheLiveFailure(chargerId, err)
         }
         throw err
       }

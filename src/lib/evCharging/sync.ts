@@ -76,12 +76,27 @@ const FIRST_RUN_SINCE = new Date('2020-01-01T00:00:00Z')
  */
 const WINDOW_MS = 90 * DAY_MS
 /**
+ * A window that overflows `MAX_PAGES` is halved and retried from the same
+ * start, down to this length — so a dense stretch narrows instead of failing
+ * every run. Only a stretch this short that still overflows fails the run.
+ */
+const MIN_WINDOW_MS = 60 * 60 * 1000
+/**
  * No new window starts once the run is this old; the next run continues from
  * the watermark. Leaves the rest of `RUN_DEADLINE_MS` for the window in flight.
  */
 const WINDOW_BUDGET_MS = 120_000
-/** Per installation and window. More pages than this means the paging went wrong. */
+/** Per installation and window. More pages than this narrows the window (see `MIN_WINDOW_MS`). */
 const MAX_PAGES = 20
+
+/** A window's session paging went past `MAX_PAGES`. */
+class PageCapExceeded extends ZaptecError {
+  constructor() {
+    super('unexpected_response', 'sessions', undefined, {
+      message: `Zaptec sessions exceeded ${MAX_PAGES} pages for one installation`,
+    })
+  }
+}
 /**
  * Overall budget for the run's Zaptec calls. Well under Vercel's 300 s function
  * limit, so a slow run still fails as `unreachable`, records its outcome and
@@ -259,17 +274,27 @@ async function fetchAndImport(
 
   const installationIds = [...new Set(chargers.map((c) => c.installationId))]
   let windowStart = since
+  let windowMs = WINDOW_MS
   while (windowStart < run.startedAt) {
     // Always at least one window per run, so a run can never make no progress.
     const elapsed = now().getTime() - run.startedAt.getTime()
     if (run.syncedUntil !== null && elapsed >= WINDOW_BUDGET_MS) return
-    const windowEnd = new Date(Math.min(windowStart.getTime() + WINDOW_MS, run.startedAt.getTime()))
-    for (const installationId of installationIds) {
-      await importWindow(client, run, stats, signal, {
-        installationId,
-        since: windowStart,
-        until: windowEnd,
-      })
+    const windowEnd = new Date(Math.min(windowStart.getTime() + windowMs, run.startedAt.getTime()))
+    try {
+      for (const installationId of installationIds) {
+        await importWindow(client, run, stats, signal, {
+          installationId,
+          since: windowStart,
+          until: windowEnd,
+        })
+      }
+    } catch (error) {
+      // Too dense for one window: retry it narrower (pages that already
+      // imported are upserted again, harmlessly). Later windows keep the
+      // narrower length — dense stretches tend to be long ones.
+      if (!(error instanceof PageCapExceeded) || windowMs / 2 < MIN_WINDOW_MS) throw error
+      windowMs /= 2
+      continue
     }
     run.syncedUntil = windowEnd
     windowStart = windowEnd
@@ -294,11 +319,7 @@ async function importWindow(
       if (next.done) break
       const page = next.value
       pages++
-      if (pages > MAX_PAGES) {
-        throw new ZaptecError('unexpected_response', 'sessions', undefined, {
-          message: `Zaptec sessions exceeded ${MAX_PAGES} pages for one installation`,
-        })
-      }
+      if (pages > MAX_PAGES) throw new PageCapExceeded()
       run.pages++
       run.sessionsSeen += page.length
       const importStart = performance.now()
@@ -316,13 +337,16 @@ async function importWindow(
 
 // The admin-facing message for an unexpected error. A failed drizzle query's
 // own message is the SQL plus its bound params (session emails and names); the
-// Postgres error that actually explains it is the `cause`.
+// Postgres error that actually explains it is the `cause`. A data exception
+// (SQLSTATE class 22, e.g. invalid input syntax) quotes the offending value in
+// its message, so for those only the code is kept.
 function internalErrorMessage(error: unknown): string {
   if (error instanceof DrizzleQueryError) {
     const cause = error.cause as (Error & { code?: unknown }) | undefined
     if (!cause) return 'Database query failed'
-    const code = typeof cause.code === 'string' ? ` (SQLSTATE ${cause.code})` : ''
-    return `Database query failed${code}: ${cause.message}`
+    if (typeof cause.code !== 'string') return `Database query failed: ${cause.message}`
+    if (cause.code.startsWith('22')) return `Database query failed (SQLSTATE ${cause.code})`
+    return `Database query failed (SQLSTATE ${cause.code}): ${cause.message}`
   }
   return error instanceof Error ? error.message : String(error)
 }

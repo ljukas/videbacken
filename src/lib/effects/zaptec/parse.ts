@@ -100,6 +100,8 @@ const sessionSchema = z.object({
 // session (a null `energy`, a missing flag) is rejected on its own instead of
 // failing the page — and with it every later run, since the watermark only
 // moves past a page once it imports.
+const SHAPE_CHANGE_MIN_SESSIONS = 3
+
 const sessionsPageSchema = z.object({
   sessions: z.array(z.unknown()),
   cursor: nullableString,
@@ -128,9 +130,11 @@ export function parseSessionsPage(body: unknown): SessionsPage {
       }
     }
   }
-  // Every session rejected → the shape changed, not one odd record. Fail
-  // loudly rather than report a healthy run that imported nothing.
-  if (page.sessions.length > 0 && sessions.length === 0) {
+  // Several sessions and every one rejected → the shape changed, not one odd
+  // record. Fail loudly rather than report a healthy run that imported
+  // nothing. A page of one or two bad sessions (a quiet week) is skipped like
+  // any other bad record, or it would fail every run until a good one lands.
+  if (page.sessions.length >= SHAPE_CHANGE_MIN_SESSIONS && sessions.length === 0) {
     throw shapeError('sessions', [...rejectedPaths])
   }
   return {

@@ -163,8 +163,10 @@ per-integration knobs, and elpris/Škoda are expected to want the same shape:
   watermark (`lastSuccessStartedAt`; `2020-01-01` on the first run) to the run's start. Every window
   that fully imports moves the run's `syncedUntil`, and that becomes the next watermark — on success
   *and* on failure. So a multi-year first backfill checkpoints instead of restarting from 2020 each
-  time it hits the deadline or the 20-page cap, and no new window starts after 120 s of run time (the
-  next run continues). An hourly run is a single window.
+  time it hits the deadline, and no new window starts after 120 s of run time (the next run
+  continues). A window that overflows the 20-page cap (200 sessions a page) is halved and retried
+  from the same start, down to 1 hour, so a dense stretch narrows instead of failing every run. An
+  hourly run is a single window.
 - Status → code mapping is fixed inside the client (`token 400/401` → `auth_failed`; `403` →
   `forbidden`; `429` → `rate_limited`; `5xx`/network/timeout → `unreachable`), so every caller gets
   the same classification without re-deriving it.
@@ -180,7 +182,8 @@ Two tables, not one:
   `alertedAt` (when this streak's `started_failing` alert went out; null while no alert is open),
   `consecutiveFailures`, `errorCode`, `lastErrorMessage` (admin-only, ≤ 500 chars; for a failed
   database query it's the Postgres error, never drizzle's own message, which is the SQL plus its bound
-  params — session emails and names; sanitized before write — control chars
+  params — session emails and names; for a data exception, SQLSTATE class 22, only the code, since its
+  message quotes the offending value; sanitized before write — control chars
   stripped, `Bearer \S+`/`password=\S+` redacted — a defense-in-depth backstop; the client itself
   never logs credentials, so this guards against a future bug, not today's expected path), plus the
   lease fields below. Cross-column CHECKs keep it internally consistent: `consecutiveFailures = 0`

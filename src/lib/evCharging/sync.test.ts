@@ -500,25 +500,47 @@ test('a page-2 failure keeps page 1 and does not advance the watermark', async (
   expect(runLines()[1]).toMatchObject({ level: WARN, outcome: 'failed', code: 'unreachable' })
 })
 
-test('more than 20 pages in one window fails as unexpected_response', async () => {
+test('a window over 20 pages is halved and retried until it fits', async () => {
   const { client, state } = fakeZaptec()
-  const { log, runLines } = capturingLogger()
+  const { log } = capturingLogger()
   await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
 
+  // 42 sessions an hour apart: 21 pages at 2 per page, one over the cap.
   const T2 = new Date(T1.getTime() + HOUR)
   state.sessions = Array.from({ length: 42 }, (_, i) =>
     session(`s${String(i).padStart(2, '0')}`, new Date(T2.getTime() - (i + 1) * HOUR)),
   )
+  state.calls.sessions = []
   const run = await runZaptecSync({ trigger: 'cron', now: () => T2, deps: { zaptec: client, log } })
 
-  expect(run).toMatchObject({
-    outcome: 'failed',
-    code: 'unexpected_response',
-    pages: 20,
-    syncedUntil: null,
-  })
-  expect(await sessionRows()).toHaveLength(40)
-  expect(await getLastSuccessStartedAt('zaptec')).toEqual(T1)
+  expect(run).toMatchObject({ outcome: 'ok', syncedUntil: T2 })
+  expect(await sessionRows()).toHaveLength(42)
+  expect(await getLastSuccessStartedAt('zaptec')).toEqual(T2)
+  // The first attempt covered the whole 7-day lookback; the retries are narrower.
+  const spans = state.calls.sessions.map((c) => (c.until?.getTime() ?? 0) - c.since.getTime())
+  expect(spans[0]).toBe(7 * DAY + HOUR)
+  expect(Math.min(...spans)).toBeLessThan(spans[0])
+})
+
+test('more than 20 pages within one hour fails as unexpected_response', async () => {
+  const { client, state } = fakeZaptec()
+  const { log, runLines } = capturingLogger()
+  await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
+
+  // 82 sessions within 10 minutes: however a window of an hour or more splits
+  // them, one side keeps 41+ (21+ pages at 2 per page).
+  const T2 = new Date(T1.getTime() + HOUR)
+  state.sessions = Array.from({ length: 82 }, (_, i) =>
+    session(`s${String(i).padStart(2, '0')}`, new Date(T2.getTime() - 60_000 - i * 7_000)),
+  )
+  const run = await runZaptecSync({ trigger: 'cron', now: () => T2, deps: { zaptec: client, log } })
+
+  expect(run).toMatchObject({ outcome: 'failed', code: 'unexpected_response' })
+  // The narrowed windows before the cluster finished; the watermark stops short of it.
+  const firstInCluster = Math.min(...state.sessions.map((x) => x.endAt.getTime()))
+  expect(run.syncedUntil?.getTime()).toBeGreaterThan(T1.getTime())
+  expect(run.syncedUntil?.getTime()).toBeLessThanOrEqual(firstInCluster)
+  expect(await getLastSuccessStartedAt('zaptec')).toEqual(run.syncedUntil)
   expect(runLines()).toHaveLength(2)
 })
 
