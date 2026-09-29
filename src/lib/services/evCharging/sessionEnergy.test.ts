@@ -53,6 +53,15 @@ test('returns counted sessions oldest first with their intervals as stretches', 
 
   expect(sessions.map((s) => s.sessionId)).toEqual([earlier, later])
   expect(sessions[0]).toMatchObject({ estimated: false, energyKwh: 10 })
+  // The interval-less session next to it keeps its own fallback stretch.
+  expect(sessions[1]).toMatchObject({ estimated: true })
+  expect(sessions[1].stretches).toEqual([
+    {
+      startMs: Date.parse('2026-09-02T20:00:00Z'),
+      endMs: Date.parse('2026-09-02T22:00:00Z'),
+      kwh: 10,
+    },
+  ])
   expect(sessions[0].stretches).toEqual([
     {
       startMs: Date.parse('2026-09-01T20:00:00Z'),
@@ -102,6 +111,8 @@ test('filters by session ids, still only counted ones', async () => {
 test('earliestCountedStartAt ignores uncounted sessions', async () => {
   expect(await earliestCountedStartAt()).toBeNull()
   await insertSession({ startAt: new Date('2026-01-27T08:00:00Z'), energyKwh: 0.1 })
+  await insertSession({ startAt: new Date('2026-01-28T08:00:00Z'), voided: true })
+  await insertSession({ startAt: new Date('2026-01-29T08:00:00Z'), replacedByZaptecSessionId: 'z' })
   await insertSession({ startAt: new Date('2026-02-03T08:00:00Z') })
   expect(await earliestCountedStartAt()).toEqual(new Date('2026-02-03T08:00:00Z'))
 })

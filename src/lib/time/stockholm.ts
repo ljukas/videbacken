@@ -43,9 +43,10 @@ function parseDay(day: string): { y: number; m: number; d: number } {
   const m = Number(match?.[2])
   const d = Number(match?.[3])
   // Round-trip through Date.UTC so an impossible date (2025-02-30) is rejected
-  // rather than rolled over into the next month.
+  // rather than rolled over into the next month. The year range keeps clear of
+  // Date.UTC's 0–99 → 1900s mapping and of dates Postgres can't store sensibly.
   const date = new Date(Date.UTC(y, m - 1, d))
-  if (!match || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+  if (!match || y < 1970 || y > 2999 || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
     throw new RangeError(`Not a YYYY-MM-DD day: ${day}`)
   }
   return { y, m, d }

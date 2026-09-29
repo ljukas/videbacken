@@ -38,6 +38,21 @@ function validate(input: TariffInput): void {
   }
 }
 
+// Only the editable columns, whatever else a caller's object carries.
+function columns(input: TariffInput): TariffInput {
+  const { validFrom, retailMarkupOre, gridTransferOre, energyTaxOre, vatPercent } = input
+  return { validFrom, retailMarkupOre, gridTransferOre, energyTaxOre, vatPercent }
+}
+
+async function exists(id: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: electricityTariff.id })
+    .from(electricityTariff)
+    .where(eq(electricityTariff.id, id))
+    .limit(1)
+  return row !== undefined
+}
+
 async function validFromTaken(validFrom: string, exceptId?: string): Promise<boolean> {
   const [row] = await db
     .select({ id: electricityTariff.id })
@@ -75,24 +90,26 @@ export async function create(input: TariffInput): Promise<TariffRow> {
     throw new TariffDomainError('TARIFF_VALID_FROM_TAKEN')
   }
   return mapValidFromRace(async () => {
-    const [row] = await db.insert(electricityTariff).values(input).returning()
+    const [row] = await db.insert(electricityTariff).values(columns(input)).returning()
     return row
   })
 }
 
 export async function update(id: string, input: TariffInput): Promise<TariffRow> {
   validate(input)
+  if (!(await exists(id))) throw new TariffDomainError('TARIFF_NOT_FOUND')
   if (await validFromTaken(input.validFrom, id)) {
     throw new TariffDomainError('TARIFF_VALID_FROM_TAKEN')
   }
   const row = await mapValidFromRace(async () => {
     const [updated] = await db
       .update(electricityTariff)
-      .set(input)
+      .set(columns(input))
       .where(eq(electricityTariff.id, id))
       .returning()
     return updated
   })
+  // Deleted between the existence check and the write.
   if (!row) throw new TariffDomainError('TARIFF_NOT_FOUND')
   return row
 }

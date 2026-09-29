@@ -63,10 +63,10 @@ and `handleCronRun`. Reviewers: `code-reviewer` + a behavior-equivalence adversa
 slots; hourly: 23/25 — 2024-03-31, 2024-10-27) and the 2025-10-01 hourly→15-min switch. Extend `clientSafe.browser.test.tsx`. Reviewers: `code-reviewer` + DST/maths adversary.
 
 ### Task B3 — services
-`services/spotPrice/` (`upsertDay`, `listSlots`, `daysWithSlots`), `services/tariff/` (CRUD + `TariffDomainError`),
+`services/spotPrice/` (`replaceDay`, `listSlotsOverlapping`, `daysWithSlots`), `services/tariff/` (CRUD + `TariffDomainError`),
 `services/evCharging/counted.ts` (moved filter) + `listSessionEnergy` + `earliestCountedStartAt`.
 Reviewers: `code-reviewer` + `test-completeness`.
-From the B1 schema review: `upsertDay` **replaces the whole Stockholm day** (delete the day's range, then insert, one tx) so
+From the B1 schema review: `replaceDay` **replaces the whole Stockholm day** (delete the day's range, then insert, one tx) so
 a re-split day can't leave overlapping slots; map 23505 by constraint name `electricity_tariff_valid_from_unique`;
 slot reads for many intervals join against `unnest($starts, $ends)` rather than N OR'ed ranges.
 

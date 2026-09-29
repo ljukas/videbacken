@@ -33,6 +33,8 @@ describe('addDays', () => {
   test('rejects a malformed or impossible day', () => {
     expect(() => addDays('2026-9-1', 1)).toThrow(RangeError)
     expect(() => addDays('2025-02-30', 0)).toThrow(RangeError)
+    expect(() => addDays('0050-01-01', 0)).toThrow(RangeError)
+    expect(() => addDays('0000-01-01', 0)).toThrow(RangeError)
   })
 })
 

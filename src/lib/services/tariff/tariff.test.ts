@@ -97,6 +97,9 @@ test('update validates like create', async () => {
 test('update and remove of an unknown id are TARIFF_NOT_FOUND', async () => {
   const missing = '00000000-0000-4000-8000-000000000000'
   await expect(update(missing, AUG_2026)).rejects.toMatchObject({ code: 'TARIFF_NOT_FOUND' })
+  // Not found wins even when the day is also taken.
+  await create(AUG_2026)
+  await expect(update(missing, AUG_2026)).rejects.toMatchObject({ code: 'TARIFF_NOT_FOUND' })
   await expect(remove(missing)).rejects.toMatchObject({ code: 'TARIFF_NOT_FOUND' })
 })
 
@@ -104,4 +107,23 @@ test('remove deletes a period, including the last one', async () => {
   const row = await create(AUG_2026)
   await remove(row.id)
   expect(await list()).toEqual([])
+})
+
+test('concurrent updates onto the same day: one wins, the other is TARIFF_VALID_FROM_TAKEN', async () => {
+  const a = await create(AUG_2026)
+  const b = await create({ ...AUG_2026, validFrom: '2026-09-01' })
+  const target = { ...AUG_2026, validFrom: '2026-10-01' }
+
+  const results = await Promise.allSettled([update(a.id, target), update(b.id, target)])
+
+  expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+  const [rejected] = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[]
+  expect(rejected.reason).toMatchObject({ code: 'TARIFF_VALID_FROM_TAKEN' })
+})
+
+test('writes only the tariff columns, ignoring extra fields on the input', async () => {
+  const sneaky = { ...AUG_2026, id: '11111111-1111-4111-8111-111111111111', createdAt: new Date(0) }
+  const row = await create(sneaky)
+  expect(row.id).not.toBe(sneaky.id)
+  expect(row.createdAt.getTime()).toBeGreaterThan(0)
 })

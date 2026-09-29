@@ -23,12 +23,16 @@ export type SessionEnergy = {
 
 /**
  * Counted sessions with their energy stretches, oldest first. Two queries
- * (sessions, then their intervals by id) regardless of how many sessions.
+ * (sessions, then their intervals) regardless of how many sessions.
  */
 export async function listSessionEnergy(
   filter: { all: true } | { sessionIds: readonly string[] },
 ): Promise<SessionEnergy[]> {
   if ('sessionIds' in filter && filter.sessionIds.length === 0) return []
+  const sessionFilter =
+    'sessionIds' in filter
+      ? and(countedSessionFilter(), inArray(evChargeSession.id, [...filter.sessionIds]))
+      : countedSessionFilter()
   const sessions = await db
     .select({
       id: evChargeSession.id,
@@ -37,12 +41,8 @@ export async function listSessionEnergy(
       energyKwh: evChargeSession.energyKwh,
     })
     .from(evChargeSession)
-    .where(
-      'sessionIds' in filter
-        ? and(countedSessionFilter(), inArray(evChargeSession.id, [...filter.sessionIds]))
-        : countedSessionFilter(),
-    )
-    .orderBy(asc(evChargeSession.startAt))
+    .where(sessionFilter)
+    .orderBy(asc(evChargeSession.startAt), asc(evChargeSession.id))
   if (sessions.length === 0) return []
 
   const intervals = await db
@@ -53,10 +53,12 @@ export async function listSessionEnergy(
       energyKwh: evChargeInterval.energyKwh,
     })
     .from(evChargeInterval)
+    // A subselect, not one bind parameter per session: `{ all: true }` would
+    // otherwise hit postgres-js's parameter limit on a long history.
     .where(
       inArray(
         evChargeInterval.sessionId,
-        sessions.map((s) => s.id),
+        db.select({ id: evChargeSession.id }).from(evChargeSession).where(sessionFilter),
       ),
     )
     .orderBy(asc(evChargeInterval.startAt))
