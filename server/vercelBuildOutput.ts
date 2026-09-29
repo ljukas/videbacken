@@ -66,7 +66,8 @@ export function patchVercelBuildConfig(config: VercelBuildConfig): VercelBuildCo
 export const vercelBuildOutput: NitroModule = {
   name: 'videbacken:vercel-build-output',
   setup(nitro) {
-    if (!nitro.options.preset.startsWith('vercel')) return
+    // Production Vercel builds only (`vercel-dev` also starts with "vercel").
+    if (nitro.options.dev || !nitro.options.preset.startsWith('vercel')) return
     // Modules install after the preset's hooks are registered, so this runs
     // after the preset has written config.json in its own `compiled` hook.
     nitro.hooks.hook('compiled', async () => {
