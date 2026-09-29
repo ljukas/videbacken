@@ -3,7 +3,15 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
 import { evCharger, user } from '~/lib/db/schema'
-import { zaptec } from '~/lib/effects/zaptec'
+import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
+import { createZaptecClient, zaptec } from '~/lib/effects/zaptec'
+import {
+  CHARGER_ID,
+  chargingStateBody,
+  INSTALLATION_ID,
+  TEST_CREDS,
+  tokenBody,
+} from '~/lib/effects/zaptec/fixtures'
 import type { Logger } from '~/lib/logger'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { setupDatabase } from '~test/setup'
@@ -139,7 +147,126 @@ test('liveStatus bounds the Zaptec wait with an abort signal', async () => {
   await signIn('user')
   const spy = vi.spyOn(zaptec, 'liveState')
   await call(evChargingRouter.liveStatus, undefined, { context: baseContext() })
-  expect(spy).toHaveBeenCalledWith('charger-1', { signal: expect.any(AbortSignal) })
+  expect(spy).toHaveBeenCalledWith('charger-1', {
+    signal: expect.any(AbortSignal),
+    stats: expect.any(Object),
+  })
+})
+
+// Routes the `zaptec` facade (notConfigured under VITEST) to a real HTTP
+// client over a fake fetch, so the procedure sees the client's own stats.
+async function withLiveClient(routes: Record<string, FakeRoute>) {
+  await db
+    .insert(evCharger)
+    .values({ id: CHARGER_ID, name: 'Garage', installationId: INSTALLATION_ID })
+  const client = createZaptecClient({ fetch: fakeFetch(routes).fetch, creds: TEST_CREDS })
+  vi.spyOn(zaptec, 'liveState').mockImplementation((id, o) => client.liveState(id, o))
+}
+
+const TOKEN_ROUTE = 'POST /oauth/token'
+const STATE_ROUTE = `GET /api/chargers/${CHARGER_ID}/state`
+
+test('liveStatus records the Zaptec auth/fetch split and request count', async () => {
+  await withLiveClient({
+    // A slow login (cold instance) must show up as auth time, not fetch time.
+    [TOKEN_ROUTE]: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      return jsonResponse(tokenBody())
+    },
+    [STATE_ROUTE]: () => jsonResponse(chargingStateBody()),
+  })
+  await signIn('user')
+
+  const timings: Record<string, number> = {}
+  const result = await call(evChargingRouter.liveStatus, undefined, {
+    context: { ...baseContext(), timings },
+  })
+  expect(result).toMatchObject({ mode: 'charging' })
+  expect(timings).toMatchObject({
+    zaptecLiveMs: expect.any(Number),
+    zaptecAuthMs: expect.any(Number),
+    zaptecFetchMs: expect.any(Number),
+    zaptecRequests: 2, // token + state
+    zaptecRetries: 0,
+  })
+  expect(timings.zaptecAuthMs).toBeGreaterThanOrEqual(20)
+  expect(Number.isInteger(timings.zaptecAuthMs)).toBe(true)
+  expect(Number.isInteger(timings.zaptecFetchMs)).toBe(true)
+  expect(timings).not.toHaveProperty('zaptecLiveFailed')
+
+  // Warm: token and state both cached → no HTTP at all.
+  const warm: Record<string, number> = {}
+  await call(evChargingRouter.liveStatus, undefined, {
+    context: { ...baseContext(), timings: warm },
+  })
+  expect(warm).toMatchObject({
+    zaptecAuthMs: 0,
+    zaptecFetchMs: 0,
+    zaptecRequests: 0,
+    zaptecRetries: 0,
+  })
+})
+
+test('liveStatus flags a failed Zaptec read in its timings', async () => {
+  await withLiveClient({
+    [TOKEN_ROUTE]: () => jsonResponse(tokenBody()),
+    [STATE_ROUTE]: () => new Response(null, { status: 503 }),
+  })
+  await signIn('user')
+
+  const timings: Record<string, number> = {}
+  const result = await call(evChargingRouter.liveStatus, undefined, {
+    context: { ...baseContext(), timings },
+  })
+  expect(result).toBeNull()
+  expect(timings).toMatchObject({ zaptecLiveFailed: 1, zaptecRequests: 2 })
+})
+
+test('liveStatus counts a retried login', async () => {
+  await withLiveClient({
+    [TOKEN_ROUTE]: (_req, n) =>
+      n === 0 ? new Response(null, { status: 503 }) : jsonResponse(tokenBody()),
+    [STATE_ROUTE]: () => jsonResponse(chargingStateBody()),
+  })
+  await signIn('user')
+
+  const timings: Record<string, number> = {}
+  await call(evChargingRouter.liveStatus, undefined, { context: { ...baseContext(), timings } })
+  expect(timings).toMatchObject({ zaptecRequests: 3, zaptecRetries: 1 })
+  expect(timings).not.toHaveProperty('zaptecLiveFailed')
+})
+
+// Known limitation, pinned so it stays visible: the shared login runs without
+// the caller's signal, and an attempt is timed only when it settles. A login
+// that outlives the budget therefore reads as auth 0 with 1 request started —
+// the whole `zaptecLiveMs` is unattributed waiting.
+test('liveStatus attributes nothing to auth when the login outlives the budget', async () => {
+  // Shrink only the procedure's 6 s budget (the client's own per-attempt
+  // timeouts are 5 s / 10 s and keep their real value). If the budget constant
+  // changes, the login completes in 300 ms and the `null` assertion fails.
+  const timeout = AbortSignal.timeout.bind(AbortSignal)
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => timeout(ms === 6_000 ? 50 : ms))
+  await withLiveClient({
+    [TOKEN_ROUTE]: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      return jsonResponse(tokenBody())
+    },
+    [STATE_ROUTE]: () => jsonResponse(chargingStateBody()),
+  })
+  await signIn('user')
+
+  const timings: Record<string, number> = {}
+  const result = await call(evChargingRouter.liveStatus, undefined, {
+    context: { ...baseContext(), timings },
+  })
+  expect(result).toBeNull()
+  expect(timings).toMatchObject({
+    zaptecLiveFailed: 1,
+    zaptecAuthMs: 0,
+    zaptecFetchMs: 0,
+    zaptecRequests: 1,
+  })
+  expect(timings.zaptecLiveMs).toBeGreaterThanOrEqual(40)
 })
 
 test('recentRuns rejects an unauthenticated caller', async () => {
