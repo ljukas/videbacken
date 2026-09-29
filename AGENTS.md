@@ -1,3 +1,8 @@
+# Videbacken — agent instructions
+
+Project rules, commands, architecture and gotchas live in **[CLAUDE.md](./CLAUDE.md)** — read it first; it applies to every agent, not just Claude.
+Process: `docs/{feature,refactor,bugfix}-workflow.md`. Architecture decisions: `docs/adr/`.
+
 <!-- intent-skills:start -->
 ## Skill Loading
 

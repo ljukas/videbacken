@@ -14,20 +14,23 @@ For *why* a pattern exists, follow the ADR link.
 
 ---
 
-## Stack
+## Stack (decided — don't relitigate)
 
-- **Framework:** TanStack Start (RC, locked) on Vite 8 + Nitro; file-based router in `src/routes/`.
-- **UI:** Tailwind CSS v4 + shadcn/ui (`components.json`, style `radix-nova`, **Radix** primitives — not Base UI).
-- **Auth:** Better Auth (self-hosted) — **Google OAuth + email magic-link**, both gated by an
-  admin-managed email allowlist. See ADR-0017.
-- **Database:** Supabase Postgres (prod, via Vercel Marketplace) / plain `postgres:17-alpine` (local + CI) + Drizzle ORM; `postgres-js` driver; snake_case.
-- **Data layer:** oRPC + TanStack Query; SSR via an in-process router client.
-- **Effects:** email (Resend / Mailpit-SMTP / devLog), file storage (Vercel Blob / S3-RustFS / devLog),
-  queue (Vercel Queue / BullMQ+Redis / devLog) — all in `src/lib/effects/`. No realtime/presence: sync is polled (ADR-0018).
-- **i18n:** Paraglide JS — Swedish (source of truth + default) + English; `videbacken-locale` cookie, no URL prefix.
-- **Testing:** Vitest — a `node` project (per-test Postgres schema) + a `browser` project (Chromium via Playwright).
-- **Tooling:** Biome (format/lint/organize-imports); docker compose dev stack; GitHub Actions CI.
-- **Hosting:** Vercel Pro; Stockholm region (`arn1`).
+- **Framework:** TanStack Start (RC, **locked** to its pinned version until 1.0) on Vite 8 + Nitro; file-based router in `src/routes/`.
+- **Hosting:** Vercel Pro, function region pinned to Stockholm `arn1` (see Non-negotiables).
+- **Database:** Supabase Postgres (prod, via Vercel Marketplace) / plain `postgres:17-alpine` (local + CI); Drizzle ORM, `postgres-js` driver, snake_case, all timestamps `timestamptz`.
+- **Data layer:** oRPC + TanStack Query; SSR via an in-process router client. Domain rules in services (ADR-0002), effects isolated (ADR-0001).
+- **Auth:** Better Auth, Google OAuth + email magic-link, allowlist-gated — see [Authentication](#authentication--authorization-adr-0017).
+- **Sync:** polled, never pushed (ADR-0018 supersedes 0004 + 0011). No realtime, no presence.
+- **Effects** (`src/lib/effects/`, each prod / dev / test): email Resend / Mailpit-SMTP / devLog + React Email templates (ADR-0008); storage Vercel Blob / RustFS-S3 / devLog, public (avatars) + private stores, client-direct upload (ADR-0006); queue Vercel Queue / BullMQ+Redis / devLog (ADR-0007). Pulled integrations (Zaptec, elpris) have **no** devLog adapter — they fail closed (ADR-0019).
+- **Logging:** pino → stdout (Vercel Runtime Logs); browser warn/error POSTs `/api/log` (ADR-0003).
+- **UI:** shadcn/ui (style `radix-nova`, base `slate`, **Radix primitives — not Base UI**) + Tailwind v4 (class sort on). Design language: self-hosted Cabinet Grotesk (headings) + Switzer (body), inset-sidebar shell + shared `PageContainer`, one `--brand` accent, reduced-motion-aware overlays (ADR-0015). Shared `Empty` component (ADR-0016); global Cmd+K palette on cmdk (ADR-0014).
+- **Forms:** `@tanstack/react-form` v1 `createFormHook` + bound shadcn `<Field>` (ADR-0005). Small CRUD → responsive overlay with URL dialog state; large forms → dedicated route (ADR-0013).
+- **Dark mode:** cookie `videbacken-theme`, applied to `<html>` during SSR; own `ThemeProvider` (no next-themes); manual + system; no FOUC.
+- **i18n:** Paraglide JS — Swedish (source of truth + default) + English; `videbacken-locale` cookie, no URL prefix; per-request locale via ALS in `src/server.ts`.
+- **Testing:** Vitest — `node` project (per-test Postgres schema) + `browser` project (Vitest Browser Mode, real Chromium via Playwright, `vitest.browser.config.ts`).
+- **Tooling:** Biome (format/lint/organize-imports); docker compose dev stack; GitHub Actions CI; squash-merge only.
+- **Ports** offset **+100** (146xx) so the template coexists with sibling projects on one machine.
 
 ---
 
@@ -36,6 +39,9 @@ For *why* a pattern exists, follow the ADR link.
 ```
 messages/                       i18n source: sv.json (source of truth) + en.json; flat keys
 project.inlang/                 Paraglide/inlang config (baseLocale sv)
+server/plugins/                 Nitro plugins, registered in vite.config.ts (not auto-discovered):
+                                seedApprovedEmails.ts (first admin), queueConsumer.ts (Vercel Queues → lib/queue)
+scripts/                        patchBetterAuthSchema.mjs (auth:schema), devQueueWorker.ts (dev:worker), loadEnv.ts, LAN-IP helpers
 src/
   router.tsx / routeTree.gen.ts createRouter (+ codegen — DO NOT hand-edit)
   server.ts                     custom entry; wraps each request in the Paraglide locale scope
@@ -45,29 +51,34 @@ src/
     onboarding.tsx              full-screen 2-step wizard (name → avatar); guard while onboardedAt null
     signed-in.tsx               magic-link "continue here" confirmation
     api/{auth/$.ts, rpc/$.ts, log.ts}   Better Auth / oRPC catch-alls; browser log sink
-    api/cron/                   non-oRPC cron entrypoints, secret-gated (zaptec-sync.ts hourly, elpris-sync.ts 12:30+15:30 UTC)
+    api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, elpris-sync.ts 12:30+15:30 UTC)
+    api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
-    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging
+    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging, sensors
   lib/
-    auth.ts                     betterAuth(): drizzleAdapter + google + magicLink + admin; allowlist gate
-    authClient.ts               createAuthClient() (signIn.social + signIn.magicLink)
+    auth.ts / authClient.ts     betterAuth() (drizzleAdapter + google + magicLink + admin; allowlist gate) / createAuthClient()
     getSession.ts               server fn wrapping auth.api.getSession()
-    seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (invoked by server/plugins/seedApprovedEmails.ts, a Nitro plugin registered in vite.config.ts)
-    orpc/                       context (public/protected/admin procedures), router, client, procedures/
-    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,evCharging,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping)
-    services/                   approvedEmail, user, file, evCharging, integrationSync, spotPrice, tariff — own all DB access + domain rules (see ADR-0002)
-    effects/                    email, storage, queue, zaptec, elpris (pulled clients fail closed, no devLog — see ADR-0001, ADR-0019); http.ts + testing/fakeFetch shared by them
-    logger/                     pino on server, console+POST /api/log in browser (see ADR-0003)
-    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, tariff limits + statutory energy tax (see ADR-0019, ADR-0020)
-    integrations/               runPulledSync (shared sync lifecycle) + cron helper (see ADR-0019)
-    spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts (day validation) — no index barrel
+    seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
+    orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
+    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
+    services/                   approvedEmail, user, file, sensor, evCharging, integrationSync, spotPrice, tariff — own all DB access + domain rules (ADR-0002)
+    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris (pulled, fail closed — ADR-0019); http.ts + testing/fakeFetch shared by the pulled clients
+    queue/                      dispatch.ts: one typed handler table used by both the prod consumer and the dev worker (ADR-0007)
+    logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
+    sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
+    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, tariff limits + energy tax (ADR-0019, ADR-0020)
+    integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019)
+    spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
     time/stockholm.ts           client-safe Stockholm calendar helpers (DST-aware day bounds)
-    integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — see ADR-0019)
-    i18n/, zodLocale.ts, theme.ts, browserSession.ts, utils.ts
-  components/  {AppSidebar, command/, form/, layout/, login/, onboarding/, user/, ui/}
-  emails/                       React Email templates (MagicLink, InviteUser); preview `bun run email:dev`
+    integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — ADR-0019)
+    files/, image/              upload helpers: EXIF, remote origin / blurhash, HEIC transcode, sizes
+    i18n/, zodLocale.ts, theme.ts, browserSession.ts, devHost.ts (dev:host LAN URLs), utils.ts
+  components/                   <entity>/ folders: account, command, evCharging, form, layout, login, onboarding, sensor, user; ui/ (shadcn);
+                                root: AppSidebar, ThemeProvider, ModeToggle, LocaleSwitcher, Logo, NotFound, DefaultCatchBoundary
+  emails/                       React Email: MagicLink, InviteUser, IntegrationSyncAlert (+ BrandEmailLayout); preview `bun run email:dev`
   styles/                       Tailwind v4 entry (+ the --brand token)
-test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
+test/                           setup.ts (setupDatabase: per-test schema, local-only guard), rls.test.ts, fixtures/, browser/
+drizzle/, compose.yaml, vite.config.ts (Nitro: plugins, region, crons, queue triggers), drizzle.config.ts, biome.json
 ```
 
 **Path aliases:** `~/*` → `./src/*`; `~test/*` → `./test/*` (`tsconfig.json`).
@@ -81,8 +92,8 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 - **Cross-system effects in `src/lib/effects/`.** Services never import Better Auth / Blob / Resend;
   effect adapters run *after* a successful service call. See **ADR-0001**.
 - **Logging via `~/lib/logger/`.** `context.log` in oRPC; `logger` singleton elsewhere. Never `console.*`. See **ADR-0003**.
-- **Timing: every RPC is auto-timed — instrument new work.** The `/api/rpc` handler logs one `rpc timing` line per request (`region`, `totalMs`, sub-timings) to Vercel Runtime Logs (filter by msg `"rpc timing"`). For anything heavier than a single query (multiple queries, external calls, expensive compute), record named sub-timings into `context.timings` (`if (context.timings) context.timings.<label>Ms = …`) so slow paths surface early. Pattern: `getSessionMs`/`findActiveByIdMs` in `src/lib/orpc/context.ts`. See **ADR-0003**.
-- **Never hold a connection open on a Vercel Function.** No SSE, no WebSockets, no long-polling. Fluid Compute bills **provisioned memory for the entire lifetime of an in-flight request** — one open stream pins a 2 GB instance 24/7 and exhausted the whole Hobby allowance in ~7 days (production was blocked 2026-08-05). Cross-user freshness comes from TanStack Query: `refetchInterval` on the few screens that need it, plus the default focus refetch. See **ADR-0018**.
+- **Timing: every RPC is auto-timed — instrument new work.** `/api/rpc` logs one `rpc timing` line per request (`region`, `totalMs`, sub-timings) to Vercel Runtime Logs. For anything heavier than a single query (multiple queries, external calls, expensive compute), record named sub-timings: `if (context.timings) context.timings.<label>Ms = …`. Pattern: `getSessionMs`/`findActiveByIdMs` in `src/lib/orpc/context.ts`.
+- **Never hold a connection open on a Vercel Function** — no SSE, WebSockets or long-polling. Fluid Compute bills provisioned memory for a request's whole lifetime; one open stream exhausted the Hobby allowance in ~7 days and blocked prod (2026-08-05). Freshness comes from TanStack Query `refetchInterval` + focus refetch. See **ADR-0018**.
 - **Forms via `useAppForm`.** Never `useState` for field values; canonical example `src/components/login/LoginFormCard.tsx`. See **ADR-0005**.
 - **Reuse before you hand-roll (non-trivial work only).** Before writing anything non-trivial
   (date/time math, parsing, validation, retries, concurrency, crypto, formatting, UI primitives…):
@@ -97,9 +108,10 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 - **Add a schema:** `src/lib/db/schema/<x>.ts` (end every `pgTable(...)` with `.enableRLS()` — `test/rls.test.ts` enforces it) → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`. Then get the **schema-design review** (Non-negotiables) before building on it.
 - **Add a service:** copy `services/user/` shape (`<x>.ts`, `<x>.test.ts` with `setupDatabase()` first, `index.ts`; `errors.ts` when an invariant lands).
 - **Add an effect:** copy `effects/email/` shape (`<domain>.ts` selector + `adapters/<name>.ts` + barrel + test; register in `effects/index.ts`).
-- **Add a procedure:** edit `src/lib/orpc/procedures/<x>.ts`; pick `protectedProcedure` (reads) or `adminProcedure` (mutations); `.input(zodSchema)`; thin glue → service → run effects after success; register in `orpc/router.ts`. Auto-timed via the `rpc timing` log; add `context.timings.<label>Ms` sub-timings for heavier work (see the timing rule above).
+- **Add a procedure:** edit `src/lib/orpc/procedures/<x>.ts`; pick `protectedProcedure` (reads) or `adminProcedure` (mutations); `.errors(<x>Errors)` + `.input(zodSchema)`; thin glue → service → rethrow `errors[err.code]()` → run effects after success; register in `orpc/router.ts`. Add `context.timings` sub-timings for heavier work.
+- **Add a queue topic:** a handler in `src/lib/queue/handlers/` + an entry in the typed table in `dispatch.ts` (a topic without a handler fails to compile) + a trigger in `vite.config.ts`.
 - **Add a UI component:** `bunx shadcn@latest add <name>` (Radix variant per `components.json` — never `shadcn init --base`).
-- **Regenerate Better Auth schema:** `bun run auth:schema` (runs the CLI + `scripts/patchBetterAuthSchema.mjs` for `timestamptz`). Never hand-edit `betterAuth.ts`.
+- **Regenerate Better Auth schema:** `bun run auth:schema` (runs the CLI + `scripts/patchBetterAuthSchema.mjs` for `timestamptz` + RLS). Never hand-edit `betterAuth.ts`.
 
 ### ADR index
 | Concern | ADR |
@@ -118,6 +130,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 | Visual identity / design language | 0015 |
 | Empty states & feedback | 0016 |
 | **Authentication** (Google + magic-link, allowlist, admin-only mutation, onboarding) | **0017** |
+| Polled sync replaces realtime SSE | 0018 |
 | External data integrations (fail-closed sync, health tracking, lease) | **0019** |
 | Spot prices & charging cost model (on-read, missing ≠ 0 kr, gridShare seam) | **0020** |
 
@@ -126,40 +139,44 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 ## Authentication & authorization (ADR-0017)
 
 - **Two sign-in methods, both gated by the `approved_email` allowlist:** Google OAuth and email
-  magic-link. Only approved emails can create an account / sign in. No pre-created user rows —
-  the row is created on first sign-in; role comes from the `approved_email` row.
-- **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → seeded as admin allowlist rows at startup by
-  `src/lib/seedApprovedEmails.ts`, invoked from **`server/plugins/seedApprovedEmails.ts`**, the Nitro
-  plugin **registered in `vite.config.ts`**.
-- **Two roles:** `user`, `admin`.
-- **Authorization — admins mutate, users are read-only:** reads use `protectedProcedure`; every
-  mutation uses `adminProcedure`; the **sole exception** is a user managing their **own account**
+  magic-link. **No passwords, no passkeys.** Only approved emails can sign in; the user row is created
+  on first sign-in and its role comes from the `approved_email` row.
+- **Two roles:** `user`, `admin`. **Admins mutate, users are read-only:** reads use `protectedProcedure`;
+  every mutation uses `adminProcedure`; the **sole exception** is a user managing their **own account**
   (`updateProfile`, `completeOnboarding`, own avatar) scoped to `context.user.id`.
+- **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → admin allowlist rows at startup (see Non-negotiables for the plugin rule).
+  Sign in locally with one of those addresses to bootstrap the first admin.
 - Admins manage access at `/admin` (invite = add an allowlist row + courtesy email to `/login`;
   revoke = remove approval + soft-delete + revoke sessions; re-invite restores a revoked user).
 
 ---
 
-## Scripts
-
-Local dev runs a plain `postgres:17-alpine` container (no cloud DB locally). Sign in with an
-`INITIAL_ADMIN_EMAILS` address to bootstrap the first admin.
+## Commands
 
 | Command | What it does |
 |---|---|
 | `bun run dev` | Vite dev server on :14600 |
-| `bun run build` | Vite build + `tsc --noEmit` |
+| `bun run dev:host` | Same, on your LAN IP so a phone on the Wi-Fi can reach auth + storage |
 | `bun run dev:up` / `dev:down` | Whole dev stack: db + queue + mail + storage (`up` also migrates) |
+| `bun run dev:worker` | Local BullMQ consumer — **run it, or queued jobs (blurhash, alert emails) never process in dev** |
+| `bun run build` / `typecheck` | Vite build + `tsc --noEmit` / types only |
 | `bun run db:{up,down,generate,migrate,studio}` | Postgres on :14620; generate/apply migrations; Drizzle Studio |
-| `bun run auth:schema` | Regenerate `betterAuth.ts` + patch `timestamptz`. Idempotent |
+| `bun run auth:schema` | Regenerate `betterAuth.ts` + patch `timestamptz`/RLS. Idempotent |
 | `bun run queue:{up,down,studio}` / `storage:{up,down}` / `mail:{up,down}` | Local broker / S3 (RustFS) / Mailpit |
 | `bun run email:dev` | React Email preview on :14601 |
-| `bun run i18n:compile` | Compile `messages/{sv,en}.json` → `src/paraglide/` |
-| `bun run test` / `test:node` / `test:components` | Vitest (both / node-DB / browser) |
-| `bun run check` / `check:ci` | Biome format+lint+organize-imports (write / dry-run) |
+| `bun run i18n:compile` | Compile `messages/{sv,en}.json` → `src/paraglide/` (also runs on install and before `test`) |
+| `bun run test` / `test:node` / `test:components` | Vitest: both / node-DB / browser (**`test:components` watches**; one-shot: `bunx vitest run --project browser`) |
+| `bunx vitest run <path>` | One test file |
+| `bun run check` / `check:ci` | Biome format+lint+organize-imports: write / dry-run (= CI's `Check (lint)`) |
 
-**Ports (146xx, offset +100 so it coexists with sibling projects):** dev 14600, email:dev 14601,
-mailpit UI 14602, storage console 14603, bull studio 14604; postgres 14620, redis 14621, smtp 14622, s3 14623.
+**Tests need the local DB:** `bun run db:up && bun run db:migrate` first. `setupDatabase()` refuses any
+non-local `DATABASE_URL` outside CI, because tests create and drop schemas.
+
+**Ports:** dev 14600, email:dev 14601, mailpit UI 14602, storage console 14603, bull studio 14604;
+postgres 14620, redis 14621, smtp 14622, s3 14623.
+
+**CI:** `main` is PR-gated by the `protect-main` ruleset — required checks are **`CI Success`** (aggregates
+`Check (lint)`, `Check (types)`, `Check (build)`, `Test`) and **`Validate Conventional Commit title`**.
 
 ---
 
@@ -167,23 +184,30 @@ mailpit UI 14602, storage console 14603, bull studio 14604; postgres 14620, redi
 
 `.env.example` lists everything. Key vars:
 - `DATABASE_URL` (prod: auto-provisioned as `POSTGRES_URL` by the Supabase Vercel integration, bridged in `src/lib/db/connectionString.ts`; local `postgres://neon:npg@localhost:14620/neondb`).
-- `BETTER_AUTH_SECRET` (32+ chars; `openssl rand -base64 32`), `BETTER_AUTH_URL`.
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (Google OAuth client).
+- `BETTER_AUTH_SECRET` (32+ chars; `openssl rand -base64 32`), `BETTER_AUTH_URL`; `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
 - `INITIAL_ADMIN_EMAILS` (CSV; seeds the first admin(s) into `approved_email`).
 - Storage `BLOB_*` (prod) / `S3_*` (local RustFS); email `RESEND_API_KEY`+`EMAIL_FROM` (prod) / `SMTP_*` (local Mailpit); `REDIS_URL` (local queue); `LOG_LEVEL`.
-- `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (Zaptec sync creds; unset → integration fails closed as `not_configured`, see ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data). `CRON_SECRET` (Bearer token gating `/api/cron/*`).
+  `STORAGE_ADAPTER=devLog` / `EMAIL_ADAPTER=devLog` force the no-op adapters (offline dev without docker).
+- `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (unset → fails closed as `not_configured`, ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data).
+- `CRON_SECRET` (Bearer token gating `/api/cron/*`); `SHELLY_WEBHOOK_TOKEN` (query-param token for `/api/webhooks/shelly`).
 
-**`vercel env pull` hazard:** it writes prod `DATABASE_URL` into `.env.local`, which Vite + Drizzle
-prefer over `.env`. If you run it, delete the `DATABASE_URL*` lines from `.env.local` immediately —
-otherwise `bun run db:migrate` migrates **production**.
+---
+
+## Gotchas
+
+- **`vercel env pull` writes prod `DATABASE_URL` into `.env.local`**, which Vite + Drizzle prefer over `.env`.
+  If you run it, delete the `DATABASE_URL*` lines from `.env.local` immediately — otherwise `bun run db:migrate` migrates **production**.
+- **Every Vercel deploy migrates its database:** the `vercel-build` script runs `drizzle-kit migrate` before the build.
+  A merged migration hits prod on the next production deploy — it can't be "held back".
+- **Client code may only `import type` from services.** A value import pulls `db` → `postgres` → `Buffer` into the
+  browser bundle and crashes the page. Put shared constants/vocab in a client-safe module (e.g. `integrationHealth.ts`, `spotPrice/zones.ts`); the `clientSafe.browser.test.tsx` tests guard this.
+- **`src/routeTree.gen.ts`, `src/paraglide/`, `drizzle/meta/` and `betterAuth.ts` are generated** — regenerate, never edit.
 
 ---
 
 ## Non-negotiables
 
-- **Auth: Google + magic-link only, both allowlist-gated.** No passwords, no passkeys.
-- **Admins mutate; users are read-only** except their own account. Every mutating procedure is `adminProcedure`.
-- **Two roles:** `user`, `admin`.
+- **Auth rules** in [Authentication](#authentication--authorization-adr-0017) are fixed: Google + magic-link only, allowlist-gated, two roles, every mutating procedure `adminProcedure` except own-account.
 - **All `db` access through services.** No `db.select()` in routes/handlers/auth hooks. See ADR-0002.
 - **File blobs out-of-process.** User file bytes never traverse a Vercel Function; all file access goes through `src/lib/effects/storage/`. See ADR-0006.
 - **oRPC procedures are thin glue.** Gate with `protectedProcedure`/`adminProcedure` (never inline). Better Auth's own `/api/auth/*` routes stay on the Better Auth handler.
@@ -191,34 +215,12 @@ otherwise `bun run db:migrate` migrates **production**.
 - **Never hand-edit `src/lib/db/schema/betterAuth.ts`** — regenerate via `bun run auth:schema`.
 - **Every database change gets a Postgres schema-design review before it merges** — new/altered tables, columns, constraints, indexes, or migrations under `src/lib/db/schema/` / `drizzle/`. The reviewer (a subagent) must load the `supabase-postgres-best-practices` skill and judge the change against the queries that will actually run (indexes, constraints vs. every valid write, types, FK/cascade, evolvability). Run it alongside `migration-guard` (which checks the mechanical migration gotchas); fix or explicitly rule on every finding before code builds on the schema.
 - **All timestamp columns use `timestamp({ withTimezone: true })`** (timestamptz). When drizzle-kit emits an `ALTER ... SET DATA TYPE timestamp with time zone` on existing data, hand-add `USING "<col>" AT TIME ZONE 'UTC'`.
-- **`server/plugins/seedApprovedEmails.ts`** (which invokes the seeding logic in `src/lib/seedApprovedEmails.ts`) **must stay registered in `vite.config.ts`'s Nitro `plugins`** — Nitro does not auto-discover `server/plugins/*`; unregistered, the first admin never seeds.
-- **The Vercel function region is pinned to `arn1` (Stockholm) in `vite.config.ts`** (Nitro `vercel.functions.regions`), co-located with the Supabase DB (`eu-north-1`) and the users. **Never remove it** — without a pin the region silently falls back to Vercel's US default (`iad1`), adding a transatlantic hop to every request *and* every DB round-trip (~610ms/RPC vs. ~60ms — ~10× slower). If the DB region moves, change this to match.
-- **User-facing text is Paraglide-localized** (`messages/{sv,en}.json`, sv source-of-truth + default, en key-complete). "Videbacken" stays untranslated. **Route URL paths stay English** (`/users`, `/account`).
+- **`server/plugins/seedApprovedEmails.ts` must stay registered in `vite.config.ts`'s Nitro `plugins`** — Nitro doesn't auto-discover `server/plugins/*`; unregistered, the first admin never seeds.
+- **Never remove the `arn1` region pin in `vite.config.ts`** (Nitro `vercel.functions.regions`, co-located with the Supabase DB in `eu-north-1`). Without it the region silently falls back to US `iad1`: ~610 ms/RPC instead of ~60 ms. If the DB region moves, change the pin to match.
+- **User-facing text is Paraglide-localized** (`messages/{sv,en}.json`, sv source of truth + default, en key-complete). "Videbacken" stays untranslated. **Route URL paths stay English** (`/users`, `/account`).
 - **File naming:** routes lowercase + TanStack tokens; React components PascalCase in `src/components/<entity>/`; hooks `useX`; `src/components/ui/` kebab-case (shadcn-managed); everything else camelCase.
 - **Every screen is responsive** (desktop + mobile + tablet; no fixed pixel widths).
-- **Conventional Commits** (`<type>(<scope>): <subject>` ≤72 chars, imperative). PRs are **squash-merged** — PR title = the conventional-commit subject (GitHub appends `(#NN)`), description = the body; one concern per PR. PR-title format enforced by `.github/workflows/lint-pr-title.yml`.
-- **Lock TanStack Start to its pinned RC version** in `package.json` until 1.0.
-
----
-
-## Decisions made — don't relitigate
-
-- **Framework:** TanStack Start (RC, locked) on Vite. **Hosting:** Vercel Pro, Stockholm (`arn1`).
-- **Package manager:** bun.
-- **DB:** Supabase Postgres (prod) / plain Postgres (local+CI); `postgres-js` driver; Drizzle ORM. All timestamps `timestamptz`.
-- **Data layer:** oRPC + TanStack Query; SSR via in-process router client. Domain rules in services (ADR-0002); effects isolated (ADR-0001).
-- **Auth:** Better Auth, **Google OAuth + email magic-link, both gated by the `approved_email` allowlist**; two roles; **admins mutate, users read-only except own account**; first admin seeded from `INITIAL_ADMIN_EMAILS`. No passwords/passkeys. See ADR-0017.
-- **Ports:** offset **+100** (14600/14620…) so this template coexists with sibling projects on one machine.
-- **Logging:** pino → stdout (Vercel Runtime Logs); browser warn/error POSTs `/api/log` (ADR-0003).
-- **Sync: polled, never pushed** (ADR-0018, supersedes ADR-0004 + ADR-0011). SSE/WebSockets are off the table on Vercel Fluid — a held connection bills provisioned memory for its whole lifetime. Presence was deleted with it (it had no UI consumer).
-- **Forms:** `@tanstack/react-form` v1 `createFormHook` + bound shadcn `<Field>` (ADR-0005). **Form presentation:** responsive overlay (URL dialog state) for small CRUD; dedicated route for large forms (ADR-0013).
-- **File storage:** Vercel Blob (prod) / RustFS S3 (dev) / devLog (test); public store (avatars) + private store; client-direct upload (ADR-0006). **Queue:** Vercel Queue (prod) / BullMQ+Redis (dev) / devLog (test) (ADR-0007). **Email:** Resend (prod) / Mailpit (dev) / devLog (test); React Email templates (ADR-0008).
-- **UI:** shadcn/ui (style `radix-nova`, base `slate`) + Tailwind v4 — **Radix primitives, not Base UI**. **Design language:** self-hosted Cabinet Grotesk (headings) + Switzer (body); inset-sidebar shell + shared `PageContainer`; one `--brand` accent (muted indigo placeholder); reduced-motion-aware overlay motion (ADR-0015). **Empty states:** shared `Empty` component (ADR-0016). **Command palette:** global Cmd+K on cmdk (ADR-0014).
-- **Dark mode:** cookie-based (`videbacken-theme`), applied to `<html>` during SSR; own `ThemeProvider` (no next-themes); manual + system; no FOUC.
-- **i18n:** Paraglide JS, sv default + en, `videbacken-locale` cookie, no URL prefix; per-request server locale via ALS in `src/server.ts`.
-- **Linter/formatter:** Biome; Tailwind class sort on; `check:ci` is a required CI gate.
-- **Component tests** run in Vitest Browser Mode (real Chromium via Playwright), separate `vitest.browser.config.ts`; `*.browser.test.tsx`, cache-seed a fresh `QueryClient` via `renderWithProviders`.
-- **Squash-merge only;** `main` PR-gated with `Check (Biome)`, `Build`, `Test`, and the PR-title check required.
+- **Conventional Commits** (`<type>(<scope>): <subject>` ≤72 chars, imperative). PRs are **squash-merged** — PR title = the conventional-commit subject (GitHub appends `(#NN)`), description = the body (`.github/PULL_REQUEST_TEMPLATE.md`); one concern per PR.
 
 ---
 
