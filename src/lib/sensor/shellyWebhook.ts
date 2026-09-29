@@ -1,6 +1,6 @@
-import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { logger } from '~/lib/logger/server'
+import { secretMatches } from '~/lib/secretMatches'
 import { recordReading, SensorDomainError } from '~/lib/services/sensor'
 
 // Shelly interpolates urlencoded values into GET query params. Numbers are
@@ -51,22 +51,12 @@ export function parseShellyQuery(
   }
 }
 
-// Constant-time compare so a wrong token can't be probed by timing. Returns
-// false when no server secret is configured (fail closed).
-export function verifyWebhookToken(provided: string | null, expected: string | undefined): boolean {
-  if (!expected || provided == null) return false
-  const a = Buffer.from(provided)
-  const b = Buffer.from(expected)
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
-}
-
 // The full receiver: token gate → parse → service → response. Kept out of the
 // route file so the whole flow is unit-testable. No `db.` here — the service
 // owns all persistence (ADR-0002).
 export async function handleShellyWebhook(request: Request): Promise<Response> {
   const url = new URL(request.url)
-  if (!verifyWebhookToken(url.searchParams.get('token'), process.env.SHELLY_WEBHOOK_TOKEN)) {
+  if (!secretMatches(url.searchParams.get('token'), process.env.SHELLY_WEBHOOK_TOKEN)) {
     return new Response(null, { status: 401 })
   }
   const parsed = parseShellyQuery(url.searchParams)

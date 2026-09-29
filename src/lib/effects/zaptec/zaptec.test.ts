@@ -698,6 +698,25 @@ describe('sessionsEndedSince', () => {
     }
   })
 
+  test('the drift message lists at most 10 distinct paths, then a count', async () => {
+    const drifted = sessionJson({ energy: 'twelve-kWh', chargerId: undefined })
+    const { client } = setup({
+      [SESSIONS]: () => jsonResponse(sessionsPage(Array.from({ length: 12 }, () => drifted))),
+    })
+
+    const err = await caught(
+      collect(client.sessionsEndedSince(since, { installationId: INSTALLATION_ID, until })),
+    )
+
+    const shown = [0, 1, 2, 3, 4].flatMap((i) => [
+      `sessions.${i}.chargerId`,
+      `sessions.${i}.energy`,
+    ])
+    expect(err.message).toBe(
+      `Zaptec sessions response has an unexpected shape at: ${shown.join(', ')} (+14 more)`,
+    )
+  })
+
   test('non-JSON body → unexpected_response', async () => {
     const { client } = setup({
       [CHARGERS]: () => new Response('<html>oops</html>', { status: 200 }),
