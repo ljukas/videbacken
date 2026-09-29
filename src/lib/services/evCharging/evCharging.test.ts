@@ -283,7 +283,7 @@ test('findLiveCharger picks the charger with the newest session over stubs and o
 
 test('importSessions inserts more intervals than one statement can bind', async () => {
   // 4 params per interval: 20,000 rows would need 80,000 bound params, past
-  // postgres-js's 65,534 cap for a single statement.
+  // Postgres's 65,535 cap for a single statement.
   const start = new Date('2026-01-10T00:00:00Z').getTime()
   const intervals = Array.from({ length: 20_000 }, (_, i) => ({
     startAt: new Date(start + i * 1000),

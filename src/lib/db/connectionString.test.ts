@@ -28,12 +28,35 @@ describe('resolvePooledUrl', () => {
   })
 
   it('strips `workaround` while preserving other query params, in any order', () => {
+    expect(resolvePooledUrl({ POSTGRES_URL: `${POOLED}?workaround=x&supa=base-pooler.x` })).toBe(
+      `${POOLED}?supa=base-pooler.x`,
+    )
+    expect(resolvePooledUrl({ POSTGRES_URL: `${POOLED}?supa=base-pooler.x&workaround=x` })).toBe(
+      `${POOLED}?supa=base-pooler.x`,
+    )
+  })
+
+  // node-postgres reads a bare `sslmode=require` as `verify-full`, which
+  // rejects Supabase's certificate; libpq semantics keep it encrypted-only.
+  it('gives an `sslmode` libpq semantics', () => {
     expect(resolvePooledUrl({ POSTGRES_URL: `${POOLED}?workaround=x&sslmode=require` })).toBe(
-      `${POOLED}?sslmode=require`,
+      `${POOLED}?sslmode=require&uselibpqcompat=true`,
     )
-    expect(resolvePooledUrl({ POSTGRES_URL: `${POOLED}?sslmode=require&workaround=x` })).toBe(
-      `${POOLED}?sslmode=require`,
+    expect(resolveUnpooledUrl({ POSTGRES_URL_NON_POOLING: `${DIRECT}?sslmode=require` })).toBe(
+      `${DIRECT}?sslmode=require&uselibpqcompat=true`,
     )
+  })
+
+  it('leaves modes libpq semantics would change, or that already agree', () => {
+    for (const mode of ['no-verify', 'verify-full', 'disable']) {
+      const url = `${POOLED}?sslmode=${mode}`
+      expect(resolvePooledUrl({ POSTGRES_URL: url })).toBe(url)
+    }
+  })
+
+  it('keeps an explicit `uselibpqcompat` as given', () => {
+    const url = `${POOLED}?sslmode=verify-full&uselibpqcompat=false`
+    expect(resolvePooledUrl({ POSTGRES_URL: url })).toBe(url)
   })
 
   it('leaves the password (with encoded specials) untouched', () => {

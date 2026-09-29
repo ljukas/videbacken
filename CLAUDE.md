@@ -18,7 +18,7 @@ For *why* a pattern exists, follow the ADR link.
 
 - **Framework:** TanStack Start (RC, **locked** to its pinned version until 1.0) on Vite 8 + Nitro; file-based router in `src/routes/`.
 - **Hosting:** Vercel Pro, function region pinned to Stockholm `arn1` (see Non-negotiables).
-- **Database:** Supabase Postgres (prod, via Vercel Marketplace) / plain `postgres:17-alpine` (local + CI); Drizzle ORM, `postgres-js` driver, snake_case, all timestamps `timestamptz`.
+- **Database:** Supabase Postgres (prod, via Vercel Marketplace) / plain `postgres:17-alpine` (local + CI); Drizzle ORM, `node-postgres` (`pg`) driver — not postgres.js, which pipelines queries that Supabase's transaction pooler drops — snake_case, all timestamps `timestamptz`.
 - **Data layer:** oRPC + TanStack Query; SSR via an in-process router client. Domain rules in services (ADR-0002), effects isolated (ADR-0001).
 - **Auth:** Better Auth, Google OAuth + email magic-link, allowlist-gated — see [Authentication](#authentication--authorization-adr-0017).
 - **Sync:** polled, never pushed (ADR-0018 supersedes 0004 + 0011). No realtime, no presence.

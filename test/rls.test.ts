@@ -11,7 +11,7 @@ setupDatabase()
 // Every table must opt in — schema tables via `.enableRLS()`, Better Auth's via
 // `scripts/patchBetterAuthSchema.mjs` — so a new table can't slip through.
 test('every table has row-level security enabled', async () => {
-  const rows = await db.execute<{
+  const { rows: tables } = await db.execute<{
     relname: string
     relrowsecurity: boolean
     relforcerowsecurity: boolean
@@ -21,7 +21,6 @@ test('every table has row-level security enabled', async () => {
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p')
   `)
-  const tables = [...rows]
 
   expect(tables.length).toBeGreaterThanOrEqual(14)
   expect(tables.filter((t) => !t.relrowsecurity).map((t) => t.relname)).toEqual([])
@@ -35,9 +34,9 @@ test('every table has row-level security enabled', async () => {
 // runs in a transaction that is rolled back, so the role never persists.
 test('a non-owner role with table grants sees no rows (default deny)', async () => {
   await db.execute(sql`INSERT INTO approved_email (email, role) VALUES ('rls@example.com', 'user')`)
-  const [{ schema }] = [
-    ...(await db.execute<{ schema: string }>(sql`SELECT current_schema() AS schema`)),
-  ]
+  const {
+    rows: [{ schema }],
+  } = await db.execute<{ schema: string }>(sql`SELECT current_schema() AS schema`)
   const probe = `rls_probe_${process.env.VITEST_POOL_ID ?? '0'}`
   const rollback = new Error('rollback')
   const counts: { owner?: number; probe?: number } = {}
@@ -45,9 +44,8 @@ test('a non-owner role with table grants sees no rows (default deny)', async () 
   const result = await db
     .transaction(async (tx) => {
       const count = async () =>
-        [
-          ...(await tx.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM approved_email`)),
-        ][0].n
+        (await tx.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM approved_email`))
+          .rows[0].n
       await tx.execute(sql.raw(`CREATE ROLE ${probe} NOLOGIN`))
       await tx.execute(sql.raw(`GRANT USAGE ON SCHEMA "${schema}" TO ${probe}`))
       await tx.execute(sql.raw(`GRANT SELECT ON approved_email TO ${probe}`))

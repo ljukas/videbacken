@@ -247,7 +247,7 @@ function queryBucketAverages(win: SeriesWindow, now: Date, filter: SQL | undefin
   )
 }
 
-// postgres-js returns avg() as a numeric string; preserve null (never coerce to 0).
+// The driver can return avg() as a numeric string; preserve null (never coerce to 0).
 function toNumber(v: number | string | null): number | null {
   return v == null ? null : Number(v)
 }
