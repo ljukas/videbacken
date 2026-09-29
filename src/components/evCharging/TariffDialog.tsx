@@ -61,7 +61,8 @@ function makeFormSchema() {
       .refine(
         (s) => {
           const n = parseDecimal(s)
-          return !KRONOR_SUSPECT.has(field) || n === null || n >= 1
+          // 0 is a real (if unusual) amount; 0 < n < 1 is the kronor mistake.
+          return !KRONOR_SUSPECT.has(field) || n === null || n === 0 || n >= 1
         },
         { message: m.charging_tariff_error_looks_like_kronor() },
       )
@@ -152,23 +153,20 @@ function amountOf(value: string): number {
 function TariffForm({ mode, onDone }: { mode: TariffDialogMode; onDone: () => void }) {
   const queryClient = useQueryClient()
   const formSchema = useMemo(makeFormSchema, [])
-  // Set when the server rejects the date; the field can only take focus once
-  // the submit has ended (inputs are disabled while submitting).
+  // The start date the server said is taken. Kept as state and checked by a
+  // field validator (not written into the error map, which TanStack clears on
+  // every blur/change), so the error stays until the date actually changes.
+  const [takenDay, setTakenDay] = useState<string | null>(null)
+  // Set on that rejection; the field can only take focus once the submit has
+  // ended (inputs are disabled while submitting).
   const focusDateAfterSubmit = useRef(false)
 
   // A taken start date is shown on the date field itself (the dialog stays
   // open so it can be fixed); any other failure is a toast.
   const reportError = (code: TariffDomainErrorCode | undefined) => {
     if (code === 'TARIFF_VALID_FROM_TAKEN') {
-      form.setFieldMeta('validFrom', (meta) => ({
-        ...meta,
-        isTouched: true,
-        // `{ message }`, like a zod issue — FieldError renders `.message`.
-        errorMap: {
-          ...meta.errorMap,
-          onServer: { message: m.charging_tariff_error_valid_from_taken() },
-        },
-      }))
+      setTakenDay(form.getFieldValue('validFrom'))
+      form.setFieldMeta('validFrom', (meta) => ({ ...meta, isTouched: true }))
       focusDateAfterSubmit.current = true
       return
     }
@@ -217,11 +215,26 @@ function TariffForm({ mode, onDone }: { mode: TariffDialogMode; onDone: () => vo
   })
 
   const isSubmitting = useStore(form.store, (st) => st.isSubmitting)
+  const validFromValue = useStore(form.store, (st) => st.values.validFrom)
   useEffect(() => {
+    // Surface the taken-date error now that the field's validator knows it…
+    if (takenDay !== null) form.validateField('validFrom', 'change')
+  }, [takenDay, form])
+  useEffect(() => {
+    // …and move focus there once the submit has finished.
     if (isSubmitting || !focusDateAfterSubmit.current) return
     focusDateAfterSubmit.current = false
     document.getElementById('validFrom')?.focus()
   }, [isSubmitting])
+  const takenError = ({ value }: { value: string }) =>
+    takenDay !== null && value === takenDay
+      ? { message: m.charging_tariff_error_valid_from_taken() }
+      : undefined
+  // Only claim "pre-filled" when it was: a new period in a year the table knows.
+  const taxHint =
+    mode.kind === 'new' && statutoryEnergyTaxOre(validFromValue) !== undefined
+      ? m.charging_tariff_field_tax_hint()
+      : m.charging_tariff_field_tax_hint_plain()
 
   const ore = m.charging_tariff_unit_ore()
   return (
@@ -234,15 +247,13 @@ function TariffForm({ mode, onDone }: { mode: TariffDialogMode; onDone: () => vo
       <div className="flex flex-col gap-5">
         <form.AppField
           name="validFrom"
+          // Change-only: raised via validateField('change'), cleared by the next
+          // edit; a blur never touches this slot, so the message stays put.
+          validators={{ onChange: takenError }}
           listeners={{
             onChange: ({ value }) => {
-              // A changed date clears a "date taken" error from the server…
-              form.setFieldMeta('validFrom', (meta) => ({
-                ...meta,
-                errorMap: { ...meta.errorMap, onServer: undefined },
-              }))
-              // …and, for a new period whose tax hasn't been typed over,
-              // follows that year's statutory energy tax.
+              // For a new period whose tax hasn't been typed over, the tax
+              // follows the chosen year's statutory rate.
               const tax = statutoryEnergyTaxOre(value)
               const taxTyped = form.getFieldMeta('energyTaxOre')?.isDirty
               if (mode.kind === 'new' && tax !== undefined && !taxTyped) {
@@ -280,7 +291,7 @@ function TariffForm({ mode, onDone }: { mode: TariffDialogMode; onDone: () => vo
           children={(field) => (
             <field.NumberField
               label={m.charging_tariff_field_tax()}
-              description={m.charging_tariff_field_tax_hint()}
+              description={taxHint}
               suffix={ore}
             />
           )}

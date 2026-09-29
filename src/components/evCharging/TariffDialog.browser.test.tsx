@@ -217,3 +217,45 @@ test('the unit and hint are announced with the input', async () => {
     .map((id) => document.getElementById(id)?.textContent)
   expect(described).toEqual([m.charging_tariff_unit_ore(), m.charging_tariff_field_grid_hint()])
 })
+
+test('a 0 grid fee is a real amount, not a kronor mistake', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={() => {}} />,
+  )
+  await field(screen, m.charging_tariff_field_grid()).fill('0')
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await vi.waitFor(() =>
+    expect(createFn).toHaveBeenCalledWith(
+      expect.objectContaining({ gridTransferOre: 0 }),
+      expect.anything(),
+    ),
+  )
+})
+
+test('the taken-date error survives a blur and clears once the date changes', async () => {
+  createFn.mockRejectedValue(
+    new ORPCError('TARIFF_VALID_FROM_TAKEN', { defined: true, status: 409 }),
+  )
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={() => {}} />,
+  )
+  const message = tariffErrorMessage('TARIFF_VALID_FROM_TAKEN')
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await expect.element(screen.getByText(message)).toBeVisible()
+
+  // Tabbing away (a blur) keeps it…
+  await field(screen, m.charging_tariff_field_markup()).click()
+  await expect.element(screen.getByText(message)).toBeVisible()
+
+  // …a different date clears it.
+  await field(screen, m.charging_tariff_field_valid_from()).fill('2026-10-01')
+  await expect.element(screen.getByText(message)).not.toBeInTheDocument()
+})
+
+test('editing shows the plain energy-tax hint, not "pre-filled"', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'edit', tariff: AUG }} onOpenChange={() => {}} />,
+  )
+  await expect.element(screen.getByText(m.charging_tariff_field_tax_hint_plain())).toBeVisible()
+  expect(screen.getByText(m.charging_tariff_field_tax_hint()).elements()).toHaveLength(0)
+})

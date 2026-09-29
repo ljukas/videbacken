@@ -120,6 +120,7 @@
   "charging_tariff_field_markup_hint": "The sum of the \"Rörliga kostnader\" and \"Fast påslag\" lines on the retailer's bill. May be negative.",
   "charging_tariff_field_tax": "Energy tax",
   "charging_tariff_field_tax_hint": "Pre-filled with this year's statutory tax – the \"Energiskatt\" line on the grid bill.",
+  "charging_tariff_field_tax_hint_plain": "The \"Energiskatt\" line on the grid bill.",
   "charging_tariff_field_valid_from": "Valid from",
   "charging_tariff_field_vat": "VAT",
   "charging_tariff_field_vat_hint": "Normally 25 %.",

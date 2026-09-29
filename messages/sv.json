@@ -120,6 +120,7 @@
   "charging_tariff_field_markup_hint": "Summan av raderna ”Rörliga kostnader” och ”Fast påslag” på elhandelsfakturan. Kan vara negativ.",
   "charging_tariff_field_tax": "Energiskatt",
   "charging_tariff_field_tax_hint": "Förifylld med årets lagstadgade skatt – raden ”Energiskatt” på elnätsfakturan.",
+  "charging_tariff_field_tax_hint_plain": "Raden ”Energiskatt” på elnätsfakturan.",
   "charging_tariff_field_valid_from": "Gäller från",
   "charging_tariff_field_vat": "Moms",
   "charging_tariff_field_vat_hint": "Normalt 25 %.",

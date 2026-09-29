@@ -99,8 +99,16 @@ function ChargingPage() {
   const dialogUnavailable =
     dialog !== undefined && (!isAdmin || (dialog !== 'tariffNew' && !selectedTariff))
   useEffect(() => {
-    if (dialogUnavailable) close()
-  }, [dialogUnavailable, close])
+    // `replace`, so Back doesn't return to the bad URL (and bounce again).
+    if (dialogUnavailable) {
+      navigate({
+        to: '.',
+        replace: true,
+        resetScroll: false,
+        search: (prev) => ({ ...prev, dialog: undefined, tariffId: undefined }),
+      })
+    }
+  }, [dialogUnavailable, navigate])
   // "Ny period" starts from the newest period's amounts (the list is oldest first).
   const latestTariff = tariffs.at(-1)
 
