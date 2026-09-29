@@ -6,8 +6,9 @@
 import { TZDate, tz } from '@date-fns/tz'
 import { addDays as addCalendarDays, format, startOfMonth } from 'date-fns'
 
-const TIME_ZONE = 'Europe/Stockholm'
-const inStockholm = tz(TIME_ZONE)
+/** The IANA zone, for formatters that take one (Intl `timeZone`). */
+export const STOCKHOLM_TIME_ZONE = 'Europe/Stockholm'
+const inStockholm = tz(STOCKHOLM_TIME_ZONE)
 const DAY_FORMAT = 'yyyy-MM-dd'
 const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/
 
@@ -23,7 +24,7 @@ function parseDay(day: string): TZDate | null {
   if (!match) return null
   const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])]
   if (y < 1970 || y > 2999) return null
-  const midnight = TZDate.tz(TIME_ZONE, y, m - 1, d)
+  const midnight = TZDate.tz(STOCKHOLM_TIME_ZONE, y, m - 1, d)
   return midnight.getMonth() === m - 1 && midnight.getDate() === d ? midnight : null
 }
 
@@ -67,7 +68,7 @@ export function stockholmDayBounds(day: string): { startMs: number; endMs: numbe
 /** `[startMs, endMs)` of a Stockholm calendar year: local midnight 1 January to the next. */
 export function stockholmYearBounds(year: number): { startMs: number; endMs: number } {
   return {
-    startMs: TZDate.tz(TIME_ZONE, year, 0, 1).getTime(),
-    endMs: TZDate.tz(TIME_ZONE, year + 1, 0, 1).getTime(),
+    startMs: TZDate.tz(STOCKHOLM_TIME_ZONE, year, 0, 1).getTime(),
+    endMs: TZDate.tz(STOCKHOLM_TIME_ZONE, year + 1, 0, 1).getTime(),
   }
 }
