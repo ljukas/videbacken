@@ -43,11 +43,13 @@ rows by the `seedApprovedEmails` function in `src/lib/seedApprovedEmails.ts`,
 invoked from the Nitro plugin `server/plugins/seedApprovedEmails.ts`, which is
 registered explicitly in `vite.config.ts` (this project's Nitro does **not**
 auto-discover `server/plugins/*` — plugins must be listed explicitly). The plugin
-runs the seed on each instance's first request, under `waitUntil`, not at init:
-Vercel can pre-warm an instance and freeze it before any request, and a seed
-started at init froze mid-connect and timed out on thaw. The seed is idempotent
-and fails soft (logs, never crashes; the next request retries). The table is the runtime source of truth
-thereafter; editing the env later does not retroactively change existing rows.
+runs the seed on each instance's first request, under `waitUntil` (from
+`@vercel/functions`), not at init: work started outside a request isn't covered
+by `waitUntil`, and Vercel may suspend the instance with it in flight (logs
+showed the init-time seed's connect timing out during the instance's first
+requests). The seed is idempotent and fails soft (logs, never crashes; the next
+request retries). The table is the runtime source of truth thereafter; editing
+the env later does not retroactively change existing rows.
 
 ### Roles and the authorization rule
 

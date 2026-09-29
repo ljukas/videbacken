@@ -201,9 +201,10 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
   A merged migration hits prod on the next production deploy — it can't be "held back".
 - **Client code may only `import type` from services.** A value import pulls `db` → `postgres` → `Buffer` into the
   browser bundle and crashes the page. Put shared constants/vocab in a client-safe module (e.g. `integrationHealth.ts`, `spotPrice/zones.ts`); the `clientSafe.browser.test.tsx` tests guard this.
-- **No DB or network I/O at module init or in a Nitro plugin's body.** Vercel can pre-warm an instance and
-  freeze it before its first request; work started at init freezes mid-flight and its timers fire on thaw
-  (the approved-email seed timed out this way). Do it inside a request (`request` hook + `event.req.waitUntil`).
+- **No DB or network I/O at module init or in a Nitro plugin's body.** Work started outside a request isn't
+  covered by `waitUntil`; Vercel may suspend the instance with it in flight (logs showed the approved-email
+  seed's connect timing out during the instance's first requests). Do it inside a request: a `request` hook
+  that hands the work to `waitUntil` from `@vercel/functions`.
 - **`src/routeTree.gen.ts`, `src/paraglide/`, `drizzle/meta/` and `betterAuth.ts` are generated** — regenerate, never edit.
 
 ---
