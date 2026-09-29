@@ -3,17 +3,12 @@ import type { PriceSlot } from '~/lib/spotPrice/slots'
 import { validateDaySlots } from '~/lib/spotPrice/slots'
 import { ElprisError } from './errors'
 
-const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
-
-/** A strict ISO-8601 instant with an explicit offset, as elprisetjustnu.se sends it. */
-const instant = z.string().transform((s, ctx) => {
-  const ms = ISO_WITH_OFFSET.test(s) ? Date.parse(s) : Number.NaN
-  if (Number.isNaN(ms)) {
-    ctx.addIssue({ code: 'custom', message: 'not an ISO instant with an offset' })
-    return z.NEVER
-  }
-  return ms
-})
+/**
+ * A strict ISO-8601 instant with an explicit offset, as elprisetjustnu.se
+ * sends it. zod also rejects impossible dates and times (Feb 30, 24:00), which
+ * Date.parse would silently roll over.
+ */
+const instant = z.iso.datetime({ offset: true }).transform((s) => Date.parse(s))
 
 const rowSchema = z.object({
   SEK_per_kWh: z.number(),

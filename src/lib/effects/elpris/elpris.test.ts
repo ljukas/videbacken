@@ -354,6 +354,19 @@ describe('dayPrices', () => {
     for (const row of apiDay()) expect(error.message).not.toContain(String(row.SEK_per_kWh))
   })
 
+  // Date.parse rolls these over (Feb 30 → Mar 2, 24:00 → next midnight), and a
+  // single odd `time_end` is otherwise tolerated as the fall-back slot.
+  test.each([
+    ['an impossible calendar day', 5, '2026-02-30T00:00:00+01:00'],
+    ['hour 24', 95, '2026-09-28T24:00:00+02:00'],
+  ])('an impossible instant (%s) is unexpected_response', async (_, index, timeEnd) => {
+    const rows = apiDay().map((r, i) => (i === index ? { ...r, time_end: timeEnd } : r))
+    const { c } = client({ [ROUTE]: () => jsonResponse(rows) })
+    const error = await rejection(c.dayPrices(DAY, 'SE3'))
+    expect(error.code).toBe('unexpected_response')
+    expect(error.message).toContain(`${index}.time_end`)
+  })
+
   test('a SEK price that no longer matches EUR × EXR is unexpected_response', async () => {
     // öre in the SEK field: 100× too large.
     const rows = apiDay().map((r) => ({ ...r, SEK_per_kWh: r.SEK_per_kWh * 100 }))
