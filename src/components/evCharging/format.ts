@@ -1,12 +1,12 @@
 import { formatDistanceStrict } from 'date-fns'
 import { getDateFnsLocale, getIntlLocale } from '~/lib/i18n/format'
+import { STOCKHOLM_TIME_ZONE } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 
 // Charging data is bucketed in Stockholm time server-side (calendar months,
 // Stockholm day boundaries), so every date/time on /charging is rendered in
 // that zone too. Pinning the zone also keeps SSR (Vercel runs in UTC) and the
 // browser rendering identical strings.
-const TIME_ZONE = 'Europe/Stockholm'
 
 // Formatters are built per call: the locale is per request/render, and a
 // module-level formatter would pin the first request's locale (see
@@ -30,7 +30,7 @@ export function formatThreshold(kwh: number): string {
 
 export function formatDate(date: Date): string {
   return new Intl.DateTimeFormat(getIntlLocale(), {
-    timeZone: TIME_ZONE,
+    timeZone: STOCKHOLM_TIME_ZONE,
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -39,7 +39,7 @@ export function formatDate(date: Date): string {
 
 export function formatTime(date: Date): string {
   return new Intl.DateTimeFormat(getIntlLocale(), {
-    timeZone: TIME_ZONE,
+    timeZone: STOCKHOLM_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
@@ -47,7 +47,7 @@ export function formatTime(date: Date): string {
 
 export function formatDateTime(date: Date): string {
   return new Intl.DateTimeFormat(getIntlLocale(), {
-    timeZone: TIME_ZONE,
+    timeZone: STOCKHOLM_TIME_ZONE,
     year: 'numeric',
     month: 'short',
     day: 'numeric',

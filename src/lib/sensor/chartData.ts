@@ -1,3 +1,6 @@
+import { tickStep } from 'd3-array'
+import { precisionFixed } from 'd3-format'
+import { scaleLinear } from 'd3-scale'
 import type { RouterOutputs } from '~/lib/orpc/client'
 
 type Buckets = RouterOutputs['sensor']['series']['buckets']
@@ -34,56 +37,37 @@ export function timeDomain(devices: { points: SeriesPoint[] }[]): [number, numbe
   return min <= max ? [min, max] : undefined
 }
 
-// Round a raw step up to the nearest "nice" number (1, 2, or 5 × 10ⁿ), the
-// increments people read axes in.
-function niceStep(raw: number): number {
-  if (!Number.isFinite(raw) || raw <= 0) return 1
-  const exp = Math.floor(Math.log10(raw))
-  const pow = 10 ** exp
-  const frac = raw / pow
-  const niceFrac = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10
-  return niceFrac * pow
-}
-
-// Decimals a nice step needs (0.5 → 1, 0.05 → 2, 2 → 0). Loop-based to dodge the
-// float error `-log10` accumulates.
-function decimalsForStep(step: number): number {
-  if (!Number.isFinite(step) || step >= 1) return 0
-  let d = 0
-  let s = step
-  while (s < 1 && d < 6) {
-    s *= 10
-    d++
-  }
-  return d
-}
-
-function roundTo(v: number, decimals: number): number {
-  const f = 10 ** decimals
-  return Math.round(v * f) / f
-}
-
 export type YScale = { domain: [number, number]; ticks: number[]; decimals: number }
 
+// A span this small relative to the values is float noise (e.g. two bucket
+// averages that differ only in the last bits), not a real spread — treat it as
+// flat rather than zooming the axis into sub-millionth ticks.
+const FLAT_EPSILON = 1e-6
+
 // A "nice" y-axis for a value range: round bounds and evenly-spaced ticks on a
-// round step. Recharts equal-divides a narrow auto-domain into arbitrary
-// fractional ticks (24.595, 24.49, …) that overflow a fixed-width axis and read
-// as noise; supplying round ticks keeps labels short, aligned to sensible
-// increments, and free of rounding collisions. A flat series (all readings
-// equal) is padded to a 1-unit band so its line sits mid-axis.
+// round step (1, 2, or 5 × 10ⁿ), via d3-scale. Recharts equal-divides a narrow
+// auto-domain into arbitrary fractional ticks (24.595, 24.49, …) that overflow a
+// fixed-width axis and read as noise; supplying round ticks keeps labels short
+// and aligned to sensible increments. `decimals` is the precision the step needs,
+// so ticks formatted with it are always distinct. A flat series (all readings
+// equal, or equal up to float noise) is padded to a 1-unit band so its line sits
+// mid-axis. d3's count is a target number of intervals, so targetCount − 1
+// keeps the axis at roughly targetCount ticks on the ~260px-tall chart — but at
+// least 2 intervals, since d3 neither rounds the domain nor gives two ticks for 1.
 export function niceYScale(min: number, max: number, targetCount = 5): YScale {
-  if (!(max > min)) {
+  const magnitude = Math.max(1, Math.abs(min), Math.abs(max))
+  if (!(max - min > FLAT_EPSILON * magnitude)) {
     min -= 0.5
     max += 0.5
   }
-  const step = niceStep((max - min) / Math.max(1, targetCount - 1))
-  const decimals = decimalsForStep(step)
-  const niceMin = Math.floor(min / step) * step
-  const niceMax = Math.ceil(max / step) * step
-  const count = Math.round((niceMax - niceMin) / step) + 1
-  const ticks: number[] = []
-  for (let i = 0; i < count; i++) ticks.push(roundTo(niceMin + i * step, decimals))
-  return { domain: [ticks[0], ticks[ticks.length - 1]], ticks, decimals }
+  const count = Math.max(2, targetCount - 1)
+  const scale = scaleLinear().domain([min, max]).nice(count)
+  const [lo, hi] = scale.domain()
+  return {
+    domain: [lo, hi],
+    ticks: scale.ticks(count),
+    decimals: precisionFixed(tickStep(lo, hi, count)),
+  }
 }
 
 // Min/max of every visible device's own readings, for the y-axis scale. Hidden
@@ -98,7 +82,8 @@ export function valueRange(
     if (d.hidden) continue
     for (const p of d.points) {
       const v = p[d.id]
-      if (typeof v === 'number') {
+      // Finite only: a stray Infinity would give d3 no domain to round.
+      if (typeof v === 'number' && Number.isFinite(v)) {
         if (v < min) min = v
         if (v > max) max = v
       }

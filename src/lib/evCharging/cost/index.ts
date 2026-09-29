@@ -1,4 +1,4 @@
-// Dependency-free, client-safe cost math (no db import). The composer that
+// Client-safe cost math (no db import). The composer that
 // feeds it lives server-side; Phase 4 counterfactuals reuse it over
 // hypothetical intervals.
 
