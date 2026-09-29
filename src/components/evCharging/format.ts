@@ -128,7 +128,19 @@ export function formatSek(value: number, fractionDigits = 0): string {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).format(value)
-  return `${n} kr`
+  return `${n}\u00a0kr` // no-break space: the unit never wraps away from its number
+}
+
+/**
+ * A share (0…1) as a whole percent ("39 %"). A small but real share never
+ * rounds to "0 %": it reads "< 1 %".
+ */
+export function formatShare(share: number): string {
+  const percent = new Intl.NumberFormat(getIntlLocale(), {
+    style: 'percent',
+    maximumFractionDigits: 0,
+  })
+  return share > 0 && share < 0.005 ? `< ${percent.format(0.01)}` : percent.format(share)
 }
 
 /** An average öre/kWh, whole öre (e.g. "159"). */

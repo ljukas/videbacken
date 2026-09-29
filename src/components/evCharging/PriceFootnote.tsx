@@ -12,6 +12,7 @@ export function PriceFootnote() {
           href="https://www.elprisetjustnu.se"
           target="_blank"
           rel="noopener noreferrer"
+          translate="no"
           className="underline underline-offset-4 hover:text-foreground"
         >
           Elpriset just nu.se

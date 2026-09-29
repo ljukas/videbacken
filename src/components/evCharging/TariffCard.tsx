@@ -1,4 +1,5 @@
 import { MoreVerticalIcon, PencilIcon, PlusIcon, ReceiptTextIcon, Trash2Icon } from 'lucide-react'
+import { Fragment } from 'react'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -102,10 +103,21 @@ export function TariffCard({ tariffs, admin }: Props) {
             <TableHeader>
               <TableRow>
                 <TableHead>{m.charging_tariff_col_valid_from()}</TableHead>
-                <TableHead className="text-right">{m.charging_tariff_col_markup()}</TableHead>
-                <TableHead className="text-right">{m.charging_tariff_col_grid()}</TableHead>
-                <TableHead className="text-right">{m.charging_tariff_col_tax()}</TableHead>
-                {/* VAT is nearly always 25 %: the one column a phone can spare. */}
+                {/* A phone can't fit three amount columns: they fold into one
+                    labelled list there. VAT is nearly always 25 %: the one
+                    column a phone can spare. */}
+                <TableHead className="text-right sm:hidden">
+                  {m.charging_tariff_col_amounts()}
+                </TableHead>
+                <TableHead className="hidden text-right sm:table-cell">
+                  {m.charging_tariff_col_markup()}
+                </TableHead>
+                <TableHead className="hidden text-right sm:table-cell">
+                  {m.charging_tariff_col_grid()}
+                </TableHead>
+                <TableHead className="hidden text-right sm:table-cell">
+                  {m.charging_tariff_col_tax()}
+                </TableHead>
                 <TableHead className="hidden text-right sm:table-cell">
                   {m.charging_tariff_col_vat()}
                 </TableHead>
@@ -123,15 +135,21 @@ export function TariffCard({ tariffs, admin }: Props) {
                       ) : null}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatTariffAmount(t.retailMarkupOre)}
+                  <TableCell className="sm:hidden">
+                    <dl className="grid grid-cols-[auto_auto] justify-end gap-x-3 text-right tabular-nums">
+                      {amounts(t).map(([label, value]) => (
+                        <Fragment key={label}>
+                          <dt className="text-muted-foreground">{label}</dt>
+                          <dd>{value}</dd>
+                        </Fragment>
+                      ))}
+                    </dl>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatTariffAmount(t.gridTransferOre)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatTariffAmount(t.energyTaxOre)}
-                  </TableCell>
+                  {amounts(t).map(([label, value]) => (
+                    <TableCell key={label} className="hidden text-right tabular-nums sm:table-cell">
+                      {value}
+                    </TableCell>
+                  ))}
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">
                     {`${formatDecimal(t.vatPercent)} %`}
                   </TableCell>
@@ -175,4 +193,13 @@ export function TariffCard({ tariffs, admin }: Props) {
       </CardContent>
     </Card>
   )
+}
+
+/** The three per-kWh amounts in column order, for the table and its phone fold. */
+function amounts(t: Tariff): [label: string, value: string][] {
+  return [
+    [m.charging_tariff_col_markup(), formatTariffAmount(t.retailMarkupOre)],
+    [m.charging_tariff_col_grid(), formatTariffAmount(t.gridTransferOre)],
+    [m.charging_tariff_col_tax(), formatTariffAmount(t.energyTaxOre)],
+  ]
 }

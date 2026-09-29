@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
+import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
 import {
@@ -49,6 +50,8 @@ const SESSIONS_MAX = 500 // the `sessions` procedure's `limit` cap
 const RECENT_RUNS = 20
 
 const sessionsQuery = (limit: number) => orpc.evCharging.sessions.queryOptions({ input: { limit } })
+const sessionCostsQuery = (sessionIds: string[]) =>
+  orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } })
 // Spot price sync (elpris). Zaptec's keep their input-less calls, so their
 // query keys are unchanged; prices always pass their source.
 const pricesHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } })
@@ -67,9 +70,17 @@ export const Route = createFileRoute('/_authenticated/charging')({
       queryClient.ensureQueryData(
         orpc.evCharging.overview.queryOptions({ input: { year: deps.year } }),
       ),
-      queryClient.ensureQueryData(sessionsQuery(SESSIONS_PAGE)),
       // Cost is best-effort: prefetchQuery never throws, so a price/tariff
-      // failure degrades only the cost figures, never the page.
+      // failure degrades only the cost figures, never the page. Awaited so the
+      // tiles render with their kronor headline instead of jumping when it
+      // arrives; the sessions' costs follow the sessions (they need the ids).
+      queryClient
+        .ensureQueryData(sessionsQuery(SESSIONS_PAGE))
+        .then(({ sessions }) =>
+          sessions.length > 0
+            ? queryClient.prefetchQuery(sessionCostsQuery(sessions.map((sess) => sess.id)))
+            : undefined,
+        ),
       queryClient.prefetchQuery(
         orpc.evCharging.costOverview.queryOptions({ input: { year: deps.year } }),
       ),
@@ -129,28 +140,38 @@ function ChargingPage() {
     placeholderData: keepPreviousData, // keep the old chart while another year loads
   })
   const sessions = useQuery(sessionsQuery(sessionLimit))
-  const { data: cost } = useQuery({
+  const { data: cost, isPlaceholderData: costIsStale } = useQuery({
     ...orpc.evCharging.costOverview.queryOptions({ input: { year } }),
     placeholderData: keepPreviousData,
   })
+  // Cost is shown once anything at all is priced (year-independent, so a year
+  // switch doesn't flicker the kr toggle away); until then one notice says why.
+  const showCost = tariffs.length > 0 && cost?.tiles.allTime.avgOre != null
+  const hasEnergy = (overview?.tiles.allTime.kwh ?? 0) > 0
+  const costNotice: CostNoticeReason | null = !hasEnergy
+    ? null
+    : tariffs.length === 0
+      ? 'noTariff'
+      : cost && !showCost
+        ? 'unpriced'
+        : null
   const [chartMetric, setChartMetric] = useState<ChartMetric>('kwh')
-  // The kr view only when the selected year has some priced energy: a
-  // placeholder from another year, or a year with no prices/tariff, would
-  // draw empty axes that read as "0 kr".
-  const costMonths =
-    overview && cost?.year === overview.year && cost.months.some((mo) => mo.fullKwh > 0)
-      ? cost.months
-      : undefined
+  const chartCost = showCost && cost ? { year: cost.year, months: cost.months } : undefined
+  const showingCost = chartMetric === 'sek' && chartCost !== undefined
   // Cost for the sessions on screen, keyed by id for the list's cost column.
   const sessionIds = useMemo(
     () => sessions.data?.sessions.map((sess) => sess.id) ?? [],
     [sessions.data],
   )
-  const { data: sessionCostList } = useQuery({
-    ...orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } }),
+  const sessionCostsResult = useQuery({
+    ...sessionCostsQuery(sessionIds),
     enabled: sessionIds.length > 0,
     placeholderData: keepPreviousData,
   })
+  const sessionCostList = sessionCostsResult.data
+  // Rows still waiting for their cost (first load, or new rows after "Visa
+  // fler") show a placeholder, not the "missing" dash.
+  const sessionCostsPending = sessionCostsResult.isPending || sessionCostsResult.isPlaceholderData
   const sessionCosts = useMemo(
     () => new Map(sessionCostList?.map((c) => [c.sessionId, c])),
     [sessionCostList],
@@ -211,34 +232,44 @@ function ChargingPage() {
 
       {overview ? (
         <>
+          {costNotice ? (
+            <CostNotice
+              reason={costNotice}
+              onAddTariff={isAdmin ? () => open('tariffNew') : undefined}
+            />
+          ) : null}
           <section className="flex flex-col gap-2">
             <h2 className="sr-only">{m.charging_totals_heading()}</h2>
-            <TotalsTiles tiles={overview.tiles} cost={cost?.tiles} />
+            <TotalsTiles tiles={overview.tiles} cost={showCost ? cost?.tiles : undefined} />
           </section>
 
           <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-medium text-sm">
-                {chartMetric === 'sek' && costMonths
-                  ? m.charging_chart_title_cost()
-                  : m.charging_chart_title()}
+                {showingCost ? m.charging_chart_title_cost() : m.charging_chart_title()}
               </h2>
               <div className="flex flex-wrap items-center gap-2">
-                {costMonths ? (
+                {chartCost ? (
                   <ChartMetricToggle value={chartMetric} onChange={setChartMetric} />
                 ) : null}
                 <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
               </div>
             </div>
             {overview.months.some((mo) => mo.kwh > 0) ? (
-              <MonthlyChart months={overview.months} costMonths={costMonths} metric={chartMetric} />
+              // Dimmed while the kr view still shows the previous year's cost.
+              <div
+                aria-busy={showingCost && costIsStale}
+                className={showingCost && costIsStale ? 'opacity-60 transition-opacity' : undefined}
+              >
+                <MonthlyChart months={overview.months} cost={chartCost} metric={chartMetric} />
+              </div>
             ) : (
               <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
                 {m.charging_chart_empty({ year: overview.year })}
               </div>
             )}
           </section>
-          {cost ? <PriceFootnote /> : null}
+          {showCost ? <PriceFootnote /> : null}
         </>
       ) : null}
 
@@ -262,7 +293,7 @@ function ChargingPage() {
           hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
           onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
           loadingMore={showMore.isPending}
-          costs={sessionCosts}
+          costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
           onSync={isAdmin ? () => syncNow.syncSource('zaptec') : undefined}
           syncing={syncNow.isPendingFor('zaptec')}
         />

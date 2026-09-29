@@ -89,10 +89,29 @@ test('marks the period in force today, not a future one', async () => {
   expect(rows[3].textContent).not.toContain(m.charging_tariff_current())
 })
 
-test('keeps energy tax visible on a phone (only VAT is dropped below sm)', async () => {
+test('on a phone the amounts fold into one labelled list, energy tax included', async () => {
   // The breakpoint is a viewport media query, so assert the responsive classes.
   const { screen } = await renderWithProviders(<TariffCard tariffs={TARIFFS} />)
-  const header = (name: string) => screen.getByText(name, { exact: true }).element()
-  expect(header(m.charging_tariff_col_tax()).className).not.toMatch(/\bhidden\b/)
-  expect(header(m.charging_tariff_col_vat()).className).toMatch(/\bhidden\b.*\bsm:table-cell\b/)
+  const header = (name: string) =>
+    screen
+      .getByText(name, { exact: true })
+      .elements()
+      .find((el) => el.tagName === 'TH') as HTMLElement
+  expect(header(m.charging_tariff_col_amounts()).className).toMatch(/\bsm:hidden\b/)
+  for (const col of [
+    m.charging_tariff_col_markup(),
+    m.charging_tariff_col_grid(),
+    m.charging_tariff_col_tax(),
+    m.charging_tariff_col_vat(),
+  ]) {
+    expect(header(col).className).toMatch(/\bhidden\b.*\bsm:table-cell\b/)
+  }
+  // The fold names every amount (VAT is the only one a phone drops).
+  const fold = screen.container.querySelector('dl')
+  expect(fold?.closest('td')?.className).toMatch(/\bsm:hidden\b/)
+  expect([...(fold?.querySelectorAll('dt') ?? [])].map((dt) => dt.textContent)).toEqual([
+    m.charging_tariff_col_markup(),
+    m.charging_tariff_col_grid(),
+    m.charging_tariff_col_tax(),
+  ])
 })

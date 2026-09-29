@@ -50,7 +50,7 @@ test('populated: date, Stockholm start–end, duration, kWh and peak kW', async 
       <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />
     </div>,
   )
-  await expect.element(screen.getByRole('cell', { name: '18:05–20:20' })).toBeVisible()
+  await expect.element(screen.getByRole('cell', { name: '18:05–20:20', exact: true })).toBeVisible()
   await expect
     .element(
       screen.getByRole('cell', {
@@ -73,7 +73,7 @@ test('a session without intervals shows an em-dash for peak power', async () => 
       onShowMore={noop}
       loadingMore={false}
       // Priced, so the cost cell isn't a second dash.
-      costs={new Map([['s1', priced]])}
+      costs={{ byId: new Map([['s1', priced]]), pending: false }}
     />,
   )
   await expect.element(screen.getByRole('cell', { name: '—' })).toBeInTheDocument()
@@ -113,7 +113,7 @@ const priced: SessionCost = {
   complete: true,
 }
 
-function renderWithCost(cost: SessionCost | undefined) {
+function renderWithCost(cost: SessionCost | undefined, pending = false) {
   return renderWithProviders(
     <div style={{ width: 1024 }}>
       <SessionList
@@ -121,7 +121,7 @@ function renderWithCost(cost: SessionCost | undefined) {
         hasMore={false}
         onShowMore={noop}
         loadingMore={false}
-        costs={new Map(cost ? [[cost.sessionId, cost]] : [])}
+        costs={{ byId: new Map(cost ? [[cost.sessionId, cost]] : []), pending }}
       />
     </div>,
   )
@@ -130,21 +130,84 @@ function renderWithCost(cost: SessionCost | undefined) {
 test('a priced session shows its total and spot share in kronor', async () => {
   const { screen } = await renderWithCost(priced)
   await expect.element(screen.getByText(/22,68\s?kr/)).toBeVisible()
-  await expect.element(screen.getByText(/spot 8,97\s?kr/)).toBeVisible()
+  await expect.element(screen.getByText(/varav spotpris 8,97\s?kr/)).toBeVisible()
 })
 
 test('an estimated session is marked ≈ with the reason', async () => {
   const { screen } = await renderWithCost({ ...priced, estimated: true })
-  await expect.element(screen.getByText(/≈/)).toBeVisible()
+  await expect.element(screen.getByText('≈', { exact: false }).first()).toBeVisible()
   await expect
     .element(screen.getByText(m.charging_sessions_cost_estimated(), { exact: false }))
     .toBeInTheDocument()
 })
 
-test('an unpriced or not-yet-loaded session shows a dash, never 0 kr', async () => {
+test('an unpriced session shows a dash with the reason, never 0 kr', async () => {
+  const unpriced = await renderWithCost({ ...priced, complete: false, totalSek: 0 })
+  // The dash carries its reason on hover (title) and for screen readers (sr-only).
+  const dash = unpriced.screen.getByTitle(m.charging_sessions_cost_unknown())
+  await expect.element(dash).toHaveTextContent(`— ${m.charging_sessions_cost_unknown()}`)
+  expect(unpriced.screen.getByText(/0,00\s?kr/).elements()).toHaveLength(0)
+})
+
+test('an unpriced session adds the — legend under the table; a priced one does not', async () => {
   const unpriced = await renderWithCost({ ...priced, complete: false, totalSek: 0 })
   await expect
-    .element(unpriced.screen.getByText(m.charging_sessions_cost_unknown(), { exact: false }))
+    .element(unpriced.screen.getByText(m.charging_sessions_cost_legend_missing(), { exact: true }))
+    .toBeVisible()
+})
+
+test('a priced session has no — legend', async () => {
+  const { screen } = await renderWithCost(priced)
+  await expect.element(screen.getByText(/22,68\s?kr/)).toBeVisible()
+  expect(
+    screen.getByText(m.charging_sessions_cost_legend_missing(), { exact: true }).elements(),
+  ).toHaveLength(0)
+})
+
+test('a session whose cost is still loading shows a placeholder, not the missing dash', async () => {
+  const { screen } = await renderWithCost(undefined, true)
+  await expect.element(screen.getByText(m.charging_sessions_cost_loading())).toBeInTheDocument()
+  expect(
+    screen.getByText(m.charging_sessions_cost_unknown(), { exact: false }).elements(),
+  ).toHaveLength(0)
+})
+
+test('a session missing from loaded costs (e.g. the query failed) says the cost is missing', async () => {
+  const { screen } = await renderWithCost(undefined, false)
+  await expect
+    .element(screen.getByText(m.charging_sessions_cost_unknown(), { exact: false }))
     .toBeInTheDocument()
-  expect(unpriced.screen.getByText(/0,00\s?kr/).elements()).toHaveLength(0)
+})
+
+test('an estimated session adds the ≈ legend under the table', async () => {
+  const { screen } = await renderWithCost({ ...priced, estimated: true })
+  await expect.element(screen.getByText(m.charging_sessions_cost_legend())).toBeVisible()
+})
+
+test('a priced, measured session has no ≈ legend', async () => {
+  const { screen } = await renderWithCost(priced)
+  await expect.element(screen.getByText(/22,68\s?kr/)).toBeVisible()
+  expect(screen.getByText(m.charging_sessions_cost_legend()).elements()).toHaveLength(0)
+})
+
+test('without cost (nothing priced yet) there is no cost column', async () => {
+  const { screen } = await renderWithProviders(
+    <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />,
+  )
+  expect(screen.getByText(m.charging_sessions_col_cost(), { exact: true }).elements()).toHaveLength(
+    0,
+  )
+})
+
+// The browser-test env has no Tailwind, so the phone layout is pinned by its
+// classes: the time column hides below `sm` and repeats under the date there,
+// and the spot sub-line is `sm`-up only.
+test('on a phone the time moves under the date and the spot line hides', async () => {
+  const { screen } = await renderWithCost(priced)
+  const timeHeader = screen.getByText(m.charging_sessions_col_time(), { exact: true })
+  expect(timeHeader.element().className).toMatch(/\bhidden\b.*\bsm:table-cell\b/)
+  const dateCell = screen.getByRole('row').nth(1).getByRole('cell').first().element()
+  expect(dateCell.querySelector('.sm\\:hidden')?.textContent).toMatch(/\d{2}:\d{2}–\d{2}:\d{2}/)
+  const spot = screen.getByText(/varav spotpris 8,97\s?kr/).element()
+  expect(spot.className).toMatch(/\bhidden\b.*\bsm:inline\b/)
 })

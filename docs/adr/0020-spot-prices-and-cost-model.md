@@ -45,8 +45,9 @@ on its slot's Stockholm day: `total = (spot + markup + grid + tax) × (1 + VAT)`
 (`kwh, gridKwh, fullKwh, noPriceKwh, noTariffKwh, spotSek, feesSek, totalSek`); money covers only `fullKwh`.
 
 - **Missing data is a state.** Energy without a price or a tariff is counted, not priced at 0; `isComplete` compares
-  `fullKwh` to `gridKwh` (so an over-count from overlapping slots is incomplete too). The UI shows "Delvis" with the
-  missing kWh, or "Kostnad saknas" — never 0 kr.
+  `fullKwh` to `gridKwh` (so an over-count from overlapping slots is incomplete too). The UI shows a partly priced
+  total as "minst … kr" with the share of charging that lacks a price, marks unpriced chart months "Pris saknas", and
+  explains a page with nothing priced once (no tariff yet / no price yet) — never 0 kr. Zero energy is a true 0 kr.
 - **`gridShare`** (0…1, always 1 today) scales what's priced. A later solar/battery source (Emaldo) supplies the real
   share per interval without touching the math; Phase 4 counterfactuals price hypothetical intervals the same way.
 - Invalid input (non-finite, negative kWh, share outside 0…1) throws — stored data is CHECK-constrained, so it's a bug.
@@ -69,8 +70,9 @@ monthly variable cost stays manual (no API).
 ## Alternatives considered
 
 - **Materialize cost per session/interval.** Faster reads, but every tariff edit needs a recompute job and "which
-  numbers are stale" bookkeeping. Data is tiny (~100 sessions/yr); on-read stays well under the ~300 ms `costCompute`
-  budget for years (estimated ~100–150 ms at 5 years). Revisit with a monthly rollup if `costSlotsMs` grows.
+  numbers are stale" bookkeeping. Data is tiny (~100 sessions/yr); on-read stays well under a ~300 ms budget for the
+  whole read for years (estimated ~100–150 ms at 5 years). The `rpc timing` line records `costEnergyMs`, `costSlotsMs`,
+  `costTariffMs` and `costComputeMs`; revisit with a monthly rollup if `costSlotsMs` grows.
 - **All in SQL.** An overlap join × lateral tariff lookup works, but DST/15-min edge cases are hard to test in SQL,
   and Phase 4 counterfactuals price intervals that don't exist in any table. The hybrid keeps SQL for the narrow fetch.
 - **Price by the interval's start slot only.** Simpler, but an hour spans four 15-min prices; the overlap split is
@@ -80,8 +82,8 @@ monthly variable cost stays manual (no API).
 
 - One small, pure, heavily tested module decides every kronor figure; DST days, the hourly→15-min switch and tariff
   changes at Stockholm midnight are unit tests, not SQL fixtures.
-- Cost is an **upper bound** today: all charging counts as grid-bought, and Zaptec's hourly intervals can't resolve
-  cheaper quarters inside an hour. Both are stated on the page.
+- Cost is an **upper bound** today: all charging counts as grid-bought (stated on the page), and Zaptec's hourly
+  intervals can't resolve cheaper quarters inside an hour.
 - Adding a zone or a tariff component is a migration each (CHECK list; column) — cheap, but not free.
 - Time-of-use grid pricing (effektavgift) doesn't fit a flat per-kWh period; it would need a child table, most likely
   fed by Eltariff-API.
