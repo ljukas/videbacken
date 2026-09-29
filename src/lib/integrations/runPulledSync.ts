@@ -19,13 +19,9 @@ import * as userService from '~/lib/services/user'
 import { baseLocale } from '~/paraglide/runtime'
 
 /**
- * The lifecycle every pulled integration's sync run shares (ADR-0019): lease →
- * source-specific fetch/import under a deadline → record the outcome once →
- * alert admins on a streak edge → exactly one `integration sync run` log line.
- * Each source supplies only its own work (`execute`) and counters.
- *
- * Deliberately carries no error message: the admin-only detail lives in the
- * health snapshot, never in the returned run or the log line.
+ * The fields every source's sync run shares. Deliberately carries no error
+ * message: the admin-only detail lives in the health snapshot, never in the
+ * returned run or the log line.
  */
 export type RunBase = {
   source: IntegrationSource
@@ -58,13 +54,23 @@ export type PulledSyncSpec<R extends RunBase> = {
    * anything else → `error` (recorded best effort, then rethrown).
    */
   execute: (ctx: { run: R; signal: AbortSignal; now: () => Date }) => Promise<void>
+  /** The recorded run-history stats. Sees `run` before `finalize` has run. */
   toRunStats: (run: R) => RunStats
-  /** Folds client-side counters into `run` once it has ended, before the log line. */
+  /**
+   * Folds client-side counters into `run` once it has ended (after the outcome
+   * is recorded), before the log line.
+   */
   finalize?: (run: R) => void
-  /** The source's own run-line fields, logged after the common ones. */
+  /** The source's own run-line fields, logged after — never instead of — the common ones. */
   logFields: (run: R) => Record<string, unknown>
 }
 
+/**
+ * The lifecycle every pulled integration's sync run shares (ADR-0019): lease →
+ * source-specific fetch/import under a deadline → record the outcome once →
+ * alert admins on a streak edge → exactly one `integration sync run` log line.
+ * Each source supplies only its own work (`execute`) and counters.
+ */
 export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>): Promise<R> {
   const { source, trigger, now, log } = spec
   const startedAt = now()
@@ -158,19 +164,19 @@ export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>):
 }
 
 /**
- * Races a remote call against the run deadline; a hit rejects with `mkErr()`
+ * Races a remote call against the run deadline; a hit rejects with `makeError()`
  * (an `IntegrationError`, so the run records `failed`, typically `unreachable`).
  */
 export function withDeadline<T>(
   p: Promise<T>,
   signal: AbortSignal,
-  mkErr: () => IntegrationError,
+  makeError: () => IntegrationError,
 ): Promise<T> {
   // A call that settles after the deadline must not surface as unhandled.
   p.catch(() => {})
-  if (signal.aborted) return Promise.reject(mkErr())
+  if (signal.aborted) return Promise.reject(makeError())
   return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(mkErr())
+    const onAbort = () => reject(makeError())
     signal.addEventListener('abort', onAbort, { once: true })
     p.then(
       (value) => {

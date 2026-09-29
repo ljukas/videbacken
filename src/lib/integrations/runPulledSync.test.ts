@@ -5,14 +5,21 @@ import { queue } from '~/lib/effects'
 import { IntegrationError } from '~/lib/effects/integrationError'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
 import { createServerLogger } from '~/lib/logger/server'
-import { beginAttempt, getHealth, listRecentRuns } from '~/lib/services/integrationSync'
+import * as integrationSyncService from '~/lib/services/integrationSync'
+import {
+  beginAttempt,
+  getHealth,
+  getLastSuccessStartedAt,
+  listRecentRuns,
+} from '~/lib/services/integrationSync'
 import { setupDatabase } from '~test/setup'
 import { type RunBase, runPulledSync, withDeadline } from './runPulledSync'
 
 setupDatabase()
 
-// The lifecycle is exercised through a synthetic source ('elpris', so nothing
-// here is Zaptec-shaped); Zaptec's own behavior is covered by sync.test.ts.
+// The lifecycle is exercised through a synthetic source ('elpris') with its own
+// counters; Zaptec's own behavior is covered by sync.test.ts. (`RunStats` keeps
+// its Zaptec-era column names — `sessionsSeen` here just carries `items`.)
 
 const T0 = new Date('2026-09-20T10:00:00Z')
 
@@ -158,7 +165,7 @@ test('any other error is internal_error: recorded, logged at error, and rethrown
 })
 
 test('a held lease skips the run without calling execute', async () => {
-  await beginAttempt('elpris', { now: new Date() })
+  await beginAttempt('elpris', { now: T0 })
   const execute = vi.fn(async () => {})
   const { log, runLines } = capturingLogger()
 
@@ -215,5 +222,97 @@ test('the first failure of a streak alerts each active admin with this source', 
       transition: 'started_failing',
       code: 'unreachable',
     }),
+  )
+})
+
+test('only an error line carries the error key', async () => {
+  const { log, runLines } = capturingLogger()
+  await run(async () => {}, { log })
+  await run(
+    async () => {
+      throw new FakeRemoteError('unreachable')
+    },
+    { log },
+  )
+  const [ok, failed] = runLines()
+  expect(ok).not.toHaveProperty('error')
+  expect(failed).not.toHaveProperty('error')
+})
+
+test('success moves the watermark to startedAt; a failure keeps its partial syncedUntil', async () => {
+  const partial = new Date('2026-06-01T00:00:00Z')
+
+  const failed = await run(async ({ run }) => {
+    run.syncedUntil = partial
+    throw new FakeRemoteError('unreachable')
+  })
+  expect(failed.outcome).toBe('failed')
+  expect(await getLastSuccessStartedAt('elpris')).toEqual(partial)
+
+  const ok = await run(async () => {})
+  expect(await getLastSuccessStartedAt('elpris')).toEqual(ok.startedAt)
+})
+
+test('toRunStats sees the run before finalize', async () => {
+  const toRunStats = vi.fn((r: FakeRun) => ({
+    since: null,
+    pages: 0,
+    sessionsSeen: r.finalized ? 1 : 0,
+    upserted: 0,
+    voided: 0,
+    timings: {},
+  }))
+  const result = await runPulledSync<FakeRun>({
+    source: 'elpris',
+    trigger: 'admin',
+    now: () => T0,
+    deadlineMs: 60_000,
+    log: capturingLogger().log,
+    init: (base) => ({ ...base, items: 0, finalized: false }),
+    execute: async () => {},
+    toRunStats,
+    finalize: (r) => {
+      r.finalized = true
+    },
+    logFields: () => ({}),
+  })
+  expect(result.finalized).toBe(true)
+  expect(toRunStats).toHaveBeenCalledOnce()
+  const [row] = await listRecentRuns('elpris', { limit: 1 })
+  expect(row.sessionsSeen).toBe(0)
+})
+
+test('a failed outcome write on a non-error run surfaces the write error', async () => {
+  const writeError = new Error('connection reset')
+  vi.spyOn(integrationSyncService, 'recordOutcome').mockRejectedValueOnce(writeError)
+  const { log, runLines } = capturingLogger()
+
+  await expect(run(async () => {}, { log })).rejects.toBe(writeError)
+
+  expect(runLines()).toEqual([expect.objectContaining({ level: ERROR, outcome: 'error' })])
+})
+
+test('a failed outcome write on an error run is only warned; the original bug is rethrown', async () => {
+  vi.spyOn(integrationSyncService, 'recordOutcome').mockRejectedValueOnce(new Error('db down'))
+  const { log, entries } = capturingLogger()
+  const bug = new TypeError('our bug')
+
+  await expect(
+    run(
+      async () => {
+        throw bug
+      },
+      { log },
+    ),
+  ).rejects.toBe(bug)
+
+  expect(entries()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        level: WARN,
+        msg: 'integration sync outcome could not be recorded',
+      }),
+      expect.objectContaining({ level: ERROR, msg: 'integration sync run', outcome: 'error' }),
+    ]),
   )
 })

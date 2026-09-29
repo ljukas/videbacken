@@ -22,18 +22,19 @@ export function verifyCronSecret(header: string | null, expected: string | undef
  * response. `ok`/`failed`/`skipped` are all 200 — a failed remote call is
  * recorded in health, not a server fault. Only an unexpected throw is a 500;
  * the run has already logged it (its one run line carries the error), so it
- * isn't logged again.
+ * isn't logged again. `summary` adds source-specific counters to the body.
  */
-export async function handleCronRun<R extends RunBase & { upserted: number }>(
+export async function handleCronRun<R extends RunBase>(
   request: Request,
   run: (log: Logger) => Promise<R>,
+  summary?: (run: R) => Record<string, unknown>,
 ): Promise<Response> {
   if (!verifyCronSecret(request.headers.get('authorization'), process.env.CRON_SECRET)) {
     return new Response(null, { status: 401 })
   }
   try {
     const result = await run(createRequestLogger(request).log)
-    return Response.json({ outcome: result.outcome, code: result.code, upserted: result.upserted })
+    return Response.json({ outcome: result.outcome, code: result.code, ...summary?.(result) })
   } catch {
     return new Response(null, { status: 500 })
   }

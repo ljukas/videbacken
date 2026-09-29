@@ -60,12 +60,21 @@ test.each([
   'skipped',
 ] as const)('a %s run is a 200 with its summary', async (outcome) => {
   const code = outcome === 'failed' ? 'unreachable' : null
-  const res = await handleCronRun(request(`Bearer ${SECRET}`), async (log) => {
-    expect(log.info).toBeTypeOf('function')
-    return fakeRun({ outcome, code, upserted: 4 })
-  })
+  const res = await handleCronRun(
+    request(`Bearer ${SECRET}`),
+    async (log) => {
+      expect(log.info).toBeTypeOf('function')
+      return fakeRun({ outcome, code, upserted: 4 })
+    },
+    (run) => ({ upserted: run.upserted }),
+  )
   expect(res.status).toBe(200)
   expect(await res.json()).toEqual({ outcome, code, upserted: 4 })
+})
+
+test('without a summary the body is just the outcome and code', async () => {
+  const res = await handleCronRun(request(`Bearer ${SECRET}`), async () => fakeRun({}))
+  expect(await res.json()).toEqual({ outcome: 'ok', code: null })
 })
 
 test('an unexpected throw is a 500', async () => {

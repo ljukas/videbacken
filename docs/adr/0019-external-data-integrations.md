@@ -440,9 +440,12 @@ a duplicate here) — these are pointers, not summaries to read instead of them.
   `integration_sync_run` (append-only history) tables and their CHECK constraints.
 - `src/lib/db/schema/evCharging.ts` — `ev_charger` / `ev_charge_session` / `ev_charge_interval`; the
   `double precision` energy columns and their CHECKs the importer re-validates in JS before writing.
-- `src/lib/evCharging/sync.ts` — `runZaptecSync`, the domain orchestrator that ties the client, the
-  service, and the alert email together; the 240 s run deadline; the one `integration sync run` log
-  line.
+- `src/lib/integrations/runPulledSync.ts` — `runPulledSync`, the source-generic run lifecycle
+  (lease, deadline, record-once outcome, transition-only alert email, the one `integration sync run`
+  log line) and `withDeadline`; `src/lib/integrations/cron.ts` — `verifyCronSecret` + `handleCronRun`
+  (the 200/500 mapping). Extracted 2026-09-29 so every source shares it.
+- `src/lib/evCharging/sync.ts` — `runZaptecSync`: the Zaptec fetch windows + session import and the
+  240 s run deadline, run inside `runPulledSync`.
 - `src/lib/services/evCharging/evCharging.ts` — `importSessions` / `upsertChargers`: the
   validate-skip / stub-parent / allow-listed-upsert import behavior.
 - `src/lib/integrationHealthMessage.ts` — client-side, code-only → Swedish/English message mapping,

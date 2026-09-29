@@ -90,6 +90,7 @@ export async function runZaptecSync(opts: {
     log: opts.deps?.log ?? logger,
     init: (base) => ({
       ...base,
+      // Already set in `base`; restated to narrow the type to 'zaptec'.
       source: SOURCE,
       authMs: 0,
       fetchMs: 0,

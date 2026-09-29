@@ -7,5 +7,9 @@ export { verifyCronSecret } from '~/lib/integrations/cron'
 // flow is unit-testable; the secret gate and status mapping are shared
 // (`handleCronRun`).
 export function handleZaptecSyncCron(request: Request): Promise<Response> {
-  return handleCronRun(request, (log) => runZaptecSync({ trigger: 'cron', deps: { log } }))
+  return handleCronRun(
+    request,
+    (log) => runZaptecSync({ trigger: 'cron', deps: { log } }),
+    (run) => ({ upserted: run.upserted }),
+  )
 }
