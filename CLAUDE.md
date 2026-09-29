@@ -71,7 +71,7 @@ src/
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
     time/stockholm.ts           client-safe Stockholm calendar helpers (DST-aware day bounds)
     integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — ADR-0019)
-    files/, image/              upload helpers: EXIF, remote origin / blurhash, HEIC transcode, sizes
+    files/, image/              upload helpers: EXIF / blurhash, HEIC transcode, sizes
     i18n/, zodLocale.ts, theme.ts, browserSession.ts, devHost.ts (dev:host LAN URLs), utils.ts
   components/                   <entity>/ folders: account, command, evCharging, form, layout, login, onboarding, sensor, user; ui/ (shadcn);
                                 root: AppSidebar, ThemeProvider, ModeToggle, LocaleSwitcher, Logo, NotFound, DefaultCatchBoundary
@@ -183,7 +183,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 ## Environment variables
 
 `.env.example` lists everything. Key vars:
-- `DATABASE_URL` (prod: auto-provisioned as `POSTGRES_URL` by the Supabase Vercel integration, bridged in `src/lib/db/connectionString.ts`; local `postgres://neon:npg@localhost:14620/neondb`).
+- `DATABASE_URL` (prod: auto-provisioned as `POSTGRES_URL` by the Supabase Vercel integration, bridged in `src/lib/db/connectionString.ts`; local `postgres://videbacken:videbacken@localhost:14620/videbacken`).
 - `BETTER_AUTH_SECRET` (32+ chars; `openssl rand -base64 32`), `BETTER_AUTH_URL`; `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
 - `INITIAL_ADMIN_EMAILS` (CSV; seeds the first admin(s) into `approved_email`).
 - Storage `BLOB_*` (prod) / `S3_*` (local RustFS); email `RESEND_API_KEY`+`EMAIL_FROM` (prod) / `SMTP_*` (local Mailpit); `REDIS_URL` (local queue); `LOG_LEVEL`.

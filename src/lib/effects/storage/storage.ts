@@ -59,13 +59,12 @@ export function stripEnvPrefix(pathname: string): string {
  * prefix. The vercelBlob adapter uses this to turn a logical path
  * (`documents/x.pdf`) into the env-namespaced key it stores under.
  *
- * Recognizing all three prefixes — not just the current env's — matters because
- * dev/preview Neon DBs branch prod, so a prod `file` row read from preview keeps
- * its `prod/` pathname. That byte lives at `prod/…` in the shared Blob store, so
- * it must be looked up verbatim; re-prefixing it to `preview/prod/…` 404s
- * ("Blob not found"). Mirrors `stripEnvPrefix` so prefixing and stripping can't
- * drift. Logical paths never start with an env prefix, so new uploads still get
- * the current env's prefix.
+ * Recognizing all three prefixes — not just the current env's — means a stored
+ * pathname is never double-prefixed: a `prod/…` row that ends up in another
+ * env's database (a restored dump, a copied row) still resolves to its real key
+ * in the shared Blob store instead of `preview/prod/…`. Mirrors `stripEnvPrefix`
+ * so prefixing and stripping can't drift. Logical paths never start with an env
+ * prefix, so new uploads still get the current env's prefix.
  */
 export function applyEnvPrefix(pathname: string): string {
   return ENV_PREFIX_RE.test(pathname) ? pathname : `${envPrefix()}${pathname}`
@@ -73,18 +72,11 @@ export function applyEnvPrefix(pathname: string): string {
 
 /**
  * True for a stored pathname whose env prefix differs from the *current*
- * environment's — a "foreign-origin" byte surfaced through a branched DB. Dev
- * and preview both branch the prod Neon DB, so their databases carry prod `file`
- * rows whose `pathname` keeps its `prod/` prefix. Two consequences hang off it:
- *
- *   - **Dev** (s3/RustFS adapter — never prefixes its own uploads): the bytes
- *     were never written locally, so the file routes return a friendly "run
- *     `bun run storage:sync`" page when `head` misses, and the UI shows a PROD badge.
- *   - **Preview** (vercelBlob adapter — *shared* stores with prod): the bytes are
- *     readable (resolved verbatim by `applyEnvPrefix`), so the file renders — but
- *     prod *owns* the byte, so the adapter refuses to delete/overwrite it and the
- *     UI still shows a PROD badge so an editor knows mutations here can't touch
- *     the real file.
+ * environment's — a "foreign-origin" byte. Each env has its own database, so
+ * this only happens if another env's rows are copied in (e.g. a prod dump
+ * restored into preview). The Blob stores are *shared* across envs (only the
+ * prefix separates them), so the vercelBlob adapter uses this to refuse
+ * deleting or overwriting a byte another env owns — a safety net, like RLS.
  *
  * False for a file in its own env (prefix == current env, e.g. every prod file
  * in production) and for dev's own unprefixed uploads.
@@ -160,10 +152,9 @@ export interface StorageEffects {
    * may be ignored for public on adapters whose public URLs don't expire.
    *
    * `opts.downloadFilename` forces a `Content-Disposition: attachment` with
-   * that filename on the response, so a renamed document downloads under its
-   * current display name. Honored on the S3 (dev) signed-URL path; Vercel Blob
-   * (prod) ignores it and serves the pathname basename, which `renameDocument`
-   * keeps in sync with the display name. See each adapter for support details.
+   * that filename on the response, so a file downloads under its display name.
+   * Honored on the S3 (dev) signed-URL path; Vercel Blob (prod) ignores it and
+   * serves the pathname basename. See each adapter for support details.
    */
   getReadUrl(
     access: 'public' | 'private',

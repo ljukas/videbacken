@@ -63,15 +63,16 @@ export async function listSessionEnergy(
     )
     .orderBy(asc(evChargeInterval.startAt))
 
-  const bySession = new Map<string, EnergyStretch[]>()
-  for (const iv of intervals) {
-    const list = bySession.get(iv.sessionId) ?? []
-    list.push({ startMs: iv.startAt.getTime(), endMs: iv.endAt.getTime(), kwh: iv.energyKwh })
-    bySession.set(iv.sessionId, list)
-  }
+  const bySession = Map.groupBy(intervals, (iv) => iv.sessionId)
 
   return sessions.map((s) => {
-    const stretches = bySession.get(s.id)
+    const stretches = bySession.get(s.id)?.map(
+      (iv): EnergyStretch => ({
+        startMs: iv.startAt.getTime(),
+        endMs: iv.endAt.getTime(),
+        kwh: iv.energyKwh,
+      }),
+    )
     return {
       sessionId: s.id,
       startAt: s.startAt,

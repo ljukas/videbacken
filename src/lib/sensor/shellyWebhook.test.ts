@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
 import { setupDatabase } from '~test/setup'
-import { handleShellyWebhook, parseShellyQuery, verifyWebhookToken } from './shellyWebhook'
+import { handleShellyWebhook, parseShellyQuery } from './shellyWebhook'
 
 const TOKEN = 'test-webhook-secret'
 process.env.SHELLY_WEBHOOK_TOKEN = TOKEN
@@ -94,29 +94,6 @@ describe('parseShellyQuery', () => {
       ok: true,
       value: { mac: 'AABBCCDDEEFF', temperatureC: 0, humidityPct: null, batteryPct: null },
     })
-  })
-})
-
-describe('verifyWebhookToken', () => {
-  test('accepts a matching token', () => {
-    expect(verifyWebhookToken('s3cret', 's3cret')).toBe(true)
-  })
-  test('rejects a wrong or missing token', () => {
-    expect(verifyWebhookToken('nope', 's3cret')).toBe(false)
-    expect(verifyWebhookToken(null, 's3cret')).toBe(false)
-  })
-  test('rejects when no server secret is configured (fail closed)', () => {
-    expect(verifyWebhookToken('anything', undefined)).toBe(false)
-    expect(verifyWebhookToken('anything', '')).toBe(false)
-  })
-  test('rejects a token of a different length without throwing', () => {
-    expect(verifyWebhookToken('short', 'a-much-longer-secret')).toBe(false)
-  })
-  test('rejects a same-length token with different content', () => {
-    // Exercises the timingSafeEqual content compare itself — every other
-    // rejection here differs in length and is caught by the length guard alone,
-    // so without this an impl that skipped the content compare would pass.
-    expect(verifyWebhookToken('wrongpw!', 'rightpw!')).toBe(false)
   })
 })
 

@@ -62,6 +62,23 @@ describe('logRpcError', () => {
     expect(JSON.stringify(log.warn.mock.calls)).not.toContain('secret-input')
   })
 
+  test('logs at most 10 issues, and an empty path for a missing or non-array one', () => {
+    const log = spyLogger()
+    const issues = [
+      { message: 'No path' },
+      { path: 'range', message: 42 },
+      ...Array.from({ length: 10 }, (_, i) => ({ message: 'Required', path: ['rows', i] })),
+    ]
+    logRpcError(log, new ORPCError('BAD_REQUEST', { data: { issues } }))
+    const logged = log.warn.mock.calls[0][1].issues
+    expect(logged).toHaveLength(10)
+    expect(logged.slice(0, 3)).toEqual([
+      { path: '', message: 'No path' },
+      { path: '', message: 'invalid' },
+      { path: 'rows.0', message: 'Required' },
+    ])
+  })
+
   test('logs a BAD_REQUEST without issues at info', () => {
     const log = spyLogger()
     logRpcError(log, new ORPCError('BAD_REQUEST'))

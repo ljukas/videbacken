@@ -1,4 +1,5 @@
 import { ORPCError } from '@orpc/server'
+import { issuePath } from '~/lib/issuePaths'
 import type { Logger } from '~/lib/logger'
 
 // Grades an error thrown out of an oRPC procedure (wired as the handler's
@@ -29,12 +30,7 @@ function validationIssues(error: ORPCError<string, unknown>) {
   const issues = (error.data as { issues?: unknown } | undefined)?.issues
   if (!Array.isArray(issues)) return null
   return issues.slice(0, 10).map((issue: { message?: unknown; path?: unknown }) => ({
-    path: Array.isArray(issue.path)
-      ? issue.path
-          .map((seg) => (typeof seg === 'object' && seg !== null && 'key' in seg ? seg.key : seg))
-          .map(String)
-          .join('.')
-      : '',
+    path: Array.isArray(issue.path) ? issuePath(issue.path) : '',
     message: typeof issue.message === 'string' ? issue.message : 'invalid',
   }))
 }
