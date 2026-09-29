@@ -143,6 +143,15 @@ describe('dayPrices', () => {
     }
   })
 
+  test('time_end that disagrees on more than the one fall-back slot is drift', async () => {
+    const rows = apiDay().map((r, i) =>
+      i === 3 || i === 40 ? { ...r, time_end: r.time_start } : r,
+    )
+    const { c } = client({ [ROUTE]: () => jsonResponse(rows) })
+    const error = await rejection(c.dayPrices(DAY, 'SE3'))
+    expect(error.message).toContain('time_end disagrees')
+  })
+
   test('the fall-back fixture really carries the API’s bad time_end', () => {
     const rows = realFormatDay('2025-10-26', 15)
     expect(rows[11]).toMatchObject({

@@ -65,6 +65,14 @@ export function parseDay(day: string, body: unknown): PriceSlot[] {
     endMs: i + 1 < rows.length ? rows[i + 1].time_start : row.time_start + stepMs,
     sekPerKwh: row.SEK_per_kWh,
   }))
+  // `time_end` is otherwise unused, but still a drift signal: it must agree
+  // with the derived end everywhere except the one known-bad fall-back slot.
+  const disagreeing = rows.filter((row, i) => row.time_end !== slots[i].endMs).length
+  if (disagreeing > 1) {
+    throw shapeError(
+      `elpris ${day}: time_end disagrees with the next slot's start on ${disagreeing} slots`,
+    )
+  }
   const problems = validateDaySlots(day, slots)
   if (problems.length > 0)
     throw shapeError(`elpris ${day} slots are invalid: ${problems.join('; ')}`)

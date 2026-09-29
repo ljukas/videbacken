@@ -5,8 +5,12 @@ import { runZaptecSync } from '~/lib/evCharging/sync'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import * as evChargingService from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
+import { runElprisSync } from '~/lib/spotPrice/sync'
 
-const SOURCE = 'zaptec' as const
+/** The sources the charging page tracks: sessions (Zaptec) and spot prices (elpris). */
+const chargingSource = z.enum(['zaptec', 'elpris'])
+/** `{ source }`, defaulting to Zaptec so existing callers keep their meaning. */
+const sourceInput = z.object({ source: chargingSource.default('zaptec') }).optional()
 /** Upper bound on how long `liveStatus` may wait on Zaptec. */
 const LIVE_BUDGET_MS = 6_000
 
@@ -39,8 +43,8 @@ export const evChargingRouter = {
   // `includeAdminDetail` is a flag derived from the caller's own role, never
   // trusted client input (ADR-0002 amendment) — a non-admin never sees
   // `adminDetail`, even if it asked for it.
-  syncStatus: protectedProcedure.handler(({ context }) =>
-    integrationSyncService.getHealth(SOURCE, {
+  syncStatus: protectedProcedure.input(sourceInput).handler(({ input, context }) =>
+    integrationSyncService.getHealth(input?.source ?? 'zaptec', {
       now: new Date(),
       includeAdminDetail: context.user.role === 'admin',
     }),
@@ -72,19 +76,43 @@ export const evChargingRouter = {
   }),
 
   recentRuns: adminProcedure
-    .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }))
-    .handler(({ input }) => integrationSyncService.listRecentRuns(SOURCE, { limit: input.limit })),
+    .input(
+      z.object({
+        source: chargingSource.default('zaptec'),
+        limit: z.number().int().min(1).max(50).default(20),
+      }),
+    )
+    .handler(({ input }) =>
+      integrationSyncService.listRecentRuns(input.source, { limit: input.limit }),
+    ),
 
-  // Manual sync trigger. `runZaptecSync` never throws for a failed/skipped
-  // run — those are ordinary (non-throwing) outcomes recorded in health — so
-  // this handler has nothing to catch; only a genuine bug propagates.
+  // Manual sync trigger: both sources, in parallel — run one after the other
+  // they could need 2 × 240 s, past Vercel's 300 s function limit. Neither run
+  // throws for a failed/skipped outcome (those are recorded in health); only a
+  // genuine bug propagates, and only after both have settled, so one source's
+  // bug never cuts the other's run short. The top-level fields stay Zaptec's.
   syncNow: adminProcedure.handler(async ({ context }) => {
-    const run = await runZaptecSync({ trigger: 'admin', deps: { log: context.log } })
+    const [zaptecResult, elprisResult] = await Promise.allSettled([
+      runZaptecSync({ trigger: 'admin', deps: { log: context.log } }),
+      runElprisSync({ trigger: 'admin', deps: { log: context.log } }),
+    ])
+    if (zaptecResult.status === 'rejected') throw zaptecResult.reason
+    if (elprisResult.status === 'rejected') throw elprisResult.reason
+    const run = zaptecResult.value
+    const prices = elprisResult.value
     if (context.timings) {
       context.timings.zaptecSyncMs = run.durationMs
       context.timings.zaptecFetchMs = run.fetchMs
       context.timings.zaptecImportMs = run.importMs
+      context.timings.elprisSyncMs = prices.durationMs
+      context.timings.elprisFetchMs = prices.fetchMs
+      context.timings.elprisImportMs = prices.importMs
     }
-    return { outcome: run.outcome, code: run.code, upserted: run.upserted }
+    return {
+      outcome: run.outcome,
+      code: run.code,
+      upserted: run.upserted,
+      elpris: { outcome: prices.outcome, code: prices.code, upserted: prices.upserted },
+    }
   }),
 }

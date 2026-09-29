@@ -3,8 +3,9 @@ import type { IntegrationSource } from '~/lib/integrationHealth'
 const HOUR_MS = 60 * 60 * 1000
 
 // Domain rule: how long after its last success a source counts as `stale`.
-// Zaptec syncs hourly, so 3 h = two missed runs. elpris/skoda are placeholders
-// until their phases land (a daily sync + slack).
+// Zaptec syncs hourly, so 3 h = two missed runs. elpris runs at 12:30 and
+// 15:30 UTC (at most 21 h apart), so 26 h = a whole missed day plus slack.
+// skoda is a placeholder until its phase lands.
 export const STALE_AFTER_MS: Record<IntegrationSource, number> = {
   zaptec: 3 * HOUR_MS,
   elpris: 26 * HOUR_MS,
