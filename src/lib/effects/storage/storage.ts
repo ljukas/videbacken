@@ -152,10 +152,9 @@ export interface StorageEffects {
    * may be ignored for public on adapters whose public URLs don't expire.
    *
    * `opts.downloadFilename` forces a `Content-Disposition: attachment` with
-   * that filename on the response, so a renamed document downloads under its
-   * current display name. Honored on the S3 (dev) signed-URL path; Vercel Blob
-   * (prod) ignores it and serves the pathname basename, which `renameDocument`
-   * keeps in sync with the display name. See each adapter for support details.
+   * that filename on the response, so a file downloads under its display name.
+   * Honored on the S3 (dev) signed-URL path; Vercel Blob (prod) ignores it and
+   * serves the pathname basename. See each adapter for support details.
    */
   getReadUrl(
     access: 'public' | 'private',
