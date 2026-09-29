@@ -1,11 +1,8 @@
 import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
-import {
-  NOISE_THRESHOLD_KWH,
-  OVERVIEW_MAX_YEAR,
-  OVERVIEW_MIN_YEAR,
-} from '~/lib/evCharging/counting'
+import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import { countedSessionFilter } from './counted'
 
 export type Totals = { kwh: number; sessions: number }
 
@@ -38,17 +35,6 @@ function toNumber(v: number | string | null): number {
 // meaningful ("no interval long enough to compute a peak").
 function toNullableNumber(v: number | string | null): number | null {
   return v == null ? null : Number(v)
-}
-
-// The one private "counted session" predicate every read in this module
-// shares: noise (sub-threshold), voided and replaced sessions never appear in
-// totals or lists.
-function countedSessionFilter() {
-  return and(
-    eq(evChargeSession.voided, false),
-    isNull(evChargeSession.replacedByZaptecSessionId),
-    gte(evChargeSession.energyKwh, NOISE_THRESHOLD_KWH),
-  )
 }
 
 // Sweden's Jan 1 00:00 local time is always CET (UTC+1) — DST only runs from

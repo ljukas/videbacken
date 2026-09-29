@@ -1,0 +1,93 @@
+import { and, asc, inArray, min } from 'drizzle-orm'
+import { db } from '~/lib/db'
+import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
+import { countedSessionFilter } from './counted'
+
+/** A stretch of a session's energy, as the cost math consumes it. */
+export type EnergyStretch = { startMs: number; endMs: number; kwh: number }
+
+/**
+ * One counted session's energy over time: its Zaptec intervals, or — for a
+ * session without intervals — one `estimated` stretch spreading its whole
+ * `energyKwh` over `[startAt, endAt)`. That mirrors the overview's kWh
+ * fallback, so priced kWh and shown kWh always agree.
+ */
+export type SessionEnergy = {
+  sessionId: string
+  startAt: Date
+  endAt: Date
+  energyKwh: number
+  stretches: EnergyStretch[]
+  estimated: boolean
+}
+
+/**
+ * Counted sessions with their energy stretches, oldest first. Two queries
+ * (sessions, then their intervals by id) regardless of how many sessions.
+ */
+export async function listSessionEnergy(
+  filter: { all: true } | { sessionIds: readonly string[] },
+): Promise<SessionEnergy[]> {
+  if ('sessionIds' in filter && filter.sessionIds.length === 0) return []
+  const sessions = await db
+    .select({
+      id: evChargeSession.id,
+      startAt: evChargeSession.startAt,
+      endAt: evChargeSession.endAt,
+      energyKwh: evChargeSession.energyKwh,
+    })
+    .from(evChargeSession)
+    .where(
+      'sessionIds' in filter
+        ? and(countedSessionFilter(), inArray(evChargeSession.id, [...filter.sessionIds]))
+        : countedSessionFilter(),
+    )
+    .orderBy(asc(evChargeSession.startAt))
+  if (sessions.length === 0) return []
+
+  const intervals = await db
+    .select({
+      sessionId: evChargeInterval.sessionId,
+      startAt: evChargeInterval.startAt,
+      endAt: evChargeInterval.endAt,
+      energyKwh: evChargeInterval.energyKwh,
+    })
+    .from(evChargeInterval)
+    .where(
+      inArray(
+        evChargeInterval.sessionId,
+        sessions.map((s) => s.id),
+      ),
+    )
+    .orderBy(asc(evChargeInterval.startAt))
+
+  const bySession = new Map<string, EnergyStretch[]>()
+  for (const iv of intervals) {
+    const list = bySession.get(iv.sessionId) ?? []
+    list.push({ startMs: iv.startAt.getTime(), endMs: iv.endAt.getTime(), kwh: iv.energyKwh })
+    bySession.set(iv.sessionId, list)
+  }
+
+  return sessions.map((s) => {
+    const stretches = bySession.get(s.id)
+    return {
+      sessionId: s.id,
+      startAt: s.startAt,
+      endAt: s.endAt,
+      energyKwh: s.energyKwh,
+      stretches: stretches ?? [
+        { startMs: s.startAt.getTime(), endMs: s.endAt.getTime(), kwh: s.energyKwh },
+      ],
+      estimated: stretches === undefined,
+    }
+  })
+}
+
+/** Start of the earliest counted session, or null with none. */
+export async function earliestCountedStartAt(): Promise<Date | null> {
+  const [row] = await db
+    .select({ first: min(evChargeSession.startAt) })
+    .from(evChargeSession)
+    .where(countedSessionFilter())
+  return row?.first ?? null
+}
