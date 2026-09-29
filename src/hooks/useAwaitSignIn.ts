@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { getSession } from '~/lib/getSession'
 
@@ -23,41 +24,21 @@ export function useAwaitSignIn({ enabled, onSignedIn }: Options) {
   const onSignedInRef = useRef(onSignedIn)
   onSignedInRef.current = onSignedIn
 
+  const { data: session } = useQuery({
+    queryKey: ['awaitSignIn'],
+    queryFn: () => getSession(),
+    // Once a session is seen there is nothing left to watch for.
+    enabled: (query) => enabled && !query.state.data,
+    refetchInterval: POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    // TanStack's focus event is `visibilitychange`: re-check on becoming visible.
+    refetchOnWindowFocus: 'always',
+    // A failed check is simply retried on the next tick.
+    retry: false,
+    gcTime: 0,
+  })
+
   useEffect(() => {
-    if (!enabled) return
-
-    let cancelled = false
-    let firing = false
-
-    async function check() {
-      if (cancelled || firing) return
-      firing = true
-      try {
-        const session = await getSession()
-        if (!cancelled && session) {
-          cancelled = true
-          onSignedInRef.current()
-        }
-      } finally {
-        firing = false
-      }
-    }
-
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') void check()
-    }, POLL_INTERVAL_MS)
-
-    function onVisibility() {
-      if (document.visibilityState === 'visible') void check()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-
-    void check()
-
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-  }, [enabled])
+    if (enabled && session) onSignedInRef.current()
+  }, [enabled, session])
 }

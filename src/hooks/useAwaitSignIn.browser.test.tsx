@@ -94,7 +94,8 @@ test('calls onSignedIn once when a session appears, then stops checking', async 
   const { onSignedIn } = await mount()
   getSession.mockResolvedValue(SESSION)
   await vi.advanceTimersByTimeAsync(2_500)
-  expect(onSignedIn).toHaveBeenCalledOnce()
+  // Eventually, not synchronously: React may commit the result on its own tick.
+  await vi.waitFor(() => expect(onSignedIn).toHaveBeenCalledOnce())
   const calls = getSession.mock.calls.length
   await vi.advanceTimersByTimeAsync(10_000)
   setVisibility('hidden')
