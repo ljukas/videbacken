@@ -1,5 +1,5 @@
 import type { ZaptecLiveState } from '~/lib/evCharging/types'
-import { discard, networkCause, retryAfterMs } from '../http'
+import { discard, fetchWithRetry, networkCause } from '../http'
 import { ZaptecError, type ZaptecOp } from './errors'
 import {
   parse,
@@ -26,9 +26,7 @@ const LIVE_FAILURE_TTL_MS = 60_000
 const AUTH_CODES: ReadonlySet<string> = new Set(['auth_failed', 'forbidden'])
 const TRANSIENT_CODES: ReadonlySet<string> = new Set(['unreachable', 'rate_limited'])
 
-const MAX_RETRIES = 2
-const MAX_RETRY_AFTER_MS = 10_000
-const BACKOFF_MS = [500, 1500]
+// Retry counts, backoff and the Retry-After cap are in `../http` (ADR-0019).
 const DATA_RETRY_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504])
 // Token 4xx (including 429) is never retried.
 const TOKEN_RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504])
@@ -38,8 +36,6 @@ type Deps = {
   fetch: typeof fetch
   creds: { username: string; password: string }
   now?: () => Date
-  sleep?: (ms: number) => Promise<void>
-  random?: () => number
 }
 
 type SendOpts = {
@@ -47,7 +43,7 @@ type SendOpts = {
   signal?: AbortSignal
   stats: ZaptecCallStats
   timeoutMs: number
-  /** Statuses to retry; network failures are retried whenever this is non-empty. */
+  /** Statuses to retry; network failures and timeouts are retried whenever this is non-empty. */
   retryStatuses: ReadonlySet<number>
   timing: 'authMs' | 'fetchMs'
 }
@@ -58,8 +54,6 @@ type SendOpts = {
  */
 export function createZaptecClient(deps: Deps): ZaptecClient {
   const now = deps.now ?? (() => new Date())
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
-  const random = deps.random ?? Math.random
 
   let token: { value: string; expiresAt: number } | null = null
   let login: Promise<string> | null = null
@@ -72,53 +66,24 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
   async function send(url: string, init: RequestInit, o: SendOpts): Promise<Response> {
     const headers = new Headers(init.headers)
     headers.set('User-Agent', USER_AGENT)
-    for (let attempt = 0; ; attempt++) {
-      const canRetry = attempt < MAX_RETRIES && o.retryStatuses.size > 0
-      if (o.signal?.aborted) {
-        throw new ZaptecError('unreachable', o.op, undefined, {
-          cause: networkCause(o.signal.reason),
-        })
-      }
-      const timeout = AbortSignal.timeout(o.timeoutMs)
-      const signal = o.signal ? AbortSignal.any([timeout, o.signal]) : timeout
-
-      o.stats.requests++
-      const started = performance.now()
-      let res: Response
-      try {
-        res = await deps.fetch(url, { ...init, headers, signal })
-      } catch (err) {
-        o.stats[o.timing] += performance.now() - started
-        // A caller abort is final; a timeout or network failure may be retried.
-        if (canRetry && !o.signal?.aborted) {
-          await backoff(attempt, o.stats)
-          continue
-        }
-        throw new ZaptecError('unreachable', o.op, undefined, { cause: networkCause(err) })
-      }
-      o.stats[o.timing] += performance.now() - started
-
-      if (res.ok || !o.retryStatuses.has(res.status)) return res
-
-      const retryAfter = retryAfterMs(res.headers.get('Retry-After'), now().getTime())
-      if (retryAfter !== null && retryAfter > MAX_RETRY_AFTER_MS) {
-        await discard(res)
-        throw new ZaptecError(res.status === 429 ? 'rate_limited' : 'unreachable', o.op, res.status)
-      }
-      if (!canRetry) return res
-      await discard(res)
-      if (retryAfter !== null) {
-        o.stats.retries++
-        await sleep(retryAfter)
-      } else {
-        await backoff(attempt, o.stats)
-      }
+    try {
+      return await fetchWithRetry(
+        url,
+        { ...init, headers },
+        {
+          fetch: deps.fetch,
+          timeoutMs: o.timeoutMs,
+          retryStatuses: o.retryStatuses,
+          signal: o.signal,
+          stats: o.stats,
+          onTiming: (ms) => {
+            o.stats[o.timing] += ms
+          },
+        },
+      )
+    } catch (err) {
+      throw new ZaptecError('unreachable', o.op, undefined, { cause: networkCause(err) })
     }
-  }
-
-  async function backoff(attempt: number, stats: ZaptecCallStats) {
-    stats.retries++
-    await sleep(BACKOFF_MS[attempt] * (0.8 + 0.4 * random()))
   }
 
   /**
@@ -348,14 +313,10 @@ async function readJson(op: ZaptecOp, res: Response): Promise<unknown> {
   try {
     return await res.json()
   } catch (err) {
-    // A body that isn't JSON (or a read that died mid-stream) — never echo it.
-    const aborted =
-      err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
-    throw new ZaptecError(aborted ? 'unreachable' : 'unexpected_response', op, res.status, {
+    // A 2xx body is read inside the request (see `../http`), so it just isn't JSON — never echo it.
+    throw new ZaptecError('unexpected_response', op, res.status, {
       cause: networkCause(err),
-      message: aborted
-        ? `Zaptec ${op} response was cut off`
-        : `Zaptec ${op} response is not valid JSON (HTTP ${res.status})`,
+      message: `Zaptec ${op} response is not valid JSON (HTTP ${res.status})`,
     })
   }
 }

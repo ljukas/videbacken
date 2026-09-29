@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import { createElprisClient } from './client'
@@ -62,19 +62,29 @@ function realFormatDay(day: string, lengthMin: 15 | 60) {
   })
 }
 
+// ky waits on real timers: fake them, jumping straight to the next one.
+beforeEach(() => {
+  vi.useFakeTimers({ now: new Date('2026-09-28T12:00:00Z') })
+  vi.setTimerTickMode('nextTimerAsync')
+  vi.spyOn(Math, 'random').mockReturnValue(0.5) // jitter factor exactly 1.0
+})
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
 function client(routes: Record<string, FakeRoute>) {
   const fake = fakeFetch(routes)
-  const sleeps: number[] = []
+  const sentAt: number[] = []
   const c = createElprisClient({
-    fetch: fake.fetch,
-    timeoutMs: 50,
-    sleep: async (ms) => {
-      sleeps.push(ms)
+    fetch: (input, init) => {
+      sentAt.push(Date.now())
+      return fake.fetch(input, init)
     },
-    random: () => 0.5,
-    now: () => new Date('2026-09-28T12:00:00Z'),
   })
-  return { c, fake, sleeps }
+  /** The (fake) time between consecutive requests — the retry waits. */
+  const waits = () => sentAt.slice(1).map((at, i) => at - sentAt[i])
+  return { c, fake, waits }
 }
 
 async function rejection(p: Promise<unknown>): Promise<ElprisError> {
@@ -167,8 +177,35 @@ describe('dayPrices', () => {
     expect(fake.calls).toHaveLength(1)
   })
 
+  test('a 404 whose body stalls is still null after one request', async () => {
+    const stalled = (req: Request) =>
+      new Response(
+        new ReadableStream({
+          start: (c) => {
+            c.enqueue(new TextEncoder().encode('Not fo'))
+            req.signal.addEventListener('abort', () => c.error(req.signal.reason), { once: true })
+          },
+        }),
+        { status: 404 },
+      )
+    const { c, fake } = client({ [ROUTE]: stalled })
+    expect(await c.dayPrices(DAY, 'SE3')).toBeNull()
+    expect(fake.calls).toHaveLength(1)
+  })
+
+  test('any thrown error (not only a recognized network error) is retried', async () => {
+    const { c, fake } = client({
+      [ROUTE]: (_req, call) => {
+        if (call === 0) throw new Error('boom')
+        return jsonResponse(apiDay())
+      },
+    })
+    expect(await c.dayPrices(DAY, 'SE3')).toHaveLength(96)
+    expect(fake.calls).toHaveLength(2)
+  })
+
   test('retries a 429 and a 503, then succeeds', async () => {
-    const { c, sleeps } = client({
+    const { c, waits } = client({
       [ROUTE]: (_req, call) =>
         call === 0
           ? new Response(null, { status: 429 })
@@ -179,26 +216,27 @@ describe('dayPrices', () => {
     const stats = newCallStats()
     expect(await c.dayPrices(DAY, 'SE3', { stats })).toHaveLength(96)
     expect(stats).toMatchObject({ requests: 3, retries: 2 })
-    expect(sleeps).toEqual([500, 1500])
+    expect(waits()).toEqual([500, 1500])
   })
 
   test('honors a short Retry-After', async () => {
-    const { c, sleeps } = client({
+    const { c, waits } = client({
       [ROUTE]: (_req, call) =>
         call === 0
           ? new Response(null, { status: 429, headers: { 'Retry-After': '2' } })
           : jsonResponse(apiDay()),
     })
     expect(await c.dayPrices(DAY, 'SE3')).toHaveLength(96)
-    expect(sleeps).toEqual([2000])
+    expect(waits()).toEqual([2000])
   })
 
-  test('a Retry-After beyond 10 s fails as rate_limited without waiting', async () => {
-    const { c, sleeps } = client({
+  test('a Retry-After beyond 10 s is capped at 10 s, then rate_limited', async () => {
+    const { c, fake, waits } = client({
       [ROUTE]: () => new Response(null, { status: 429, headers: { 'Retry-After': '60' } }),
     })
     expect((await rejection(c.dayPrices(DAY, 'SE3'))).code).toBe('rate_limited')
-    expect(sleeps).toEqual([])
+    expect(waits()).toEqual([10_000, 10_000])
+    expect(fake.calls).toHaveLength(3)
   })
 
   test('persistent 5xx is unreachable after two retries', async () => {
@@ -211,8 +249,9 @@ describe('dayPrices', () => {
   test('a network failure is retried, then unreachable with only name/code as cause', async () => {
     const { c, fake } = client({
       [ROUTE]: () => {
-        throw Object.assign(new TypeError('fetch failed: GET https://secret'), {
-          cause: { code: 'ECONNRESET' },
+        // undici's own message; the detail (which may echo the URL) sits on the cause.
+        throw Object.assign(new TypeError('fetch failed'), {
+          cause: { code: 'ECONNRESET', message: 'read ECONNRESET https://secret' },
         })
       },
     })
@@ -284,7 +323,7 @@ describe('dayPrices', () => {
   })
 
   test('a Retry-After in HTTP-date form is honored', async () => {
-    const { c, sleeps } = client({
+    const { c, waits } = client({
       [ROUTE]: (_req, call) =>
         call === 0
           ? new Response(null, {
@@ -294,18 +333,18 @@ describe('dayPrices', () => {
           : jsonResponse(apiDay()),
     })
     expect(await c.dayPrices(DAY, 'SE3')).toHaveLength(96)
-    expect(sleeps).toEqual([3000])
+    expect(waits()).toEqual([3000])
   })
 
-  test('a 503 with a long Retry-After is unreachable without waiting', async () => {
-    const { c, sleeps } = client({
+  test('a 503 with a long Retry-After is capped at 10 s, then unreachable', async () => {
+    const { c, waits } = client({
       [ROUTE]: () => new Response(null, { status: 503, headers: { 'Retry-After': '120' } }),
     })
     expect(await rejection(c.dayPrices(DAY, 'SE3'))).toMatchObject({
       code: 'unreachable',
       status: 503,
     })
-    expect(sleeps).toEqual([])
+    expect(waits()).toEqual([10_000, 10_000])
   })
 
   test('a 429 on the last attempt is rate_limited', async () => {

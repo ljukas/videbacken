@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
 import { fake } from './adapters/fake'
 import { notConfigured } from './adapters/notConfigured'
@@ -28,23 +28,46 @@ const STATE = `GET /api/chargers/${CHARGER_ID}/state`
 const tokenOk: FakeRoute = () => jsonResponse(tokenBody())
 const chargersOk: FakeRoute = () => jsonResponse(chargersBody())
 
+// ky waits on real timers: fake them, jumping straight to the next one.
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.setTimerTickMode('nextTimerAsync')
+  vi.spyOn(Math, 'random').mockReturnValue(0.5) // jitter factor exactly 1.0
+})
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+/** A fake `fetch` that also records when (in fake time) each route was called. */
+function timedFetch(routes: Record<string, FakeRoute>) {
+  const ff = fakeFetch({ [TOKEN]: tokenOk, ...routes })
+  const sent: Array<{ key: string; at: number }> = []
+  const fetch: typeof globalThis.fetch = (input, init) => {
+    const req = input instanceof Request ? input : new Request(input, init) // don't consume a body
+    sent.push({ key: `${req.method} ${new URL(req.url).pathname}`, at: Date.now() })
+    return ff.fetch(input, init)
+  }
+  /** The time between consecutive requests to `key` — the retry waits. */
+  const waits = (key: string) => {
+    const at = sent.filter((s) => s.key === key).map((s) => s.at)
+    return at.slice(1).map((t, i) => t - at[i])
+  }
+  return { ff, fetch, waits }
+}
+
 function setup(routes: Record<string, FakeRoute>) {
   let nowMs = T0
-  const sleeps: number[] = []
-  const ff = fakeFetch({ [TOKEN]: tokenOk, ...routes })
+  const { ff, fetch, waits } = timedFetch(routes)
   const client = createZaptecClient({
-    fetch: ff.fetch,
+    fetch,
     creds: TEST_CREDS,
     now: () => new Date(nowMs),
-    sleep: async (ms) => {
-      sleeps.push(ms)
-    },
-    random: () => 0.5, // jitter factor exactly 1.0
   })
   return {
     client,
     ff,
-    sleeps,
+    waits,
     advance: (ms: number) => {
       nowMs += ms
     },
@@ -178,7 +201,7 @@ describe('login', () => {
   })
 
   test('token 400 → auth_failed, never retried', async () => {
-    const { client, ff, sleeps } = setup({
+    const { client, ff, waits } = setup({
       [TOKEN]: () => jsonResponse({ error: 'invalid_grant' }, { status: 400 }),
       [CHARGERS]: chargersOk,
     })
@@ -188,7 +211,34 @@ describe('login', () => {
     expect(err).toMatchObject({ code: 'auth_failed', op: 'token', status: 400 })
     expect(err.message).not.toContain('grant retired')
     expect(ff.callsTo(TOKEN)).toHaveLength(1)
-    expect(sleeps).toEqual([])
+    expect(waits(TOKEN)).toEqual([])
+  })
+
+  test('a token 400 whose body drops mid-read is auth_failed after one POST, and blocks logins', async () => {
+    const droppedBody = () =>
+      new Response(
+        new ReadableStream({
+          start: (c) => {
+            c.enqueue(new TextEncoder().encode('{"error":"inv'))
+            c.error(
+              Object.assign(new TypeError('terminated'), { cause: { code: 'UND_ERR_SOCKET' } }),
+            )
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      )
+    const { client, ff } = setup({ [TOKEN]: droppedBody, [CHARGERS]: chargersOk })
+
+    expect(await caught(client.chargers())).toMatchObject({
+      code: 'auth_failed',
+      op: 'token',
+      status: 400,
+    })
+    expect(ff.callsTo(TOKEN)).toHaveLength(1)
+
+    // The rejected login is cached: the next call makes no new POST.
+    expect(await caught(client.chargers())).toMatchObject({ code: 'auth_failed', op: 'token' })
+    expect(ff.callsTo(TOKEN)).toHaveLength(1)
   })
 
   test('token 401 → auth_failed', async () => {
@@ -288,9 +338,9 @@ describe('status mapping and retries', () => {
     })
   })
 
-  test('429 with Retry-After: 2 sleeps 2000 ms, then succeeds', async () => {
+  test('429 with Retry-After: 2 waits 2000 ms, then succeeds', async () => {
     const stats = newCallStats()
-    const { client, sleeps } = setup({
+    const { client, waits } = setup({
       [CHARGERS]: (req, call) =>
         call === 0
           ? new Response(null, { status: 429, headers: { 'Retry-After': '2' } })
@@ -298,38 +348,38 @@ describe('status mapping and retries', () => {
     })
 
     await expect(client.chargers({ stats })).resolves.toHaveLength(1)
-    expect(sleeps).toEqual([2000])
+    expect(waits(CHARGERS)).toEqual([2000])
     expect(stats.retries).toBe(1)
   })
 
-  test('429 with Retry-After: 60 fails rate_limited without sleeping', async () => {
-    const { client, ff, sleeps } = setup({
+  test('429 with Retry-After: 60 is capped at 10 s, then fails rate_limited', async () => {
+    const { client, ff, waits } = setup({
       [CHARGERS]: () => new Response(null, { status: 429, headers: { 'Retry-After': '60' } }),
     })
 
     const err = await caught(client.chargers())
 
     expect(err).toMatchObject({ code: 'rate_limited', status: 429 })
-    expect(sleeps).toEqual([])
-    expect(ff.callsTo(CHARGERS)).toHaveLength(1)
+    expect(waits(CHARGERS)).toEqual([10_000, 10_000])
+    expect(ff.callsTo(CHARGERS)).toHaveLength(3)
   })
 
   test('429 without Retry-After retries with backoff, then fails rate_limited', async () => {
-    const { client, sleeps } = setup({ [CHARGERS]: () => new Response(null, { status: 429 }) })
+    const { client, waits } = setup({ [CHARGERS]: () => new Response(null, { status: 429 }) })
     expect(await caught(client.chargers())).toMatchObject({ code: 'rate_limited', status: 429 })
-    expect(sleeps).toEqual([500, 1500])
+    expect(waits(CHARGERS)).toEqual([500, 1500])
   })
 
   test('503 ×3 → unreachable after two retries with 500/1500 ms backoff', async () => {
     const stats = newCallStats()
-    const { client, ff, sleeps } = setup({ [CHARGERS]: () => new Response(null, { status: 503 }) })
+    const { client, ff, waits } = setup({ [CHARGERS]: () => new Response(null, { status: 503 }) })
 
     const err = await caught(client.chargers({ stats }))
 
     expect(err).toMatchObject({ code: 'unreachable', status: 503 })
     expect(stats.retries).toBe(2)
     expect(ff.callsTo(CHARGERS)).toHaveLength(3)
-    expect(sleeps).toEqual([500, 1500])
+    expect(waits(CHARGERS)).toEqual([500, 1500])
   })
 
   test('backoff jitter stays within 0.8–1.2×', async () => {
@@ -337,22 +387,14 @@ describe('status mapping and retries', () => {
       [0, [400, 1200]],
       [0.999999, [600, 1800]],
     ] as const) {
-      const sleeps: number[] = []
-      const ff = fakeFetch({
-        [TOKEN]: tokenOk,
-        [CHARGERS]: () => new Response(null, { status: 502 }),
-      })
-      const client = createZaptecClient({
-        fetch: ff.fetch,
-        creds: TEST_CREDS,
-        sleep: async (ms) => {
-          sleeps.push(ms)
-        },
-        random: () => random,
-      })
+      vi.spyOn(Math, 'random').mockReturnValue(random)
+      const { fetch, waits } = timedFetch({ [CHARGERS]: () => new Response(null, { status: 502 }) })
+      const client = createZaptecClient({ fetch, creds: TEST_CREDS })
       await caught(client.chargers())
-      expect(sleeps[0]).toBeCloseTo(expected[0], 0)
-      expect(sleeps[1]).toBeCloseTo(expected[1], 0)
+      // Fake timers fire on whole milliseconds.
+      const [first, second] = waits(CHARGERS)
+      expect(Math.abs(first - expected[0])).toBeLessThanOrEqual(1)
+      expect(Math.abs(second - expected[1])).toBeLessThanOrEqual(1)
     }
   })
 
@@ -383,7 +425,7 @@ describe('status mapping and retries', () => {
     })
     expect(await caught(b.client.chargers())).toMatchObject({ code: 'rate_limited', op: 'token' })
     expect(b.ff.callsTo(TOKEN)).toHaveLength(1)
-    expect(b.sleeps).toEqual([])
+    expect(b.waits(TOKEN)).toEqual([])
   })
 
   test('timeout → unreachable; every request carries an abort signal', async () => {
@@ -399,6 +441,121 @@ describe('status mapping and retries', () => {
     expect(err.cause).toEqual({ name: 'TimeoutError' })
     expect(ff.callsTo(CHARGERS)).toHaveLength(3) // network-class failures are retried
     for (const req of ff.calls) expect(req.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  test('a Retry-After on a 502 is honored too', async () => {
+    const { client, waits } = setup({
+      [CHARGERS]: (req, call) =>
+        call === 0
+          ? new Response(null, { status: 502, headers: { 'Retry-After': '2' } })
+          : chargersOk(req, call),
+    })
+    await expect(client.chargers()).resolves.toHaveLength(1)
+    expect(waits(CHARGERS)).toEqual([2000])
+  })
+
+  test('any thrown error (not only a recognized network error) is retried', async () => {
+    const { client, ff } = setup({
+      [CHARGERS]: (req, call) => {
+        if (call === 0) throw new Error('The socket connection was closed unexpectedly.')
+        return chargersOk(req, call)
+      },
+    })
+    await expect(client.chargers()).resolves.toHaveLength(1)
+    expect(ff.callsTo(CHARGERS)).toHaveLength(2)
+  })
+
+  test('a caller abort during an attempt is final: unreachable, no further request', async () => {
+    const controller = new AbortController()
+    const stats = newCallStats()
+    const { client, ff } = setup({
+      [CHARGERS]: (req) => {
+        controller.abort()
+        return new Promise<Response>((_, reject) => {
+          if (req.signal.aborted) reject(req.signal.reason)
+          req.signal.addEventListener('abort', () => reject(req.signal.reason), { once: true })
+        })
+      },
+    })
+
+    const err = await caught(client.chargers({ signal: controller.signal, stats }))
+
+    expect(err).toMatchObject({ code: 'unreachable', op: 'chargers' })
+    expect(ff.callsTo(CHARGERS)).toHaveLength(1)
+    expect(stats.retries).toBe(0)
+  })
+
+  test('a 429 that arrives after the caller aborted is unreachable, not rate_limited', async () => {
+    const controller = new AbortController()
+    const { client, ff } = setup({
+      [CHARGERS]: () => {
+        controller.abort()
+        return new Response(null, { status: 429 })
+      },
+    })
+
+    const err = await caught(client.chargers({ signal: controller.signal }))
+
+    expect(err).toMatchObject({ code: 'unreachable', op: 'chargers' })
+    expect(ff.callsTo(CHARGERS)).toHaveLength(1)
+  })
+
+  test('a caller abort during the backoff wait is final: unreachable, no further request', async () => {
+    const controller = new AbortController()
+    const { client, ff } = setup({
+      [CHARGERS]: (req, call) => {
+        if (call > 0) return chargersOk(req, call)
+        setTimeout(() => controller.abort(), 100) // inside the 500 ms backoff
+        return new Response(null, { status: 429 })
+      },
+    })
+
+    const err = await caught(client.chargers({ signal: controller.signal }))
+
+    expect(err).toMatchObject({ code: 'unreachable', op: 'chargers' })
+    expect(ff.callsTo(CHARGERS)).toHaveLength(1)
+  })
+
+  test('a download that drops mid-body is retried and can recover', async () => {
+    const dropped = () =>
+      new Response(
+        new ReadableStream({
+          start: (c) => {
+            c.enqueue(new TextEncoder().encode('{"Data'))
+            c.error(
+              Object.assign(new TypeError('terminated'), { cause: { code: 'UND_ERR_SOCKET' } }),
+            )
+          },
+        }),
+        { status: 200 },
+      )
+    const { client, ff } = setup({
+      [CHARGERS]: (req, call) => (call === 0 ? dropped() : chargersOk(req, call)),
+    })
+
+    await expect(client.chargers()).resolves.toHaveLength(1)
+    expect(ff.callsTo(CHARGERS)).toHaveLength(2)
+  })
+
+  test('a download that stalls past the timeout is retried, then unreachable', async () => {
+    // Like real fetch, the body stream errors when the request's signal aborts.
+    const stalled: FakeRoute = (req) =>
+      new Response(
+        new ReadableStream({
+          start: (c) => {
+            c.enqueue(new TextEncoder().encode('{'))
+            req.signal.addEventListener('abort', () => c.error(req.signal.reason), { once: true })
+          },
+        }),
+        { status: 200 },
+      )
+    const { client, ff } = setup({ [CHARGERS]: stalled })
+
+    const err = await caught(client.chargers())
+
+    expect(err).toMatchObject({ code: 'unreachable', op: 'chargers' })
+    expect(err.cause).toEqual({ name: 'TimeoutError' })
+    expect(ff.callsTo(CHARGERS)).toHaveLength(3)
   })
 
   test('network error → unreachable; cause keeps only name/code', async () => {
@@ -419,13 +576,13 @@ describe('status mapping and retries', () => {
   test('an already-aborted caller signal fails without retrying', async () => {
     const controller = new AbortController()
     controller.abort()
-    const { client, ff, sleeps } = setup({ [CHARGERS]: chargersOk })
+    const { client, ff, waits } = setup({ [CHARGERS]: chargersOk })
 
     const err = await caught(client.chargers({ signal: controller.signal }))
 
     expect(err.code).toBe('unreachable')
-    expect(sleeps).toEqual([])
-    expect(ff.callsTo(CHARGERS).length).toBeLessThanOrEqual(1)
+    expect(waits(CHARGERS)).toEqual([])
+    expect(ff.callsTo(CHARGERS)).toHaveLength(0)
   })
 })
 
@@ -808,7 +965,7 @@ describe('liveState', () => {
   })
 
   test('is never retried; an unreachable read is cached for 60 s', async () => {
-    const { client, ff, sleeps, advance } = setup({
+    const { client, ff, waits, advance } = setup({
       [STATE]: (_req, call) =>
         call === 0 ? new Response(null, { status: 503 }) : jsonResponse(chargingStateBody()),
     })
@@ -818,7 +975,7 @@ describe('liveState', () => {
       op: 'state',
     })
     expect(ff.callsTo(STATE)).toHaveLength(1)
-    expect(sleeps).toEqual([])
+    expect(waits(STATE)).toEqual([])
 
     advance(59_999)
     expect(await caught(client.liveState(CHARGER_ID))).toMatchObject({ code: 'unreachable' })
@@ -871,6 +1028,7 @@ describe('liveState', () => {
 
     // The shared login keeps going (three attempts) and then fails.
     release()
+    await vi.waitFor(() => expect(ff.callsTo(TOKEN)).toHaveLength(3))
     await new Promise((r) => setTimeout(r, 0))
     const loginCalls = ff.callsTo(TOKEN).length
 
