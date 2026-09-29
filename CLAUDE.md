@@ -80,7 +80,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 - **Forms via `useAppForm`.** Never `useState` for field values; canonical example `src/components/login/LoginFormCard.tsx`. See **ADR-0005**.
 
 ### Recipes
-- **Add a schema:** `src/lib/db/schema/<x>.ts` → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`. Then get the **schema-design review** (Non-negotiables) before building on it.
+- **Add a schema:** `src/lib/db/schema/<x>.ts` (end every `pgTable(...)` with `.enableRLS()` — `test/rls.test.ts` enforces it) → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`. Then get the **schema-design review** (Non-negotiables) before building on it.
 - **Add a service:** copy `services/user/` shape (`<x>.ts`, `<x>.test.ts` with `setupDatabase()` first, `index.ts`; `errors.ts` when an invariant lands).
 - **Add an effect:** copy `effects/email/` shape (`<domain>.ts` selector + `adapters/<name>.ts` + barrel + test; register in `effects/index.ts`).
 - **Add a procedure:** edit `src/lib/orpc/procedures/<x>.ts`; pick `protectedProcedure` (reads) or `adminProcedure` (mutations); `.input(zodSchema)`; thin glue → service → run effects after success; register in `orpc/router.ts`. Auto-timed via the `rpc timing` log; add `context.timings.<label>Ms` sub-timings for heavier work (see the timing rule above).

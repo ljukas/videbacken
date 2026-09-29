@@ -8,4 +8,4 @@ export const approvedEmail = pgTable('approved_email', {
     .default('user'),
   addedByUserId: uuid('added_by_user_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}).enableRLS()

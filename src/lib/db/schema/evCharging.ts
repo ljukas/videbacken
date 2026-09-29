@@ -22,7 +22,7 @@ export const evCharger = pgTable('ev_charger', {
     .defaultNow()
     .$onUpdate(() => new Date())
     .notNull(),
-})
+}).enableRLS()
 
 // One row per completed (or voided/replaced) Zaptec charge session, upserted by
 // the sync run keyed on `zaptecSessionId`. `energyKwh` is `doublePrecision`
@@ -64,7 +64,7 @@ export const evChargeSession = pgTable(
     check('ev_charge_session_energy_kwh_nonneg_check', sql`${table.energyKwh} >= 0`),
     check('ev_charge_session_end_at_check', sql`${table.endAt} >= ${table.startAt}`),
   ],
-)
+).enableRLS()
 
 // Sub-session power intervals (Zaptec's per-charge "ChargerSessions" line
 // items) used to reconstruct a session's charging profile. No synthetic id:
@@ -86,7 +86,7 @@ export const evChargeInterval = pgTable(
     check('ev_charge_interval_end_at_check', sql`${table.endAt} > ${table.startAt}`),
     check('ev_charge_interval_energy_kwh_nonneg_check', sql`${table.energyKwh} >= 0`),
   ],
-)
+).enableRLS()
 
 export const evChargerRelations = relations(evCharger, ({ many }) => ({
   sessions: many(evChargeSession),
