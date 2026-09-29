@@ -5,6 +5,8 @@ import { useAwaitSignIn } from './useAwaitSignIn'
 
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }))
 vi.mock('~/lib/getSession', () => ({ getSession }))
+const { warn } = vi.hoisted(() => ({ warn: vi.fn() }))
+vi.mock('~/lib/logger/browser', () => ({ logger: { warn, error: vi.fn(), info: vi.fn() } }))
 
 const SESSION = { user: { id: 'u1' }, session: { id: 's1' } }
 
@@ -38,6 +40,7 @@ beforeEach(() => {
   visibility = 'visible'
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
   getSession.mockReset()
+  warn.mockReset()
   getSession.mockResolvedValue(null)
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
 })
@@ -112,4 +115,13 @@ test('stops checking on unmount', async () => {
   setVisibility('visible')
   await vi.advanceTimersByTimeAsync(0)
   expect(getSession).toHaveBeenCalledTimes(1)
+})
+
+test('a failed check is logged and polling carries on', async () => {
+  getSession.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  await mount()
+  expect(getSession).toHaveBeenCalledTimes(1)
+  expect(warn).toHaveBeenCalledWith('sign-in check failed', { error: expect.any(TypeError) })
+  await vi.advanceTimersByTimeAsync(2_500)
+  expect(getSession).toHaveBeenCalledTimes(2)
 })

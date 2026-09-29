@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { getSession } from '~/lib/getSession'
+import { logger } from '~/lib/logger/browser'
 
 const POLL_INTERVAL_MS = 2500
 
@@ -16,9 +17,12 @@ type Options = {
  *
  * The Better Auth session cookie is shared across all same-origin tabs, so when
  * the user follows the magic link (which authenticates in a new tab), this tab's
- * `getSession()` starts returning a session. We poll on an interval while the tab
- * is visible, and re-check immediately when the tab regains visibility — so
- * returning to this tab after clicking the link advances it at once.
+ * `getSession()` starts returning a session. We check 2.5 s after the previous
+ * check settles while the tab is visible (never two at once), and re-check
+ * immediately when the tab regains visibility — so returning to this tab after
+ * clicking the link advances it at once. TanStack Query also re-checks on
+ * reconnect and holds checks while the browser is offline. Turning `enabled`
+ * off and on again resumes at the next 2.5 s tick (the login page never does).
  */
 export function useAwaitSignIn({ enabled, onSignedIn }: Options) {
   const onSignedInRef = useRef(onSignedIn)
@@ -26,7 +30,16 @@ export function useAwaitSignIn({ enabled, onSignedIn }: Options) {
 
   const { data: session } = useQuery({
     queryKey: ['awaitSignIn'],
-    queryFn: () => getSession(),
+    queryFn: async () => {
+      try {
+        return await getSession()
+      } catch (error) {
+        // A query error is otherwise silent: keep a trace of a check that
+        // can't reach the server (it's retried on the next tick).
+        logger.warn('sign-in check failed', { error })
+        throw error
+      }
+    },
     // Once a session is seen there is nothing left to watch for.
     enabled: (query) => enabled && !query.state.data,
     refetchInterval: POLL_INTERVAL_MS,
