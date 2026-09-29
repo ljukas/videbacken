@@ -1,20 +1,15 @@
-import { timingSafeEqual } from 'node:crypto'
 import type { Logger } from '~/lib/logger'
 import { createRequestLogger } from '~/lib/logger/server'
+import { secretMatches } from '~/lib/secretMatches'
 import type { RunBase } from './runPulledSync'
 
 const BEARER = 'Bearer '
 
-// Vercel Cron sends `Authorization: Bearer $CRON_SECRET`. Constant-time compare
-// so a wrong secret can't be probed by timing; false when no server secret is
-// configured (fail closed). Mirrors `verifyWebhookToken` in
-// `src/lib/sensor/shellyWebhook.ts`.
+// Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; the token is
+// compared in constant time, failing closed without a server secret.
 export function verifyCronSecret(header: string | null, expected: string | undefined): boolean {
-  if (!expected || header == null || !header.startsWith(BEARER)) return false
-  const a = Buffer.from(header.slice(BEARER.length))
-  const b = Buffer.from(expected)
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
+  if (header == null || !header.startsWith(BEARER)) return false
+  return secretMatches(header.slice(BEARER.length), expected)
 }
 
 /**
