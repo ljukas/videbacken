@@ -43,6 +43,13 @@
       "when": 1790659227752,
       "tag": "0005_enable_row_level_security",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790660730302,
+      "tag": "0006_spot_price_and_electricity_tariff",
+      "breakpoints": true
     }
   ]
 }

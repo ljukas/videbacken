@@ -59,13 +59,16 @@ and `handleCronRun`. Reviewers: `code-reviewer` + a behavior-equivalence adversa
 
 ### Task B2 — Stockholm time helpers + pure cost module
 `src/lib/time/stockholm.ts`, `src/lib/spotPrice/slots.ts` (`validateDaySlots`), `src/lib/evCharging/cost/*`
-(`SlotIndex`, `priceIntervals`, `tariffAt`, `CostTotals` helpers, `gridShare`). Pure tests incl. DST days and the
-2025-10-01 hourly→15-min switch. Extend `clientSafe.browser.test.tsx`. Reviewers: `code-reviewer` + DST/maths adversary.
+(`SlotIndex`, `priceIntervals`, `tariffAt`, `CostTotals` helpers, `gridShare`). Pure tests incl. DST days (15-min: 92/100
+slots; hourly: 23/25 — 2024-03-31, 2024-10-27) and the 2025-10-01 hourly→15-min switch. Extend `clientSafe.browser.test.tsx`. Reviewers: `code-reviewer` + DST/maths adversary.
 
 ### Task B3 — services
-`services/spotPrice/` (`upsertDay`, `listSlots`, `daysWithSlots`), `services/tariff/` (CRUD + `TariffDomainError`),
+`services/spotPrice/` (`replaceDay`, `listSlotsOverlapping`, `daysWithSlots`), `services/tariff/` (CRUD + `TariffDomainError`),
 `services/evCharging/counted.ts` (moved filter) + `listSessionEnergy` + `earliestCountedStartAt`.
 Reviewers: `code-reviewer` + `test-completeness`.
+From the B1 schema review: `replaceDay` **replaces the whole Stockholm day** (delete the day's range, then insert, one tx) so
+a re-split day can't leave overlapping slots; map 23505 by constraint name `electricity_tariff_valid_from_unique`;
+slot reads for many intervals join against `unnest($starts, $ends)` rather than N OR'ed ranges.
 
 ---
 
@@ -73,6 +76,7 @@ Reviewers: `code-reviewer` + `test-completeness`.
 
 ### Task C1 — elpris effect
 `src/lib/effects/elpris/` (selector, http client with ADR-0019 retry/timeout, zod parse, errors, notConfigured, fakeFetch tests).
+Parser validates units/range (SEK ≈ EUR × EXR; within market limits) → `unexpected_response`, never a DB CHECK error.
 Reviewers: `code-reviewer` + error-mapping/no-payload-leak adversary.
 
 ### Task C2 — `runElprisSync` + cron + procedures
@@ -86,6 +90,7 @@ Reviewers: `code-reviewer` + error-mapping/no-payload-leak adversary.
 
 ### Task D1 — composer + cost/tariff procedures
 `src/lib/evCharging/costing.ts`, `costOverview`, `sessionCosts`, `tariff.*` + mappers. Parity test (cost kWh == overview kWh).
+`overview.ts` switches to the shared `stockholmYearMonth` from `~/lib/time/stockholm` (drop its private copy) so both bucket months identically.
 Reviewers: `code-reviewer` + `test-completeness`.
 
 ### Task D2 — form fields + tariff UI

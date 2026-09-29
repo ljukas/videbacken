@@ -21,6 +21,17 @@ test('the integration-health copy is importable client-side', async () => {
   expect(typeof mod.integrationErrorMessage).toBe('function')
 })
 
+test('the cost math, price slots, zones and Stockholm time helpers are importable client-side', async () => {
+  const cost = await import('~/lib/evCharging/cost')
+  const slots = await import('~/lib/spotPrice/slots')
+  const zones = await import('~/lib/spotPrice/zones')
+  const time = await import('~/lib/time/stockholm')
+  expect(typeof cost.priceIntervals).toBe('function')
+  expect(typeof slots.validateDaySlots).toBe('function')
+  expect(zones.SPOT_ZONE).toBe('SE3')
+  expect(time.stockholmDayOf(Date.UTC(2026, 8, 27, 22))).toBe('2026-09-28')
+})
+
 test('the /charging route module evaluates client-side without a db leak', async () => {
   const mod = await import('~/routes/_authenticated/charging')
   expect(mod.Route).toBeDefined()

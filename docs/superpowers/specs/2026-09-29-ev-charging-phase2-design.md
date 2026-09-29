@@ -111,7 +111,7 @@ type PriceSlot = { startMs: number; endMs: number; sekPerKwh: number }
 type EnergyInterval = { startMs: number; endMs: number; kwh: number; gridShare: number } // 1 in Phase 2
 type TariffPeriod = { validFrom: string; retailMarkupOre; gridTransferOre; energyTaxOre; vatPercent }
 class SlotIndex { constructor(slots: PriceSlot[]); between(startMs, endMs): PriceSlot[] }
-type CostTotals = { kwh; pricedKwh; spotSek; fullKwh; feesSek; totalSek }   // spot/total incl VAT
+type CostTotals = { kwh; gridKwh; fullKwh; noPriceKwh; noTariffKwh; spotSek; feesSek; totalSek } // SEK incl VAT
 priceIntervals(ivs: EnergyInterval[], idx: SlotIndex, tariffsAsc: TariffPeriod[]): CostTotals
 tariffAt(tariffsAsc, day: string): TariffPeriod | null
 avgOre(t) / isComplete(t) / emptyTotals() / mergeTotals(a, b)
@@ -120,8 +120,10 @@ avgOre(t) / isComplete(t) / emptyTotals() / mergeTotals(a, b)
   within an interval); an uncovered part becomes a piece with no slot. Piece kWh sums to interval kWh (invariant).
 - Tariff per piece by the piece's Stockholm day (slots never straddle midnight).
 - `total = (spot + markup + grid + tax) × (1 + vat/100)` per grid kWh. Spot is shown incl VAT too, so `total − spot` = fees + VAT on fees.
-- **Missing data is a state, never 0**: pieces without price → excluded from `pricedKwh`; without tariff → excluded from `fullKwh`.
-  UI shows "delvis" when `fullKwh < kwh`, "—" when `fullKwh = 0`.
+- **Missing data is a state, never 0**: grid kWh without a price → `noPriceKwh`, with a price but no tariff → `noTariffKwh`;
+  only `fullKwh` is priced. UI shows "delvis" when `!isComplete(t)` (compares `fullKwh` to `gridKwh`, not `kwh`, so a
+  later `gridShare < 1` isn't "partial"), "—" when nothing is priced (`avgOre(t) === null`).
+- Invalid intervals (non-finite, negative kWh, `gridShare` outside 0…1) throw — stored data is CHECK-constrained, so it's a bug.
 - Sessions without intervals: one synthetic interval `[startAt, endAt)` flagged `estimated` (matches overview's kWh fallback); zero-length → unknown.
 
 ### Services (ADR-0002, `setupDatabase()` tests)
