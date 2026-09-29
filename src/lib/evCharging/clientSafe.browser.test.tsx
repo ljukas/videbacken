@@ -32,6 +32,13 @@ test('the cost math, price slots, zones and Stockholm time helpers are importabl
   expect(time.stockholmDayOf(Date.UTC(2026, 8, 27, 22))).toBe('2026-09-28')
 })
 
+test('the tariff limits and tariff error copy are importable client-side', async () => {
+  const limits = await import('~/lib/evCharging/tariff')
+  const copy = await import('~/lib/orpc/tariffErrorMessage')
+  expect(limits.TARIFF_LIMITS.vatPercent.max).toBe(100)
+  expect(typeof copy.tariffErrorMessage).toBe('function')
+})
+
 test('the /charging route module evaluates client-side without a db leak', async () => {
   const mod = await import('~/routes/_authenticated/charging')
   expect(mod.Route).toBeDefined()

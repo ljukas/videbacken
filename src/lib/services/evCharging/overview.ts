@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import { stockholmYearMonth } from '~/lib/time/stockholm'
 import { countedSessionFilter } from './counted'
 
 export type Totals = { kwh: number; sessions: number }
@@ -50,23 +51,6 @@ function stockholmYearStartUtc(year: number): Date {
 // which can't use the `start_at` index.
 function stockholmYearRangeUtc(year: number): { start: Date; end: Date } {
   return { start: stockholmYearStartUtc(year), end: stockholmYearStartUtc(year + 1) }
-}
-
-const STOCKHOLM_TZ = 'Europe/Stockholm'
-
-// The Stockholm calendar year/month `now` falls in — used only to pick the
-// default `year` and the this-month/this-year tile targets (arbitrary
-// instants, so this needs real DST-aware conversion, unlike the year-boundary
-// helper above).
-function stockholmYearMonth(date: Date): { year: number; month: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: STOCKHOLM_TZ,
-    year: 'numeric',
-    month: 'numeric',
-  }).formatToParts(date)
-  const year = Number(parts.find((p) => p.type === 'year')?.value)
-  const month = Number(parts.find((p) => p.type === 'month')?.value)
-  return { year, month }
 }
 
 // One (month → Totals) map for a single Stockholm calendar year, scoped by a
@@ -199,7 +183,9 @@ const ZERO_MONTHS: (Totals & { month: number })[] = Array.from({ length: 12 }, (
 
 export async function getOverview(input: { year?: number; now?: Date }): Promise<ChargingOverview> {
   const now = input.now ?? new Date()
-  const { year: currentYear, month: currentMonth } = stockholmYearMonth(now)
+  // The shared helper (also used by the cost read model) so kWh and cost
+  // buckets can never disagree on which month an instant falls in.
+  const { year: currentYear, month: currentMonth } = stockholmYearMonth(now.getTime())
   const year = input.year ?? currentYear
 
   const [selectedYearTotals, currentYearTotals, allTime, years] = await Promise.all([

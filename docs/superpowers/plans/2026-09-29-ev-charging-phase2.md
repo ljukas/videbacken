@@ -101,3 +101,12 @@ Reviewers: `code-reviewer` + `test-completeness`.
 ### Task D3 — cost display + docs
 Cost tiles, chart metric toggle, session cost column, `PriceFootnote`, loader prefetch degrade; ADR-0020, ADR-0019 amendment,
 CLAUDE.md, CONTEXT.md. Browser verification of `/charging` (desktop/tablet/mobile). Reviewers: `code-reviewer` + `web-design-guidelines`.
+
+---
+
+## After Phase 2
+
+### PR E — `feat(charging): tell admins when the grid-fee API covers our facility`
+Monthly cron: fetch `https://eltariff.se/tariffcatalogue/all`, match the facility ID from an env var
+(`GRID_FACILITY_ID`, not committed) against each entry's `meteringPointIdFrom/To` locally, and email admins once it's
+covered (then Phase 2b — see the scope map). Fails closed; no personal data leaves the app.
