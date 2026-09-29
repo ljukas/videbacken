@@ -8,6 +8,13 @@ import seedApprovedEmailsPlugin from '../server/plugins/seedApprovedEmails'
 setupDatabase()
 
 type NitroApp = Parameters<typeof seedApprovedEmailsPlugin>[0]
+
+// The pool behind `db` (test mode pins it to one connection).
+function testPool() {
+  if (!__testClient) throw new Error('TEST_SCHEMA must be set — see vite.config.ts')
+  return __testClient
+}
+
 type RequestHook = (event: { req: { waitUntil?: (promise: Promise<unknown>) => void } }) => unknown
 
 // Just enough of Nitro's app for the plugin: a hooks registry we can fire by hand.
@@ -53,7 +60,7 @@ describe('seedApprovedEmails plugin', () => {
   })
 
   it('does no DB work at init — Vercel may freeze the instance before its first request', async () => {
-    const query = vi.spyOn(__testClient!, 'query')
+    const query = vi.spyOn(testPool(), 'query')
     seedApprovedEmailsPlugin(fakeNitroApp().app)
     // Let any fire-and-forget work reach the driver before asserting.
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -72,7 +79,7 @@ describe('seedApprovedEmails plugin', () => {
     const { app, requestHooks } = fakeNitroApp()
     seedApprovedEmailsPlugin(app)
     const error = vi.spyOn(logger, 'error')
-    const query = vi.spyOn(__testClient!, 'query').mockRejectedValueOnce(connectTimeout())
+    const query = vi.spyOn(testPool(), 'query').mockRejectedValueOnce(connectTimeout())
 
     await simulateRequest(requestHooks)
     expect(error).toHaveBeenCalledWith('approved-email seed failed', expect.anything())

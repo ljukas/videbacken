@@ -3,16 +3,36 @@ import { logger } from '~/lib/logger/server'
 import { seedApprovedEmails } from '~/lib/seedApprovedEmails'
 
 /**
- * One-shot startup seed of the approved_email allowlist from
- * INITIAL_ADMIN_EMAILS. Runs at server init (after migrations, which run in the
- * build/deploy step via `drizzle-kit migrate`). Guarded so a seed failure logs
- * and lets the server come up rather than crashing the whole process — the
+ * Seeds the approved_email allowlist from INITIAL_ADMIN_EMAILS once per server
+ * instance, on its first request (migrations already ran in the deploy step
+ * via `drizzle-kit migrate`).
+ *
+ * Not at init: Nitro runs plugins when the function module loads, and Vercel
+ * can load it (pre-warm) and then freeze the instance until its first request.
+ * A seed started at init froze mid-connect, and on thaw the driver's overdue
+ * connect timer fired at once — "connection timeout" a few ms into whatever
+ * request woke the instance. Inside a request, handed to `waitUntil`, the
+ * instance stays running until the seed settles.
+ *
+ * A failure logs and lets the request proceed; the next request retries. The
  * allowlist can also be managed at runtime once an admin is in.
  */
-export default definePlugin(async () => {
-  try {
-    await seedApprovedEmails()
-  } catch (error) {
-    logger.error('approved-email seed failed', { error })
-  }
+export default definePlugin((nitro) => {
+  let state: 'pending' | 'running' | 'done' = 'pending'
+
+  nitro.hooks.hook('request', (event) => {
+    if (state !== 'pending') return
+    state = 'running'
+    const run = seedApprovedEmails().then(
+      () => {
+        state = 'done'
+      },
+      (error: unknown) => {
+        state = 'pending'
+        logger.error('approved-email seed failed', { error })
+      },
+    )
+    // Not returned: the request doesn't wait for the seed.
+    event.req.waitUntil?.(run)
+  })
 })

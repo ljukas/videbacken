@@ -78,7 +78,8 @@ export default defineConfig({
           // does NOT auto-discover server/plugins/*).
           // - queueConsumer.ts uses the `vercel:queue` runtime hook.
           // - seedApprovedEmails.ts seeds INITIAL_ADMIN_EMAILS into
-          //   approved_email at startup so the first admin can sign in.
+          //   approved_email on each instance's first request (`request`
+          //   runtime hook) so the first admin can sign in.
           plugins: ['./server/plugins/queueConsumer.ts', './server/plugins/seedApprovedEmails.ts'],
           // Activates Vercel Image Optimization for `/_vercel/image?url=…&w=…&q=…`.
           // The `unpic/providers/vercel` transformer (used by ~/lib/image/transformer)
