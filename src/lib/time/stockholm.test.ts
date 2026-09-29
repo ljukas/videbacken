@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import {
   addDays,
+  isStockholmDay,
   stockholmDayBounds,
   stockholmDayOf,
+  stockholmFirstOfMonth,
   stockholmYearBounds,
   stockholmYearMonth,
 } from './stockholm'
@@ -139,6 +141,28 @@ describe('stockholmDayBounds', () => {
       expect(stockholmDayBounds(day).endMs).toBe(stockholmDayBounds(next).startMs)
       day = next
     }
+  })
+})
+
+describe('isStockholmDay', () => {
+  test('accepts exactly the days addDays accepts', () => {
+    expect(isStockholmDay('2026-09-28')).toBe(true)
+    expect(isStockholmDay('2028-02-29')).toBe(true)
+    expect(isStockholmDay('1970-01-01')).toBe(true)
+    expect(isStockholmDay('2999-12-31')).toBe(true)
+    for (const bad of ['2025-02-30', '2026-9-1', '1969-12-31', '3000-01-01', '', '2026-01-01Z']) {
+      expect(isStockholmDay(bad), bad).toBe(false)
+    }
+  })
+})
+
+describe('stockholmFirstOfMonth', () => {
+  test('the 1st of the local month, not the UTC one', () => {
+    expect(stockholmFirstOfMonth(utc('2026-09-28T12:00:00Z'))).toBe('2026-09-01')
+    // 2026-08-31T22:30Z is already 1 September in Stockholm (CEST).
+    expect(stockholmFirstOfMonth(utc('2026-08-31T22:30:00Z'))).toBe('2026-09-01')
+    expect(stockholmFirstOfMonth(utc('2026-08-31T21:59:59.999Z'))).toBe('2026-08-01')
+    expect(stockholmFirstOfMonth(utc('2025-12-31T23:00:00Z'))).toBe('2026-01-01')
   })
 })
 

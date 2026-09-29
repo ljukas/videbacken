@@ -4,7 +4,7 @@
 // epoch ms. DST-aware via @date-fns/tz — a Stockholm day is 23, 24 or 25 hours
 // long.
 import { TZDate, tz } from '@date-fns/tz'
-import { addDays as addCalendarDays, format } from 'date-fns'
+import { addDays as addCalendarDays, format, startOfMonth } from 'date-fns'
 
 const TIME_ZONE = 'Europe/Stockholm'
 const inStockholm = tz(TIME_ZONE)
@@ -33,9 +33,19 @@ function midnightOf(day: string): TZDate {
   return midnight
 }
 
+/** Whether `day` is a real 'YYYY-MM-DD' day in 1970–2999 (the days the helpers accept). */
+export function isStockholmDay(day: string): boolean {
+  return parseDay(day) !== null
+}
+
 /** The Stockholm calendar day the instant falls in. */
 export function stockholmDayOf(ms: number): string {
   return format(ms, DAY_FORMAT, { in: inStockholm })
+}
+
+/** The first day of the Stockholm calendar month the instant falls in. */
+export function stockholmFirstOfMonth(ms: number): string {
+  return format(startOfMonth(ms, { in: inStockholm }), DAY_FORMAT)
 }
 
 /** The Stockholm calendar year/month (1-based) the instant falls in. */
