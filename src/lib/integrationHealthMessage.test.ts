@@ -43,8 +43,8 @@ for (const locale of LOCALES) {
   })
 }
 
-test('an elpris failure names Elpris, not Zaptec', () => {
+test('an elpris failure names elprisetjustnu.se, not Zaptec', () => {
   const message = integrationErrorMessage('unreachable', { source: 'elpris', locale: 'sv' })
-  expect(message).toContain('Elpris')
+  expect(message).toContain('elprisetjustnu.se')
   expect(message).not.toContain('Zaptec')
 })

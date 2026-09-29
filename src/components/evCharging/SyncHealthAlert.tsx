@@ -52,7 +52,7 @@ export function SyncHealthAlert({
     case 'stale':
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{m.charging_health_stale()}</div>
+          <div>{staleCopy(health.source)}</div>
           {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
         </HealthAlert>
       )
@@ -71,11 +71,29 @@ export function SyncHealthAlert({
   }
 }
 
-// Only "never synced" differs by source: sessions sync hourly, prices daily.
+// The state bodies that differ by source: sessions sync hourly and feed the
+// totals; prices sync daily and feed costs. Exhaustive — a new source is a
+// compile error until it gets its own copy.
 function neverSyncedCopy(source: Health['source']): string {
-  return source === 'elpris'
-    ? m.charging_health_never_synced_elpris()
-    : m.charging_health_never_synced()
+  switch (source) {
+    case 'zaptec':
+      return m.charging_health_never_synced()
+    case 'elpris':
+      return m.charging_health_never_synced_elpris()
+    case 'skoda':
+      return m.charging_health_never_synced()
+  }
+}
+
+function staleCopy(source: Health['source']): string {
+  switch (source) {
+    case 'zaptec':
+      return m.charging_health_stale()
+    case 'elpris':
+      return m.charging_health_stale_elpris()
+    case 'skoda':
+      return m.charging_health_stale()
+  }
 }
 
 function HealthAlert({
@@ -87,8 +105,10 @@ function HealthAlert({
   title: string
   children: React.ReactNode
 }) {
+  // Only a failure interrupts (role=alert); informational states are a polite
+  // status, so two alerts refetching together don't shout over each other.
   return (
-    <Alert variant={variant}>
+    <Alert variant={variant} role={variant === 'destructive' ? 'alert' : 'status'}>
       {variant === 'destructive' ? <AlertTriangleIcon /> : <InfoIcon />}
       <AlertTitle>{title}</AlertTitle>
       {/* Children are divs, not <p>: AlertDescription adds a large bottom margin between paragraphs. */}

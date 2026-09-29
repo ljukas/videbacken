@@ -25,8 +25,8 @@ test('renderIntegrationSyncAlert returns the Swedish failing/recovered subjects 
       locale: 'sv',
     }),
   ])
-  expect(failing.subject).toBe('Zaptec-synkningen fungerar inte')
-  expect(recovered.subject).toBe('Zaptec-synkningen fungerar igen')
+  expect(failing.subject).toBe('Synkningen mot Zaptec fungerar inte')
+  expect(recovered.subject).toBe('Synkningen mot Zaptec fungerar igen')
 })
 
 test('renderIntegrationSyncAlert returns the English failing/recovered subjects', async () => {
@@ -80,14 +80,15 @@ test('renderIntegrationSyncAlert includes the code-specific explanation when fai
   expect(text).toContain('Inloggningen mot Zaptec fungerar inte längre')
 })
 
-test('an elpris alert names Elpris throughout — never Zaptec', async () => {
+test('an elpris alert names elprisetjustnu.se throughout — never Zaptec', async () => {
   const { html, text } = await renderIntegrationSyncAlert({
     source: 'elpris',
     transition: 'started_failing',
     code: 'unexpected_response',
     locale: 'sv',
   })
-  expect(text).toContain('Elpris svarade på ett oväntat sätt')
+  expect(text).toContain('Synkningen mot elprisetjustnu.se')
+  expect(text).toContain('elprisetjustnu.se svarade på ett oväntat sätt')
   expect(html).not.toContain('Zaptec')
   expect(text).not.toContain('Zaptec')
 })

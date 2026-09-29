@@ -55,7 +55,7 @@ export const Route = createFileRoute('/_authenticated/charging')({
       ),
       queryClient.ensureQueryData(sessionsQuery(SESSIONS_PAGE)),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
-      queryClient.ensureQueryData(pricesHealthQuery),
+      user.role === 'admin' ? queryClient.ensureQueryData(pricesHealthQuery) : null,
       user.role === 'admin'
         ? queryClient.ensureQueryData(
             orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
@@ -87,7 +87,8 @@ function ChargingPage() {
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
   })
-  const { data: pricesHealth } = useSuspenseQuery({ ...pricesHealthQuery, refetchInterval: 60_000 })
+  // Daily data, admin-only (see the alert below): no polling beyond focus refetch.
+  const { data: pricesHealth } = useQuery({ ...pricesHealthQuery, enabled: isAdmin })
   const live = useLiveStatus()
   const { data: runs } = useQuery({
     ...orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
@@ -113,22 +114,26 @@ function ChargingPage() {
       <ChargingHeading
         lastSuccessAt={health.lastSuccessAt}
         action={
-          isAdmin ? <SyncNowButton onSync={syncNow.sync} pending={syncNow.isPending} /> : null
+          isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
         }
       />
 
       <SyncHealthAlert
         health={health}
         isAdmin={isAdmin}
-        onRetry={syncNow.sync}
-        retrying={syncNow.isPending}
+        onRetry={() => syncNow.syncSource('zaptec')}
+        retrying={syncNow.isPendingFor('zaptec')}
       />
-      <SyncHealthAlert
-        health={pricesHealth}
-        isAdmin={isAdmin}
-        onRetry={syncNow.sync}
-        retrying={syncNow.isPending}
-      />
+      {/* Admin-only until prices are shown on the page: a household member
+          can't see or act on the price feed, so its health is noise to them. */}
+      {isAdmin && pricesHealth ? (
+        <SyncHealthAlert
+          health={pricesHealth}
+          isAdmin
+          onRetry={() => syncNow.syncSource('elpris')}
+          retrying={syncNow.isPendingFor('elpris')}
+        />
+      ) : null}
 
       <LiveStatusTile live={live} />
 
@@ -162,8 +167,8 @@ function ChargingPage() {
           hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
           onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
           loadingMore={showMore.isPending}
-          onSync={isAdmin ? syncNow.sync : undefined}
-          syncing={syncNow.isPending}
+          onSync={isAdmin ? () => syncNow.syncSource('zaptec') : undefined}
+          syncing={syncNow.isPendingFor('zaptec')}
         />
       </section>
 

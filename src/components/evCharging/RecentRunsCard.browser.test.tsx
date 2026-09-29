@@ -35,10 +35,10 @@ test('is collapsed by default and expands to the run table', async () => {
       <RecentRunsCard source="zaptec" runs={[okRun, failedRun]} />
     </div>,
   )
-  await expect.element(screen.getByText(m.charging_runs_title())).toBeVisible()
+  await expect.element(screen.getByText(m.charging_runs_title({ source: 'Zaptec' }))).toBeVisible()
   expect(screen.getByRole('table').elements()).toHaveLength(0)
 
-  await screen.getByRole('button', { name: m.charging_runs_toggle() }).click()
+  await screen.getByRole('button', { name: m.charging_runs_toggle({ source: 'Zaptec' }) }).click()
 
   await expect.element(screen.getByRole('table')).toBeVisible()
   // Time in Europe/Stockholm, trigger, outcome badge, duration, upserted, code.
@@ -54,6 +54,6 @@ test('is collapsed by default and expands to the run table', async () => {
 
 test('an empty history says so once expanded', async () => {
   const { screen } = await renderWithProviders(<RecentRunsCard source="zaptec" runs={[]} />)
-  await screen.getByRole('button', { name: m.charging_runs_toggle() }).click()
+  await screen.getByRole('button', { name: m.charging_runs_toggle({ source: 'Zaptec' }) }).click()
   await expect.element(screen.getByText(m.charging_runs_empty())).toBeVisible()
 })

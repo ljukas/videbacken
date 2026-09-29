@@ -177,37 +177,27 @@ test('syncNow is forbidden for a non-admin user', async () => {
 test('syncNow reports a failed/not_configured outcome under the notConfigured zaptec client (VITEST)', async () => {
   await signIn('admin')
   const result = await call(evChargingRouter.syncNow, undefined, { context: baseContext() })
-  expect(result).toEqual({
-    outcome: 'failed',
-    code: 'not_configured',
-    upserted: 0,
-    elpris: { outcome: 'failed', code: 'not_configured', upserted: 0 },
-  })
+  expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
 })
 
-test('syncNow runs both sources: one source’s bug neither skips the other nor is swallowed', async () => {
+test('syncNow with source elpris runs only the price sync', async () => {
   await signIn('admin')
-  const beginAttempt = integrationSyncService.beginAttempt
-  vi.spyOn(integrationSyncService, 'beginAttempt').mockImplementation(async (source, opts) => {
-    if (source === 'zaptec') throw new Error('zaptec lease exploded')
-    return beginAttempt(source, opts)
-  })
-
-  await expect(
-    call(evChargingRouter.syncNow, undefined, { context: baseContext() }),
-  ).rejects.toThrow('zaptec lease exploded')
-
-  // The elpris run still went through and recorded its (VITEST: not_configured) outcome.
-  const elpris = await integrationSyncService.getHealth('elpris', {
+  const result = await call(
+    evChargingRouter.syncNow,
+    { source: 'elpris' },
+    { context: baseContext() },
+  )
+  expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
+  const zaptec = await integrationSyncService.getHealth('zaptec', {
     now: new Date(),
     includeAdminDetail: false,
   })
-  expect(elpris.state).toBe('not_configured')
+  expect(zaptec.state).toBe('never_synced')
 })
 
 test('syncStatus and recentRuns take a source', async () => {
   await signIn('admin')
-  await call(evChargingRouter.syncNow, undefined, { context: baseContext() })
+  await call(evChargingRouter.syncNow, { source: 'elpris' }, { context: baseContext() })
 
   const elpris = await call(
     evChargingRouter.syncStatus,
@@ -227,7 +217,8 @@ test('syncStatus and recentRuns take a source', async () => {
   )
   expect(runs).toHaveLength(1)
   expect(runs[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
-  expect(await call(evChargingRouter.recentRuns, {}, { context: baseContext() })).toHaveLength(1)
+  // Only the price sync ran, so Zaptec's history (the default source) is empty.
+  expect(await call(evChargingRouter.recentRuns, {}, { context: baseContext() })).toHaveLength(0)
 })
 
 test('syncStatus rejects an unknown source', async () => {
@@ -244,6 +235,13 @@ test('syncNow records zaptec timing sub-timings when context.timings is present'
   expect(timings.zaptecSyncMs).toBeGreaterThanOrEqual(0)
   expect(timings.zaptecFetchMs).toBeGreaterThanOrEqual(0)
   expect(timings.zaptecImportMs).toBeGreaterThanOrEqual(0)
-  expect(timings.elprisSyncMs).toBeGreaterThanOrEqual(0)
-  expect(timings.elprisFetchMs).toBeGreaterThanOrEqual(0)
+
+  const priceTimings: Record<string, number> = {}
+  await call(
+    evChargingRouter.syncNow,
+    { source: 'elpris' },
+    { context: { ...baseContext(), timings: priceTimings } },
+  )
+  expect(priceTimings.elprisSyncMs).toBeGreaterThanOrEqual(0)
+  expect(priceTimings.elprisFetchMs).toBeGreaterThanOrEqual(0)
 })

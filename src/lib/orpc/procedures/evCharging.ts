@@ -86,33 +86,27 @@ export const evChargingRouter = {
       integrationSyncService.listRecentRuns(input.source, { limit: input.limit }),
     ),
 
-  // Manual sync trigger: both sources, in parallel — run one after the other
-  // they could need 2 × 240 s, past Vercel's 300 s function limit. Neither run
-  // throws for a failed/skipped outcome (those are recorded in health); only a
-  // genuine bug propagates, and only after both have settled, so one source's
-  // bug never cuts the other's run short. The top-level fields stay Zaptec's.
-  syncNow: adminProcedure.handler(async ({ context }) => {
-    const [zaptecResult, elprisResult] = await Promise.allSettled([
-      runZaptecSync({ trigger: 'admin', deps: { log: context.log } }),
-      runElprisSync({ trigger: 'admin', deps: { log: context.log } }),
-    ])
-    if (zaptecResult.status === 'rejected') throw zaptecResult.reason
-    if (elprisResult.status === 'rejected') throw elprisResult.reason
-    const run = zaptecResult.value
-    const prices = elprisResult.value
+  // Manual sync trigger for one source (default Zaptec). The page's "Synka
+  // nu" fires one call per source in parallel, so the quick session sync
+  // isn't held behind a long price backfill, and each alert's retry runs only
+  // its own source. A run never throws for a failed/skipped outcome (those
+  // are recorded in health); only a genuine bug propagates.
+  syncNow: adminProcedure.input(sourceInput).handler(async ({ input, context }) => {
+    if ((input?.source ?? 'zaptec') === 'elpris') {
+      const run = await runElprisSync({ trigger: 'admin', deps: { log: context.log } })
+      if (context.timings) {
+        context.timings.elprisSyncMs = run.durationMs
+        context.timings.elprisFetchMs = run.fetchMs
+        context.timings.elprisImportMs = run.importMs
+      }
+      return { outcome: run.outcome, code: run.code, upserted: run.upserted }
+    }
+    const run = await runZaptecSync({ trigger: 'admin', deps: { log: context.log } })
     if (context.timings) {
       context.timings.zaptecSyncMs = run.durationMs
       context.timings.zaptecFetchMs = run.fetchMs
       context.timings.zaptecImportMs = run.importMs
-      context.timings.elprisSyncMs = prices.durationMs
-      context.timings.elprisFetchMs = prices.fetchMs
-      context.timings.elprisImportMs = prices.importMs
     }
-    return {
-      outcome: run.outcome,
-      code: run.code,
-      upserted: run.upserted,
-      elpris: { outcome: prices.outcome, code: prices.code, upserted: prices.upserted },
-    }
+    return { outcome: run.outcome, code: run.code, upserted: run.upserted }
   }),
 }
