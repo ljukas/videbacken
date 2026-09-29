@@ -24,7 +24,7 @@ export type SessionRow = {
   reliableClock: boolean
 }
 
-// postgres-js returns sum()/count() aggregates as strings even over
+// The driver can return sum()/count() aggregates as strings even over
 // `double precision` columns (Task 1 schema note) — coerce like `toNumber` in
 // `src/lib/services/sensor/sensor.ts`. Missing group (no matching rows) means
 // zero for a total.

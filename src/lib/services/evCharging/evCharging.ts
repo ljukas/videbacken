@@ -164,8 +164,8 @@ export async function importSessions(
         energyKwh: iv.energyKwh,
       }))
     })
-    // Batched: 4 params per row, and postgres-js caps a statement at 65,534
-    // bound params — a page of long sessions could otherwise exceed it.
+    // Batched: 4 params per row, and Postgres's wire protocol caps a statement
+    // at 65,535 bound params — a page of long sessions could otherwise exceed it.
     for (let i = 0; i < intervalRows.length; i += INTERVAL_INSERT_BATCH) {
       await tx.insert(evChargeInterval).values(intervalRows.slice(i, i + INTERVAL_INSERT_BATCH))
     }

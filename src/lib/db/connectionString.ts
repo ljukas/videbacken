@@ -32,15 +32,30 @@ export function resolveUnpooledUrl(env: NodeJS.ProcessEnv = process.env): string
 }
 
 // Supabase's Vercel integration appends `?workaround=supabase-pooler.vercel` to
-// the pooled URL. It's a Vercel-only marker, not a Postgres parameter — but
-// postgres-js forwards unrecognised query params to the server as startup
-// options, which Postgres then rejects. Strip it (and only it). Splitting on the
+// the pooled URL. It's a Vercel-only marker, not a Postgres parameter, and a
+// driver that forwards unrecognised query params to the server as startup
+// options (postgres.js did) gets it rejected. Strip it. Splitting on the
 // first `?` leaves the authority section — including any special characters in
 // the password — untouched, since a literal `?` there would be percent-encoded.
+//
+// `sslmode=require` / `prefer` get `uselibpqcompat=true`: node-postgres
+// otherwise reads them as `verify-full`, which rejects Supabase's certificate
+// (signed by Supabase's own CA). With it they keep libpq's meaning — encrypted,
+// certificate not verified — the behavior postgres.js had. Other modes already
+// mean the same in both (`disable`, `verify-full`), or libpq mode would change
+// them (`no-verify` has no libpq meaning and would start verifying).
+const LIBPQ_SSLMODES = ['sslmode=require', 'sslmode=prefer']
+
 function normalize(url: string | undefined): string | undefined {
   if (!url) return url
   const [base, query] = url.split(/\?(.*)/s)
   if (!query) return url
   const kept = query.split('&').filter((param) => !param.startsWith('workaround='))
+  if (
+    kept.some((param) => LIBPQ_SSLMODES.includes(param)) &&
+    !kept.some((param) => param.startsWith('uselibpqcompat='))
+  ) {
+    kept.push('uselibpqcompat=true')
+  }
   return kept.length > 0 ? `${base}?${kept.join('&')}` : base
 }

@@ -54,7 +54,7 @@ export async function listSessionEnergy(
     })
     .from(evChargeInterval)
     // A subselect, not one bind parameter per session: `{ all: true }` would
-    // otherwise hit postgres-js's parameter limit on a long history.
+    // otherwise hit Postgres's bind-parameter limit on a long history.
     .where(
       inArray(
         evChargeInterval.sessionId,

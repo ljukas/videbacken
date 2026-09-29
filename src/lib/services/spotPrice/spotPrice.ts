@@ -59,7 +59,12 @@ export async function listSlotsOverlapping(
   const pgArray = (ms: number[]) => `{${ms.map((m) => new Date(m).toISOString()).join(',')}}`
   const starts = pgArray(ranges.map((r) => r.startMs))
   const ends = pgArray(ranges.map((r) => r.endMs))
-  const rows = await db.execute<{ slot_start: Date; slot_end: Date; sek_per_kwh: number }>(sql`
+  // Raw `execute` returns timestamptz as strings (drizzle's node-postgres parsers).
+  const { rows } = await db.execute<{
+    slot_start: string
+    slot_end: string
+    sek_per_kwh: number
+  }>(sql`
     SELECT DISTINCT p.slot_start, p.slot_end, p.sek_per_kwh
     FROM unnest(${starts}::timestamptz[], ${ends}::timestamptz[]) AS r(range_start, range_end)
     JOIN ${spotPrice} p
@@ -69,7 +74,7 @@ export async function listSlotsOverlapping(
      AND p.slot_start >= r.range_start - interval '1 hour'
     ORDER BY p.slot_start
   `)
-  return [...rows].map((r) => ({
+  return rows.map((r) => ({
     startMs: new Date(r.slot_start).getTime(),
     endMs: new Date(r.slot_end).getTime(),
     sekPerKwh: Number(r.sek_per_kwh),

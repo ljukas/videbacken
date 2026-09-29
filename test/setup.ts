@@ -5,8 +5,8 @@ import { __testClient } from '~/lib/db'
 
 // Concatenate every migration's statements into one SQL string with `"public".`
 // stripped, so `search_path` resolves all references to the per-test schema.
-// drizzle-kit emits no BEGIN/COMMIT in migrations, so a single `unsafe()` call
-// runs cleanly inside postgres-js's implicit simple-query transaction.
+// drizzle-kit emits no BEGIN/COMMIT in migrations, so a single parameterless
+// `query()` (simple-query protocol) runs them all in its implicit transaction.
 const MIGRATIONS_SQL = readMigrationFiles({ migrationsFolder: './drizzle' })
   .flatMap((m) => m.sql)
   .map((stmt) => stmt.replace(/"public"\./g, ''))
@@ -27,7 +27,7 @@ export function setupDatabase() {
       'TEST_SCHEMA env var must be set before db/index.ts loads — check vite.config.ts',
     )
   }
-  const sql = __testClient
+  const pool = __testClient
 
   const POOL_ID = process.env.VITEST_POOL_ID ?? String(process.pid)
   const SCHEMA_PREFIX = `test_w${POOL_ID}_`
@@ -37,11 +37,12 @@ export function setupDatabase() {
 
   beforeAll(async () => {
     // Drop any straggler schemas from a crashed prior run in this worker.
-    const stragglers = await sql<{ nspname: string }[]>`
-      SELECT nspname FROM pg_namespace WHERE nspname LIKE ${`${SCHEMA_PREFIX}%`}
-    `
+    const { rows: stragglers } = await pool.query<{ nspname: string }>(
+      'SELECT nspname FROM pg_namespace WHERE nspname LIKE $1',
+      [`${SCHEMA_PREFIX}%`],
+    )
     for (const { nspname } of stragglers) {
-      await sql.unsafe(`DROP SCHEMA IF EXISTS "${nspname}" CASCADE`)
+      await pool.query(`DROP SCHEMA IF EXISTS "${nspname}" CASCADE`)
     }
   })
 
@@ -53,7 +54,7 @@ export function setupDatabase() {
     // drizzle/0011_document_management.sql) resolves `gin_trgm_ops` and
     // `word_similarity` without each per-test schema reinstalling the
     // extension. Per-test tables/types take priority via the leading entry.
-    await sql.unsafe(
+    await pool.query(
       `CREATE SCHEMA "${schema}";\nSET search_path TO "${schema}", public;\n${MIGRATIONS_SQL}`,
     )
   })
@@ -63,13 +64,13 @@ export function setupDatabase() {
     const schema = currentSchema
     currentSchema = null
     try {
-      await sql.unsafe(`DROP SCHEMA "${schema}" CASCADE`)
+      await pool.query(`DROP SCHEMA "${schema}" CASCADE`)
     } catch {
       // Best-effort; beforeAll sweep on next run catches anything missed.
     }
   })
 
   afterAll(async () => {
-    await sql.end({ timeout: 5 })
+    await pool.end()
   })
 }
