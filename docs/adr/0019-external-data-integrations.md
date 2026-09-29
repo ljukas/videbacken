@@ -411,6 +411,31 @@ itself be the thing that's broken.
 
 ---
 
+## Amendment (2026-09-29): the second source — `elpris`
+
+Adding SE3 spot prices ([ADR-0020](./0020-spot-prices-and-cost-model.md)) confirmed the pattern and settled three
+generalizations:
+
+- **One lifecycle, shared.** `src/lib/integrations/runPulledSync.ts` owns the lease, deadline, record-once outcome,
+  transition-only alert and the one `integration sync run` log line; a source supplies only `execute` and its
+  counters. `IntegrationError` is the base class every client error extends (→ `failed`; anything else → `error`).
+  `handleCronRun` (`src/lib/integrations/cron.ts`) is the shared 401/200/500 cron mapping.
+- **A keyless API still fails closed.** elprisetjustnu.se needs no credentials, so its `http` adapter is the default
+  everywhere (dev and preview included); `notConfigured` exists only under VITEST so no test reaches the network.
+  There is still no devLog/fake adapter.
+- **A source may have no watermark.** The elpris run plans "the Stockholm days not stored yet" (first counted
+  charging day → tomorrow, newest first, capped per run) — self-healing, and a stored day is never re-fetched.
+  An unpublished future day is normal; a missing **today/yesterday** fails the run (after the rest has landed), so a
+  price outage alerts; an older day that 404s or fails validation is counted and skipped so one bad archive day can't
+  wedge the backfill.
+- **Validate the source, not just its shape.** Beyond zod, the parser cross-checks `SEK ≈ EUR × EXR` (catches unit
+  changes) and derives each slot's end from the next slot's start — the API's own `time_end` is wrong for the slot
+  before the clocks go back (02:45+02:00 → "03:00+01:00"), found by review against live data.
+- Health copy names its source (`integrationErrorMessage(code, { source })`); "Synka nu" runs one request per source
+  so the quick session sync isn't held behind a price backfill. Cron: `/api/cron/elpris-sync` at 12:30 and 15:30 UTC.
+
+---
+
 ## Amendments to other ADRs
 
 Full rationale lives in each amended ADR itself (this repo's convention: one substantive copy, not
@@ -440,6 +465,8 @@ a duplicate here) — these are pointers, not summaries to read instead of them.
   `integration_sync_run` (append-only history) tables and their CHECK constraints.
 - `src/lib/db/schema/evCharging.ts` — `ev_charger` / `ev_charge_session` / `ev_charge_interval`; the
   `double precision` energy columns and their CHECKs the importer re-validates in JS before writing.
+- `src/lib/effects/elpris/` — the keyless spot-price client (DST-safe slot parsing, unit cross-check);
+  `src/lib/spotPrice/sync.ts` — `runElprisSync`, the missing-days planner.
 - `src/lib/integrations/runPulledSync.ts` — `runPulledSync`, the source-generic run lifecycle
   (lease, deadline, record-once outcome, transition-only alert email, the one `integration sync run`
   log line) and `withDeadline`; `src/lib/integrations/cron.ts` — `verifyCronSecret` + `handleCronRun`

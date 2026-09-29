@@ -45,7 +45,7 @@ src/
     onboarding.tsx              full-screen 2-step wizard (name → avatar); guard while onboardedAt null
     signed-in.tsx               magic-link "continue here" confirmation
     api/{auth/$.ts, rpc/$.ts, log.ts}   Better Auth / oRPC catch-alls; browser log sink
-    api/cron/                   non-oRPC cron entrypoints, secret-gated (e.g. zaptec-sync.ts, hourly)
+    api/cron/                   non-oRPC cron entrypoints, secret-gated (zaptec-sync.ts hourly, elpris-sync.ts 12:30+15:30 UTC)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
     _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging
   lib/
@@ -54,11 +54,14 @@ src/
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (invoked by server/plugins/seedApprovedEmails.ts, a Nitro plugin registered in vite.config.ts)
     orpc/                       context (public/protected/admin procedures), router, client, procedures/
-    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,evCharging,integrationSync}.ts + index barrel
-    services/                   approvedEmail, user, file, evCharging, integrationSync — own all DB access + domain rules (see ADR-0002)
-    effects/                    email, storage, queue, zaptec (fails closed, no devLog — see ADR-0001, ADR-0019)
+    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,evCharging,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping)
+    services/                   approvedEmail, user, file, evCharging, integrationSync, spotPrice, tariff — own all DB access + domain rules (see ADR-0002)
+    effects/                    email, storage, queue, zaptec, elpris (pulled clients fail closed, no devLog — see ADR-0001, ADR-0019); http.ts + testing/fakeFetch shared by them
     logger/                     pino on server, console+POST /api/log in browser (see ADR-0003)
-    evCharging/                 Zaptec sync orchestrator (sync.ts) + cron entrypoint; client-safe types/vocab (see ADR-0019)
+    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, tariff limits + statutory energy tax (see ADR-0019, ADR-0020)
+    integrations/               runPulledSync (shared sync lifecycle) + cron helper (see ADR-0019)
+    spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts (day validation) — no index barrel
+    time/stockholm.ts           client-safe Stockholm calendar helpers (DST-aware day bounds)
     integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — see ADR-0019)
     i18n/, zodLocale.ts, theme.ts, browserSession.ts, utils.ts
   components/  {AppSidebar, command/, form/, layout/, login/, onboarding/, user/, ui/}
@@ -116,6 +119,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 | Empty states & feedback | 0016 |
 | **Authentication** (Google + magic-link, allowlist, admin-only mutation, onboarding) | **0017** |
 | External data integrations (fail-closed sync, health tracking, lease) | **0019** |
+| Spot prices & charging cost model (on-read, missing ≠ 0 kr, gridShare seam) | **0020** |
 
 ---
 

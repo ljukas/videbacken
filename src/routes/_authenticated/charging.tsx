@@ -6,19 +6,29 @@ import {
   useSuspenseQuery,
 } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
+import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
+import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
-import { MonthlyChart } from '~/components/evCharging/MonthlyChart'
+import {
+  type ChartMetric,
+  ChartMetricToggle,
+  MonthlyChart,
+} from '~/components/evCharging/MonthlyChart'
+import { PriceFootnote } from '~/components/evCharging/PriceFootnote'
 import { RecentRunsCard } from '~/components/evCharging/RecentRunsCard'
 import { SessionList } from '~/components/evCharging/SessionList'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { TariffCard } from '~/components/evCharging/TariffCard'
+import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -28,13 +38,20 @@ import { seo } from '~/utils/seo'
 // `?year=` falls back to the current year instead of erroring the loader.
 const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
+  // Tariff dialogs (ADR-0013): new (optionally pre-filled), edit, delete.
+  dialog: z.enum(['tariffNew', 'tariffEdit', 'tariffDelete']).optional().catch(undefined),
+  tariffId: z.string().optional().catch(undefined),
 })
+type ChargingSearch = z.infer<typeof searchSchema>
+type ChargingDialog = NonNullable<ChargingSearch['dialog']>
 
 const SESSIONS_PAGE = 20
 const SESSIONS_MAX = 500 // the `sessions` procedure's `limit` cap
 const RECENT_RUNS = 20
 
 const sessionsQuery = (limit: number) => orpc.evCharging.sessions.queryOptions({ input: { limit } })
+const sessionCostsQuery = (sessionIds: string[]) =>
+  orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } })
 // Spot price sync (elpris). Zaptec's keep their input-less calls, so their
 // query keys are unchanged; prices always pass their source.
 const pricesHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } })
@@ -53,7 +70,21 @@ export const Route = createFileRoute('/_authenticated/charging')({
       queryClient.ensureQueryData(
         orpc.evCharging.overview.queryOptions({ input: { year: deps.year } }),
       ),
-      queryClient.ensureQueryData(sessionsQuery(SESSIONS_PAGE)),
+      // Cost is best-effort: prefetchQuery never throws, so a price/tariff
+      // failure degrades only the cost figures, never the page. Awaited so the
+      // tiles render with their kronor headline instead of jumping when it
+      // arrives; the sessions' costs follow the sessions (they need the ids).
+      queryClient
+        .ensureQueryData(sessionsQuery(SESSIONS_PAGE))
+        .then(({ sessions }) =>
+          sessions.length > 0
+            ? queryClient.prefetchQuery(sessionCostsQuery(sessions.map((sess) => sess.id)))
+            : undefined,
+        ),
+      queryClient.prefetchQuery(
+        orpc.evCharging.costOverview.queryOptions({ input: { year: deps.year } }),
+      ),
+      queryClient.ensureQueryData(orpc.tariff.list.queryOptions()),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
       user.role === 'admin' ? queryClient.ensureQueryData(pricesHealthQuery) : null,
       user.role === 'admin'
@@ -75,6 +106,32 @@ function ChargingPage() {
   const queryClient = useQueryClient()
   const [sessionLimit, setSessionLimit] = useState(SESSIONS_PAGE)
   const syncNow = useSyncNow()
+  const dialog = Route.useSearch({ select: (s) => s.dialog })
+  const tariffId = Route.useSearch({ select: (s) => s.tariffId })
+  const { isOpen, open, close } = useUrlDialog<ChargingDialog, ChargingSearch>({
+    current: dialog,
+    navigate,
+    clearKeys: ['tariffId'],
+  })
+  const { data: tariffs } = useSuspenseQuery(orpc.tariff.list.queryOptions())
+  const selectedTariff = tariffs.find((t) => t.id === tariffId)
+  // A tariff dialog that can't show (a non-admin, or a tariffId that no longer
+  // exists) is cleared from the URL instead of lingering there.
+  const dialogUnavailable =
+    dialog !== undefined && (!isAdmin || (dialog !== 'tariffNew' && !selectedTariff))
+  useEffect(() => {
+    // `replace`, so Back doesn't return to the bad URL (and bounce again).
+    if (dialogUnavailable) {
+      navigate({
+        to: '.',
+        replace: true,
+        resetScroll: false,
+        search: (prev) => ({ ...prev, dialog: undefined, tariffId: undefined }),
+      })
+    }
+  }, [dialogUnavailable, navigate])
+  // "Ny period" starts from the newest period's amounts (the list is oldest first).
+  const latestTariff = tariffs.at(-1)
 
   // Hourly data: no polling on overview/sessions — the default focus refetch
   // plus `syncNow`'s invalidation keep them fresh (ADR-0018).
@@ -83,6 +140,42 @@ function ChargingPage() {
     placeholderData: keepPreviousData, // keep the old chart while another year loads
   })
   const sessions = useQuery(sessionsQuery(sessionLimit))
+  const { data: cost, isPlaceholderData: costIsStale } = useQuery({
+    ...orpc.evCharging.costOverview.queryOptions({ input: { year } }),
+    placeholderData: keepPreviousData,
+  })
+  // Cost is shown once anything at all is priced (year-independent, so a year
+  // switch doesn't flicker the kr toggle away); until then one notice says why.
+  const showCost = tariffs.length > 0 && cost?.tiles.allTime.avgOre != null
+  const hasEnergy = (overview?.tiles.allTime.kwh ?? 0) > 0
+  const costNotice: CostNoticeReason | null = !hasEnergy
+    ? null
+    : tariffs.length === 0
+      ? 'noTariff'
+      : cost && !showCost
+        ? 'unpriced'
+        : null
+  const [chartMetric, setChartMetric] = useState<ChartMetric>('kwh')
+  const chartCost = showCost && cost ? { year: cost.year, months: cost.months } : undefined
+  const showingCost = chartMetric === 'sek' && chartCost !== undefined
+  // Cost for the sessions on screen, keyed by id for the list's cost column.
+  const sessionIds = useMemo(
+    () => sessions.data?.sessions.map((sess) => sess.id) ?? [],
+    [sessions.data],
+  )
+  const sessionCostsResult = useQuery({
+    ...sessionCostsQuery(sessionIds),
+    enabled: sessionIds.length > 0,
+    placeholderData: keepPreviousData,
+  })
+  const sessionCostList = sessionCostsResult.data
+  // Rows still waiting for their cost (first load, or new rows after "Visa
+  // fler") show a placeholder, not the "missing" dash.
+  const sessionCostsPending = sessionCostsResult.isPending || sessionCostsResult.isPlaceholderData
+  const sessionCosts = useMemo(
+    () => new Map(sessionCostList?.map((c) => [c.sessionId, c])),
+    [sessionCostList],
+  )
   const { data: health } = useSuspenseQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
@@ -139,26 +232,59 @@ function ChargingPage() {
 
       {overview ? (
         <>
+          {costNotice ? (
+            <CostNotice
+              reason={costNotice}
+              onAddTariff={isAdmin ? () => open('tariffNew') : undefined}
+            />
+          ) : null}
           <section className="flex flex-col gap-2">
             <h2 className="sr-only">{m.charging_totals_heading()}</h2>
-            <TotalsTiles tiles={overview.tiles} />
+            <TotalsTiles tiles={overview.tiles} cost={showCost ? cost?.tiles : undefined} />
           </section>
 
           <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-medium text-sm">{m.charging_chart_title()}</h2>
-              <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
+              <h2 className="font-medium text-sm">
+                {showingCost ? m.charging_chart_title_cost() : m.charging_chart_title()}
+              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                {chartCost ? (
+                  <ChartMetricToggle value={chartMetric} onChange={setChartMetric} />
+                ) : null}
+                <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
+              </div>
             </div>
             {overview.months.some((mo) => mo.kwh > 0) ? (
-              <MonthlyChart months={overview.months} />
+              // Dimmed while the kr view still shows the previous year's cost.
+              <div
+                aria-busy={showingCost && costIsStale}
+                className={showingCost && costIsStale ? 'opacity-60 transition-opacity' : undefined}
+              >
+                <MonthlyChart months={overview.months} cost={chartCost} metric={chartMetric} />
+              </div>
             ) : (
               <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
                 {m.charging_chart_empty({ year: overview.year })}
               </div>
             )}
           </section>
+          {showCost ? <PriceFootnote /> : null}
         </>
       ) : null}
+
+      <TariffCard
+        tariffs={tariffs}
+        admin={
+          isAdmin
+            ? {
+                onNew: () => open('tariffNew'),
+                onEdit: (id) => open('tariffEdit', { tariffId: id }),
+                onDelete: (id) => open('tariffDelete', { tariffId: id }),
+              }
+            : undefined
+        }
+      />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
@@ -167,6 +293,7 @@ function ChargingPage() {
           hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
           onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
           loadingMore={showMore.isPending}
+          costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
           onSync={isAdmin ? () => syncNow.syncSource('zaptec') : undefined}
           syncing={syncNow.isPendingFor('zaptec')}
         />
@@ -174,6 +301,31 @@ function ChargingPage() {
 
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
       {isAdmin && pricesRuns ? <RecentRunsCard source="elpris" runs={pricesRuns} /> : null}
+
+      {isAdmin ? (
+        <>
+          <TariffDialog
+            open={isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined)}
+            mode={
+              isOpen('tariffEdit') && selectedTariff
+                ? { kind: 'edit', tariff: selectedTariff }
+                : isOpen('tariffNew')
+                  ? { kind: 'new', from: latestTariff }
+                  : undefined
+            }
+            onOpenChange={(o) => {
+              if (!o) close()
+            }}
+          />
+          <DeleteTariffDialog
+            open={isOpen('tariffDelete') && selectedTariff !== undefined}
+            tariff={selectedTariff}
+            onOpenChange={(o) => {
+              if (!o) close()
+            }}
+          />
+        </>
+      ) : null}
     </PageContainer>
   )
 }

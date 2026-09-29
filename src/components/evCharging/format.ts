@@ -89,3 +89,66 @@ export function monthLabel(month: number): string {
     new Date(Date.UTC(2000, month - 1, 15, 12)),
   )
 }
+
+/** A decimal as typed/read back in a form field: no grouping, up to 3 decimals. */
+export function formatDecimalInput(value: number): string {
+  return new Intl.NumberFormat(getIntlLocale(), {
+    maximumFractionDigits: 3,
+    useGrouping: false,
+  }).format(value)
+}
+
+/** A decimal for display, up to 3 decimals (tariff limits like 1 000). */
+export function formatDecimal(value: number): string {
+  return new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 3 }).format(value)
+}
+
+/** A tariff amount as bills print it: at least 2 decimals (35,60), up to 3 (5,331). */
+export function formatTariffAmount(value: number): string {
+  return new Intl.NumberFormat(getIntlLocale(), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 3,
+  }).format(value)
+}
+
+/**
+ * A Stockholm calendar day ('YYYY-MM-DD') for display. Formatted in UTC from
+ * the day's own UTC midnight, so no time zone can ever shift it a day.
+ */
+export function formatDay(day: string): string {
+  const [y, m, d] = day.split('-').map(Number)
+  return new Intl.DateTimeFormat(getIntlLocale(), { dateStyle: 'medium', timeZone: 'UTC' }).format(
+    Date.UTC(y, m - 1, d),
+  )
+}
+
+/** A kronor amount without its unit (for a readout that sets "kr" apart). */
+export function formatKronor(value: number, fractionDigits = 0): string {
+  return new Intl.NumberFormat(getIntlLocale(), {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value)
+}
+
+/** Kronor for display: whole kronor by default (tiles), or with öre (sessions). */
+export function formatSek(value: number, fractionDigits = 0): string {
+  // No-break space: the unit never wraps away from its number.
+  return `${formatKronor(value, fractionDigits)}\u00a0kr`
+}
+
+/**
+ * A share (0…1) as a whole percent ("39 %"). A small but real share never
+ * rounds to "0 %": it reads "< 1 %".
+ */
+export function formatShare(share: number): string {
+  const percent = new Intl.NumberFormat(getIntlLocale(), {
+    style: 'percent',
+    maximumFractionDigits: 0,
+  })
+  return share > 0 && share < 0.005 ? `< ${percent.format(0.01)}` : percent.format(share)
+}
+
+/** An average öre/kWh, whole öre (e.g. "159"). */
+export function formatOre(value: number): string {
+  return new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 0 }).format(value)
+}

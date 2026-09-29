@@ -6,6 +6,7 @@ import { evChargingRouter } from './procedures/evCharging'
 import { healthRouter } from './procedures/health'
 import { imageRouter } from './procedures/image'
 import { sensorRouter } from './procedures/sensor'
+import { tariffRouter } from './procedures/tariff'
 import { userRouter } from './procedures/user'
 
 export const appRouter = {
@@ -13,6 +14,7 @@ export const appRouter = {
   health: healthRouter,
   image: imageRouter,
   sensor: sensorRouter,
+  tariff: tariffRouter,
   user: userRouter,
 }
 
