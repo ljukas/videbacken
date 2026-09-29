@@ -32,6 +32,22 @@ export async function listChargers(): Promise<
     .orderBy(evCharger.name)
 }
 
+// The charger the live-status tile reads: the one with the newest session,
+// i.e. the charger actually in use. A stub (see `importSessions`) or a
+// decommissioned charger only has older sessions, so it never wins over the
+// active one; with no sessions at all, the first by name.
+export async function findLiveCharger(): Promise<{ id: string } | null> {
+  const latestStart = sql`(select max(${evChargeSession.startAt}) from ${evChargeSession} where ${evChargeSession.chargerId} = ${evCharger.id})`
+  const [row] = await db
+    .select({ id: evCharger.id })
+    .from(evCharger)
+    .orderBy(sql`${latestStart} desc nulls last`, evCharger.name)
+    .limit(1)
+  return row ?? null
+}
+
+const INTERVAL_INSERT_BATCH = 5_000
+
 export type ImportSessionsResult = { upserted: number; voided: number; skipped: number }
 
 // A session/interval must satisfy the table CHECKs before it ever reaches the
@@ -148,8 +164,10 @@ export async function importSessions(
         energyKwh: iv.energyKwh,
       }))
     })
-    if (intervalRows.length > 0) {
-      await tx.insert(evChargeInterval).values(intervalRows)
+    // Batched: 4 params per row, and postgres-js caps a statement at 65,534
+    // bound params — a page of long sessions could otherwise exceed it.
+    for (let i = 0; i < intervalRows.length; i += INTERVAL_INSERT_BATCH) {
+      await tx.insert(evChargeInterval).values(intervalRows.slice(i, i + INTERVAL_INSERT_BATCH))
     }
   })
 

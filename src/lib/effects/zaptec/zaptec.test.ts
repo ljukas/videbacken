@@ -110,6 +110,22 @@ describe('login', () => {
     expect(ff.callsTo(TOKEN)).toHaveLength(2)
   })
 
+  test('a short-lived token is refreshed halfway instead of 300 s early', async () => {
+    const { client, ff, advance } = setup({
+      [TOKEN]: () => jsonResponse(tokenBody({ expires_in: 300 })),
+      [CHARGERS]: chargersOk,
+    })
+
+    await client.chargers()
+    advance(150_000 - 1)
+    await client.chargers()
+    expect(ff.callsTo(TOKEN)).toHaveLength(1)
+
+    advance(1)
+    await client.chargers()
+    expect(ff.callsTo(TOKEN)).toHaveLength(2)
+  })
+
   test('a data-call 401 triggers one re-login, then succeeds', async () => {
     const { client, ff } = setup({
       [CHARGERS]: (_req, call) =>
@@ -200,10 +216,7 @@ describe('login', () => {
   })
 
   test("a caller's signal stops its wait on a shared login; other waiters still get the token", async () => {
-    let release: (() => void) | undefined
-    const gate = new Promise<void>((r) => {
-      release = r
-    })
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
     const { client, ff } = setup({
       [TOKEN]: async (req, call) => {
         await gate
@@ -219,7 +232,7 @@ describe('login', () => {
     controller.abort()
 
     expect(await caught(aborted)).toMatchObject({ code: 'unreachable', op: 'chargers' })
-    release?.()
+    release()
     await expect(patient).resolves.toHaveLength(1)
     expect(ff.callsTo(TOKEN)).toHaveLength(1)
     expect(ff.callsTo(CHARGERS)).toHaveLength(1)
@@ -603,9 +616,47 @@ describe('sessionsEndedSince', () => {
     expect(partial.authorizedUser).toEqual({ email: null, name: null })
   })
 
+  test('one malformed session is skipped and counted; the rest of the page imports', async () => {
+    const stats = newCallStats()
+    const { client } = setup({
+      [SESSIONS]: () =>
+        jsonResponse(
+          sessionsPage([
+            sessionJson({ id: 's1' }),
+            sessionJson({ id: 's2', energy: null }),
+            sessionJson({ id: 's3', reliableClock: undefined }),
+          ]),
+        ),
+    })
+
+    const pages = await collect(
+      client.sessionsEndedSince(since, { installationId: INSTALLATION_ID, until, stats }),
+    )
+
+    expect(pages.flat().map((s) => s.id)).toEqual(['s1'])
+    expect(stats.rejected).toBe(2)
+  })
+
+  test('a page of only one or two bad sessions is skipped, not failed', async () => {
+    const stats = newCallStats()
+    const { client } = setup({
+      [SESSIONS]: () => jsonResponse(sessionsPage([sessionJson({ energy: null })])),
+    })
+
+    const pages = await collect(
+      client.sessionsEndedSince(since, { installationId: INSTALLATION_ID, until, stats }),
+    )
+
+    expect(pages).toEqual([[]])
+    expect(stats.rejected).toBe(1)
+  })
+
   test('payload drift → unexpected_response listing field paths, never values', async () => {
+    // Three sessions, all rejected: a shape change, not one odd record.
     const drifted = sessionJson({ energy: 'twelve-kWh', chargerId: undefined })
-    const { client } = setup({ [SESSIONS]: () => jsonResponse(sessionsPage([drifted])) })
+    const { client } = setup({
+      [SESSIONS]: () => jsonResponse(sessionsPage([drifted, drifted, drifted])),
+    })
 
     const err = await caught(
       collect(client.sessionsEndedSince(since, { installationId: INSTALLATION_ID, until })),
@@ -699,6 +750,57 @@ describe('liveState', () => {
     advance(1)
     await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
     expect(ff.callsTo(STATE)).toHaveLength(2)
+  })
+
+  test("a read cut off by the caller's own signal is not cached", async () => {
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
+    const { client, ff } = setup({
+      [STATE]: async (_req, call) => {
+        if (call === 0) {
+          await gate
+          throw new DOMException('aborted', 'AbortError')
+        }
+        return jsonResponse(chargingStateBody())
+      },
+    })
+    const controller = new AbortController()
+
+    const read = client.liveState(CHARGER_ID, { signal: controller.signal })
+    await new Promise((r) => setTimeout(r, 0))
+    controller.abort(new DOMException('budget', 'TimeoutError'))
+    release()
+    expect(await caught(read)).toMatchObject({ code: 'unreachable', op: 'state' })
+
+    // The next poll (no budget pressure) goes straight to Zaptec.
+    await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
+    expect(ff.callsTo(STATE)).toHaveLength(2)
+  })
+
+  test('a login still failing after the caller gave up is cached for the next read', async () => {
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
+    const { client, ff } = setup({
+      [TOKEN]: async () => {
+        await gate
+        return new Response(null, { status: 503 })
+      },
+      [STATE]: () => jsonResponse(chargingStateBody()),
+    })
+    const controller = new AbortController()
+
+    const read = client.liveState(CHARGER_ID, { signal: controller.signal })
+    await Promise.resolve()
+    controller.abort(new DOMException('budget', 'TimeoutError'))
+    expect(await caught(read)).toMatchObject({ code: 'unreachable', op: 'state' })
+
+    // The shared login keeps going (three attempts) and then fails.
+    release()
+    await new Promise((r) => setTimeout(r, 0))
+    const loginCalls = ff.callsTo(TOKEN).length
+
+    // Cached: the next poll fails fast, with no new login.
+    expect(await caught(client.liveState(CHARGER_ID))).toMatchObject({ code: 'unreachable' })
+    expect(ff.callsTo(TOKEN)).toHaveLength(loginCalls)
+    expect(ff.callsTo(STATE)).toHaveLength(0)
   })
 
   test('a rate-limited read is cached for 60 s', async () => {

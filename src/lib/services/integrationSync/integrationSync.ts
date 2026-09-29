@@ -50,6 +50,7 @@ function toSnapshot(row: SyncRow): HealthSnapshot {
     lastSuccessAt: row.lastSuccessAt,
     lastSuccessStartedAt: row.lastSuccessStartedAt,
     failingSince: row.failingSince,
+    alertedAt: row.alertedAt,
     consecutiveFailures: row.consecutiveFailures,
     errorCode: row.errorCode as IntegrationErrorCode | null,
     lastErrorMessage: row.lastErrorMessage,

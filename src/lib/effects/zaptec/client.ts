@@ -161,9 +161,12 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
     }
     if (!res.ok) throw statusError('token', res)
     const parsed = parse('token', tokenSchema, await readJson('token', res))
+    // Refresh 5 min early — or halfway, for a token that lives 10 min or less,
+    // so a short-lived token is still reused instead of re-logging in per call.
+    const lifetimeMs = parsed.expires_in * 1000
     token = {
       value: parsed.access_token,
-      expiresAt: now().getTime() + parsed.expires_in * 1000 - TOKEN_EXPIRY_MARGIN_MS,
+      expiresAt: now().getTime() + lifetimeMs - Math.min(TOKEN_EXPIRY_MARGIN_MS, lifetimeMs / 2),
     }
     return parsed.access_token
   }
@@ -232,6 +235,16 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
     return readJson(op, res)
   }
 
+  // Caches a failed live read so a polling dashboard can't hammer a down (or
+  // credential-rejecting) Zaptec: auth failures 5 min, transient 60 s.
+  function cacheLiveFailure(chargerId: string, err: unknown) {
+    if (!(err instanceof ZaptecError)) return
+    const cache = (ttl: number) =>
+      liveFailures.set(chargerId, { error: err, until: now().getTime() + ttl })
+    if (AUTH_CODES.has(err.code)) cache(AUTH_FAILURE_TTL_MS)
+    else if (TRANSIENT_CODES.has(err.code)) cache(LIVE_FAILURE_TTL_MS)
+  }
+
   return {
     async chargers(o = {}) {
       return parseChargers(await getJson('/api/chargers', 'chargers', o, TIMEOUT_MS, true))
@@ -258,6 +271,7 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
           ),
         )
         stats.pages++
+        stats.rejected += page.rejected
         yield page.sessions
         if (!page.hasMore) return
         if (page.cursor === null || page.cursor === cursor) {
@@ -285,15 +299,14 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
           false,
         )
       } catch (err) {
-        // Cache the failure so a polling dashboard can't hammer a down (or
-        // credential-rejecting) Zaptec: auth failures 5 min, transient 60 s.
-        if (err instanceof ZaptecError) {
-          const ttl = AUTH_CODES.has(err.code)
-            ? AUTH_FAILURE_TTL_MS
-            : TRANSIENT_CODES.has(err.code)
-              ? LIVE_FAILURE_TTL_MS
-              : 0
-          if (ttl > 0) liveFailures.set(chargerId, { error: err, until: now().getTime() + ttl })
+        if (o.signal?.aborted) {
+          // The caller's own budget ran out (e.g. the 6 s `liveStatus` budget
+          // on a slow login) — that alone says nothing about Zaptec. But if a
+          // shared login is still in flight and then fails, cache that, so
+          // the next poll fails fast instead of starting another login.
+          login?.catch((loginErr: unknown) => cacheLiveFailure(chargerId, loginErr))
+        } else {
+          cacheLiveFailure(chargerId, err)
         }
         throw err
       }

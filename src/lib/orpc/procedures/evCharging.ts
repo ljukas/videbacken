@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ZaptecError, zaptec } from '~/lib/effects/zaptec'
+import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { runZaptecSync } from '~/lib/evCharging/sync'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import * as evChargingService from '~/lib/services/evCharging'
@@ -14,7 +15,11 @@ export const evChargingRouter = {
   // non-admins. Overview runs several queries (see `getOverview`), so it's
   // one of the "heavier than a single query" cases the timing rule calls out.
   overview: protectedProcedure
-    .input(z.object({ year: z.number().int().min(2020).max(2100).optional() }))
+    .input(
+      z.object({
+        year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional(),
+      }),
+    )
     .handler(async ({ input, context }) => {
       const startedAt = performance.now()
       const overview = await evChargingService.getOverview({ year: input.year })
@@ -48,9 +53,11 @@ export const evChargingRouter = {
   // Zaptec can never hold this polled request open (ADR-0018); failures are
   // cached in the client, so the poll doesn't re-hit a down/rejecting Zaptec.
   liveStatus: protectedProcedure.handler(async ({ context }) => {
-    const chargers = await evChargingService.listChargers()
-    const charger = chargers[0]
+    const findStart = performance.now()
+    const charger = await evChargingService.findLiveCharger()
+    if (context.timings) context.timings.findChargerMs = Math.round(performance.now() - findStart)
     if (!charger) return null
+    const liveStart = performance.now()
     try {
       return await zaptec.liveState(charger.id, { signal: AbortSignal.timeout(LIVE_BUDGET_MS) })
     } catch (err) {
@@ -59,6 +66,8 @@ export const evChargingRouter = {
         return null
       }
       throw err
+    } finally {
+      if (context.timings) context.timings.zaptecLiveMs = Math.round(performance.now() - liveStart)
     }
   }),
 

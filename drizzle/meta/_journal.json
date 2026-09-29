@@ -29,6 +29,13 @@
       "when": 1790614498339,
       "tag": "0003_add_ev_charging_and_integration_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790655309868,
+      "tag": "0004_integration_sync_alerted_at_and_charger_idx",
+      "breakpoints": true
     }
   ]
 }

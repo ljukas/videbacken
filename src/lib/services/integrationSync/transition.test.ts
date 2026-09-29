@@ -31,6 +31,7 @@ const never: HealthSnapshot = {
   lastSuccessAt: null,
   lastSuccessStartedAt: null,
   failingSince: null,
+  alertedAt: null,
   consecutiveFailures: 0,
   errorCode: null,
   lastErrorMessage: null,
@@ -45,6 +46,8 @@ function failing(code: 'auth_failed' | 'unreachable' | 'not_configured', n = 2):
   return {
     ...healthy,
     failingSince: T0,
+    // The streak alerted iff it ran on an alertable code.
+    alertedAt: code === 'not_configured' ? null : T0,
     consecutiveFailures: n,
     errorCode: code,
     lastErrorMessage: 'earlier',
@@ -61,6 +64,14 @@ describe('nextRow transitions', () => {
     ['not_configured start from never', never, fail('not_configured'), 'none', 1],
     ['not_configured → ok', failing('not_configured'), ok, 'none', 0],
     ['code change mid-streak', failing('unreachable'), fail('auth_failed'), 'none', 3],
+    [
+      'not_configured → alertable',
+      failing('not_configured'),
+      fail('auth_failed'),
+      'started_failing',
+      3,
+    ],
+    ['alertable → not_configured', failing('auth_failed'), fail('not_configured'), 'none', 3],
     ['ok → ok', healthy, ok, 'none', 0],
   ] as const)('%s', (_label, prev, outcome, transition, failures) => {
     const result = nextRow(prev, outcome, NOW, STARTED)
@@ -96,17 +107,40 @@ describe('nextRow transitions', () => {
       lastSuccessAt: NOW,
       lastSuccessStartedAt: STARTED,
       failingSince: null,
+      alertedAt: null,
       consecutiveFailures: 0,
       errorCode: null,
       lastErrorMessage: null,
     })
   })
+
+  test('an opened alert is stamped once and kept for the rest of the streak', () => {
+    const opened = nextRow(healthy, fail('unreachable'), NOW, STARTED).row
+    expect(opened.alertedAt).toEqual(NOW)
+    const later = new Date(NOW.getTime() + 60_000)
+    expect(nextRow(opened, fail('not_configured'), later, STARTED).row.alertedAt).toEqual(NOW)
+    expect(nextRow(opened, fail('auth_failed'), later, STARTED).row.alertedAt).toEqual(NOW)
+  })
+
+  test('the watermark is the run start, or `syncedUntil` when the run passes one', () => {
+    const until = new Date('2026-06-01T00:00:00.000Z')
+    expect(nextRow(healthy, ok, NOW, STARTED).row.lastSuccessStartedAt).toEqual(STARTED)
+    expect(
+      nextRow(healthy, { ...ok, syncedUntil: until }, NOW, STARTED).row.lastSuccessStartedAt,
+    ).toEqual(until)
+    // A failed run keeps the previous watermark unless it finished some windows.
+    expect(nextRow(healthy, fail('unreachable'), NOW, STARTED).row.lastSuccessStartedAt).toEqual(T0)
+    expect(
+      nextRow(healthy, { ...fail('unreachable'), syncedUntil: until }, NOW, STARTED).row
+        .lastSuccessStartedAt,
+    ).toEqual(until)
+  })
 })
 
-// Mixed-code streaks. The row keeps only the current error code, so each streak
-// edge is judged by the code at that edge. These unpaired alerts are deliberate
-// and accepted (see ADR-0019); the tests pin them so a change is a conscious one.
-describe('mixed-code streaks (accepted unpaired alerts)', () => {
+// Mixed-code streaks: `alertedAt` remembers whether this streak alerted, so
+// every `recovered` pairs with a `started_failing`, whichever codes the streak
+// passed through.
+describe('mixed-code streaks pair their alerts', () => {
   function run(steps: SyncOutcome[]) {
     let prev = healthy
     return steps.map((outcome, i) => {
@@ -116,21 +150,33 @@ describe('mixed-code streaks (accepted unpaired alerts)', () => {
     })
   }
 
-  test('ok → auth_failed → not_configured → ok: start alert, no recovery alert', () => {
-    // Accepted: the streak alerted on auth_failed but ends while not_configured,
-    // so no `recovered` is sent.
+  test('ok → auth_failed → not_configured → ok: start alert, then recovery alert', () => {
     expect(run([fail('auth_failed'), fail('not_configured'), ok])).toEqual([
       'started_failing',
+      'none',
+      'recovered',
+    ])
+  })
+
+  test('ok → not_configured → auth_failed → ok: start alert on auth_failed, then recovery', () => {
+    expect(run([fail('not_configured'), fail('auth_failed'), ok])).toEqual([
+      'none',
+      'started_failing',
+      'recovered',
+    ])
+  })
+
+  test('ok → not_configured → ok: never alerts', () => {
+    expect(run([fail('not_configured'), fail('not_configured'), ok])).toEqual([
+      'none',
       'none',
       'none',
     ])
   })
 
-  test('ok → not_configured → auth_failed → ok: no start alert, recovery alert', () => {
-    // Accepted: the streak started as not_configured (no alert) and the code
-    // change mid-streak does not alert, but it ends from auth_failed, so a
-    // `recovered` is sent.
-    expect(run([fail('not_configured'), fail('auth_failed'), ok])).toEqual([
+  test('unreachable → not_configured → auth_failed: one alert for the whole streak', () => {
+    expect(run([fail('unreachable'), fail('not_configured'), fail('auth_failed'), ok])).toEqual([
+      'started_failing',
       'none',
       'none',
       'recovered',

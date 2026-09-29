@@ -15,6 +15,7 @@ import {
   beginAttempt,
   getLastSuccessStartedAt,
   type IntegrationHealth,
+  internalErrorMessage,
   type RunStats,
   recordOutcome,
   type SyncOutcome,
@@ -40,6 +41,11 @@ export type SyncRun = {
   transition: HealthTransition
   startedAt: Date
   since: Date | null
+  /**
+   * End of the last fetch window that fully imported — the next watermark.
+   * Before `startedAt` when a backfill ran out of budget (or failed) part-way.
+   */
+  syncedUntil: Date | null
   durationMs: number
   authMs: number
   fetchMs: number
@@ -49,16 +55,38 @@ export type SyncRun = {
   sessionsSeen: number
   upserted: number
   voided: number
-  /** Sessions the charging service rejected as invalid (never imported). */
+  /**
+   * Sessions never imported because they were invalid: dropped by the Zaptec
+   * parser (unexpected shape) or rejected by the charging service.
+   */
   skipped: number
 }
 
 const SOURCE = 'zaptec'
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
 /** Re-fetch window before the last success, to catch late/offline sessions. */
-const LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
+const LOOKBACK_MS = 7 * DAY_MS
 const FIRST_RUN_SINCE = new Date('2020-01-01T00:00:00Z')
-/** Per installation. More pages than this means the paging went wrong. */
+// Session fetch windows (ADR-0019): oldest first, each finished window moves
+// the watermark, and one that overflows `MAX_PAGES` is halved and retried.
+/** Longest window. Must exceed `LOOKBACK_MS`, so a window ends past the previous watermark. */
+const WINDOW_MS = 90 * DAY_MS
+/** Shortest window; one this short that still overflows fails the run. */
+const MIN_WINDOW_MS = HOUR_MS
+/** No new window starts once the run is this old; the next run continues. */
+const WINDOW_BUDGET_MS = 120_000
+/** Per installation and window. */
 const MAX_PAGES = 20
+
+/** A window's session paging went past `MAX_PAGES`. */
+class PageCapExceeded extends ZaptecError {
+  constructor() {
+    super('unexpected_response', 'sessions', undefined, {
+      message: `Zaptec sessions exceeded ${MAX_PAGES} pages for one installation`,
+    })
+  }
+}
 /**
  * Overall budget for the run's Zaptec calls. Well under Vercel's 300 s function
  * limit, so a slow run still fails as `unreachable`, records its outcome and
@@ -86,6 +114,7 @@ export async function runZaptecSync(opts: {
     transition: 'none',
     startedAt,
     since: null,
+    syncedUntil: null,
     durationMs: 0,
     authMs: 0,
     fetchMs: 0,
@@ -97,7 +126,6 @@ export async function runZaptecSync(opts: {
     voided: 0,
     skipped: 0,
   }
-  let attemptId: string | null = null
   let thrown: unknown
   const deadlineMs = opts.deadlineMs ?? RUN_DEADLINE_MS
   const deadline = new AbortController()
@@ -110,64 +138,54 @@ export async function runZaptecSync(opts: {
     const attempt = await beginAttempt(SOURCE, { now: startedAt })
     // Another run holds the lease (also absorbs duplicate cron deliveries).
     if (!attempt.acquired) return run
-    attemptId = attempt.attemptId
 
     let outcome: SyncOutcome
     try {
-      await fetchAndImport(client, run, stats, deadline.signal)
+      await fetchAndImport(client, run, stats, deadline.signal, now)
       run.outcome = 'ok'
-      outcome = { ok: true, stats: runStats(run, stats) }
+      outcome = { ok: true, stats: runStats(run, stats), syncedUntil: run.syncedUntil }
     } catch (error) {
-      if (!(error instanceof ZaptecError)) throw error
-      run.outcome = 'failed'
-      run.code = error.code
+      const failed = error instanceof ZaptecError
+      if (!failed) thrown = error
+      run.outcome = failed ? 'failed' : 'error'
+      run.code = failed ? error.code : 'internal_error'
       outcome = {
         ok: false,
-        kind: 'failed',
-        code: error.code,
-        message: error.message,
+        kind: failed ? 'failed' : 'error',
+        code: run.code,
+        message: failed ? error.message : internalErrorMessage(error),
         stats: runStats(run, stats),
+        syncedUntil: run.syncedUntil,
       }
     }
 
-    const recorded = await recordOutcome(SOURCE, outcome, {
-      attemptId,
-      trigger: opts.trigger,
-      startedAt,
-      now: now(),
-      log,
-    })
-    run.transition = recorded.transition
-    await alertAdmins(recorded.transition, recorded.health, log)
+    // The outcome is written once (ADR-0019). If that write throws, it is not
+    // retried as `internal_error` — whether it committed is unknown; the lease
+    // expires and the next run redoes the window.
+    try {
+      const recorded = await recordOutcome(SOURCE, outcome, {
+        attemptId: attempt.attemptId,
+        trigger: opts.trigger,
+        startedAt,
+        now: now(),
+        log,
+      })
+      run.transition = recorded.transition
+      await alertAdmins(recorded.transition, recorded.health, log)
+    } catch (recordError) {
+      if (run.outcome !== 'error') throw recordError
+      // Recording an unexpected error is best effort: it must not mask it.
+      log.warn('integration sync outcome could not be recorded', {
+        source: SOURCE,
+        error: recordError,
+      })
+    }
+    if (run.outcome === 'error') throw thrown
     return run
   } catch (error) {
     thrown = error
     run.outcome = 'error'
     run.code = 'internal_error'
-    if (attemptId !== null) {
-      // Best effort: the health snapshot should show the failure, but a
-      // failure to record it must not mask the original error.
-      try {
-        const recorded = await recordOutcome(
-          SOURCE,
-          {
-            ok: false,
-            kind: 'error',
-            code: 'internal_error',
-            message: error instanceof Error ? error.message : String(error),
-            stats: runStats(run, stats),
-          },
-          { attemptId, trigger: opts.trigger, startedAt, now: now(), log },
-        )
-        run.transition = recorded.transition
-        await alertAdmins(recorded.transition, recorded.health, log)
-      } catch (recordError) {
-        log.warn('integration sync outcome could not be recorded', {
-          source: SOURCE,
-          error: recordError,
-        })
-      }
-    }
     throw error
   } finally {
     clearTimeout(deadlineTimer)
@@ -175,6 +193,7 @@ export async function runZaptecSync(opts: {
     run.authMs = Math.round(stats.authMs)
     run.fetchMs = Math.round(stats.fetchMs)
     run.importMs = Math.round(run.importMs)
+    run.skipped += stats.rejected
     const fields = {
       source: run.source,
       trigger: run.trigger,
@@ -182,6 +201,7 @@ export async function runZaptecSync(opts: {
       code: run.code,
       transition: run.transition,
       since: run.since,
+      syncedUntil: run.syncedUntil,
       durationMs: run.durationMs,
       authMs: run.authMs,
       fetchMs: run.fetchMs,
@@ -199,9 +219,10 @@ export async function runZaptecSync(opts: {
   }
 }
 
-// Chargers → sessions per installation, one charging-service transaction per
-// page. Mutates `run` as it goes, so a failure part-way still reports what
-// landed (earlier pages stay imported; only the watermark waits for success).
+// Chargers, then sessions window by window (oldest first) and installation by
+// installation, one charging-service transaction per page. Mutates `run` as it
+// goes, so a failure part-way still reports what landed: earlier pages stay
+// imported, and `run.syncedUntil` marks the last window that fully did.
 // Every Zaptec call gets the run's deadline `signal` and is also raced against
 // it, so even a client that ignores the signal can't outlast the deadline.
 async function fetchAndImport(
@@ -209,6 +230,7 @@ async function fetchAndImport(
   run: SyncRun,
   stats: ZaptecCallStats,
   signal: AbortSignal,
+  now: () => Date,
 ): Promise<void> {
   const chargers = await withDeadline(client.chargers({ stats, signal }), signal, 'chargers')
   run.chargers = chargers.length
@@ -221,35 +243,64 @@ async function fetchAndImport(
   run.since = since
 
   const installationIds = [...new Set(chargers.map((c) => c.installationId))]
-  for (const installationId of installationIds) {
-    let pages = 0
-    const iterator = client
-      .sessionsEndedSince(since, { installationId, until: run.startedAt, stats, signal })
-      [Symbol.asyncIterator]()
+  let windowStart = since
+  let windowMs = WINDOW_MS
+  while (windowStart < run.startedAt) {
+    // Always at least one window per run, so a run can never make no progress.
+    const elapsed = now().getTime() - run.startedAt.getTime()
+    if (run.syncedUntil !== null && elapsed >= WINDOW_BUDGET_MS) return
+    const windowEnd = new Date(Math.min(windowStart.getTime() + windowMs, run.startedAt.getTime()))
     try {
-      for (;;) {
-        const next = await withDeadline(iterator.next(), signal, 'sessions')
-        if (next.done) break
-        const page = next.value
-        pages++
-        if (pages > MAX_PAGES) {
-          throw new ZaptecError('unexpected_response', 'sessions', undefined, {
-            message: `Zaptec sessions exceeded ${MAX_PAGES} pages for one installation`,
-          })
-        }
-        run.pages++
-        run.sessionsSeen += page.length
-        const importStart = performance.now()
-        const result = await importSessions(page, { installationId })
-        run.importMs += performance.now() - importStart
-        run.upserted += result.upserted
-        run.voided += result.voided
-        run.skipped += result.skipped
+      for (const installationId of installationIds) {
+        await importWindow(client, run, stats, signal, {
+          installationId,
+          since: windowStart,
+          until: windowEnd,
+        })
       }
-    } finally {
-      // Not awaited: a generator stuck past the deadline would never settle.
-      iterator.return?.()?.catch(() => {})
+    } catch (error) {
+      // Pages that already imported are upserted again, harmlessly. Later
+      // windows keep the narrower length — dense stretches tend to be long.
+      if (!(error instanceof PageCapExceeded) || windowMs / 2 < MIN_WINDOW_MS) throw error
+      windowMs /= 2
+      continue
     }
+    run.syncedUntil = windowEnd
+    windowStart = windowEnd
+  }
+}
+
+async function importWindow(
+  client: ZaptecClient,
+  run: SyncRun,
+  stats: ZaptecCallStats,
+  signal: AbortSignal,
+  window: { installationId: string; since: Date; until: Date },
+): Promise<void> {
+  const { installationId, since, until } = window
+  let pages = 0
+  const iterator = client
+    .sessionsEndedSince(since, { installationId, until, stats, signal })
+    [Symbol.asyncIterator]()
+  try {
+    for (;;) {
+      const next = await withDeadline(iterator.next(), signal, 'sessions')
+      if (next.done) break
+      const page = next.value
+      pages++
+      if (pages > MAX_PAGES) throw new PageCapExceeded()
+      run.pages++
+      run.sessionsSeen += page.length
+      const importStart = performance.now()
+      const result = await importSessions(page, { installationId })
+      run.importMs += performance.now() - importStart
+      run.upserted += result.upserted
+      run.voided += result.voided
+      run.skipped += result.skipped
+    }
+  } finally {
+    // Not awaited: a generator stuck past the deadline would never settle.
+    iterator.return?.()?.catch(() => {})
   }
 }
 

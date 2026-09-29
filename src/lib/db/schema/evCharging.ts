@@ -57,6 +57,10 @@ export const evChargeSession = pgTable(
     // No end_at index: nothing queries by end_at alone (start_at covers the
     // recency/range queries the overview and health views need).
     index('ev_charge_session_start_at_idx').on(table.startAt),
+    // Covers the `charger_id` FK (an `ev_charger` delete/key check would
+    // otherwise scan every session) and "the charger's latest session", which
+    // picks the charger the live-status tile reads.
+    index('ev_charge_session_charger_id_start_at_idx').on(table.chargerId, table.startAt),
     check('ev_charge_session_energy_kwh_nonneg_check', sql`${table.energyKwh} >= 0`),
     check('ev_charge_session_end_at_check', sql`${table.endAt} >= ${table.startAt}`),
   ],

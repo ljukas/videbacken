@@ -1,0 +1,3 @@
+ALTER TABLE "integration_sync" ADD COLUMN "alerted_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "ev_charge_session_charger_id_start_at_idx" ON "ev_charge_session" USING btree ("charger_id","start_at");--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD CONSTRAINT "integration_sync_alerted_at_error_code_check" CHECK ("integration_sync"."alerted_at" IS NULL OR "integration_sync"."error_code" IS NOT NULL);

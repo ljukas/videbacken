@@ -23,10 +23,12 @@ export interface ZaptecCallStats {
   requests: number
   retries: number
   pages: number
+  /** Sessions dropped because they didn't match the expected shape. */
+  rejected: number
 }
 
 export function newCallStats(): ZaptecCallStats {
-  return { authMs: 0, fetchMs: 0, requests: 0, retries: 0, pages: 0 }
+  return { authMs: 0, fetchMs: 0, requests: 0, retries: 0, pages: 0, rejected: 0 }
 }
 
 export interface CallOpts {

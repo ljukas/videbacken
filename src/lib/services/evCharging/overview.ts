@@ -1,7 +1,11 @@
 import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
-import { NOISE_THRESHOLD_KWH } from '~/lib/evCharging/counting'
+import {
+  NOISE_THRESHOLD_KWH,
+  OVERVIEW_MAX_YEAR,
+  OVERVIEW_MIN_YEAR,
+} from '~/lib/evCharging/counting'
 
 export type Totals = { kwh: number; sessions: number }
 
@@ -167,9 +171,12 @@ async function distinctCountedYears(): Promise<Set<number>> {
     .innerJoin(evChargeSession, eq(evChargeInterval.sessionId, evChargeSession.id))
     .where(countedSessionFilter())
 
+  // Only years the `overview` procedure accepts; data outside them still
+  // counts toward the all-time tile.
   const years = new Set<number>()
-  for (const r of sessionYears) years.add(r.year)
-  for (const r of intervalYears) years.add(r.year)
+  for (const r of [...sessionYears, ...intervalYears]) {
+    if (r.year >= OVERVIEW_MIN_YEAR && r.year <= OVERVIEW_MAX_YEAR) years.add(r.year)
+  }
   return years
 }
 
