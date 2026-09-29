@@ -63,7 +63,7 @@ src/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
     services/                   approvedEmail, user, file, sensor, evCharging, integrationSync, spotPrice, tariff — own all DB access + domain rules (ADR-0002)
     effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris (pulled, fail closed — ADR-0019); http.ts + testing/fakeFetch shared by the pulled clients
-    queue/                      dispatch.ts: one typed handler table used by both the prod consumer and the dev worker (ADR-0007)
+    queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
     evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, tariff limits + energy tax (ADR-0019, ADR-0020)
@@ -109,7 +109,7 @@ drizzle/, compose.yaml, vite.config.ts (Nitro: plugins, region, crons, queue tri
 - **Add a service:** copy `services/user/` shape (`<x>.ts`, `<x>.test.ts` with `setupDatabase()` first, `index.ts`; `errors.ts` when an invariant lands).
 - **Add an effect:** copy `effects/email/` shape (`<domain>.ts` selector + `adapters/<name>.ts` + barrel + test; register in `effects/index.ts`).
 - **Add a procedure:** edit `src/lib/orpc/procedures/<x>.ts`; pick `protectedProcedure` (reads) or `adminProcedure` (mutations); `.errors(<x>Errors)` + `.input(zodSchema)`; thin glue → service → rethrow `errors[err.code]()` → run effects after success; register in `orpc/router.ts`. Add `context.timings` sub-timings for heavier work.
-- **Add a queue topic:** a handler in `src/lib/queue/handlers/` + an entry in the typed table in `dispatch.ts` (a topic without a handler fails to compile) + a trigger in `vite.config.ts`.
+- **Add a queue topic:** extend the `QueueTopic` / `QueuePayloadMap` union in `src/lib/effects/queue/queue.ts` → a handler in `src/lib/queue/handlers/` → an entry in the typed `queueHandlers` table in `src/lib/queue/index.ts` (a topic without a handler fails to compile) → a trigger in `vite.config.ts` (ADR-0007).
 - **Add a UI component:** `bunx shadcn@latest add <name>` (Radix variant per `components.json` — never `shadcn init --base`).
 - **Regenerate Better Auth schema:** `bun run auth:schema` (runs the CLI + `scripts/patchBetterAuthSchema.mjs` for `timestamptz` + RLS). Never hand-edit `betterAuth.ts`.
 

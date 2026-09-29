@@ -5,6 +5,8 @@
 - **Deciders**: Lukas
 - **Decision in one line**: Heavy / deferred work runs on a queue. Producers call `queue.publish(topic, payload)` through `~/lib/effects/queue/`; the same handler in `src/lib/queue/handlers/<topic>.ts` runs in production (Vercel Queues → Nitro `vercel:queue` hook) and in local dev (BullMQ + Redis worker). The adapter is chosen at runtime from env; tests use a `devLog` no-op. **Supersedes the tier-3 / outbox passages in [ADR-0001](./0001-side-effects-architecture.md).**
 
+> **Amended 2026-09-29. Pruned to the current template.** References to features the template removed (documents and the `image_thumbnail` / `pdf_thumbnail` topics with their `imageThumbnail` handler, the `document` procedures, the `realtime` effect, a link to a nonexistent ADR) were removed or replaced with current examples (the `heic_transcode` and `email_integration_sync_alert` topics, `confirmAvatarUpload`). The trigger config path is corrected to `vercel.queues.triggers`. One verification rule was widened to match the code: the `publish('blurhash'` producer check (Verification) now also admits the `heic_transcode` handler, which re-enqueues `blurhash` after transcoding — previously only oRPC procedure files were allowed. No decision changed.
+
 > **Amended 2026-09-28 — one dispatcher, one outcome line, bounded retries.** Both consumers now call `dispatchQueueMessage(topic, message, meta)` (`src/lib/queue/index.ts`, contract in `src/lib/queue/dispatch.ts`) instead of their own switch/`Worker` wiring. Handlers are entries in a typed `QueueHandlerTable` (`{ [T in QueueTopic]: QueueHandler<T> }`, so a topic without a handler is a compile error) and receive `{ meta, log }` — a child logger already scoped to topic/messageId/deliveryCount plus the handler's `logFields(msg)`. Outcomes: return → `ok`; `PermanentQueueError` → `dropped` (ack); any other throw → `retry` (rethrown) until `deliveryCount >= QUEUE_MAX_DELIVERIES` (**5**), then `dropped` / `exhausted` (ack); unknown topic → `dropped` / `unknown_topic` (ack, previously silently acked). Each message logs exactly one `queue message` line (`topic, messageId, deliveryCount, outcome, reason?, durationMs, …logFields, error?`), never the payload. Why: `@vercel/queue` has **no max-delivery count and no dead-letter queue** — a throwing handler was retried silently until the message expired (default 24 h) with nothing in our logs, while dev BullMQ gave up after 3 attempts; prod consumer failures were invisible. The BullMQ producer's `attempts` now uses the same `QUEUE_MAX_DELIVERIES`. Adding a topic is **three** steps (see *How to add a new topic*).
 
 > **Amended 2026-06-24, corrected 2026-07-16.** A fourth topic landed: **`email_user_invited`** (`{ to, inviteUrl, locale }`) — the first **email** topic. It is published from the `invite` / `resendInvite` oRPC procedures (`src/lib/orpc/procedures/user.ts`) — an ordinary oRPC-procedure producer like the others, not a Better Auth hook (an earlier version of this note said the invitation flow ran through Better Auth's `sendVerificationEmail`; it doesn't — see ADR-0017) — making user invitations tier-3 (delivery off the admin's request, with retry/backoff). Handler: `src/lib/queue/handlers/emailUserInvited.ts` (a thin `email.sendUserInvited(...)` — the link is built by the producer's `buildInviteUrl()`, which returns a plain `/login` URL, not a minted magic-link). Wired through all five places per *How to add a new topic*: the union/payload in `queue.ts`, the handler, the `vercel:queue` switch (`queueConsumer.ts`), the `vite.config.ts` trigger, and the dev `Worker` (`devQueueWorker.ts`). See [ADR-0008](./0008-email-architecture.md) (the email seam) and [ADR-0017](./0017-authentication.md) (the invitation flow).
@@ -15,7 +17,7 @@
 
 ## Context
 
-[ADR-0006](./0006-file-storage.md) put avatars and documents in Vercel Blob. That created the need for a `<canvas>`-style placeholder while the real image loads — a [blurhash](https://blurha.sh). Generating one is **expensive**: `sharp` decodes the bytes, downscales, and hands a pixel buffer to `blurhash`'s encoder. On a 5 MB JPEG that's hundreds of milliseconds, sometimes seconds, and it loads two heavy native modules (`sharp` is ~30 MB on disk; `blurhash` is small but allocates). Doing it inline inside `confirmAvatarUpload` would:
+[ADR-0006](./0006-file-storage.md) put avatars and other user files in Vercel Blob. That created the need for a `<canvas>`-style placeholder while the real image loads — a [blurhash](https://blurha.sh). Generating one is **expensive**: `sharp` decodes the bytes, downscales, and hands a pixel buffer to `blurhash`'s encoder. On a 5 MB JPEG that's hundreds of milliseconds, sometimes seconds, and it loads two heavy native modules (`sharp` is ~30 MB on disk; `blurhash` is small but allocates). Doing it inline inside `confirmAvatarUpload` would:
 
 - Block the upload response on CPU work the user doesn't need to wait for.
 - Hold a Vercel Function open for the duration, burning Active CPU pricing on a request that should be sub-100 ms.
@@ -38,7 +40,7 @@ The shape of the problem — *fire-and-forget durable work, executed out-of-band
 | Local dev without broker | `devLog` (no-op) | — | — (uploads succeed; blurhash skipped) |
 | Tests (`VITEST=true`) | `devLog` | — | — |
 
-The producer interface lives at `~/lib/effects/queue/` (alongside `email`, `storage`, `realtime`); the consumer handler lives at `~/lib/queue/handlers/<topic>.ts`. Both Vercel Queues and the dev BullMQ worker call the **same** handler function — the wire-up is the only thing that differs.
+The producer interface lives at `~/lib/effects/queue/` (alongside `email`, `storage`, `zaptec`, `elpris`); the consumer handler lives at `~/lib/queue/handlers/<topic>.ts`. Both Vercel Queues and the dev BullMQ worker call the **same** handler function — the wire-up is the only thing that differs.
 
 This is a **deep seam**: a one-method interface (`publish`) with real leverage behind it (three live adapters, a shared consumer, retries, idempotent handler logic). Two adapters from day one would have qualified; we have three.
 
@@ -84,15 +86,17 @@ One interface, typed per topic via a discriminated payload map:
 
 ```ts
 // src/lib/effects/queue/queue.ts
-export type QueueTopic = 'blurhash' | 'image_thumbnail' | 'pdf_thumbnail' | 'email_user_invited'
+export type QueueTopic =
+  | 'blurhash'
+  | 'email_user_invited'
+  | 'heic_transcode'
+  | 'email_integration_sync_alert'
 
 export type QueuePayloadMap = {
-  blurhash:
-    | { fileId: string; kind: 'avatar'; userId: string }
-    | { fileId: string; kind: 'document' }
-  image_thumbnail: { documentId: string }
-  pdf_thumbnail: { documentId: string } // reserved; not yet produced or consumed
+  blurhash: { fileId: string; kind: 'avatar'; userId: string }
   email_user_invited: { to: string; inviteUrl: string; locale: Locale } // ADR-0017
+  heic_transcode: { fileId: string; kind: 'avatar'; userId: string }
+  email_integration_sync_alert: { to: string; source: IntegrationSource; /* … */ } // ADR-0019
 }
 
 export interface QueueEffects {
@@ -100,7 +104,7 @@ export interface QueueEffects {
 }
 ```
 
-> **Amended 2026-06-04, superseded.** `blurhash` is the canonical example throughout this ADR. A second topic, `image_thumbnail`, landed for a since-removed document-management feature and was removed along with it; the current second/third live topics are `email_user_invited` (see the 2026-06-24 amendment above) and `heic_transcode`.
+> **Amended 2026-06-04, superseded.** `blurhash` is the canonical example throughout this ADR. A second topic, `image_thumbnail`, landed for a since-removed document-management feature and was removed along with it; the other current topics are `email_user_invited` (see the 2026-06-24 amendment above), `heic_transcode` and `email_integration_sync_alert` (ADR-0019).
 
 Adapter selection happens on first `publish()` via dynamic import, cached for the rest of the process (the branching is wrapped in the shared `lazy()` memoizer from `src/lib/effects/lazy.ts` — same semantics, shared with the other effect selectors):
 
@@ -115,7 +119,7 @@ const getAdapter = lazy(async (): Promise<QueueEffects> => {
 
 Three properties this gets us:
 
-- **Per-topic payload typing.** The discriminated union (`kind: 'avatar' | 'document'`) lives in the producer's type, not deferred to the row in storage. The handler dispatches on `kind` without re-querying.
+- **Per-topic payload typing.** The `kind` discriminant (today only `'avatar'`, kept so a second image-bearing producer can extend the union) lives in the producer's type, not deferred to the row in storage. The handler dispatches on `kind` without re-querying.
 - **Bundle isolation.** BullMQ stays out of the production Nitro bundle; `@vercel/queue` stays out of the local `tsx` worker. Each runtime ships only the adapter it actually uses.
 - **Fire-and-forget on failure.** Callers `.catch()` the publish so an upload still succeeds if the broker is briefly unavailable — the worst case is a missing blurhash, not a failed upload.
 
@@ -129,17 +133,11 @@ await queue
     context.log.warn('failed to enqueue avatar blurhash', { fileId: newRow.id, error })
   })
 
-// `confirmDocumentUpload` — src/lib/orpc/procedures/document.ts
-// Behind the same SHARP_DECODABLE_MIME_SET gate, it enqueues `image_thumbnail`
-// alongside `blurhash`.
-if (SHARP_DECODABLE_MIME_SET.has(inserted.file.mime)) {
-  await queue
-    .publish('blurhash', { fileId: inserted.file.id, kind: 'document' })
-    .catch((error) => { /* log and continue */ })
-  await queue
-    .publish('image_thumbnail', { documentId: inserted.document.id })
-    .catch((error) => { /* log and continue */ })
-}
+// Same procedure, HEIC branch — enqueues `heic_transcode` instead; that handler
+// publishes `blurhash` itself once the JPEG exists.
+await queue
+  .publish('heic_transcode', { fileId: newRow.id, kind: 'avatar', userId: context.user.id })
+  .catch((error) => { /* log and continue */ })
 ```
 
 ### The handler contract — `src/lib/queue/handlers/<topic>.ts`
@@ -176,8 +174,13 @@ The Nitro plugin is registered explicitly because TanStack Start manages Nitro's
 nitro({
   plugins: ['./server/plugins/queueConsumer.ts'],
   vercel: {
-    config: {
-      queues: { triggers: [{ topic: 'blurhash' }, { topic: 'image_thumbnail' }] },
+    queues: {
+      triggers: [
+        { topic: 'blurhash' },
+        { topic: 'email_user_invited' },
+        { topic: 'heic_transcode' },
+        { topic: 'email_integration_sync_alert' },
+      ],
     },
   },
 })
@@ -276,7 +279,7 @@ On record because the swap was an explicit design goal: Vercel Queues was in pub
 **What to budget when the swap happens:**
 - One managed-Redis account (Upstash has a free tier covering our scale).
 - One worker host (Fly.io free tier covers it; the worker process is small).
-- Migrating any unprocessed Vercel Queues messages — in practice nothing: messages self-expire at the default 24 h retention (max 7 days), and blurhash/thumbnails are idempotent and recomputable, so unprocessed backlog can simply be left to expire.
+- Migrating any unprocessed Vercel Queues messages — in practice nothing: messages self-expire at the default 24 h retention (max 7 days), and blurhash/transcodes are idempotent and recomputable, so unprocessed backlog can simply be left to expire.
 
 **Revisit triggers** for actually pulling this lever:
 - Per-operation billing (GA model — see the 2026-06-10 amendment) starts consuming a meaningful share of plan credits. Implausible at ~20 users, but it keeps the trigger measurable.
@@ -295,8 +298,7 @@ After this ADR's pattern lands or is touched:
 
 - `grep -rn "@vercel/queue" src/` — only `src/lib/effects/queue/adapters/vercelQueue.ts` should match.
 - `grep -rn "from 'bullmq'" src/ scripts/` — only `src/lib/effects/queue/adapters/bullmqQueue.ts` and `scripts/devQueueWorker.ts` should match.
-- `grep -rn "publish('blurhash" src/` — every producer-side hit must be an oRPC procedure file (currently `src/lib/orpc/procedures/image.ts` for avatars, `src/lib/orpc/procedures/document.ts` for documents); test files in `src/lib/effects/queue/` are also expected. No service, no auth hook, no React file.
-- `grep -rn "publish('image_thumbnail" src/` — only `src/lib/orpc/procedures/document.ts` (plus the queue test). Its handler is `src/lib/queue/handlers/imageThumbnail.ts`.
+- `grep -rn "publish('blurhash" src/` — every producer-side hit must be an oRPC procedure file (currently `src/lib/orpc/procedures/image.ts` for avatars) or the `heic_transcode` handler (`src/lib/queue/handlers/heicTranscode.ts`, which re-enqueues after transcoding); test files in `src/lib/effects/queue/` are also expected. No service, no auth hook, no React file.
 - `grep -rn "vercel:queue" server/` — only `server/plugins/queueConsumer.ts` should match (no other hook subscribers).
 - `grep -rn "dispatchQueueMessage" server/ scripts/ src/` — only `src/lib/queue/index.ts`, `server/plugins/queueConsumer.ts` and `scripts/devQueueWorker.ts`; no consumer calls a handler directly.
 - `bun run test` — `src/lib/effects/queue/queue.test.ts` passes; selects the `devLog` adapter regardless of `REDIS_URL`.
@@ -313,17 +315,18 @@ After this ADR's pattern lands or is touched:
 - `src/lib/effects/queue/adapters/bullmqQueue.ts` — local dev adapter (BullMQ `Queue` per topic).
 - `src/lib/effects/queue/adapters/devLog.ts` — no-op adapter (tests + offline dev).
 - `src/lib/effects/queue/queue.test.ts` — contract test.
-- `src/lib/effects/index.ts` — re-exports `queue` alongside `email`, `storage`, `realtime`.
+- `src/lib/effects/index.ts` — re-exports `queue` alongside `email`, `storage`, `zaptec`, `elpris`.
 - `src/lib/queue/handlers/blurhash.ts` — shared consumer handler (`blurhash` topic).
-- `src/lib/queue/handlers/imageThumbnail.ts` — shared consumer handler (`image_thumbnail` topic; ADR-0010).
+- `src/lib/queue/handlers/heicTranscode.ts` — shared consumer handler (`heic_transcode` topic). Producer is `confirmAvatarUpload` (`src/lib/orpc/procedures/image.ts`).
+- `src/lib/queue/handlers/emailIntegrationSyncAlert.ts` — shared consumer handler (`email_integration_sync_alert` topic; ADR-0019). Producer is `runPulledSync` (`src/lib/integrations/runPulledSync.ts`).
 - `src/lib/queue/handlers/emailUserInvited.ts` — shared consumer handler (`email_user_invited` topic; ADR-0017). Producer is the `invite` / `resendInvite` oRPC procedures (`src/lib/orpc/procedures/user.ts`).
 - `src/lib/queue/dispatch.ts` / `src/lib/queue/index.ts` — the dispatcher (handler contract, outcome log line, delivery cap) and the handler table both consumers use.
 - `server/plugins/queueConsumer.ts` — Vercel Queues consumer (Nitro `vercel:queue` hook).
 - `scripts/devQueueWorker.ts` — local BullMQ consumer; run via `bun run dev:worker`.
 - `compose.yaml` — `queue` and `queue-studio` services.
-- `vite.config.ts` — Nitro plugin registration + `vercel.config.queues.triggers`.
+- `vite.config.ts` — Nitro plugin registration + `vercel.queues.triggers`.
 - `.env.example` — ships `REDIS_URL=redis://localhost:14621` pre-filled (opt-out posture: blank it to fall back to `devLog`).
-- `src/lib/orpc/procedures/image.ts` (`confirmAvatarUpload`), `src/lib/orpc/procedures/document.ts` (`confirmDocumentUpload`) — current producer call sites.
+- `src/lib/orpc/procedures/image.ts` (`confirmAvatarUpload`) — current image producer call site.
 
 ---
 
@@ -334,12 +337,12 @@ After this ADR's pattern lands or is touched:
 - Producer and consumer execute identical code in prod and dev — no "dev-only" branches in the handler.
 - The seam is genuinely deep: three real adapters behind a one-method interface; tests prove the contract, not the transport.
 - Swap to Redis-in-prod is unblocked at the producer layer; only the worker host is operational work.
-- The `effects/` namespace stays the single seat for cross-system side effects (`email`, `storage`, `realtime`, `queue`) — ADR-0001's discipline is preserved.
+- The `effects/` namespace stays the single seat for cross-system side effects (`email`, `storage`, `queue`, `zaptec`, `elpris`) — ADR-0001's discipline is preserved.
 
 **Negative**:
 - End-to-end blurhash exercise in dev requires Docker + a second terminal — friction when you want to test the full flow.
 - Vercel Queues is a single-vendor managed dependency (GA since the 2026-06-10 amendment, which retired the beta-SLA concern) — still bounded by the swap escape hatch.
-- Adding a new topic touches three places: the `QueueTopic` / `QueuePayloadMap` union (`queue.ts`), a handler file + its `queueHandlers` entry (enforced by the compiler), and a `vercel.config.queues.triggers` entry (`vite.config.ts`). Forgetting the trigger still fails silently in prod.
+- Adding a new topic touches three places: the `QueueTopic` / `QueuePayloadMap` union (`queue.ts`), a handler file + its `queueHandlers` entry (enforced by the compiler), and a `vercel.queues.triggers` entry (`vite.config.ts`). Forgetting the trigger still fails silently in prod.
 
 **Revisit triggers** — re-open this ADR if any of these change:
 - Vercel Queues' per-operation billing (see the 2026-06-10 amendment) grows to break the free-tier-first guideline — not plausible at ~20 users, but kept as the measurable restatement of the retired "exits beta with surprising pricing" trigger.
@@ -353,6 +356,6 @@ After this ADR's pattern lands or is touched:
 
 1. Extend the `QueueTopic` union in `src/lib/effects/queue/queue.ts` and add the payload shape to `QueuePayloadMap`.
 2. Create `src/lib/queue/handlers/<topic>.ts` exporting `handle<Topic>Message(msg, ctx)` and a `<topic>Handler: QueueHandler<'<topic>'>` (with `logFields` for its identifiers — never the payload), then add it to `queueHandlers` in `src/lib/queue/index.ts` (the compiler insists). Keep it idempotent; throw to retry, throw `PermanentQueueError` when a retry can't help.
-3. Add a `{ topic: '<topic>' }` entry to `vercel.config.queues.triggers` in `vite.config.ts` — **mandatory**: a topic without a trigger is silently never delivered in prod (the publish succeeds and nothing consumes it). The dev worker picks the topic up from the handler table automatically.
+3. Add a `{ topic: '<topic>' }` entry to `vercel.queues.triggers` in `vite.config.ts` — **mandatory**: a topic without a trigger is silently never delivered in prod (the publish succeeds and nothing consumes it). The dev worker picks the topic up from the handler table automatically.
 
 Then call `queue.publish('<topic>', payload)` from the producer, after the service call succeeds, with `.catch()` for the fire-and-forget guarantee. No producer test is required beyond the existing contract test; add a handler test next to the handler if its logic warrants one.

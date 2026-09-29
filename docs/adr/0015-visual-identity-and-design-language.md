@@ -5,6 +5,10 @@
 - **Deciders**: Lukas
 - **Decision in one line**: Adopt a "quiet nautical confidence" design language — a Linear-style **inset app-shell** with a shared centered **`PageContainer`**, a **self-hosted type pairing** of Cabinet Grotesk (headings) over Switzer (body/UI) tuned Linear-style, **one** signature nautical-blue accent (`--brand`, applied to login/empty washes, the logo mark, and form-field focus borders, never to `--primary`), and a slightly slower, `prefers-reduced-motion`-aware overlay choreography shared across dialog / alert-dialog / sheet.
 
+> **Amended 2026-09-29. Pruned to the current template.** References to features the template removed
+> (calendar, owners, documents/folders and the bin, shares, seasons, the account security subpage) were
+> removed or replaced with current examples. No decision changed.
+
 ---
 
 ## Context
@@ -16,10 +20,10 @@ Geist face, and instant 100 ms overlay fades. The brand blue `#156cdd` lived onl
 and the web manifest. The base is shadcn `radix-nova` + Tailwind v4 with oklch tokens in
 `src/styles/app.css`, dark mode via `.dark` + the `videbacken-theme` cookie.
 
-The goal is "striking but usable" for a calm internal tool used by ~10–20 sailboat co-owners. The risk with
-"make it bold" is loudness; the discipline adopted here is **three concentrated moves on a restrained
-canvas** — an inset shell, a distinctive type pairing, and one signature accent — rather than pervasive
-decoration. Crucially, the inset machinery already exists in `src/components/ui/sidebar.tsx`
+The goal is "striking but usable" for a calm internal tool (at the time, used by ~10–20 sailboat
+co-owners). The risk with "make it bold" is loudness; the discipline adopted here is **three concentrated
+moves on a restrained canvas** — an inset shell, a distinctive type pairing, and one signature accent —
+rather than pervasive decoration. Crucially, the inset machinery already exists in `src/components/ui/sidebar.tsx`
 (`variant="inset"`) but was never deployed, so most of this is configuration plus a small amount of shared
 layout, not new infrastructure.
 
@@ -59,39 +63,37 @@ wrap; both read as a distinct surface (the standard inset look). Text contrast i
 `background`), so accessibility is preserved.
 
 > **Amendment (2026-06-23) — data tables go full-bleed (the table/content split).** The "Pages
-> routinely need full width" revisit trigger **fired**: rather than only the document grid opting into
-> `width="full"`, **every primary data-table screen now uses `full`** — Calendar (disposition list,
-> `index.tsx`), Owners (`owners.tsx`), and Documents (already `full`). This matches Linear's pattern
+> routinely need full width" revisit trigger **fired**: **every primary data-table screen uses
+> `width="full"`** — today Users (`users.tsx`). This matches Linear's pattern
 > (wide tables for column scannability; constrained reading width for prose/forms) and the readability
 > consensus (~65–75 chars ≈ 600–720px for body/forms — Baymard, NN/g, WCAG 1.4.8, GitHub Primer). The
-> `width` tiers settle as: **`full`** (`max-w-none`) = data tables + document grid; **`default`**
-> (`max-w-5xl`) = card grids / lists / mixed content (Admin Shares grid, Bin); **`prose`** (`max-w-2xl`)
+> `width` tiers settle as: **`full`** (`max-w-none`) = data tables; **`default`**
+> (`max-w-5xl`) = card grids / lists / mixed content (Charging, Sensors); **`prose`** (`max-w-2xl`)
 > = forms / settings / reading (unchanged — already the ideal measure, so *not* tightened). **Full-bleed
 > prose rule:** on a `width="full"` page, cap any multi-word descriptive paragraph at `max-w-2xl` while
-> titles, controls, and the table span the panel (applied to the Owners + Documents descriptions; Calendar
-> has none). Page-title `h1`s on the table screens are unified at `text-2xl md:text-3xl` (Documents was
-> `text-3xl md:text-4xl` — now matched to Calendar/Owners). Ultrawide column stretch on the now-full tables
+> titles, controls, and the table span the panel (applied to the Users description). Page-title `h1`s on
+> the table screens are unified at `text-2xl md:text-3xl`. Ultrawide column stretch on the now-full tables
 > is accepted; a `max-w-7xl` cap is the documented fallback if it ever bothers.
 
 > **Amendment (2026-06-28) — settings pages with an inner nav + Linear-style card rows.** The Account
-> screen splits into subpages (`/account/profile`, `/account/security`) switched by an **inner
+> screen splits into subpages (`/account/profile` today) switched by an **inner
 > navigation** that lives *inside* the page content, not the app sidebar: a left rail from `md:` up, a
 > top segmented control below it (`src/components/account/AccountNav.tsx`, routed `Link`s with
-> `activeProps`). Because the rail eats horizontal room, the account **layout** uses `width="default"`
+> active-route matching). Because the rail eats horizontal room, the account **layout** uses `width="default"`
 > (max-w-5xl) with the content column itself capped at `max-w-2xl` — the prose measure is preserved for
 > the form, the rail just sits beside it (a deliberate exception to "settings = `prose`"). Editable
 > settings render as **Linear-style rows**: one bordered `divide-y` card whose container is
 > `@container/field-group`, each field a `<Field orientation="responsive">` (stacked on a narrow card,
 > label-left at the `@md` container breakpoint) with the control pinned to a fixed width on the right
 > (`w-full @md/field-group:w-64`). The bound `TextField`/`PhoneField` gained optional `orientation` /
-> `fieldClassName` / `controlClassName` props (default `vertical` — every existing caller unchanged) so
-> they compose into these rows without bypassing ADR-0005. This is the reusable template for future
-> settings screens.
+> `fieldClassName` props (plus `controlClassName` on `PhoneField`; default `vertical` — every existing
+> caller unchanged) so they compose into these rows without bypassing ADR-0005. This is the reusable
+> template for future settings screens.
 
 > **Amendment (2026-06-29) — off-white content canvas so cards lift (light mode).** The original
 > "pure-white `--background` panel lifts above the near-white `--sidebar` wrap" reads flat for
 > card-based screens: in light mode `--background` and `--card` were both `oklch(1 0 0)`, so white
-> cards (ProfileCard, document/folder cards, empty states, …) only separated by their border. A new
+> cards (ProfileCard, empty states, …) only separated by their border. A new
 > **`--canvas` token** (light `oklch(0.98 0 0)`, dark `oklch(0.145 0 0)` = today's `--background`)
 > paints the inset content panel: `SidebarInset` gets `bg-canvas` at its single call site
 > (`src/routes/_authenticated.tsx`), tailwind-merge overriding the component's base `bg-background` —
@@ -105,7 +107,7 @@ wrap; both read as a distinct surface (the standard inset look). Text contrast i
 > gains three distinct tiers.** The off-white canvas above added a *third* surface but left it
 > under-named: the page tier lived only as `bg-canvas` (one consumer), while `bg-background` — the
 > obvious-sounding name — meant the pure-white *content/primitive* tier, so layout code reached for
-> the wrong token (the Documents + Owners sticky table headers and the mobile selection bar painted
+> the wrong token (sticky table headers and a mobile selection bar painted
 > `bg-background` pure white on the off-white page, reading as white blocks). Two layered changes;
 > **the surface scale re-values nothing** (it only aliases existing tokens — one source of truth per
 > value), while the dark-mode tier change below deliberately re-values `--sidebar`/`--canvas`/`--card`:
@@ -114,10 +116,10 @@ wrap; both read as a distinct surface (the standard inset look). Text contrast i
 >   `bg-surface-{sidebar,page,raised}` as the canonical *app-layout* vocabulary for the three Linear
 >   tiers (chrome → page → content). shadcn primitives in `src/components/ui/` keep
 >   `bg-sidebar`/`bg-card`/`bg-background`; the ambiguous `bg-canvas` utility is dropped. Page-composition
->   surfaces migrate: `SidebarInset` → `bg-surface-page`; hand-rolled content panels (profile, security,
->   share cards, season table, bin, document/folder cards) → `bg-surface-raised`; the three sticky
->   headers/bar → `bg-surface-page` (the fix). Overlays/floating surfaces (upload box, selection pills,
->   drag previews, sheet items) and emails stay on `bg-card` — they aren't page tiers.
+>   surfaces migrate: `SidebarInset` → `bg-surface-page`; hand-rolled content panels (today the
+>   `ProfileCard` rows and the `SessionList` table frame) → `bg-surface-raised`; sticky headers/bars
+>   (today the `UsersTable` header and the mobile header bar) → `bg-surface-page` (the fix).
+>   Overlays/floating surfaces and emails stay on `bg-card` — they aren't page tiers.
 > - **Dark mode gets three distinct tiers** (this **supersedes** the prior amendment's "dark mode is
 >   pixel-identical" note): dark `--sidebar` 0.205 → **0.155** (darkest), `--canvas` 0.145 → **0.185**
 >   (page), and `--card` 0.205 → **0.22** (content), so `--sidebar` < `--canvas` < `--card` read as three
@@ -126,8 +128,6 @@ wrap; both read as a distinct surface (the standard inset look). Text contrast i
 >   buttons read as slightly sunken). Light mode already had three tiers (`--sidebar` 0.97 < `--canvas`
 >   0.99 < `--card`/`--background` 1.0) and is unchanged. (Light `--canvas` shipped as `oklch(0.99 0 0)`,
 >   not the `0.98` quoted in the prior amendment.)
->
-> Design doc: `docs/superpowers/specs/2026-06-29-surface-token-system-design.md`.
 
 ### Typography & type scale
 
@@ -145,8 +145,8 @@ Alternative E for why the originally-considered dafont route was dropped.)
 - **Body/UI — Switzer.** Variable woff2 from Fontshare under the **ITF Free Font License** (free personal +
   commercial); retain the license file in-repo. `--font-sans: 'Switzer', system-ui, sans-serif`.
 - **Linear-style body tuning** (`@layer base`): tight negative letter-spacing on body/UI (≈ `-0.011em`),
-  `font-optical-sizing: auto`, and `font-variant-numeric: tabular-nums` on numeric table cells (sizes, dates,
-  phone, share counts). This tuning — not an exotic typeface — is the bulk of the "Linear feel."
+  `font-optical-sizing: auto`, and `font-variant-numeric: tabular-nums` on numeric table cells (dates, kWh,
+  phone). This tuning — not an exotic typeface — is the bulk of the "Linear feel."
 - **Type scale.** An `@layer base` rule applies `font-heading tracking-tight` to `h1/h2/h3`. Page titles
   become `font-bold` (was Geist `font-semibold`). Dialog/section titles use `font-medium`/`font-semibold`
   **in Cabinet Grotesk** — its variable axis covers 500/600, so there is no fall-back to the body face.
@@ -260,7 +260,7 @@ tokens/primitives, so the language is greppable and easy to retune.
 font families (woff2 to retain under `public/fonts/`, with license files) — more upkeep than `@fontsource`,
 though both download as ready woff2 from Fontshare (no conversion, and the variable axes mean no
 fixed-weight compromises); migrating ~6 routes to `PageContainer` is mechanical but touches several files;
-data-table screens + the document grid opt into `width="full"` while grids/lists/forms stay `default`/`prose`
+data-table screens opt into `width="full"` while grids/lists/forms stay `default`/`prose`
 (see the 2026-06-23 amendment); the brand blue overlaps `--selected`, so the
 two must be kept visually coherent.
 

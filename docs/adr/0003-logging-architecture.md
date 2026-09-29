@@ -7,8 +7,10 @@
 
 ---
 
+> **Amended 2026-09-29. Pruned to the current template.** References to features the template removed (the document procedures, the `/api/files/{view,download}` routes, the `createAsAdmin` / soft-delete user operations) were removed or replaced with current examples (the avatar enqueues in `src/lib/orpc/procedures/image.ts`, the cron helper `src/lib/integrations/cron.ts`, the `invite` procedure). No decision changed.
+
 > **Amended 2026-06-10** (implementation reality + one recorded decision):
-> - **`runEffect` was never built** (see ADR-0001's 2026-06-04 amendment). Where this ADR says tier-2 `runEffect` "swallows errors" (Context, point 1) and "logs with the effect's tag" (*What to log*, "Significant business events"), read the real tier-2 contract instead: inline `effects.x.y(...).catch((error) => context.log.warn('failed to …', { error }))` at the call site. Live examples: the blurhash and thumbnail enqueues in `src/lib/orpc/procedures/document.ts`.
+> - **`runEffect` was never built** (see ADR-0001's 2026-06-04 amendment). Where this ADR says tier-2 `runEffect` "swallows errors" (Context, point 1) and "logs with the effect's tag" (*What to log*, "Significant business events"), read the real tier-2 contract instead: inline `effects.x.y(...).catch((error) => context.log.warn('failed to …', { error }))` at the call site. Live examples: the blurhash and `heic_transcode` enqueues in `confirmAvatarUpload` (`src/lib/orpc/procedures/image.ts`).
 > - **`/api/log` is deliberately open ingest.** The route is unauthenticated and has no rate limit — an accepted risk at ~20 users on a URL nobody knows. The guardrails are payload-shaped, not identity-shaped: levels restricted to `warn`/`error`, `msg` ≤ 500 chars, an 8 KB body cap (byte-accurate via `Buffer.byteLength(text, 'utf8')` as of 2026-06-10 — `text.length` would undercount multibyte bodies), and `source: 'browser'` appended server-side so spoofed entries are at least filterable. Revisit if abuse is observed in the log stream or the app becomes known on the public internet.
 
 > **Amended 2026-09-28** (error serialization + graded rpc errors):
@@ -62,8 +64,8 @@ logger.info('magic-link sent', { email, userId })
 // Inside an oRPC procedure — use context.log; it's a child logger already tagged with
 // requestId (set in src/routes/api/rpc/$.ts) and userId (set by sessionMiddleware).
 adminProcedure.input(schema).handler(async ({ input, context }) => {
-  const created = await userService.createAsAdmin(input)
-  context.log.info('admin created user', { targetId: created.id, role: input.role })
+  const created = await userService.inviteUser({ ...input, actorUserId: context.user.id })
+  context.log.info('admin invited user', { email: created.email, role: created.role })
   return created
 })
 ```
@@ -147,7 +149,7 @@ This is a two-step assembly, not a single middleware:
 
 Net effect inside any handler: `context.log` already carries `{ requestId, path, userId? }`. Handlers add per-event fields (`targetId`, `role`, `error`). There is no single `loggingMiddleware` — the work is deliberately split between the route entrypoint (request-scoped log construction) and `sessionMiddleware` (user enrichment); the handler-facing contract — "use `context.log`, it's already tagged" — is the same either way.
 
-The oRPC catch-all is not the only `createRequestLogger` construction site. The SSR in-process oRPC client (`src/lib/orpc/client.ts`) builds the same `{ log, requestId }` context for server-side renders, and the file routes (`src/routes/api/files/download.$id.ts`, `src/routes/api/files/view.$id.ts`) call it for their auth-gated redirects.
+The oRPC catch-all is not the only `createRequestLogger` construction site. The SSR in-process oRPC client (`src/lib/orpc/client.ts`) builds the same `{ log, requestId }` context for server-side renders, and the cron entrypoints call it through `handleCronRun` in `src/lib/integrations/cron.ts`.
 
 The oRPC handler is constructed with an `onError` interceptor that calls `logRpcError(context.log, error)`, so any thrown exception in a procedure leaves exactly one log line on the way out, graded by severity (see the 2026-09-28 amendment). It logs through the request-scoped `context.log`, so the line carries `requestId`/`path` — but not `userId`, which sessionMiddleware adds to a context the interceptor can't see.
 
@@ -179,11 +181,11 @@ The first line of defence is still **don't log credentials in the first place** 
 
 These are what callers must follow to keep logs greppable:
 
-- **Message is a short English noun phrase.** `'magic-link sent'`, `'admin created user'`, `'getSession failed'`. Lowercase, no trailing punctuation, no interpolation. Log messages stay English; only user-facing UI strings are Swedish.
+- **Message is a short English noun phrase.** `'magic-link sent'`, `'admin invited user'`, `'getSession failed'`. Lowercase, no trailing punctuation, no interpolation. Log messages stay English; only user-facing UI strings are Swedish.
 - **Structured fields, not interpolation.** `logger.info('user updated', { targetId, role })` — never `` logger.info(`user ${id} updated`) ``. Fields are queryable; strings are not.
 - **Use the right level.**
   - `debug` — local-only details (`'serializer cache miss'`).
-  - `info` — significant events you'd care about post-hoc (`'admin created user'`, `'magic-link sent'`).
+  - `info` — significant events you'd care about post-hoc (`'admin invited user'`, `'magic-link sent'`).
   - `warn` — unusual but recoverable (`'getSession returned null inside protectedProcedure'`).
   - `error` — caught exceptions and unhandled rejections.
 - **Never log secrets or session tokens.** The redact policy is a backstop; the rule is don't pass them in. Log identifiers (`userId`, `targetId`), not credentials.
@@ -191,7 +193,7 @@ These are what callers must follow to keep logs greppable:
 ### What to log — the policy that makes the volume signal-rich
 
 - **Errors** — every caught exception that isn't immediately rethrown as a typed user-facing error. `context.log.error('orpc handler error', { error })`. The oRPC `onError` interceptor already handles thrown handler errors; you only need explicit `.error(...)` calls when *catching* an exception and continuing.
-- **Significant business events** — admin actions (`'admin created user'`, `'admin soft-deleted user'`), auth lifecycle (`'magic-link sent'`, `'auth session created'`, `'magic-link denied (unknown email)'`), effect failures (when a tier-2 `runEffect` swallows an error, it logs with the effect's tag).
+- **Significant business events** — admin actions (`'admin invited user'`, `'admin revoked user access'`), auth lifecycle (`'magic-link sent'`, `'auth session created'`, `'magic-link denied (unknown email)'`), effect failures (when a tier-2 `runEffect` swallows an error, it logs with the effect's tag).
 - **Skip**: per-request access logs (Vercel's request log already covers this and the 1-day retention isn't worth burning on it), debug breadcrumbs that mirror the code, anything you'd remove the next day.
 
 The implicit rule: if a future you reading the production log stream wouldn't care about this line, it shouldn't exist.
@@ -255,7 +257,7 @@ Manual smoke test after a change in this area:
 - `src/routes/api/log.ts` — browser log sink, Zod-validated.
 - `src/routes/api/rpc/$.ts` — `createRequestLogger(request)` + oRPC `onError` interceptor.
 - `src/lib/orpc/client.ts` — SSR in-process client; second `createRequestLogger` call site.
-- `src/routes/api/files/download.$id.ts` / `view.$id.ts` — file routes; remaining `createRequestLogger` call sites.
+- `src/lib/integrations/cron.ts` — cron helper; remaining `createRequestLogger` call site.
 - `src/lib/orpc/context.ts` — `sessionMiddleware` attaches `userId` to `context.log`.
 - `src/router.tsx` — `installGlobalHandlers()` call site.
 
