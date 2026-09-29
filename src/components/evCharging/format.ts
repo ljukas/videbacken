@@ -98,9 +98,17 @@ export function formatDecimalInput(value: number): string {
   }).format(value)
 }
 
-/** A decimal for display, up to 3 decimals (tariff amounts like 5,331). */
+/** A decimal for display, up to 3 decimals (tariff limits like 1 000). */
 export function formatDecimal(value: number): string {
   return new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 3 }).format(value)
+}
+
+/** A tariff amount as bills print it: at least 2 decimals (35,60), up to 3 (5,331). */
+export function formatTariffAmount(value: number): string {
+  return new Intl.NumberFormat(getIntlLocale(), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 3,
+  }).format(value)
 }
 
 /**

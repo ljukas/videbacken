@@ -1,4 +1,5 @@
 import { MoreVerticalIcon, PencilIcon, PlusIcon, ReceiptTextIcon, Trash2Icon } from 'lucide-react'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
   Card,
@@ -22,7 +23,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '~/components/ui/empty'
-import { RowActions } from '~/components/ui/row-actions'
 import {
   Table,
   TableBody,
@@ -31,8 +31,9 @@ import {
   TableHeader,
   TableRow,
 } from '~/components/ui/table'
+import { stockholmDayOf } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
-import { formatDay, formatDecimal } from './format'
+import { formatDay, formatDecimal, formatTariffAmount } from './format'
 import type { Tariff } from './TariffDialog'
 
 type Props = {
@@ -46,13 +47,17 @@ type Props = {
   }
 }
 
-// The per-kWh fees the cost is computed from, newest period first. Everyone
-// can see them (the cost is only as trustworthy as these numbers); only
-// admins get the add/edit/delete actions. Empty → the shared `Empty`
+// The per-kWh costs the charging cost is computed from, newest period first,
+// with the one in force today marked. Everyone can see them (the cost is only
+// as trustworthy as these numbers); only admins get add/edit/delete. Amounts
+// print like the bills (35,60); the unit (öre/kWh ex VAT) is stated once in
+// the description rather than in every cell. Empty → the shared `Empty`
 // (ADR-0016), with the one next action for admins.
 export function TariffCard({ tariffs, admin }: Props) {
   const newestFirst = [...tariffs].reverse()
-  const ore = (v: number) => `${formatDecimal(v)} öre`
+  const today = stockholmDayOf(Date.now())
+  const currentId = newestFirst.find((t) => t.validFrom <= today)?.id
+
   return (
     <Card>
       <CardHeader>
@@ -71,7 +76,7 @@ export function TariffCard({ tariffs, admin }: Props) {
       </CardHeader>
       <CardContent>
         {tariffs.length === 0 ? (
-          <Empty className="py-6">
+          <Empty className="rounded-lg border py-6">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <ReceiptTextIcon />
@@ -99,9 +104,8 @@ export function TariffCard({ tariffs, admin }: Props) {
                 <TableHead>{m.charging_tariff_col_valid_from()}</TableHead>
                 <TableHead className="text-right">{m.charging_tariff_col_markup()}</TableHead>
                 <TableHead className="text-right">{m.charging_tariff_col_grid()}</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">
-                  {m.charging_tariff_col_tax()}
-                </TableHead>
+                <TableHead className="text-right">{m.charging_tariff_col_tax()}</TableHead>
+                {/* VAT is nearly always 25 %: the one column a phone can spare. */}
                 <TableHead className="hidden text-right sm:table-cell">
                   {m.charging_tariff_col_vat()}
                 </TableHead>
@@ -110,50 +114,57 @@ export function TariffCard({ tariffs, admin }: Props) {
             </TableHeader>
             <TableBody>
               {newestFirst.map((t) => (
-                <TableRow key={t.id} className="group/row">
-                  <TableCell className="whitespace-nowrap">{formatDay(t.validFrom)}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {ore(t.retailMarkupOre)}
+                <TableRow key={t.id}>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="whitespace-nowrap">{formatDay(t.validFrom)}</span>
+                      {t.id === currentId ? (
+                        <Badge variant="secondary">{m.charging_tariff_current()}</Badge>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {ore(t.gridTransferOre)}
+                    {formatTariffAmount(t.retailMarkupOre)}
                   </TableCell>
-                  <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                    {ore(t.energyTaxOre)}
+                  <TableCell className="text-right tabular-nums">
+                    {formatTariffAmount(t.gridTransferOre)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatTariffAmount(t.energyTaxOre)}
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">
                     {`${formatDecimal(t.vatPercent)} %`}
                   </TableCell>
                   {admin ? (
+                    // Always visible (not hover-revealed): with a handful of
+                    // rows, the menu is the only edit affordance.
                     <TableCell className="text-right">
-                      <RowActions>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={m.charging_tariff_actions_for({
-                                date: formatDay(t.validFrom),
-                              })}
-                            >
-                              <MoreVerticalIcon />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => admin.onEdit(t.id)}>
-                              <PencilIcon />
-                              {m.common_edit()}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onSelect={() => admin.onDelete(t.id)}
-                            >
-                              <Trash2Icon />
-                              {m.charging_tariff_delete_action()}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </RowActions>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={m.charging_tariff_actions_for({
+                              date: formatDay(t.validFrom),
+                            })}
+                          >
+                            <MoreVerticalIcon />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => admin.onEdit(t.id)}>
+                            <PencilIcon />
+                            {m.common_edit()}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() => admin.onDelete(t.id)}
+                          >
+                            <Trash2Icon />
+                            {m.charging_tariff_delete_action()}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   ) : null}
                 </TableRow>

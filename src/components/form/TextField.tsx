@@ -59,8 +59,19 @@ export function TextField({
   const isSubmitting = useStore(field.form.store, (s) => s.isSubmitting)
   const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid
 
+  // The unit suffix, hint and error are announced with the input (the suffix
+  // is otherwise only visual), so "Energiskatt" reads as "… öre/kWh".
+  const suffixId = `${field.name}-suffix`
+  const descriptionId = `${field.name}-description`
+  const errorId = `${field.name}-error`
+  const describedBy =
+    [suffix ? suffixId : null, description ? descriptionId : null, isInvalid ? errorId : null]
+      .filter(Boolean)
+      .join(' ') || undefined
+
   const sharedInputProps = {
     id: field.name,
+    'aria-describedby': describedBy,
     name: field.name,
     type,
     inputMode,
@@ -84,14 +95,14 @@ export function TextField({
         <InputGroup>
           <InputGroupInput className={inputClassName} {...sharedInputProps} />
           <InputGroupAddon align="inline-end">
-            <InputGroupText>{suffix}</InputGroupText>
+            <InputGroupText id={suffixId}>{suffix}</InputGroupText>
           </InputGroupAddon>
         </InputGroup>
       ) : (
         <Input size={inputSize} className={inputClassName} {...sharedInputProps} />
       )}
-      {description ? <FieldDescription>{description}</FieldDescription> : null}
-      <FieldError errors={field.state.meta.errors} />
+      {description ? <FieldDescription id={descriptionId}>{description}</FieldDescription> : null}
+      <FieldError id={errorId} errors={field.state.meta.errors} />
     </Field>
   )
 }

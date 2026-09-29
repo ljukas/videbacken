@@ -1,5 +1,6 @@
 import { isDefinedError } from '@orpc/client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -11,7 +12,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
-import { Spinner } from '~/components/ui/spinner'
 import { orpc } from '~/lib/orpc/client'
 import { tariffErrorMessage } from '~/lib/orpc/tariffErrorMessage'
 import { m } from '~/paraglide/messages'
@@ -26,8 +26,13 @@ type Props = {
 
 // Confirm before deleting a tariff period: it re-prices every day it covered
 // (with the previous period, or no cost at all).
-export function DeleteTariffDialog({ open, tariff, onOpenChange }: Props) {
+export function DeleteTariffDialog({ open, tariff: target, onOpenChange }: Props) {
   const queryClient = useQueryClient()
+  // Keep the last target while the close animation runs (the URL — and so
+  // `target` — clears first), so the dialog doesn't blank as it fades out.
+  const [shown, setShown] = useState(target)
+  if (target && target.id !== shown?.id) setShown(target)
+  const tariff = target ?? shown
   const remove = useMutation(
     orpc.tariff.remove.mutationOptions({
       onSuccess: () => toast.success(m.charging_tariff_deleted()),
@@ -55,10 +60,9 @@ export function DeleteTariffDialog({ open, tariff, onOpenChange }: Props) {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={remove.isPending}>{m.common_cancel()}</AlertDialogCancel>
+              <AlertDialogCancel>{m.common_cancel()}</AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
-                disabled={remove.isPending}
                 onClick={(e) => {
                   e.preventDefault()
                   // Instant close; the toast and invalidation reconcile after.
@@ -66,7 +70,6 @@ export function DeleteTariffDialog({ open, tariff, onOpenChange }: Props) {
                   onOpenChange(false)
                 }}
               >
-                {remove.isPending && <Spinner data-icon="inline-start" />}
                 {m.charging_tariff_delete_action()}
               </AlertDialogAction>
             </AlertDialogFooter>

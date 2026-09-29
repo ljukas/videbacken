@@ -27,9 +27,10 @@ test('lists periods newest first with Swedish amounts, read-only for non-admins'
     .element(screen.getByRole('heading', { name: m.charging_tariff_title() }))
     .toBeVisible()
   const rows = screen.getByRole('row').elements()
-  expect(rows[1].textContent).toContain('5,331 öre')
-  expect(rows[2].textContent).toContain('4 öre')
-  await expect.element(screen.getByText('35,6 öre').first()).toBeVisible()
+  // Amounts print like the bills: at least two decimals.
+  expect(rows[1].textContent).toContain('5,331')
+  expect(rows[2].textContent).toContain('4,00')
+  await expect.element(screen.getByText('35,60').first()).toBeVisible()
   expect(screen.getByRole('button', { name: m.charging_tariff_new() }).elements()).toHaveLength(0)
   expect(screen.getByRole('button', { name: /Åtgärder/ }).elements()).toHaveLength(0)
 })
@@ -72,4 +73,26 @@ test('empty for a non-admin says an admin needs to add the fees', async () => {
   const { screen } = await renderWithProviders(<TariffCard tariffs={[]} />)
   await expect.element(screen.getByText(m.charging_tariff_empty_description())).toBeVisible()
   expect(screen.getByRole('button').elements()).toHaveLength(0)
+})
+
+test('marks the period in force today, not a future one', async () => {
+  const future = period('c', '2999-01-01', 9)
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 1024 }}>
+      <TariffCard tariffs={[...TARIFFS, future]} />
+    </div>,
+  )
+  const rows = screen.getByRole('row').elements()
+  // Newest first: the future period, then 2026-08-01 (current), then 2026-01-01.
+  expect(rows[1].textContent).not.toContain(m.charging_tariff_current())
+  expect(rows[2].textContent).toContain(m.charging_tariff_current())
+  expect(rows[3].textContent).not.toContain(m.charging_tariff_current())
+})
+
+test('keeps energy tax visible on a phone (only VAT is dropped below sm)', async () => {
+  // The breakpoint is a viewport media query, so assert the responsive classes.
+  const { screen } = await renderWithProviders(<TariffCard tariffs={TARIFFS} />)
+  const header = (name: string) => screen.getByText(name, { exact: true }).element()
+  expect(header(m.charging_tariff_col_tax()).className).not.toMatch(/\bhidden\b/)
+  expect(header(m.charging_tariff_col_vat()).className).toMatch(/\bhidden\b.*\bsm:table-cell\b/)
 })

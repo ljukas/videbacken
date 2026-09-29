@@ -11,3 +11,26 @@ export const TARIFF_LIMITS = {
 } as const
 
 export type TariffAmountField = keyof typeof TARIFF_LIMITS
+
+/**
+ * Swedish energy tax on electricity (normal rate), öre/kWh ex VAT, by calendar
+ * year — set by law and changed on 1 January, so it pre-fills a new tariff
+ * period instead of being copied from a bill. Still editable: households in
+ * some northern municipalities get a 9,6 öre deduction, and a law can change
+ * mid-year. Sources: Skatteverket "Sänkt skatt på el 1 januari 2026";
+ * Energimarknadsbyrån "Energiskatt – skattesatser". Add each new year's rate
+ * when it's decided (usually in the autumn budget).
+ */
+export const ENERGY_TAX_ORE_BY_YEAR: Readonly<Record<number, number>> = {
+  2024: 42.8,
+  2025: 43.9,
+  2026: 36.0,
+}
+
+/** The statutory energy tax for the year of Stockholm `day`, if known. */
+export function statutoryEnergyTaxOre(day: string): number | undefined {
+  return ENERGY_TAX_ORE_BY_YEAR[Number(day.slice(0, 4))]
+}
+
+/** The Swedish standard VAT rate, the default for a new period. */
+export const DEFAULT_VAT_PERCENT = 25

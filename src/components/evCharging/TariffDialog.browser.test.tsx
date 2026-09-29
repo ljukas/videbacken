@@ -1,6 +1,8 @@
 import { ORPCError } from '@orpc/client'
 import { beforeEach, expect, test, vi } from 'vitest'
+import { statutoryEnergyTaxOre } from '~/lib/evCharging/tariff'
 import { tariffErrorMessage } from '~/lib/orpc/tariffErrorMessage'
+import { stockholmDayOf } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { type Tariff, TariffDialog } from './TariffDialog'
@@ -133,7 +135,7 @@ test('rejects text and out-of-range amounts without saving', async () => {
   expect(createFn).not.toHaveBeenCalled()
 })
 
-test('a taken start date shows the domain error and keeps the dialog open', async () => {
+test('a taken start date is shown on the date field and keeps the dialog open', async () => {
   createFn.mockRejectedValue(
     new ORPCError('TARIFF_VALID_FROM_TAKEN', { defined: true, status: 409 }),
   )
@@ -143,9 +145,75 @@ test('a taken start date shows the domain error and keeps the dialog open', asyn
   )
   await screen.getByRole('button', { name: m.common_save() }).click()
 
-  await vi.waitFor(() =>
-    expect(toastMock.error).toHaveBeenCalledWith(tariffErrorMessage('TARIFF_VALID_FROM_TAKEN')),
-  )
+  await expect
+    .element(screen.getByText(tariffErrorMessage('TARIFF_VALID_FROM_TAKEN')))
+    .toBeVisible()
+  await expect.element(field(screen, m.charging_tariff_field_valid_from())).toHaveFocus()
+  expect(toastMock.error).not.toHaveBeenCalled()
   expect(onOpenChange).not.toHaveBeenCalled()
-  expect(toastMock.success).not.toHaveBeenCalled()
+})
+
+test('another domain error is a toast', async () => {
+  createFn.mockRejectedValue(new ORPCError('TARIFF_INVALID_VALUE', { defined: true, status: 422 }))
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={() => {}} />,
+  )
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(tariffErrorMessage('TARIFF_INVALID_VALUE')),
+  )
+})
+
+test('a new period starts on the 1st of this month with the statutory energy tax', async () => {
+  const firstOfMonth = `${stockholmDayOf(Date.now()).slice(0, 8)}01`
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new' }} onOpenChange={() => {}} />,
+  )
+  await expect
+    .element(field(screen, m.charging_tariff_field_valid_from()))
+    .toHaveValue(firstOfMonth)
+  const tax = statutoryEnergyTaxOre(firstOfMonth)
+  if (tax !== undefined) {
+    await expect
+      .element(field(screen, m.charging_tariff_field_tax()))
+      .toHaveValue(String(tax).replace('.', ','))
+  }
+})
+
+test('changing the date re-fills the untouched energy tax for that year', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={() => {}} />,
+  )
+  await field(screen, m.charging_tariff_field_valid_from()).fill('2025-03-01')
+  await expect.element(field(screen, m.charging_tariff_field_tax())).toHaveValue('43,9')
+})
+
+test('a typed energy tax is not overwritten by a date change', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={() => {}} />,
+  )
+  await field(screen, m.charging_tariff_field_tax()).fill('26,4')
+  await field(screen, m.charging_tariff_field_valid_from()).fill('2025-03-01')
+  await expect.element(field(screen, m.charging_tariff_field_tax())).toHaveValue('26,4')
+})
+
+test('an amount that looks like kronor is rejected', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={() => {}} />,
+  )
+  await field(screen, m.charging_tariff_field_grid()).fill('0,356')
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await expect.element(screen.getByText(m.charging_tariff_error_looks_like_kronor())).toBeVisible()
+  expect(createFn).not.toHaveBeenCalled()
+})
+
+test('the unit and hint are announced with the input', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new' }} onOpenChange={() => {}} />,
+  )
+  const input = field(screen, m.charging_tariff_field_grid()).element()
+  const described = (input.getAttribute('aria-describedby') ?? '')
+    .split(' ')
+    .map((id) => document.getElementById(id)?.textContent)
+  expect(described).toEqual([m.charging_tariff_unit_ore(), m.charging_tariff_field_grid_hint()])
 })

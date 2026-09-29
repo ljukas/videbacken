@@ -6,7 +6,7 @@ import {
   useSuspenseQuery,
 } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
@@ -94,6 +94,13 @@ function ChargingPage() {
   })
   const { data: tariffs } = useSuspenseQuery(orpc.tariff.list.queryOptions())
   const selectedTariff = tariffs.find((t) => t.id === tariffId)
+  // A tariff dialog that can't show (a non-admin, or a tariffId that no longer
+  // exists) is cleared from the URL instead of lingering there.
+  const dialogUnavailable =
+    dialog !== undefined && (!isAdmin || (dialog !== 'tariffNew' && !selectedTariff))
+  useEffect(() => {
+    if (dialogUnavailable) close()
+  }, [dialogUnavailable, close])
   // "Ny period" starts from the newest period's amounts (the list is oldest first).
   const latestTariff = tariffs.at(-1)
 
@@ -181,18 +188,6 @@ function ChargingPage() {
         </>
       ) : null}
 
-      <section className="flex flex-col gap-2">
-        <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
-        <SessionList
-          sessions={sessions.data?.sessions ?? []}
-          hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
-          onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
-          loadingMore={showMore.isPending}
-          onSync={isAdmin ? () => syncNow.syncSource('zaptec') : undefined}
-          syncing={syncNow.isPendingFor('zaptec')}
-        />
-      </section>
-
       <TariffCard
         tariffs={tariffs}
         admin={
@@ -205,6 +200,18 @@ function ChargingPage() {
             : undefined
         }
       />
+
+      <section className="flex flex-col gap-2">
+        <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
+        <SessionList
+          sessions={sessions.data?.sessions ?? []}
+          hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
+          onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
+          loadingMore={showMore.isPending}
+          onSync={isAdmin ? () => syncNow.syncSource('zaptec') : undefined}
+          syncing={syncNow.isPendingFor('zaptec')}
+        />
+      </section>
 
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
       {isAdmin && pricesRuns ? <RecentRunsCard source="elpris" runs={pricesRuns} /> : null}

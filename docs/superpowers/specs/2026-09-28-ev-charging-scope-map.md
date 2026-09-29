@@ -180,6 +180,21 @@ its sync outcome so a broken integration is visible instead of silently stale.
 - SoC at plug-in / plug-out distribution; charging losses (wall vs battery kWh).
 - km per month; share of charging done at home vs elsewhere (SoC rose while away).
 
+### Phase 2b — Grid fee from Eltariff-API (when Vattenfall Eldistribution publishes)
+- [Eltariff-API](https://github.com/RI-SE/Eltariff-API) (RISE; free, keyless, machine-readable grid tariffs) —
+  grid companies register in the catalogue `https://eltariff.se/tariffcatalogue/{all,lookup/{mpid}}`; target: every
+  Swedish grid company by 2027-01-01, Ei preparing regulation. Vattenfall Eldistribution is a project partner.
+- **Status 2026-09-29 (verified):** not published — catalogue v0.6.6 has 13 entries, none for Vattenfall or the
+  facility prefix `735999100…`; lookup of a synthetic ID in that range → 404; no Vattenfall sample/issue in the repo;
+  no endpoint on vattenfalleldistribution.se.
+- When live: a third pulled source (ADR-0019) that looks up the facility's tariff and writes the grid-transfer part of
+  the tariff periods automatically (`validPeriod` → `valid_from`); also carries any future power/time-of-use fee
+  (Vattenfall paused its effektavgift rollout in 2026-03).
+- Until then, a monthly catalogue check (own small PR) emails admins when the facility's range appears. The facility
+  ID lives in an env var (not in the repo); the check matches ranges locally, never sending the ID.
+- Energy tax needs no API: statutory, same for everyone, changes 1 January → built-in table
+  (`ENERGY_TAX_ORE_BY_YEAR`, pre-fills new periods). Bixia's monthly "rörliga kostnader" stays manual (no API).
+
 ### Later / nice-to-have
 - Live "laddar nu" tile from charger state (polled via TanStack Query `refetchInterval`, ADR-0018).
 - Year-over-year comparison, year-to-date projection.
