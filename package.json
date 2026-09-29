@@ -51,6 +51,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1082.0",
     "@better-auth/drizzle-adapter": "^1.6.23",
     "@better-auth/passkey": "^1.6.23",
+    "@date-fns/tz": "^1.5.0",
     "@orpc/client": "^1.14.7",
     "@orpc/server": "^1.14.7",
     "@orpc/tanstack-query": "^1.14.7",
