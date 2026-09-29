@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { issuePath, summarizeIssuePaths } from '~/lib/issuePaths'
 import type { PriceSlot } from '~/lib/spotPrice/slots'
 import { validateDaySlots } from '~/lib/spotPrice/slots'
 import { ElprisError } from './errors'
@@ -37,10 +38,8 @@ function sekMatchesEur(row: z.output<typeof rowSchema>): boolean {
 export function parseDay(day: string, body: unknown): PriceSlot[] {
   const result = daySchema.safeParse(body)
   if (!result.success) {
-    const paths = [...new Set(result.error.issues.map((i) => i.path.join('.') || '(root)'))]
-    const shown = paths.slice(0, 10).join(', ')
-    const more = paths.length > 10 ? ` (+${paths.length - 10} more)` : ''
-    throw shapeError(`elpris ${day} response has an unexpected shape at: ${shown}${more}`)
+    const at = summarizeIssuePaths(result.error.issues.map((i) => issuePath(i.path)))
+    throw shapeError(`elpris ${day} response has an unexpected shape at: ${at}`)
   }
   const mismatched = result.data.findIndex((row) => !sekMatchesEur(row))
   if (mismatched !== -1) {
