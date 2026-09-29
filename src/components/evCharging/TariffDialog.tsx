@@ -23,7 +23,7 @@ import { orpc, type RouterOutputs } from '~/lib/orpc/client'
 import { tariffErrorMessage } from '~/lib/orpc/tariffErrorMessage'
 import { parseDecimal } from '~/lib/parseDecimal'
 import type { TariffDomainErrorCode } from '~/lib/services/tariff'
-import { stockholmDayOf } from '~/lib/time/stockholm'
+import { stockholmFirstOfMonth } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { formatDecimal, formatDecimalInput } from './format'
 
@@ -131,7 +131,7 @@ function defaults(mode: TariffDialogMode) {
   // A new period starts on the 1st of this month (Stockholm) — retail costs
   // change monthly, grid tariffs and tax on 1 January — with that year's
   // statutory energy tax.
-  const validFrom = `${stockholmDayOf(Date.now()).slice(0, 8)}01`
+  const validFrom = stockholmFirstOfMonth(Date.now())
   const from = mode.from
   const tax = statutoryEnergyTaxOre(validFrom) ?? from?.energyTaxOre
   return {
