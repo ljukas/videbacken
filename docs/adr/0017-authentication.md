@@ -39,12 +39,14 @@ Columns: `id`, `email` (unique, normalized lowercase), `role`
 `resolveSignInDecision`).
 
 **Seeding:** `INITIAL_ADMIN_EMAILS` (CSV) is seeded as admin `approved_email`
-rows at server startup by the `seedApprovedEmails` function in
-`src/lib/seedApprovedEmails.ts`, invoked from the Nitro plugin
-`server/plugins/seedApprovedEmails.ts`, which is registered explicitly in
-`vite.config.ts` (this project's Nitro does **not** auto-discover
-`server/plugins/*` — plugins must be listed explicitly). The seed is idempotent
-and fails soft (logs, never crashes). The table is the runtime source of truth
+rows by the `seedApprovedEmails` function in `src/lib/seedApprovedEmails.ts`,
+invoked from the Nitro plugin `server/plugins/seedApprovedEmails.ts`, which is
+registered explicitly in `vite.config.ts` (this project's Nitro does **not**
+auto-discover `server/plugins/*` — plugins must be listed explicitly). The plugin
+runs the seed on each instance's first request, under `waitUntil`, not at init:
+Vercel can pre-warm an instance and freeze it before any request, and a seed
+started at init froze mid-connect and timed out on thaw. The seed is idempotent
+and fails soft (logs, never crashes; the next request retries). The table is the runtime source of truth
 thereafter; editing the env later does not retroactively change existing rows.
 
 ### Roles and the authorization rule
