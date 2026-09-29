@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
 import { fake } from './adapters/fake'
 import { notConfigured } from './adapters/notConfigured'
 import { createZaptecClient } from './client'
@@ -16,7 +17,6 @@ import {
   TEST_TOKEN,
   tokenBody,
 } from './fixtures'
-import { type FakeRoute, fakeFetch, jsonResponse } from './testing/fakeFetch'
 import { newCallStats, selectZaptecAdapter, zaptec } from './zaptec'
 
 const T0 = Date.parse('2026-09-28T10:00:00Z')
