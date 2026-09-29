@@ -20,12 +20,32 @@ function niceFractionOf(step: number): number {
 describe('niceYScale', () => {
   it('turns a narrow range into round, evenly-spaced, single-value ticks', () => {
     // The bug: 24.49–24.60 got equal-divided into 24.48/24.51/24.54/… (step
-    // 0.03). Nice ticks land on a round 0.05 step instead.
+    // 0.03). Nice ticks land on a round 0.02 step instead.
     const { ticks, decimals, domain } = niceYScale(24.49, 24.6)
     expect(decimals).toBe(2)
-    expect(ticks).toEqual([24.45, 24.5, 24.55, 24.6])
-    expect(domain).toEqual([24.45, 24.6])
-    expect(niceFractionOf(0.05)).toBeCloseTo(5)
+    expect(ticks).toEqual([24.48, 24.5, 24.52, 24.54, 24.56, 24.58, 24.6])
+    expect(domain).toEqual([24.48, 24.6])
+  })
+
+  it('never collapses a float-noise spread into repeated ticks', () => {
+    // Regression: a spread far below display precision (two bucket averages that
+    // differ only in their last bits) used to zoom to a sub-millionth step that
+    // the 6-decimal cap then rounded into four identical 24.5 ticks on a
+    // zero-width domain. It is now treated as a flat series.
+    for (const [lo, hi] of [
+      [24.5, 24.5000001],
+      [24.533333333333328, 24.533333333333335],
+      [-3.1, -3.0999999],
+    ]) {
+      const { ticks, decimals, domain } = niceYScale(lo, hi)
+      expect(domain[1] - domain[0]).toBeGreaterThanOrEqual(1)
+      expect(domain[0]).toBeLessThanOrEqual(lo)
+      expect(domain[1]).toBeGreaterThanOrEqual(hi)
+      const labels = ticks.map((t) => t.toFixed(decimals))
+      expect(ticks.length).toBeGreaterThan(1)
+      expect(new Set(labels).size).toBe(labels.length)
+      expect(decimals).toBeLessThanOrEqual(1)
+    }
   })
 
   it('always produces distinct labels once formatted', () => {
@@ -66,13 +86,22 @@ describe('niceYScale', () => {
       expect([1, 2, 5]).toContain(Math.round(niceFractionOf(step)))
     }
   })
+
+  it('still rounds the domain and gives at least two ticks for a small targetCount', () => {
+    for (const targetCount of [0, 1, 2]) {
+      const { domain, ticks } = niceYScale(-0.84, 34.32, targetCount)
+      expect(domain[0]).toBeLessThanOrEqual(-0.84)
+      expect(domain[1]).toBeGreaterThanOrEqual(34.32)
+      expect(domain.every(Number.isInteger)).toBe(true)
+      expect(ticks.length).toBeGreaterThanOrEqual(2)
+    }
+  })
 })
 
-// Characterization: pins what niceYScale returns TODAY (domain, ticks, decimals)
-// across a spread of inputs, so a change to the tick maths (e.g. swapping in a
-// library) can prove it is behavior-preserving. These are captured outputs, not
-// a spec — a deliberate behavior change updates them in its own commit.
-describe('niceYScale characterization', () => {
+// The exact axis niceYScale draws (domain, ticks, decimals) across a spread of
+// inputs — tiny, sub-zero, zero-crossing, flat, large and humidity ranges — so
+// any change to the tick maths shows up here as a deliberate, reviewable diff.
+describe('niceYScale outputs', () => {
   it.each<[string, number, number, number | undefined, YScale]>([
     // tiny ranges
     [
@@ -81,8 +110,8 @@ describe('niceYScale characterization', () => {
       24.6,
       undefined,
       {
-        domain: [24.45, 24.6],
-        ticks: [24.45, 24.5, 24.55, 24.6],
+        domain: [24.48, 24.6],
+        ticks: [24.48, 24.5, 24.52, 24.54, 24.56, 24.58, 24.6],
         decimals: 2,
       },
     ],
@@ -91,93 +120,58 @@ describe('niceYScale characterization', () => {
       24.5,
       24.52,
       undefined,
-      {
-        domain: [24.5, 24.52],
-        ticks: [24.5, 24.505, 24.51, 24.515, 24.52],
-        decimals: 3,
-      },
+      { domain: [24.5, 24.52], ticks: [24.5, 24.505, 24.51, 24.515, 24.52], decimals: 3 },
     ],
-    // Engine-dependent, pinned as V8 (Node/Chrome) computes it: V8's `10 ** -4`
-    // and `10 ** -5` are 1 ulp low, so niceStep rounds a raw 5e-4 / 1e-5 step UP
-    // one notch (JavaScriptCore/Bun gives 0.0005 / 0.00001 steps instead).
     [
       'thousandths',
       0.001,
       0.003,
       undefined,
-      {
-        domain: [0.001, 0.003],
-        ticks: [0.001, 0.002, 0.003],
-        decimals: 3,
-      },
+      { domain: [0.001, 0.003], ticks: [0.001, 0.0015, 0.002, 0.0025, 0.003], decimals: 4 },
     ],
     [
       'ten-thousandths',
       0,
       0.00004,
       undefined,
-      {
-        domain: [0, 0.00006],
-        ticks: [0, 0.00002, 0.00004, 0.00006],
-        decimals: 5,
-      },
+      { domain: [0, 0.00004], ticks: [0, 0.00001, 0.00002, 0.00003, 0.00004], decimals: 5 },
     ],
-    // below the 6-decimal cap the ticks collapse — pinned as-is, not endorsed
+    // a float-noise spread is treated as flat (padded), never zoomed into
     [
-      'sub-cap noise',
+      'float-noise spread',
       24.5,
       24.5000001,
       undefined,
-      {
-        domain: [24.5, 24.5],
-        ticks: [24.5, 24.5, 24.5, 24.5],
-        decimals: 6,
-      },
+      { domain: [24, 25.2], ticks: [24, 24.2, 24.4, 24.6, 24.8, 25, 25.2], decimals: 1 },
     ],
     // fractional steps
     [
-      'half-degree step',
+      'fifth-degree step',
       21.3,
       22.1,
       undefined,
-      {
-        domain: [21, 22.5],
-        ticks: [21, 21.5, 22, 22.5],
-        decimals: 1,
-      },
+      { domain: [21.2, 22.2], ticks: [21.2, 21.4, 21.6, 21.8, 22, 22.2], decimals: 1 },
     ],
     [
-      'tenths step',
+      'twentieths step',
       0.1,
       0.35,
       undefined,
-      {
-        domain: [0.1, 0.4],
-        ticks: [0.1, 0.2, 0.3, 0.4],
-        decimals: 1,
-      },
+      { domain: [0.1, 0.35], ticks: [0.1, 0.15, 0.2, 0.25, 0.3, 0.35], decimals: 2 },
     ],
     [
       'one-unit band',
       42,
       43,
       undefined,
-      {
-        domain: [42, 43],
-        ticks: [42, 42.5, 43],
-        decimals: 1,
-      },
+      { domain: [42, 43], ticks: [42, 42.2, 42.4, 42.6, 42.8, 43], decimals: 1 },
     ],
     [
-      'hundredths step',
+      'fiftieths step',
       1,
       1.1,
       undefined,
-      {
-        domain: [1, 1.1],
-        ticks: [1, 1.05, 1.1],
-        decimals: 2,
-      },
+      { domain: [1, 1.12], ticks: [1, 1.02, 1.04, 1.06, 1.08, 1.1, 1.12], decimals: 2 },
     ],
     // negative ranges (sub-zero temperatures)
     [
@@ -185,22 +179,14 @@ describe('niceYScale characterization', () => {
       -12.3,
       -4.1,
       undefined,
-      {
-        domain: [-15, 0],
-        ticks: [-15, -10, -5, 0],
-        decimals: 0,
-      },
+      { domain: [-14, -4], ticks: [-14, -12, -10, -8, -6, -4], decimals: 0 },
     ],
     [
       'deep negative',
       -25,
       -18.5,
       undefined,
-      {
-        domain: [-26, -18],
-        ticks: [-26, -24, -22, -20, -18],
-        decimals: 0,
-      },
+      { domain: [-26, -18], ticks: [-26, -24, -22, -20, -18], decimals: 0 },
     ],
     // ranges crossing 0
     [
@@ -208,44 +194,28 @@ describe('niceYScale characterization', () => {
       -3.2,
       4.8,
       undefined,
-      {
-        domain: [-4, 6],
-        ticks: [-4, -2, 0, 2, 4, 6],
-        decimals: 0,
-      },
+      { domain: [-4, 6], ticks: [-4, -2, 0, 2, 4, 6], decimals: 0 },
     ],
     [
       'crossing 0, fractional',
       -0.4,
       0.3,
       undefined,
-      {
-        domain: [-0.4, 0.4],
-        ticks: [-0.4, -0.2, 0, 0.2, 0.4],
-        decimals: 1,
-      },
+      { domain: [-0.4, 0.4], ticks: [-0.4, -0.2, 0, 0.2, 0.4], decimals: 1 },
     ],
     [
       'wide crossing 0',
       -10,
       30,
       undefined,
-      {
-        domain: [-10, 30],
-        ticks: [-10, 0, 10, 20, 30],
-        decimals: 0,
-      },
+      { domain: [-10, 30], ticks: [-10, 0, 10, 20, 30], decimals: 0 },
     ],
     [
       'sensor full scale',
       -40,
       85,
       undefined,
-      {
-        domain: [-50, 100],
-        ticks: [-50, 0, 50, 100],
-        decimals: 0,
-      },
+      { domain: [-50, 100], ticks: [-50, 0, 50, 100], decimals: 0 },
     ],
     // a single value (flat series → padded 1-unit band)
     [
@@ -253,33 +223,21 @@ describe('niceYScale characterization', () => {
       24.5,
       24.5,
       undefined,
-      {
-        domain: [24, 25],
-        ticks: [24, 24.5, 25],
-        decimals: 1,
-      },
+      { domain: [24, 25], ticks: [24, 24.2, 24.4, 24.6, 24.8, 25], decimals: 1 },
     ],
     [
       'flat zero',
       0,
       0,
       undefined,
-      {
-        domain: [-0.5, 0.5],
-        ticks: [-0.5, 0, 0.5],
-        decimals: 1,
-      },
+      { domain: [-0.6, 0.6], ticks: [-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6], decimals: 1 },
     ],
     [
       'flat negative',
       -5,
       -5,
       undefined,
-      {
-        domain: [-5.5, -4.5],
-        ticks: [-5.5, -5, -4.5],
-        decimals: 1,
-      },
+      { domain: [-5.6, -4.4], ticks: [-5.6, -5.4, -5.2, -5, -4.8, -4.6, -4.4], decimals: 1 },
     ],
     // large values
     [
@@ -287,22 +245,14 @@ describe('niceYScale characterization', () => {
       980,
       1030,
       undefined,
-      {
-        domain: [980, 1040],
-        ticks: [980, 1000, 1020, 1040],
-        decimals: 0,
-      },
+      { domain: [980, 1030], ticks: [980, 990, 1000, 1010, 1020, 1030], decimals: 0 },
     ],
     [
       'tens of thousands',
       12000,
       56000,
       undefined,
-      {
-        domain: [0, 60000],
-        ticks: [0, 20000, 40000, 60000],
-        decimals: 0,
-      },
+      { domain: [10000, 60000], ticks: [10000, 20000, 30000, 40000, 50000, 60000], decimals: 0 },
     ],
     // humidity
     [
@@ -310,56 +260,30 @@ describe('niceYScale characterization', () => {
       0,
       100,
       undefined,
-      {
-        domain: [0, 100],
-        ticks: [0, 50, 100],
-        decimals: 0,
-      },
+      { domain: [0, 100], ticks: [0, 20, 40, 60, 80, 100], decimals: 0 },
     ],
     [
       'humidity indoor',
       35.2,
       68.9,
       undefined,
-      {
-        domain: [30, 70],
-        ticks: [30, 40, 50, 60, 70],
-        decimals: 0,
-      },
+      { domain: [30, 70], ticks: [30, 40, 50, 60, 70], decimals: 0 },
     ],
     [
       'indoor temperature',
       18.7,
       26.4,
       undefined,
-      {
-        domain: [18, 28],
-        ticks: [18, 20, 22, 24, 26, 28],
-        decimals: 0,
-      },
+      { domain: [18, 28], ticks: [18, 20, 22, 24, 26, 28], decimals: 0 },
     ],
     // explicit target counts
-    [
-      'targetCount 3',
-      3,
-      5,
-      3,
-      {
-        domain: [3, 5],
-        ticks: [3, 4, 5],
-        decimals: 0,
-      },
-    ],
+    ['targetCount 3', 3, 5, 3, { domain: [3, 5], ticks: [3, 4, 5], decimals: 0 }],
     [
       'targetCount 11',
       0,
       100,
       11,
-      {
-        domain: [0, 100],
-        ticks: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-        decimals: 0,
-      },
+      { domain: [0, 100], ticks: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100], decimals: 0 },
     ],
   ])('%s: [%d, %d]', (_label, min, max, targetCount, expected) => {
     expect(niceYScale(min, max, targetCount)).toEqual(expected)
@@ -380,6 +304,21 @@ describe('valueRange', () => {
         { id: 'b', points: [{ t: 1, b: 5 }] },
       ]),
     ).toEqual([5, 22])
+  })
+
+  it('ignores non-finite values', () => {
+    expect(
+      valueRange([
+        {
+          id: 'a',
+          points: [
+            { t: 1, a: 20 },
+            { t: 2, a: Number.POSITIVE_INFINITY },
+            { t: 3, a: Number.NaN },
+          ],
+        },
+      ]),
+    ).toEqual([20, 20])
   })
 
   it('ignores hidden devices and null/break markers', () => {
