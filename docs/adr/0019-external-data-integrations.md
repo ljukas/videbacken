@@ -132,6 +132,9 @@ client **never logs**, only reports through a `stats` sink (`authMs`, `fetchMs`,
 
 ### Timeout and retry policy
 
+> Amended 2026-09-29: ky now owns timeouts and retries. See "Amendment (2026-09-29): ky owns the timeout + retry
+> policy" below.
+
 Fixed, not configurable per call site — a single documented policy is easier to reason about than
 per-integration knobs, and elpris/Škoda are expected to want the same shape:
 
@@ -433,6 +436,30 @@ generalizations:
   before the clocks go back (02:45+02:00 → "03:00+01:00"), found by review against live data.
 - Health copy names its source (`integrationErrorMessage(code, { source })`); "Synka nu" runs one request per source
   so the quick session sync isn't held behind a price backfill. Cron: `/api/cron/elpris-sync` at 12:30 and 15:30 UTC.
+
+## Amendment (2026-09-29): ky owns the timeout + retry policy
+
+Both clients' hand-written retry loops are gone. `fetchWithRetry` (`src/lib/effects/http.ts`) runs every Zaptec and
+elpris request through [ky](https://github.com/sindresorhus/ky) and uses ky's own timeout/retry/backoff instead of
+matching the old loop exactly. It supersedes these parts of "Timeout and retry policy" above:
+
+- **Timeout:** ky's per-attempt `timeout` (10 s; 5 s for `liveState`). The only custom piece is the `fetch` passed to
+  ky. It reads a **2xx** body inside the call, so the timeout covers the download too, and a download that drops or
+  stalls is retried like any network failure (`retryOnTimeout`) before it's reported as `unreachable`. This now
+  applies to Zaptec as well; before, a failed Zaptec download was not retried. For `liveState` (never retried) a
+  dropped download is therefore `unreachable` (it was `unexpected_response`), so it's cached for 60 s like any
+  transient failure. **A non-2xx body is not read inside the attempt.** It comes back unread, so a dropped error
+  body can't turn a final 4xx into retries (a token 400/401 is still one password-grant POST and still sets the
+  login block). The attempt's own timeout signal stays on the response, so reading that body later is bounded too.
+- **Retries:** up to 2, for GET and the Zaptec login POST, on the client's status set (data `429/502/503/504`, login
+  `502/503/504`, none for `liveState`) and on **any** other failure except the caller's abort (`shouldRetry`), as
+  before. Backoff is 0.5 s then 1.5 s, jittered ×0.8–1.2 (ky `delay` + `jitter`).
+- **Retry-After:** honored on every retryable status (`afterStatusCodes`), as before, but parsed by ky: whole seconds
+  or an HTTP date, and with no Retry-After it also reads `RateLimit-Reset` / `X-RateLimit-*`. **A Retry-After over
+  10 s is capped at 10 s and waited out** (`maxRetryAfter`); it no longer fails straight away as `rate_limited`.
+  Worst case per request is now about 3 × the timeout plus 2 × 10 s, still well inside the sync run's 240 s deadline.
+- Unchanged: status → code mapping (a dropped error body included), a caller abort is final and never retried,
+  causes carry only `{ name, code }`, the `stats` counters, and no retry on a token 4xx or on `liveState`.
 
 ---
 
