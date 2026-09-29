@@ -8,7 +8,7 @@ Companions — one hat per commit, pick the doc by the hat:
 
 > **Run it:** `/feature-workflow <idea>` (`.claude/skills/feature-workflow/`) loads this doc and starts at Phase 0. Edit the process here, not in the skill.
 
-> **Where the tools are.** The phases say *what* and *why*. *Which* skill or agent to use lives only in [Current toolchain mapping](#current-toolchain-mapping): look up each phase's row there, and update that table (not the prose) when tooling changes. Invoke skills with the `Skill` tool and agents with the `Agent` tool. The only tools named in the prose are the mandatory review gates, because they're rules, not suggestions.
+> **Where the tools are.** The phases say *what* and *why*. *Which* skill or agent to use lives in [Current toolchain mapping](#current-toolchain-mapping): look up each phase's row there, and update that table (not the prose) when tooling changes. Entries tagged *(agent)* go through the `Agent` tool with that exact type; everything else is a skill for the `Skill` tool. Two exceptions name tools in the prose on purpose: the mandatory review gates (they're rules, not suggestions) and the [reviewer pairings](#reviewer-pairings) table.
 
 ---
 
@@ -26,7 +26,7 @@ Companions — one hat per commit, pick the doc by the hat:
 - A real *decision with alternatives* (a new seam, a non-obvious trade-off) → an **ADR** in `docs/adr/` (e.g. ADR-0019, written for the Zaptec integration).
 - Design detail that isn't a decision → a **spec** in `docs/superpowers/specs/`.
 
-**Big features → a scope map first.** When the idea spans several shippable phases, write a **scope map** (feasibility verdict per capability, then the phases), then one **design spec per phase** as you reach it. Example: `specs/2026-09-28-ev-charging-scope-map.md` → `ev-charging-phase1-design.md` → `ev-charging-phase2-design.md`.
+**Big features → a scope map first.** When the idea spans several shippable phases, write a **scope map** (feasibility verdict per capability, then the phases), then one **design spec per phase** as you reach it. Example: `specs/2026-09-28-ev-charging-scope-map.md` → `2026-09-28-ev-charging-phase1-design.md` → `2026-09-29-ev-charging-phase2-design.md`.
 
 **Probe external systems before designing on them.** For a new integration, make a few live calls first and write down what you actually saw. The Zaptec probe found a 24 h token lifetime (not the documented 1 h) and pinned the `energyDetails` semantics before any schema existed. Designs built on assumed API behavior get rebuilt.
 
@@ -47,7 +47,7 @@ Companions — one hat per commit, pick the doc by the hat:
 **What:** Turn the design + the exploration findings into a **checkpointed, layered** plan, ordered by the dependency spine:
 `schema/migration (+ .enableRLS()) → services (+errors +tests) → procedures (+error mappers, timings) → effects wiring → UI → i18n`.
 
-**Slice into PRs, one concern each.** Each PR must be shippable on its own and reviewable in one sitting. Big features become a **stack**: EV-charging phase 2 shipped as #25 (storage + pure cost math, nothing calls it yet) → #26 (spot-price sync) → the cost UI. Put the slicing in the plan.
+**Slice into PRs, one concern each.** Each PR must be shippable on its own and reviewable in one sitting. Big features become a **stack**: EV-charging phase 2 shipped as #23 (preparatory refactor) → #24 (RLS, from the schema review) → #25 (storage + pure cost math, nothing calls it yet) → #26 (spot-price sync) → #29 (cost UI + tariff admin). Put the slicing in the plan.
 
 **Pair reviewers per task.** For each task, the plan names the two reviewers Phase 4 will dispatch (see [pairings](#reviewer-pairings)).
 **Output:** A plan in `docs/superpowers/plans/`.
@@ -57,7 +57,7 @@ Companions — one hat per commit, pick the doc by the hat:
 
 ### 4. Build, task by task
 **What:** Execute the plan **one task at a time**, each through the same loop:
-1. **Implement** the task. Testable layers (services, pure helpers, effect adapters) go **test-first**: ADR-0002 mandates service tests, and every `<Entity>DomainError.code` literal must be exercised. Visual/client-only UI is built, then verified live (Phase 6).
+1. **Implement** the task. Testable layers (services, pure helpers, effect adapters) go **test-first**: ADR-0002 mandates colocated service tests, and `test-completeness` requires every `<Entity>DomainError.code` literal to be exercised. Visual/client-only UI is built, then verified live (Phase 6).
 2. **Commit** it (one hat, conventional message).
 3. **Adversarial review:** dispatch **two reviewers in parallel**, each told to *start from the assumption that the task is incorrect and not up to spec*, and each wired to that layer's skills ([pairings](#reviewer-pairings)).
 4. **Fix** every confirmed finding (or rule on it explicitly), then move to the next task.
@@ -79,8 +79,8 @@ This loop stays a per-task checkpoint in the conversation. Don't collapse it int
 
 ### 5. Review the branch
 **What:** The per-task reviews catch local mistakes; this pass catches what only shows across the whole diff. **It must finish before merge**, and its findings are fixed *in this PR*. #21 merged before its multi-agent review finished, and #22 had to fix 10 findings after the fact, including a sync that could fail silently.
-**Mandatory gates** (from the Non-negotiables):
-- Schema or `drizzle/` changed → `migration-guard` **and** the schema-design review, with every finding fixed or explicitly ruled on.
+**Gates** (the schema one is a Non-negotiable; the rest are house rules):
+- Schema or `drizzle/` changed → `migration-guard` **and** the schema-design review, with every finding fixed or explicitly ruled on (Non-negotiable).
 - Service / effect / `errors.ts` changed → `test-completeness`.
 - Always → `code-reviewer` (ADR adherence) plus a general correctness pass, scaled to the diff.
 - Auth, sessions, file access or permission boundaries → a dedicated security pass. The `security-guidance` plugin also reviews continuously and at commit/push; address or consciously dismiss its findings.
@@ -98,12 +98,14 @@ Receive feedback with rigor: verify each finding, don't perform agreement.
 
 ## Pre-PR gate
 
-Shared by all three workflows. It mirrors CI (`Check (Biome)`, `Build`, `Test`, PR-title lint) plus the checks CI can't do:
+Shared by all three workflows. It mirrors CI (the `CI Success` gate over `Check (lint)`, `Check (types)`, `Check (build)` and `Test`, plus the PR-title lint) and adds the checks CI can't do:
 
 ```bash
-bun run check                    # Biome format + lint + organize imports
-bun run build                    # vite build + tsc --noEmit
-bun run test                     # node (per-test Postgres) + browser projects
+bun run check                    # Biome writes fixes; commit anything it changed
+bun run check:ci                 # = CI's Check (lint): must pass with no writes
+bun run build                    # = Check (build); includes tsc --noEmit (= Check (types))
+bun run db:up && bun run db:migrate   # tests need the local Postgres container
+bun run test                     # = Test: node (per-test schema) + browser projects
 # sv/en message keys match (CI doesn't check this):
 bun -e 'const sv=Object.keys(await Bun.file("messages/sv.json").json()),en=Object.keys(await Bun.file("messages/en.json").json());const d=[...sv.filter(k=>!en.includes(k)).map(k=>"en missing "+k),...en.filter(k=>!sv.includes(k)).map(k=>"sv missing "+k)];console.log(d.join("\n")||"sv/en keys match");process.exit(d.length?1:0)'
 ```
@@ -139,15 +141,15 @@ Paste the output (or say what you checked) in the PR's *Verification* section. U
 
 ## Current toolchain mapping
 
-*The only place tools are listed. Update this section when tooling changes; the phases above stay durable.*
+*Where tools are listed (the prose names only mandatory gates). Entries tagged* (agent) *go through the `Agent` tool; the rest are skills. Update this section when tooling changes; the phases above stay durable.*
 
 | Phase | Primary | Also useful |
 |---|---|---|
 | 0. Shape | `superpowers:brainstorming` | `AskUserQuestion` for genuine forks; Context7 (API docs) + live calls for integration probes |
-| 1. Understand seams | `feature-dev:code-explorer` | `Explore`; `superpowers:dispatching-parallel-agents`; Context7 (installed-library docs); `find-skills`; `feature-dev:code-architect` *(blank-page design only)* |
-| 2. Plan | `superpowers:writing-plans` | `Plan` (smaller features) |
+| 1. Understand seams | `feature-dev:code-explorer` *(agent)* | `Explore` *(agent)*; `superpowers:dispatching-parallel-agents`; Context7 (installed-library docs); `find-skills` *(user-level)*; `feature-dev:code-architect` *(agent; blank-page design only)* |
+| 2. Plan | `superpowers:writing-plans` | `Plan` *(agent; smaller features)* |
 | 3. Isolate | `superpowers:using-git-worktrees` | — |
-| 4. Build | `superpowers:subagent-driven-development` (this session) / `superpowers:executing-plans` (separate session) | `superpowers:test-driven-development`; `superpowers:systematic-debugging`; `superpowers:dispatching-parallel-agents` *(leaves)*; `ralph-loop:ralph-loop` *(only a task whose tests are already written: `--completion-promise` = green suite + `bun run check`, always `--max-iterations`)*; reviewers per [pairings](#reviewer-pairings); domain skills: `shadcn`, `vercel-react-best-practices`, `vercel-composition-patterns`, `supabase-postgres-best-practices`, `better-auth-best-practices`, `better-auth-security-best-practices`, `react-email`, `email-best-practices`, `frontend-design`, `web-design-guidelines` |
-| 5. Review branch | `code-reviewer`, `migration-guard` + schema-design reviewer, `test-completeness` | `/code-review` (`high`+ for large diffs; `--fix` to apply); `/security-review`; `security-guidance` *(automatic)*; `superpowers:requesting-code-review` / `superpowers:receiving-code-review`; the `Workflow` tool for a multi-agent review *(only when the user opts in)* |
-| 6. Verify | `superpowers:verification-before-completion` | `/run`; `claude-in-chrome` or the `playwright` plugin (drive the browser, resize for responsive); `vercel:verification` |
+| 4. Build | `superpowers:subagent-driven-development` (this session) / `superpowers:executing-plans` (inline, no subagents) | `superpowers:test-driven-development`; `superpowers:systematic-debugging`; `superpowers:dispatching-parallel-agents` *(leaves)*; `ralph-loop:ralph-loop` *(only a task whose tests are already written: the prompt says to print `<promise>DONE</promise>` only once the suite and `check:ci` are green; run with `--completion-promise DONE --max-iterations N`)*; reviewers per [pairings](#reviewer-pairings); domain skills: `shadcn`, `vercel-react-best-practices`, `vercel-composition-patterns`, `supabase-postgres-best-practices`, `better-auth-best-practices`, `better-auth-security-best-practices`, `react-email`, `email-best-practices`, `frontend-design`, `web-design-guidelines` |
+| 5. Review branch | `code-reviewer`, `migration-guard`, `test-completeness` *(agents)*; schema-design reviewer *(`general-purpose` agent loading `supabase-postgres-best-practices`)* | `/code-review` (`high`+ for large diffs; `--fix` to apply); `/security-review`; `security-guidance` *(automatic)*; `superpowers:requesting-code-review` / `superpowers:receiving-code-review`; the `Workflow` tool for a multi-agent review *(only when the user opts in)* |
+| 6. Verify | `superpowers:verification-before-completion` | `/run`; `claude-in-chrome` or the `playwright` plugin (drive the browser, resize for responsive); `vercel:verification` *(user-level plugin)* |
 | 7. Ship | `superpowers:finishing-a-development-branch` | `security-guidance` *(commit/push review)*; `claude-md-management:revise-claude-md` *(capture session learnings)* |

@@ -9,7 +9,7 @@ Companions: **[feature-workflow.md](./feature-workflow.md)** for adding capabili
 
 > **Run it:** `/refactor-workflow <target>` (`.claude/skills/refactor-workflow/`) loads this doc and starts at Phase 0. Edit the process here, not in the skill.
 
-> **Where the tools are.** The phases say *what* and *why*. *Which* skill or agent to use lives only in [Current toolchain mapping](#current-toolchain-mapping); update that table, not the prose, when tooling changes.
+> **Where the tools are.** The phases say *what* and *why*. *Which* skill or agent to use lives in [Current toolchain mapping](#current-toolchain-mapping); update that table, not the prose, when tooling changes. The prose names only mandatory review gates.
 
 ---
 
@@ -63,9 +63,9 @@ Discovery and scoping speak the house vocabulary (deep modules, the deletion tes
 #### Replacing hand-rolled code with a library
 A library swap is a refactor *only if behavior stays the same*, and libraries rarely match hand-rolled code exactly. Treat it as Branch by Abstraction around the old helper:
 1. **Pin the current behavior** with characterization tests on the edge cases the hand-rolled code handles on purpose: timeouts, `Retry-After`, retrying a body that drops mid-download, DST boundaries, TTL expiry, in-flight de-duplication.
-2. **List the semantic gaps** between the old code and the library by reading the library's *current* docs, not memory. Example from the planned `ky` swap: does its timeout/retry also cover a response body that fails mid-read? The old loop reads the body inside the attempt on purpose.
+2. **List the semantic gaps** between the old code and the library by reading the library's *current* docs, not memory. Example: swapping the `send()` retry loops in `effects/zaptec/client.ts` / `effects/elpris/client.ts` for `ky`: does its timeout/retry also cover a response body that fails mid-read? The old loops read the body inside the attempt on purpose.
 3. **Rule on each gap:** configure or wrap the library so behavior is identical (stays a refactor), or change behavior deliberately (that's the *other* hat: a separate `fix`/`feat` commit, stated in the PR).
-4. **Delete the old code and any dependency it leaves unused** (e.g. `exponential-backoff`). For client code, check the bundle-size cost.
+4. **Delete the old code and any dependency it leaves unused.** For client code, check the bundle-size cost.
 5. **One PR per library**, so a regression bisects to one swap.
 
 ### 4. Isolate
@@ -86,6 +86,7 @@ A library swap is a refactor *only if behavior stays the same*, and libraries ra
 - Always → `code-reviewer` (ADR adherence) and a general correctness pass, told to look for behavior that moved.
 - Touched `drizzle/` or schema → `migration-guard` **and** the schema-design review (mandatory).
 - Moved services / effects / `errors.ts` → `test-completeness`.
+- Moved auth, session, file-access or `adminProcedure`/`protectedProcedure` gating → a dedicated security pass, told to check that no boundary moved.
 - `security-guidance` reviews at commit/push; clear or consciously dismiss its findings before the PR.
 - Open the PR with the template; `refactor(<scope>): …` title; squash-merge.
 
@@ -125,15 +126,15 @@ Ousterhout is skeptical of strict TDD; Beck/Fowler treat tests as the indispensa
 
 ## Current toolchain mapping
 
-*The only place tools are listed. Update this section when tooling changes; the phases above stay durable.*
+*Where tools are listed (the prose names only mandatory gates). Entries tagged* (agent) *go through the `Agent` tool; the rest are skills. Update this section when tooling changes; the phases above stay durable.*
 
 | Phase | Primary | Also useful |
 |---|---|---|
 | 0. Confirm & size | `improve-codebase-architecture` | — |
-| 1. Safety net | `superpowers:test-driven-development` *(applied to characterization tests)* | `feature-dev:code-explorer`; `Explore` |
+| 1. Safety net | `superpowers:test-driven-development` *(applied to characterization tests)* | `feature-dev:code-explorer` *(agent)*; `Explore` *(agent)* |
 | 2. Decide target | *(human/judgment — APOSD)* | `improve-codebase-architecture` |
-| 3. Pick strategy | `superpowers:writing-plans` *(planned/large)* | `Plan`; Context7 *(library docs for a swap's gap list)* |
+| 3. Pick strategy | `superpowers:writing-plans` *(planned/large)* | `Plan` *(agent)*; Context7 *(library docs for a swap's gap list)* |
 | 4. Isolate | `superpowers:using-git-worktrees` | — |
-| 5. Small steps | `code-simplifier` / `/simplify` *(mechanical cleanup; quality only, no bug hunting)* | `superpowers:subagent-driven-development`; `superpowers:dispatching-parallel-agents`; `superpowers:systematic-debugging`; reviewers per [feature pairings](./feature-workflow.md#reviewer-pairings); `ralph-loop:ralph-loop` *(safety net green only; always `--max-iterations`)*; `vercel-composition-patterns`; `vercel-react-best-practices`; `supabase-postgres-best-practices` |
-| 6. Verify preservation | `superpowers:verification-before-completion` | `/run`; `claude-in-chrome` or the `playwright` plugin *(visual before/after)*; `vercel:verification` |
-| 7. Review & ship | `code-reviewer`, `migration-guard` + schema-design reviewer, `test-completeness` | `/simplify`; `/code-review` (`--fix` to apply); `security-guidance` *(commit/push review)*; `superpowers:requesting-code-review` / `superpowers:receiving-code-review`; `superpowers:finishing-a-development-branch` |
+| 5. Small steps | `code-simplifier:code-simplifier` *(agent)* / `/simplify` *(mechanical cleanup; quality only, no bug hunting)* | `superpowers:subagent-driven-development`; `superpowers:dispatching-parallel-agents`; `superpowers:systematic-debugging`; reviewers per [feature pairings](./feature-workflow.md#reviewer-pairings); `ralph-loop:ralph-loop` *(safety net green only; `--completion-promise DONE --max-iterations N`)*; `vercel-composition-patterns`; `vercel-react-best-practices`; `supabase-postgres-best-practices` |
+| 6. Verify preservation | `superpowers:verification-before-completion` | `/run`; `claude-in-chrome` or the `playwright` plugin *(visual before/after)*; `vercel:verification` *(user-level plugin)* |
+| 7. Review & ship | `code-reviewer`, `migration-guard`, `test-completeness` *(agents)*; schema-design reviewer *(`general-purpose` agent loading `supabase-postgres-best-practices`)* | `/simplify`; `/code-review` (`--fix` to apply); `/security-review`; `security-guidance` *(commit/push review)*; `superpowers:requesting-code-review` / `superpowers:receiving-code-review`; `superpowers:finishing-a-development-branch` |

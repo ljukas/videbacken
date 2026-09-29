@@ -8,7 +8,7 @@ Companions — one hat per commit:
 
 > **Run it:** `/bugfix-workflow <symptom>` (`.claude/skills/bugfix-workflow/`) loads this doc and starts at Phase 0. Edit the process here, not in the skill.
 
-> **Where the tools are.** The phases say *what* and *why*. *Which* skill or agent to use lives only in [Current toolchain mapping](#current-toolchain-mapping).
+> **Where the tools are.** The phases say *what* and *why*. *Which* skill or agent to use lives in [Current toolchain mapping](#current-toolchain-mapping). The prose names only mandatory review gates.
 
 ---
 
@@ -23,7 +23,7 @@ Companions — one hat per commit:
 ### 0. Confirm it's a bug, and gather evidence
 **What:** A bug is behavior that contradicts something already decided: a spec, an ADR, a Non-negotiable, or plain correctness. If nobody decided what *should* happen, it's a product decision, so switch to the feature workflow.
 **Evidence first, theories second.** Collect what actually happened before guessing why:
-- **Prod:** Vercel runtime logs (`rpc timing` lines, `queue message` outcomes, error logs), the deploy that introduced it, `integration_sync` health rows for a sync, the browser log sink (`/api/log`).
+- **Prod:** Vercel runtime logs (`rpc timing` lines, `queue message` outcomes, server errors, and browser warn/error forwarded through `/api/log`), and the deploy that introduced it. For a sync, the health alert and recent-runs card on `/charging` (admins) show its state. Query the prod DB only read-only, and never pull prod credentials into `.env.local` (CLAUDE.md → the `vercel env pull` hazard).
 - **Local:** the exact steps, input, locale, viewport and role (admin vs user).
 - **Review findings** (e.g. #22 fixing #21's review): each finding is a bug report. Confirm it's real before fixing it.
 
@@ -51,8 +51,8 @@ The fix still honors the architectural rules and Non-negotiables (CLAUDE.md). A 
 ### 6. Review & ship
 **What:**
 - `code-reviewer`, plus a reviewer told to assume the fix is incomplete: does it cover the sibling sites from Phase 2, and does the test actually fail without the fix?
-- The project gates as they apply: `migration-guard` + schema-design review for schema, `test-completeness` for services/`errors.ts`.
-- PR with the template: *Why* names the symptom and the root cause; `fix(<scope>): …` title; squash-merge. Group review-finding fixes by concern (as #22 did), not one PR per finding.
+- The project gates as they apply: `migration-guard` + schema-design review for schema, `test-completeness` for services/`errors.ts`, and a dedicated security pass for auth, session, file-access or permission bugs.
+- PR with the template: *Why* names the symptom and the root cause; `fix(<scope>): …` title; squash-merge. A batch of review findings can ship as one PR for that review round (as #22 did), with the *Why* listing each finding; don't open one PR per finding.
 
 **Loop-back:** if the bug showed a *decision* was wrong, amend the ADR. #22 amended ADR-0019 and reversed its accepted "unpaired alert" trade-off. A missing guard that could recur project-wide belongs in CLAUDE.md or a review agent's checklist.
 
@@ -60,7 +60,7 @@ The fix still honors the architectural rules and Non-negotiables (CLAUDE.md). A 
 
 ## Pitfalls
 
-- **Fixing the symptom**: a `?? 0` or `try/catch` that hides the error instead of removing its cause. Missing data is not zero and a skipped sync is not a success: fail closed and surface it (ADR-0019).
+- **Fixing the symptom**: a `?? 0` or `try/catch` that hides the error instead of removing its cause. Missing data is not zero (ADR-0020: never 0 kr) and a skipped sync is not a success (ADR-0019: fail closed). Surface both.
 - **No regression test**: the bug comes back in the next refactor.
 - **Patch stacking**: the third fix in one area is a design problem, not a bug.
 - **Scope creep**: "while I'm here" refactors in the fix commit make the fix unreviewable and unrevertable.
@@ -70,14 +70,14 @@ The fix still honors the architectural rules and Non-negotiables (CLAUDE.md). A 
 
 ## Current toolchain mapping
 
-*The only place tools are listed. Update this section when tooling changes; the phases above stay durable.*
+*Where tools are listed (the prose names only mandatory gates). Entries tagged* (agent) *go through the `Agent` tool; the rest are skills. Update this section when tooling changes; the phases above stay durable.*
 
 | Phase | Primary | Also useful |
 |---|---|---|
-| 0. Evidence | Vercel runtime logs (`vercel logs` / the Vercel MCP `get_runtime_logs`) | `vercel:vercel-cli`; `claude-in-chrome` (console + network) |
+| 0. Evidence | Vercel runtime logs (`vercel logs` / the Vercel MCP `get_runtime_logs`) | `vercel:vercel-cli` *(user-level plugin)*; `claude-in-chrome` (console + network) |
 | 1. Reproduce | `superpowers:systematic-debugging` | `/run`; `claude-in-chrome` or the `playwright` plugin |
-| 2. Root cause | `superpowers:systematic-debugging` | `feature-dev:code-explorer`; `Explore`; Context7 *(check a library's actual behavior)* |
+| 2. Root cause | `superpowers:systematic-debugging` | `feature-dev:code-explorer` *(agent)*; `Explore` *(agent)*; Context7 *(check a library's actual behavior)* |
 | 3. Regression test | `superpowers:test-driven-development` | — |
 | 4. Minimal fix | — | `refactor-workflow` *(if restructuring is needed first)*; domain skills as in the [feature table](./feature-workflow.md#current-toolchain-mapping) |
 | 5. Verify | `superpowers:verification-before-completion` | `claude-in-chrome` or the `playwright` plugin |
-| 6. Review & ship | `code-reviewer`, plus `migration-guard` + schema-design reviewer / `test-completeness` as applicable | `/code-review`; `superpowers:receiving-code-review`; `superpowers:finishing-a-development-branch` |
+| 6. Review & ship | `code-reviewer` *(agent)*, plus `migration-guard` + schema-design reviewer / `test-completeness` *(agents)* as applicable | `/code-review`; `/security-review`; `superpowers:receiving-code-review`; `superpowers:finishing-a-development-branch` |

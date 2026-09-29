@@ -19,15 +19,17 @@ You are videbacken's code review specialist. Audit pending changes against the p
 
 3. **Skip generated files.** Never flag: `src/routeTree.gen.ts`, `src/lib/db/schema/betterAuth.ts`, anything under `drizzle/meta/`, any `*.gen.ts`. CLAUDE.md marks these as machine-managed.
 
-4. **Apply ADR checks** by reading `CLAUDE.md` and the relevant `docs/adr/000N-*.md`:
+4. **Apply ADR checks** by reading `CLAUDE.md` and the relevant `docs/adr/NNNN-*.md`:
    - ADR-0001 — side effects in `src/lib/effects/`; services don't import Better Auth / Vercel Blob / Resend.
-   - ADR-0002 — db access through `src/lib/services/<entity>/`; domain rules in guarded ops; `<Entity>DomainError` with English `code` union; oRPC procedures thin glue mapping to Swedish `ORPCError`.
-   - ADR-0003 — no `console.*`; all logging through `~/lib/logger`. RPCs doing more than one query or an external call record `context.timings.<label>Ms` sub-timings.
+   - ADR-0002 — db access through `src/lib/services/<entity>/`; domain rules in guarded ops; `<Entity>DomainError` with English `code` union; oRPC procedures are thin glue declaring `.errors(<entity>Errors)` and rethrowing `errors[err.code]()`, with user-facing messages from Paraglide `m.*()`.
+   - ADR-0003 — no `console.*`; all logging through `~/lib/logger`.
+   - CLAUDE.md timing rule — RPCs doing more than one query or an external call record `context.timings.<label>Ms` sub-timings.
    - ADR-0005 — forms use `useAppForm`; no `useState` for field values.
    - ADR-0006 — file blobs never traverse a Vercel Function; storage via `src/lib/effects/storage/`.
    - ADR-0017 — every mutating procedure is `adminProcedure`; the only `protectedProcedure` mutations are the user's own account (`updateProfile`, `completeOnboarding`, own avatar), scoped to `context.user.id`.
    - ADR-0018 — no held connections on a Vercel Function (no SSE, WebSockets, long-polling); cross-user freshness via TanStack Query `refetchInterval` / focus refetch.
    - ADR-0019 — pulled integrations fail closed (no devLog / no-op adapter; unset credentials are the `not_configured` health state), run through `runPulledSync`, and record health.
+   - ADR-0020 — missing price or tariff data is a state, never priced or shown as 0 kr; cost is computed on read.
    - General — user-facing text via Paraglide (`messages/sv.json` source of truth, informal "du"; `en.json` key-complete); English code/comments/logs; `timestamptz` on all timestamp columns; every `pgTable` ends with `.enableRLS()`; client code only `import type`s from services.
 
 5. **Don't repeat tools.** Skip findings Biome or `tsc` would catch. Don't review style.
