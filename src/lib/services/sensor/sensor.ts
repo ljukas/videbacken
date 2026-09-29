@@ -1,3 +1,4 @@
+import { secondsInDay, secondsInHour } from 'date-fns/constants'
 import { and, desc, eq, gte, inArray, lte, type SQL, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
@@ -160,24 +161,22 @@ type BucketRow = {
   humAvg: number | null
 }
 
-const DAY_SEC = 86_400
-
 // Fixed ranges → lookback window + bucket width, chosen so each range yields a
 // bounded number of points (~100-400). `all` is resolved from the data instead.
 const FIXED_RANGES: Record<
   Exclude<SeriesRange, 'all'>,
   { windowSec: number; bucketSec: number }
 > = {
-  '24h': { windowSec: DAY_SEC, bucketSec: 600 }, // 10 min → ~144 pts
+  '24h': { windowSec: secondsInDay, bucketSec: 600 }, // 10 min → ~144 pts
   // 2 h → ~84 pts. Deliberately AT the reporting cadence (CADENCE_SEC), not
   // below it: roughly one reading per bucket (little averaging), while staying
   // coarse enough that toDeviceSeries keeps outage breaks on — under the cadence
   // it treats empty buckets as sparseness and stops breaking. See series.test.ts.
-  '1w': { windowSec: 7 * DAY_SEC, bucketSec: 2 * 3600 },
-  '1m': { windowSec: 30 * DAY_SEC, bucketSec: 3 * 3600 }, // 3 h → ~240 pts
-  '3m': { windowSec: 90 * DAY_SEC, bucketSec: 12 * 3600 }, // 12 h → ~180 pts
-  '6m': { windowSec: 180 * DAY_SEC, bucketSec: DAY_SEC }, // 1 day → ~180 pts
-  '1y': { windowSec: 365 * DAY_SEC, bucketSec: DAY_SEC }, // 1 day → ~365 pts
+  '1w': { windowSec: 7 * secondsInDay, bucketSec: 2 * secondsInHour },
+  '1m': { windowSec: 30 * secondsInDay, bucketSec: 3 * secondsInHour }, // 3 h → ~240 pts
+  '3m': { windowSec: 90 * secondsInDay, bucketSec: 12 * secondsInHour }, // 12 h → ~180 pts
+  '6m': { windowSec: 180 * secondsInDay, bucketSec: secondsInDay }, // 1 day → ~180 pts
+  '1y': { windowSec: 365 * secondsInDay, bucketSec: secondsInDay }, // 1 day → ~365 pts
 }
 
 // Restrict to the requested devices; `undefined`/empty means no restriction.
@@ -219,7 +218,7 @@ async function resolveWindow(
   const spanSec = nowSec - sinceSec
   return {
     since: new Date(sinceSec * 1000),
-    bucketSec: spanSec > 400 * DAY_SEC ? 7 * DAY_SEC : DAY_SEC,
+    bucketSec: spanSec > 400 * secondsInDay ? 7 * secondsInDay : secondsInDay,
   }
 }
 

@@ -1,14 +1,14 @@
-// Dependency-free, client-safe. Validation for one Stockholm day of spot price
+// Client-safe (no server imports). Validation for one Stockholm day of spot price
 // slots as the elpris API publishes it — the sync stores a day all-or-nothing,
 // so a day that fails here is rejected whole (`unexpected_response`), never
 // stored with holes or overlaps that would mis-price charging.
+import { millisecondsInHour, millisecondsInMinute } from 'date-fns/constants'
 import { stockholmDayBounds } from '~/lib/time/stockholm'
 
 export type PriceSlot = { startMs: number; endMs: number; sekPerKwh: number }
 
-const MINUTE_MS = 60 * 1000
 /** 15-min slots since 2025-10-01, hourly before. */
-const SLOT_LENGTHS_MS = new Set([15 * MINUTE_MS, 60 * MINUTE_MS])
+const SLOT_LENGTHS_MS = new Set([15 * millisecondsInMinute, millisecondsInHour])
 /**
  * Absurd-value bounds in SEK/kWh (ex VAT), matching the `spot_price` CHECK. The
  * day-ahead market's price cap steps up automatically in extreme conditions, so
