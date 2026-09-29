@@ -138,6 +138,25 @@ test('retrying prices alone runs only elpris and confirms success', async () => 
   expect(syncFn.mock.calls.map((c) => c[0])).toEqual([{ source: 'elpris' }])
 })
 
+test('a price retry reports a skipped run', async () => {
+  respond({ elpris: { outcome: 'skipped', code: null, upserted: 0 } })
+  const { screen } = await renderWithProviders(<Harness only="elpris" />)
+  await click(screen)
+  await vi.waitFor(() => expect(toastMock.info).toHaveBeenCalledWith(m.charging_sync_skipped()))
+})
+
+test('a full sync keeps a skipped price run silent', async () => {
+  respond({
+    zaptec: { outcome: 'ok', code: null, upserted: 1 },
+    elpris: { outcome: 'skipped', code: null, upserted: 0 },
+  })
+  const { screen } = await renderWithProviders(<Harness />)
+  await click(screen)
+  await vi.waitFor(() => expect(syncFn).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledOnce())
+  expect(toastMock.info).not.toHaveBeenCalled()
+})
+
 test('the button is disabled while a sync is pending', async () => {
   const { screen } = await renderWithProviders(<SyncNowButton onSync={() => {}} pending />)
   await expect.element(screen.getByRole('button', { name: m.charging_sync_now() })).toBeDisabled()

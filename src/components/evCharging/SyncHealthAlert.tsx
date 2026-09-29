@@ -15,7 +15,7 @@ type Health = RouterOutputs['evCharging']['syncStatus']
 // Sync health banner, driven by `state` alone (never re-derived from the
 // timestamps client-side — the server owns the stale/failing policy). `ok`
 // renders nothing. Admins additionally see the raw (sanitized) last error and
-// a retry, which is the same `syncNow` mutation as the heading button.
+// a retry that re-runs only this alert's source (`useSyncNow().syncSource`).
 export function SyncHealthAlert({
   health,
   isAdmin,

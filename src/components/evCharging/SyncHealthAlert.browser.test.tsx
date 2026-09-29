@@ -128,7 +128,7 @@ test.each([
   expect(retryButton(screen).elements()).toHaveLength(0)
 })
 
-test('an elpris alert uses elpris copy: its own never-synced text and a source-named error', async () => {
+test('an elpris alert that never synced uses the price-specific copy', async () => {
   const never: Health = {
     ...base,
     source: 'elpris',
@@ -136,14 +136,15 @@ test('an elpris alert uses elpris copy: its own never-synced text and a source-n
     lastAttemptAt: null,
     lastSuccessAt: null,
   }
-  const first = await renderWithProviders(
+  const { screen } = await renderWithProviders(
     <SyncHealthAlert health={never} isAdmin={false} onRetry={() => {}} retrying={false} />,
   )
-  await expect
-    .element(first.screen.getByText(m.charging_health_never_synced_elpris()))
-    .toBeVisible()
-  first.screen.unmount()
+  await expect.element(screen.getByText(m.charging_health_never_synced_elpris())).toBeVisible()
+  // Informational states are a polite status, not an interrupting alert.
+  await expect.element(screen.getByRole('status')).toBeVisible()
+})
 
+test('a failing elpris alert names its own source and interrupts (role=alert)', async () => {
   const { screen } = await renderWithProviders(
     <SyncHealthAlert
       health={{ ...failing, source: 'elpris', code: 'unreachable', adminDetail: null }}
@@ -155,4 +156,17 @@ test('an elpris alert uses elpris copy: its own never-synced text and a source-n
   const message = integrationErrorMessage('unreachable', { source: 'elpris' })
   expect(message).not.toContain('Zaptec')
   await expect.element(screen.getByText(message, { exact: false })).toBeVisible()
+  await expect.element(screen.getByRole('alert')).toBeVisible()
+})
+
+test('a stale elpris alert talks about prices', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...base, source: 'elpris', state: 'stale' }}
+      isAdmin={false}
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_health_stale_elpris())).toBeVisible()
 })
