@@ -53,3 +53,11 @@ export function addDays(day: string, n: number): string {
 export function stockholmDayBounds(day: string): { startMs: number; endMs: number } {
   return { startMs: midnightOf(day).getTime(), endMs: midnightOf(addDays(day, 1)).getTime() }
 }
+
+/** `[startMs, endMs)` of a Stockholm calendar year: local midnight 1 January to the next. */
+export function stockholmYearBounds(year: number): { startMs: number; endMs: number } {
+  return {
+    startMs: TZDate.tz(TIME_ZONE, year, 0, 1).getTime(),
+    endMs: TZDate.tz(TIME_ZONE, year + 1, 0, 1).getTime(),
+  }
+}

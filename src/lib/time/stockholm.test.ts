@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest'
-import { addDays, stockholmDayBounds, stockholmDayOf, stockholmYearMonth } from './stockholm'
+import {
+  addDays,
+  stockholmDayBounds,
+  stockholmDayOf,
+  stockholmYearBounds,
+  stockholmYearMonth,
+} from './stockholm'
 
 const HOUR = 60 * 60 * 1000
 const utc = (iso: string) => new Date(iso).getTime()
@@ -132,6 +138,18 @@ describe('stockholmDayBounds', () => {
       const next = addDays(day, 1)
       expect(stockholmDayBounds(day).endMs).toBe(stockholmDayBounds(next).startMs)
       day = next
+    }
+  })
+})
+
+describe('stockholmYearBounds', () => {
+  test('runs from local 1 January midnight (always CET, UTC+1) to the next', () => {
+    const { startMs, endMs } = stockholmYearBounds(2026)
+    expect(new Date(startMs).toISOString()).toBe('2025-12-31T23:00:00.000Z')
+    expect(new Date(endMs).toISOString()).toBe('2026-12-31T23:00:00.000Z')
+    for (let year = 1970; year <= 2100; year++) {
+      expect(stockholmYearBounds(year).startMs).toBe(Date.UTC(year - 1, 11, 31, 23))
+      expect(stockholmYearBounds(year).endMs).toBe(stockholmYearBounds(year + 1).startMs)
     }
   })
 })
