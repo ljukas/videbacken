@@ -1,4 +1,5 @@
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
+import { IntegrationError } from '../integrationError'
 
 export type ZaptecOp = 'token' | 'chargers' | 'sessions' | 'state'
 
@@ -12,7 +13,7 @@ export type ZaptecOp = 'token' | 'chargers' | 'sessions' | 'state'
  * error's `{ name, code }` — never the raw error, whose message may echo the
  * request.
  */
-export class ZaptecError extends Error {
+export class ZaptecError extends IntegrationError {
   override readonly name = 'ZaptecError'
 
   constructor(
