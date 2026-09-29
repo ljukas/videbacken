@@ -19,10 +19,26 @@ the noise threshold (0.5 kWh). Everything else (e.g. commissioning blips) is sto
 
 **Live state** — the charger's current mode (disconnected / connected / charging / finished) and power, read on demand.
 
+## Cost
+
+**Spot price slot** — one day-ahead SE3 price for `[slot_start, slot_end)`: 15 min since 2025-10-01, an hour before;
+a Stockholm day has 92/96/100 of them. SEK/kWh ex VAT, may be negative. Stored a whole day at a time.
+
+**Tariff period** — the per-kWh costs on top of spot (retail markup, grid transfer, energy tax, VAT) that apply from
+its `valid_from` Stockholm date until the next period starts. Fixed monthly fees are not part of it.
+
+**Piece** — the part of an interval that falls in one price slot; the unit the cost math prices.
+
+**Grid share** — the fraction of an interval's energy bought from the grid (1 until a solar/battery source says
+otherwise); only that share is priced.
+
+**Complete / partial cost** — complete when every grid kWh has both a price and a tariff; otherwise partial, and the
+missing energy is shown as missing, never as 0 kr.
+
 ## Integrations
 
-**Integration** — an external data source we pull from on a schedule: `zaptec` now; `elpris`
-(spot prices) and `skoda` later.
+**Integration** — an external data source we pull from on a schedule: `zaptec` (sessions) and `elpris`
+(spot prices); `skoda` later.
 
 **Sync run** — one execution of an integration's sync (triggered by cron or an admin). Produces
 exactly one run record and one `integration sync run` log line.
