@@ -388,3 +388,30 @@ show the message.
 The `user` service gained three exports for the invitation flow ([ADR-0017](./0017-authentication.md)), all following the patterns above: `inviteUser(email)` (a check-first guarded write — `findIdByEmail` → `EMAIL_TAKEN`, the unique constraint staying the silent backstop, per "Check first" §), `markInvited(id)` (a bare timestamp bump, no invariant), and `assertInviteResendable(id)` (a read-only guard that throws `NOT_FOUND` / `ALREADY_ACCEPTED`). `create` was reshaped into `invite` + `resendInvite` at the procedure layer.
 
 The `UserDomainErrorCode` union grew two members — **`ALREADY_ACCEPTED`** (resend on an already-verified user) and **`EMAIL_TAKEN`** (invite for an existing email) — staying **code-only** per the 2026-06-14 amendment above: `userErrors` in `procedures/user.ts` declares them status-only (`satisfies Record<UserDomainErrorCode, …>` catches a missed key at build), and `src/lib/orpc/userErrorMessage.ts`'s exhaustive switch localizes them. No new Swedish in the procedure; the type system forced both the `userErrors` key and the `userErrorMessage` case the moment each code was added.
+
+## Amendment (2026-09-28): row locking inside a service transaction; role-shaped reads take a flag
+
+Two clarifications land alongside [ADR-0019](./0019-external-data-integrations.md), which introduces
+the first service (`src/lib/services/integrationSync/`) that needs both.
+
+**`SELECT … FOR UPDATE` inside a service's own transaction is a sanctioned pattern**, not only the
+`pg_advisory_xact_lock` escape hatch the "Check first — never translate Postgres errors" section
+describes. `integrationSync`'s `recordOutcome` takes the row lock on `integration_sync` as its first
+statement to serialize concurrent *finishers* of a sync run — a different problem from the
+advisory-lock section's `LAST_ADMIN` race, where a lost race is a rare, manually-recoverable
+inconvenience. Here, two runs finishing at the same instant without a lock could both observe "was
+healthy" and both fire a transition alert email — exactly the noise ADR-0019 exists to prevent — so
+serializing the finish is load-bearing, not a nice-to-have. `FOR UPDATE` inside the same transaction
+as the read-check and the write is the minimal fix; it carries no new exception to "never translate
+Postgres errors" or "no SERIALIZABLE retries" — it's ordinary row-level locking, already implied by
+"reads going through the transaction" in the guarded-operation pattern above, just stated explicitly
+now that a service leans on it as its central invariant rather than incidentally.
+
+**Role-shaped reads take an explicit flag, never the caller's role.** `getHealth(source, { now,
+includeAdminDetail })` takes a plain `includeAdminDetail: boolean`, not `role: 'user' | 'admin'`. A
+service has no business knowing about auth roles — "why services stay free of Better Auth / Resend /
+R2 imports" above already keeps `~/lib/auth` out of services entirely — so the procedure
+(`syncStatus` in `src/lib/orpc/procedures/evCharging.ts`) computes `includeAdminDetail =
+context.user.role === 'admin'` and passes the boolean down. No prior service has had a read shape
+that varies by caller, so this wasn't previously a named convention; it now is one, for the next
+service that needs it.

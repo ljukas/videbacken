@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { renderIntegrationSyncAlert } from '~/emails/IntegrationSyncAlertEmail'
 import { renderInviteUser } from '~/emails/InviteUserEmail'
 import { renderMagicLink } from '~/emails/MagicLinkEmail'
 import { logger } from '~/lib/logger/server'
@@ -26,5 +27,23 @@ export const resend: EmailEffects = {
     const result = await getClient().emails.send({ from, to, subject, html, text })
     if (result.error) throw new Error(`Resend send failed: ${result.error.message}`)
     logger.info('invite sent (resend)', { to, messageId: result.data?.id })
+  },
+  async sendIntegrationSyncAlert({ to, source, transition, code, locale }) {
+    const { subject, html, text } = await renderIntegrationSyncAlert({
+      source,
+      transition,
+      code,
+      locale,
+    })
+    const from = process.env.EMAIL_FROM
+    if (!from) throw new Error('EMAIL_FROM is required when RESEND_API_KEY is set')
+    const result = await getClient().emails.send({ from, to, subject, html, text })
+    if (result.error) throw new Error(`Resend send failed: ${result.error.message}`)
+    logger.info('integration sync alert sent (resend)', {
+      to,
+      source,
+      transition,
+      messageId: result.data?.id,
+    })
   },
 }

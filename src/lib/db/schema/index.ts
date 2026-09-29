@@ -1,4 +1,6 @@
 export * from './approvedEmail'
 export * from './betterAuth'
+export * from './evCharging'
 export * from './file'
+export * from './integrationSync'
 export * from './sensor'

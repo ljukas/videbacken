@@ -24,7 +24,7 @@ For *why* a pattern exists, follow the ADR link.
 - **i18n:** Paraglide JS — Swedish (source of truth + default) + English; `videbacken-locale` cookie, no URL prefix.
 - **Testing:** Vitest — a `node` project (per-test Postgres schema) + a `browser` project (Chromium via Playwright).
 - **Tooling:** Biome (format/lint/organize-imports); docker compose dev stack; GitHub Actions CI.
-- **Hosting:** Vercel; Stockholm region (`arn1`).
+- **Hosting:** Vercel Pro; Stockholm region (`arn1`).
 
 ---
 
@@ -42,18 +42,21 @@ src/
     onboarding.tsx              full-screen 2-step wizard (name → avatar); guard while onboardedAt null
     signed-in.tsx               magic-link "continue here" confirmation
     api/{auth/$.ts, rpc/$.ts, log.ts}   Better Auth / oRPC catch-alls; browser log sink
+    api/cron/                   non-oRPC cron entrypoints, secret-gated (e.g. zaptec-sync.ts, hourly)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
-    _authenticated/             index (dashboard), users, account/{index,profile}, admin
+    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging
   lib/
     auth.ts                     betterAuth(): drizzleAdapter + google + magicLink + admin; allowlist gate
     authClient.ts               createAuthClient() (signIn.social + signIn.magicLink)
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (invoked by server/plugins/seedApprovedEmails.ts, a Nitro plugin registered in vite.config.ts)
     orpc/                       context (public/protected/admin procedures), router, client, procedures/
-    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail}.ts + index barrel
-    services/                   approvedEmail, user, file — own all DB access + domain rules (see ADR-0002)
-    effects/                    email, storage, queue (see ADR-0001)
+    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,evCharging,integrationSync}.ts + index barrel
+    services/                   approvedEmail, user, file, evCharging, integrationSync — own all DB access + domain rules (see ADR-0002)
+    effects/                    email, storage, queue, zaptec (fails closed, no devLog — see ADR-0001, ADR-0019)
     logger/                     pino on server, console+POST /api/log in browser (see ADR-0003)
+    evCharging/                 Zaptec sync orchestrator (sync.ts) + cron entrypoint; client-safe types/vocab (see ADR-0019)
+    integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — see ADR-0019)
     i18n/, zodLocale.ts, theme.ts, browserSession.ts, utils.ts
   components/  {AppSidebar, command/, form/, layout/, login/, onboarding/, user/, ui/}
   emails/                       React Email templates (MagicLink, InviteUser); preview `bun run email:dev`
@@ -77,7 +80,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 - **Forms via `useAppForm`.** Never `useState` for field values; canonical example `src/components/login/LoginFormCard.tsx`. See **ADR-0005**.
 
 ### Recipes
-- **Add a schema:** `src/lib/db/schema/<x>.ts` → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`.
+- **Add a schema:** `src/lib/db/schema/<x>.ts` → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`. Then get the **schema-design review** (Non-negotiables) before building on it.
 - **Add a service:** copy `services/user/` shape (`<x>.ts`, `<x>.test.ts` with `setupDatabase()` first, `index.ts`; `errors.ts` when an invariant lands).
 - **Add an effect:** copy `effects/email/` shape (`<domain>.ts` selector + `adapters/<name>.ts` + barrel + test; register in `effects/index.ts`).
 - **Add a procedure:** edit `src/lib/orpc/procedures/<x>.ts`; pick `protectedProcedure` (reads) or `adminProcedure` (mutations); `.input(zodSchema)`; thin glue → service → run effects after success; register in `orpc/router.ts`. Auto-timed via the `rpc timing` log; add `context.timings.<label>Ms` sub-timings for heavier work (see the timing rule above).
@@ -101,6 +104,7 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 | Visual identity / design language | 0015 |
 | Empty states & feedback | 0016 |
 | **Authentication** (Google + magic-link, allowlist, admin-only mutation, onboarding) | **0017** |
+| External data integrations (fail-closed sync, health tracking, lease) | **0019** |
 
 ---
 
@@ -152,6 +156,7 @@ mailpit UI 14602, storage console 14603, bull studio 14604; postgres 14620, redi
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (Google OAuth client).
 - `INITIAL_ADMIN_EMAILS` (CSV; seeds the first admin(s) into `approved_email`).
 - Storage `BLOB_*` (prod) / `S3_*` (local RustFS); email `RESEND_API_KEY`+`EMAIL_FROM` (prod) / `SMTP_*` (local Mailpit); `REDIS_URL` (local queue); `LOG_LEVEL`.
+- `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (Zaptec sync creds; unset → integration fails closed as `not_configured`, see ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data). `CRON_SECRET` (Bearer token gating `/api/cron/*`).
 
 **`vercel env pull` hazard:** it writes prod `DATABASE_URL` into `.env.local`, which Vite + Drizzle
 prefer over `.env`. If you run it, delete the `DATABASE_URL*` lines from `.env.local` immediately —
@@ -169,6 +174,7 @@ otherwise `bun run db:migrate` migrates **production**.
 - **oRPC procedures are thin glue.** Gate with `protectedProcedure`/`adminProcedure` (never inline). Better Auth's own `/api/auth/*` routes stay on the Better Auth handler.
 - **All logging through `~/lib/logger/`.** Never `console.*`. See ADR-0003.
 - **Never hand-edit `src/lib/db/schema/betterAuth.ts`** — regenerate via `bun run auth:schema`.
+- **Every database change gets a Postgres schema-design review before it merges** — new/altered tables, columns, constraints, indexes, or migrations under `src/lib/db/schema/` / `drizzle/`. The reviewer (a subagent) must load the `supabase-postgres-best-practices` skill and judge the change against the queries that will actually run (indexes, constraints vs. every valid write, types, FK/cascade, evolvability). Run it alongside `migration-guard` (which checks the mechanical migration gotchas); fix or explicitly rule on every finding before code builds on the schema.
 - **All timestamp columns use `timestamp({ withTimezone: true })`** (timestamptz). When drizzle-kit emits an `ALTER ... SET DATA TYPE timestamp with time zone` on existing data, hand-add `USING "<col>" AT TIME ZONE 'UTC'`.
 - **`server/plugins/seedApprovedEmails.ts`** (which invokes the seeding logic in `src/lib/seedApprovedEmails.ts`) **must stay registered in `vite.config.ts`'s Nitro `plugins`** — Nitro does not auto-discover `server/plugins/*`; unregistered, the first admin never seeds.
 - **The Vercel function region is pinned to `arn1` (Stockholm) in `vite.config.ts`** (Nitro `vercel.functions.regions`), co-located with the Supabase DB (`eu-north-1`) and the users. **Never remove it** — without a pin the region silently falls back to Vercel's US default (`iad1`), adding a transatlantic hop to every request *and* every DB round-trip (~610ms/RPC vs. ~60ms — ~10× slower). If the DB region moves, change this to match.
@@ -182,7 +188,7 @@ otherwise `bun run db:migrate` migrates **production**.
 
 ## Decisions made — don't relitigate
 
-- **Framework:** TanStack Start (RC, locked) on Vite. **Hosting:** Vercel, Stockholm (`arn1`).
+- **Framework:** TanStack Start (RC, locked) on Vite. **Hosting:** Vercel Pro, Stockholm (`arn1`).
 - **Package manager:** bun.
 - **DB:** Supabase Postgres (prod) / plain Postgres (local+CI); `postgres-js` driver; Drizzle ORM. All timestamps `timestamptz`.
 - **Data layer:** oRPC + TanStack Query; SSR via in-process router client. Domain rules in services (ADR-0002); effects isolated (ADR-0001).

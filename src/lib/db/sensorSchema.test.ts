@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
+import { expectConstraintViolation } from '~test/expectConstraintViolation'
 import { setupDatabase } from '~test/setup'
 
 // Lives in src/lib/db/ (not src/lib/db/schema/) because drizzle-kit scans the
@@ -10,25 +11,6 @@ setupDatabase()
 async function insertDevice(mac: string) {
   const [row] = await db.insert(sensorDevice).values({ mac }).returning({ id: sensorDevice.id })
   return row.id
-}
-
-// drizzle wraps the driver error: its `.message` is "Failed query: ...", and the
-// violated constraint name lives on the postgres-js cause (`constraint_name` /
-// message). Assert against that so the test pins the *specific* constraint.
-async function expectConstraintViolation(promise: Promise<unknown>, constraint: string) {
-  let error: unknown = null
-  try {
-    await promise
-  } catch (e) {
-    error = e
-  }
-  expect(error, 'expected the insert to be rejected').not.toBeNull()
-  const cause = (error as { cause?: unknown }).cause ?? error
-  const detail =
-    (cause as { constraint_name?: string }).constraint_name ??
-    (cause as { message?: string }).message ??
-    String(error)
-  expect(detail).toContain(constraint)
 }
 
 test('a device + reading round-trips with JS-number temperature', async () => {
