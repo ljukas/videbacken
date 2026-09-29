@@ -1,5 +1,7 @@
 // Client-safe calendar helpers for Europe/Stockholm, the one time zone every
-// charging/price bucket is defined in — and the one module that names it. A
+// charging/price bucket is defined in — and, outside SQL (`AT TIME ZONE
+// 'Europe/Stockholm'` in the overview and spot-price queries), the one module
+// that names it. A
 // "day" is a 'YYYY-MM-DD' string naming a local calendar day; instants are
 // epoch ms. DST-aware via @date-fns/tz — a Stockholm day is 23, 24 or 25 hours
 // long.
@@ -71,7 +73,10 @@ export function stockholmDayBounds(day: string): { startMs: number; endMs: numbe
   return { startMs: midnightOf(day).getTime(), endMs: midnightOf(addDays(day, 1)).getTime() }
 }
 
-/** `[startMs, endMs)` of a Stockholm calendar year: local midnight 1 January to the next. */
+/**
+ * `[startMs, endMs)` of a Stockholm calendar year: local midnight 1 January to
+ * the next. (1 January is always CET, so this is 23:00 UTC on 31 December.)
+ */
 export function stockholmYearBounds(year: number): { startMs: number; endMs: number } {
   return {
     startMs: TZDate.tz(STOCKHOLM_TIME_ZONE, year, 0, 1).getTime(),
