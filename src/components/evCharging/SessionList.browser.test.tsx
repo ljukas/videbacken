@@ -72,6 +72,8 @@ test('a session without intervals shows an em-dash for peak power', async () => 
       hasMore={false}
       onShowMore={noop}
       loadingMore={false}
+      // Priced, so the cost cell isn't a second dash.
+      costs={new Map([['s1', priced]])}
     />,
   )
   await expect.element(screen.getByRole('cell', { name: '—' })).toBeInTheDocument()
@@ -93,4 +95,56 @@ test('"Visa fler" is disabled while the next page loads', async () => {
   await expect
     .element(screen.getByRole('button', { name: m.charging_sessions_show_more() }))
     .toBeDisabled()
+})
+
+type SessionCost = RouterOutputs['evCharging']['sessionCosts'][number]
+const priced: SessionCost = {
+  sessionId: 's1',
+  estimated: false,
+  kwh: 14.26,
+  gridKwh: 14.26,
+  fullKwh: 14.26,
+  noPriceKwh: 0,
+  noTariffKwh: 0,
+  spotSek: 8.97,
+  feesSek: 13.71,
+  totalSek: 22.68,
+  avgOre: 159,
+  complete: true,
+}
+
+function renderWithCost(cost: SessionCost | undefined) {
+  return renderWithProviders(
+    <div style={{ width: 1024 }}>
+      <SessionList
+        sessions={[session]}
+        hasMore={false}
+        onShowMore={noop}
+        loadingMore={false}
+        costs={new Map(cost ? [[cost.sessionId, cost]] : [])}
+      />
+    </div>,
+  )
+}
+
+test('a priced session shows its total and spot share in kronor', async () => {
+  const { screen } = await renderWithCost(priced)
+  await expect.element(screen.getByText(/22,68\s?kr/)).toBeVisible()
+  await expect.element(screen.getByText(/spot 8,97\s?kr/)).toBeVisible()
+})
+
+test('an estimated session is marked ≈ with the reason', async () => {
+  const { screen } = await renderWithCost({ ...priced, estimated: true })
+  await expect.element(screen.getByText(/≈/)).toBeVisible()
+  await expect
+    .element(screen.getByText(m.charging_sessions_cost_estimated(), { exact: false }))
+    .toBeInTheDocument()
+})
+
+test('an unpriced or not-yet-loaded session shows a dash, never 0 kr', async () => {
+  const unpriced = await renderWithCost({ ...priced, complete: false, totalSek: 0 })
+  await expect
+    .element(unpriced.screen.getByText(m.charging_sessions_cost_unknown(), { exact: false }))
+    .toBeInTheDocument()
+  expect(unpriced.screen.getByText(/0,00\s?kr/).elements()).toHaveLength(0)
 })

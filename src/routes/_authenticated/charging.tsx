@@ -6,13 +6,18 @@ import {
   useSuspenseQuery,
 } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
-import { MonthlyChart } from '~/components/evCharging/MonthlyChart'
+import {
+  type ChartMetric,
+  ChartMetricToggle,
+  MonthlyChart,
+} from '~/components/evCharging/MonthlyChart'
+import { PriceFootnote } from '~/components/evCharging/PriceFootnote'
 import { RecentRunsCard } from '~/components/evCharging/RecentRunsCard'
 import { SessionList } from '~/components/evCharging/SessionList'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
@@ -63,6 +68,11 @@ export const Route = createFileRoute('/_authenticated/charging')({
         orpc.evCharging.overview.queryOptions({ input: { year: deps.year } }),
       ),
       queryClient.ensureQueryData(sessionsQuery(SESSIONS_PAGE)),
+      // Cost is best-effort: prefetchQuery never throws, so a price/tariff
+      // failure degrades only the cost figures, never the page.
+      queryClient.prefetchQuery(
+        orpc.evCharging.costOverview.queryOptions({ input: { year: deps.year } }),
+      ),
       queryClient.ensureQueryData(orpc.tariff.list.queryOptions()),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
       user.role === 'admin' ? queryClient.ensureQueryData(pricesHealthQuery) : null,
@@ -119,6 +129,32 @@ function ChargingPage() {
     placeholderData: keepPreviousData, // keep the old chart while another year loads
   })
   const sessions = useQuery(sessionsQuery(sessionLimit))
+  const { data: cost } = useQuery({
+    ...orpc.evCharging.costOverview.queryOptions({ input: { year } }),
+    placeholderData: keepPreviousData,
+  })
+  const [chartMetric, setChartMetric] = useState<ChartMetric>('kwh')
+  // The kr view only when the selected year has some priced energy: a
+  // placeholder from another year, or a year with no prices/tariff, would
+  // draw empty axes that read as "0 kr".
+  const costMonths =
+    overview && cost?.year === overview.year && cost.months.some((mo) => mo.fullKwh > 0)
+      ? cost.months
+      : undefined
+  // Cost for the sessions on screen, keyed by id for the list's cost column.
+  const sessionIds = useMemo(
+    () => sessions.data?.sessions.map((sess) => sess.id) ?? [],
+    [sessions.data],
+  )
+  const { data: sessionCostList } = useQuery({
+    ...orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } }),
+    enabled: sessionIds.length > 0,
+    placeholderData: keepPreviousData,
+  })
+  const sessionCosts = useMemo(
+    () => new Map(sessionCostList?.map((c) => [c.sessionId, c])),
+    [sessionCostList],
+  )
   const { data: health } = useSuspenseQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
@@ -177,22 +213,32 @@ function ChargingPage() {
         <>
           <section className="flex flex-col gap-2">
             <h2 className="sr-only">{m.charging_totals_heading()}</h2>
-            <TotalsTiles tiles={overview.tiles} />
+            <TotalsTiles tiles={overview.tiles} cost={cost?.tiles} />
           </section>
 
           <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-medium text-sm">{m.charging_chart_title()}</h2>
-              <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
+              <h2 className="font-medium text-sm">
+                {chartMetric === 'sek' && costMonths
+                  ? m.charging_chart_title_cost()
+                  : m.charging_chart_title()}
+              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                {costMonths ? (
+                  <ChartMetricToggle value={chartMetric} onChange={setChartMetric} />
+                ) : null}
+                <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
+              </div>
             </div>
             {overview.months.some((mo) => mo.kwh > 0) ? (
-              <MonthlyChart months={overview.months} />
+              <MonthlyChart months={overview.months} costMonths={costMonths} metric={chartMetric} />
             ) : (
               <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
                 {m.charging_chart_empty({ year: overview.year })}
               </div>
             )}
           </section>
+          {cost ? <PriceFootnote /> : null}
         </>
       ) : null}
 
@@ -216,6 +262,7 @@ function ChargingPage() {
           hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
           onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
           loadingMore={showMore.isPending}
+          costs={sessionCosts}
           onSync={isAdmin ? () => syncNow.syncSource('zaptec') : undefined}
           syncing={syncNow.isPendingFor('zaptec')}
         />

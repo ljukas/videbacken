@@ -18,10 +18,11 @@ import {
 } from '~/components/ui/table'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { formatDate, formatDuration, formatOneDecimal, formatTime } from './format'
+import { formatDate, formatDuration, formatOneDecimal, formatSek, formatTime } from './format'
 import { SyncNowButton } from './SyncNowButton'
 
 type Session = RouterOutputs['evCharging']['sessions']['sessions'][number]
+type SessionCost = RouterOutputs['evCharging']['sessionCosts'][number]
 
 // Counted sessions, newest first. The parent owns the growing `limit`; "Visa
 // fler" asks for the next page while the server reports `hasMore`. Empty →
@@ -34,6 +35,7 @@ export function SessionList({
   loadingMore,
   onSync,
   syncing = false,
+  costs,
 }: {
   sessions: Session[]
   hasMore: boolean
@@ -41,6 +43,8 @@ export function SessionList({
   loadingMore: boolean
   onSync?: () => void
   syncing?: boolean
+  /** Cost per session id, once loaded (the column shows "—" until then). */
+  costs?: ReadonlyMap<string, SessionCost>
 }) {
   if (sessions.length === 0) {
     return (
@@ -74,6 +78,7 @@ export function SessionList({
                 {m.charging_sessions_col_duration()}
               </TableHead>
               <TableHead className="text-right">{m.charging_sessions_col_energy()}</TableHead>
+              <TableHead className="text-right">{m.charging_sessions_col_cost()}</TableHead>
               <TableHead className="hidden text-right md:table-cell">
                 {m.charging_sessions_col_peak()}
               </TableHead>
@@ -92,6 +97,9 @@ export function SessionList({
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {formatOneDecimal(s.energyKwh)} kWh
                 </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  <SessionCostCell cost={costs?.get(s.id)} />
+                </TableCell>
                 <TableCell className="hidden whitespace-nowrap text-right tabular-nums md:table-cell">
                   {s.peakKw != null ? `${formatOneDecimal(s.peakKw)} kW` : '—'}
                 </TableCell>
@@ -107,6 +115,34 @@ export function SessionList({
           </Button>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+// Total incl VAT with the spot share under it. "≈" marks a session priced
+// from its total alone (no hourly values); "—" (with the reason for screen
+// readers and on hover) when a price or the tariff is missing — never 0 kr.
+function SessionCostCell({ cost }: { cost: SessionCost | undefined }) {
+  if (!cost) return <span className="text-muted-foreground">—</span>
+  if (!cost.complete) {
+    return (
+      <span className="text-muted-foreground" title={m.charging_sessions_cost_unknown()}>
+        —<span className="sr-only"> {m.charging_sessions_cost_unknown()}</span>
+      </span>
+    )
+  }
+  return (
+    <div className="flex flex-col items-end">
+      <span title={cost.estimated ? m.charging_sessions_cost_estimated() : undefined}>
+        {cost.estimated ? '≈ ' : null}
+        {formatSek(cost.totalSek, 2)}
+        {cost.estimated ? (
+          <span className="sr-only"> ({m.charging_sessions_cost_estimated()})</span>
+        ) : null}
+      </span>
+      <span className="text-muted-foreground text-xs">
+        {m.charging_sessions_cost_spot({ spot: formatSek(cost.spotSek, 2) })}
+      </span>
     </div>
   )
 }

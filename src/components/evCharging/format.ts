@@ -121,3 +121,17 @@ export function formatDay(day: string): string {
     Date.UTC(y, m - 1, d),
   )
 }
+
+/** Kronor for display: whole kronor by default (tiles), or with öre (sessions). */
+export function formatSek(value: number, fractionDigits = 0): string {
+  const n = new Intl.NumberFormat(getIntlLocale(), {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value)
+  return `${n} kr`
+}
+
+/** An average öre/kWh, whole öre (e.g. "159"). */
+export function formatOre(value: number): string {
+  return new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 0 }).format(value)
+}
