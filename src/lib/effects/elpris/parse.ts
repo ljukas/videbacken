@@ -3,9 +3,11 @@ import type { PriceSlot } from '~/lib/spotPrice/slots'
 import { validateDaySlots } from '~/lib/spotPrice/slots'
 import { ElprisError } from './errors'
 
-/** An ISO-8601 instant with an explicit offset, as elprisetjustnu.se sends it. */
+const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+
+/** A strict ISO-8601 instant with an explicit offset, as elprisetjustnu.se sends it. */
 const instant = z.string().transform((s, ctx) => {
-  const ms = /(?:Z|[+-]\d{2}:\d{2})$/.test(s) ? Date.parse(s) : Number.NaN
+  const ms = ISO_WITH_OFFSET.test(s) ? Date.parse(s) : Number.NaN
   if (Number.isNaN(ms)) {
     ctx.addIssue({ code: 'custom', message: 'not an ISO instant with an offset' })
     return z.NEVER
@@ -49,9 +51,18 @@ export function parseDay(day: string, body: unknown): PriceSlot[] {
   if (mismatched !== -1) {
     throw shapeError(`elpris ${day} slot ${mismatched}: SEK price does not match EUR × EXR`)
   }
-  const slots = result.data.map((row) => ({
+  // Each slot ends where the next begins; the last runs one slot length. The
+  // API's own `time_end` is not used: on a fall-back day it is wrong for the
+  // slot before the clocks go back (02:45+02:00 → "03:00+01:00", i.e. 75 min).
+  // validateDaySlots still checks the day ends at the next local midnight.
+  const rows = result.data
+  const stepMs =
+    rows.length > 1
+      ? rows[1].time_start - rows[0].time_start
+      : rows[0].time_end - rows[0].time_start
+  const slots = rows.map((row, i) => ({
     startMs: row.time_start,
-    endMs: row.time_end,
+    endMs: i + 1 < rows.length ? rows[i + 1].time_start : row.time_start + stepMs,
     sekPerKwh: row.SEK_per_kWh,
   }))
   const problems = validateDaySlots(day, slots)

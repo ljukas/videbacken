@@ -29,7 +29,9 @@ Produced from two architect blueprints (pragmatic / clean) reconciled into a hyb
 
 - `GET https://www.elprisetjustnu.se/api/v1/prices/YYYY/MM-DD_SE3.json` →
   `[{ SEK_per_kWh, EUR_per_kWh, EXR, time_start, time_end }]`, ISO with offset, SEK **ex VAT**, may be ≤ 0.
-- 96 rows/day; **92 / 100 on DST days**; 24 (hourly) before 2025-10-01; data from 2022-11-01.
+- 96 rows/day; **92 / 100 on DST days**; 24 (hourly, 23/25 on DST days) before 2025-10-01; data back to at least 2022.
+- **`time_end` is wrong on fall-back days** (the slot before the switch ends one hour late, e.g. 02:45+02:00 → "03:00+01:00"),
+  so the client derives each slot's end from the next slot's start (found by the C1 adversarial review against live data).
 - Unpublished day (tomorrow before ~13:00 CET) → **404**.
 
 ## Delivery: four PRs, in order (two skeptical reviewers after each)
