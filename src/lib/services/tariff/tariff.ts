@@ -3,7 +3,7 @@ import { db } from '~/lib/db'
 import { isUniqueViolation } from '~/lib/db/pgError'
 import { electricityTariff } from '~/lib/db/schema'
 import { TARIFF_LIMITS, type TariffAmountField } from '~/lib/evCharging/tariff'
-import { addDays } from '~/lib/time/stockholm'
+import { isStockholmDay } from '~/lib/time/stockholm'
 import { TariffDomainError } from './errors'
 
 export type TariffRow = typeof electricityTariff.$inferSelect
@@ -23,11 +23,7 @@ const VALID_FROM_UNIQUE = 'electricity_tariff_valid_from_unique'
 // `TARIFF_LIMITS`), checked first so a bad value is a domain error rather
 // than a constraint violation.
 function validate(input: TariffInput): void {
-  try {
-    addDays(input.validFrom, 0)
-  } catch {
-    throw new TariffDomainError('TARIFF_INVALID_DATE')
-  }
+  if (!isStockholmDay(input.validFrom)) throw new TariffDomainError('TARIFF_INVALID_DATE')
   for (const field of Object.keys(TARIFF_LIMITS) as TariffAmountField[]) {
     const v = input[field]
     const { min, max } = TARIFF_LIMITS[field]

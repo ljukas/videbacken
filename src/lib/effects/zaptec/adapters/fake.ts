@@ -1,3 +1,4 @@
+import { millisecondsInDay, millisecondsInHour } from 'date-fns/constants'
 import type { ChargeInterval, ZaptecSession } from '~/lib/evCharging/types'
 import type { ZaptecClient } from '../zaptec'
 
@@ -5,8 +6,6 @@ import type { ZaptecClient } from '../zaptec'
 // charger; one overnight session per day (22:00Z → 01:00Z, ~11 kW) with a
 // deterministic per-day energy so repeated syncs import identical rows.
 
-const HOUR_MS = 3_600_000
-const DAY_MS = 24 * HOUR_MS
 const CHARGER = {
   id: 'fake-charger-1',
   name: 'Laddbox (fake)',
@@ -15,20 +14,20 @@ const CHARGER = {
 }
 
 function sessionForDay(dayStartMs: number): ZaptecSession {
-  const start = dayStartMs + 22 * HOUR_MS
-  const day = Math.floor(dayStartMs / DAY_MS)
+  const start = dayStartMs + 22 * millisecondsInHour
+  const day = Math.floor(dayStartMs / millisecondsInDay)
   const lastHourKwh = 2 + (day % 7) // 2–8 kWh in the final hour
   const perHour = [10.8, 10.8, lastHourKwh]
   const intervals: ChargeInterval[] = perHour.map((energyKwh, i) => ({
-    startAt: new Date(start + i * HOUR_MS),
-    endAt: new Date(start + (i + 1) * HOUR_MS),
+    startAt: new Date(start + i * millisecondsInHour),
+    endAt: new Date(start + (i + 1) * millisecondsInHour),
     energyKwh,
   }))
   return {
     id: `fake-session-${day}`,
     chargerId: CHARGER.id,
     startAt: new Date(start),
-    endAt: new Date(start + perHour.length * HOUR_MS),
+    endAt: new Date(start + perHour.length * millisecondsInHour),
     energyKwh: perHour.reduce((a, b) => a + b, 0),
     intervals,
     authorizedUser: { email: null, name: 'Fake Owner' },
@@ -48,8 +47,9 @@ export const fake: ZaptecClient = {
     const until = (o.until ?? new Date()).getTime()
     const sessions: ZaptecSession[] = []
     // Start a day early: a session starting the evening before `since` may end after it.
-    for (let day = Math.floor(since.getTime() / DAY_MS) - 1; day * DAY_MS < until; day++) {
-      const s = sessionForDay(day * DAY_MS)
+    const firstDay = Math.floor(since.getTime() / millisecondsInDay) - 1
+    for (let day = firstDay; day * millisecondsInDay < until; day++) {
+      const s = sessionForDay(day * millisecondsInDay)
       if (s.endAt.getTime() >= since.getTime() && s.endAt.getTime() < until) sessions.push(s)
     }
     if (o.stats) o.stats.pages++

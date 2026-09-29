@@ -1,3 +1,4 @@
+import { millisecondsInDay, millisecondsInHour } from 'date-fns/constants'
 import {
   newCallStats,
   type ZaptecCallStats,
@@ -42,17 +43,15 @@ export type SyncRun = RunBase & {
 }
 
 const SOURCE = 'zaptec'
-const HOUR_MS = 60 * 60 * 1000
-const DAY_MS = 24 * HOUR_MS
 /** Re-fetch window before the last success, to catch late/offline sessions. */
-const LOOKBACK_MS = 7 * DAY_MS
+const LOOKBACK_MS = 7 * millisecondsInDay
 const FIRST_RUN_SINCE = new Date('2020-01-01T00:00:00Z')
 // Session fetch windows (ADR-0019): oldest first, each finished window moves
 // the watermark, and one that overflows `MAX_PAGES` is halved and retried.
 /** Longest window. Must exceed `LOOKBACK_MS`, so a window ends past the previous watermark. */
-const WINDOW_MS = 90 * DAY_MS
+const WINDOW_MS = 90 * millisecondsInDay
 /** Shortest window; one this short that still overflows fails the run. */
-const MIN_WINDOW_MS = HOUR_MS
+const MIN_WINDOW_MS = millisecondsInHour
 /** No new window starts once the run is this old; the next run continues. */
 const WINDOW_BUDGET_MS = 120_000
 /** Per installation and window. */

@@ -2,7 +2,7 @@ import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { stockholmYearMonth } from '~/lib/time/stockholm'
+import { stockholmYearBounds, stockholmYearMonth } from '~/lib/time/stockholm'
 import { countedSessionFilter } from './counted'
 
 export type Totals = { kwh: number; sessions: number }
@@ -38,30 +38,23 @@ function toNullableNumber(v: number | string | null): number | null {
   return v == null ? null : Number(v)
 }
 
-// Sweden's Jan 1 00:00 local time is always CET (UTC+1) — DST only runs from
-// the last Sunday of March to the last Sunday of October, so a calendar-year
-// boundary never falls inside it. That makes the UTC instant for a Stockholm
-// year boundary a fixed, Intl-free 1h offset.
-function stockholmYearStartUtc(year: number): Date {
-  return new Date(Date.UTC(year - 1, 11, 31, 23, 0, 0))
-}
-
-// [start, end) UTC instants spanning one Stockholm calendar year, for a
-// sargable `start_at` range filter — never `extract(year from …) = $year`,
-// which can't use the `start_at` index.
-function stockholmYearRangeUtc(year: number): { start: Date; end: Date } {
-  return { start: stockholmYearStartUtc(year), end: stockholmYearStartUtc(year + 1) }
+// [start, end) instants spanning one Stockholm calendar year, for a sargable
+// `start_at` range filter — never `extract(year from …) = $year`, which can't
+// use the `start_at` index.
+function stockholmYearRange(year: number): { start: Date; end: Date } {
+  const { startMs, endMs } = stockholmYearBounds(year)
+  return { start: new Date(startMs), end: new Date(endMs) }
 }
 
 // One (month → Totals) map for a single Stockholm calendar year, scoped by a
-// `start_at` range (see `stockholmYearRangeUtc`). kWh comes from intervals,
+// `start_at` range (see `stockholmYearRange`). kWh comes from intervals,
 // bucketed by each interval's own `start_at` (an overnight session splits its
 // kWh across the months its intervals actually fall in); a session with no
 // intervals falls back to its own `energy_kwh` in the month of its own
 // `start_at`. Session count is always by the session's own `start_at` month,
 // regardless of how its kWh split across months.
 async function monthlyTotals(year: number): Promise<Map<number, Totals>> {
-  const { start, end } = stockholmYearRangeUtc(year)
+  const { start, end } = stockholmYearRange(year)
   const monthOfInterval = sql<number>`extract(month from ${evChargeInterval.startAt} AT TIME ZONE 'Europe/Stockholm')::int`
   const monthOfSession = sql<number>`extract(month from ${evChargeSession.startAt} AT TIME ZONE 'Europe/Stockholm')::int`
 
