@@ -86,6 +86,10 @@
   ],
   "charging_sync_prices_failed": "Elpriserna kunde inte hämtas",
   "charging_sync_skipped": "En synkning pågår redan",
+  "charging_tariff_error_invalid_date": "Ange ett giltigt datum.",
+  "charging_tariff_error_invalid_value": "Ett av beloppen ligger utanför det tillåtna intervallet.",
+  "charging_tariff_error_not_found": "Tariffperioden finns inte längre. Ladda om sidan.",
+  "charging_tariff_error_valid_from_taken": "Det finns redan en tariffperiod som börjar det datumet.",
   "charging_tile_all_time": "Totalt",
   "charging_tile_sessions": [
     {

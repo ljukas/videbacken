@@ -86,6 +86,10 @@
   ],
   "charging_sync_prices_failed": "Electricity prices couldn't be fetched",
   "charging_sync_skipped": "A sync is already running",
+  "charging_tariff_error_invalid_date": "Enter a valid date.",
+  "charging_tariff_error_invalid_value": "One of the amounts is outside the allowed range.",
+  "charging_tariff_error_not_found": "The tariff period no longer exists. Reload the page.",
+  "charging_tariff_error_valid_from_taken": "A tariff period already starts on that date.",
   "charging_tile_all_time": "All time",
   "charging_tile_sessions": [
     {

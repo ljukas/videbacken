@@ -1,0 +1,163 @@
+import {
+  avgOre,
+  type CostTotals,
+  type EnergyInterval,
+  emptyTotals,
+  isComplete,
+  mergeTotals,
+  priceIntervals,
+  SlotIndex,
+  type TariffPeriod,
+} from '~/lib/evCharging/cost'
+import { listSessionEnergy, type SessionEnergy } from '~/lib/services/evCharging'
+import { listSlotsOverlapping } from '~/lib/services/spotPrice'
+import * as tariffService from '~/lib/services/tariff'
+import { SPOT_ZONE } from '~/lib/spotPrice/zones'
+import { stockholmYearMonth } from '~/lib/time/stockholm'
+
+// Server-only. The cost read model (spec "PR D"): the one place that combines
+// session energy, spot slots and tariff periods — each loaded through its own
+// service — and runs the pure cost math over them. Kept apart from the kWh
+// overview so a price/tariff problem can never blank the energy figures.
+
+/** A priced total plus what the UI needs to present it honestly. */
+export type CostSummary = CostTotals & {
+  /** Average öre/kWh incl VAT over the priced energy; null when nothing is priced. */
+  avgOre: number | null
+  /** Every grid kWh is priced — otherwise the UI marks the figure partial. */
+  complete: boolean
+}
+
+export type CostOverview = {
+  year: number
+  tiles: { thisMonth: CostSummary; thisYear: CostSummary; allTime: CostSummary }
+  /** The selected year's 12 Stockholm months, zero-filled. */
+  months: (CostSummary & { month: number })[]
+}
+
+export type SessionCost = CostSummary & { sessionId: string; estimated: boolean }
+
+/** Optional sub-timings sink (the procedure forwards it to `context.timings`). */
+export type CostTimings = {
+  energyMs?: number
+  slotsMs?: number
+  tariffMs?: number
+  costMs?: number
+}
+
+function summarize(t: CostTotals): CostSummary {
+  return { ...t, avgOre: avgOre(t), complete: isComplete(t) }
+}
+
+// Every counted session is bought from the grid for now (gridShare 1) — the
+// seam where a solar/battery source (Emaldo) would supply a real share.
+function toIntervals(session: SessionEnergy): EnergyInterval[] {
+  return session.stretches.map((s) => ({ ...s, gridShare: 1 }))
+}
+
+async function timed<T>(
+  timings: CostTimings | undefined,
+  key: keyof CostTimings,
+  fn: () => Promise<T>,
+) {
+  const start = performance.now()
+  try {
+    return await fn()
+  } finally {
+    if (timings) timings[key] = Math.round(performance.now() - start)
+  }
+}
+
+// Loads the slots overlapping these sessions' windows and all tariff periods,
+// in parallel, as the cost math wants them.
+async function pricingInputs(sessions: SessionEnergy[], timings?: CostTimings) {
+  const ranges = sessions.map((s) => ({
+    startMs: Math.min(s.startAt.getTime(), ...s.stretches.map((x) => x.startMs)),
+    endMs: Math.max(s.endAt.getTime(), ...s.stretches.map((x) => x.endMs)),
+  }))
+  const [slots, tariffs] = await Promise.all([
+    timed(timings, 'slotsMs', () => listSlotsOverlapping(SPOT_ZONE, ranges)),
+    timed(timings, 'tariffMs', () => tariffService.list()),
+  ])
+  const tariffsAsc: TariffPeriod[] = tariffs.map((t) => ({
+    validFrom: t.validFrom,
+    retailMarkupOre: t.retailMarkupOre,
+    gridTransferOre: t.gridTransferOre,
+    energyTaxOre: t.energyTaxOre,
+    vatPercent: t.vatPercent,
+  }))
+  return { index: new SlotIndex(slots), tariffsAsc }
+}
+
+/**
+ * Cost per Stockholm month of `year`, plus this month / this year / all time.
+ * Energy is bucketed by each stretch's own start (an overnight session splits
+ * across months), exactly as the kWh overview buckets it.
+ */
+export async function getCostOverview(input: {
+  year?: number
+  now?: Date
+  timings?: CostTimings
+}): Promise<CostOverview> {
+  const now = input.now ?? new Date()
+  const current = stockholmYearMonth(now.getTime())
+  const year = input.year ?? current.year
+
+  const sessions = await timed(input.timings, 'energyMs', () => listSessionEnergy({ all: true }))
+  const { index, tariffsAsc } = await pricingInputs(sessions, input.timings)
+
+  const costStart = performance.now()
+  // year*100+month → that month's intervals.
+  const buckets = new Map<number, EnergyInterval[]>()
+  for (const session of sessions) {
+    for (const iv of toIntervals(session)) {
+      const { year: y, month } = stockholmYearMonth(iv.startMs)
+      const key = y * 100 + month
+      const list = buckets.get(key) ?? []
+      list.push(iv)
+      buckets.set(key, list)
+    }
+  }
+  const priced = new Map<number, CostTotals>()
+  for (const [key, ivs] of buckets) priced.set(key, priceIntervals(ivs, index, tariffsAsc))
+
+  const monthTotals = (y: number, month: number) => priced.get(y * 100 + month) ?? emptyTotals()
+  const yearTotals = (y: number) =>
+    Array.from({ length: 12 }, (_, i) => monthTotals(y, i + 1)).reduce(mergeTotals, emptyTotals())
+  const allTime = [...priced.values()].reduce(mergeTotals, emptyTotals())
+
+  const overview: CostOverview = {
+    year,
+    tiles: {
+      thisMonth: summarize(monthTotals(current.year, current.month)),
+      thisYear: summarize(yearTotals(current.year)),
+      allTime: summarize(allTime),
+    },
+    months: Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      ...summarize(monthTotals(year, i + 1)),
+    })),
+  }
+  if (input.timings) input.timings.costMs = Math.round(performance.now() - costStart)
+  return overview
+}
+
+/** Cost of specific sessions (the session list's current page). */
+export async function getSessionCosts(input: {
+  sessionIds: readonly string[]
+  timings?: CostTimings
+}): Promise<SessionCost[]> {
+  const sessions = await timed(input.timings, 'energyMs', () =>
+    listSessionEnergy({ sessionIds: input.sessionIds }),
+  )
+  if (sessions.length === 0) return []
+  const { index, tariffsAsc } = await pricingInputs(sessions, input.timings)
+  const costStart = performance.now()
+  const costs = sessions.map((s) => ({
+    sessionId: s.sessionId,
+    estimated: s.estimated,
+    ...summarize(priceIntervals(toIntervals(s), index, tariffsAsc)),
+  }))
+  if (input.timings) input.timings.costMs = Math.round(performance.now() - costStart)
+  return costs
+}

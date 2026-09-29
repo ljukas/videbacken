@@ -2,6 +2,7 @@ import { and, asc, eq, ne } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { isUniqueViolation } from '~/lib/db/pgError'
 import { electricityTariff } from '~/lib/db/schema'
+import { TARIFF_LIMITS, type TariffAmountField } from '~/lib/evCharging/tariff'
 import { addDays } from '~/lib/time/stockholm'
 import { TariffDomainError } from './errors'
 
@@ -18,23 +19,21 @@ export type TariffInput = {
 
 const VALID_FROM_UNIQUE = 'electricity_tariff_valid_from_unique'
 
-// The same bounds as the table's CHECKs, checked first so a bad value is a
-// domain error rather than a constraint violation. Only the retail markup may
-// be negative (a retailer selling below spot).
+// The same bounds as the table's CHECKs (shared with the admin form via
+// `TARIFF_LIMITS`), checked first so a bad value is a domain error rather
+// than a constraint violation.
 function validate(input: TariffInput): void {
   try {
     addDays(input.validFrom, 0)
   } catch {
     throw new TariffDomainError('TARIFF_INVALID_DATE')
   }
-  const within = (v: number, min: number, max: number) => Number.isFinite(v) && v >= min && v <= max
-  if (
-    !within(input.retailMarkupOre, -1000, 1000) ||
-    !within(input.gridTransferOre, 0, 1000) ||
-    !within(input.energyTaxOre, 0, 1000) ||
-    !within(input.vatPercent, 0, 100)
-  ) {
-    throw new TariffDomainError('TARIFF_INVALID_VALUE')
+  for (const field of Object.keys(TARIFF_LIMITS) as TariffAmountField[]) {
+    const v = input[field]
+    const { min, max } = TARIFF_LIMITS[field]
+    if (!(Number.isFinite(v) && v >= min && v <= max)) {
+      throw new TariffDomainError('TARIFF_INVALID_VALUE')
+    }
   }
 }
 

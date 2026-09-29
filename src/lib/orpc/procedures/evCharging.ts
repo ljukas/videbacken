@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ZaptecError, zaptec } from '~/lib/effects/zaptec'
+import { type CostTimings, getCostOverview, getSessionCosts } from '~/lib/evCharging/costing'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { runZaptecSync } from '~/lib/evCharging/sync'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
@@ -38,6 +39,33 @@ export const evChargingRouter = {
       const result = await evChargingService.listSessions({ limit: input.limit })
       if (context.timings) context.timings.sessionsMs = Math.round(performance.now() - startedAt)
       return result
+    }),
+
+  // Cost per month/tile (spot + tariff), kept apart from `overview` so a price
+  // or tariff problem degrades only the cost figures, never the kWh ones.
+  // Several queries + the pure cost math → sub-timings (timing rule).
+  costOverview: protectedProcedure
+    .input(
+      z.object({
+        year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const timings: CostTimings = {}
+      const overview = await getCostOverview({ year: input.year, timings })
+      recordCostTimings(context.timings, timings)
+      return overview
+    }),
+
+  // Cost of the sessions on the list's current page (the client passes the
+  // ids it shows, capped like `sessions`' limit).
+  sessionCosts: protectedProcedure
+    .input(z.object({ sessionIds: z.array(z.uuid()).max(500) }))
+    .handler(async ({ input, context }) => {
+      const timings: CostTimings = {}
+      const costs = await getSessionCosts({ sessionIds: input.sessionIds, timings })
+      recordCostTimings(context.timings, timings)
+      return costs
     }),
 
   // `includeAdminDetail` is a flag derived from the caller's own role, never
@@ -109,4 +137,13 @@ export const evChargingRouter = {
     }
     return { outcome: run.outcome, code: run.code, upserted: run.upserted }
   }),
+}
+
+// Copies the cost read model's sub-timings into the request's timing line
+// under `cost*` labels (e.g. `slotsMs` → `costSlotsMs`).
+function recordCostTimings(timings: Record<string, number> | undefined, cost: CostTimings): void {
+  if (!timings) return
+  for (const [key, ms] of Object.entries(cost)) {
+    timings[`cost${key.charAt(0).toUpperCase()}${key.slice(1)}`] = ms
+  }
 }
