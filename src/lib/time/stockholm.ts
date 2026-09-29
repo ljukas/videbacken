@@ -4,12 +4,11 @@
 // epoch ms. DST-aware via @date-fns/tz — a Stockholm day is 23, 24 or 25 hours
 // long.
 import { TZDate, tz } from '@date-fns/tz'
-import { addDays as addCalendarDays, format, startOfMonth } from 'date-fns'
+import { addDays as addCalendarDays, formatISO, startOfMonth } from 'date-fns'
 
 /** The IANA zone, for formatters that take one (Intl `timeZone`). */
 export const STOCKHOLM_TIME_ZONE = 'Europe/Stockholm'
 const inStockholm = tz(STOCKHOLM_TIME_ZONE)
-const DAY_FORMAT = 'yyyy-MM-dd'
 const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/
 
 /**
@@ -34,6 +33,13 @@ function midnightOf(day: string): TZDate {
   return midnight
 }
 
+// The Stockholm 'YYYY-MM-DD' of an instant. formatISO rather than format():
+// the same string, without pulling date-fns' locale-aware formatter into the
+// client bundle.
+function toDay(date: Date | number): string {
+  return formatISO(date, { representation: 'date', in: inStockholm })
+}
+
 /** Whether `day` is a real 'YYYY-MM-DD' day in 1970–2999 (the days the helpers accept). */
 export function isStockholmDay(day: string): boolean {
   return parseDay(day) !== null
@@ -41,12 +47,12 @@ export function isStockholmDay(day: string): boolean {
 
 /** The Stockholm calendar day the instant falls in. */
 export function stockholmDayOf(ms: number): string {
-  return format(ms, DAY_FORMAT, { in: inStockholm })
+  return toDay(ms)
 }
 
 /** The first day of the Stockholm calendar month the instant falls in. */
 export function stockholmFirstOfMonth(ms: number): string {
-  return format(startOfMonth(ms, { in: inStockholm }), DAY_FORMAT)
+  return toDay(startOfMonth(ms, { in: inStockholm }))
 }
 
 /** The Stockholm calendar year/month (1-based) the instant falls in. */
@@ -57,7 +63,7 @@ export function stockholmYearMonth(ms: number): { year: number; month: number } 
 
 /** `day` shifted by `n` calendar days (calendar arithmetic; DST never shifts it). */
 export function addDays(day: string, n: number): string {
-  return format(addCalendarDays(midnightOf(day), n), DAY_FORMAT)
+  return toDay(addCalendarDays(midnightOf(day), n))
 }
 
 /** `[startMs, endMs)` of a Stockholm calendar day — 23, 24 or 25 h long. */
