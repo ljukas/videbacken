@@ -9,6 +9,7 @@ import {
   timeDomain,
   toDeviceSeries,
   valueRange,
+  type YScale,
 } from './chartData'
 
 // A tick step is "nice" when it is 1, 2, or 5 × 10ⁿ — the increments axes read in.
@@ -64,6 +65,304 @@ describe('niceYScale', () => {
       expect(niceFractionOf(step)).toBeCloseTo(Math.round(niceFractionOf(step)))
       expect([1, 2, 5]).toContain(Math.round(niceFractionOf(step)))
     }
+  })
+})
+
+// Characterization: pins what niceYScale returns TODAY (domain, ticks, decimals)
+// across a spread of inputs, so a change to the tick maths (e.g. swapping in a
+// library) can prove it is behavior-preserving. These are captured outputs, not
+// a spec — a deliberate behavior change updates them in its own commit.
+describe('niceYScale characterization', () => {
+  it.each<[string, number, number, number | undefined, YScale]>([
+    // tiny ranges
+    [
+      'narrow sub-degree',
+      24.49,
+      24.6,
+      undefined,
+      {
+        domain: [24.45, 24.6],
+        ticks: [24.45, 24.5, 24.55, 24.6],
+        decimals: 2,
+      },
+    ],
+    [
+      'hundredths',
+      24.5,
+      24.52,
+      undefined,
+      {
+        domain: [24.5, 24.52],
+        ticks: [24.5, 24.505, 24.51, 24.515, 24.52],
+        decimals: 3,
+      },
+    ],
+    // Engine-dependent, pinned as V8 (Node/Chrome) computes it: V8's `10 ** -4`
+    // and `10 ** -5` are 1 ulp low, so niceStep rounds a raw 5e-4 / 1e-5 step UP
+    // one notch (JavaScriptCore/Bun gives 0.0005 / 0.00001 steps instead).
+    [
+      'thousandths',
+      0.001,
+      0.003,
+      undefined,
+      {
+        domain: [0.001, 0.003],
+        ticks: [0.001, 0.002, 0.003],
+        decimals: 3,
+      },
+    ],
+    [
+      'ten-thousandths',
+      0,
+      0.00004,
+      undefined,
+      {
+        domain: [0, 0.00006],
+        ticks: [0, 0.00002, 0.00004, 0.00006],
+        decimals: 5,
+      },
+    ],
+    // below the 6-decimal cap the ticks collapse — pinned as-is, not endorsed
+    [
+      'sub-cap noise',
+      24.5,
+      24.5000001,
+      undefined,
+      {
+        domain: [24.5, 24.5],
+        ticks: [24.5, 24.5, 24.5, 24.5],
+        decimals: 6,
+      },
+    ],
+    // fractional steps
+    [
+      'half-degree step',
+      21.3,
+      22.1,
+      undefined,
+      {
+        domain: [21, 22.5],
+        ticks: [21, 21.5, 22, 22.5],
+        decimals: 1,
+      },
+    ],
+    [
+      'tenths step',
+      0.1,
+      0.35,
+      undefined,
+      {
+        domain: [0.1, 0.4],
+        ticks: [0.1, 0.2, 0.3, 0.4],
+        decimals: 1,
+      },
+    ],
+    [
+      'one-unit band',
+      42,
+      43,
+      undefined,
+      {
+        domain: [42, 43],
+        ticks: [42, 42.5, 43],
+        decimals: 1,
+      },
+    ],
+    [
+      'hundredths step',
+      1,
+      1.1,
+      undefined,
+      {
+        domain: [1, 1.1],
+        ticks: [1, 1.05, 1.1],
+        decimals: 2,
+      },
+    ],
+    // negative ranges (sub-zero temperatures)
+    [
+      'all negative',
+      -12.3,
+      -4.1,
+      undefined,
+      {
+        domain: [-15, 0],
+        ticks: [-15, -10, -5, 0],
+        decimals: 0,
+      },
+    ],
+    [
+      'deep negative',
+      -25,
+      -18.5,
+      undefined,
+      {
+        domain: [-26, -18],
+        ticks: [-26, -24, -22, -20, -18],
+        decimals: 0,
+      },
+    ],
+    // ranges crossing 0
+    [
+      'crossing 0',
+      -3.2,
+      4.8,
+      undefined,
+      {
+        domain: [-4, 6],
+        ticks: [-4, -2, 0, 2, 4, 6],
+        decimals: 0,
+      },
+    ],
+    [
+      'crossing 0, fractional',
+      -0.4,
+      0.3,
+      undefined,
+      {
+        domain: [-0.4, 0.4],
+        ticks: [-0.4, -0.2, 0, 0.2, 0.4],
+        decimals: 1,
+      },
+    ],
+    [
+      'wide crossing 0',
+      -10,
+      30,
+      undefined,
+      {
+        domain: [-10, 30],
+        ticks: [-10, 0, 10, 20, 30],
+        decimals: 0,
+      },
+    ],
+    [
+      'sensor full scale',
+      -40,
+      85,
+      undefined,
+      {
+        domain: [-50, 100],
+        ticks: [-50, 0, 50, 100],
+        decimals: 0,
+      },
+    ],
+    // a single value (flat series → padded 1-unit band)
+    [
+      'flat positive',
+      24.5,
+      24.5,
+      undefined,
+      {
+        domain: [24, 25],
+        ticks: [24, 24.5, 25],
+        decimals: 1,
+      },
+    ],
+    [
+      'flat zero',
+      0,
+      0,
+      undefined,
+      {
+        domain: [-0.5, 0.5],
+        ticks: [-0.5, 0, 0.5],
+        decimals: 1,
+      },
+    ],
+    [
+      'flat negative',
+      -5,
+      -5,
+      undefined,
+      {
+        domain: [-5.5, -4.5],
+        ticks: [-5.5, -5, -4.5],
+        decimals: 1,
+      },
+    ],
+    // large values
+    [
+      'hundreds',
+      980,
+      1030,
+      undefined,
+      {
+        domain: [980, 1040],
+        ticks: [980, 1000, 1020, 1040],
+        decimals: 0,
+      },
+    ],
+    [
+      'tens of thousands',
+      12000,
+      56000,
+      undefined,
+      {
+        domain: [0, 60000],
+        ticks: [0, 20000, 40000, 60000],
+        decimals: 0,
+      },
+    ],
+    // humidity
+    [
+      'humidity 0–100',
+      0,
+      100,
+      undefined,
+      {
+        domain: [0, 100],
+        ticks: [0, 50, 100],
+        decimals: 0,
+      },
+    ],
+    [
+      'humidity indoor',
+      35.2,
+      68.9,
+      undefined,
+      {
+        domain: [30, 70],
+        ticks: [30, 40, 50, 60, 70],
+        decimals: 0,
+      },
+    ],
+    [
+      'indoor temperature',
+      18.7,
+      26.4,
+      undefined,
+      {
+        domain: [18, 28],
+        ticks: [18, 20, 22, 24, 26, 28],
+        decimals: 0,
+      },
+    ],
+    // explicit target counts
+    [
+      'targetCount 3',
+      3,
+      5,
+      3,
+      {
+        domain: [3, 5],
+        ticks: [3, 4, 5],
+        decimals: 0,
+      },
+    ],
+    [
+      'targetCount 11',
+      0,
+      100,
+      11,
+      {
+        domain: [0, 100],
+        ticks: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+        decimals: 0,
+      },
+    ],
+  ])('%s: [%d, %d]', (_label, min, max, targetCount, expected) => {
+    expect(niceYScale(min, max, targetCount)).toEqual(expected)
   })
 })
 
