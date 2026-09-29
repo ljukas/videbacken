@@ -12,8 +12,8 @@ if (!connectionString) {
 
 // In tests: pin to one connection so the `SET search_path` issued in
 // `test/setup.ts` persists across every drizzle query and transaction. Local
-// tests run against a plain Postgres container (Neon Local paused — see
-// compose.yaml + vite.config.ts), so there's no pooler: connections are direct
+// tests run against a plain Postgres container (see compose.yaml +
+// vite.config.ts), so there's no pooler: connections are direct
 // sessions and the single pinned connection (`max: 1`) keeps the SET alive.
 const client = postgres(connectionString, {
   prepare: false,

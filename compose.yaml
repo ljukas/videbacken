@@ -1,52 +1,23 @@
 services:
   db:
-    # Local dev DB — plain Postgres. Neon Local is PAUSED to avoid free-tier
-    # branch storage (it created one persistent ~32 MB cloud branch per local
-    # git branch). Same port/creds/db-name as Neon Local so URLs barely change.
-    # To re-enable Neon Local: uncomment the block below, delete this service +
-    # the `db_data` volume, restore `?sslmode=require` in .env, and restore
-    # `neondb_session?sslmode=require` in vite.config.ts (TEST_DATABASE_URL).
+    # Local dev DB — plain Postgres, no SSL. Credentials match .env.example,
+    # vite.config.ts (TEST_DATABASE_URL) and the CI service in ci.yml.
     image: postgres:17-alpine
     ports:
       - "14620:5432"
     environment:
-      POSTGRES_USER: neon
-      POSTGRES_PASSWORD: npg
-      POSTGRES_DB: neondb
+      POSTGRES_USER: videbacken
+      POSTGRES_PASSWORD: videbacken
+      POSTGRES_DB: videbacken
     volumes:
       - db_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U neon -d neondb"]
+      test: ["CMD-SHELL", "pg_isready -U videbacken -d videbacken"]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 5s
-  # --- PAUSED: Neon Local (re-enable per the comment on the `db` service above)
-  # db:
-  #   image: neondatabase/neon_local:v1.5
-  #   ports:
-  #     - "14620:5432"
-  #   environment:
-  #     NEON_API_KEY: ${NEON_API_KEY}
-  #     NEON_PROJECT_ID: ${NEON_PROJECT_ID}
-  #     PARENT_BRANCH_ID: ${PARENT_BRANCH_ID}
-  #   volumes:
-  #     # Persist Neon Local's branch metadata so `down`/`up` reuses the same
-  #     # upstream branch instead of creating a fresh one. Combined with the
-  #     # git/HEAD mount below, each local git branch gets its own persistent
-  #     # Neon branch. These accumulate (~32 MB each against the 512 MB free
-  #     # tier) — `bun run neon:prune` deletes the ones whose git branch is gone.
-  #     - ./.neon_local:/tmp/.neon_local
-  #     - ./.git/HEAD:/tmp/.git/HEAD:ro
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -h localhost -U neon"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 12
-  #     start_period: 10s
-  # --- end PAUSED Neon Local
   queue:
     # Local-dev broker for the blurhash queue. Producers go through the
     # bullmqQueue adapter; consumed by `bun run dev:worker`. Mirrors the
