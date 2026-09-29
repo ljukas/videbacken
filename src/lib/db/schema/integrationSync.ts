@@ -91,7 +91,7 @@ export const integrationSync = pgTable(
       sql`(${table.leaseUntil} IS NULL) = (${table.leaseToken} IS NULL)`,
     ),
   ],
-)
+).enableRLS()
 
 // Append-only history: one row per sync attempt, for the health dashboard and
 // debugging. Never updated after insert.
@@ -142,4 +142,4 @@ export const integrationSyncRun = pgTable(
       sql`(${table.outcome} = 'ok') = (${table.errorCode} IS NULL)`,
     ),
   ],
-)
+).enableRLS()

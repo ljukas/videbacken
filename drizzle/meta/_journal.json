@@ -36,6 +36,13 @@
       "when": 1790655309868,
       "tag": "0004_integration_sync_alerted_at_and_charger_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790659227752,
+      "tag": "0005_enable_row_level_security",
+      "breakpoints": true
     }
   ]
 }

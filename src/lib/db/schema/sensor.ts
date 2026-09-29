@@ -14,7 +14,7 @@ export const sensorDevice = pgTable('sensor_device', {
   batteryPct: integer('battery_pct'),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}).enableRLS()
 
 // One snapshot row per webhook: every Shelly webhook carries both current temp
 // and humidity via status-placeholders, so both columns are normally populated.
@@ -48,7 +48,7 @@ export const sensorReading = pgTable(
       sql`${table.batteryPct} IS NULL OR ${table.batteryPct} BETWEEN 0 AND 100`,
     ),
   ],
-)
+).enableRLS()
 
 export const sensorDeviceRelations = relations(sensorDevice, ({ many }) => ({
   readings: many(sensorReading),

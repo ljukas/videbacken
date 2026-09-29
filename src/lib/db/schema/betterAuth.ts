@@ -31,7 +31,7 @@ export const user = pgTable("user", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   imageBlurhash: text("image_blurhash"),
   onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
-});
+}).enableRLS();
 
 export const session = pgTable(
   "session",
@@ -53,7 +53,7 @@ export const session = pgTable(
     impersonatedBy: text("impersonated_by"),
   },
   (table) => [index("session_userId_idx").on(table.userId)],
-);
+).enableRLS();
 
 export const account = pgTable(
   "account",
@@ -79,7 +79,7 @@ export const account = pgTable(
       .notNull(),
   },
   (table) => [index("account_userId_idx").on(table.userId)],
-);
+).enableRLS();
 
 export const verification = pgTable(
   "verification",
@@ -97,7 +97,7 @@ export const verification = pgTable(
       .notNull(),
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
-);
+).enableRLS();
 
 export const rateLimit = pgTable("rate_limit", {
   id: uuid("id")
@@ -106,7 +106,7 @@ export const rateLimit = pgTable("rate_limit", {
   key: text("key").notNull().unique(),
   count: integer("count").notNull(),
   lastRequest: bigint("last_request", { mode: "number" }).notNull(),
-});
+}).enableRLS();
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),

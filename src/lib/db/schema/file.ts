@@ -27,7 +27,7 @@ export const file = pgTable(
     index('file_access_idx').on(table.access),
     check('file_size_bytes_nonneg_check', sql`${table.sizeBytes} >= 0`),
   ],
-)
+).enableRLS()
 
 export const fileRelations = relations(file, ({ one }) => ({
   owner: one(user, {
