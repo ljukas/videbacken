@@ -20,7 +20,20 @@ for (const locale of LOCALES) {
   test.each(
     INTEGRATION_ERROR_CODES,
   )(`integrationErrorMessage returns a non-empty ${locale} string for %s`, (code) => {
-    expect(integrationErrorMessage(code, { locale }).length).toBeGreaterThan(0)
+    for (const source of INTEGRATION_SOURCES) {
+      expect(integrationErrorMessage(code, { source, locale }).length).toBeGreaterThan(0)
+    }
+  })
+
+  test.each(
+    INTEGRATION_ERROR_CODES,
+  )(`integrationErrorMessage (${locale}) never names another source for %s`, (code) => {
+    for (const source of INTEGRATION_SOURCES) {
+      const message = integrationErrorMessage(code, { source, locale })
+      for (const other of INTEGRATION_SOURCES.filter((s) => s !== source)) {
+        expect(message).not.toContain(integrationSourceName(other))
+      }
+    }
   })
 
   test.each(
@@ -29,3 +42,9 @@ for (const locale of LOCALES) {
     expect(integrationHealthTitle(state, { locale }).length).toBeGreaterThan(0)
   })
 }
+
+test('an elpris failure names elprisetjustnu.se, not Zaptec', () => {
+  const message = integrationErrorMessage('unreachable', { source: 'elpris', locale: 'sv' })
+  expect(message).toContain('elprisetjustnu.se')
+  expect(message).not.toContain('Zaptec')
+})

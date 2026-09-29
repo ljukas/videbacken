@@ -34,8 +34,8 @@ export const IntegrationSyncAlertEmail = ({
   const isFailing = transition === 'started_failing'
 
   // Heading doubles as the email subject (see `renderIntegrationSyncAlert`
-  // below) — for the `zaptec` source this renders exactly "Zaptec-synkningen
-  // fungerar inte" / "Zaptec-synkningen fungerar igen" per the copy spec.
+  // below) — e.g. "Synkningen mot Zaptec fungerar inte" / "… fungerar igen".
+  // "Synkningen mot {source}" reads for a product name and a domain alike.
   const heading = isFailing
     ? m.email_integration_sync_heading_failing({ source: sourceName }, { locale })
     : m.email_integration_sync_heading_recovered({ source: sourceName }, { locale })
@@ -43,7 +43,8 @@ export const IntegrationSyncAlertEmail = ({
   const intro = isFailing
     ? m.email_integration_sync_body_failing({ source: sourceName }, { locale })
     : m.email_integration_sync_body_recovered({ source: sourceName }, { locale })
-  const body = isFailing && code ? `${intro} ${integrationErrorMessage(code, { locale })}` : intro
+  const body =
+    isFailing && code ? `${intro} ${integrationErrorMessage(code, { source, locale })}` : intro
 
   const preview = isFailing
     ? m.email_integration_sync_preview_failing({ source: sourceName }, { locale })

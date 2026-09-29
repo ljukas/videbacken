@@ -31,24 +31,30 @@ export function integrationSourceName(source: IntegrationSource): string {
   }
 }
 
+/**
+ * The admin-facing explanation of a failure code, naming the source — the same
+ * code means the same thing for every integration, only the name differs. The
+ * source is required so no caller can fall back to one integration's wording.
+ */
 export function integrationErrorMessage(
   code: IntegrationErrorCode,
-  options?: { locale?: Locale },
+  options: { source: IntegrationSource; locale?: Locale },
 ): string {
-  const opts = { locale: options?.locale }
+  const opts = { locale: options.locale }
+  const source = integrationSourceName(options.source)
   switch (code) {
     case 'auth_failed':
-      return m.integration_health_error_auth_failed({}, opts)
+      return m.integration_health_error_auth_failed({ source }, opts)
     case 'forbidden':
-      return m.integration_health_error_forbidden({}, opts)
+      return m.integration_health_error_forbidden({ source }, opts)
     case 'rate_limited':
-      return m.integration_health_error_rate_limited({}, opts)
+      return m.integration_health_error_rate_limited({ source }, opts)
     case 'unreachable':
-      return m.integration_health_error_unreachable({}, opts)
+      return m.integration_health_error_unreachable({ source }, opts)
     case 'unexpected_response':
-      return m.integration_health_error_unexpected_response({}, opts)
+      return m.integration_health_error_unexpected_response({ source }, opts)
     case 'not_configured':
-      return m.integration_health_error_not_configured({}, opts)
+      return m.integration_health_error_not_configured({ source }, opts)
     case 'internal_error':
       return m.integration_health_error_internal_error({}, opts)
   }
