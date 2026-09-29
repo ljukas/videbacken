@@ -354,6 +354,19 @@ describe('dayPrices', () => {
     for (const row of apiDay()) expect(error.message).not.toContain(String(row.SEK_per_kWh))
   })
 
+  test('the shape message names the root, and at most 10 distinct paths then a count', async () => {
+    const root = client({ [ROUTE]: () => jsonResponse({ prices: apiDay() }) })
+    expect((await rejection(root.c.dayPrices(DAY, 'SE3'))).message).toBe(
+      `elpris ${DAY} response has an unexpected shape at: (root)`,
+    )
+    const rows = apiDay().map(({ SEK_per_kWh: _sek, ...rest }) => rest)
+    const many = client({ [ROUTE]: () => jsonResponse(rows) })
+    const shown = Array.from({ length: 10 }, (_, i) => `${i}.SEK_per_kWh`).join(', ')
+    expect((await rejection(many.c.dayPrices(DAY, 'SE3'))).message).toBe(
+      `elpris ${DAY} response has an unexpected shape at: ${shown} (+86 more)`,
+    )
+  })
+
   // Date.parse rolls these over (Feb 30 → Mar 2, 24:00 → next midnight), and a
   // single odd `time_end` is otherwise tolerated as the fall-back slot.
   test.each([
