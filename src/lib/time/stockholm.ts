@@ -39,8 +39,16 @@ function localParts(ms: number) {
 
 function parseDay(day: string): { y: number; m: number; d: number } {
   const match = DAY_RE.exec(day)
-  if (!match) throw new RangeError(`Not a YYYY-MM-DD day: ${day}`)
-  return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]) }
+  const y = Number(match?.[1])
+  const m = Number(match?.[2])
+  const d = Number(match?.[3])
+  // Round-trip through Date.UTC so an impossible date (2025-02-30) is rejected
+  // rather than rolled over into the next month.
+  const date = new Date(Date.UTC(y, m - 1, d))
+  if (!match || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+    throw new RangeError(`Not a YYYY-MM-DD day: ${day}`)
+  }
+  return { y, m, d }
 }
 
 /** The Stockholm calendar day the instant falls in. */

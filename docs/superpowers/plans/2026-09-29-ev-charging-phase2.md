@@ -90,6 +90,7 @@ Reviewers: `code-reviewer` + error-mapping/no-payload-leak adversary.
 
 ### Task D1 — composer + cost/tariff procedures
 `src/lib/evCharging/costing.ts`, `costOverview`, `sessionCosts`, `tariff.*` + mappers. Parity test (cost kWh == overview kWh).
+`overview.ts` switches to the shared `stockholmYearMonth` from `~/lib/time/stockholm` (drop its private copy) so both bucket months identically.
 Reviewers: `code-reviewer` + `test-completeness`.
 
 ### Task D2 — form fields + tariff UI

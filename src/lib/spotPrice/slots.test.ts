@@ -38,7 +38,7 @@ describe('validateDaySlots', () => {
     )
 
     const odd = slots.map((s, i) => (i === 3 ? { ...s, endMs: s.endMs - 60_000 } : s))
-    expect(validateDaySlots('2026-09-28', odd)).toContain('slot 3 is not 15 or 60 minutes long')
+    expect(validateDaySlots('2026-09-28', odd)).toContain('slot 3 differs in length from slot 0')
   })
 
   test('rejects slots for another day (UTC-midnight aligned)', () => {
@@ -53,11 +53,35 @@ describe('validateDaySlots', () => {
   })
 
   test('rejects non-finite and implausible prices without echoing them', () => {
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 250, -50]) {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 250, -150]) {
       const slots = daySlots('2026-09-28', 15, (i) => (i === 7 ? bad : 1))
       const problems = validateDaySlots('2026-09-28', slots)
       expect(problems).toEqual(['slot 7 has an implausible price'])
       expect(problems.join(' ')).not.toContain(String(bad))
     }
   })
+})
+
+test('accepts an extreme but real price spike (the market cap can rise)', () => {
+  const slots = daySlots('2026-09-28', 15, (i) => (i === 70 ? 66 : 1)) // ≈ 6000 EUR/MWh
+  expect(validateDaySlots('2026-09-28', slots)).toEqual([])
+})
+
+test('rejects a day mixing slot lengths, and one with a wrong base length', () => {
+  const hourly = daySlots('2026-09-28', 60)
+  const quarter = daySlots('2026-09-28', 15)
+  const mixed = [...quarter.slice(0, 4), ...hourly.slice(1)]
+  expect(validateDaySlots('2026-09-28', mixed)).toContain('slot 4 differs in length from slot 0')
+
+  const thirty = quarter
+    .filter((_, i) => i % 2 === 0)
+    .map((s) => ({ ...s, endMs: s.startMs + 30 * 60_000 }))
+  expect(validateDaySlots('2026-09-28', thirty)).toContain('slots are not 15 or 60 minutes long')
+})
+
+test('caps the problem list', () => {
+  const garbage = daySlots('2026-09-28', 15, () => Number.NaN)
+  const problems = validateDaySlots('2026-09-28', garbage)
+  expect(problems).toHaveLength(6)
+  expect(problems.at(-1)).toBe('and 91 more')
 })

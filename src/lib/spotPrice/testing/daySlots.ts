@@ -1,5 +1,5 @@
-import { stockholmDayBounds } from '../../time/stockholm'
-import type { PriceSlot } from '../slots'
+import type { PriceSlot } from '~/lib/spotPrice/slots'
+import { stockholmDayBounds } from '~/lib/time/stockholm'
 
 /**
  * Synthetic slots covering Stockholm `day` — test fixtures only. `price(i)`

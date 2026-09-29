@@ -1,6 +1,8 @@
 // Dependency-free, client-safe cost math (no db import). The composer that
 // feeds it lives server-side; Phase 4 counterfactuals reuse it over
 // hypothetical intervals.
+
+export type { PriceSlot } from '~/lib/spotPrice/slots'
 export {
   avgOre,
   type CostTotals,

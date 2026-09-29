@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { daySlots } from '../../spotPrice/testing/daySlots'
+import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import {
   avgOre,
   type EnergyInterval,
@@ -139,10 +139,13 @@ describe('priceIntervals', () => {
 
   test('conserves kWh: priced + missing always equals grid kWh', () => {
     // Deterministic pseudo-random intervals over two days with a hole in prices.
+    // mulberry32: exact 32-bit integer steps, so the sequence is stable.
     let seed = 42
     const rand = () => {
-      seed = (seed * 1103515245 + 12345) % 2 ** 31
-      return seed / 2 ** 31
+      seed = (seed + 0x6d2b79f5) | 0
+      let x = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x
+      return ((x ^ (x >>> 14)) >>> 0) / 2 ** 32
     }
     const slots = new SlotIndex([
       ...daySlots('2026-09-28', 15, (i) => i / 20).filter((_, i) => i < 50 || i > 60),
@@ -160,6 +163,30 @@ describe('priceIntervals', () => {
     })
     const t = priceIntervals(ivs, slots, [{ ...TARIFF, validFrom: '2026-09-29' }])
     expect(t.fullKwh + t.noPriceKwh + t.noTariffKwh).toBeCloseTo(t.gridKwh, 9)
+  })
+})
+
+describe('priceIntervals input and completeness guards', () => {
+  const idx = new SlotIndex(daySlots('2026-09-28', 15))
+
+  test.each([
+    ['negative kWh', { kwh: -1 }],
+    ['NaN kWh', { kwh: Number.NaN }],
+    ['gridShare above 1', { gridShare: 2 }],
+    ['negative gridShare', { gridShare: -0.1 }],
+    ['NaN gridShare', { gridShare: Number.NaN }],
+    ['NaN start', { startMs: Number.NaN }],
+  ])('rejects %s', (_, override) => {
+    const bad = { ...iv('2026-09-28T08:00Z', '2026-09-28T09:00Z', 1), ...override }
+    expect(() => priceIntervals([bad], idx, [TARIFF])).toThrow(RangeError)
+  })
+
+  test('overlapping slots that double-count energy are not complete', () => {
+    const dup = daySlots('2026-09-28', 60)
+    const doubled = new SlotIndex([...dup, dup[8]])
+    const t = priceIntervals([iv('2026-09-28T06:00Z', '2026-09-28T07:00Z', 10)], doubled, [TARIFF])
+    expect(t.fullKwh).toBeGreaterThan(t.gridKwh)
+    expect(isComplete(t)).toBe(false)
   })
 })
 

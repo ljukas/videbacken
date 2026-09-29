@@ -1,4 +1,4 @@
-import { stockholmDayOf } from '../../time/stockholm'
+import { stockholmDayOf } from '~/lib/time/stockholm'
 import type { SlotIndex } from './slotIndex'
 
 /**
@@ -71,9 +71,12 @@ export function mergeTotals(a: CostTotals, b: CostTotals): CostTotals {
 /** Float tolerance for "no grid kWh is missing a price or tariff". */
 const COMPLETE_EPSILON_KWH = 1e-6
 
-/** Every grid kWh is priced. */
+/**
+ * Every grid kWh is priced — exactly once. A priced total above the grid total
+ * means overlapping slots double-counted energy, which is not complete either.
+ */
 export function isComplete(t: CostTotals): boolean {
-  return t.gridKwh - t.fullKwh <= COMPLETE_EPSILON_KWH
+  return Math.abs(t.gridKwh - t.fullKwh) <= COMPLETE_EPSILON_KWH
 }
 
 /** Average öre/kWh incl VAT over the priced energy; null when nothing is priced. */
@@ -106,6 +109,7 @@ export function priceIntervals(
 ): CostTotals {
   const t = emptyTotals()
   for (const iv of intervals) {
+    assertValidInterval(iv)
     const durationMs = iv.endMs - iv.startMs
     const gridKwh = iv.kwh * iv.gridShare
     t.kwh += iv.kwh
@@ -138,4 +142,18 @@ export function priceIntervals(
     t.noPriceKwh += (gridKwh * (durationMs - Math.min(coveredMs, durationMs))) / durationMs
   }
   return t
+}
+
+// Stored energy is CHECK-constrained non-negative and finite, so a bad value
+// here is a caller bug: fail loudly rather than let one NaN poison every sum.
+function assertValidInterval(iv: EnergyInterval): void {
+  if (
+    !Number.isFinite(iv.startMs) ||
+    !Number.isFinite(iv.endMs) ||
+    !Number.isFinite(iv.kwh) ||
+    iv.kwh < 0 ||
+    !(iv.gridShare >= 0 && iv.gridShare <= 1)
+  ) {
+    throw new RangeError('Invalid energy interval')
+  }
 }

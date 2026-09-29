@@ -1,4 +1,4 @@
-import type { PriceSlot } from '../../spotPrice/slots'
+import type { PriceSlot } from '~/lib/spotPrice/slots'
 
 /**
  * Spot price slots sorted by start, for overlap lookups. Assumes slots don't
