@@ -1,4 +1,5 @@
 import type { ZaptecLiveState } from '~/lib/evCharging/types'
+import { discard, networkCause, retryAfterMs } from '../http'
 import { ZaptecError, type ZaptecOp } from './errors'
 import {
   parse,
@@ -99,8 +100,9 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
 
       if (res.ok || !o.retryStatuses.has(res.status)) return res
 
-      const retryAfter = retryAfterMs(res.headers.get('Retry-After'))
+      const retryAfter = retryAfterMs(res.headers.get('Retry-After'), now().getTime())
       if (retryAfter !== null && retryAfter > MAX_RETRY_AFTER_MS) {
+        await discard(res)
         throw new ZaptecError(res.status === 429 ? 'rate_limited' : 'unreachable', o.op, res.status)
       }
       if (!canRetry) return res
@@ -117,14 +119,6 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
   async function backoff(attempt: number, stats: ZaptecCallStats) {
     stats.retries++
     await sleep(BACKOFF_MS[attempt] * (0.8 + 0.4 * random()))
-  }
-
-  function retryAfterMs(header: string | null): number | null {
-    if (header === null || header.trim() === '') return null
-    const trimmed = header.trim()
-    if (/^\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed) * 1000
-    const at = Date.parse(trimmed)
-    return Number.isNaN(at) ? null : Math.max(0, at - now().getTime())
   }
 
   /**
@@ -374,25 +368,4 @@ async function oauthErrorCode(res: Response): Promise<string | null> {
   } catch {
     return null
   }
-}
-
-async function discard(res: Response) {
-  try {
-    await res.body?.cancel()
-  } catch {
-    // ignore — the body is unused
-  }
-}
-
-/** Keeps only a network error's `name` and `code` — its message may echo the request. */
-function networkCause(err: unknown): { name: string; code?: string } {
-  const e = err as { name?: unknown; code?: unknown; cause?: { code?: unknown } } | null
-  const name = typeof e?.name === 'string' ? e.name : 'Error'
-  const code =
-    typeof e?.code === 'string'
-      ? e.code
-      : typeof e?.cause?.code === 'string'
-        ? e.cause.code
-        : undefined
-  return code === undefined ? { name } : { name, code }
 }

@@ -77,6 +77,8 @@ slot reads for many intervals join against `unnest($starts, $ends)` rather than 
 ### Task C1 — elpris effect
 `src/lib/effects/elpris/` (selector, http client with ADR-0019 retry/timeout, zod parse, errors, notConfigured, fakeFetch tests).
 Parser validates units/range (SEK ≈ EUR × EXR; within market limits) → `unexpected_response`, never a DB CHECK error.
+Follow-up (not in Phase 2): the Zaptec client reads bodies outside its retry loop too, so a connection dropped
+mid-body is `unexpected_response` rather than a retried `unreachable` — port the elpris fix when Škoda lands.
 Reviewers: `code-reviewer` + error-mapping/no-payload-leak adversary.
 
 ### Task C2 — `runElprisSync` + cron + procedures

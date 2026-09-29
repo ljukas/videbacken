@@ -113,10 +113,19 @@ export default defineConfig({
                 formats: ['image/webp'],
                 minimumCacheTTL: 2_678_400,
               },
-              // Hourly Zaptec sync (ADR-0019). Vercel Cron GETs the path with
-              // `Authorization: Bearer $CRON_SECRET`; the handler rejects
-              // anything else (src/lib/evCharging/zaptecSyncCron.ts).
-              crons: [{ path: '/api/cron/zaptec-sync', schedule: '0 * * * *' }],
+              // Pulled integrations (ADR-0019). Vercel Cron GETs the path with
+              // `Authorization: Bearer $CRON_SECRET`; the handlers reject
+              // anything else. Schedules are UTC.
+              // - Zaptec sessions, hourly (src/lib/evCharging/zaptecSyncCron.ts).
+              // - SE3 spot prices after tomorrow's publish (~13:00 CET/CEST):
+              //   12:30 UTC = 13:30 CET / 14:30 CEST, plus a late retry at
+              //   15:30 UTC (src/lib/spotPrice/elprisSyncCron.ts). Two entries
+              //   may share a path.
+              crons: [
+                { path: '/api/cron/zaptec-sync', schedule: '0 * * * *' },
+                { path: '/api/cron/elpris-sync', schedule: '30 12 * * *' },
+                { path: '/api/cron/elpris-sync', schedule: '30 15 * * *' },
+              ],
             },
             // Subscribes the Vercel preset's queue handler to each topic.
             // Producers call `queue.publish('<topic>', …)` from oRPC

@@ -15,7 +15,7 @@ type Health = RouterOutputs['evCharging']['syncStatus']
 // Sync health banner, driven by `state` alone (never re-derived from the
 // timestamps client-side — the server owns the stale/failing policy). `ok`
 // renders nothing. Admins additionally see the raw (sanitized) last error and
-// a retry, which is the same `syncNow` mutation as the heading button.
+// a retry that re-runs only this alert's source (`useSyncNow().syncSource`).
 export function SyncHealthAlert({
   health,
   isAdmin,
@@ -38,7 +38,7 @@ export function SyncHealthAlert({
     case 'never_synced':
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{m.charging_health_never_synced()}</div>
+          <div>{neverSyncedCopy(health.source)}</div>
           {isAdmin ? <RetryRow onRetry={onRetry} retrying={retrying} /> : null}
         </HealthAlert>
       )
@@ -46,13 +46,13 @@ export function SyncHealthAlert({
       // Retrying can't fix missing credentials, so no retry here.
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{integrationErrorMessage('not_configured')}</div>
+          <div>{integrationErrorMessage('not_configured', { source: health.source })}</div>
         </HealthAlert>
       )
     case 'stale':
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{m.charging_health_stale()}</div>
+          <div>{staleCopy(health.source)}</div>
           {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
         </HealthAlert>
       )
@@ -60,7 +60,7 @@ export function SyncHealthAlert({
       return (
         <HealthAlert variant="destructive" title={title}>
           <div>
-            {integrationErrorMessage(health.code ?? 'internal_error')}
+            {integrationErrorMessage(health.code ?? 'internal_error', { source: health.source })}
             {health.failingSince ? (
               <> {m.charging_health_failing_since({ time: formatDateTime(health.failingSince) })}</>
             ) : null}
@@ -68,6 +68,31 @@ export function SyncHealthAlert({
           {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
         </HealthAlert>
       )
+  }
+}
+
+// The state bodies that differ by source: sessions sync hourly and feed the
+// totals; prices sync daily and feed costs. Exhaustive — a new source is a
+// compile error until it gets its own copy.
+function neverSyncedCopy(source: Health['source']): string {
+  switch (source) {
+    case 'zaptec':
+      return m.charging_health_never_synced()
+    case 'elpris':
+      return m.charging_health_never_synced_elpris()
+    case 'skoda':
+      return m.charging_health_never_synced()
+  }
+}
+
+function staleCopy(source: Health['source']): string {
+  switch (source) {
+    case 'zaptec':
+      return m.charging_health_stale()
+    case 'elpris':
+      return m.charging_health_stale_elpris()
+    case 'skoda':
+      return m.charging_health_stale()
   }
 }
 
@@ -80,8 +105,10 @@ function HealthAlert({
   title: string
   children: React.ReactNode
 }) {
+  // Only a failure interrupts (role=alert); informational states are a polite
+  // status, so two alerts refetching together don't shout over each other.
   return (
-    <Alert variant={variant}>
+    <Alert variant={variant} role={variant === 'destructive' ? 'alert' : 'status'}>
       {variant === 'destructive' ? <AlertTriangleIcon /> : <InfoIcon />}
       <AlertTitle>{title}</AlertTitle>
       {/* Children are divs, not <p>: AlertDescription adds a large bottom margin between paragraphs. */}

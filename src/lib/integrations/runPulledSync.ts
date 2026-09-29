@@ -53,7 +53,7 @@ export type PulledSyncSpec<R extends RunBase> = {
    * part-way still reports what landed. An `IntegrationError` → `failed`;
    * anything else → `error` (recorded best effort, then rethrown).
    */
-  execute: (ctx: { run: R; signal: AbortSignal; now: () => Date }) => Promise<void>
+  execute: (ctx: { run: R; signal: AbortSignal; now: () => Date; log: Logger }) => Promise<void>
   /** The recorded run-history stats. Sees `run` before `finalize` has run. */
   toRunStats: (run: R) => RunStats
   /**
@@ -99,7 +99,7 @@ export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>):
 
     let outcome: SyncOutcome
     try {
-      await spec.execute({ run, signal: deadline.signal, now })
+      await spec.execute({ run, signal: deadline.signal, now, log })
       run.outcome = 'ok'
       outcome = { ok: true, stats: spec.toRunStats(run), syncedUntil: run.syncedUntil }
     } catch (error) {

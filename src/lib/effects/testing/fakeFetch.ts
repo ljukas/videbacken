@@ -1,8 +1,9 @@
 /**
- * Hand-written `fetch` stand-in for Zaptec client tests. Routes are keyed by
- * `"<METHOD> <pathname>"` (query string ignored); each handler receives the
- * real `Request` plus its 0-based call index for that route and returns a real
- * `Response` (or throws, to simulate a network failure).
+ * Hand-written `fetch` stand-in for integration client tests (Zaptec, elpris).
+ * Routes are keyed by `"<METHOD> <pathname>"` (query string ignored); each
+ * handler receives the real `Request` plus its 0-based call index for that
+ * route and returns a real `Response` (or throws, to simulate a network
+ * failure).
  */
 export type FakeRoute = (req: Request, call: number) => Response | Promise<Response>
 

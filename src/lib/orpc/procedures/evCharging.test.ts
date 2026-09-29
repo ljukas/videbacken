@@ -5,6 +5,7 @@ import { db } from '~/lib/db'
 import { evCharger, user } from '~/lib/db/schema'
 import { zaptec } from '~/lib/effects/zaptec'
 import type { Logger } from '~/lib/logger'
+import * as integrationSyncService from '~/lib/services/integrationSync'
 import { setupDatabase } from '~test/setup'
 import { evChargingRouter } from './evCharging'
 
@@ -179,6 +180,54 @@ test('syncNow reports a failed/not_configured outcome under the notConfigured za
   expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
 })
 
+test('syncNow with source elpris runs only the price sync', async () => {
+  await signIn('admin')
+  const result = await call(
+    evChargingRouter.syncNow,
+    { source: 'elpris' },
+    { context: baseContext() },
+  )
+  expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
+  const zaptec = await integrationSyncService.getHealth('zaptec', {
+    now: new Date(),
+    includeAdminDetail: false,
+  })
+  expect(zaptec.state).toBe('never_synced')
+})
+
+test('syncStatus and recentRuns take a source', async () => {
+  await signIn('admin')
+  await call(evChargingRouter.syncNow, { source: 'elpris' }, { context: baseContext() })
+
+  const elpris = await call(
+    evChargingRouter.syncStatus,
+    { source: 'elpris' },
+    { context: baseContext() },
+  )
+  const zaptecDefault = await call(evChargingRouter.syncStatus, undefined, {
+    context: baseContext(),
+  })
+  expect(elpris.source).toBe('elpris')
+  expect(zaptecDefault.source).toBe('zaptec')
+
+  const runs = await call(
+    evChargingRouter.recentRuns,
+    { source: 'elpris' },
+    { context: baseContext() },
+  )
+  expect(runs).toHaveLength(1)
+  expect(runs[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
+  // Only the price sync ran, so Zaptec's history (the default source) is empty.
+  expect(await call(evChargingRouter.recentRuns, {}, { context: baseContext() })).toHaveLength(0)
+})
+
+test('syncStatus rejects an unknown source', async () => {
+  await signIn('user')
+  await expect(
+    call(evChargingRouter.syncStatus, { source: 'skoda' as never }, { context: baseContext() }),
+  ).rejects.toThrow()
+})
+
 test('syncNow records zaptec timing sub-timings when context.timings is present', async () => {
   await signIn('admin')
   const timings: Record<string, number> = {}
@@ -186,4 +235,13 @@ test('syncNow records zaptec timing sub-timings when context.timings is present'
   expect(timings.zaptecSyncMs).toBeGreaterThanOrEqual(0)
   expect(timings.zaptecFetchMs).toBeGreaterThanOrEqual(0)
   expect(timings.zaptecImportMs).toBeGreaterThanOrEqual(0)
+
+  const priceTimings: Record<string, number> = {}
+  await call(
+    evChargingRouter.syncNow,
+    { source: 'elpris' },
+    { context: { ...baseContext(), timings: priceTimings } },
+  )
+  expect(priceTimings.elprisSyncMs).toBeGreaterThanOrEqual(0)
+  expect(priceTimings.elprisFetchMs).toBeGreaterThanOrEqual(0)
 })
