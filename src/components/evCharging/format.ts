@@ -89,3 +89,27 @@ export function monthLabel(month: number): string {
     new Date(Date.UTC(2000, month - 1, 15, 12)),
   )
 }
+
+/** A decimal as typed/read back in a form field: no grouping, up to 3 decimals. */
+export function formatDecimalInput(value: number): string {
+  return new Intl.NumberFormat(getIntlLocale(), {
+    maximumFractionDigits: 3,
+    useGrouping: false,
+  }).format(value)
+}
+
+/** A decimal for display, up to 3 decimals (tariff amounts like 5,331). */
+export function formatDecimal(value: number): string {
+  return new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 3 }).format(value)
+}
+
+/**
+ * A Stockholm calendar day ('YYYY-MM-DD') for display. Formatted in UTC from
+ * the day's own UTC midnight, so no time zone can ever shift it a day.
+ */
+export function formatDay(day: string): string {
+  const [y, m, d] = day.split('-').map(Number)
+  return new Intl.DateTimeFormat(getIntlLocale(), { dateStyle: 'medium', timeZone: 'UTC' }).format(
+    Date.UTC(y, m - 1, d),
+  )
+}

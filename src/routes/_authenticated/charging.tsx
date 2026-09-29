@@ -10,15 +10,19 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
+import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
 import { MonthlyChart } from '~/components/evCharging/MonthlyChart'
 import { RecentRunsCard } from '~/components/evCharging/RecentRunsCard'
 import { SessionList } from '~/components/evCharging/SessionList'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { TariffCard } from '~/components/evCharging/TariffCard'
+import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -28,7 +32,12 @@ import { seo } from '~/utils/seo'
 // `?year=` falls back to the current year instead of erroring the loader.
 const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
+  // Tariff dialogs (ADR-0013): new (optionally pre-filled), edit, delete.
+  dialog: z.enum(['tariffNew', 'tariffEdit', 'tariffDelete']).optional().catch(undefined),
+  tariffId: z.string().optional().catch(undefined),
 })
+type ChargingSearch = z.infer<typeof searchSchema>
+type ChargingDialog = NonNullable<ChargingSearch['dialog']>
 
 const SESSIONS_PAGE = 20
 const SESSIONS_MAX = 500 // the `sessions` procedure's `limit` cap
@@ -54,6 +63,7 @@ export const Route = createFileRoute('/_authenticated/charging')({
         orpc.evCharging.overview.queryOptions({ input: { year: deps.year } }),
       ),
       queryClient.ensureQueryData(sessionsQuery(SESSIONS_PAGE)),
+      queryClient.ensureQueryData(orpc.tariff.list.queryOptions()),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
       user.role === 'admin' ? queryClient.ensureQueryData(pricesHealthQuery) : null,
       user.role === 'admin'
@@ -75,6 +85,17 @@ function ChargingPage() {
   const queryClient = useQueryClient()
   const [sessionLimit, setSessionLimit] = useState(SESSIONS_PAGE)
   const syncNow = useSyncNow()
+  const dialog = Route.useSearch({ select: (s) => s.dialog })
+  const tariffId = Route.useSearch({ select: (s) => s.tariffId })
+  const { isOpen, open, close } = useUrlDialog<ChargingDialog, ChargingSearch>({
+    current: dialog,
+    navigate,
+    clearKeys: ['tariffId'],
+  })
+  const { data: tariffs } = useSuspenseQuery(orpc.tariff.list.queryOptions())
+  const selectedTariff = tariffs.find((t) => t.id === tariffId)
+  // "Ny period" starts from the newest period's amounts (the list is oldest first).
+  const latestTariff = tariffs.at(-1)
 
   // Hourly data: no polling on overview/sessions — the default focus refetch
   // plus `syncNow`'s invalidation keep them fresh (ADR-0018).
@@ -172,8 +193,46 @@ function ChargingPage() {
         />
       </section>
 
+      <TariffCard
+        tariffs={tariffs}
+        admin={
+          isAdmin
+            ? {
+                onNew: () => open('tariffNew'),
+                onEdit: (id) => open('tariffEdit', { tariffId: id }),
+                onDelete: (id) => open('tariffDelete', { tariffId: id }),
+              }
+            : undefined
+        }
+      />
+
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
       {isAdmin && pricesRuns ? <RecentRunsCard source="elpris" runs={pricesRuns} /> : null}
+
+      {isAdmin ? (
+        <>
+          <TariffDialog
+            open={isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined)}
+            mode={
+              isOpen('tariffEdit') && selectedTariff
+                ? { kind: 'edit', tariff: selectedTariff }
+                : isOpen('tariffNew')
+                  ? { kind: 'new', from: latestTariff }
+                  : undefined
+            }
+            onOpenChange={(o) => {
+              if (!o) close()
+            }}
+          />
+          <DeleteTariffDialog
+            open={isOpen('tariffDelete') && selectedTariff !== undefined}
+            tariff={selectedTariff}
+            onOpenChange={(o) => {
+              if (!o) close()
+            }}
+          />
+        </>
+      ) : null}
     </PageContainer>
   )
 }

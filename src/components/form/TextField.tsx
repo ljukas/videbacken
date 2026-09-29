@@ -14,6 +14,8 @@ type Props = {
   label: string
   description?: string
   type?: ComponentProps<typeof Input>['type']
+  /** Soft-keyboard hint, e.g. `decimal` for a comma-friendly number field. */
+  inputMode?: ComponentProps<typeof Input>['inputMode']
   autoComplete?: string
   placeholder?: string
   autoFocus?: boolean
@@ -41,6 +43,7 @@ export function TextField({
   label,
   description,
   type = 'text',
+  inputMode,
   autoComplete,
   placeholder,
   autoFocus,
@@ -60,6 +63,7 @@ export function TextField({
     id: field.name,
     name: field.name,
     type,
+    inputMode,
     autoComplete,
     placeholder,
     autoFocus,

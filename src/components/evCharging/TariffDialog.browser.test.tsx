@@ -1,0 +1,151 @@
+import { ORPCError } from '@orpc/client'
+import { beforeEach, expect, test, vi } from 'vitest'
+import { tariffErrorMessage } from '~/lib/orpc/tariffErrorMessage'
+import { m } from '~/paraglide/messages'
+import { renderWithProviders } from '~test/browser/render'
+import { type Tariff, TariffDialog } from './TariffDialog'
+
+// Mock the oRPC client so a save records its payload (or fails on demand)
+// instead of hitting the network; spreading `opts` keeps the dialog's own
+// onError/onSettled (same idiom as EditDeviceDialog's test).
+const { createFn, updateFn, toastMock } = vi.hoisted(() => ({
+  createFn: vi.fn(),
+  updateFn: vi.fn(),
+  toastMock: { success: vi.fn(), error: vi.fn() },
+}))
+vi.mock('~/lib/orpc/client', () => ({
+  orpc: {
+    tariff: {
+      create: {
+        mutationOptions: (opts: Record<string, unknown>) => ({ ...opts, mutationFn: createFn }),
+      },
+      update: {
+        mutationOptions: (opts: Record<string, unknown>) => ({ ...opts, mutationFn: updateFn }),
+      },
+      key: () => ['tariff'],
+    },
+    evCharging: { key: () => ['evCharging'] },
+  },
+}))
+vi.mock('sonner', () => ({ toast: toastMock }))
+
+const AUG: Tariff = {
+  id: 't1',
+  validFrom: '2026-08-01',
+  retailMarkupOre: 5.331,
+  gridTransferOre: 35.6,
+  energyTaxOre: 36,
+  vatPercent: 25,
+  createdAt: new Date('2026-08-01T00:00:00Z'),
+  updatedAt: new Date('2026-08-01T00:00:00Z'),
+}
+
+beforeEach(() => {
+  createFn.mockReset().mockResolvedValue(AUG)
+  updateFn.mockReset().mockResolvedValue(AUG)
+  toastMock.success.mockReset()
+  toastMock.error.mockReset()
+})
+
+const field = (screen: Awaited<ReturnType<typeof renderWithProviders>>['screen'], label: string) =>
+  screen.getByLabelText(label, { exact: false })
+
+test('editing pre-fills the period with Swedish decimals', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'edit', tariff: AUG }} onOpenChange={() => {}} />,
+  )
+  await expect
+    .element(field(screen, m.charging_tariff_field_valid_from()))
+    .toHaveValue('2026-08-01')
+  await expect.element(field(screen, m.charging_tariff_field_markup())).toHaveValue('5,331')
+  await expect.element(field(screen, m.charging_tariff_field_grid())).toHaveValue('35,6')
+  await expect.element(field(screen, m.charging_tariff_field_vat())).toHaveValue('25')
+})
+
+test('a new period from the current one keeps its amounts', async () => {
+  const from = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={() => {}} />,
+  )
+  await expect.element(field(from.screen, m.charging_tariff_field_tax())).toHaveValue('36')
+})
+
+test('a blank new period starts empty with 25 % VAT', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new' }} onOpenChange={() => {}} />,
+  )
+  await expect.element(field(screen, m.charging_tariff_field_markup())).toHaveValue('')
+  await expect.element(field(screen, m.charging_tariff_field_vat())).toHaveValue('25')
+})
+
+test('saves comma decimals as numbers and closes on success', async () => {
+  const onOpenChange = vi.fn()
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new' }} onOpenChange={onOpenChange} />,
+  )
+  await field(screen, m.charging_tariff_field_valid_from()).fill('2026-09-01')
+  await field(screen, m.charging_tariff_field_markup()).fill('-1,5')
+  await field(screen, m.charging_tariff_field_grid()).fill('35,60')
+  await field(screen, m.charging_tariff_field_tax()).fill('36')
+  await screen.getByRole('button', { name: m.common_save() }).click()
+
+  await vi.waitFor(() =>
+    expect(createFn).toHaveBeenCalledWith(
+      {
+        validFrom: '2026-09-01',
+        retailMarkupOre: -1.5,
+        gridTransferOre: 35.6,
+        energyTaxOre: 36,
+        vatPercent: 25,
+      },
+      expect.anything(),
+    ),
+  )
+  await vi.waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  expect(toastMock.success).toHaveBeenCalledWith(m.charging_tariff_saved())
+})
+
+test('editing sends the id with the new values', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'edit', tariff: AUG }} onOpenChange={() => {}} />,
+  )
+  await field(screen, m.charging_tariff_field_grid()).fill('40')
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await vi.waitFor(() =>
+    expect(updateFn).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 't1', gridTransferOre: 40, retailMarkupOre: 5.331 }),
+      expect.anything(),
+    ),
+  )
+})
+
+test('rejects text and out-of-range amounts without saving', async () => {
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={() => {}} />,
+  )
+  await field(screen, m.charging_tariff_field_grid()).fill('tjugo')
+  await field(screen, m.charging_tariff_field_vat()).fill('125')
+  await screen.getByRole('button', { name: m.common_save() }).click()
+
+  await expect.element(screen.getByText(m.charging_tariff_error_not_a_number())).toBeVisible()
+  await expect
+    .element(screen.getByText(m.charging_tariff_error_range({ min: '0', max: '100' })))
+    .toBeVisible()
+  expect(createFn).not.toHaveBeenCalled()
+})
+
+test('a taken start date shows the domain error and keeps the dialog open', async () => {
+  createFn.mockRejectedValue(
+    new ORPCError('TARIFF_VALID_FROM_TAKEN', { defined: true, status: 409 }),
+  )
+  const onOpenChange = vi.fn()
+  const { screen } = await renderWithProviders(
+    <TariffDialog open mode={{ kind: 'new', from: AUG }} onOpenChange={onOpenChange} />,
+  )
+  await screen.getByRole('button', { name: m.common_save() }).click()
+
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(tariffErrorMessage('TARIFF_VALID_FROM_TAKEN')),
+  )
+  expect(onOpenChange).not.toHaveBeenCalled()
+  expect(toastMock.success).not.toHaveBeenCalled()
+})
