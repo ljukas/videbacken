@@ -149,6 +149,34 @@ describe('login', () => {
     expect(ff.callsTo(CHARGERS)).toHaveLength(2)
   })
 
+  test("a stale 401 doesn't discard a token another caller already refreshed", async () => {
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
+    const { client, ff } = setup({
+      [TOKEN]: (_req, call) => jsonResponse(tokenBody({ access_token: `tok-${call}` })),
+      [CHARGERS]: async (req, call) => {
+        if (req.headers.get('authorization') === 'Bearer tok-1') return chargersOk(req, call)
+        // Call 0 is the first caller, call 1 the second (it joined the login later):
+        // hold the second caller's 401 until the first has refreshed the token.
+        if (call === 1) await gate
+        return new Response(null, { status: 401 })
+      },
+    })
+
+    const first = client.chargers()
+    const second = client.chargers()
+    await expect(first).resolves.toHaveLength(1)
+    release()
+    await expect(second).resolves.toHaveLength(1)
+
+    expect(ff.callsTo(TOKEN)).toHaveLength(2)
+    expect(ff.callsTo(CHARGERS).map((r) => r.headers.get('authorization'))).toEqual([
+      'Bearer tok-0',
+      'Bearer tok-0',
+      'Bearer tok-1',
+      'Bearer tok-1',
+    ])
+  })
+
   test('token 400 → auth_failed, never retried', async () => {
     const { client, ff, sleeps } = setup({
       [TOKEN]: () => jsonResponse({ error: 'invalid_grant' }, { status: 400 }),
@@ -670,6 +698,25 @@ describe('sessionsEndedSince', () => {
     }
   })
 
+  test('the drift message lists at most 10 distinct paths, then a count', async () => {
+    const drifted = sessionJson({ energy: 'twelve-kWh', chargerId: undefined })
+    const { client } = setup({
+      [SESSIONS]: () => jsonResponse(sessionsPage(Array.from({ length: 12 }, () => drifted))),
+    })
+
+    const err = await caught(
+      collect(client.sessionsEndedSince(since, { installationId: INSTALLATION_ID, until })),
+    )
+
+    const shown = [0, 1, 2, 3, 4].flatMap((i) => [
+      `sessions.${i}.chargerId`,
+      `sessions.${i}.energy`,
+    ])
+    expect(err.message).toBe(
+      `Zaptec sessions response has an unexpected shape at: ${shown.join(', ')} (+14 more)`,
+    )
+  })
+
   test('non-JSON body → unexpected_response', async () => {
     const { client } = setup({
       [CHARGERS]: () => new Response('<html>oops</html>', { status: 200 }),
@@ -727,6 +774,36 @@ describe('liveState', () => {
 
     advance(1)
     await client.liveState(CHARGER_ID)
+    expect(ff.callsTo(STATE)).toHaveLength(2)
+  })
+
+  // Characterization: concurrent reads aren't deduplicated today. Update this
+  // if in-flight dedup is ever added on purpose.
+  test('concurrent reads of one charger are not deduplicated', async () => {
+    const { client, ff } = setup({ [STATE]: () => jsonResponse(chargingStateBody()) })
+
+    await Promise.all([client.liveState(CHARGER_ID), client.liveState(CHARGER_ID)])
+
+    expect(ff.callsTo(STATE)).toHaveLength(2)
+  })
+
+  test('a read that succeeds after a concurrent failure clears the cached failure', async () => {
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
+    const { client, ff } = setup({
+      [STATE]: async (_req, call) => {
+        if (call > 0) return new Response(null, { status: 503 })
+        await gate
+        return jsonResponse(chargingStateBody())
+      },
+    })
+
+    const slow = client.liveState(CHARGER_ID)
+    expect(await caught(client.liveState(CHARGER_ID))).toMatchObject({ code: 'unreachable' })
+    release()
+    await expect(slow).resolves.toMatchObject({ mode: 'charging' })
+
+    // Served from the success cache, not the (now cleared) failure cache.
+    await expect(client.liveState(CHARGER_ID)).resolves.toMatchObject({ mode: 'charging' })
     expect(ff.callsTo(STATE)).toHaveLength(2)
   })
 

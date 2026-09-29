@@ -6,6 +6,7 @@ import type {
   ZaptecLiveState,
   ZaptecSession,
 } from '~/lib/evCharging/types'
+import { issuePath, summarizeIssuePaths } from '~/lib/issuePaths'
 import { ZaptecError, type ZaptecOp } from './errors'
 
 // Zod schemas for the Zaptec payloads we read, plus their mapping to the
@@ -123,7 +124,7 @@ export function parseSessionsPage(body: unknown): SessionsPage {
       sessions.push(toSession(result.data))
     } else {
       for (const issue of result.error.issues) {
-        rejectedPaths.push(['sessions', index, ...issue.path].join('.'))
+        rejectedPaths.push(issuePath(['sessions', index, ...issue.path]))
       }
     }
   }
@@ -231,16 +232,13 @@ export function parse<S extends z.ZodType>(op: ZaptecOp, schema: S, body: unknow
   if (result.success) return result.data
   throw shapeError(
     op,
-    result.error.issues.map((i) => i.path.join('.') || '(root)'),
+    result.error.issues.map((i) => issuePath(i.path)),
   )
 }
 
 // Lists field paths only — never a value.
 function shapeError(op: ZaptecOp, issuePaths: string[]): ZaptecError {
-  const paths = [...new Set(issuePaths)]
-  const shown = paths.slice(0, 10).join(', ')
-  const more = paths.length > 10 ? ` (+${paths.length - 10} more)` : ''
   return new ZaptecError('unexpected_response', op, undefined, {
-    message: `Zaptec ${op} response has an unexpected shape at: ${shown}${more}`,
+    message: `Zaptec ${op} response has an unexpected shape at: ${summarizeIssuePaths(issuePaths)}`,
   })
 }
