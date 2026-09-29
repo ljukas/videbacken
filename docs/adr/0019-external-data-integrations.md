@@ -302,13 +302,13 @@ not re-alert — it's the same streak). Whether the streak alerted is its own co
 derived from the current code: `not_configured` neither opens nor closes an alert, so
 `not_configured` → `auth_failed` (credentials added, but wrong) opens one, and `auth_failed` →
 `not_configured` → ok still closes it with `recovered`. Every `recovered` pairs with a
-`started_failing`.
+`started_failing`. This is the one place a sync failure reaches a human outside the logs, and it earns
+that reach precisely by being rare: an hourly cron with a real outage would otherwise send 24
+identical emails a day.
 
 The outcome is written once. If that write itself throws (a database blip), the run rethrows without
 recording a second `internal_error` outcome — the fetch may have succeeded, and whether the first
-write committed is unknown. The lease expires and the next run redoes the window. This is the one place a sync failure reaches a human outside the logs, and it earns
-that reach precisely by being rare: an hourly cron with a real outage would otherwise send 24
-identical emails a day.
+write committed is unknown. The lease expires and the next run redoes the window.
 
 ### Cron status codes: 200 for integration failures, 500 for bugs
 

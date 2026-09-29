@@ -96,10 +96,7 @@ const sessionSchema = z.object({
   reliableClock: z.boolean(),
 })
 
-// Sessions are validated one by one (`sessions` is `unknown[]` here): one odd
-// session (a null `energy`, a missing flag) is rejected on its own instead of
-// failing the page — and with it every later run, since the watermark only
-// moves past a page once it imports.
+// A page with at least this many sessions, all rejected, is a shape change.
 const SHAPE_CHANGE_MIN_SESSIONS = 3
 
 const sessionsPageSchema = z.object({
@@ -119,23 +116,25 @@ export type SessionsPage = {
 export function parseSessionsPage(body: unknown): SessionsPage {
   const page = parse('sessions', sessionsPageSchema, body)
   const sessions: ZaptecSession[] = []
-  const rejectedPaths = new Set<string>()
+  const rejectedPaths: string[] = []
   for (const [index, raw] of page.sessions.entries()) {
     const result = sessionSchema.safeParse(raw)
     if (result.success) {
       sessions.push(toSession(result.data))
     } else {
       for (const issue of result.error.issues) {
-        rejectedPaths.add(['sessions', index, ...issue.path].join('.'))
+        rejectedPaths.push(['sessions', index, ...issue.path].join('.'))
       }
     }
   }
-  // Several sessions and every one rejected → the shape changed, not one odd
-  // record. Fail loudly rather than report a healthy run that imported
-  // nothing. A page of one or two bad sessions (a quiet week) is skipped like
-  // any other bad record, or it would fail every run until a good one lands.
+  // Sessions are validated one by one: an odd session (a null `energy`, a
+  // missing flag) is dropped and counted instead of failing the page — and
+  // with it every later run, since the watermark only moves past a page once
+  // it imports. But several sessions all rejected is a shape change: fail
+  // loudly rather than report a healthy run that imported nothing. (A page of
+  // one or two bad sessions, a quiet week, is still just skipped.)
   if (page.sessions.length >= SHAPE_CHANGE_MIN_SESSIONS && sessions.length === 0) {
-    throw shapeError('sessions', [...rejectedPaths])
+    throw shapeError('sessions', rejectedPaths)
   }
   return {
     sessions,

@@ -1,4 +1,3 @@
-import { DrizzleQueryError } from 'drizzle-orm'
 import { queue } from '~/lib/effects'
 import {
   newCallStats,
@@ -16,6 +15,7 @@ import {
   beginAttempt,
   getLastSuccessStartedAt,
   type IntegrationHealth,
+  internalErrorMessage,
   type RunStats,
   recordOutcome,
   type SyncOutcome,
@@ -63,30 +63,20 @@ export type SyncRun = {
 }
 
 const SOURCE = 'zaptec'
-const DAY_MS = 24 * 60 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
 /** Re-fetch window before the last success, to catch late/offline sessions. */
 const LOOKBACK_MS = 7 * DAY_MS
 const FIRST_RUN_SINCE = new Date('2020-01-01T00:00:00Z')
-/**
- * Sessions are fetched in windows of at most this length, oldest first, and
- * every finished window moves the watermark — so a multi-year first backfill
- * makes progress across runs instead of restarting from 2020 on each failure.
- * An hourly run is a single window. Must exceed `LOOKBACK_MS`, so a window
- * always ends past the previous watermark.
- */
+// Session fetch windows (ADR-0019): oldest first, each finished window moves
+// the watermark, and one that overflows `MAX_PAGES` is halved and retried.
+/** Longest window. Must exceed `LOOKBACK_MS`, so a window ends past the previous watermark. */
 const WINDOW_MS = 90 * DAY_MS
-/**
- * A window that overflows `MAX_PAGES` is halved and retried from the same
- * start, down to this length — so a dense stretch narrows instead of failing
- * every run. Only a stretch this short that still overflows fails the run.
- */
-const MIN_WINDOW_MS = 60 * 60 * 1000
-/**
- * No new window starts once the run is this old; the next run continues from
- * the watermark. Leaves the rest of `RUN_DEADLINE_MS` for the window in flight.
- */
+/** Shortest window; one this short that still overflows fails the run. */
+const MIN_WINDOW_MS = HOUR_MS
+/** No new window starts once the run is this old; the next run continues. */
 const WINDOW_BUDGET_MS = 120_000
-/** Per installation and window. More pages than this narrows the window (see `MIN_WINDOW_MS`). */
+/** Per installation and window. */
 const MAX_PAGES = 20
 
 /** A window's session paging went past `MAX_PAGES`. */
@@ -136,7 +126,6 @@ export async function runZaptecSync(opts: {
     voided: 0,
     skipped: 0,
   }
-  let attemptId: string | null = null
   let thrown: unknown
   const deadlineMs = opts.deadlineMs ?? RUN_DEADLINE_MS
   const deadline = new AbortController()
@@ -145,77 +134,58 @@ export async function runZaptecSync(opts: {
     deadlineMs,
   )
 
-  // Set just before the outcome is written. From then on a throw (a db blip
-  // in `recordOutcome`) must not record a second, `internal_error` outcome:
-  // the fetch may well have succeeded, and whether the first write committed
-  // is unknown. The lease expires and the next run redoes the window.
-  let recording = false
-
   try {
     const attempt = await beginAttempt(SOURCE, { now: startedAt })
     // Another run holds the lease (also absorbs duplicate cron deliveries).
     if (!attempt.acquired) return run
-    attemptId = attempt.attemptId
 
     let outcome: SyncOutcome
     try {
       await fetchAndImport(client, run, stats, deadline.signal, now)
       run.outcome = 'ok'
-      outcome = { ok: true, stats: runStats(run, stats), syncedUntil: run.syncedUntil ?? startedAt }
+      outcome = { ok: true, stats: runStats(run, stats), syncedUntil: run.syncedUntil }
     } catch (error) {
-      if (!(error instanceof ZaptecError)) throw error
-      run.outcome = 'failed'
-      run.code = error.code
+      const failed = error instanceof ZaptecError
+      if (!failed) thrown = error
+      run.outcome = failed ? 'failed' : 'error'
+      run.code = failed ? error.code : 'internal_error'
       outcome = {
         ok: false,
-        kind: 'failed',
-        code: error.code,
-        message: error.message,
+        kind: failed ? 'failed' : 'error',
+        code: run.code,
+        message: failed ? error.message : internalErrorMessage(error),
         stats: runStats(run, stats),
-        syncedUntil: run.syncedUntil ?? undefined,
+        syncedUntil: run.syncedUntil,
       }
     }
 
-    recording = true
-    const recorded = await recordOutcome(SOURCE, outcome, {
-      attemptId,
-      trigger: opts.trigger,
-      startedAt,
-      now: now(),
-      log,
-    })
-    run.transition = recorded.transition
-    await alertAdmins(recorded.transition, recorded.health, log)
+    // The outcome is written once (ADR-0019). If that write throws, it is not
+    // retried as `internal_error` — whether it committed is unknown; the lease
+    // expires and the next run redoes the window.
+    try {
+      const recorded = await recordOutcome(SOURCE, outcome, {
+        attemptId: attempt.attemptId,
+        trigger: opts.trigger,
+        startedAt,
+        now: now(),
+        log,
+      })
+      run.transition = recorded.transition
+      await alertAdmins(recorded.transition, recorded.health, log)
+    } catch (recordError) {
+      if (run.outcome !== 'error') throw recordError
+      // Recording an unexpected error is best effort: it must not mask it.
+      log.warn('integration sync outcome could not be recorded', {
+        source: SOURCE,
+        error: recordError,
+      })
+    }
+    if (run.outcome === 'error') throw thrown
     return run
   } catch (error) {
     thrown = error
     run.outcome = 'error'
     run.code = 'internal_error'
-    if (attemptId !== null && !recording) {
-      // Best effort: the health snapshot should show the failure, but a
-      // failure to record it must not mask the original error.
-      try {
-        const recorded = await recordOutcome(
-          SOURCE,
-          {
-            ok: false,
-            kind: 'error',
-            code: 'internal_error',
-            message: internalErrorMessage(error),
-            stats: runStats(run, stats),
-            syncedUntil: run.syncedUntil ?? undefined,
-          },
-          { attemptId, trigger: opts.trigger, startedAt, now: now(), log },
-        )
-        run.transition = recorded.transition
-        await alertAdmins(recorded.transition, recorded.health, log)
-      } catch (recordError) {
-        log.warn('integration sync outcome could not be recorded', {
-          source: SOURCE,
-          error: recordError,
-        })
-      }
-    }
     throw error
   } finally {
     clearTimeout(deadlineTimer)
@@ -289,9 +259,8 @@ async function fetchAndImport(
         })
       }
     } catch (error) {
-      // Too dense for one window: retry it narrower (pages that already
-      // imported are upserted again, harmlessly). Later windows keep the
-      // narrower length — dense stretches tend to be long ones.
+      // Pages that already imported are upserted again, harmlessly. Later
+      // windows keep the narrower length — dense stretches tend to be long.
       if (!(error instanceof PageCapExceeded) || windowMs / 2 < MIN_WINDOW_MS) throw error
       windowMs /= 2
       continue
@@ -333,22 +302,6 @@ async function importWindow(
     // Not awaited: a generator stuck past the deadline would never settle.
     iterator.return?.()?.catch(() => {})
   }
-}
-
-// The admin-facing message for an unexpected error. A failed drizzle query's
-// own message is the SQL plus its bound params (session emails and names); the
-// Postgres error that actually explains it is the `cause`. A data exception
-// (SQLSTATE class 22, e.g. invalid input syntax) quotes the offending value in
-// its message, so for those only the code is kept.
-function internalErrorMessage(error: unknown): string {
-  if (error instanceof DrizzleQueryError) {
-    const cause = error.cause as (Error & { code?: unknown }) | undefined
-    if (!cause) return 'Database query failed'
-    if (typeof cause.code !== 'string') return `Database query failed: ${cause.message}`
-    if (cause.code.startsWith('22')) return `Database query failed (SQLSTATE ${cause.code})`
-    return `Database query failed (SQLSTATE ${cause.code}): ${cause.message}`
-  }
-  return error instanceof Error ? error.message : String(error)
 }
 
 /** Races a Zaptec call against the run deadline; a hit → `unreachable`. */

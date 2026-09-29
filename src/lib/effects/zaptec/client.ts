@@ -239,12 +239,10 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
   // credential-rejecting) Zaptec: auth failures 5 min, transient 60 s.
   function cacheLiveFailure(chargerId: string, err: unknown) {
     if (!(err instanceof ZaptecError)) return
-    const ttl = AUTH_CODES.has(err.code)
-      ? AUTH_FAILURE_TTL_MS
-      : TRANSIENT_CODES.has(err.code)
-        ? LIVE_FAILURE_TTL_MS
-        : 0
-    if (ttl > 0) liveFailures.set(chargerId, { error: err, until: now().getTime() + ttl })
+    const cache = (ttl: number) =>
+      liveFailures.set(chargerId, { error: err, until: now().getTime() + ttl })
+    if (AUTH_CODES.has(err.code)) cache(AUTH_FAILURE_TTL_MS)
+    else if (TRANSIENT_CODES.has(err.code)) cache(LIVE_FAILURE_TTL_MS)
   }
 
   return {

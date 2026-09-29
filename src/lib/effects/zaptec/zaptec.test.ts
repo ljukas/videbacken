@@ -216,10 +216,7 @@ describe('login', () => {
   })
 
   test("a caller's signal stops its wait on a shared login; other waiters still get the token", async () => {
-    let release: (() => void) | undefined
-    const gate = new Promise<void>((r) => {
-      release = r
-    })
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
     const { client, ff } = setup({
       [TOKEN]: async (req, call) => {
         await gate
@@ -235,7 +232,7 @@ describe('login', () => {
     controller.abort()
 
     expect(await caught(aborted)).toMatchObject({ code: 'unreachable', op: 'chargers' })
-    release?.()
+    release()
     await expect(patient).resolves.toHaveLength(1)
     expect(ff.callsTo(TOKEN)).toHaveLength(1)
     expect(ff.callsTo(CHARGERS)).toHaveLength(1)
@@ -756,10 +753,7 @@ describe('liveState', () => {
   })
 
   test("a read cut off by the caller's own signal is not cached", async () => {
-    let release: (() => void) | undefined
-    const gate = new Promise<void>((r) => {
-      release = r
-    })
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
     const { client, ff } = setup({
       [STATE]: async (_req, call) => {
         if (call === 0) {
@@ -774,7 +768,7 @@ describe('liveState', () => {
     const read = client.liveState(CHARGER_ID, { signal: controller.signal })
     await new Promise((r) => setTimeout(r, 0))
     controller.abort(new DOMException('budget', 'TimeoutError'))
-    release?.()
+    release()
     expect(await caught(read)).toMatchObject({ code: 'unreachable', op: 'state' })
 
     // The next poll (no budget pressure) goes straight to Zaptec.
@@ -783,10 +777,7 @@ describe('liveState', () => {
   })
 
   test('a login still failing after the caller gave up is cached for the next read', async () => {
-    let release: (() => void) | undefined
-    const gate = new Promise<void>((r) => {
-      release = r
-    })
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
     const { client, ff } = setup({
       [TOKEN]: async () => {
         await gate
@@ -802,7 +793,7 @@ describe('liveState', () => {
     expect(await caught(read)).toMatchObject({ code: 'unreachable', op: 'state' })
 
     // The shared login keeps going (three attempts) and then fails.
-    release?.()
+    release()
     await new Promise((r) => setTimeout(r, 0))
     const loginCalls = ff.callsTo(TOKEN).length
 

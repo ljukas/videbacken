@@ -1,4 +1,10 @@
-import { keepPreviousData, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -28,6 +34,8 @@ const SESSIONS_PAGE = 20
 const SESSIONS_MAX = 500 // the `sessions` procedure's `limit` cap
 const RECENT_RUNS = 20
 
+const sessionsQuery = (limit: number) => orpc.evCharging.sessions.queryOptions({ input: { limit } })
+
 export const Route = createFileRoute('/_authenticated/charging')({
   head: () => ({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
@@ -39,9 +47,7 @@ export const Route = createFileRoute('/_authenticated/charging')({
       queryClient.ensureQueryData(
         orpc.evCharging.overview.queryOptions({ input: { year: deps.year } }),
       ),
-      queryClient.ensureQueryData(
-        orpc.evCharging.sessions.queryOptions({ input: { limit: SESSIONS_PAGE } }),
-      ),
+      queryClient.ensureQueryData(sessionsQuery(SESSIONS_PAGE)),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
       user.role === 'admin'
         ? queryClient.ensureQueryData(
@@ -60,7 +66,6 @@ function ChargingPage() {
   const year = Route.useSearch({ select: (s) => s.year })
   const queryClient = useQueryClient()
   const [sessionLimit, setSessionLimit] = useState(SESSIONS_PAGE)
-  const [loadingMore, setLoadingMore] = useState(false)
   const syncNow = useSyncNow()
 
   // Hourly data: no polling on overview/sessions — the default focus refetch
@@ -69,9 +74,7 @@ function ChargingPage() {
     ...orpc.evCharging.overview.queryOptions({ input: { year } }),
     placeholderData: keepPreviousData, // keep the old chart while another year loads
   })
-  const sessions = useQuery(
-    orpc.evCharging.sessions.queryOptions({ input: { limit: sessionLimit } }),
-  )
+  const sessions = useQuery(sessionsQuery(sessionLimit))
   const { data: health } = useSuspenseQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
@@ -85,20 +88,11 @@ function ChargingPage() {
   // "Visa fler" fetches the longer page first and only then switches to it, so
   // a failed fetch leaves the rows on screen (with a toast; the button stays
   // for a retry) instead of swapping the list for an errored, empty query.
-  async function showMore() {
-    const next = Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX)
-    setLoadingMore(true)
-    try {
-      await queryClient.fetchQuery(
-        orpc.evCharging.sessions.queryOptions({ input: { limit: next } }),
-      )
-      setSessionLimit(next)
-    } catch {
-      toast.error(m.charging_sessions_show_more_failed())
-    } finally {
-      setLoadingMore(false)
-    }
-  }
+  const showMore = useMutation({
+    mutationFn: (limit: number) => queryClient.fetchQuery(sessionsQuery(limit)),
+    onSuccess: (_data, limit) => setSessionLimit(limit),
+    onError: () => toast.error(m.charging_sessions_show_more_failed()),
+  })
 
   function setYear(y: number) {
     navigate({ to: '.', search: (s) => ({ ...s, year: y }), replace: true, resetScroll: false })
@@ -150,8 +144,8 @@ function ChargingPage() {
         <SessionList
           sessions={sessions.data?.sessions ?? []}
           hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
-          onShowMore={showMore}
-          loadingMore={loadingMore}
+          onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
+          loadingMore={showMore.isPending}
           onSync={isAdmin ? syncNow.sync : undefined}
           syncing={syncNow.isPending}
         />

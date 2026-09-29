@@ -48,11 +48,23 @@ function serialize(value: unknown, depth: number, seen: WeakSet<Error>): unknown
   if (depth >= MAX_DEPTH) return { type, message: '[max cause depth reached]' }
   seen.add(value)
 
-  const out: SerializedError = { type, message: String(value.message) }
-  if (value.name && value.name !== type) out.name = String(value.name)
-  if (typeof value.stack === 'string') out.stack = value.stack
-
   const e = value as Error & Record<string, unknown>
+  const message = String(value.message)
+  // A failed drizzle query (duck-typed: `query` + `params`) has the SQL *and
+  // its bound params* as its message — user data, and unbounded in size (a
+  // batch insert binds thousands). Keep the SQL; the `cause` is the Postgres
+  // error that explains the failure.
+  const safeMessage =
+    typeof e.query === 'string' && 'params' in e ? `Failed query: ${e.query}` : message
+
+  const out: SerializedError = { type, message: safeMessage }
+  if (value.name && value.name !== type) out.name = String(value.name)
+  if (typeof value.stack === 'string') {
+    // The stack's first line repeats the message.
+    out.stack =
+      safeMessage === message ? value.stack : value.stack.replace(message, () => safeMessage)
+  }
+
   // DOMException's numeric `code` is a meaningless legacy constant — its `name`
   // (e.g. TimeoutError, AbortError) is the useful part.
   const isDomException = typeof DOMException !== 'undefined' && value instanceof DOMException

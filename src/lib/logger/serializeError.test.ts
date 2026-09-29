@@ -114,6 +114,21 @@ describe('serializeError', () => {
     expect(serializeError(hostile)).toEqual({ type: 'Error', message: '[unserializable error]' })
   })
 
+  test("drops a failed drizzle query's bound params from message and stack", () => {
+    const pgError = Object.assign(new Error('duplicate key'), { code: '23505' })
+    const err = Object.assign(
+      new Error('Failed query: insert into "t" values ($1)\nparams: owner@example.com', {
+        cause: pgError,
+      }),
+      { query: 'insert into "t" values ($1)', params: ['owner@example.com'] },
+    )
+    const out = ser(err)
+    expect(out.message).toBe('Failed query: insert into "t" values ($1)')
+    expect(out.stack).toContain('Failed query: insert into "t" values ($1)')
+    expect(JSON.stringify(out)).not.toContain('owner@example.com')
+    expect(out.cause).toMatchObject({ message: 'duplicate key', code: '23505' })
+  })
+
   test('passes non-Error values through unchanged', () => {
     expect(serializeError('just a string')).toBe('just a string')
     expect(serializeError(42)).toBe(42)

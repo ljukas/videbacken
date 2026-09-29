@@ -25,14 +25,14 @@ export type RunStats = {
 // windows (a long backfill hitting the deadline) passes it so that progress is
 // kept rather than refetched from scratch.
 export type SyncOutcome =
-  | { ok: true; stats: RunStats; syncedUntil?: Date }
+  | { ok: true; stats: RunStats; syncedUntil?: Date | null }
   | {
       ok: false
       kind: 'failed' | 'error'
       code: IntegrationErrorCode
       message: string
       stats: RunStats
-      syncedUntil?: Date
+      syncedUntil?: Date | null
     }
 
 // The health-bearing columns of an `integration_sync` row (lease columns are

@@ -1,3 +1,5 @@
+import { DrizzleQueryError } from 'drizzle-orm'
+
 export const MAX_ERROR_MESSAGE_LENGTH = 500
 
 // Error messages from third-party calls end up in `integration_sync` and
@@ -17,4 +19,20 @@ export function sanitizeErrorMessage(message: string): string {
   return codePoints.length > MAX_ERROR_MESSAGE_LENGTH
     ? codePoints.slice(0, MAX_ERROR_MESSAGE_LENGTH).join('')
     : cleaned
+}
+
+// The stored message for an unexpected (non-integration) error. A failed
+// drizzle query's own message is the SQL plus its bound params (session emails
+// and names); the Postgres error that actually explains it is the `cause`. A
+// data exception (SQLSTATE class 22, e.g. invalid input syntax) quotes the
+// offending value in its message, so for those only the code is kept.
+export function internalErrorMessage(error: unknown): string {
+  if (error instanceof DrizzleQueryError) {
+    const cause = error.cause as (Error & { code?: unknown }) | undefined
+    if (!cause) return 'Database query failed'
+    if (typeof cause.code !== 'string') return `Database query failed: ${cause.message}`
+    if (cause.code.startsWith('22')) return `Database query failed (SQLSTATE ${cause.code})`
+    return `Database query failed (SQLSTATE ${cause.code}): ${cause.message}`
+  }
+  return error instanceof Error ? error.message : String(error)
 }
