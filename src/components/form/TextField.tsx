@@ -33,8 +33,8 @@ type Props = {
   /** Extra classes on the `Field` wrapper (e.g. row padding inside a card). */
   fieldClassName?: string
   /**
-   * Non-editable text pinned to the trailing edge of the input (e.g. a locked
-   * file extension). When set, the field renders as an input group.
+   * Non-editable text pinned to the trailing edge of the input (e.g. a unit
+   * such as "öre/kWh"). When set, the field renders as an input group.
    */
   suffix?: string
 }

@@ -40,8 +40,9 @@ export type QueuePayloadMap = {
   // row, delete the original). `userId` carries the avatar's user so the
   // worker can repoint user.image without a session.
   heic_transcode: { fileId: string; kind: 'avatar'; userId: string }
-  // Integration sync health alert (tier-3): published by the Zaptec sync run
-  // (`src/lib/evCharging/sync.ts`), one message per admin, on the first
+  // Integration sync health alert (tier-3): published by the shared pulled-sync
+  // lifecycle (`src/lib/integrations/runPulledSync.ts`) for every pulled
+  // integration (Zaptec, elpris), one message per admin, on the first
   // failure of a streak and again on recovery — never on every failed run
   // (see `src/lib/integrationHealth.ts` and ADR-0019). `code`/`failingSince`
   // are null on `recovered` (health is back to `ok`, nothing to explain).
