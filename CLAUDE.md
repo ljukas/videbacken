@@ -81,6 +81,14 @@ test/, drizzle/, compose.yaml, vite.config.ts, drizzle.config.ts, biome.json
 - **Timing: every RPC is auto-timed — instrument new work.** The `/api/rpc` handler logs one `rpc timing` line per request (`region`, `totalMs`, sub-timings) to Vercel Runtime Logs (filter by msg `"rpc timing"`). For anything heavier than a single query (multiple queries, external calls, expensive compute), record named sub-timings into `context.timings` (`if (context.timings) context.timings.<label>Ms = …`) so slow paths surface early. Pattern: `getSessionMs`/`findActiveByIdMs` in `src/lib/orpc/context.ts`. See **ADR-0003**.
 - **Never hold a connection open on a Vercel Function.** No SSE, no WebSockets, no long-polling. Fluid Compute bills **provisioned memory for the entire lifetime of an in-flight request** — one open stream pins a 2 GB instance 24/7 and exhausted the whole Hobby allowance in ~7 days (production was blocked 2026-08-05). Cross-user freshness comes from TanStack Query: `refetchInterval` on the few screens that need it, plus the default focus refetch. See **ADR-0018**.
 - **Forms via `useAppForm`.** Never `useState` for field values; canonical example `src/components/login/LoginFormCard.tsx`. See **ADR-0005**.
+- **Reuse before you hand-roll (non-trivial work only).** Before writing anything non-trivial
+  (date/time math, parsing, validation, retries, concurrency, crypto, formatting, UI primitives…):
+  1. **Check what's already installed** (`package.json`) and use it — e.g. date-fns, Zod, TanStack Query/Form,
+     Drizzle, Better Auth, Radix/shadcn. Read the library's current docs (Context7) before assuming it can't.
+  2. **Nothing installed fits → look for a well-maintained library** before building your own. Weigh
+     maintenance, bundle size (client code), and license; add it with `bun add`.
+  3. **Hand-roll only when** no good fit exists or the dependency costs more than the code, and say
+     why in the PR. Trivial helpers (a few lines, obvious) don't need this ceremony.
 
 ### Recipes
 - **Add a schema:** `src/lib/db/schema/<x>.ts` (end every `pgTable(...)` with `.enableRLS()` — `test/rls.test.ts` enforces it) → re-export in `schema/index.ts` → `bun run db:generate --name=<desc> && bun run db:migrate`. Then get the **schema-design review** (Non-negotiables) before building on it.
