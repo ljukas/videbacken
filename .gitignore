@@ -24,7 +24,6 @@ yarn.lock
 .claude/worktrees/
 .claude/plans/
 .env*.local
-.neon_local/
 
 # Vitest Browser Mode artifacts (failure screenshots + attachments)
 .vitest-attachments/

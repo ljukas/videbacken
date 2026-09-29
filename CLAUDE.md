@@ -166,7 +166,7 @@ mailpit UI 14602, storage console 14603, bull studio 14604; postgres 14620, redi
 ## Environment variables
 
 `.env.example` lists everything. Key vars:
-- `DATABASE_URL` (prod: auto-provisioned as `POSTGRES_URL` by the Supabase Vercel integration, bridged in `src/lib/db/connectionString.ts`; local `postgres://neon:npg@localhost:14620/neondb`).
+- `DATABASE_URL` (prod: auto-provisioned as `POSTGRES_URL` by the Supabase Vercel integration, bridged in `src/lib/db/connectionString.ts`; local `postgres://videbacken:videbacken@localhost:14620/videbacken`).
 - `BETTER_AUTH_SECRET` (32+ chars; `openssl rand -base64 32`), `BETTER_AUTH_URL`.
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (Google OAuth client).
 - `INITIAL_ADMIN_EMAILS` (CSV; seeds the first admin(s) into `approved_email`).

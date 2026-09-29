@@ -8,7 +8,7 @@ data layer, effects, i18n, a design system, and tests already wired. Fork it and
 - **Framework:** [TanStack Start](https://tanstack.com/start/latest) (RC) on Vite + Nitro — file-based router in `src/routes/`
 - **UI:** [Tailwind CSS v4](https://tailwindcss.com) + [shadcn/ui](https://ui.shadcn.com) (Radix primitives)
 - **Auth:** [Better Auth](https://www.better-auth.com) — Google OAuth + email magic-link, gated by an admin-managed email allowlist
-- **Database:** [Neon Postgres](https://neon.tech) (prod) / plain Postgres (local + CI) + [Drizzle ORM](https://orm.drizzle.team)
+- **Database:** [Supabase Postgres](https://supabase.com) (prod) / plain Postgres (local + CI) + [Drizzle ORM](https://orm.drizzle.team)
 - **File storage:** [Vercel Blob](https://vercel.com/docs/vercel-blob) (prod) / S3-compatible RustFS (local)
 - **Email:** [Resend](https://resend.com) (prod) / Mailpit (local)
 - **i18n:** [Paraglide JS](https://inlang.com/m/gerre34r/library-inlang-paraglideJs) — Swedish (default) + English
@@ -48,9 +48,9 @@ Local magic-link sign-in works out of the box against Mailpit (inbox at http://l
    - prod: `https://<your-domain>/api/auth/callback/google`
 
    Put the client id/secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-2. **Database** — either create a [Neon](https://neon.tech) project (recommended for Vercel; connect it
-   via the Vercel ↔ Neon Marketplace integration so `DATABASE_URL` is auto-provisioned), or keep the
-   local Postgres container for development.
+2. **Database** — connect a [Supabase](https://supabase.com) project through the Vercel Marketplace
+   integration; it provisions `POSTGRES_URL` / `POSTGRES_URL_NON_POOLING`, which
+   `src/lib/db/connectionString.ts` bridges to the app. Local dev and CI use the Postgres container.
 3. **Vercel project** — import the repo, set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
    `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `INITIAL_ADMIN_EMAILS` in the project env.
 4. **First admin** — `INITIAL_ADMIN_EMAILS` (CSV) is seeded into the `approved_email` allowlist at

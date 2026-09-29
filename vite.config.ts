@@ -9,13 +9,13 @@ import { IMAGE_SIZES } from './src/lib/image/sizes'
 
 const isTest = process.env.VITEST === 'true'
 
-// Local `bun run test` is force-pointed at the local `db` service. With the plain
-// Postgres container (Neon Local paused — see compose.yaml) there is no pooler,
-// so connections are direct sessions; the `max: 1` pinned connection in test
-// mode (`src/lib/db/index.ts`) keeps the `SET search_path` alive across queries.
+// Local `bun run test` is force-pointed at the local `db` service. The plain
+// Postgres container has no pooler, so connections are direct sessions; the
+// `max: 1` pinned connection in test mode (`src/lib/db/index.ts`) keeps the
+// `SET search_path` alive across queries.
 // Tests create per-test schemas (`test_w*`); the dev app's `public` schema is
 // untouched. In CI (`CI=true`) we inherit DATABASE_URL from the job env instead.
-const TEST_DATABASE_URL = 'postgres://neon:npg@localhost:14620/neondb'
+const TEST_DATABASE_URL = 'postgres://videbacken:videbacken@localhost:14620/videbacken'
 
 export default defineConfig({
   server: {
@@ -171,7 +171,7 @@ export default defineConfig({
           // vitest.browser.config.ts.
           sequence: { groupOrder: 0 },
           // Each test creates its own Postgres schema (see test/setup.ts). Cap
-          // workers so the CREATE/DROP SCHEMA churn against Neon Local stays
+          // workers so the CREATE/DROP SCHEMA churn against Postgres stays
           // bounded; bump cautiously after observing CI stability.
           maxWorkers: 4,
           hookTimeout: 20_000,

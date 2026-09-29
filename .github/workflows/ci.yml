@@ -50,24 +50,24 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Self-contained Postgres service (no Neon secrets). Mirrors local dev:
-    # plain postgres:17-alpine, same neon/npg/neondb creds, no SSL.
+    # Self-contained Postgres service. Mirrors local dev: plain
+    # postgres:17-alpine, same videbacken creds as compose.yaml, no SSL.
     services:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: neon
-          POSTGRES_PASSWORD: npg
-          POSTGRES_DB: neondb
+          POSTGRES_USER: videbacken
+          POSTGRES_PASSWORD: videbacken
+          POSTGRES_DB: videbacken
         ports:
           - 14620:5432
         options: >-
-          --health-cmd "pg_isready -U neon -d neondb"
+          --health-cmd "pg_isready -U videbacken -d videbacken"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgres://neon:npg@localhost:14620/neondb
+      DATABASE_URL: postgres://videbacken:videbacken@localhost:14620/videbacken
       BETTER_AUTH_URL: http://localhost:14600
       # CI-only dummy (32+ chars); real secret is set per-environment in Vercel.
       BETTER_AUTH_SECRET: ci-dummy-secret-not-used-in-prod-0000000000

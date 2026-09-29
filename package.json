@@ -21,7 +21,6 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "auth:schema": "bunx @better-auth/cli@1.4.21 generate --yes --output src/lib/db/schema/betterAuth.ts && node scripts/patchBetterAuthSchema.mjs",
-    "neon:prune": "node scripts/neonPruneBranches.mjs",
     "queue:up": "docker compose up -d --wait queue",
     "queue:down": "docker compose down queue",
     "queue:studio": "docker compose --profile studio up -d queue-studio",
