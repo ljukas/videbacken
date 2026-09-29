@@ -25,6 +25,13 @@ if (!connectionString) {
 // sessions and the single pinned connection keeps the SET alive.
 const pool = new Pool({
   connectionString,
+  // Fail fast instead of waiting forever (node-postgres's default): a stalled
+  // connect or pool checkout errors after 10 s, a query whose reply never
+  // comes after 30 s — well inside Vercel's 300 s function timeout. Inside a
+  // transaction a timed-out query leaves its client busy, so the rollback can
+  // still wait; outside one the client is discarded.
+  connectionTimeoutMillis: 10_000,
+  query_timeout: 30_000,
   ...(process.env.TEST_SCHEMA ? { max: 1, idleTimeoutMillis: 0 } : {}),
 })
 // An idle client's socket error (the pooler closing an idle connection) is
