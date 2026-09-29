@@ -7,6 +7,9 @@ design system, and tests already wired. Fork it and build your app's domain on t
 **Architecture lives in `docs/adr/`.** This file is a router: rules + commands + gotchas.
 For *why* a pattern exists, follow the ADR link.
 
+**Process lives in `docs/feature-workflow.md` and `docs/refactor-workflow.md`**, runnable as
+`/feature-workflow <idea>` and `/refactor-workflow <target>` (thin skills in `.claude/skills/` that load the doc).
+
 **Package manager is [bun](https://bun.sh).** All commands are `bun run <script>` / `bunx <cli>`.
 
 ---

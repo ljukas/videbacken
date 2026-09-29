@@ -4,6 +4,8 @@ The durable arc for taking a new feature or idea from spark to merge. This is th
 
 Companion: **[refactor-workflow.md](./refactor-workflow.md)** for behavior-preserving structural change. If your task adds capability, you're in the right doc. If it only rearranges existing behavior, switch there.
 
+> **Run it:** `/feature-workflow <idea>` (`.claude/skills/feature-workflow/`) loads this doc and starts at Phase 0. Edit the process here, not in the skill.
+
 > **How to read the skill callouts.** Each phase names the skill/agent to reach for. Phase names are durable; the *specific tools* are listed once in [Current toolchain mapping](#current-toolchain-mapping) — when tooling changes, update that one section, not the prose. Invoke a skill via the `Skill` tool; dispatch an agent via the `Agent` tool.
 
 ---
@@ -91,7 +93,7 @@ Companion: **[refactor-workflow.md](./refactor-workflow.md)** for behavior-prese
 | **ADR** | A decision *with alternatives* and why; a new seam | `docs/adr/NNNN-*.md` |
 | **Spec** | Design detail that isn't a standalone decision | brainstorming default (`docs/superpowers/specs/`) |
 | **Plan** | The checkpointed build sequence for one feature | `docs/superpowers/plans/` |
-| **Workflow** | The reusable process (this doc + the refactor one) | `docs/*-workflow.md` |
+| **Workflow** | The reusable process (this doc + the refactor one) | `docs/*-workflow.md` (run via `.claude/skills/*-workflow/`) |
 
 ---
 
