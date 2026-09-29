@@ -122,13 +122,18 @@ export function formatDay(day: string): string {
   )
 }
 
-/** Kronor for display: whole kronor by default (tiles), or with öre (sessions). */
-export function formatSek(value: number, fractionDigits = 0): string {
-  const n = new Intl.NumberFormat(getIntlLocale(), {
+/** A kronor amount without its unit (for a readout that sets "kr" apart). */
+export function formatKronor(value: number, fractionDigits = 0): string {
+  return new Intl.NumberFormat(getIntlLocale(), {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).format(value)
-  return `${n}\u00a0kr` // no-break space: the unit never wraps away from its number
+}
+
+/** Kronor for display: whole kronor by default (tiles), or with öre (sessions). */
+export function formatSek(value: number, fractionDigits = 0): string {
+  // No-break space: the unit never wraps away from its number.
+  return `${formatKronor(value, fractionDigits)}\u00a0kr`
 }
 
 /**

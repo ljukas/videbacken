@@ -66,28 +66,35 @@ const priced: Cost = {
   complete: true,
 }
 const allTiles = (cost: Cost) => ({ thisMonth: cost, thisYear: cost, allTime: cost })
-// sv-SE puts a no-break space before "kr"; match loosely.
-const kr = (n: string) => new RegExp(`^${n}\\s?kr$`)
 
-test('with cost, kronor leads and kWh, sessions and the average follow', async () => {
+test('with cost, energy and cost are twin readouts, the average in the footer', async () => {
   const { screen } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(priced)} />,
   )
-  expect(screen.getByText(kr('159')).elements()).toHaveLength(3)
-  await expect
-    .element(screen.getByText(/inkl\. moms, varav spotpris 63\s?kr/).first())
-    .toBeVisible()
-  await expect.element(screen.getByText('100,0 kWh').first()).toBeVisible()
-  await expect.element(screen.getByText('· 159 öre/kWh i snitt').first()).toBeVisible()
-  expect(screen.getByText(/^minst/).elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_tile_energy(), { exact: true }).elements()).toHaveLength(3)
+  expect(screen.getByText(m.charging_tile_cost(), { exact: true }).elements()).toHaveLength(3)
+  expect(screen.getByText('100,0 kWh', { exact: true }).elements()).toHaveLength(3)
+  expect(screen.getByText(/^159 kr$/).elements()).toHaveLength(3)
+  await expect.element(screen.getByText(/^varav spotpris\s63\s?kr$/).first()).toBeVisible()
+  await expect.element(screen.getByText('159 öre/kWh i snitt').first()).toBeVisible()
+  expect(screen.getByText(m.charging_cost_min_prefix(), { exact: true }).elements()).toHaveLength(0)
 })
 
-test('a partly priced total is "minst" with the share of charging that lacks a price', async () => {
+test('the two readouts carry the same weight', async () => {
+  const { screen } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(priced)} />,
+  )
+  const kwh = screen.getByText('100,0', { exact: true }).first().element()
+  const kr = screen.getByText('159', { exact: true }).first().element()
+  expect(kr.className).toBe(kwh.className)
+})
+
+test('a partly priced total is qualified "minst", with the missing share in the footer', async () => {
   const partial = { ...priced, fullKwh: 61, noPriceKwh: 39, complete: false }
   const { screen } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(partial)} />,
   )
-  await expect.element(screen.getByText(/^minst 159\s?kr$/).first()).toBeVisible()
+  await expect.element(screen.getByText(/^minst 159 kr$/).first()).toBeVisible()
   await expect
     .element(screen.getByText(m.charging_cost_partial_hint({ share: '39 %' })).first())
     .toBeVisible()
@@ -110,14 +117,14 @@ test('an over-count is incomplete but never "minst" or a negative amount', async
   const { screen } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(over)} />,
   )
-  expect(screen.getByText(kr('159')).elements()).toHaveLength(3)
+  expect(screen.getByText(/^159 kr$/).elements()).toHaveLength(3)
   await expect
     .element(screen.getByText(m.charging_cost_partial_hint_generic()).first())
     .toBeVisible()
   expect(screen.getByText(/-\d/).elements()).toHaveLength(0)
 })
 
-test('a tile with energy but no price keeps kWh as the headline and says the cost is missing', async () => {
+test('a tile with energy but no price shows "—" for cost with the reason, never 0 kr', async () => {
   const unpriced = {
     ...priced,
     fullKwh: 0,
@@ -134,14 +141,14 @@ test('a tile with energy but no price keeps kWh as the headline and says the cos
       cost={{ thisMonth: unpriced, thisYear: priced, allTime: priced }}
     />,
   )
-  await expect
-    .element(screen.getByText(`${m.charging_cost_unknown()}: ${m.charging_cost_unknown_hint()}`))
-    .toBeVisible()
-  expect(screen.getByText(kr('0')).elements()).toHaveLength(0)
-  expect(screen.getByText(kr('159')).elements()).toHaveLength(2)
+  await expect.element(screen.getByText('—', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText(m.charging_cost_unknown(), { exact: true })).toBeVisible()
+  await expect.element(screen.getByText(m.charging_cost_unknown_hint())).toBeVisible()
+  expect(screen.getByText(/^0 kr$/).elements()).toHaveLength(0)
+  expect(screen.getByText(/^159 kr$/).elements()).toHaveLength(2)
 })
 
-test('no energy is a true 0 kr', async () => {
+test('no energy is a true 0 kr, without a spot breakdown or footer', async () => {
   const none = { kwh: 0, sessions: 0 }
   const empty = {
     ...priced,
@@ -159,8 +166,14 @@ test('no energy is a true 0 kr', async () => {
       cost={{ thisMonth: empty, thisYear: priced, allTime: priced }}
     />,
   )
-  await expect.element(screen.getByText(kr('0'))).toBeVisible()
+  await expect.element(screen.getByText(/^0 kr$/)).toBeVisible()
   expect(screen.getByText(m.charging_cost_unknown(), { exact: false }).elements()).toHaveLength(0)
-  // Just the bare 0 kr: no "varav spotpris 0 kr" breakdown for no charging.
   expect(screen.getByText(/varav spotpris/).elements()).toHaveLength(2)
+  expect(screen.getByText('159 öre/kWh i snitt').elements()).toHaveLength(2)
+})
+
+test('without cost a tile is the energy readout alone', async () => {
+  const { screen } = await renderWithProviders(<TotalsTiles tiles={zeroTiles} />)
+  expect(screen.getByText(m.charging_tile_cost(), { exact: true }).elements()).toHaveLength(0)
+  expect(screen.getByText('100,0 kWh', { exact: true }).elements()).toHaveLength(3)
 })

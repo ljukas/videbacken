@@ -31,8 +31,8 @@
   "charging_chart_title_cost": "Charging cost per month (kr, incl. VAT)",
   "charging_chart_total": "Total",
   "charging_cost_avg": "{avg} öre/kWh on average",
-  "charging_cost_breakdown": "incl. VAT, of which spot price {spot}",
   "charging_cost_min": "at least {total}",
+  "charging_cost_min_prefix": "at least",
   "charging_cost_note": "An estimate incl. VAT. All charging counts as bought from the grid, and fixed monthly fees aren't included.",
   "charging_cost_notice_setup_action": "Add fees",
   "charging_cost_notice_setup_admin": "Add the grid fees and markup to see what charging costs.",
@@ -40,6 +40,7 @@
   "charging_cost_notice_unpriced": "The cost can't be worked out yet: electricity prices or fees are missing for when the car charged.",
   "charging_cost_partial_hint": "No price for {share} of the charging.",
   "charging_cost_partial_hint_generic": "The prices for the period are incomplete.",
+  "charging_cost_spot_share": "of which spot price {spot}",
   "charging_cost_unknown": "Cost unavailable",
   "charging_cost_unknown_hint": "Electricity prices or fees are missing for the period.",
   "charging_description": "EV charging via the house's Zaptec charger. Data syncs automatically every hour.",
@@ -161,6 +162,8 @@
   "charging_tariff_title": "Markup, grid and tax",
   "charging_tariff_unit_ore": "öre/kWh",
   "charging_tile_all_time": "All time",
+  "charging_tile_cost": "Cost incl. VAT",
+  "charging_tile_energy": "Energy",
   "charging_tile_sessions": [
     {
       "declarations": [

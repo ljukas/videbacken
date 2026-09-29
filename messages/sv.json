@@ -31,8 +31,8 @@
   "charging_chart_title_cost": "Laddningskostnad per månad (kr, inkl. moms)",
   "charging_chart_total": "Totalt",
   "charging_cost_avg": "{avg} öre/kWh i snitt",
-  "charging_cost_breakdown": "inkl. moms, varav spotpris {spot}",
   "charging_cost_min": "minst {total}",
+  "charging_cost_min_prefix": "minst",
   "charging_cost_note": "Uppskattning inkl. moms. All laddning räknas som köpt från elnätet och fasta månadsavgifter ingår inte.",
   "charging_cost_notice_setup_action": "Lägg in avgifter",
   "charging_cost_notice_setup_admin": "Lägg in elnätsavgifter och påslag för att se vad laddningen kostar.",
@@ -40,6 +40,7 @@
   "charging_cost_notice_unpriced": "Kostnaden kan inte räknas ut än: elpris eller avgifter saknas för perioden då bilen laddades.",
   "charging_cost_partial_hint": "Pris saknas för {share} av laddningen.",
   "charging_cost_partial_hint_generic": "Priserna för perioden är inte kompletta.",
+  "charging_cost_spot_share": "varav spotpris {spot}",
   "charging_cost_unknown": "Kostnad saknas",
   "charging_cost_unknown_hint": "Elpris eller avgifter saknas för perioden.",
   "charging_description": "Elbilsladdning via husets Zaptec-laddbox. Datan synkas automatiskt varje timme.",
@@ -161,6 +162,8 @@
   "charging_tariff_title": "Påslag, elnät och skatt",
   "charging_tariff_unit_ore": "öre/kWh",
   "charging_tile_all_time": "Totalt",
+  "charging_tile_cost": "Kostnad inkl. moms",
+  "charging_tile_energy": "Energi",
   "charging_tile_sessions": [
     {
       "declarations": [
