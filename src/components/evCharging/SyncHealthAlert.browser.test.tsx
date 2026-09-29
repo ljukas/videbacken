@@ -49,7 +49,11 @@ test('failing (admin): code message, raw error detail and a working retry', asyn
   )
   await expect.element(screen.getByText(titleFor('failing'))).toBeVisible()
   await expect
-    .element(screen.getByText(integrationErrorMessage('auth_failed'), { exact: false }))
+    .element(
+      screen.getByText(integrationErrorMessage('auth_failed', { source: 'zaptec' }), {
+        exact: false,
+      }),
+    )
     .toBeVisible()
   await expect.element(screen.getByText('HTTP 401 from /oauth/token')).toBeVisible()
 
@@ -68,7 +72,11 @@ test('failing (non-admin): code message only — no raw detail, no retry', async
     />,
   )
   await expect
-    .element(screen.getByText(integrationErrorMessage('auth_failed'), { exact: false }))
+    .element(
+      screen.getByText(integrationErrorMessage('auth_failed', { source: 'zaptec' }), {
+        exact: false,
+      }),
+    )
     .toBeVisible()
   expect(screen.getByText(m.charging_health_admin_detail()).elements()).toHaveLength(0)
   expect(retryButton(screen).elements()).toHaveLength(0)
@@ -114,6 +122,51 @@ test.each([
     />,
   )
   await expect.element(screen.getByText(titleFor('not_configured'))).toBeVisible()
-  await expect.element(screen.getByText(integrationErrorMessage('not_configured'))).toBeVisible()
+  await expect
+    .element(screen.getByText(integrationErrorMessage('not_configured', { source: 'zaptec' })))
+    .toBeVisible()
   expect(retryButton(screen).elements()).toHaveLength(0)
+})
+
+test('an elpris alert that never synced uses the price-specific copy', async () => {
+  const never: Health = {
+    ...base,
+    source: 'elpris',
+    state: 'never_synced',
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+  }
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert health={never} isAdmin={false} onRetry={() => {}} retrying={false} />,
+  )
+  await expect.element(screen.getByText(m.charging_health_never_synced_elpris())).toBeVisible()
+  // Informational states are a polite status, not an interrupting alert.
+  await expect.element(screen.getByRole('status')).toBeVisible()
+})
+
+test('a failing elpris alert names its own source and interrupts (role=alert)', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...failing, source: 'elpris', code: 'unreachable', adminDetail: null }}
+      isAdmin={false}
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  const message = integrationErrorMessage('unreachable', { source: 'elpris' })
+  expect(message).not.toContain('Zaptec')
+  await expect.element(screen.getByText(message, { exact: false })).toBeVisible()
+  await expect.element(screen.getByRole('alert')).toBeVisible()
+})
+
+test('a stale elpris alert talks about prices', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...base, source: 'elpris', state: 'stale' }}
+      isAdmin={false}
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_health_stale_elpris())).toBeVisible()
 })

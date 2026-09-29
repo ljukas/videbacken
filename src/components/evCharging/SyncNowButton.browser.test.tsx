@@ -28,69 +28,133 @@ beforeEach(() => {
   for (const fn of Object.values(toastMock)) fn.mockReset()
 })
 
-function Harness() {
-  const { sync, isPending } = useSyncNow()
-  return <SyncNowButton onSync={sync} pending={isPending} />
+type Result = {
+  outcome: 'ok' | 'skipped' | 'failed' | 'error'
+  code: string | null
+  upserted: number
+}
+const OK: Result = { outcome: 'ok', code: null, upserted: 96 }
+
+// `syncNow` is called once per source; script each source's result.
+function respond(results: { zaptec?: Result | Error; elpris?: Result | Error }) {
+  syncFn.mockImplementation(async ({ source }: { source: 'zaptec' | 'elpris' }) => {
+    const r = results[source] ?? OK
+    if (r instanceof Error) throw r
+    return r
+  })
 }
 
-test('an ok run toasts success with the upserted count and invalidates evCharging', async () => {
-  syncFn.mockResolvedValue({ outcome: 'ok', code: null, upserted: 3 })
+function Harness({ only }: { only?: 'zaptec' | 'elpris' }) {
+  const { syncAll, syncSource, isPending } = useSyncNow()
+  return <SyncNowButton onSync={only ? () => syncSource(only) : syncAll} pending={isPending} />
+}
+
+const click = (screen: Awaited<ReturnType<typeof renderWithProviders>>['screen']) =>
+  screen.getByRole('button', { name: m.charging_sync_now() }).click()
+
+test('sync all runs both sources, toasts the session result once and invalidates evCharging', async () => {
+  respond({ zaptec: { outcome: 'ok', code: null, upserted: 3 } })
   const queryClient = makeTestQueryClient()
   const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
   const { screen } = await renderWithProviders(<Harness />, { queryClient })
 
-  await screen.getByRole('button', { name: m.charging_sync_now() }).click()
+  await click(screen)
 
   await vi.waitFor(() =>
     expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_ok({ count: 3 })),
   )
+  await vi.waitFor(() => expect(syncFn).toHaveBeenCalledTimes(2))
+  expect(syncFn.mock.calls.map((c) => c[0])).toEqual([{ source: 'zaptec' }, { source: 'elpris' }])
   await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['evCharging'] }))
+  // A full sync doesn't stack a second green toast for prices.
+  expect(toastMock.success).toHaveBeenCalledOnce()
+  expect(toastMock.error).not.toHaveBeenCalled()
 })
 
 test('a one-session run toasts the singular', async () => {
-  syncFn.mockResolvedValue({ outcome: 'ok', code: null, upserted: 1 })
+  respond({ zaptec: { outcome: 'ok', code: null, upserted: 1 } })
   const { screen } = await renderWithProviders(<Harness />)
-
-  await screen.getByRole('button', { name: m.charging_sync_now() }).click()
-
+  await click(screen)
   await vi.waitFor(() =>
     expect(toastMock.success).toHaveBeenCalledWith('Synkningen är klar (1 session uppdaterad)'),
   )
 })
 
-test('a failed run toasts the localized error for its code', async () => {
-  syncFn.mockResolvedValue({ outcome: 'failed', code: 'auth_failed', upserted: 0 })
+test('a failed session run toasts the localized Zaptec error for its code', async () => {
+  respond({ zaptec: { outcome: 'failed', code: 'auth_failed', upserted: 0 } })
   const { screen } = await renderWithProviders(<Harness />)
-
-  await screen.getByRole('button', { name: m.charging_sync_now() }).click()
-
+  await click(screen)
   await vi.waitFor(() =>
     expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_failed(), {
-      description: integrationErrorMessage('auth_failed'),
+      description: integrationErrorMessage('auth_failed', { source: 'zaptec' }),
     }),
   )
 })
 
-test('a skipped run says a sync is already running', async () => {
-  syncFn.mockResolvedValue({ outcome: 'skipped', code: null, upserted: 0 })
+test('a skipped session run says a sync is already running', async () => {
+  respond({ zaptec: { outcome: 'skipped', code: null, upserted: 0 } })
   const { screen } = await renderWithProviders(<Harness />)
-
-  await screen.getByRole('button', { name: m.charging_sync_now() }).click()
-
+  await click(screen)
   await vi.waitFor(() => expect(toastMock.info).toHaveBeenCalledWith(m.charging_sync_skipped()))
 })
 
-test('a transport error toasts a generic failure', async () => {
-  syncFn.mockRejectedValue(new Error('network down'))
+test('a failed price sync gets its own error toast next to a session success', async () => {
+  respond({
+    zaptec: { outcome: 'ok', code: null, upserted: 2 },
+    elpris: { outcome: 'failed', code: 'unreachable', upserted: 0 },
+  })
   const { screen } = await renderWithProviders(<Harness />)
-
-  await screen.getByRole('button', { name: m.charging_sync_now() }).click()
-
+  await click(screen)
   await vi.waitFor(() =>
-    expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_failed(), {
-      description: integrationErrorMessage('internal_error'),
+    expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_ok({ count: 2 })),
+  )
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_prices_failed(), {
+      description: integrationErrorMessage('unreachable', { source: 'elpris' }),
     }),
   )
+})
+
+test('a transport error is attributed to the source that raised it', async () => {
+  respond({ zaptec: { outcome: 'ok', code: null, upserted: 2 }, elpris: new Error('boom') })
+  const { screen } = await renderWithProviders(<Harness />)
+  await click(screen)
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_prices_failed(), {
+      description: integrationErrorMessage('internal_error', { source: 'elpris' }),
+    }),
+  )
+  expect(toastMock.error).toHaveBeenCalledOnce()
+  expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_ok({ count: 2 }))
+})
+
+test('retrying prices alone runs only elpris and confirms success', async () => {
+  respond({})
+  const { screen } = await renderWithProviders(<Harness only="elpris" />)
+  await click(screen)
+  await vi.waitFor(() =>
+    expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_prices_ok()),
+  )
+  expect(syncFn.mock.calls.map((c) => c[0])).toEqual([{ source: 'elpris' }])
+})
+
+test('a price retry reports a skipped run', async () => {
+  respond({ elpris: { outcome: 'skipped', code: null, upserted: 0 } })
+  const { screen } = await renderWithProviders(<Harness only="elpris" />)
+  await click(screen)
+  await vi.waitFor(() => expect(toastMock.info).toHaveBeenCalledWith(m.charging_sync_skipped()))
+})
+
+test('a full sync keeps a skipped price run silent', async () => {
+  respond({
+    zaptec: { outcome: 'ok', code: null, upserted: 1 },
+    elpris: { outcome: 'skipped', code: null, upserted: 0 },
+  })
+  const { screen } = await renderWithProviders(<Harness />)
+  await click(screen)
+  await vi.waitFor(() => expect(syncFn).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledOnce())
+  expect(toastMock.info).not.toHaveBeenCalled()
 })
 
 test('the button is disabled while a sync is pending', async () => {

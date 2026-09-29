@@ -24,6 +24,7 @@ import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authent
 import { Route as ApiWebhooksShellyRouteImport } from './routes/api/webhooks/shelly'
 import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
 import { Route as ApiCronZaptecSyncRouteImport } from './routes/api/cron/zaptec-sync'
+import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
 
@@ -102,6 +103,11 @@ const ApiCronZaptecSyncRoute = ApiCronZaptecSyncRouteImport.update({
   path: '/api/cron/zaptec-sync',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronElprisSyncRoute = ApiCronElprisSyncRouteImport.update({
+  id: '/api/cron/elpris-sync',
+  path: '/api/cron/elpris-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/api/log': typeof ApiLogRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
@@ -144,6 +151,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
@@ -164,6 +172,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
@@ -184,6 +193,7 @@ export interface FileRouteTypes {
     | '/api/log'
     | '/account/profile'
     | '/api/auth/$'
+    | '/api/cron/elpris-sync'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
@@ -201,6 +211,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account/profile'
     | '/api/auth/$'
+    | '/api/cron/elpris-sync'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
@@ -220,6 +231,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/account/profile'
     | '/api/auth/$'
+    | '/api/cron/elpris-sync'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
@@ -233,6 +245,7 @@ export interface RootRouteChildren {
   SignedInRoute: typeof SignedInRoute
   ApiLogRoute: typeof ApiLogRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiCronElprisSyncRoute: typeof ApiCronElprisSyncRoute
   ApiCronZaptecSyncRoute: typeof ApiCronZaptecSyncRoute
   ApiRpcSplatRoute: typeof ApiRpcSplatRoute
   ApiWebhooksShellyRoute: typeof ApiWebhooksShellyRoute
@@ -345,6 +358,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronZaptecSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/elpris-sync': {
+      id: '/api/cron/elpris-sync'
+      path: '/api/cron/elpris-sync'
+      fullPath: '/api/cron/elpris-sync'
+      preLoaderRoute: typeof ApiCronElprisSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -404,6 +424,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignedInRoute: SignedInRoute,
   ApiLogRoute: ApiLogRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiCronElprisSyncRoute: ApiCronElprisSyncRoute,
   ApiCronZaptecSyncRoute: ApiCronZaptecSyncRoute,
   ApiRpcSplatRoute: ApiRpcSplatRoute,
   ApiWebhooksShellyRoute: ApiWebhooksShellyRoute,
