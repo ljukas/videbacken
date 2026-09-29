@@ -76,8 +76,20 @@ test('renderIntegrationSyncAlert includes the code-specific explanation when fai
     code: 'auth_failed',
     locale: 'sv',
   })
-  expect(html).toContain('Zaptec-lösenordet')
-  expect(text).toContain('Zaptec-lösenordet')
+  expect(html).toContain('Inloggningen mot Zaptec fungerar inte längre')
+  expect(text).toContain('Inloggningen mot Zaptec fungerar inte längre')
+})
+
+test('an elpris alert names Elpris throughout — never Zaptec', async () => {
+  const { html, text } = await renderIntegrationSyncAlert({
+    source: 'elpris',
+    transition: 'started_failing',
+    code: 'unexpected_response',
+    locale: 'sv',
+  })
+  expect(text).toContain('Elpris svarade på ett oväntat sätt')
+  expect(html).not.toContain('Zaptec')
+  expect(text).not.toContain('Zaptec')
 })
 
 test('renderIntegrationSyncAlert emits non-empty html and text for both transitions', async () => {

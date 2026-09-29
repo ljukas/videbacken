@@ -32,7 +32,7 @@ const failedRun: Run = {
 test('is collapsed by default and expands to the run table', async () => {
   const { screen } = await renderWithProviders(
     <div style={{ width: 1024 }}>
-      <RecentRunsCard runs={[okRun, failedRun]} />
+      <RecentRunsCard source="zaptec" runs={[okRun, failedRun]} />
     </div>,
   )
   await expect.element(screen.getByText(m.charging_runs_title())).toBeVisible()
@@ -53,7 +53,7 @@ test('is collapsed by default and expands to the run table', async () => {
 })
 
 test('an empty history says so once expanded', async () => {
-  const { screen } = await renderWithProviders(<RecentRunsCard runs={[]} />)
+  const { screen } = await renderWithProviders(<RecentRunsCard source="zaptec" runs={[]} />)
   await screen.getByRole('button', { name: m.charging_runs_toggle() }).click()
   await expect.element(screen.getByText(m.charging_runs_empty())).toBeVisible()
 })

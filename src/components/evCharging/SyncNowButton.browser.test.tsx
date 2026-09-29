@@ -28,13 +28,15 @@ beforeEach(() => {
   for (const fn of Object.values(toastMock)) fn.mockReset()
 })
 
+const PRICES_OK = { outcome: 'ok', code: null, upserted: 96 }
+
 function Harness() {
   const { sync, isPending } = useSyncNow()
   return <SyncNowButton onSync={sync} pending={isPending} />
 }
 
 test('an ok run toasts success with the upserted count and invalidates evCharging', async () => {
-  syncFn.mockResolvedValue({ outcome: 'ok', code: null, upserted: 3 })
+  syncFn.mockResolvedValue({ outcome: 'ok', code: null, upserted: 3, elpris: PRICES_OK })
   const queryClient = makeTestQueryClient()
   const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
   const { screen } = await renderWithProviders(<Harness />, { queryClient })
@@ -48,7 +50,7 @@ test('an ok run toasts success with the upserted count and invalidates evChargin
 })
 
 test('a one-session run toasts the singular', async () => {
-  syncFn.mockResolvedValue({ outcome: 'ok', code: null, upserted: 1 })
+  syncFn.mockResolvedValue({ outcome: 'ok', code: null, upserted: 1, elpris: PRICES_OK })
   const { screen } = await renderWithProviders(<Harness />)
 
   await screen.getByRole('button', { name: m.charging_sync_now() }).click()
@@ -59,20 +61,25 @@ test('a one-session run toasts the singular', async () => {
 })
 
 test('a failed run toasts the localized error for its code', async () => {
-  syncFn.mockResolvedValue({ outcome: 'failed', code: 'auth_failed', upserted: 0 })
+  syncFn.mockResolvedValue({
+    outcome: 'failed',
+    code: 'auth_failed',
+    upserted: 0,
+    elpris: PRICES_OK,
+  })
   const { screen } = await renderWithProviders(<Harness />)
 
   await screen.getByRole('button', { name: m.charging_sync_now() }).click()
 
   await vi.waitFor(() =>
     expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_failed(), {
-      description: integrationErrorMessage('auth_failed'),
+      description: integrationErrorMessage('auth_failed', { source: 'zaptec' }),
     }),
   )
 })
 
 test('a skipped run says a sync is already running', async () => {
-  syncFn.mockResolvedValue({ outcome: 'skipped', code: null, upserted: 0 })
+  syncFn.mockResolvedValue({ outcome: 'skipped', code: null, upserted: 0, elpris: PRICES_OK })
   const { screen } = await renderWithProviders(<Harness />)
 
   await screen.getByRole('button', { name: m.charging_sync_now() }).click()
@@ -88,9 +95,38 @@ test('a transport error toasts a generic failure', async () => {
 
   await vi.waitFor(() =>
     expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_failed(), {
-      description: integrationErrorMessage('internal_error'),
+      description: integrationErrorMessage('internal_error', { source: 'zaptec' }),
     }),
   )
+})
+
+test('a failed price sync gets its own error toast, even when sessions synced fine', async () => {
+  syncFn.mockResolvedValue({
+    outcome: 'ok',
+    code: null,
+    upserted: 2,
+    elpris: { outcome: 'failed', code: 'unreachable', upserted: 0 },
+  })
+  const { screen } = await renderWithProviders(<Harness />)
+
+  await screen.getByRole('button', { name: m.charging_sync_now() }).click()
+
+  await vi.waitFor(() =>
+    expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_ok({ count: 2 })),
+  )
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_prices_failed(), {
+      description: integrationErrorMessage('unreachable', { source: 'elpris' }),
+    }),
+  )
+})
+
+test('an ok price sync adds no toast of its own', async () => {
+  syncFn.mockResolvedValue({ outcome: 'ok', code: null, upserted: 2, elpris: PRICES_OK })
+  const { screen } = await renderWithProviders(<Harness />)
+  await screen.getByRole('button', { name: m.charging_sync_now() }).click()
+  await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledOnce())
+  expect(toastMock.error).not.toHaveBeenCalled()
 })
 
 test('the button is disabled while a sync is pending', async () => {

@@ -8,11 +8,13 @@ import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
 // The admin "sync now" mutation, shared by the heading button, the health
-// alert's "Försök igen" and the empty session list's CTA. `syncNow` never
-// throws for a failed/skipped run — those are ordinary outcomes — so the toast
-// is chosen by `outcome`; `onError` only covers a transport/unexpected error.
-// Every outcome can have changed health/runs/data, so the whole evCharging
-// cache is invalidated on settle.
+// alerts' "Försök igen" and the empty session list's CTA. It runs both syncs
+// (sessions and spot prices). Neither throws for a failed/skipped run — those
+// are ordinary outcomes — so the toasts are chosen by `outcome`: the session
+// sync's as before, plus an extra error toast when the price sync failed (a
+// price failure must never hide behind a green "N sessions updated").
+// `onError` only covers a transport/unexpected error. Every outcome can have
+// changed health/runs/data, so the whole evCharging cache is invalidated.
 export function useSyncNow() {
   const queryClient = useQueryClient()
   const mutation = useMutation(
@@ -21,21 +23,30 @@ export function useSyncNow() {
         switch (result.outcome) {
           case 'ok':
             toast.success(m.charging_sync_ok({ count: result.upserted }))
-            return
+            break
           case 'skipped':
             toast.info(m.charging_sync_skipped())
-            return
+            break
           case 'failed':
           case 'error':
             toast.error(m.charging_sync_failed(), {
-              description: integrationErrorMessage(result.code ?? 'internal_error'),
+              description: integrationErrorMessage(result.code ?? 'internal_error', {
+                source: 'zaptec',
+              }),
             })
-            return
+            break
+        }
+        if (result.elpris.outcome === 'failed' || result.elpris.outcome === 'error') {
+          toast.error(m.charging_sync_prices_failed(), {
+            description: integrationErrorMessage(result.elpris.code ?? 'internal_error', {
+              source: 'elpris',
+            }),
+          })
         }
       },
       onError: () => {
         toast.error(m.charging_sync_failed(), {
-          description: integrationErrorMessage('internal_error'),
+          description: integrationErrorMessage('internal_error', { source: 'zaptec' }),
         })
       },
       onSettled: () => queryClient.invalidateQueries({ queryKey: orpc.evCharging.key() }),

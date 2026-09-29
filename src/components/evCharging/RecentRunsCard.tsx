@@ -20,6 +20,8 @@ import {
   TableHeader,
   TableRow,
 } from '~/components/ui/table'
+import type { IntegrationSource } from '~/lib/integrationHealth'
+import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
@@ -41,17 +43,19 @@ const OUTCOME: Record<
   error: { label: m.charging_runs_outcome_error, variant: 'destructive' },
 }
 
-// Admin-only sync history (the last 20 runs), collapsed by default — it's a
+// Admin-only sync history of one source (the last 20 runs), collapsed by default — it's a
 // diagnostic, not something to read on every visit. The error code is shown
 // raw on purpose: it's the stable identifier admins grep logs for.
-export function RecentRunsCard({ runs }: { runs: Run[] }) {
+export function RecentRunsCard({ source, runs }: { source: IntegrationSource; runs: Run[] }) {
   const [open, setOpen] = useState(false)
   return (
     <Collapsible open={open} onOpenChange={setOpen} asChild>
       <Card>
         <CardHeader>
           <CardTitle>{m.charging_runs_title()}</CardTitle>
-          <CardDescription>{m.charging_runs_description()}</CardDescription>
+          <CardDescription>
+            {m.charging_runs_description({ source: integrationSourceName(source) })}
+          </CardDescription>
           <CardAction>
             <CollapsibleTrigger asChild>
               <Button variant="ghost" size="icon" aria-label={m.charging_runs_toggle()}>

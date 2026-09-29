@@ -38,7 +38,7 @@ export function SyncHealthAlert({
     case 'never_synced':
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{m.charging_health_never_synced()}</div>
+          <div>{neverSyncedCopy(health.source)}</div>
           {isAdmin ? <RetryRow onRetry={onRetry} retrying={retrying} /> : null}
         </HealthAlert>
       )
@@ -46,7 +46,7 @@ export function SyncHealthAlert({
       // Retrying can't fix missing credentials, so no retry here.
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{integrationErrorMessage('not_configured')}</div>
+          <div>{integrationErrorMessage('not_configured', { source: health.source })}</div>
         </HealthAlert>
       )
     case 'stale':
@@ -60,7 +60,7 @@ export function SyncHealthAlert({
       return (
         <HealthAlert variant="destructive" title={title}>
           <div>
-            {integrationErrorMessage(health.code ?? 'internal_error')}
+            {integrationErrorMessage(health.code ?? 'internal_error', { source: health.source })}
             {health.failingSince ? (
               <> {m.charging_health_failing_since({ time: formatDateTime(health.failingSince) })}</>
             ) : null}
@@ -69,6 +69,13 @@ export function SyncHealthAlert({
         </HealthAlert>
       )
   }
+}
+
+// Only "never synced" differs by source: sessions sync hourly, prices daily.
+function neverSyncedCopy(source: Health['source']): string {
+  return source === 'elpris'
+    ? m.charging_health_never_synced_elpris()
+    : m.charging_health_never_synced()
 }
 
 function HealthAlert({

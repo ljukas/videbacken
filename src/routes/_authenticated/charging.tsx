@@ -35,6 +35,12 @@ const SESSIONS_MAX = 500 // the `sessions` procedure's `limit` cap
 const RECENT_RUNS = 20
 
 const sessionsQuery = (limit: number) => orpc.evCharging.sessions.queryOptions({ input: { limit } })
+// Spot price sync (elpris). Zaptec's keep their input-less calls, so their
+// query keys are unchanged; prices always pass their source.
+const pricesHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } })
+const pricesRunsQuery = orpc.evCharging.recentRuns.queryOptions({
+  input: { source: 'elpris', limit: RECENT_RUNS },
+})
 
 export const Route = createFileRoute('/_authenticated/charging')({
   head: () => ({
@@ -49,11 +55,13 @@ export const Route = createFileRoute('/_authenticated/charging')({
       ),
       queryClient.ensureQueryData(sessionsQuery(SESSIONS_PAGE)),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
+      queryClient.ensureQueryData(pricesHealthQuery),
       user.role === 'admin'
         ? queryClient.ensureQueryData(
             orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
           )
         : null,
+      user.role === 'admin' ? queryClient.ensureQueryData(pricesRunsQuery) : null,
     ])
   },
   component: ChargingPage,
@@ -79,11 +87,13 @@ function ChargingPage() {
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
   })
+  const { data: pricesHealth } = useSuspenseQuery({ ...pricesHealthQuery, refetchInterval: 60_000 })
   const live = useLiveStatus()
   const { data: runs } = useQuery({
     ...orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
     enabled: isAdmin,
   })
+  const { data: pricesRuns } = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
 
   // "Visa fler" fetches the longer page first and only then switches to it, so
   // a failed fetch leaves the rows on screen (with a toast; the button stays
@@ -109,6 +119,12 @@ function ChargingPage() {
 
       <SyncHealthAlert
         health={health}
+        isAdmin={isAdmin}
+        onRetry={syncNow.sync}
+        retrying={syncNow.isPending}
+      />
+      <SyncHealthAlert
+        health={pricesHealth}
         isAdmin={isAdmin}
         onRetry={syncNow.sync}
         retrying={syncNow.isPending}
@@ -151,7 +167,8 @@ function ChargingPage() {
         />
       </section>
 
-      {isAdmin && runs ? <RecentRunsCard runs={runs} /> : null}
+      {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
+      {isAdmin && pricesRuns ? <RecentRunsCard source="elpris" runs={pricesRuns} /> : null}
     </PageContainer>
   )
 }

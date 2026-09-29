@@ -43,7 +43,8 @@ export const IntegrationSyncAlertEmail = ({
   const intro = isFailing
     ? m.email_integration_sync_body_failing({ source: sourceName }, { locale })
     : m.email_integration_sync_body_recovered({ source: sourceName }, { locale })
-  const body = isFailing && code ? `${intro} ${integrationErrorMessage(code, { locale })}` : intro
+  const body =
+    isFailing && code ? `${intro} ${integrationErrorMessage(code, { source, locale })}` : intro
 
   const preview = isFailing
     ? m.email_integration_sync_preview_failing({ source: sourceName }, { locale })
