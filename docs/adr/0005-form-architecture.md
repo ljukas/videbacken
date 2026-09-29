@@ -5,11 +5,13 @@
 - **Deciders**: Lukas
 - **Decision in one line**: Every form uses `useAppForm` from `~/hooks/form`; fields render via `<form.AppField>` + pre-bound `<field.TextField>` / `<field.SelectField>`; submit gates via `<form.AppForm>` + `<form.SubmitButton>`. Field errors → `<FieldError>`, async/API errors → `sonner` toasts.
 
+> **Amended 2026-09-29. Pruned to the current template.** References to features the template removed (passkeys and `RenamePasskeyForm`/`PasskeyRow`, seasons, shares and `AssignShareDialog`, the document library and its dialogs/search, `CreateUserDialog`, the `/konto` and `/admin/users` routes) were removed or replaced with current examples (`TariffDialog`, `EditUserDialog`, `InviteUserDialog`, `CommandPalette`). Stale descriptions of `SubmitButton`, `DateField`, the Zod locale and the bound-component inventory were corrected to match the code; the form inventory in the 2026-06-10 addendum was re-dated to the current consumers. One convention did change, in #29: the 2026-06-10 numeric-input convention (a `TextField` with `type="number"`, coerced with `Number(...)`) became a text input with `inputMode="decimal"`, parsed via `parseDecimal` (the string-typed `NumberField` preset), and its rule now reads "don't add a number-valued field" rather than "don't add a `NumberField`" — the intent is unchanged: form state stays string-typed. Both in-place edits to that addendum are marked "(updated 2026-09-29)". The caller-level `<form.Subscribe>` exceptions keep their sanction but have no caller today. No other decision changed.
+
 ---
 
 ## Context
 
-At decision time (May 2026 baseline), Videbacken had three forms (`LoginFormCard`, `RenamePasskeyForm`, `UserForm`), each following the inline `<form.Field>` + render-prop pattern. The pattern worked, but the cost per field was ~16 lines of boilerplate:
+At decision time (May 2026 baseline), Videbacken had three forms (`LoginFormCard`, a passkey-rename form, and a user form), each following the inline `<form.Field>` + render-prop pattern. The pattern worked, but the cost per field was ~16 lines of boilerplate:
 
 ```tsx
 <form.Field name="email" children={(field) => {
@@ -33,7 +35,7 @@ At decision time (May 2026 baseline), Videbacken had three forms (`LoginFormCard
 }} />
 ```
 
-`UserForm` repeated this **four times** (one per field). The `<form.Subscribe>` submit-button block was duplicated three times across the three forms. The duplication wasn't deeply harmful then, but adding a 4th form — file library upload metadata, contact details, boat-week assignments — would copy-paste 60+ lines of glue per form. (The bet paid off: as of 2026-06-10 the pattern carries **12** `useAppForm` consumers — see the form inventory in the 2026-06-10 addendum.)
+The user form repeated this **four times** (one per field). The `<form.Subscribe>` submit-button block was duplicated three times across the three forms. The duplication wasn't deeply harmful then, but adding a 4th form would copy-paste 60+ lines of glue per form. (The bet paid off: by 2026-06-10 the pattern carried **12** `useAppForm` consumers; the current inventory is in the 2026-06-10 addendum.)
 
 TanStack Form v1 ships `createFormHook` + `useFieldContext` specifically to consolidate this pattern: a tailored `useAppForm` hook with pre-registered, context-bound field components. The composition guide also gives a file layout and a context-based bridge that the shadcn `<Field>` primitives slot into cleanly. Capturing the pattern in an ADR makes it the canonical way to add forms, and migrating the three existing forms proves the pattern carries the real cases.
 
@@ -86,10 +88,10 @@ This is a **deep module** in the architecture-skill sense: the public interface 
 - **Verdict**: don't.
 
 ### E. `formOptions` + `withForm` (compose the whole form)
-- ➕ Shares form shape across files (e.g. one `formOptions` import for both `CreateUserForm` and `EditUserForm`).
-- ➖ Today's `UserForm` already extracts the shape via props; `formOptions` would add indirection without consolidating anything genuinely shared.
+- ➕ Shares form shape across files (e.g. one `formOptions` import for both a create and an edit user form).
+- ➖ The user form of the time already extracted the shape via props; `formOptions` would add indirection without consolidating anything genuinely shared.
 - **Verdict**: mentioned in the ADR as available; not adopted in this migration. Revisit if a form shape needs to be shared across **files** (currently none).
-- **Superseded 2026-06-10**: the cross-file case arrived (`CreateUserDialog` + `EditUserDialog`) and was solved with `withFieldGroup`, which shares the bound *fields* — not just the options object. `formOptions` remains unused. See the 2026-06-10 addendum.
+- **Superseded 2026-06-10**: the cross-file case arrived (the user create + edit dialogs) and was solved with `withFieldGroup`, which shares the bound *fields* — not just the options object. `formOptions` remains unused. See the 2026-06-10 addendum.
 
 ---
 
@@ -105,33 +107,36 @@ src/
                                   useFieldContext, useFormContext
   components/
     form/                         bound field + form components
-      TextField.tsx               text/email/tel/password/number inputs (+ suffix input group)
+      TextField.tsx               text/email/tel/password inputs (+ suffix input group)
+      NumberField.tsx             decimal input; TextField preset, string-typed (added post-migration)
+      DateField.tsx               native date input; TextField preset, 'YYYY-MM-DD' string
+      FloatingTextField.tsx       floating-label text/email input (login; added post-migration)
+      FloatingPhoneField.tsx      floating-label phone input (added post-migration)
       SelectField.tsx             single-select dropdown
       SubmitButton.tsx            submit-gated button with Spinner
       CancelButton.tsx            submit-aware cancel/close button (added 2026-06-10)
       PhoneField.tsx              phone input (added post-migration)
       ToggleField.tsx             segmented toggle / switch (added post-migration)
-      DateField.tsx               date picker; local useState for popover open-state only
       UserSelectField.tsx         user picker (added post-migration)
 ```
 
-> **Added 2026-06-04.** The initial migration shipped three bound components (`TextField`, `SelectField`, `SubmitButton`); the inventory has since grown by four — `PhoneField`, `ToggleField`, `DateField`, `UserSelectField` — all registered in `src/hooks/form.ts` and following the same context-bound pattern. This is exactly the "add a new bound component to `src/components/form/`" path the ADR prescribes (see *How to add a form*), not a deviation. Note `DateField` keeps a local `useState` for popover open/closed — that's **UI** state, not field value, so the "never `useState` for field values" rule is intact.
+> **Added 2026-06-04.** The initial migration shipped three bound components (`TextField`, `SelectField`, `SubmitButton`); the inventory has since grown by four — `PhoneField`, `ToggleField`, `DateField`, `UserSelectField` — all registered in `src/hooks/form.ts` and following the same context-bound pattern. This is exactly the "add a new bound component to `src/components/form/`" path the ADR prescribes (see *How to add a form*), not a deviation. At the time `DateField` kept a local `useState` for popover open/closed — that's **UI** state, not field value, so the "never `useState` for field values" rule is intact. (It has since become a `TextField` preset over the native date input, with no local state.)
 
 > **Added 2026-06-10.** Four pattern updates, verified against `src/hooks/form.ts` and all consumers.
 >
-> **Bound `<form.CancelButton>` (8th bound component, `src/components/form/CancelButton.tsx`).** `form.state.isSubmitting` read directly in render is **not reactive** — TanStack Form only re-renders through `Subscribe`/`useStore` — so the hand-written `<Button disabled={form.state.isSubmitting}>` cancel buttons the dialogs used to carry never actually disabled during submit. The bound component subscribes via `form.Subscribe` and is registered in `formComponents` alongside `SubmitButton`. **Rule**: cancel/close actions in a form go through `<form.CancelButton>` inside `<form.AppForm>`. It accepts `Button` props (`variant` defaults to `outline`); icon-only usage passes the icon as children (see `PasskeyRow`'s ghost `XIcon` cancel).
+> **Bound `<form.CancelButton>` (8th bound component, `src/components/form/CancelButton.tsx`).** `form.state.isSubmitting` read directly in render is **not reactive** — TanStack Form only re-renders through `Subscribe`/`useStore` — so the hand-written `<Button disabled={form.state.isSubmitting}>` cancel buttons the dialogs used to carry never actually disabled during submit. The bound component subscribes via `form.Subscribe` and is registered in `formComponents` alongside `SubmitButton`. **Rule**: cancel/close actions in a form go through `<form.CancelButton>` inside `<form.AppForm>`. It accepts `Button` props (`variant` defaults to `outline`); icon-only usage passes the icon as children.
 >
-> **`withFieldGroup` is the sanctioned cross-file sharing mechanism.** The case Alternative E anticipated arrived: `CreateUserDialog` and `EditUserDialog` need the same four fields. `src/components/user/UserFormFields.tsx` packages them as a `withFieldGroup` component, exported alongside `userFieldsSchema` and `userFieldsDefaults`; both dialogs render `<UserFormFields form={form} fields={userFieldsMap} />`. This supersedes the unused `formOptions` recommendation (Alternative E, revisit trigger 1).
+> **`withFieldGroup` is the sanctioned cross-file sharing mechanism.** The case Alternative E anticipated arrived: the user create and edit dialogs needed the same fields. `src/components/user/UserFormFields.tsx` packages them (today name, phone, role) as a `withFieldGroup` component, exported alongside `userFieldsSchema`, `userFieldsDefaults` and `userFieldsMap`; `EditUserDialog` renders `<UserFormFields form={form} fields={userFieldsMap} />`. (The create dialog was replaced by `InviteUserDialog`, which asks only for email + role and shares just `roleOptions()`.) This supersedes the unused `formOptions` recommendation (Alternative E, revisit trigger 1).
 >
-> **Raw `form.Subscribe` is sanctioned at three sites** (the original ADR allowed one): the `SubmitButton`/`CancelButton` internals, the icon save button in `RenamePasskeyForm` (`PasskeyRow` — the original icon-button exception), and **conditional field display** — `AssignShareDialog` switches whole-vs-split fields on `selector={(s) => s.values.mode}`. Conditional field display is the second caller-level exception; per the extraction rule, a recurrence of either shape is the signal to extract a bound component.
+> **Raw `form.Subscribe` is sanctioned at three sites** (the original ADR allowed one): bound-component internals (today `CancelButton`; `SubmitButton` reads the store via `useStore`), an **icon-only submit button** (the original icon-button exception), and **conditional field display** — switching fields on a value, e.g. `selector={(s) => s.values.mode}`. Conditional field display is the second caller-level exception; per the extraction rule, a recurrence of either shape is the signal to extract a bound component. Both caller-level exceptions came from features the template removed (passkey rename, share assignment), so no caller uses raw `form.Subscribe` today.
 >
-> **Convention — numeric inputs** (season dialogs): numeric fields stay **string-typed in form state** (`TextField` is `useFieldContext<string>`, rendered with `type="number"`), are validated as string shapes (regex + `refine`), and are coerced with `Number(...)` in `onSubmit` before calling the mutation. Don't add a `NumberField` for this.
+> **Convention — numeric inputs** (`TariffDialog`; updated 2026-09-29 for #29): numeric fields stay **string-typed in form state** (`NumberField` is a `TextField` preset — `useFieldContext<string>`, `type="text"` + `inputMode="decimal"`, since `type="number"` mangles Swedish decimal commas), are validated as string shapes (`refine` over `parseDecimal`), and are parsed to numbers in `onSubmit` before calling the mutation. Don't add a number-valued field for this.
 >
-> **Scope of the no-`useState` rule**: it applies to submit-bearing forms — `DocumentSearch`'s cmdk palette keeps its query in `useState` and is fine, because a filter input with no submit/validation lifecycle isn't a form field.
+> **Scope of the no-`useState` rule**: it applies to submit-bearing forms — `CommandPalette` keeps its cmdk query in `useState` and is fine, because a filter input with no submit/validation lifecycle isn't a form field.
 >
-> **Form inventory as of 2026-06-10** — 12 `useAppForm` consumers: login (`LoginFormCard`), passkey rename (`PasskeyRow`), user create/edit (`CreateUserDialog`/`EditUserDialog`), season create/edit (`CreateSeasonDialog`/`EditSeasonDialog`), share assign/unassign (`AssignShareDialog`/`UnassignShareDialog`), folder create/rename (`CreateFolderDialog`/`RenameFolderDialog`), document rename (`RenameDocumentDialog`), and move (`MoveDialog`).
+> **Form inventory as of 2026-09-29** (updated 2026-09-29) — 7 `useAppForm` consumers: login (`LoginFormCard`), onboarding name (`OnboardingNameStep`), own profile (`ProfileCard`), user invite/edit (`InviteUserDialog`/`EditUserDialog`), sensor device edit (`EditDeviceDialog`), and tariff create/edit (`TariffDialog`). (On 2026-06-10 there were 12, most for features the template has since removed.)
 
-The plural `components/form/` matches the project's existing entity-folder convention (`user/`, `passkey/`) — the form layer is the entity, the bound components are its surface. The hook lives in `src/hooks/` per project convention; the TanStack-recommended `useAppForm` name is preserved.
+The plural `components/form/` matches the project's existing entity-folder convention (`user/`, `sensor/`) — the form layer is the entity, the bound components are its surface. The hook lives in `src/hooks/` per project convention; the TanStack-recommended `useAppForm` name is preserved.
 
 ### `src/hooks/form.ts` — the entrypoint
 
@@ -145,7 +150,10 @@ export const { fieldContext, formContext, useFieldContext, useFormContext } =
 export const { useAppForm, withForm, withFieldGroup } = createFormHook({
   fieldContext,
   formContext,
-  fieldComponents: { TextField, SelectField, PhoneField, ToggleField, DateField, UserSelectField },
+  fieldComponents: {
+    TextField, NumberField, DateField, FloatingTextField, FloatingPhoneField,
+    SelectField, PhoneField, ToggleField, UserSelectField,
+  },
   formComponents: { SubmitButton, CancelButton },
 })
 ```
@@ -168,18 +176,19 @@ Each bound component:
 type Props = {
   label: string
   description?: string                          // → <FieldDescription>
-  type?: ComponentProps<typeof Input>['type']   // default 'text'; season dialogs use 'number'
+  type?: ComponentProps<typeof Input>['type']   // default 'text'
+  inputMode?: ComponentProps<typeof Input>['inputMode']  // soft keyboard; NumberField sets 'decimal'
   autoComplete?: string
   placeholder?: string
   autoFocus?: boolean
   inputClassName?: string                       // for inline edits with custom heights
   srOnlyLabel?: boolean                         // visually hidden label (inline edits)
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>  // Escape-to-cancel, etc.
-  suffix?: string                               // trailing locked text (e.g. file extension) → InputGroup
+  suffix?: string                               // trailing locked text (e.g. a unit such as öre/kWh) → InputGroup
 }
 ```
 
-`useFieldContext<string>()`. All input-shaped fields (email, tel, password, url, number) share this component — they're variations on `<Input type="...">`. The value stays `string` in form state even for `type="number"` (see the numeric convention in the 2026-06-10 addendum). When `suffix` is set, the field renders as a shadcn `<InputGroup>` with the suffix pinned to the trailing edge (used by `RenameDocumentDialog` for the locked file extension).
+`useFieldContext<string>()`. All input-shaped fields (email, tel, password, url, date, decimal) share this component — they're variations on `<Input type="...">` (`NumberField` and `DateField` are thin presets over it). The value stays `string` in form state even for numbers (see the numeric convention in the 2026-06-10 addendum). When `suffix` is set, the field renders as a shadcn `<InputGroup>` with the suffix pinned to the trailing edge (used by `TariffDialog` for the `öre/kWh` and `%` units).
 
 #### `SelectField` interface
 
@@ -202,10 +211,11 @@ type Props = {
   pendingLabel?: string
   className?: string
   variant?: ComponentProps<typeof Button>['variant']
+  size?: ComponentProps<typeof Button>['size']
 }
 ```
 
-Calls `useFormContext()`, then subscribes via `form.Subscribe selector={(s) => [s.canSubmit, s.isSubmitting]}`. Renders `<Spinner data-icon="inline-start" />` + label, disables on `!canSubmit || isSubmitting`. Lives inside `<form.AppForm>` — that wrapper supplies the form context.
+Calls `useFormContext()`, then reads `canSubmit` / `isSubmitting` reactively via `useStore(form.store, …)`. Disables on `!canSubmit || isSubmitting`; `<Spinner data-icon="inline-start" />` + `pendingLabel` appear only once a submit has run ~300 ms (`useDelayedFlag`), so a fast save doesn't flash a loader. Lives inside `<form.AppForm>` — that wrapper supplies the form context.
 
 ### Composition example — the whole pattern in 25 lines
 
@@ -231,7 +241,7 @@ export function MagicLinkForm({ onSent }: { onSent: (email: string) => void }) {
         <form.AppField
           name="email"
           children={(field) => (
-            <field.TextField label="E-post" type="email" autoComplete="username webauthn" />
+            <field.TextField label="E-post" type="email" autoComplete="username" />
           )}
         />
       </FieldGroup>
@@ -249,18 +259,18 @@ Everything that varies per form is visible; everything that's invariant is hidde
 
 - **Field-level errors** (Zod validation, length, format) → rendered by the bound field via `<FieldError>`. The component is responsible; the consumer never imports `FieldError` directly.
 - **Async / API / mutation errors** → `toast.error(...)` from `sonner`, invoked in the procedure's `onError` callback (`mutationOptions({ onError: (err) => toast.error(err.message) })`).
-- **Do not cross-wire**. A failed mutation shouldn't surface as a `FieldError`; a field that fails Zod shouldn't pop a toast. Field errors are contextual to the input; async errors are contextual to the operation.
+- **Do not cross-wire**. A failed mutation shouldn't surface as a `FieldError` (ADR-0013's carve-out aside: a user-fixable inline mutation error such as `TariffDialog`'s `TARIFF_VALID_FROM_TAKEN` lands on `validFrom`); a field that fails Zod shouldn't pop a toast. Field errors are contextual to the input; async errors are contextual to the operation.
 
 ### Zod locale (unchanged)
 
-`src/lib/zodLocale.ts` calls `z.config(z.locales.sv())` once at module load (imported from `src/router.tsx`). Every Zod schema gets Swedish default messages without per-field overrides. Override per-field only when the locale default is wrong for the specific case (rare).
+`src/lib/zodLocale.ts` calls `z.config({ localeError })` once at module load (imported from `src/router.tsx`), resolving the active Paraglide locale per issue. Every Zod schema gets Swedish (or English) default messages without per-field overrides. Override per-field only when the locale default is wrong for the specific case (rare).
 
 ### Accessibility wiring (already correct; this ADR locks it in)
 
 - `aria-invalid={isInvalid}` on the input/select trigger.
 - `data-invalid={isInvalid}` on the `<Field>` wrapper — drives shadcn's CSS variants (the `data-[invalid=true]:text-destructive` rule in `fieldVariants`).
 - `id={field.name}` on the input/trigger; `htmlFor={field.name}` on the label.
-- `<FieldLabel className="sr-only">` for inline edits (e.g. rename passkey) where the visible label is the surrounding context.
+- `<FieldLabel className="sr-only">` (the `srOnlyLabel` prop) for inline edits where the visible label is the surrounding context.
 - `<FieldDescription>` is available via the optional `description` prop for helper text; no aria linking required because the description is rendered inside the `<Field>` group.
 
 ### SSR posture — and the door we leave open
@@ -275,16 +285,16 @@ TanStack Start ships `createServerValidate` + `createServerFn` + `useTransform`/
 
 ### The icon-button exception
 
-`RenamePasskeyForm` in `PasskeyRow.tsx` has a save button that's an icon-only `<Button variant="ghost" size="icon-sm">` with a custom `aria-label`. The bound `<form.SubmitButton>` renders a labelled button — wrong shape for this caller. **Drop down to raw `<form.Subscribe>` for this one button** rather than inventing an `IconSubmitButton` bound component for a single caller. Document the exception inline.
+The original case was the passkey-rename form (removed with passkeys): its save button was an icon-only `<Button variant="ghost" size="icon-sm">` with a custom `aria-label`. The bound `<form.SubmitButton>` renders a labelled button — wrong shape for such a caller. **Drop down to raw `<form.Subscribe>` for that one button** rather than inventing an `IconSubmitButton` bound component for a single caller. Document the exception inline.
 
 This is the general rule: **when bound components don't fit, drop to the raw `@tanstack/react-form` API for that specific element.** Don't multiply bound components for one-off shapes. If the same exception recurs in a second place, that's the signal to extract it. (A second *kind* of caller-level exception — conditional field display — was sanctioned 2026-06-10; see the addendum under *Two new namespaces*.)
 
 ### Why this is a deep module (in the skill's terms)
 
-- **Interface**: `useAppForm` + the bound components registered in `src/hooks/form.ts` — currently 8 (six `fieldComponents` + `SubmitButton`/`CancelButton` in `formComponents`). Small enough to fit on one screen.
+- **Interface**: `useAppForm` + the bound components registered in `src/hooks/form.ts` — currently 11 (nine `fieldComponents` + `SubmitButton`/`CancelButton` in `formComponents`). Small enough to fit on one screen.
 - **Implementation**: hides the `isInvalid` derivation, `id`/`htmlFor`/`aria-invalid` wiring, `field.handleBlur`/`handleChange` plumbing, `form.state.isSubmitting` reactive subscription, `<FieldError>` empty-state handling, and `form.Subscribe` re-render gating.
 - **Test surface = the interface**: bound components are React components, testable with React Testing Library; the consumer's form behaves like any normal form (submit, mutate, toast).
-- **Two real consumers from day one** (`LoginFormCard`, `RenamePasskeyForm`, `UserForm` — three actually) — the seam is real, not hypothetical.
+- **Three real consumers from day one** (the login, passkey-rename and user forms) — the seam is real, not hypothetical.
 
 ---
 
@@ -296,13 +306,13 @@ A reader can confirm the architecture is being followed without running anything
 - **No raw `<form.Field>` in app code.** `grep -rn "form\.Field" src/` outside the hook file should match zero hits. The user-facing API is `<form.AppField>`.
 - **No raw `useForm` import.** `grep -rn "import.*useForm[ ,}]" src/` should match zero hits outside `~/hooks/form.ts` (which uses `useAppForm` only).
 - **No `isInvalid` derivation in form callsites.** `grep -rn "isInvalid" src/components/` should match only inside `src/components/form/*` (the bound components own this).
-- **`<form.Subscribe>` is used only at the documented sanctioned sites.** `grep -rn "form\.Subscribe\|form\.AppForm" src/` — `Subscribe` appears in the bound `SubmitButton`/`CancelButton` internals plus exactly two caller-level exceptions: the icon save button in `RenamePasskeyForm` (`PasskeyRow`) and conditional field display in `AssignShareDialog` (see the 2026-06-10 addendum); `AppForm` appears wherever a submit/cancel button is rendered.
+- **`<form.Subscribe>` is used only at the documented sanctioned sites.** `grep -rn "form\.Subscribe\|form\.AppForm" src/` — `Subscribe` appears in bound-component internals (today `CancelButton`) plus only the sanctioned caller-level exceptions — an icon-only submit button and conditional field display (see the 2026-06-10 addendum; none today); `AppForm` appears wherever a submit/cancel button is rendered.
 
 Manual smoke tests after a migration:
 
-1. **`/login`** — type a bad email, blur, submit; see Swedish Zod error from `<FieldError>`. Type a valid email, submit; see "Skickar…" spinner, magic-link prints in `/tmp/videbacken-dev.log` (devLog adapter, ADR-0001).
-2. **`/account`** *(was `/konto`)* — click pencil on a passkey, type a new name, click save; name updates. Press Escape mid-edit; cancels. Try to save an empty name; field error appears.
-3. **`/admin/users`** — open "Ny användare" (`CreateUserDialog`), fill all four fields including the segmented role toggle (`ToggleField`), save; toast + dialog close + list refresh. Open "Redigera" on an existing user (`EditUserDialog`), change a field, save; same. Try to save with an invalid email; field error appears.
+1. **`/login`** — type a bad email, blur, submit; see Swedish Zod error from `<FieldError>`. Type a valid email, submit; the button disables (with a "Skickar…" spinner if it takes over 300 ms), magic-link prints in `/tmp/videbacken-dev.log` (devLog adapter, ADR-0001).
+2. **`/account/profile`** — change your name (`ProfileCard`), save; name updates. Try to save an empty name; field error appears.
+3. **`/users`** (as admin) — open the invite dialog (`InviteUserDialog`), enter an email and pick a role with the segmented toggle (`ToggleField`), save; toast + dialog close + list refresh. Open edit on an existing user (`EditUserDialog`), change a field, save; the dialog closes at once and the row updates optimistically (no success toast). Try to invite an invalid email; field error appears.
 
 ---
 
@@ -316,11 +326,10 @@ Manual smoke tests after a migration:
 
 **Modified (migrated to the new shape)**:
 - `src/components/login/LoginFormCard.tsx`
-- `src/components/passkey/PasskeyRow.tsx` (`RenamePasskeyForm` only)
-- `src/components/user/CreateUserDialog.tsx`, `EditUserDialog.tsx`, `UserFormFields.tsx` (the migration touched a combined `UserFormDialog.tsx`, since split into these three; shared fields live in `UserFormFields.tsx` via `withFieldGroup` — see the 2026-06-10 addendum)
+- `src/components/user/EditUserDialog.tsx`, `UserFormFields.tsx` (the migration touched a combined user form dialog, since split; shared fields live in `UserFormFields.tsx` via `withFieldGroup` — see the 2026-06-10 addendum)
 
 **Unchanged** (this ADR doesn't touch these):
-- `src/components/user/DeleteUserDialog.tsx`, `RestoreUserDialog.tsx`, `src/components/passkey/DeletePasskeyDialog.tsx` — all `<AlertDialog>`s with no fields.
+- `src/components/user/RevokeUserDialog.tsx`, `src/components/evCharging/DeleteTariffDialog.tsx` — `<AlertDialog>`s with no fields.
 
 ---
 
@@ -348,20 +357,20 @@ If you need a UI primitive the bound components don't expose (a textarea, a mult
 ## Consequences
 
 **Positive**:
-- Form callsites shrink ~60%: a 4-field UserForm goes from ~150 LOC to ~70 LOC; LoginFormCard from ~97 → ~60; RenamePasskeyForm from ~80 → ~50.
+- Form callsites shrink ~60%: the 4-field user form went from ~150 LOC to ~70 LOC; `LoginFormCard` from ~97 → ~60.
 - Accessibility attributes (`aria-invalid`, `id`, `htmlFor`) are wired once inside the bound components — no copy-paste-and-forget risk.
-- The "validate on submit, not onChange" decision is invisible at the call site; field error rendering is invisible at the call site; the `form.Subscribe` re-render boundary for the submit button is invisible at the call site.
+- The "validate on submit, not onChange" decision is invisible at the call site; field error rendering is invisible at the call site; the submit button's reactive `useStore` gating is invisible at the call site.
 - Adding a 4th form is fast: schema + `useAppForm` + `<field.TextField>` per field + `<form.SubmitButton>`. The cost matches the actual variation.
 - The seam is in place for cross-file shape sharing (realized 2026-06-10 via `withFieldGroup`) and server validation (`serverValidate`) if the latter becomes a real need.
 
 **Negative**:
 - One indirection. The reader of `LoginFormCard.tsx` has to know that `<field.TextField>` is defined in `src/components/form/TextField.tsx` and registered in `src/hooks/form.ts`. The first-hop is one click; the second is one file open. Documented here.
-- Type-safety regression risk on `useFieldContext<T>()`: the type parameter is opaque at runtime — passing `string` for a field whose schema is `'user' | 'admin'` works because the runtime values are strings, but a stricter T would catch the consumer's `as` cast. Mitigation: each bound field uses one specific T (`TextField` → `string`, `SelectField` → `string`, `DateField` → `Date`); the more common bug (misspelling the field `name`) is caught by TypeScript via inference from `defaultValues`.
-- The caller-level `<form.Subscribe>` exceptions (icon save button in `RenamePasskeyForm`, conditional field display in `AssignShareDialog` — see the 2026-06-10 addendum) mean the migration isn't 100%. Treated as a feature: don't multiply bound components for single-use shapes.
+- Type-safety regression risk on `useFieldContext<T>()`: the type parameter is opaque at runtime — passing `string` for a field whose schema is `'user' | 'admin'` works because the runtime values are strings, but a stricter T would catch the consumer's `as` cast. Mitigation: each bound field uses one specific T (every registered field is `string` today); the more common bug (misspelling the field `name`) is caught by TypeScript via inference from `defaultValues`.
+- The caller-level `<form.Subscribe>` exceptions (icon-only submit, conditional field display — see the 2026-06-10 addendum) mean the pattern isn't 100%. Treated as a feature: don't multiply bound components for single-use shapes.
 
 **Revisit triggers** — re-open this ADR if any of these change:
-- ~~A form shape needs to be shared across files (e.g. CreateUserForm + a parallel BulkCreateForm both want the same field set). At that point, adopt `formOptions` and document it here.~~ **Resolved 2026-06-10**: the case arrived (`CreateUserDialog` + `EditUserDialog`) and `withFieldGroup` was adopted instead of `formOptions` — see the 2026-06-10 addendum.
-- The icon-button shape recurs in a second form. Extract `IconSubmitButton` as a bound `formComponent`.
+- ~~A form shape needs to be shared across files (e.g. CreateUserForm + a parallel BulkCreateForm both want the same field set). At that point, adopt `formOptions` and document it here.~~ **Resolved 2026-06-10**: the case arrived (the user create + edit dialogs) and `withFieldGroup` was adopted instead of `formOptions` — see the 2026-06-10 addendum.
+- Icon-only submit buttons: the next one (its first caller, the passkey-rename form, was removed) is again a one-off raw `form.Subscribe`; a second one existing concurrently is the trigger to extract `IconSubmitButton` as a bound `formComponent`.
 - Progressive enhancement becomes a real requirement. Adopt `createServerValidate` + `useTransform` + `mergeForm` per the TanStack Start SSR guide; the existing `useAppForm` API survives, only the submit path changes.
 - A primitive emerges that the registered bound components can't express (textarea, checkbox group, radio). Add the bound component to `src/components/form/`; update the `fieldComponents` registration.
 - TanStack Form ships a v2 that changes the `createFormHook` API. Re-evaluate at that point.

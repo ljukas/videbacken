@@ -7,33 +7,37 @@
 
 ---
 
+> **Amended 2026-09-29. Pruned to the current template.** References to features the template removed (realtime SSE and presence as in-process effects, the auth-gated `/api/files/*` routes, boat-week reminders as a live tier-3 candidate — the Context snapshot keeps them as history —, and the `/admin/users` screen) were removed or replaced with current examples (the `queue` handlers, the pulled `zaptec` / `elpris` integrations, the `revoke` procedure). Two amendment bullets that only described the realtime/presence effects are reduced to notes that they no longer apply. No decision changed.
+
 > **Amended 2026-05-25.** The tier-3 ("Durable / deferred") passages — TL;DR row, the durability footnote under "Why not pub/sub?", **Approach comparison D**, and the section formerly titled *"When to reach for tier 3 (outbox)"* — are superseded by **[ADR-0007 — Background-Job Queue Architecture](./0007-background-job-queue-architecture.md)**. The durable tier landed as Vercel Queues + a shared handler (BullMQ + Redis in local dev), not the speculated Postgres outbox + cron worker. The trigger wasn't durability; it was latency + CPU offload (blurhash). The outbox shape stays *available* as a layered option for a future effect that genuinely needs DB-atomic enqueue, but is no longer the recommended default for tier 3 — see ADR-0007. Everything else in this ADR (tiers 1 and 2, the `effects/` seam, why not pub/sub at points 1–3 and 5) stands as originally written.
 
 > **Amended 2026-06-04** (implementation reality — the seam stands, these details drifted):
 > - **No `runEffect.ts` helper.** Tier-2 fire-and-forget is expressed inline at the call site as `effects.x.y(...).catch((error) => context.log.warn(...))`, plus Better Auth's `backgroundTasks` / Vercel `waitUntil()` where work must outlive the response. The `runEffect(tag, fn)` wrapper described below and in Phase 1 was never built; read its mentions as "the tier-2 contract" (catch + log, never throw to caller), not a literal function.
-> - **No `audit` effect.** `effects.audit` / `src/lib/effects/audit/` shown in the namespace tree and call-site examples is illustrative only — it was never implemented (correctly deferred per Phase 1 point 5). Ignore it as a current file.
+> - **No `audit` effect.** `effects.audit` / the `audit/` folder shown in the namespace tree and call-site examples is illustrative only — it was never implemented (correctly deferred per Phase 1 point 5). Ignore it as a current file.
 > - **`email` ships three adapters**, not two: `resend` (prod), `smtp` (dev → Mailpit), `devLog` (test). See [ADR-0008](./0008-email-architecture.md). The "two adapters from day one" line is about the seam being real; three only strengthens it.
-> - **The effects inventory is wider than email/storage/queue.** Two **in-process** effects also live under `src/lib/effects/` and follow the same seam, but own in-process state rather than the outside world: `realtime` (SSE pub/sub — see [ADR-0004](./0004-realtime-sync-architecture.md)) and `presence` (online/away tracking — see [ADR-0011](./0011-presence-online-status-architecture.md)). The "effects own the outside world" framing below predates them; treat in-process effects as a sanctioned second category.
+> - **In-process effects** (`realtime`, `presence`) — about effects removed with [ADR-0018](./0018-polled-sync-replaces-realtime-sse.md); no longer applies.
 
 > **Amended 2026-06-10** (storage reality, caller classes, a stale carve-out — the seam still stands):
 > - **Storage landed per [ADR-0006](./0006-file-storage.md), not R2.** The namespace tree's `storage/adapters/r2.ts` and the `presignUpload`/`presignDownload`/`deleteObject` sketch are historical. `src/lib/effects/storage/` ships three adapters — `vercelBlob` (prod), `s3` (dev → RustFS), `devLog` (test) — plus `clientUpload.ts`, the browser-side dispatcher that switches on the discriminated `upload.kind`, and an `envPrefix()`/`stripEnvPrefix()` pair exported from `storage.ts` (kept together so adapter prefixing and validation can't drift). Read every R2 mention below — the "R2 presign" tier-1 example in the TL;DR table, "R2 has no egress fees" in the carried-forward non-negotiables, the `r2` verification grep — as historical; ADR-0006 is the storage source of truth, the same way the 2026-06-04 amendment routes email to [ADR-0008](./0008-email-architecture.md).
-> - **Sanctioned caller classes today** are four: oRPC procedures; the magic-link callback in `src/lib/auth.ts` (the `magicLink` plugin's `sendMagicLink` awaits `emailEffect.sendMagicLink`); queue handlers in `src/lib/queue/handlers/` ([ADR-0007](./0007-background-job-queue-architecture.md)); and the auth-gated file routes `src/routes/api/files/{download,view}.$id.ts` (session check → `storage.getReadUrl` → 302). The carried-forward non-negotiable naming `/api/cron/drain` as *the one* non-oRPC exception is stale — that route was never built. The actual non-oRPC server entrypoints are `/api/files/*`, `/api/log` (browser log sink — [ADR-0003](./0003-logging-architecture.md)), and the Nitro `vercel:queue` consumer plugin (`server/plugins/queueConsumer.ts`).
+> - **Sanctioned caller classes today** are three: oRPC procedures; the magic-link callback in `src/lib/auth.ts` (the `magicLink` plugin's `sendMagicLink` awaits `emailEffect.sendMagicLink`); and queue handlers in `src/lib/queue/handlers/` ([ADR-0007](./0007-background-job-queue-architecture.md)). The carried-forward non-negotiable naming `/api/cron/drain` as *the one* non-oRPC exception is stale — that route was never built. The actual non-oRPC server entrypoints are `/api/log` (browser log sink — [ADR-0003](./0003-logging-architecture.md)) and the Nitro `vercel:queue` consumer plugin (`server/plugins/queueConsumer.ts`).
 > - **Strike the `enqueueEffect(tx, …)` carve-out.** The "Services … **may** call `enqueueEffect(tx, …)` for tier 3" clause in the carried-forward non-negotiables was never built (no outbox exists). The shipped rule is stronger and unconditional: services import **nothing** from `src/lib/effects/` — `grep -ri "effects" src/lib/services/` returns zero hits.
-> - **The Context paragraph is a 2026-05-21 snapshot.** "Only one cross-system side effect actually executes" and "the magic-link transport is `console.log` in `src/lib/auth.ts:46`" were true at decision time only. Today the transport is `emailEffect.sendMagicLink`, awaited (tier 1) inside the `magicLink` plugin callback, and the effects inventory spans email, storage, queue, realtime, and presence.
+> - **The Context paragraph is a 2026-05-21 snapshot.** "Only one cross-system side effect actually executes" and "the magic-link transport is `console.log` in `src/lib/auth.ts:46`" were true at decision time only. Today the transport is `emailEffect.sendMagicLink`, awaited (tier 1) inside the `magicLink` plugin callback, and the effects inventory spans email, storage, queue, and the pulled `zaptec` / `elpris` integrations ([ADR-0019](./0019-external-data-integrations.md)).
 > - **Adapter selection is lazy, not at module load.** The shared helper is `src/lib/effects/lazy.ts`: each multi-adapter effect wraps its env-branching selector in `lazy(...)`, which dynamically imports and caches the adapter on **first call** (keeping adapters code-split). The sketch's `export const email: EmailEffects = pickAdapter() // resolves … at module load` describes the seam, not the shipped mechanism — and the tree slot drawn as `runEffect.ts` is occupied by `lazy.ts` in reality.
-> - **Tier classification of the in-process effects.** `realtime` and `presence` are awaited inline at every publish/acquire site with no catch — sound only because the in-memory adapters are infallible by construction (they cannot throw). If a fallible adapter (Redis/Postgres pub/sub) ever replaces them, every publish site moves to the tier-2 contract: catch + log, never fail the request.
+> - **Tier classification of the in-process effects** — about the removed `realtime` / `presence` effects; no longer applies.
 > - **The Verification section is the phase-1 checklist** — see the in-place notes there; the original greps no longer pass and are replaced with ones that do.
 
 > **Amended 2026-09-28** (pulled integrations — [ADR-0019](./0019-external-data-integrations.md)):
 > - **Domain orchestrators in `src/lib/<domain>/` are a sanctioned effect-calling location alongside
->   oRPC procedures.** `src/lib/evCharging/sync.ts` (`runZaptecSync`) calls the Zaptec client and
->   publishes an alert queue message directly; it isn't itself an oRPC procedure (both the hourly
+>   oRPC procedures.** `src/lib/evCharging/sync.ts` (`runZaptecSync`) calls the Zaptec client and,
+>   through the shared `runPulledSync` (`src/lib/integrations/runPulledSync.ts`), publishes an
+>   alert queue message directly (`runElprisSync` in `src/lib/spotPrice/sync.ts` has the same
+>   shape); it isn't itself an oRPC procedure (both the hourly
 >   cron route and the `syncNow` admin procedure call into it), but it follows the same order — a
 >   service/effect call, then a side effect, then a log line — that "sanctioned caller classes" above
 >   already requires of oRPC procedures. Read that list as including "or the domain orchestrator an
 >   oRPC procedure and a cron route both call into," not literally only files under `orpc/procedures/`.
-> - **Sanctioned caller classes gain a fifth and sixth entrant**: `/api/cron/*` (currently
->   `/api/cron/zaptec-sync`) and `/api/webhooks/shelly` (already shipped, undocumented here until
+> - **Sanctioned caller classes gain two more entrants**: `/api/cron/*` (currently
+>   `/api/cron/zaptec-sync` and `/api/cron/elpris-sync`) and `/api/webhooks/shelly` (already shipped, undocumented here until
 >   now) — both unauthenticated-by-transport routes that verify their own shared secret
 >   (`CRON_SECRET`, `SHELLY_WEBHOOK_TOKEN`) because their callers (Vercel Cron, a Shelly device) carry
 >   no session and aren't oRPC clients.
@@ -64,7 +68,7 @@ Three execution tiers, all routed through the same `effects/` seam:
 |---|---|---|---|
 | **1. Sync-critical** | Caller must know if it failed | `await effects.x.y(...)` — surfaces to caller | Magic-link send, session revoke, R2 presign |
 | **2. Fire-and-forget** | Best-effort; failure is logged but doesn't fail the request | `runEffect(() => effects.x.y(...))` — catches + logs | Audit log entry, analytics ping |
-| **3. Durable / deferred** *(superseded by [ADR-0007](./0007-background-job-queue-architecture.md))* | Heavy / CPU-bound / runs out-of-band; latency tolerated | `queue.publish('<topic>', payload)` via `~/lib/effects/queue/`; consumed by Vercel Queues in prod, BullMQ worker in dev | Blurhash generation; future thumbnail/transcode, scheduled boat-week reminders, batched digests |
+| **3. Durable / deferred** *(superseded by [ADR-0007](./0007-background-job-queue-architecture.md))* | Heavy / CPU-bound / runs out-of-band; latency tolerated | `queue.publish('<topic>', payload)` via `~/lib/effects/queue/`; consumed by Vercel Queues in prod, BullMQ worker in dev | Blurhash generation, HEIC transcode, invite and integration-sync-alert emails (`src/lib/queue/handlers/`) |
 
 This keeps the **interface** small (typed adapter functions), the **implementation** swappable (Resend today, alternative tomorrow), and the **locality** preserved (the procedure reads top-to-bottom: validate → service mutation → effect — no hidden listeners). It also satisfies the "deletion test": removing the `effects/` namespace would re-scatter Resend/R2/Slack glue across procedures, which it currently isn't doing. That's a real seam, not a pass-through.
 
@@ -165,8 +169,9 @@ src/lib/effects/
 
 ```ts
 // src/lib/effects/email/email.ts — illustrative sketch; the shipped interface
-// has only sendMagicLink (userInvited/userRemoved were never needed), and the
-// adapter resolves lazily on first call via lazy.ts (see 2026-06-10 amendment)
+// is sendMagicLink / sendUserInvited / sendIntegrationSyncAlert (userRemoved was
+// never needed), and the adapter resolves lazily on first call via lazy.ts
+// (see 2026-06-10 amendment)
 export interface EmailEffects {
   sendMagicLink(input: { to: string; url: string }): Promise<void>
   userInvited(input: { to: string; inviterName: string }): Promise<void>
@@ -179,7 +184,9 @@ export const email: EmailEffects = pickAdapter() // resolves Resend vs devLog at
 Procedures import the named functions — no DI container, no factory at the call site:
 
 ```ts
-// src/lib/orpc/procedures/user.ts
+// src/lib/orpc/procedures/user.ts — illustrative sketch; runEffect and audit were
+// never built (2026-06-04 amendment), and the shipped invite enqueues the
+// email_user_invited queue job (tier 3) instead of sending inline
 import * as userService from '~/lib/services/user'
 import { email, audit } from '~/lib/effects'
 import { runEffect } from '~/lib/effects/runEffect'
@@ -202,7 +209,7 @@ For Better Auth's `sendMagicLink` callback in `src/lib/auth.ts`, the callback be
 
 ### How the durable tier landed *(superseded — see [ADR-0007](./0007-background-job-queue-architecture.md))*
 
-The first tier-3 candidate turned out to be blurhash placeholder generation (introduced alongside [ADR-0006](./0006-file-storage.md)), not the boat-week reminder. The forcing function wasn't durability (blurhash is recomputable from the stored bytes), it was **latency + CPU offload**: doing `sharp` + `blurhash` inline would block upload responses and inflate Function CPU time. That made a managed queue the right shape over the speculated Postgres outbox + cron. ADR-0007 documents the producer seam (`~/lib/effects/queue/`), the shared handler (`~/lib/queue/handlers/<topic>.ts`), and the prod / dev / test wiring. When (if) a future effect genuinely needs DB-atomic enqueue — boat-week reminders being a likely candidate — outbox layers on top of the queue rather than replacing it.
+The first tier-3 candidate turned out to be blurhash placeholder generation (introduced alongside [ADR-0006](./0006-file-storage.md)), not the boat-week reminder. The forcing function wasn't durability (blurhash is recomputable from the stored bytes), it was **latency + CPU offload**: doing `sharp` + `blurhash` inline would block upload responses and inflate Function CPU time. That made a managed queue the right shape over the speculated Postgres outbox + cron. ADR-0007 documents the producer seam (`~/lib/effects/queue/`), the shared handler (`~/lib/queue/handlers/<topic>.ts`), and the prod / dev / test wiring. When (if) a future effect genuinely needs DB-atomic enqueue, outbox layers on top of the queue rather than replacing it.
 
 ---
 
@@ -217,7 +224,7 @@ The first tier-3 candidate turned out to be blurhash placeholder generation (int
    - `index.ts`: re-export `email`.
    - `email.test.ts`: interface contract test that runs against the devLog adapter (asserts no throws on the expected shapes).
 
-2. **Create `src/lib/effects/runEffect.ts`** — tier 2 helper:
+2. **Create a `runEffect` tier-2 helper** *(never built — see the 2026-06-04 amendment)*:
    - `runEffect(tag: string, fn: () => Promise<void>): void` — invokes `fn`, swallows errors, logs with the tag. Never `await`ed by callers.
 
 3. **Create `src/lib/effects/index.ts`** as a barrel: `export * as email from './email'`, etc.
@@ -230,7 +237,7 @@ The first tier-3 candidate turned out to be blurhash placeholder generation (int
    ```
    Remove the inline `console.log`. The devLog adapter already prints in development.
 
-5. **Refactor `procedures/user.ts:78-87`** (the `delete` procedure):
+5. **Refactor `procedures/user.ts:78-87`** (the `delete` procedure — today `revoke`):
    - Keep `revokeUserSessions` as tier-1 direct call (it's correct — caller must know).
    - Add `runEffect('audit.userDeleted', () => audit.log(...))` once `effects/audit` exists; until then, do nothing (don't speculatively add audit).
 
@@ -258,10 +265,10 @@ After phase 1 lands *(historical checklist — kept as written except the two gr
 
 - `bun run test` passes — `email.test.ts` exercises the interface contract against devLog.
 - `bun run dev` — request a magic link from `/login`; in dev (no `RESEND_API_KEY`) the link prints to console as before; in a `.env` with `RESEND_API_KEY` set, the message arrives in the inbox.
-- Manually delete a user via `/admin/users` — confirm: (a) user is soft-deleted, (b) their session is revoked (existing behavior preserved), (c) no new errors in logs.
+- Manually revoke a user via `/users` (the Revoke action, `?dialog=revoke`) — confirm: (a) user is soft-deleted, (b) their session is revoked (existing behavior preserved), (c) no new errors in logs.
 - `bun run check` — Biome lint passes.
-- `grep -ri "effects\|better-auth\|@vercel/blob\|resend" src/lib/services/` — zero hits (services stay DB-only: no effects namespace, no auth SDK, no transport SDK). *(The original `email`/`resend`/`r2` grep rotted — services legitimately contain `email` as a column/field name.)*
-- `grep -ri "resend\|nodemailer\|@vercel/blob\|@aws-sdk" src/lib/orpc/procedures/` — zero hits (procedures use the `effects` seam, never a transport SDK directly).
+- `grep -rE "from '(~/lib/effects[^']*|better-auth[^']*|@vercel/blob[^']*|resend)'" src/lib/services/` — zero hits (services stay DB-only: no effects namespace, no auth SDK, no transport SDK). *(The original `email`/`resend`/`r2` grep rotted — services legitimately contain `email` as a column/field name, and "resend" as a verb for invites; matching on imports avoids both.)*
+- `grep -rE "from '(resend|nodemailer|@vercel/blob[^']*|@aws-sdk[^']*)'" src/lib/orpc/procedures/` — zero hits (procedures use the `effects` seam, never a transport SDK directly).
 
 After phase 2 lands *(superseded — the outbox was never built; see [ADR-0007](./0007-background-job-queue-architecture.md) for the queue's verification story)*:
 
@@ -295,5 +302,5 @@ After phase 2 lands *(superseded — the outbox was never built; see [ADR-0007](
 
 **Revisit triggers** — re-open this ADR if any of these change:
 - Multiple consumers genuinely appear for a single "event" (≥3 different effects fanning out from one state change).
-- An effect emerges that **must** succeed even on crash, and the boat-week reminder feature is not the first such case.
+- An effect emerges that **must** succeed even on crash.
 - Vercel Hobby's 1/day cron limit becomes a meaningful blocker before tier 3 is implemented.

@@ -13,6 +13,8 @@
 
 > **Amendment (2026-06-24, second template — tier-3 realized; corrected 2026-07-16)** — The first **non-auth** email shipped: user invitations. `EmailEffects` grew a second method, `sendUserInvited({ to, inviteUrl, locale })`, and the template `src/emails/InviteUserEmail.tsx` (+ `.test.tsx`) lands alongside `MagicLinkEmail.tsx` (sharing `theme.ts`). This is the realization of the "future non-auth emails go through the queue (tier-3)" note in § Execution tier choice: the invitation is **not** sent inline — the `invite` / `resendInvite` oRPC procedures (`src/lib/orpc/procedures/user.ts`) **enqueue** the `email_user_invited` queue topic, and the worker (`src/lib/queue/handlers/emailUserInvited.ts`) calls `email.sendUserInvited(...)` through this same adapter seam. The `inviteUrl` is a plain **`/login`** URL, **not** a minted magic-link or Better Auth verify-email link — Better Auth's magic-link plugin has no server API that returns a token/URL without firing its own configured send callback, so there is no supported way to mint one for a different, invite-branded email (see ADR-0017). The invitee is already on the `approved_email` allowlist by the time the mail arrives, so `/login`'s existing Google + magic-link paths just work once they get there. The procedure passes `locale: baseLocale` (`'sv'`) rather than a request-scoped locale. See [ADR-0007](./0007-background-job-queue-architecture.md) (topic + handler) and [ADR-0017](./0017-authentication.md) (the invitation flow). The boundary discipline holds: only the adapters import `~/emails/InviteUserEmail`.
 
+> **Amended 2026-09-29. Pruned to the current template.** References to things the template removed or replaced (the `Fonts.tsx` web-font component, the planned `_layout/EmailShell.tsx`, season/schedule emails, the document-thumbnail queue topics) were removed or replaced with current examples (`BrandEmailLayout.tsx`, `IntegrationSyncAlertEmail.tsx`, `heic_transcode`). No decision changed.
+
 ---
 
 ## Context
@@ -46,7 +48,7 @@ Concretely:
   5. Fallback → `devLog`. Offline dev without docker — auth flow still works; magic-links just appear in the log.
 - **Mailpit** (`axllent/mailpit`) is the local catcher — `compose.yaml` service `mail`, SMTP on `:14622`, web UI on `:14602`. In-memory ring buffer (`MP_MAX_MESSAGES=500`); no persistent volume.
 - **Templates** live in `src/emails/` (React Email convention; `react-email dev` previews them at `:14601`). Each template exports the React component and a typed `render<Name>(props): Promise<{ subject, html, text }>` helper. Adapters import the render helper, never the JSX.
-- **First template** (`MagicLinkEmail.tsx`) is adapted from the official React Email demo's Studio brand pack (`apps/demo/emails/05-Studio/activation.tsx`, MIT — © 2024 Plus Five Five, Inc.). `theme.ts` (Tailwind config + neutral palette + font-scale plugin) and `Fonts.tsx` (Inter + Geist via `<Font>`) are copied verbatim with attribution; `MagicLinkEmail.tsx` is adapted (Swedish copy, no logo image, added URL-fallback block, reduced footer).
+- **First template** (`MagicLinkEmail.tsx`) is adapted from the official React Email demo's Studio brand pack (`apps/demo/emails/05-Studio/activation.tsx`, MIT — © 2024 Plus Five Five, Inc.). `theme.ts` keeps the pack's typographic scale + font-scale plugin with attribution (colors are Videbacken's; fonts are a system stack, since web fonts don't render in Gmail/Outlook); `MagicLinkEmail.tsx` is adapted (localized copy, added URL-fallback block, reduced footer).
 - **Subject lives in the render helper**, not the adapter — keeps localization next to the copy and lets every adapter stay dumb.
 - **Magic-link send stays tier-1** (per ADR-0001 canonical example). See § Execution tier choice.
 
@@ -99,18 +101,20 @@ grep -rn "from '~/emails/" src/  | grep -v 'effects/email/adapters/'  # must be 
 
 ```
 src/emails/
-  theme.ts                 # Studio Tailwind config + palette + font-scale (MIT)
-  Fonts.tsx                # Inter + Geist via <Font> (MIT)
-  MagicLinkEmail.tsx       # adapted from Studio activation.tsx (MIT)
-  MagicLinkEmail.test.tsx  # asserts subject, URL in html+text, non-empty bodies
+  theme.ts                       # email Tailwind config; font-scale from Studio (MIT)
+  BrandEmailLayout.tsx           # shared hero-card shell (logo, heading, CTA, fallback link)
+  MagicLinkEmail.tsx             # adapted from Studio activation.tsx (MIT)
+  MagicLinkEmail.test.tsx        # asserts subject, URL in html+text, non-empty bodies
+  InviteUserEmail.tsx            # + .test.tsx
+  IntegrationSyncAlertEmail.tsx  # + .test.tsx
 ```
 
 Conventions for future templates:
 
 - One `<Name>Email.tsx` per email, exporting the React component + `render<Name>` async helper.
-- Reuse `theme.ts` and `<TechFonts/>` from `Fonts.tsx`.
-- Swedish copy, informal "du", brand "Videbacken" untranslated (per CLAUDE.md).
-- When the second template lands, extract the duplicated hero-card shell into `src/emails/_layout/EmailShell.tsx` — premature on the first template.
+- Render through `BrandEmailLayout` (which applies `theme.ts`).
+- Copy from Paraglide messages, rendered for an explicit `locale` prop (emails render outside a request scope); informal "du" in Swedish, brand "Videbacken" untranslated (per CLAUDE.md).
+- The shared hero-card shell was extracted into `src/emails/BrandEmailLayout.tsx` once a second template landed — premature on the first.
 
 ### Execution tier choice
 
@@ -122,17 +126,29 @@ Conventions for future templates:
 - A queue doesn't actually solve provider-outage — the job just stalls. Resend's own SDK retries transient errors internally.
 - Industry norm: Clerk, WorkOS, Supabase, Better Auth's own examples all send auth mail synchronously.
 
-**Future non-auth emails go through the queue (tier-3).** User-invitation, schedule-reminder, season-summary digest, ownership-change notice, etc. — none of these have a user waiting on the request. Pattern:
+**Future non-auth emails go through the queue (tier-3).** User invitations, integration sync alerts, reminders, digests, etc. — none of these have a user waiting on the request. Pattern:
 
 ```ts
-// procedure — topic joins the QueueTopic union in src/lib/effects/queue/queue.ts
-// (snake_case, no namespacing — like 'blurhash' | 'image_thumbnail' | 'pdf_thumbnail')
-await userService.invite(input)
-await queue.publish('email_user_invited', { userId, invitedById })
+// procedure (src/lib/orpc/procedures/user.ts, `invite`, abridged) — topic joins the QueueTopic union in
+// src/lib/effects/queue/queue.ts (snake_case, no namespacing — like 'blurhash' | 'heic_transcode')
+const created = await userService.inviteUser({
+  email: input.email,
+  role: input.role,
+  actorUserId: context.user.id,
+})
+await queue.publish('email_user_invited', {
+  to: created.email,
+  inviteUrl: buildInviteUrl(),
+  locale: baseLocale,
+})
 // later: src/lib/queue/handlers/emailUserInvited.ts
 import { email } from '~/lib/effects'
-export async function handle(payload: EmailUserInvitedPayload) {
-  await email.sendUserInvited(payload)  // same EmailEffects seam
+export async function handleEmailUserInvitedMessage(
+  msg: QueuePayloadMap['email_user_invited'],
+  { log }: QueueHandlerContext,
+): Promise<void> {
+  await email.sendUserInvited({ to: msg.to, inviteUrl: msg.inviteUrl, locale: msg.locale }) // same EmailEffects seam
+  log.info('invite email dispatched')
 }
 ```
 
@@ -178,12 +194,12 @@ Net cost for the foreseeable future: **$0/mo**.
 
 ## Consequences
 
-- **Wire-up**: ~3 new source files (`adapters/smtp.ts`, `adapters/resend.ts`, `emails/MagicLinkEmail.tsx`), 2 copied (`emails/theme.ts`, `emails/Fonts.tsx`), 1 restructured (`email.ts`).
+- **Wire-up**: ~3 new source files (`adapters/smtp.ts`, `adapters/resend.ts`, `emails/MagicLinkEmail.tsx`), 2 copied (`emails/theme.ts` and a web-font component since dropped), 1 restructured (`email.ts`).
 - **`auth.ts` unchanged** — already calls `emailEffect.sendMagicLink({ to, url })`. The selector picks the right adapter from env.
 - **Cold-start path**: only the chosen adapter is imported (lazy `import('./adapters/<name>')`).
 - **Dev workflow**: `bun run dev:up` brings Mailpit alongside db/queue/storage; login mail is visible at http://localhost:14602.
 - **Deprecation note**: pnpm's deprecation warning on `@react-email/components@1.0.x` led us to use the `react-email` umbrella package directly. Modern recommended path.
-- **Accepted enumeration oracle (2026-06-10 security audit)**: the magic-link request for an unknown, non-allowlisted email answers explicitly "Inget konto finns för denna e-postadress" (`src/lib/auth.ts`, `sendMagicLink` gate) instead of a uniform "if the address exists we've sent a link". A probe can therefore learn whether an email has an account. Deliberate: a co-owner who typos their address gets actionable feedback, membership of a ~15-person boat club is not a secret worth that UX cost, and the 5/min DB-backed rate limit bounds probing. Revisit if the app ever serves a userbase whose membership is sensitive.
+- **Accepted enumeration oracle (2026-06-10 security audit)**: the magic-link request for an unknown, non-allowlisted email answers explicitly "Inget konto finns för denna e-postadress" (`src/lib/auth.ts`, `sendMagicLink` gate) instead of a uniform "if the address exists we've sent a link". A probe can therefore learn whether an email has an account. Deliberate: a member who typos their address gets actionable feedback, membership of a small, allowlisted internal userbase is not a secret worth that UX cost, and the 5/min DB-backed rate limit bounds probing. Revisit if the app ever serves a userbase whose membership is sensitive.
 
 ---
 
@@ -202,9 +218,9 @@ Re-open this decision if any of the following land:
 
 - ~~**Sender-domain verification**~~ — **Done 2026-06-11** (see Amendment above): `mail.lukaslindqvist.se` verified, Vercel envs set, `resend` adapter active in prod.
 - ~~**Interim risk: prod magic-links in Runtime Logs.**~~ — **Closed 2026-06-11**: the `devLog` adapter redacts the magic-link URL when `NODE_ENV === 'production'`, so a future config regression can't leak sign-in links into Runtime Logs. `src/lib/logger/redact.ts` stays unchanged (a global `url` path would scrub far too much).
-- **Additional templates** — added with new features. **User invitation landed 2026-06-24** (see Amendment above): `InviteUserEmail.tsx` + `sendUserInvited` on `EmailEffects`, delivered tier-3 via the `email_user_invited` queue topic. Still open: schedule reminder, season summary. Each new template is one `<Name>Email.tsx` + one new method on `EmailEffects` + per-adapter wiring.
+- **Additional templates** — added with new features. **User invitation landed 2026-06-24** (see Amendment above): `InviteUserEmail.tsx` + `sendUserInvited` on `EmailEffects`, delivered tier-3 via the `email_user_invited` queue topic. **Integration sync alert** followed (`IntegrationSyncAlertEmail.tsx` + `sendIntegrationSyncAlert`, tier-3 via the `email_integration_sync_alert` topic — see ADR-0019). Each new template is one `<Name>Email.tsx` + one new method on `EmailEffects` + per-adapter wiring.
 - **Webhook / bounce handling, suppression list** — Resend-side; not needed at 20 users. (Open tracking enabled 2026-06-11 — see Amendment; click tracking deliberately off.)
-- **Logo asset** — `MagicLinkEmail.tsx` currently uses a styled text wordmark. Swap to a hosted image (Vercel Blob's `videbacken-public` store, or a base64-inlined SVG) once a brand mark exists.
+- ~~**Logo asset**~~ — **Done**: `BrandEmailLayout.tsx` renders the brand mark from `public/email-logo.png` (a PNG — most clients strip SVG), resolved from the action link's origin.
 
 ---
 
@@ -217,10 +233,11 @@ Re-open this decision if any of the following land:
 - `src/lib/effects/email/adapters/resend.ts` — Resend SDK
   - Both transports require `EMAIL_FROM`; `resend` guards it (selector + adapter), while `smtp` passes it unchecked to nodemailer — a missing value fails at send time.
 - `src/lib/effects/email/email.test.ts` — interface contract under the VITEST short-circuit; cannot exercise the precedence rules (see § Verification)
-- `src/emails/theme.ts` — Studio Tailwind config (MIT)
-- `src/emails/Fonts.tsx` — Studio Inter + Geist loading (MIT)
+- `src/emails/theme.ts` — email Tailwind config (font-scale from Studio, MIT)
+- `src/emails/BrandEmailLayout.tsx` — shared layout every template renders through
 - `src/emails/MagicLinkEmail.tsx` — magic-link template + `renderMagicLink` (adapted from Studio, MIT)
 - `src/emails/MagicLinkEmail.test.tsx` — render-output assertions
+- `src/emails/InviteUserEmail.tsx`, `src/emails/IntegrationSyncAlertEmail.tsx` — later templates (+ `.test.tsx`)
 - `compose.yaml` — `mail` service (`axllent/mailpit:latest`)
 - `package.json` — `mail:up` / `mail:down` / `email:dev` scripts; `mail` added to `dev:up`
 - `.env.example` — `SMTP_HOST`, `SMTP_PORT`, `EMAIL_FROM`, `RESEND_API_KEY`, optional `EMAIL_ADAPTER`
