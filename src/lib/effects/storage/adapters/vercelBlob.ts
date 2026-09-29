@@ -38,8 +38,8 @@ function tokenFor(access: 'public' | 'private'): string {
  * think in logical terms (`avatars/{userId}/{slug}`, `documents/{folder}/{name}`);
  * the prefixed form is what the browser SDK uses and what we store on metadata
  * rows. `applyEnvPrefix` leaves an already-prefixed pathname untouched, so a
- * cross-env (`prod/…`) row read from preview resolves in the shared store
- * instead of being double-prefixed to a non-existent key.
+ * cross-env (`prod/…`) row resolves in the shared store instead of being
+ * double-prefixed to a non-existent key.
  */
 export const vercelBlob: StorageEffects = {
   async mintUploadToken({ access, pathname, contentType, maxBytes }) {
@@ -69,11 +69,11 @@ export const vercelBlob: StorageEffects = {
 
   async delete(access, pathname) {
     // The store is shared across environments. A foreign-origin byte (e.g. a
-    // prod file surfaced through a branched preview DB) is owned by the env its
-    // prefix names; deleting it here would destroy *that* env's object. No-op —
-    // the metadata row is branch-local and already gone. In production this never
-    // triggers (prod files carry the current prefix); it exists to stop a preview
-    // hard-delete or rename from reaching into prod.
+    // prod file whose row was restored into preview's DB) is owned by the env
+    // its prefix names; deleting it here would destroy *that* env's object.
+    // No-op — the metadata row is env-local and already gone. In production this
+    // never triggers (prod files carry the current prefix); it exists to stop a
+    // preview delete from reaching into prod.
     if (isRemoteOriginPathname(pathname)) return
     await del(applyEnvPrefix(pathname), { token: tokenFor(access) })
   },
@@ -92,10 +92,9 @@ export const vercelBlob: StorageEffects = {
   },
 
   async copy(access, fromPathname, toPathname, contentType) {
-    // Backstop against writing into another env's namespace from a branched DB.
-    // `renameDocument` already skips the byte move for a foreign-origin source,
-    // so this only fires defensively. (Reading/copying a prod byte into a new
-    // prod key would still mutate the shared prod store.)
+    // Backstop against writing into another env's namespace when its rows end
+    // up in this env's DB. (Copying a prod byte into a new prod key would still
+    // mutate the shared prod store.)
     if (isRemoteOriginPathname(fromPathname) || isRemoteOriginPathname(toPathname)) return
     // `copy` does not carry the source content type over, so we re-pass the
     // file's stored mime. `addRandomSuffix: false` keeps the destination
