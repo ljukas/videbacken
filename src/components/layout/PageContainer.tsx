@@ -4,7 +4,7 @@ import { cn } from '~/lib/utils'
 const widths = {
   default: 'max-w-5xl', // card grids, lists, mixed content
   prose: 'max-w-2xl', // forms, settings, reading
-  full: 'max-w-none', // data tables + document grid (full-bleed)
+  full: 'max-w-none', // data tables (full-bleed)
 } as const
 
 /**
@@ -20,7 +20,7 @@ const widths = {
  *   overflow-auto`.
  * - `fill="lg"`: fill from the `lg` breakpoint up, default below — for
  *   screens whose lg layout is a scroll-inside table but whose narrow layout
- *   is a card list that wants natural page scroll (Calendar). An inner
+ *   is a card list that wants natural page scroll (no current caller). An inner
  *   scroller below lg would sit inside the page padding and draw its
  *   scrollbar next to the content instead of at the panel edge.
  *

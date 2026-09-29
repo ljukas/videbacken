@@ -302,7 +302,7 @@ This is the general rule: **when bound components don't fit, drop to the raw `@t
 
 A reader can confirm the architecture is being followed without running anything:
 
-- **No raw `@tanstack/react-form` imports in app code.** `grep -rn "from '@tanstack/react-form'" src/` should match only `src/hooks/form.ts` and `src/components/form/*` (the bound components, which import `useStore` directly for reactive form subscription). Anything else is a violation.
+- **No raw `@tanstack/react-form` imports in app code.** `grep -rn "from '@tanstack/react-form'" src/` should match only `src/hooks/form.ts` and `src/components/form/*` (the bound components, which import `useStore` directly for reactive form subscription). App code that needs reactive form state outside a bound component imports the `useStore` that `~/hooks/form` re-exports (e.g. `TariffDialog`'s `isSubmitting` effect). Anything else is a violation.
 - **No raw `<form.Field>` in app code.** `grep -rn "form\.Field" src/` outside the hook file should match zero hits. The user-facing API is `<form.AppField>`.
 - **No raw `useForm` import.** `grep -rn "import.*useForm[ ,}]" src/` should match zero hits outside `~/hooks/form.ts` (which uses `useAppForm` only).
 - **No `isInvalid` derivation in form callsites.** `grep -rn "isInvalid" src/components/` should match only inside `src/components/form/*` (the bound components own this).
