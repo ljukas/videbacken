@@ -5,7 +5,7 @@ import { intensity, ZERO_FILL } from './patternChart'
 
 const tenValues = intensity([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-test('reads "mindre ●●●●●● mer" plus the max, with the ranges only in the accessible name', async () => {
+test('reads "mindre ●●●●●● mer" with no numbers; the ranges only in the accessible name', async () => {
   const { screen } = await renderWithProviders(<PatternLegend scale={tenValues} metric="kwh" />)
   const legend = screen.getByRole('img')
   await expect
@@ -18,8 +18,8 @@ test('reads "mindre ●●●●●● mer" plus the max, with the ranges only i
   expect(swatches).toHaveLength(tenValues.steps.length + 1)
   expect(swatches[0]?.dataset.swatch).toBe('zero')
   expect(swatches[0]?.style.background).toBe(ZERO_FILL)
-  // Visible text: less, more, then the max; no per-step ranges.
-  expect(el.textContent).toBe('mindremer10,0 kWh')
+  // Visible text: only less and more; no numbers.
+  expect(el.textContent).toBe('mindremer')
   expect(el.textContent).not.toContain('1,0–2,0')
 })
 

@@ -2,9 +2,9 @@ import { m } from '~/paraglide/messages'
 import { formatCount, formatOneDecimal } from './format'
 import { type Intensity, type PatternMetric, valueLabel, ZERO_FILL } from './patternChart'
 
-// "less [swatches] more  max" for the heatmap and calendar colour scale: the
-// empty-cell swatch first, then one swatch per quantile step. The sighted text
-// carries no per-step numbers; the accessible name spells every step's range out.
+// "less [swatches] more" for the heatmap and calendar colour scale: the
+// empty-cell swatch first, then one swatch per quantile step. No numbers for
+// sighted users; the accessible name spells every step's range out.
 export function PatternLegend({ scale, metric }: { scale: Intensity; metric: PatternMetric }) {
   const spoken = [
     formatCount(0),
@@ -14,7 +14,6 @@ export function PatternLegend({ scale, metric }: { scale: Intensity; metric: Pat
       return from === to ? valueLabel(step.to, metric) : `${from}–${valueLabel(step.to, metric)}`
     }),
   ]
-  const max = scale.steps.at(-1)
   return (
     <div
       role="img"
@@ -38,11 +37,6 @@ export function PatternLegend({ scale, metric }: { scale: Intensity; metric: Pat
         />
       ))}
       <span aria-hidden>{m.charging_patterns_legend_more()}</span>
-      {max ? (
-        <span aria-hidden className="tabular-nums">
-          {valueLabel(max.to, metric)}
-        </span>
-      ) : null}
     </div>
   )
 }
