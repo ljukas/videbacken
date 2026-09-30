@@ -37,6 +37,16 @@ export function formatDate(date: Date): string {
   }).format(date)
 }
 
+// "fre 5 sep." / "Fri, Sep 5": weekday and day in Stockholm time, no year.
+export function formatWeekdayDay(date: Date): string {
+  return new Intl.DateTimeFormat(getIntlLocale(), {
+    timeZone: STOCKHOLM_TIME_ZONE,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  }).format(date)
+}
+
 export function formatTime(date: Date): string {
   return new Intl.DateTimeFormat(getIntlLocale(), {
     timeZone: STOCKHOLM_TIME_ZONE,
