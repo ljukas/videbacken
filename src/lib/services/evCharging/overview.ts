@@ -1,7 +1,11 @@
 import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
-import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import {
+  OVERVIEW_MAX_YEAR,
+  OVERVIEW_MIN_YEAR,
+  PEAK_MIN_INTERVAL_MS,
+} from '~/lib/evCharging/counting'
 import { stockholmYearBounds, stockholmYearMonth } from '~/lib/time/stockholm'
 import { countedSessionFilter } from './counted'
 
@@ -210,9 +214,7 @@ export async function getOverview(input: { year?: number; now?: Date }): Promise
   }
 }
 
-// Intervals ≥ 10 minutes only — anything shorter is Zaptec sampling noise,
-// not a real sustained charge rate.
-const PEAK_MIN_DURATION_SEC = 600
+const PEAK_MIN_DURATION_SEC = PEAK_MIN_INTERVAL_MS / 1000
 
 export async function listSessions(input: {
   limit: number

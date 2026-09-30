@@ -31,3 +31,19 @@ export type PatternAggregates = {
 }
 /** Aggregates plus the selected year and the years that have data. */
 export type ChargingPatterns = PatternAggregates & { year: number; years: number[] }
+export type TimelineSegment = { startAt: Date; endAt: Date; kind: 'charging' | 'idle' }
+export type TimelineSession = {
+  id: string
+  startAt: Date
+  endAt: Date
+  energyKwh: number
+  chargingHours: number
+  hourly: boolean
+  segments: TimelineSegment[]
+}
+export type ChargingTimeline = {
+  year: number
+  month: number
+  months: number[]
+  sessions: TimelineSession[]
+}
