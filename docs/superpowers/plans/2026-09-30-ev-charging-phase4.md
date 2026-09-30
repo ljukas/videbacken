@@ -234,8 +234,11 @@ export type Counterfactual = {
 }
 
 export type SessionEconomy = {
+  /** Partial (priced hours only) when `actualComplete` is false — never show it as the session's cost then. */
   actual: CostTotals
-  /** Spot paid, öre/kWh incl VAT, over the priced energy; null when nothing is priced. */
+  /** `isComplete(actual)`: every kWh priced. Gate any kronor figure on it (an excluded `no_price` session may be partial). */
+  actualComplete: boolean
+  /** Spot paid, öre/kWh incl VAT, over the session's energy; null when the actual is incomplete or empty. */
   paidSpotOre: number | null
   /** Time-weighted average spot over the window, öre/kWh incl VAT; null without prices. */
   windowAvgSpotOre: number | null
@@ -853,6 +856,7 @@ const totals = (totalSek: number, extra: Partial<CostTotals> = {}): CostTotals =
 })
 const included = (actual: number, immediate: number, optimal: number, dearest: number): SessionEconomy => ({
   actual: totals(actual),
+  actualComplete: true,
   paidSpotOre: null,
   windowAvgSpotOre: null,
   excluded: null,
@@ -867,6 +871,7 @@ const included = (actual: number, immediate: number, optimal: number, dearest: n
 })
 const excluded = (reason: 'no_hourly' | 'no_price'): SessionEconomy => ({
   actual: totals(99),
+  actualComplete: true,
   paidSpotOre: null,
   windowAvgSpotOre: null,
   excluded: reason,
@@ -990,9 +995,13 @@ export function analyzeSession(
     tariffsAsc,
   )
   const window = economyWindow(session)
+  const actualComplete = isComplete(actual)
   const common = {
     actual,
-    paidSpotOre: actual.fullKwh > 0 ? (actual.spotSek / actual.fullKwh) * 100 : null,
+    actualComplete,
+    // Not over a partly priced actual: that would be the paid spot of only the priced hours.
+    paidSpotOre:
+      actualComplete && actual.fullKwh > 0 ? (actual.spotSek / actual.fullKwh) * 100 : null,
     windowAvgSpotOre: windowAvgSpotOre(window, slots, tariffsAsc),
   }
   const exclude = (excluded: EconomyExclusion) => ({
@@ -1930,7 +1939,7 @@ window hours if higher), and prices the result with `priceIntervals`:
 - Month/year sums bucket by the **session's start month** (counterfactuals only exist per session), so they can
   differ by öre from the cost overview, which buckets by interval.
 - **Spot timing only**: everything is grid-bought (`gridShare` 1). Actual spreads each hour's energy over its
-  quarters while optimal can pick single quarters, so "left on the table" is slightly overstated. Both caveats are
+  quarters while optimal can pick single quarters, so "left on the table" is slightly overstated (and the hourly-average rate cap pulls the other way). Both caveats are
   stated on the page.
 - Month average spot comes from `dailyAverageSpot` (per-day time-weighted average, aggregated in Postgres).
 ```
@@ -1999,7 +2008,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   "charging_economy_tile_spot_avg": "Snittspot {avg} öre/kWh",
   "charging_economy_tile_none": "Inga sessioner med fullständiga priser",
   "charging_economy_ore": "{value} öre/kWh",
-  "charging_economy_caveat": "Mäter bara pristajming: all el räknas som köpt från elnätet, så solel ingår inte. Den faktiska kostnaden fördelar varje timmes energi jämnt över timmens kvartspriser, så ”Kvar att hämta” är något överskattad.",
+  "charging_economy_caveat": "Mäter bara pristajming: all el räknas som köpt från elnätet, så solel ingår inte. Den faktiska kostnaden fördelar varje timmes energi jämnt över timmens kvartspriser, och laddtakten är en timmedel, så ”Kvar att hämta” kan vara något över- eller underskattad.",
   "charging_economy_bucketing": "Sessioner räknas till månaden de startade.",
   "charging_economy_error_title": "Kunde inte läsa laddekonomin",
   "charging_economy_empty_title": "Inga laddsessioner {year}",
@@ -2020,7 +2029,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   `"Compared with the cheapest quarters while plugged in"`, `"Price timing"`,
   `"100 % = cheapest possible, 0 % = dearest possible"`, `"Spot price paid"`, `"Average spot {avg} öre/kWh"`,
   `"No sessions with complete prices"`, `"{value} öre/kWh"`, the caveat
-  (`"Measures price timing only: all electricity counts as bought from the grid, so solar isn't included. Actual cost spreads each hour's energy evenly over its quarter-hour prices, so “Left on the table” is slightly overstated."`),
+  (`"Measures price timing only: all electricity counts as bought from the grid, so solar isn't included. Actual cost spreads each hour's energy evenly over its quarter-hour prices, and the charge rate is an hourly average, so “Left on the table” may be somewhat over- or understated."`),
   `"Sessions count toward the month they started."`, `"Couldn't load the charging economy"`,
   `"No charging sessions in {year}"`, `"Once the car has charged, this shows how well charging hit the spot price."`,
   and the plurals (`"… session has no hourly data and isn't compared."` / `"… sessions have no hourly data …"`,
@@ -2679,6 +2688,7 @@ const row = (over: Partial<Row> = {}): Row => ({
   endAt: new Date('2026-09-06T05:02:00Z'),
   kwh: 32.1,
   actual: cost(41.2),
+  actualComplete: true,
   paidSpotOre: 40,
   windowAvgSpotOre: 55,
   excluded: null,
@@ -2770,7 +2780,7 @@ export function EconomySessionTable({ sessions }: { sessions: Row[] }) {
                   {formatOneDecimal(r.kwh)} kWh
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
-                  {r.actual.fullKwh > 0 ? formatSek(r.actual.totalSek, 2) : '—'}
+                  {r.actualComplete ? formatSek(r.actual.totalSek, 2) : '—'}
                 </TableCell>
                 {cf ? (
                   <>
@@ -2803,11 +2813,6 @@ function SessionDate({ row }: { row: Row }) {
   return <span>{formatDate(row.startAt)}</span>
 }
 ```
-
-  Note: `formatSek(…, 2)` of a partly priced actual (can't happen for an included session; for an excluded one
-  `fullKwh < gridKwh`) — show it only when `r.actual.fullKwh > 0`, prefixed per the existing "minst" convention if
-  `!isComplete`: reuse `SessionList`'s `SessionCostCell` logic by reading it first; if it is exportable, export and
-  reuse it rather than duplicating.
 
 - [ ] **Step 5: Wire into the page** — replace the B3 marker with a `Sessioner` card holding
   `<EconomySessionTable sessions={economy.sessions} />`.
@@ -2870,7 +2875,7 @@ type Economy = RouterOutputs['evCharging']['session']['economy']
 
 export function SessionEconomyFigures({ economy }: { economy: Economy }) {
   const cf = economy.counterfactual
-  const actual = economy.actual.fullKwh > 0 ? formatSek(economy.actual.totalSek, 2) : '—'
+  const actual = economy.actualComplete ? formatSek(economy.actual.totalSek, 2) : '—'
   const items = cf
     ? [
         { label: m.charging_session_fig_actual(), value: actual },
