@@ -153,15 +153,16 @@ Default month when the URL has none: the latest entry in `months`, else the curr
 - Command palette (`src/components/command/commands.ts`): add a "Laddmönster" entry → `/charging/patterns`.
 - Search params (zod, `.catch(undefined)` like `/charging`): `year`, `metric: 'kwh' | 'plugged'`, `month: 1–12`.
   Year/month/metric changes use `replace: true, resetScroll: false`.
-- Loader: `ensureQueryData` for `patterns(year)` and `timeline(year, month)` + the Zaptec `syncStatus` (for the
-  heading's "Senast synkad" and the health alert). `keepPreviousData` on year/month changes.
+- Loader: `prefetchQuery` for `patterns(year)` and `timeline(year, month)` (a failed read shows the load-error alert
+  instead of replacing the page) + `ensureQueryData` for the Zaptec `syncStatus` (for the heading's "Senast synkad" and
+  the health alert). `keepPreviousData` on year/month changes.
 
 ### Components (`src/components/evCharging/`)
 
 | Component | Notes |
 |---|---|
 | `ChargingTabs` | Links "Översikt" / "Mönster" with `aria-current="page"`; used on both pages under `ChargingHeading`. Not Radix `Tabs` (they switch routes, not in-page state). |
-| `PatternMetricToggle` | kWh / Inkopplad; same shape as `ChartMetricToggle` (reuse or generalize it rather than copy). |
+| `MetricToggle` | Generic kWh / Inkopplad toggle (also replaces /charging's kWh ↔ kr toggle); sits in the heatmap card header and drives the heatmap + hour chart. |
 | `WeekdayHourHeatmap` | A `<table>` (row/col headers, sr-only cell values). ≥ sm: 7 rows × 24 cols; < sm: **transposed** 24 rows × 7 cols so it never scrolls horizontally. Colour = a `d3-scale` `scaleQuantile` over the **non-zero** values → **5 distinct steps** (≈ 20 / 40 / 60 / 80 / 100 % `--brand` mixed into `--card`, `color-mix(in oklab, …)`); thresholds are snapped to real values and deduplicated, so fewer distinct values give fewer (never empty) steps, the top one always full `--brand`. Zero = `--muted` with a `--border` stroke. *Amended 2026-09-30:* the first cut's `scaleSqrt` ramp made most cells look alike. Legend: the zero swatch + each step with the value range it holds ("0 · 0,2–4,1 · … · 30,0–48,0 kWh"). Tooltip (shadcn `tooltip`) on hover/focus: "tis 21–22 · 38,4 kWh" / "… · 2,5 h inkopplad". |
 | `HourOfDayChart` | Recharts `BarChart`, 24 bars, styled like `MonthlyChart`; tick every 3 h (6 h on mobile). |
 | `ChargingCalendar` | 12 mini month grids (Mon first), responsive 6 / 4 / 3 / 2 columns; header = month name (a link setting `?month=`) + month kWh; future days hatched; same quantile colour scale as the heatmap (over daily kWh) and the same legend; tooltip "fre 5 sep · 32,1 kWh · 1 session". |
@@ -174,7 +175,9 @@ controls row (metric toggle, `YearSelector`) → heatmap card → histogram card
 
 - Year with no counted sessions → one shared `Empty` in place of the four cards.
 - Month with no sessions → `Empty`-style row inside the timeline card (the stepper stays).
-- `unhourlySessions > 0` → a muted note under the heatmap: "{n} sessioner saknar timdata och ingår inte i timvyerna."
+- `unhourlySessions > 0` and metric kWh → a muted note under the heatmap: "{n} sessioner saknar timdata och ingår inte i
+  timvyerna." (plural message; not shown for Inkopplad, where those sessions do count).
+- A patterns or timeline read that fails with nothing to show → the shared destructive `Alert` with a retry button.
 - Stale/errored sync → the existing `SyncHealthAlert`; data stays visible.
 
 ### i18n
