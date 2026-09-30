@@ -471,7 +471,7 @@
   "charging_economy_series_immediate": "Direkt",
   "charging_economy_series_actual": "Faktiskt",
   "charging_economy_series_optimal": "Optimalt",
-  "charging_economy_chart_spot_title": "Spotpris per månad",
+  "charging_economy_chart_spot_title": "Spotpris per månad (öre/kWh inkl. moms)",
   "charging_economy_series_paid": "Betalt",
   "charging_economy_series_avg": "Månadens snitt",
   "charging_economy_chart_no_data": "Ingen jämförbar laddning",

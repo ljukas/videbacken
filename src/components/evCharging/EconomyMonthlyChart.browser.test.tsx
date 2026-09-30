@@ -28,7 +28,7 @@ const months = Array.from({ length: 12 }, (_, i) =>
     : month(i + 1),
 )
 
-test('draws three bar series and a legend naming them', async () => {
+test('draws three bar series, a legend naming them, and no bars for months without comparable sessions', async () => {
   const { screen } = await renderWithProviders(
     <div style={{ width: 720 }}>
       <EconomyMonthlyChart months={months} />
@@ -41,15 +41,7 @@ test('draws three bar series and a legend naming them', async () => {
     expect(legend).toContain(m.charging_economy_series_optimal())
   })
   expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(3)
-})
-
-test('a month without comparable sessions gets no bars, not 0 kr ones', async () => {
-  const { screen } = await renderWithProviders(
-    <div style={{ width: 720 }}>
-      <EconomyMonthlyChart months={months} />
-    </div>,
-  )
-  // One comparable month × three series.
+  // One comparable month x three series: the other eleven get no 0 kr bars.
   await vi.waitFor(() =>
     expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(3),
   )

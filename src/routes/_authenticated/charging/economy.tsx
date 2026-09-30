@@ -59,7 +59,8 @@ function EconomyPage() {
   })
   // Daily data: focus refetch only, no polling interval.
   const { data: pricesHealth } = useSuspenseQuery(pricesHealthQuery)
-  const ids = [useId(), useId()]
+  const sekHeadingId = useId()
+  const spotHeadingId = useId()
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const result = useQuery({ ...economyQuery(search.year), placeholderData: keepPreviousData })
@@ -103,10 +104,10 @@ function EconomyPage() {
               aria-busy={stale}
             >
               <EconomyTiles tiles={economy.tiles} />
-              <section aria-labelledby={ids[0]}>
+              <section aria-labelledby={sekHeadingId}>
                 <Card>
                   <CardHeader>
-                    <h2 id={ids[0]} className="font-medium text-sm">
+                    <h2 id={sekHeadingId} className="font-medium text-sm">
                       {m.charging_economy_chart_sek_title()}
                     </h2>
                   </CardHeader>
@@ -115,10 +116,10 @@ function EconomyPage() {
                   </CardContent>
                 </Card>
               </section>
-              <section aria-labelledby={ids[1]}>
+              <section aria-labelledby={spotHeadingId}>
                 <Card>
                   <CardHeader>
-                    <h2 id={ids[1]} className="font-medium text-sm">
+                    <h2 id={spotHeadingId} className="font-medium text-sm">
                       {m.charging_economy_chart_spot_title()}
                     </h2>
                   </CardHeader>

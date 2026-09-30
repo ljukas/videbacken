@@ -8,18 +8,26 @@ import {
 } from '~/components/ui/chart'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
+import { ChartFrame, NoData, TooltipRow } from './ChartFrame'
 import { formatSek, monthLabel } from './format'
-import { ChartFrame } from './MonthlyChart'
 
 type Month = RouterOutputs['evCharging']['economy']['months'][number]
+
+// Series colours: each keeps >=3:1 against the card in both themes (--chart-1,
+// -4 and -5 fail one theme; see MonthlyChart). Contrast vs card, light / dark:
+//   immediate  --muted-foreground  4.7 / 6.7  (the quiet baseline)
+//   actual     --chart-3           9.1 / 8.1
+//   optimal    --chart-2           3.7 / 7.0
+const SERIES_ORDER = ['immediate', 'actual', 'optimal']
+const seriesOrder = (item: { dataKey?: unknown }) => SERIES_ORDER.indexOf(String(item.dataKey))
 
 // Per month: what charging at once would have cost, what we paid and the
 // cheapest schedule — side by side, over the month's comparable sessions only.
 // A month with none gets no bars (its gap is the honest state, never 0 kr).
 export function EconomyMonthlyChart({ months }: { months: Month[] }) {
   const config = {
-    immediate: { label: m.charging_economy_series_immediate(), color: 'var(--chart-3)' },
-    actual: { label: m.charging_economy_series_actual(), color: 'var(--chart-1)' },
+    immediate: { label: m.charging_economy_series_immediate(), color: 'var(--muted-foreground)' },
+    actual: { label: m.charging_economy_series_actual(), color: 'var(--chart-3)' },
     optimal: { label: m.charging_economy_series_optimal(), color: 'var(--chart-2)' },
   } satisfies ChartConfig
   if (!months.some((mo) => mo.included > 0)) return <NoData />
@@ -44,15 +52,24 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
         />
         <ChartTooltip
           cursor={false}
+          itemSorter={seriesOrder}
           content={
             <ChartTooltipContent
-              formatter={(value, name) =>
-                `${config[name as keyof typeof config].label} ${formatSek(Number(value))}`
-              }
+              formatter={(value, name) => {
+                const series = config[name as keyof typeof config]
+                return (
+                  <TooltipRow label={series.label} color={series.color}>
+                    {formatSek(Number(value))}
+                  </TooltipRow>
+                )
+              }}
             />
           }
         />
-        <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />} />
+        <ChartLegend
+          itemSorter={seriesOrder}
+          content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
+        />
         <Bar
           dataKey="immediate"
           fill="var(--color-immediate)"
@@ -63,17 +80,5 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
         <Bar dataKey="optimal" fill="var(--color-optimal)" radius={3} isAnimationActive={false} />
       </BarChart>
     </ChartFrame>
-  )
-}
-
-/** The chart-sized "nothing to compare" state (shared with the spot chart). */
-export function NoData() {
-  return (
-    <div
-      className="flex items-center justify-center rounded-lg border px-4 text-center text-muted-foreground text-sm"
-      style={{ height: 260 }}
-    >
-      {m.charging_economy_chart_no_data()}
-    </div>
   )
 }

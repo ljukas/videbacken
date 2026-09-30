@@ -471,7 +471,7 @@
   "charging_economy_series_immediate": "At once",
   "charging_economy_series_actual": "Actual",
   "charging_economy_series_optimal": "Optimal",
-  "charging_economy_chart_spot_title": "Spot price per month",
+  "charging_economy_chart_spot_title": "Spot price per month (öre/kWh incl. VAT)",
   "charging_economy_series_paid": "Paid",
   "charging_economy_series_avg": "Month average",
   "charging_economy_chart_no_data": "No comparable charging",
