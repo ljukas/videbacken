@@ -102,7 +102,7 @@ type MonthEconomy = {
   `src/lib/evCharging/costInputs.ts` (server-only); `costing.ts` imports them. Behavior-preserving; lands in PR A.
 - `getEconomyOverview({ year?, now?, timings? })`:
   1. `listSessionEnergy({ all: true })` + `loadTariffs()` in parallel.
-  2. **One** `listSlotsOverlapping(SPOT_ZONE, ranges)` call whose ranges are each session's **plug-in window**
+  2. **One** `listSlotsOverlapping(SPOT_ZONE, ranges)` call whose ranges are the plug-in **window** of each session that started in the selected year (filtered in memory after step 1)
      (not its stretches — optimal and dearest may use slots outside the charged hours) plus the selected year's
      twelve Stockholm month bounds (for `monthAvgSpotOre`).
   3. Pure `sessionEconomy` per session in the selected year (by start month), `monthEconomy` per month.
