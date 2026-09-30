@@ -396,6 +396,7 @@
   "charging_patterns_value_plugged": "{value} h inkopplad",
   "charging_patterns_heatmap_caption": "Laddning per veckodag och timme",
   "charging_patterns_hour_caption": "Laddning per timme på dygnet",
+  "charging_patterns_calendar_caption": "Laddning per dag i {month}",
   "charging_patterns_day_sessions": "{count} sessioner",
   "charging_patterns_unhourly_note": "{count} sessioner saknar timdata och ingår inte i timvyerna.",
   "charging_patterns_timeline_prev": "Föregående månad",
