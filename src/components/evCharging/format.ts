@@ -1,4 +1,5 @@
-import { formatDistanceStrict } from 'date-fns'
+import { tz } from '@date-fns/tz'
+import { type Day, format, formatDistanceStrict, type Month } from 'date-fns'
 import { getDateFnsLocale, getIntlLocale } from '~/lib/i18n/format'
 import { STOCKHOLM_TIME_ZONE } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
@@ -37,14 +38,12 @@ export function formatDate(date: Date): string {
   }).format(date)
 }
 
-// "fre 5 sep." / "Fri, Sep 5": weekday and day in Stockholm time, no year.
+// "lör 5 sep" / "Sat 5 Sep": weekday and day in Stockholm time, no year.
 export function formatWeekdayDay(date: Date): string {
-  return new Intl.DateTimeFormat(getIntlLocale(), {
-    timeZone: STOCKHOLM_TIME_ZONE,
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  }).format(date)
+  return format(date, 'EEE d MMM', {
+    locale: getDateFnsLocale(),
+    in: tz(STOCKHOLM_TIME_ZONE),
+  })
 }
 
 export function formatTime(date: Date): string {
@@ -100,11 +99,11 @@ export function monthLabel(month: number): string {
   )
 }
 
-// 2024-01-01 was a Monday — a fixed UTC anchor for weekday names.
+// weekday: 0 = Monday … 6 = Sunday. date-fns counts from Sunday = 0.
 export function weekdayLabel(weekday: number, width: 'short' | 'long' = 'short'): string {
-  return new Intl.DateTimeFormat(getIntlLocale(), { weekday: width, timeZone: 'UTC' }).format(
-    new Date(Date.UTC(2024, 0, 1 + weekday, 12)),
-  )
+  return getDateFnsLocale().localize.day(((weekday + 1) % 7) as Day, {
+    width: width === 'short' ? 'abbreviated' : 'wide',
+  })
 }
 
 export function hourRangeLabel(hour: number): string {
@@ -112,10 +111,9 @@ export function hourRangeLabel(hour: number): string {
   return `${pad(hour)}–${pad(hour + 1)}`
 }
 
+// Full month name for a 1-based month.
 export function monthName(month: number): string {
-  return new Intl.DateTimeFormat(getIntlLocale(), { month: 'long', timeZone: 'UTC' }).format(
-    new Date(Date.UTC(2000, month - 1, 15, 12)),
-  )
+  return getDateFnsLocale().localize.month((month - 1) as Month, { width: 'wide' })
 }
 
 /** A decimal as typed/read back in a form field: no grouping, up to 3 decimals. */
