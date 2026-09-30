@@ -390,6 +390,8 @@
   "charging_patterns_hour_title_plugged": "Per timme på dygnet · timmar inkopplad",
   "charging_patterns_calendar_title": "Dag för dag · kWh",
   "charging_patterns_timeline_title": "Sessioner",
+  "charging_patterns_legend_less": "mindre",
+  "charging_patterns_legend_more": "mer",
   "charging_patterns_legend_label": "Färgskala: {steps}",
   "charging_patterns_value_kwh": "{value} kWh",
   "charging_patterns_value_plugged": "{value} h inkopplad",

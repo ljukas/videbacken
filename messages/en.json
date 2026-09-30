@@ -390,6 +390,8 @@
   "charging_patterns_hour_title_plugged": "By hour of day · hours plugged in",
   "charging_patterns_calendar_title": "Day by day · kWh",
   "charging_patterns_timeline_title": "Sessions",
+  "charging_patterns_legend_less": "less",
+  "charging_patterns_legend_more": "more",
   "charging_patterns_legend_label": "Colour scale: {steps}",
   "charging_patterns_value_kwh": "{value} kWh",
   "charging_patterns_value_plugged": "{value} h plugged in",

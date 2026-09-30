@@ -5,7 +5,7 @@ import { intensity, ZERO_FILL } from './patternChart'
 
 const tenValues = intensity([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-test('is one labelled image: the zero swatch plus five steps with their ranges', async () => {
+test('reads "mindre ●●●●●● mer" plus the max, with the ranges only in the accessible name', async () => {
   const { screen } = await renderWithProviders(<PatternLegend scale={tenValues} metric="kwh" />)
   const legend = screen.getByRole('img')
   await expect
@@ -15,11 +15,12 @@ test('is one labelled image: the zero swatch plus five steps with their ranges',
     )
   const el = legend.element()
   const swatches = el.querySelectorAll<HTMLElement>('[data-swatch]')
-  expect(swatches).toHaveLength(6)
+  expect(swatches).toHaveLength(tenValues.steps.length + 1)
   expect(swatches[0]?.dataset.swatch).toBe('zero')
   expect(swatches[0]?.style.background).toBe(ZERO_FILL)
-  // The unit is printed once, after the last step.
-  expect(el.textContent).toBe('01,0–2,03,0–4,05,0–6,07,0–8,09,0–10,0 kWh')
+  // Visible text: less, more, then the max; no per-step ranges.
+  expect(el.textContent).toBe('mindremer10,0 kWh')
+  expect(el.textContent).not.toContain('1,0–2,0')
 })
 
 test('each step swatch uses its own step colour', async () => {
@@ -46,5 +47,6 @@ test('all-zero data shows only the zero swatch', async () => {
   )
   const el = screen.getByRole('img').element()
   expect(el.querySelectorAll('[data-swatch]')).toHaveLength(1)
+  expect(el.textContent).toBe('mindremer')
   await expect.element(screen.getByRole('img')).toHaveAccessibleName('Färgskala: 0')
 })
