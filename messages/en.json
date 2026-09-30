@@ -464,6 +464,7 @@
   "charging_economy_tile_score_hint": "100 % = cheapest possible, 0 % = dearest possible",
   "charging_economy_tile_spot": "Spot price paid",
   "charging_economy_tile_spot_avg": "Average spot {avg} öre/kWh",
+  "charging_economy_tile_no_spread": "No price spread to compare against",
   "charging_economy_tile_none": "No sessions with complete prices",
   "charging_economy_ore": "{value} öre/kWh",
   "charging_economy_caveat": "Measures price timing only: all electricity counts as bought from the grid, so solar isn't included. Actual cost spreads each hour's energy evenly over its quarter-hour prices, and the charge rate is an hourly average, so “Left on the table” may be somewhat over- or understated.",

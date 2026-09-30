@@ -144,6 +144,8 @@ describe('formatSignedSek', () => {
     inLocale('sv')
     expect(formatSignedSek(-12.4)).toBe('−12\u00a0kr')
     expect(formatSignedSek(12.4)).toBe('12\u00a0kr')
+    expect(formatSignedSek(-12.5)).toBe('−13\u00a0kr')
+    expect(formatSignedSek(12.5)).toBe('13\u00a0kr')
     expect(formatSignedSek(-0.2)).toBe('0\u00a0kr')
   })
 })

@@ -15,16 +15,21 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
       label: m.charging_economy_tile_saved(),
       value: none ? null : formatSignedSek(tiles.savedVsImmediateSek),
       hint: m.charging_economy_tile_saved_hint(),
+      emptyReason: m.charging_economy_tile_none(),
     },
     {
       label: m.charging_economy_tile_left(),
       value: none ? null : formatSignedSek(tiles.leftOnTableSek),
       hint: m.charging_economy_tile_left_hint(),
+      emptyReason: m.charging_economy_tile_none(),
     },
     {
       label: m.charging_economy_tile_score(),
       value: none || tiles.score === null ? null : formatScore(tiles.score),
       hint: m.charging_economy_tile_score_hint(),
+      // Flat prices (no spread between cheapest and dearest) give no score
+      // even though sessions were compared.
+      emptyReason: none ? m.charging_economy_tile_none() : m.charging_economy_tile_no_spread(),
     },
     {
       label: m.charging_economy_tile_spot(),
@@ -36,6 +41,7 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
         tiles.avgSpotOre === null
           ? null
           : m.charging_economy_tile_spot_avg({ avg: formatOre(tiles.avgSpotOre) }),
+      emptyReason: none ? m.charging_economy_tile_none() : null,
     },
   ]
   // Container query like TotalsTiles: 4 across only when the column is wide.
@@ -53,9 +59,11 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
                   <span className="font-semibold text-2xl tabular-nums" aria-hidden>
                     —
                   </span>
-                  <span className="text-muted-foreground text-xs">
-                    {m.charging_economy_tile_none()}
-                  </span>
+                  {(item.emptyReason ?? item.hint) ? (
+                    <span className="text-muted-foreground text-xs">
+                      {item.emptyReason ?? item.hint}
+                    </span>
+                  ) : null}
                 </>
               ) : (
                 <>

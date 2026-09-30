@@ -162,10 +162,11 @@ export function formatSek(value: number, fractionDigits = 0): string {
 /** Kronor with a typographic minus for a negative amount; rounds −0,2 kr to "0 kr", never "−0 kr". */
 export function formatSignedSek(value: number, fractionDigits = 0): string {
   const factor = 10 ** fractionDigits
-  const rounded = Math.round(value * factor) / factor
-  return rounded < 0
-    ? `−${formatSek(-rounded, fractionDigits)}`
-    : formatSek(Math.abs(rounded), fractionDigits)
+  // Round the magnitude so ±12,5 round alike; a tiny negative never reads "−0".
+  const magnitude = Math.round(Math.abs(value) * factor) / factor
+  return value < 0 && magnitude > 0
+    ? `−${formatSek(magnitude, fractionDigits)}`
+    : formatSek(magnitude, fractionDigits)
 }
 
 /** A timing score (0…1) as a whole percent; "—" when there was nothing to compare. */

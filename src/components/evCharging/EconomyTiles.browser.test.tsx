@@ -60,5 +60,14 @@ test('nothing included → "—" with the reason, never 0 kr or 0 %', async () =
   )
   expect(screen.getByText('0 kr').elements()).toHaveLength(0)
   expect(screen.getByText(/^0\s?%$/).elements()).toHaveLength(0)
+  expect(screen.getByText('—').elements()).toHaveLength(4)
   expect(screen.getByText(m.charging_economy_tile_none()).elements().length).toBeGreaterThan(0)
+})
+
+test('flat prices (score null, sessions included) say so, not "none" or 0 %', async () => {
+  const { screen } = await renderWithProviders(<EconomyTiles tiles={{ ...base, score: null }} />)
+  expect(screen.getByText('—').elements()).toHaveLength(1)
+  await expect.element(screen.getByText(m.charging_economy_tile_no_spread())).toBeVisible()
+  expect(screen.getByText(m.charging_economy_tile_none()).elements()).toHaveLength(0)
+  expect(screen.getByText(/^0\s?%$/).elements()).toHaveLength(0)
 })
