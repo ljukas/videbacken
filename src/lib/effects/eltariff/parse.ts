@@ -5,6 +5,10 @@ import { EltariffError } from './errors'
 // Swedish metering-point IDs (anläggnings-ID) are 18 digits.
 const meteringPointId = z.string().regex(/^\d{18}$/)
 
+// The company name is third-party text that ends up in an admin email: one
+// line, bounded.
+const MAX_COMPANY_NAME = 100
+
 // Only what matching needs is required: a registration whose name is missing
 // must still count as coverage, not be dropped as malformed.
 const entrySchema = z.object({
@@ -14,7 +18,9 @@ const entrySchema = z.object({
     .string()
     .nullish()
     .catch(null)
-    .transform((name) => name?.trim() || null),
+    .transform(
+      (name) => name?.replace(/\s+/g, ' ').trim().slice(0, MAX_COMPANY_NAME).trim() || null,
+    ),
 })
 
 /**

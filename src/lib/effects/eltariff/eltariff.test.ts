@@ -100,6 +100,19 @@ describe('catalogue', () => {
     expect(result.invalidEntries).toBe(0)
   })
 
+  test('the company name is collapsed to one line and capped at 100 characters', async () => {
+    const { c } = client({
+      [ROUTE]: () =>
+        jsonResponse([
+          { ...apiEntry(1), companyName: 'Nät\n\n  1\tAB' },
+          { ...apiEntry(2), companyName: `${'x'.repeat(99)} tail beyond the cap` },
+        ]),
+    })
+    const [first, second] = (await c.catalogue()).entries
+    expect(first.companyName).toBe('Nät 1 AB')
+    expect(second.companyName).toBe('x'.repeat(99))
+  })
+
   test('drops and counts entries unusable for matching', async () => {
     const { from, to } = { from: 'meteringPointIdFrom', to: 'meteringPointIdTo' } as const
     const unusable = [
