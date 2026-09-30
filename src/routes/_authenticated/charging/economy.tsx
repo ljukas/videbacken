@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
 import { EconomyMonthlyChart } from '~/components/evCharging/EconomyMonthlyChart'
+import { EconomySessionTable } from '~/components/evCharging/EconomySessionTable'
 import { EconomyTiles } from '~/components/evCharging/EconomyTiles'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
@@ -61,6 +62,7 @@ function EconomyPage() {
   const { data: pricesHealth } = useSuspenseQuery(pricesHealthQuery)
   const sekHeadingId = useId()
   const spotHeadingId = useId()
+  const sessionsHeadingId = useId()
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const result = useQuery({ ...economyQuery(search.year), placeholderData: keepPreviousData })
@@ -128,7 +130,18 @@ function EconomyPage() {
                   </CardContent>
                 </Card>
               </section>
-              {/* B3: session table */}
+              <section aria-labelledby={sessionsHeadingId}>
+                <Card>
+                  <CardHeader>
+                    <h2 id={sessionsHeadingId} className="font-medium text-sm">
+                      {m.charging_economy_sessions_title()}
+                    </h2>
+                  </CardHeader>
+                  <CardContent>
+                    <EconomySessionTable sessions={economy.sessions} />
+                  </CardContent>
+                </Card>
+              </section>
               <EconomyFootnote excluded={economy.tiles.excluded} />
             </div>
           ) : (

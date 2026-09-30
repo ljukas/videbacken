@@ -480,6 +480,15 @@
   "charging_economy_error_title": "Couldn't load the charging economy",
   "charging_economy_empty_title": "No charging sessions in {year}",
   "charging_economy_empty_description": "Once the car has charged, this shows how well charging hit the spot price.",
+  "charging_economy_sessions_title": "Sessions",
+  "charging_economy_col_date": "Date",
+  "charging_economy_col_energy": "Energy",
+  "charging_economy_col_actual": "Cost",
+  "charging_economy_col_vs_immediate": "Vs at once",
+  "charging_economy_col_left": "Left",
+  "charging_economy_col_score": "Timing",
+  "charging_economy_reason_no_hourly": "no hourly data",
+  "charging_economy_reason_no_price": "price missing",
   "charging_economy_excluded_no_hourly": [
     {
       "declarations": [

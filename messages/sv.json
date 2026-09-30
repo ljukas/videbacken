@@ -480,6 +480,15 @@
   "charging_economy_error_title": "Kunde inte läsa laddekonomin",
   "charging_economy_empty_title": "Inga laddsessioner {year}",
   "charging_economy_empty_description": "När bilen har laddats visas här hur väl laddningen prickade spotpriset.",
+  "charging_economy_sessions_title": "Sessioner",
+  "charging_economy_col_date": "Datum",
+  "charging_economy_col_energy": "Energi",
+  "charging_economy_col_actual": "Kostnad",
+  "charging_economy_col_vs_immediate": "Mot direkt",
+  "charging_economy_col_left": "Kvar",
+  "charging_economy_col_score": "Tajming",
+  "charging_economy_reason_no_hourly": "ingen timdata",
+  "charging_economy_reason_no_price": "pris saknas",
   "charging_economy_excluded_no_hourly": [
     {
       "declarations": [
