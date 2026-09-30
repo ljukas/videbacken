@@ -130,6 +130,10 @@ export default defineConfig({
                 { path: '/api/cron/zaptec-sync', schedule: '0 * * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 12 * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 15 * * *' },
+                // Not a pulled integration: the grid-tariff watcher (ADR-0019's
+                // 2026-09-30 amendment), same secret gate. Monthly, the 1st at
+                // 06:00 UTC (src/lib/gridTariff/catalogueCheckCron.ts).
+                { path: '/api/cron/grid-tariff-catalogue', schedule: '0 6 1 * *' },
               ],
             },
             // Subscribes the Vercel preset's queue handler to each topic.
@@ -144,6 +148,7 @@ export default defineConfig({
                 { topic: 'email_user_invited' },
                 { topic: 'heic_transcode' },
                 { topic: 'email_integration_sync_alert' },
+                { topic: 'email_grid_tariff_available' },
               ],
             },
           },
