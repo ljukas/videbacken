@@ -17,4 +17,7 @@ export const devLog: EmailEffects = {
   async sendIntegrationSyncAlert({ to, source, transition, code }) {
     logger.info('integration sync alert (devLog)', { to, source, transition, code })
   },
+  async sendGridTariffAvailable({ to, companyName }) {
+    logger.info('grid tariff available (devLog)', { to, companyName })
+  },
 }

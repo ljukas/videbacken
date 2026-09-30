@@ -44,6 +44,14 @@ export interface EmailEffects {
     failingSince: string | null
     locale: Locale
   }): Promise<void>
+  // Grid-tariff watcher notice (tier-3): delivered via the
+  // `email_grid_tariff_available` queue topic — one message per admin, on every
+  // monthly check that finds our facility in the Eltariff catalogue.
+  sendGridTariffAvailable(input: {
+    to: string
+    companyName: string | null
+    locale: Locale
+  }): Promise<void>
 }
 
 const getAdapter = lazy(async (): Promise<EmailEffects> => {
@@ -75,5 +83,9 @@ export const email: EmailEffects = {
   async sendIntegrationSyncAlert(input) {
     const adapter = await getAdapter()
     return adapter.sendIntegrationSyncAlert(input)
+  },
+  async sendGridTariffAvailable(input) {
+    const adapter = await getAdapter()
+    return adapter.sendGridTariffAvailable(input)
   },
 }

@@ -106,6 +106,15 @@ export async function countAdmins(dbOrTx: DbOrTx = db): Promise<number> {
   return Number(row?.value ?? 0)
 }
 
+// The recipients of admin notices (integration alerts, the grid-tariff watcher).
+export async function listActiveAdmins(): Promise<Array<UserRow>> {
+  return db
+    .select(userSelection)
+    .from(user)
+    .where(and(eq(user.role, 'admin'), isNull(user.deletedAt)))
+    .orderBy(asc(user.name))
+}
+
 // Any *active* (non-deleted) user row for this email — used to tell "still
 // pending" apart from "already accepted" without re-deriving it from
 // `emailVerified` (which no longer means "invite accepted"; see ADR-0017
