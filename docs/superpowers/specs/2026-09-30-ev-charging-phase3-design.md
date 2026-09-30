@@ -15,7 +15,7 @@ Read-only for everyone signed in, like the rest of `/charging`; there is nothing
 | # | Decision |
 |---|---|
 | 1 | Views live on a **new sub-route `/charging/patterns`**, not appended to `/charging` (already long). The two pages share a tab bar. |
-| 2 | **Session timeline = one row per session** for a chosen month, on a shared **12:00 → 12:00** axis. Charging segments solid, plugged-in-idle segments faint. |
+| 2 | **Session timeline = one row per session** for a chosen month, on a shared **00:00 → 24:00** axis (the plug-in's Stockholm day). Charging segments solid, plugged-in-idle segments faint. *Amended after the owner's live review, 2026-09-30:* the first cut used 12:00 → 12:00, but charging is mostly daytime/solar, and that axis pushed pre-noon plug-ins to the right edge. |
 | 3 | Weekday × hour heatmap + hour-of-day histogram default to **kWh** with a **"Inkopplad" toggle** (hours plugged in per slot). The calendar is always kWh. |
 | 4 | **Narrow SQL fetch → pure TS aggregation on the server** (the Phase 2 cost-model split). Not SQL `GROUP BY` per view, not raw intervals to the browser. |
 | 5 | **No schema change.** Everything derives from `ev_charge_session` + `ev_charge_interval` under `countedSessionFilter()`. |
@@ -153,19 +153,20 @@ Default month when the URL has none: the latest entry in `months`, else the curr
 - Command palette (`src/components/command/commands.ts`): add a "Laddmönster" entry → `/charging/patterns`.
 - Search params (zod, `.catch(undefined)` like `/charging`): `year`, `metric: 'kwh' | 'plugged'`, `month: 1–12`.
   Year/month/metric changes use `replace: true, resetScroll: false`.
-- Loader: `ensureQueryData` for `patterns(year)` and `timeline(year, month)` + the Zaptec `syncStatus` (for the
-  heading's "Senast synkad" and the health alert). `keepPreviousData` on year/month changes.
+- Loader: `prefetchQuery` for `patterns(year)` and `timeline(year, month)` (a failed read shows the load-error alert
+  instead of replacing the page) + `ensureQueryData` for the Zaptec `syncStatus` (for the heading's "Senast synkad" and
+  the health alert). `keepPreviousData` on year/month changes.
 
 ### Components (`src/components/evCharging/`)
 
 | Component | Notes |
 |---|---|
 | `ChargingTabs` | Links "Översikt" / "Mönster" with `aria-current="page"`; used on both pages under `ChargingHeading`. Not Radix `Tabs` (they switch routes, not in-page state). |
-| `PatternMetricToggle` | kWh / Inkopplad; same shape as `ChartMetricToggle` (reuse or generalize it rather than copy). |
-| `WeekdayHourHeatmap` | A `<table>` (row/col headers, sr-only cell values). ≥ sm: 7 rows × 24 cols; < sm: **transposed** 24 rows × 7 cols so it never scrolls horizontally. Colour = `--brand` mixed into the card background by a `d3-scale` `scaleSqrt` (small values stay visible); zero = `--muted`. Legend ramp "mindre → mer". Tooltip (shadcn `tooltip`) on hover/focus: "tis 21–22 · 38,4 kWh" / "… · 2,5 h inkopplad". |
+| `MetricToggle` | Generic kWh / Inkopplad toggle (also replaces /charging's kWh ↔ kr toggle); sits in the heatmap card header and drives the heatmap + hour chart. |
+| `WeekdayHourHeatmap` | A `<table>` (row/col headers, sr-only cell values). ≥ sm: 7 rows × 24 cols; < sm: **transposed** 24 rows × 7 cols so it never scrolls horizontally. Colour = a `d3-scale` `scaleQuantile` over the **non-zero** values → **5 distinct steps** (≈ 20 / 40 / 60 / 80 / 100 % `--brand` mixed into `--card`, `color-mix(in oklab, …)`); thresholds are snapped to real values and deduplicated, so fewer distinct values give fewer (never empty) steps, the top one always full `--brand`. Zero = `--muted` with a `--border` stroke. *Amended 2026-09-30:* the first cut's `scaleSqrt` ramp made most cells look alike. Legend: "mindre ●●●●●● mer" (zero swatch + the steps), no numbers at all; the ranges live only in the aria-label (owner feedback 2026-09-30). Tooltip (shadcn `tooltip`) on hover/focus: "tis 21–22 · 38,4 kWh" / "… · 2,5 h inkopplad". |
 | `HourOfDayChart` | Recharts `BarChart`, 24 bars, styled like `MonthlyChart`; tick every 3 h (6 h on mobile). |
-| `ChargingCalendar` | 12 mini month grids (Mon first), responsive 6 / 4 / 3 / 2 columns; header = month name (a link setting `?month=`) + month kWh; future days hatched; same colour scale as the heatmap; tooltip "fre 5 sep · 32,1 kWh · 1 session". |
-| `SessionTimeline` | Month stepper `‹ september 2026 ›` (bounded by `months`). Axis 12:00 → 12:00 with ticks every 3 h and a faint 22–06 night band. One row per session: label "fre 5 sep · 21:10–07:02 · 32,1 kWh" + "laddar 3,2 h av 10,0 h inkopplad"; track with idle (faint brand) under charging (solid brand) segments. Row axis origin = 12:00 on the session's start day (previous day if it started before 12:00). Parts outside the 24 h window are clipped with a `‹` / `›` chevron; the label always shows real times. < sm: label above the track. Legend + footnote: "Zaptec rapporterar energi per timme; när laddningen startar och slutar inom en timme är uppskattat." Interval-less rows: plugged-in bar only + "ingen timdata". |
+| `ChargingCalendar` | 12 mini month grids (Mon first), responsive 6 / 4 / 3 / 2 columns; header = month name (a link setting `?month=`) + month kWh; future days hatched; same quantile colour scale as the heatmap (over daily kWh) and the same legend; tooltip "fre 5 sep · 32,1 kWh · 1 session". |
+| `SessionTimeline` | Month stepper `‹ september 2026 ›` (bounded by `months`). Axis 00 → 24 with ticks every 3 h and a faint night band (00–06 and 22–24 of the row's day). One row per session: label "fre 5 sep · 21:10–07:02 · 32,1 kWh" + "laddar 3,2 h av 10,0 h inkopplad"; track with idle (faint brand) under charging (solid brand) segments. Row window = 00:00 → 24:00 of the session's Stockholm start day (`stockholmDayBounds(stockholmDayOf(start))`), so a row never starts clipped; a session ending after that midnight is clipped with a `›` marker and its summary says "fortsätter efter midnatt" (the footnote "› fortsätter efter midnatt" shows only when some row is clipped). A DST day (23 / 25 h) is mapped onto the same width: the bars and the night band sit at their true instants, the fixed 3 h ticks may drift by ≤ 1 h (accepted). The label always shows real times; the ≥ 640 px label column is ~240 px so a full label stays on one line. < sm: label above the track. Legend + footnote: "Zaptec rapporterar energi per timme; när laddningen startar och slutar inom en timme är uppskattat." Interval-less rows: plugged-in bar only + "ingen timdata". |
 
 Page order (top → bottom), inside `PageContainer`: `ChargingHeading` → `ChargingTabs` → `SyncHealthAlert` (Zaptec) →
 controls row (metric toggle, `YearSelector`) → heatmap card → histogram card → calendar card → timeline card.
@@ -174,7 +175,9 @@ controls row (metric toggle, `YearSelector`) → heatmap card → histogram card
 
 - Year with no counted sessions → one shared `Empty` in place of the four cards.
 - Month with no sessions → `Empty`-style row inside the timeline card (the stepper stays).
-- `unhourlySessions > 0` → a muted note under the heatmap: "{n} sessioner saknar timdata och ingår inte i timvyerna."
+- `unhourlySessions > 0` and metric kWh → a muted note under the heatmap: "{n} sessioner saknar timdata och ingår inte i
+  timvyerna." (plural message; not shown for Inkopplad, where those sessions do count).
+- A patterns or timeline read that fails with nothing to show → the shared destructive `Alert` with a retry button.
 - Stale/errored sync → the existing `SyncHealthAlert`; data stays visible.
 
 ### i18n
@@ -214,5 +217,5 @@ Weekday and month names come from `Intl.DateTimeFormat` with the active locale, 
 
 - Within-hour timing is estimated (decision 7); exact start/stop needs Zaptec charger-state history we don't store.
 - No per-vehicle split (Phase 5) and no price overlay (Phase 4).
-- The 12:00 → 12:00 axis is fixed; a data-driven axis origin (quietest hour) is deferred until the fixed one proves wrong.
+- The 00:00 → 24:00 axis is fixed (it replaced the first cut's 12:00 → 12:00 after the owner's live review); a data-driven axis origin (quietest hour) is deferred until the fixed one proves wrong. Overnight sessions are clipped at midnight rather than wrapped onto a second row.
 - No "all time" / rolling-12-months range — year only, matching `/charging`.

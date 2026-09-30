@@ -96,22 +96,23 @@ export function stockholmMonthBounds(
 }
 
 /**
- * The Stockholm noon-to-noon window containing the instant: from 12:00 on its
- * day (the previous day if it is before 12:00) to 12:00 the next day — 23, 24
- * or 25 h over a DST night. The session timeline's row axis.
+ * The two night stretches of Stockholm `day`, as true instants: 00:00–06:00
+ * and 22:00–24:00 (the next midnight). On a DST day the early one is 5 or 7 h
+ * long. The session timeline's night band.
  */
-export function stockholmNoonOnOrBefore(ms: number): { startMs: number; endMs: number } {
-  const day = toDay(ms)
-  const noonOf = (d: string) => {
-    const midnight = midnightOf(d)
-    return TZDate.tz(
+export function stockholmNightsOfDay(day: string): { startMs: number; endMs: number }[] {
+  const midnight = midnightOf(day)
+  const at = (hour: number) =>
+    TZDate.tz(
       STOCKHOLM_TIME_ZONE,
       midnight.getFullYear(),
       midnight.getMonth(),
       midnight.getDate(),
-      12,
+      hour,
     ).getTime()
-  }
-  const start = ms >= noonOf(day) ? day : addDays(day, -1)
-  return { startMs: noonOf(start), endMs: noonOf(addDays(start, 1)) }
+  const { startMs, endMs } = stockholmDayBounds(day)
+  return [
+    { startMs, endMs: at(6) },
+    { startMs: at(22), endMs },
+  ]
 }

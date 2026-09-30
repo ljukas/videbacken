@@ -1,7 +1,8 @@
 import { expect, test, vi } from 'vitest'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
-import { ChartMetricToggle, MonthlyChart } from './MonthlyChart'
+import { MetricToggle } from './MetricToggle'
+import { chartMetricOptions, MonthlyChart } from './MonthlyChart'
 
 const months = Array.from({ length: 12 }, (_, i) => ({
   month: i + 1,
@@ -77,7 +78,12 @@ test('without cost data the kr metric falls back to kWh', async () => {
 test('the metric toggle reports the chosen metric', async () => {
   const onChange = vi.fn()
   const { screen } = await renderWithProviders(
-    <ChartMetricToggle value="kwh" onChange={onChange} />,
+    <MetricToggle
+      value="kwh"
+      options={chartMetricOptions()}
+      onChange={onChange}
+      aria-label={m.charging_chart_metric_label()}
+    />,
   )
   await screen.getByRole('radio', { name: 'kr' }).click()
   expect(onChange).toHaveBeenCalledWith('sek')
