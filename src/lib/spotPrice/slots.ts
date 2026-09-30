@@ -7,6 +7,9 @@ import { stockholmDayBounds } from '~/lib/time/stockholm'
 
 export type PriceSlot = { startMs: number; endMs: number; sekPerKwh: number }
 
+/** One Stockholm day's time-weighted average spot price (SEK/kWh ex VAT) and how much of it has prices. */
+export type DailySpot = { day: string; avgSekPerKwh: number; coveredMs: number }
+
 /** 15-min slots since 2025-10-01, hourly before. */
 const SLOT_LENGTHS_MS = new Set([15 * millisecondsInMinute, millisecondsInHour])
 /**
