@@ -68,15 +68,25 @@ test('a month whose sessions were all excluded draws one quiet stub and no krono
   )
 })
 
-test('a year where every session was excluded still shows the stubs, not "no data"', async () => {
+test('a year where every session was excluded shows sliver stubs, not "no data" or tall bars', async () => {
   const all = Array.from({ length: 12 }, (_, i) =>
-    i === 0 ? month(1, { sessions: 1, excluded: { noHourly: 1, noPrice: 0 } }) : month(i + 1),
+    i < 2 ? month(i + 1, { sessions: 1, excluded: { noHourly: 1, noPrice: 0 } }) : month(i + 1),
   )
-  const { screen } = await renderWithProviders(<EconomyMonthlyChart months={all} />)
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <EconomyMonthlyChart months={all} />
+    </div>,
+  )
   await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(1),
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(2),
   )
   expect(screen.getByText(m.charging_economy_chart_no_data()).elements()).toHaveLength(0)
+  const plot = screen.container.querySelector('.recharts-surface')?.getBoundingClientRect()
+  const rect = screen.container.querySelector('.recharts-bar-rectangle')?.getBoundingClientRect()
+  expect(plot && rect && rect.height > 0 && rect.height < plot.height * 0.1).toBe(true)
+  expect(
+    screen.container.querySelectorAll('.recharts-cartesian-grid-horizontal line'),
+  ).toHaveLength(0)
 })
 
 test('a year with no stub months has no stub series or legend entry', async () => {
@@ -136,4 +146,43 @@ test('tooltips name the stub reason and flag a partly compared month', async () 
   await vi.waitFor(() =>
     expect(document.body.textContent).toContain(m.charging_economy_series_no_hourly()),
   )
+})
+
+test('tooltips: no_price stub reads "Pris saknas", mixed reads "Inte jämförbar"', async () => {
+  const two = months.map((mo) => {
+    if (mo.month === 2) return month(2, { sessions: 1, excluded: { noHourly: 0, noPrice: 1 } })
+    if (mo.month === 3) return month(3, { sessions: 2, excluded: { noHourly: 1, noPrice: 1 } })
+    return mo
+  })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <EconomyMonthlyChart months={two} />
+    </div>,
+  )
+  const hover = async (index: number) => {
+    const rects = () => [...screen.container.querySelectorAll('.recharts-bar-rectangle')]
+    await vi.waitFor(() => expect(rects().length).toBeGreaterThan(index))
+    const box = rects()[index].getBoundingClientRect()
+    rects()[index].dispatchEvent(
+      new MouseEvent('mousemove', {
+        bubbles: true,
+        clientX: box.x + box.width / 2,
+        clientY: box.y + box.height / 2,
+      }),
+    )
+  }
+  const tooltip = () => document.querySelector('.recharts-tooltip-wrapper')?.textContent ?? ''
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(5),
+  )
+  // Hover each rectangle in turn until the tooltip shows the wanted stub reason.
+  const reveal = async (text: string) => {
+    let i = 0
+    await vi.waitFor(async () => {
+      if (!tooltip().includes(text)) await hover(i++ % 5)
+      expect(tooltip()).toContain(text)
+    })
+  }
+  await reveal(m.charging_chart_no_price())
+  await reveal(m.charging_economy_series_not_comparable())
 })

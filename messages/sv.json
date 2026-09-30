@@ -517,8 +517,8 @@
       ],
       "selectors": ["countPlural"],
       "match": {
-        "countPlural=one": "{countFormatted} session saknar spotpris eller avgifter under inkopplingen och ingår inte.",
-        "countPlural=other": "{countFormatted} sessioner saknar spotpris eller tariff under inkopplingen och ingår inte."
+        "countPlural=one": "{countFormatted} session saknar spotpris eller avgifter under inkopplingen och ingår inte i jämförelsen.",
+        "countPlural=other": "{countFormatted} sessioner saknar spotpris eller avgifter under inkopplingen och ingår inte i jämförelsen."
       }
     }
   ]
