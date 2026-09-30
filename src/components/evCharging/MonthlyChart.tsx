@@ -252,7 +252,13 @@ function CountAxis() {
   )
 }
 
-function ChartFrame({ config, children }: { config: ChartConfig; children: React.ReactElement }) {
+export function ChartFrame({
+  config,
+  children,
+}: {
+  config: ChartConfig
+  children: React.ReactElement
+}) {
   // Inline height (not a Tailwind class) so the chart has a measurable box
   // before CSS loads and in the Tailwind-less browser-test env (same as
   // ClimateChart); width stays responsive.

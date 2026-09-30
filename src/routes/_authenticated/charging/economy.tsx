@@ -1,16 +1,19 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { PiggyBankIcon } from 'lucide-react'
-import { useCallback } from 'react'
+import { useCallback, useId } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
+import { EconomyMonthlyChart } from '~/components/evCharging/EconomyMonthlyChart'
 import { EconomyTiles } from '~/components/evCharging/EconomyTiles'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
+import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { orpc } from '~/lib/orpc/client'
@@ -56,6 +59,7 @@ function EconomyPage() {
   })
   // Daily data: focus refetch only, no polling interval.
   const { data: pricesHealth } = useSuspenseQuery(pricesHealthQuery)
+  const ids = [useId(), useId()]
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const result = useQuery({ ...economyQuery(search.year), placeholderData: keepPreviousData })
@@ -99,7 +103,31 @@ function EconomyPage() {
               aria-busy={stale}
             >
               <EconomyTiles tiles={economy.tiles} />
-              {/* B2: monthly charts; B3: session table */}
+              <section aria-labelledby={ids[0]}>
+                <Card>
+                  <CardHeader>
+                    <h2 id={ids[0]} className="font-medium text-sm">
+                      {m.charging_economy_chart_sek_title()}
+                    </h2>
+                  </CardHeader>
+                  <CardContent>
+                    <EconomyMonthlyChart months={economy.months} />
+                  </CardContent>
+                </Card>
+              </section>
+              <section aria-labelledby={ids[1]}>
+                <Card>
+                  <CardHeader>
+                    <h2 id={ids[1]} className="font-medium text-sm">
+                      {m.charging_economy_chart_spot_title()}
+                    </h2>
+                  </CardHeader>
+                  <CardContent>
+                    <SpotComparisonChart months={economy.months} />
+                  </CardContent>
+                </Card>
+              </section>
+              {/* B3: session table */}
               <EconomyFootnote excluded={economy.tiles.excluded} />
             </div>
           ) : (
