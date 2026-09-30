@@ -449,5 +449,54 @@
   "charging_patterns_empty_description": "Patterns show up here once the car has charged.",
   "charging_patterns_error_title": "Couldn't load the charging patterns",
   "charging_patterns_timeline_error_title": "Couldn't load the sessions",
-  "charging_patterns_error_description": "Check your connection and try again."
+  "charging_patterns_error_description": "Check your connection and try again.",
+  "nav_charging_economy_short": "Economy",
+  "nav_charging_economy": "Charging economy",
+  "cmd_kw_charging_economy": "economy spot price savings smart charging price timing",
+  "meta_charging_economy_title": "Charging economy",
+  "meta_charging_economy_description": "How well we hit the spot price when charging the car.",
+  "charging_economy_title": "Charging economy",
+  "charging_economy_tile_saved": "Saved vs charging at once",
+  "charging_economy_tile_saved_hint": "Compared with charging at plug-in",
+  "charging_economy_tile_left": "Left on the table",
+  "charging_economy_tile_left_hint": "Compared with the cheapest quarters while plugged in",
+  "charging_economy_tile_score": "Price timing",
+  "charging_economy_tile_score_hint": "100 % = cheapest possible, 0 % = dearest possible",
+  "charging_economy_tile_spot": "Spot price paid",
+  "charging_economy_tile_spot_avg": "Average spot {avg} öre/kWh",
+  "charging_economy_tile_none": "No sessions with complete prices",
+  "charging_economy_ore": "{value} öre/kWh",
+  "charging_economy_caveat": "Measures price timing only: all electricity counts as bought from the grid, so solar isn't included. Actual cost spreads each hour's energy evenly over its quarter-hour prices, and the charge rate is an hourly average, so “Left on the table” may be somewhat over- or understated.",
+  "charging_economy_bucketing": "Sessions count toward the month they started.",
+  "charging_economy_error_title": "Couldn't load the charging economy",
+  "charging_economy_empty_title": "No charging sessions in {year}",
+  "charging_economy_empty_description": "Once the car has charged, this shows how well charging hit the spot price.",
+  "charging_economy_excluded_no_hourly": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session has no hourly data and isn't compared.",
+        "countPlural=other": "{countFormatted} sessions have no hourly data and aren't compared."
+      }
+    }
+  ],
+  "charging_economy_excluded_no_price": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session lacks a spot price or tariff while plugged in and isn't compared.",
+        "countPlural=other": "{countFormatted} sessions lack a spot price or tariff while plugged in and aren't compared."
+      }
+    }
+  ]
 }

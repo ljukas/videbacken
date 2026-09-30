@@ -26,6 +26,7 @@ import { m } from '~/paraglide/messages'
 const chargingSubItems = linkOptions([
   { to: '/charging', label: m.nav_charging_overview },
   { to: '/charging/patterns', label: m.nav_charging_patterns_short },
+  { to: '/charging/economy', label: m.nav_charging_economy_short },
 ])
 
 const mainNavItems = linkOptions([

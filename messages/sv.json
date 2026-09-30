@@ -449,5 +449,54 @@
   "charging_patterns_empty_description": "När bilen har laddats visas mönstren här.",
   "charging_patterns_error_title": "Laddmönstren kunde inte hämtas",
   "charging_patterns_timeline_error_title": "Sessionerna kunde inte hämtas",
-  "charging_patterns_error_description": "Kontrollera anslutningen och försök igen."
+  "charging_patterns_error_description": "Kontrollera anslutningen och försök igen.",
+  "nav_charging_economy_short": "Ekonomi",
+  "nav_charging_economy": "Laddekonomi",
+  "cmd_kw_charging_economy": "ekonomi spotpris besparing smart laddning pristajming",
+  "meta_charging_economy_title": "Laddekonomi",
+  "meta_charging_economy_description": "Hur väl vi prickar spotpriset när vi laddar bilen.",
+  "charging_economy_title": "Laddekonomi",
+  "charging_economy_tile_saved": "Sparat mot direktladdning",
+  "charging_economy_tile_saved_hint": "Jämfört med att ladda direkt vid inkoppling",
+  "charging_economy_tile_left": "Kvar att hämta",
+  "charging_economy_tile_left_hint": "Jämfört med de billigaste kvartarna medan bilen var inkopplad",
+  "charging_economy_tile_score": "Pristajming",
+  "charging_economy_tile_score_hint": "100 % = billigast möjliga, 0 % = dyrast möjliga",
+  "charging_economy_tile_spot": "Betalt spotpris",
+  "charging_economy_tile_spot_avg": "Snittspot {avg} öre/kWh",
+  "charging_economy_tile_none": "Inga sessioner med fullständiga priser",
+  "charging_economy_ore": "{value} öre/kWh",
+  "charging_economy_caveat": "Mäter bara pristajming: all el räknas som köpt från elnätet, så solel ingår inte. Den faktiska kostnaden fördelar varje timmes energi jämnt över timmens kvartspriser, och laddtakten är en timmedel, så ”Kvar att hämta” kan vara något över- eller underskattad.",
+  "charging_economy_bucketing": "Sessioner räknas till månaden de startade.",
+  "charging_economy_error_title": "Kunde inte läsa laddekonomin",
+  "charging_economy_empty_title": "Inga laddsessioner {year}",
+  "charging_economy_empty_description": "När bilen har laddats visas här hur väl laddningen prickade spotpriset.",
+  "charging_economy_excluded_no_hourly": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session saknar timdata och ingår inte i jämförelsen.",
+        "countPlural=other": "{countFormatted} sessioner saknar timdata och ingår inte i jämförelsen."
+      }
+    }
+  ],
+  "charging_economy_excluded_no_price": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session saknar spotpris eller tariff under inkopplingen och ingår inte.",
+        "countPlural=other": "{countFormatted} sessioner saknar spotpris eller tariff under inkopplingen och ingår inte."
+      }
+    }
+  ]
 }
