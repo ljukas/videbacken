@@ -58,11 +58,15 @@ export function formatSessionDay(date: Date, now: Date = new Date()): string {
 // "22:10–lör 06:30": the end time, prefixed with its short weekday when it
 // falls on another Stockholm day than the start.
 export function formatSessionTimeRange(startAt: Date, endAt: Date): string {
-  const inStockholm = { in: tz(STOCKHOLM_TIME_ZONE) }
-  const end = isSameDay(startAt, endAt, inStockholm)
+  const end = isSameDay(startAt, endAt, { in: tz(STOCKHOLM_TIME_ZONE) })
     ? formatTime(endAt)
-    : `${format(endAt, 'EEE', { locale: getDateFnsLocale(), ...inStockholm })} ${formatTime(endAt)}`
+    : `${formatShortWeekday(endAt)} ${formatTime(endAt)}`
   return `${formatTime(startAt)}–${end}`
+}
+
+// "lör" / "Sat": the short weekday in Stockholm time.
+export function formatShortWeekday(date: Date | number): string {
+  return format(date, 'EEE', { locale: getDateFnsLocale(), in: tz(STOCKHOLM_TIME_ZONE) })
 }
 
 export function formatTime(date: Date): string {

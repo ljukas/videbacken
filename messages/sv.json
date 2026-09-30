@@ -488,6 +488,8 @@
   "charging_session_chart_col_time": "Tid",
   "charging_session_chart_col_kwh": "kWh",
   "charging_session_chart_col_ore": "öre/kWh",
+  "charging_session_chart_col_optimal": "Billigaste schemat (kWh)",
+  "charging_session_chart_window": "Inkopplad",
   "charging_economy_tile_none": "Inga sessioner med fullständiga priser",
   "charging_economy_tile_none_hourly": "Inga sessioner med timdata",
   "charging_economy_tile_none_comparable": "Inga jämförbara sessioner",
