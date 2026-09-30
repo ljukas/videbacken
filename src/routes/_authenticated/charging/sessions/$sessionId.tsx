@@ -1,5 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { createFileRoute, Link, notFound, useCanGoBack, useRouter } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  Link,
+  notFound,
+  useCanGoBack,
+  useHydrated,
+  useRouter,
+} from '@tanstack/react-router'
 import { ArrowLeftIcon } from 'lucide-react'
 import { z } from 'zod'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
@@ -80,12 +87,16 @@ function SessionPage() {
 // Back to wherever the visitor came from (the overview, or /charging/economy
 // with its year), which a fixed link would lose. A deep link has no app history
 // to go back into, so it falls back to the overview, the section's home.
+// The server can't know the history, so it always renders the link; the
+// button waits for hydration, or a reload of an in-app-navigated page would
+// hydrate a <button> over the server's <a>.
 function BackButton() {
   const router = useRouter()
   const canGoBack = useCanGoBack()
+  const hydrated = useHydrated()
   return (
     <div>
-      {canGoBack ? (
+      {hydrated && canGoBack ? (
         <Button variant="ghost" size="sm" className="-ml-2" onClick={() => router.history.back()}>
           <ArrowLeftIcon />
           {m.charging_session_back()}
