@@ -78,7 +78,14 @@ function SessionPage() {
           <EconomyFootnote excluded={{ noHourly: 0, noPrice: 0 }} bucketing={false} />
         </>
       ) : (
-        <LoadErrorAlert title={m.charging_session_error_title()} query={result} />
+        // Without the session there's no date to title the page with, but the
+        // page keeps its one h1.
+        <>
+          <h1 className="text-balance font-bold text-2xl tracking-tight md:text-3xl">
+            {m.meta_charging_session_title()}
+          </h1>
+          <LoadErrorAlert title={m.charging_session_error_title()} query={result} />
+        </>
       )}
     </PageContainer>
   )
