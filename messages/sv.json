@@ -412,7 +412,20 @@
       }
     }
   ],
-  "charging_patterns_unhourly_note": "{count} sessioner saknar timdata och ingår inte i timvyerna.",
+  "charging_patterns_unhourly_note": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session saknar timdata och ingår inte i timvyerna.",
+        "countPlural=other": "{countFormatted} sessioner saknar timdata och ingår inte i timvyerna."
+      }
+    }
+  ],
   "charging_patterns_timeline_prev": "Föregående månad",
   "charging_patterns_timeline_next": "Nästa månad",
   "charging_patterns_timeline_charging": "Laddar",

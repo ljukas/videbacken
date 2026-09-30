@@ -1,13 +1,28 @@
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
+import { max } from 'd3-array'
+import { CalendarXIcon } from 'lucide-react'
+import { useRef } from 'react'
 import { z } from 'zod'
+import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
+import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
+import { PatternLegend } from '~/components/evCharging/PatternLegend'
+import type { PatternMetric } from '~/components/evCharging/patternChart'
+import { SessionTimeline } from '~/components/evCharging/SessionTimeline'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { valueLabel, WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
+import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { Card, CardContent, CardHeader } from '~/components/ui/card'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
+import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { orpc } from '~/lib/orpc/client'
+import { stockholmDayOf } from '~/lib/time/stockholm'
+import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
@@ -48,6 +63,25 @@ function PatternsPage() {
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
   })
+  const navigate = Route.useNavigate()
+  const search = Route.useSearch()
+  const metric: PatternMetric = search.metric ?? 'kwh'
+  const timelineRef = useRef<HTMLDivElement>(null)
+  const { data: patterns, isPlaceholderData: patternsStale } = useQuery({
+    ...patternsQuery(search.year),
+    placeholderData: keepPreviousData, // keep the old page while another year loads
+  })
+  const { data: timeline, isPlaceholderData: timelineStale } = useQuery({
+    ...timelineQuery(search.year, search.month),
+    placeholderData: keepPreviousData,
+  })
+  const stale = patternsStale || timelineStale
+  const set = (next: Partial<typeof search>) =>
+    navigate({ to: '.', search: (s) => ({ ...s, ...next }), replace: true, resetScroll: false })
+  const hasData = patterns ? patterns.months.some((mo) => mo.sessions > 0 || mo.kwh > 0) : false
+  const calendarMax = patterns
+    ? `0 … ${valueLabel(max(patterns.daily, (d) => d.kwh) ?? 0, 'kwh')}`
+    : undefined
   return (
     <PageContainer>
       <ChargingHeading
@@ -63,6 +97,123 @@ function PatternsPage() {
         onRetry={() => syncNow.syncSource('zaptec')}
         retrying={syncNow.isPendingFor('zaptec')}
       />
+
+      {patterns ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <ToggleGroup
+              type="single"
+              value={metric}
+              // Radix fires '' when the active item is re-pressed; keep one selected.
+              onValueChange={(v) => {
+                if (v) set({ metric: v as PatternMetric })
+              }}
+              variant="outline"
+              size="sm"
+              aria-label={m.charging_patterns_metric_label()}
+            >
+              <ToggleGroupItem value="kwh">{m.charging_patterns_metric_kwh()}</ToggleGroupItem>
+              <ToggleGroupItem value="plugged">
+                {m.charging_patterns_metric_plugged()}
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <YearSelector
+              years={patterns.years}
+              value={patterns.year}
+              onChange={(y) => set({ year: y, month: undefined })}
+            />
+          </div>
+
+          {hasData ? (
+            <div
+              aria-busy={stale}
+              className={cn('flex flex-col gap-4', stale && 'opacity-60 transition-opacity')}
+            >
+              <Card>
+                <CardHeader className="gap-2">
+                  <h2 className="font-medium text-sm">
+                    {metric === 'kwh'
+                      ? m.charging_patterns_heatmap_title_kwh()
+                      : m.charging_patterns_heatmap_title_plugged()}
+                  </h2>
+                  <PatternLegend />
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <WeekdayHourHeatmap grid={patterns.weekdayHour} metric={metric} />
+                  {patterns.unhourlySessions > 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      {m.charging_patterns_unhourly_note({ count: patterns.unhourlySessions })}
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <h2 className="font-medium text-sm">
+                    {metric === 'kwh'
+                      ? m.charging_patterns_hour_title_kwh()
+                      : m.charging_patterns_hour_title_plugged()}
+                  </h2>
+                </CardHeader>
+                <CardContent>
+                  <HourOfDayChart hours={patterns.hourOfDay} metric={metric} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="gap-2">
+                  <h2 className="font-medium text-sm">{m.charging_patterns_calendar_title()}</h2>
+                  <PatternLegend maxLabel={calendarMax} />
+                </CardHeader>
+                <CardContent>
+                  <ChargingCalendar
+                    year={patterns.year}
+                    daily={patterns.daily}
+                    months={patterns.months}
+                    today={stockholmDayOf(Date.now())}
+                    onPickMonth={(mo) => {
+                      set({ month: mo })
+                      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                      timelineRef.current?.scrollIntoView({
+                        block: 'nearest',
+                        behavior: reduce ? 'auto' : 'smooth',
+                      })
+                    }}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card ref={timelineRef}>
+                <CardHeader>
+                  <h2 className="font-medium text-sm">{m.charging_patterns_timeline_title()}</h2>
+                </CardHeader>
+                <CardContent>
+                  {timeline ? (
+                    <SessionTimeline
+                      sessions={timeline.sessions}
+                      year={timeline.year}
+                      month={timeline.month}
+                      months={timeline.months}
+                      onMonth={(mo) => set({ month: mo })}
+                    />
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <Empty className="brand-wash rounded-lg border">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <CalendarXIcon />
+                </EmptyMedia>
+                <EmptyTitle>{m.charging_patterns_empty_title({ year: patterns.year })}</EmptyTitle>
+                <EmptyDescription>{m.charging_patterns_empty_description()}</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </>
+      ) : null}
     </PageContainer>
   )
 }

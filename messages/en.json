@@ -412,7 +412,20 @@
       }
     }
   ],
-  "charging_patterns_unhourly_note": "{count} sessions have no hourly data and are left out of the hourly views.",
+  "charging_patterns_unhourly_note": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session has no hourly data and is left out of the hourly views.",
+        "countPlural=other": "{countFormatted} sessions have no hourly data and are left out of the hourly views."
+      }
+    }
+  ],
   "charging_patterns_timeline_prev": "Previous month",
   "charging_patterns_timeline_next": "Next month",
   "charging_patterns_timeline_charging": "Charging",
