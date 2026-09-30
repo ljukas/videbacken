@@ -1,19 +1,17 @@
 import {
   avgOre,
   type CostTotals,
-  type EnergyInterval,
   emptyTotals,
   isComplete,
   mergeTotals,
   priceIntervals,
   SlotIndex,
-  type TariffPeriod,
 } from '~/lib/evCharging/cost'
 import { listSessionEnergy, type SessionEnergy } from '~/lib/services/evCharging'
 import { listSlotsOverlapping } from '~/lib/services/spotPrice'
-import * as tariffService from '~/lib/services/tariff'
 import { SPOT_ZONE } from '~/lib/spotPrice/zones'
 import { stockholmYearMonth } from '~/lib/time/stockholm'
+import { loadTariffs, timed, toIntervals } from './costInputs'
 
 // Server-only. The cost read model (spec "PR D"): the one place that combines
 // session energy, spot slots and tariff periods — each loaded through its own
@@ -49,25 +47,6 @@ function summarize(t: CostTotals): CostSummary {
   return { ...t, avgOre: avgOre(t), complete: isComplete(t) }
 }
 
-// Every counted session is bought from the grid for now (gridShare 1) — the
-// seam where a solar/battery source (Emaldo) would supply a real share.
-function toIntervals(session: SessionEnergy): EnergyInterval[] {
-  return session.stretches.map((s) => ({ ...s, gridShare: 1 }))
-}
-
-async function timed<T>(
-  timings: CostTimings | undefined,
-  key: keyof CostTimings,
-  fn: () => Promise<T>,
-) {
-  const start = performance.now()
-  try {
-    return await fn()
-  } finally {
-    if (timings) timings[key] = Math.round(performance.now() - start)
-  }
-}
-
 // Loads the slots overlapping these sessions' energy — the stretches' own
 // span (an interval-less session's one stretch already is its whole window),
 // never the session's start/end, which could only over-fetch.
@@ -79,18 +58,6 @@ async function loadSlots(sessions: SessionEnergy[], timings?: CostTimings) {
   return new SlotIndex(
     await timed(timings, 'slotsMs', () => listSlotsOverlapping(SPOT_ZONE, ranges)),
   )
-}
-
-// All tariff periods, oldest first, as the cost math wants them.
-async function loadTariffs(timings?: CostTimings): Promise<TariffPeriod[]> {
-  const tariffs = await timed(timings, 'tariffMs', () => tariffService.list())
-  return tariffs.map((t) => ({
-    validFrom: t.validFrom,
-    retailMarkupOre: t.retailMarkupOre,
-    gridTransferOre: t.gridTransferOre,
-    energyTaxOre: t.energyTaxOre,
-    vatPercent: t.vatPercent,
-  }))
 }
 
 /**
@@ -110,7 +77,7 @@ export async function getCostOverview(input: {
   // Tariffs don't depend on the sessions, so they load alongside them.
   const [sessions, tariffsAsc] = await Promise.all([
     timed(input.timings, 'energyMs', () => listSessionEnergy({ all: true })),
-    loadTariffs(input.timings),
+    timed(input.timings, 'tariffMs', loadTariffs),
   ])
   const index = await loadSlots(sessions, input.timings)
 
@@ -152,7 +119,7 @@ export async function getSessionCosts(input: {
   if (input.sessionIds.length === 0) return []
   const [sessions, tariffsAsc] = await Promise.all([
     timed(input.timings, 'energyMs', () => listSessionEnergy({ sessionIds: input.sessionIds })),
-    loadTariffs(input.timings),
+    timed(input.timings, 'tariffMs', loadTariffs),
   ])
   if (sessions.length === 0) return []
   const index = await loadSlots(sessions, input.timings)
