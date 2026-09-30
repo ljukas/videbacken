@@ -1,5 +1,8 @@
+import { InfoIcon } from 'lucide-react'
+import { Alert, AlertDescription } from '~/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import type { RouterOutputs } from '~/lib/orpc/client'
+import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { formatScore, formatSek } from './format'
 import { Unknown } from './Unknown'
@@ -9,10 +12,23 @@ type Economy = RouterOutputs['evCharging']['session']['economy']
 // A session's kronor figures. An excluded session (no hourly data, or a price
 // or tariff missing) keeps only its own cost — and only when that is complete —
 // with the reason underneath. A partial cost is "—", never the partial kronor.
-export function SessionEconomyFigures({ economy }: { economy: Economy }) {
+export function SessionEconomyFigures({
+  economy,
+  estimated = false,
+}: {
+  economy: Economy
+  /** The session was priced from its total alone (no hourly values): mark its cost "≈", as the session list does. */
+  estimated?: boolean
+}) {
   const cf = economy.counterfactual
   const actual = economy.actualComplete ? (
-    formatSek(economy.actual.totalSek, 2)
+    <span title={estimated ? m.charging_sessions_cost_estimated() : undefined}>
+      {estimated ? '≈ ' : null}
+      {formatSek(economy.actual.totalSek, 2)}
+      {estimated ? (
+        <span className="sr-only"> ({m.charging_sessions_cost_estimated()})</span>
+      ) : null}
+    </span>
   ) : (
     <Unknown label={m.charging_sessions_cost_unknown()} />
   )
@@ -35,9 +51,15 @@ export function SessionEconomyFigures({ economy }: { economy: Economy }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="@container">
-        <div className="grid @2xl:grid-cols-4 grid-cols-2 gap-3">
+        {/* One tile (an excluded session) takes the whole row, not half of it. */}
+        <div
+          className={cn(
+            'grid gap-3',
+            items.length > 1 ? '@2xl:grid-cols-4 @md:grid-cols-2 grid-cols-1' : 'grid-cols-1',
+          )}
+        >
           {items.map((item) => (
-            <Card key={item.label}>
+            <Card key={item.label} role="group" aria-label={item.label}>
               <CardHeader className="pb-2">
                 <CardTitle className="text-muted-foreground text-sm">{item.label}</CardTitle>
               </CardHeader>
@@ -49,11 +71,14 @@ export function SessionEconomyFigures({ economy }: { economy: Economy }) {
         </div>
       </div>
       {economy.excluded ? (
-        <p className="rounded-lg border px-4 py-3 text-muted-foreground text-sm">
-          {economy.excluded === 'no_hourly'
-            ? m.charging_session_excluded_no_hourly()
-            : m.charging_session_excluded_no_price()}
-        </p>
+        <Alert>
+          <InfoIcon />
+          <AlertDescription>
+            {economy.excluded === 'no_hourly'
+              ? m.charging_session_excluded_no_hourly()
+              : m.charging_session_excluded_no_price()}
+          </AlertDescription>
+        </Alert>
       ) : null}
     </div>
   )

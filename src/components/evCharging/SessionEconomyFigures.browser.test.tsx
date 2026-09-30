@@ -38,13 +38,12 @@ const economy = (over: Partial<Economy> = {}) =>
 test('a comparable session shows its four figures', async () => {
   const { screen } = await renderWithProviders(<SessionEconomyFigures economy={economy()} />)
   for (const [label, value] of [
-    [m.charging_session_fig_actual(), /^41,20\s?kr$/],
-    [m.charging_session_fig_immediate(), /^53,60\s?kr$/],
-    [m.charging_session_fig_optimal(), /^38,00\s?kr$/],
-    [m.charging_session_fig_score(), /^90\s?%$/],
+    [m.charging_session_fig_actual(), /41,20\s?kr/],
+    [m.charging_session_fig_immediate(), /53,60\s?kr/],
+    [m.charging_session_fig_optimal(), /38,00\s?kr/],
+    [m.charging_session_fig_score(), /90\s?%/],
   ] as const) {
-    const card = screen.getByText(label, { exact: true }).element().parentElement?.parentElement
-    expect(card?.textContent?.replace(label, '')).toMatch(value)
+    await expect.element(screen.getByRole('group', { name: label })).toHaveTextContent(value)
   }
   expect(screen.getByText(m.charging_session_excluded_no_hourly()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_session_excluded_no_price()).elements()).toHaveLength(0)
@@ -58,6 +57,29 @@ test('a no_hourly session shows only its actual cost and the reason', async () =
   await expect.element(screen.getByText(/41,20/)).toBeVisible()
   expect(screen.getByText(m.charging_session_fig_immediate()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_session_fig_score()).elements()).toHaveLength(0)
+})
+
+test('an excluded no_price session with a complete actual shows the cost and the reason', async () => {
+  const { screen } = await renderWithProviders(
+    <SessionEconomyFigures economy={economy({ excluded: 'no_price', counterfactual: null })} />,
+  )
+  await expect.element(screen.getByText(/41,20/)).toBeVisible()
+  await expect.element(screen.getByText(m.charging_session_excluded_no_price())).toBeVisible()
+  expect(screen.getByText(m.charging_sessions_cost_unknown()).elements()).toHaveLength(0)
+})
+
+test('an estimated session marks its cost "≈" with the reason for screen readers', async () => {
+  const { screen } = await renderWithProviders(
+    <SessionEconomyFigures economy={economy()} estimated />,
+  )
+  const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
+  await expect.element(card).toHaveTextContent(/≈\s41,20/)
+  await expect.element(card).toHaveTextContent(m.charging_sessions_cost_estimated())
+})
+
+test('an exact session has no "≈"', async () => {
+  const { screen } = await renderWithProviders(<SessionEconomyFigures economy={economy()} />)
+  expect(screen.getByText(/≈/).elements()).toHaveLength(0)
 })
 
 test('a partial actual shows "—" with its reason, never the partial kronor', async () => {

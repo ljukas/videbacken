@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithRouter } from '~test/browser/render'
+import { formatDate, formatTime } from './format'
 import { SessionList } from './SessionList'
 
 type Session = RouterOutputs['evCharging']['sessions']['sessions'][number]
@@ -217,7 +218,10 @@ test('the date links to the session page', async () => {
     <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />,
   )
   const link = screen.getByRole('link', {
-    name: m.charging_session_link_label({ date: '27 sep. 2026' }),
+    name: m.charging_session_link_label({
+      date: formatDate(session.startAt),
+      time: formatTime(session.startAt),
+    }),
   })
   await expect.element(link).toHaveAttribute('href', '/charging/sessions/s1')
 })

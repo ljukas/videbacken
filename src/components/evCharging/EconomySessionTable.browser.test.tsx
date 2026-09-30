@@ -4,6 +4,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithRouter } from '~test/browser/render'
 import { EconomySessionTable } from './EconomySessionTable'
+import { formatDate, formatTime } from './format'
 
 type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
 const cost = (totalSek: number) => ({
@@ -134,8 +135,12 @@ test('on a phone the comparison columns fold under the date', async () => {
 
 test('the date links to the session page', async () => {
   const { screen } = await renderWithRouter(<EconomySessionTable sessions={[row()]} />)
+  const { startAt } = row()
   const link = screen.getByRole('link', {
-    name: m.charging_session_link_label({ date: '5 sep. 2026' }),
+    name: m.charging_session_link_label({
+      date: formatDate(startAt),
+      time: formatTime(startAt),
+    }),
   })
   await expect
     .element(link)

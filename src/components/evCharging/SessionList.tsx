@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import { ZapIcon } from 'lucide-react'
 import { Button } from '~/components/ui/button'
 import {
@@ -20,7 +19,8 @@ import {
 } from '~/components/ui/table'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { formatDate, formatDuration, formatOneDecimal, formatSek, formatTime } from './format'
+import { formatDuration, formatOneDecimal, formatSek, formatTime } from './format'
+import { SessionLink } from './SessionLink'
 import { SyncNowButton } from './SyncNowButton'
 
 type Session = RouterOutputs['evCharging']['sessions']['sessions'][number]
@@ -98,14 +98,7 @@ export function SessionList({
             {sessions.map((s) => (
               <TableRow key={s.id}>
                 <TableCell className="whitespace-nowrap">
-                  <Link
-                    to="/charging/sessions/$sessionId"
-                    params={{ sessionId: s.id }}
-                    aria-label={m.charging_session_link_label({ date: formatDate(s.startAt) })}
-                    className="font-medium underline-offset-4 hover:underline"
-                  >
-                    {formatDate(s.startAt)}
-                  </Link>
+                  <SessionLink sessionId={s.id} startAt={s.startAt} />
                   <div className="text-muted-foreground text-xs tabular-nums sm:hidden">
                     {timeRange(s)}
                   </div>

@@ -4,6 +4,8 @@ import {
   formatDay,
   formatDuration,
   formatScore,
+  formatSessionDay,
+  formatSessionTimeRange,
   formatSignedSek,
   formatWeekdayDay,
   hourRangeLabel,
@@ -155,5 +157,32 @@ describe('formatScore', () => {
     inLocale('sv')
     expect(formatScore(0.724)).toMatch(/^72\s?%$/)
     expect(formatScore(null)).toBe('—')
+  })
+})
+
+describe('formatSessionDay', () => {
+  test('omits the year within the current Stockholm year', () => {
+    expect(formatSessionDay(at('2026-09-05T10:00:00Z'), at('2026-09-30T10:00:00Z'))).toBe(
+      'lör 5 sep.',
+    )
+  })
+  test('adds the year for any other year', () => {
+    expect(formatSessionDay(at('2025-09-05T10:00:00Z'), at('2026-09-30T10:00:00Z'))).toBe(
+      'fre 5 sep. 2025',
+    )
+  })
+})
+
+describe('formatSessionTimeRange', () => {
+  test('a same-day session is plain start–end', () => {
+    expect(formatSessionTimeRange(at('2026-09-05T16:05:00Z'), at('2026-09-05T18:20:00Z'))).toBe(
+      '18:05–20:20',
+    )
+  })
+  test('an overnight session prefixes the end with its weekday', () => {
+    // 22:10 Sat 5 Sep → 06:30 Sun 6 Sep, Stockholm.
+    expect(formatSessionTimeRange(at('2026-09-05T20:10:00Z'), at('2026-09-06T04:30:00Z'))).toBe(
+      '22:10–sön 06:30',
+    )
   })
 })

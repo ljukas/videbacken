@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import {
   Table,
   TableBody,
@@ -9,14 +8,8 @@ import {
 } from '~/components/ui/table'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import {
-  formatDate,
-  formatOneDecimal,
-  formatScore,
-  formatSek,
-  formatSignedSek,
-  formatTime,
-} from './format'
+import { formatOneDecimal, formatScore, formatSek, formatSignedSek, formatTime } from './format'
+import { SessionLink } from './SessionLink'
 import { Unknown } from './Unknown'
 
 type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
@@ -61,7 +54,7 @@ export function EconomySessionTable({
           return (
             <TableRow key={r.sessionId}>
               <TableCell className="whitespace-nowrap">
-                <SessionDate row={r} />
+                <SessionLink sessionId={r.sessionId} startAt={r.startAt} />
                 <div className="text-muted-foreground text-xs tabular-nums">
                   {formatTime(r.startAt)}–{formatTime(r.endAt)}
                 </div>
@@ -126,19 +119,6 @@ export function EconomySessionTable({
         })}
       </TableBody>
     </Table>
-  )
-}
-
-function SessionDate({ row }: { row: Row }) {
-  return (
-    <Link
-      to="/charging/sessions/$sessionId"
-      params={{ sessionId: row.sessionId }}
-      aria-label={m.charging_session_link_label({ date: formatDate(row.startAt) })}
-      className="font-medium underline-offset-4 hover:underline"
-    >
-      {formatDate(row.startAt)}
-    </Link>
   )
 }
 

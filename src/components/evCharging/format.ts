@@ -1,5 +1,5 @@
 import { tz } from '@date-fns/tz'
-import { type Day, format, formatDistanceStrict, type Month } from 'date-fns'
+import { type Day, format, formatDistanceStrict, isSameDay, isSameYear, type Month } from 'date-fns'
 import { getDateFnsLocale, getIntlLocale } from '~/lib/i18n/format'
 import { STOCKHOLM_TIME_ZONE } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
@@ -44,6 +44,25 @@ export function formatWeekdayDay(date: Date | number): string {
     locale: getDateFnsLocale(),
     in: tz(STOCKHOLM_TIME_ZONE),
   })
+}
+
+// A session's heading day: "lör 5 sep." in the current Stockholm year, with the
+// year ("lör 5 sep. 2025") for any other.
+export function formatSessionDay(date: Date, now: Date = new Date()): string {
+  const inStockholm = { in: tz(STOCKHOLM_TIME_ZONE) }
+  return isSameYear(date, now, inStockholm)
+    ? formatWeekdayDay(date)
+    : format(date, 'EEE d MMM yyyy', { locale: getDateFnsLocale(), ...inStockholm })
+}
+
+// "22:10–lör 06:30": the end time, prefixed with its short weekday when it
+// falls on another Stockholm day than the start.
+export function formatSessionTimeRange(startAt: Date, endAt: Date): string {
+  const inStockholm = { in: tz(STOCKHOLM_TIME_ZONE) }
+  const end = isSameDay(startAt, endAt, inStockholm)
+    ? formatTime(endAt)
+    : `${format(endAt, 'EEE', { locale: getDateFnsLocale(), ...inStockholm })} ${formatTime(endAt)}`
+  return `${formatTime(startAt)}–${end}`
 }
 
 export function formatTime(date: Date): string {
