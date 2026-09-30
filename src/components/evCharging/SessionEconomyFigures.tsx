@@ -1,4 +1,5 @@
 import { InfoIcon } from 'lucide-react'
+import type * as React from 'react'
 import { Alert, AlertDescription } from '~/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import type { RouterOutputs } from '~/lib/orpc/client'
@@ -27,20 +28,25 @@ export function SessionEconomyFigures({
   ) : (
     <Unknown label={m.charging_sessions_cost_unknown()} />
   )
-  const items = cf
+  // `hint` is a visible line under the value, as on the economy page's tiles.
+  // A flat-price session has no score: its dash is hidden from screen readers
+  // and the visible line gives the reason instead of the hint.
+  const items: { label: string; value: React.ReactNode; hint?: string }[] = cf
     ? [
         { label: m.charging_session_fig_actual(), value: actual },
         { label: m.charging_session_fig_immediate(), value: formatSek(cf.immediate.totalSek, 2) },
         { label: m.charging_session_fig_optimal(), value: formatSek(cf.optimal.totalSek, 2) },
-        {
-          label: m.charging_session_fig_score(),
-          value:
-            cf.score === null ? (
-              <Unknown label={m.charging_economy_tile_no_spread()} />
-            ) : (
-              formatScore(cf.score)
-            ),
-        },
+        cf.score === null
+          ? {
+              label: m.charging_session_fig_score(),
+              value: <span aria-hidden="true">—</span>,
+              hint: m.charging_economy_tile_no_spread(),
+            }
+          : {
+              label: m.charging_session_fig_score(),
+              value: formatScore(cf.score),
+              hint: m.charging_economy_tile_score_hint(),
+            },
       ]
     : [{ label: m.charging_session_fig_actual(), value: actual }]
   return (
@@ -58,8 +64,11 @@ export function SessionEconomyFigures({
               <CardHeader className="pb-2">
                 <CardTitle className="text-muted-foreground text-sm">{item.label}</CardTitle>
               </CardHeader>
-              <CardContent className="font-semibold text-2xl tabular-nums">
-                {item.value}
+              <CardContent className="flex flex-col gap-1">
+                <span className="font-semibold text-2xl tabular-nums">{item.value}</span>
+                {item.hint ? (
+                  <span className="text-muted-foreground text-xs">{item.hint}</span>
+                ) : null}
               </CardContent>
             </Card>
           ))}

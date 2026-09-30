@@ -107,6 +107,16 @@ test('a flat-price session shows "—" for timing, with its reason', async () =>
       })}
     />,
   )
-  await expect.element(screen.getByText(m.charging_economy_tile_no_spread())).toBeInTheDocument()
+  // Said once, visibly, in place of the hint (not only for screen readers).
+  await expect.element(screen.getByText(m.charging_economy_tile_no_spread())).toBeVisible()
+  expect(screen.getByText(m.charging_economy_tile_no_spread()).elements()).toHaveLength(1)
+  expect(screen.getByText(m.charging_economy_tile_score_hint()).elements()).toHaveLength(0)
   expect(screen.getByText(/0\s?%/).elements()).toHaveLength(0)
+})
+
+test('the timing tile explains its scale on a visible line under the value', async () => {
+  const { screen } = await renderWithProviders(<SessionEconomyFigures economy={economy()} />)
+  const tile = screen.getByRole('group', { name: m.charging_session_fig_score() })
+  await expect.element(tile.getByText(m.charging_economy_tile_score_hint())).toBeVisible()
+  expect(screen.getByText(m.charging_economy_tile_no_spread()).elements()).toHaveLength(0)
 })
