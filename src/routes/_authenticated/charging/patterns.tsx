@@ -244,13 +244,12 @@ function PatternsPage() {
                         months={timeline.months}
                         onMonth={stepMonth}
                       />
-                    ) : timelineResult.isError ? (
+                    ) : (
                       <LoadErrorAlert
                         title={m.charging_patterns_timeline_error_title()}
-                        onRetry={() => void timelineResult.refetch()}
-                        retrying={timelineResult.isFetching}
+                        query={timelineResult}
                       />
-                    ) : null}
+                    )}
                   </CardContent>
                 </Card>
               </section>
@@ -267,13 +266,9 @@ function PatternsPage() {
             </Empty>
           )}
         </>
-      ) : patternsResult.isError ? (
-        <LoadErrorAlert
-          title={m.charging_patterns_error_title()}
-          onRetry={() => void patternsResult.refetch()}
-          retrying={patternsResult.isFetching}
-        />
-      ) : null}
+      ) : (
+        <LoadErrorAlert title={m.charging_patterns_error_title()} query={patternsResult} />
+      )}
     </PageContainer>
   )
 }
