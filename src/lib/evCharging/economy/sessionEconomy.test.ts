@@ -2,7 +2,7 @@ import { sum } from 'd3-array'
 import { describe, expect, test } from 'vitest'
 import { SlotIndex, type TariffPeriod } from '~/lib/evCharging/cost'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
-import { analyzeSession, timingScore } from './sessionEconomy'
+import { analyzeSession, timingScore, windowAvgSpotOre } from './sessionEconomy'
 import type { EconomySession } from './types'
 
 const HOUR = 3_600_000
@@ -100,7 +100,114 @@ describe('analyzeSession', () => {
 
   test('a window without a tariff is excluded as no_price', () => {
     const later = [{ ...TARIFF, validFrom: '2026-10-01' }]
-    expect(analyzeSession(session(), slots, later).economy.excluded).toBe('no_price')
+    const { economy } = analyzeSession(session(), slots, later)
+    expect(economy.excluded).toBe('no_price')
+    expect(economy.windowAvgSpotOre).toBeNull()
+  })
+
+  test('a fully priced window with an unpriceable stretch is excluded as no_price', () => {
+    const zeroLength = session({
+      stretches: [
+        { startMs: utc('2026-09-28T08:00Z'), endMs: utc('2026-09-28T09:00Z'), kwh: 10 },
+        { startMs: utc('2026-09-28T09:00Z'), endMs: utc('2026-09-28T09:00Z'), kwh: 1 },
+      ],
+    })
+    const { economy, optimalSchedule } = analyzeSession(zeroLength, slots, [TARIFF])
+    expect(economy.actual.noPriceKwh).toBeGreaterThan(0)
+    expect(economy.excluded).toBe('no_price')
+    expect(optimalSchedule).toBeNull()
+  })
+
+  test('a zero-energy session is included with null score and finite figures', () => {
+    const idle = session({
+      stretches: [
+        { startMs: utc('2026-09-28T08:00Z'), endMs: utc('2026-09-28T09:00Z'), kwh: 0 },
+        { startMs: utc('2026-09-28T09:00Z'), endMs: utc('2026-09-28T10:00Z'), kwh: 0 },
+      ],
+    })
+    const { economy } = analyzeSession(idle, slots, [TARIFF])
+    const cf = economy.counterfactual
+    expect(economy.excluded).toBeNull()
+    expect(economy.paidSpotOre).toBeNull()
+    expect(cf?.score).toBeNull()
+    for (const v of [
+      economy.actual.totalSek,
+      cf?.immediate.totalSek,
+      cf?.optimal.totalSek,
+      cf?.dearest.totalSek,
+      cf?.savedVsImmediateSek,
+      cf?.leftOnTableSek,
+    ]) {
+      expect(Number.isFinite(v)).toBe(true)
+    }
+  })
+
+  // Window widening: a stretch past plug-out (or before plug-in) must stay inside the
+  // window the counterfactuals choose from, else optimal could exceed actual.
+  const quirkSlots = new SlotIndex(daySlots('2026-09-28', 15, (i) => (i >= 40 && i < 44 ? 3 : 0)))
+  const HOURLY_10 = { startMs: utc('2026-09-28T08:00Z'), endMs: utc('2026-09-28T09:00Z'), kwh: 10 }
+  test.each([
+    [
+      'after plug-out',
+      { startMs: utc('2026-09-28T09:00Z'), endMs: utc('2026-09-28T09:05Z'), kwh: 0.5 },
+    ],
+    [
+      'before plug-in',
+      { startMs: utc('2026-09-28T07:55Z'), endMs: utc('2026-09-28T08:00Z'), kwh: 0.5 },
+    ],
+  ])('a clock-quirk stretch %s keeps optimal ≤ actual and the score in 0…1', (_, quirk) => {
+    const s = session({
+      startMs: utc('2026-09-28T08:00Z'),
+      endMs: utc('2026-09-28T09:00Z'),
+      stretches: [HOURLY_10, quirk],
+    })
+    const { economy } = analyzeSession(s, quirkSlots, [TARIFF])
+    const cf = economy.counterfactual
+    expect(economy.excluded).toBeNull()
+    expect(cf?.optimal.totalSek).toBeLessThanOrEqual(economy.actual.totalSek + 1e-9)
+    expect(cf?.score ?? 0).toBeGreaterThanOrEqual(0)
+    expect(cf?.score ?? 0).toBeLessThanOrEqual(1)
+  })
+
+  test('a window across local midnight prices each slot day under its own tariff', () => {
+    const twoDays = new SlotIndex([
+      ...daySlots('2026-09-30', 15, () => 2),
+      ...daySlots('2026-10-01', 15, () => 4),
+    ])
+    const newTariff: TariffPeriod = {
+      validFrom: '2026-10-01',
+      retailMarkupOre: 0,
+      gridTransferOre: 20,
+      energyTaxOre: 30,
+      vatPercent: 10,
+    }
+    const s = session({
+      startMs: utc('2026-09-30T21:00Z'),
+      endMs: utc('2026-09-30T23:00Z'),
+      stretches: [
+        { startMs: utc('2026-09-30T21:00Z'), endMs: utc('2026-09-30T22:00Z'), kwh: 5 },
+        { startMs: utc('2026-09-30T22:00Z'), endMs: utc('2026-09-30T23:00Z'), kwh: 5 },
+      ],
+    })
+    const { economy } = analyzeSession(s, twoDays, [TARIFF, newTariff])
+    expect(economy.excluded).toBeNull()
+    expect(economy.actual.totalSek).toBeCloseTo(5 * unit(2) + 5 * (4 + 0.5) * 1.1)
+    expect(economy.windowAvgSpotOre).toBeCloseTo(((2 * 1.25 + 4 * 1.1) / 2) * 100)
+  })
+})
+
+describe('windowAvgSpotOre', () => {
+  test('weights each slot by its overlap with an unaligned window', () => {
+    const priced = new SlotIndex(daySlots('2026-09-28', 15, (i) => i - 40 + 1))
+    // 10:07–11:38 local: overlaps 8, 15, 15, 15, 15, 15, 8 min in slots priced 1…7.
+    const mins = [8, 15, 15, 15, 15, 15, 8]
+    const expected = (mins.reduce((a, m, k) => a + m * (k + 1), 0) / 91) * 1.25 * 100
+    const window = { startMs: utc('2026-09-28T08:07Z'), endMs: utc('2026-09-28T09:38Z') }
+    expect(windowAvgSpotOre(window, priced, [TARIFF])).toBeCloseTo(expected)
+  })
+  test('is null without slots', () => {
+    const window = { startMs: utc('2026-09-28T08:00Z'), endMs: utc('2026-09-28T09:00Z') }
+    expect(windowAvgSpotOre(window, new SlotIndex([]), [TARIFF])).toBeNull()
   })
 })
 

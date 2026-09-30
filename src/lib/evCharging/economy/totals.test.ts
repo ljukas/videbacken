@@ -24,8 +24,9 @@ const included = (
   immediate: number,
   optimal: number,
   dearest: number,
+  actualExtra: Partial<CostTotals> = {},
 ): SessionEconomy => ({
-  actual: totals(actual),
+  actual: totals(actual, actualExtra),
   paidSpotOre: null,
   windowAvgSpotOre: null,
   excluded: null,
@@ -67,16 +68,30 @@ describe('sumEconomy', () => {
   })
 
   test('excluded sessions are counted by reason and left out of every kronor figure', () => {
+    // fullKwh (5) differs from kwh (10): paid spot is over the priced energy.
     const t = sumEconomy(
-      [included(15, 20, 10, 20), excluded('no_hourly'), excluded('no_price')],
+      [
+        included(15, 20, 10, 20, { fullKwh: 5, spotSek: 2 }),
+        excluded('no_hourly'),
+        excluded('no_price'),
+      ],
       null,
     )
     expect(t).toMatchObject({
       sessions: 3,
       included: 1,
       excluded: { noHourly: 1, noPrice: 1 },
+      kwh: 10,
       actualSek: 15,
+      immediateSek: 20,
+      optimalSek: 10,
+      dearestSek: 20,
     })
+    expect(t.paidSpotOre).toBeCloseTo((2 / 5) * 100)
+  })
+
+  test('left on the table is clamped at zero when actual beat optimal', () => {
+    expect(sumEconomy([included(9, 12, 10, 20)], null).leftOnTableSek).toBe(0)
   })
 
   test('nothing included → zero sums, null score and null paid spot (the UI says "—")', () => {
@@ -99,6 +114,18 @@ describe('averageSpotOre', () => {
       [TARIFF],
     )
     expect(avg).toBeCloseTo(((1 * 24 + 2 * 12) / 36) * 1.25 * 100)
+  })
+
+  test('applies each day’s own VAT', () => {
+    const later: TariffPeriod = { ...TARIFF, validFrom: '2026-09-02', vatPercent: 0 }
+    const avg = averageSpotOre(
+      [
+        { day: '2026-09-01', avgSekPerKwh: 1, coveredMs: 24 * 3_600_000 },
+        { day: '2026-09-02', avgSekPerKwh: 2, coveredMs: 12 * 3_600_000 },
+      ],
+      [TARIFF, later],
+    )
+    expect(avg).toBeCloseTo(((1 * 1.25 * 24 + 2 * 1 * 12) / 36) * 100)
   })
 
   test('skips days without a tariff; none left → null', () => {
