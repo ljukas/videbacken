@@ -42,7 +42,7 @@ describe('monthLabel', () => {
     ])
     inLocale('en')
     expect(monthLabel(1)).toBe('Jan')
-    expect(monthLabel(9)).toBe('Sept')
+    expect(monthLabel(9)).toBe('Sep')
   })
 })
 

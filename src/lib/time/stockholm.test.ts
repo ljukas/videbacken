@@ -6,6 +6,7 @@ import {
   stockholmDayOf,
   stockholmFirstOfMonth,
   stockholmMonthBounds,
+  stockholmNightInWindow,
   stockholmNoonOnOrBefore,
   stockholmYearBounds,
   stockholmYearMonth,
@@ -248,5 +249,47 @@ describe('stockholmYearBounds', () => {
       expect(stockholmYearBounds(year).startMs).toBe(Date.UTC(year - 1, 11, 31, 23))
       expect(stockholmYearBounds(year).endMs).toBe(stockholmYearBounds(year + 1).startMs)
     }
+  })
+})
+
+describe('stockholmNightInWindow', () => {
+  const night = (noon: string) => {
+    const { startMs, endMs } = stockholmNightInWindow(Date.parse(noon))
+    return [new Date(startMs).toISOString(), new Date(endMs).toISOString()]
+  }
+
+  test('a normal summer day: 22:00 CEST to 06:00 CEST', () => {
+    expect(night('2026-09-05T10:00:00Z')).toEqual([
+      '2026-09-05T20:00:00.000Z',
+      '2026-09-06T04:00:00.000Z',
+    ])
+  })
+
+  test('spring-forward row (28 -> 29 Mar 2026): 22:00 CET to 06:00 CEST, 7 h long', () => {
+    expect(night('2026-03-28T11:00:00Z')).toEqual([
+      '2026-03-28T21:00:00.000Z',
+      '2026-03-29T04:00:00.000Z',
+    ])
+  })
+
+  test('fall-back row (24 -> 25 Oct 2026): 22:00 CEST to 06:00 CET, 9 h long', () => {
+    expect(night('2026-10-24T10:00:00Z')).toEqual([
+      '2026-10-24T20:00:00.000Z',
+      '2026-10-25T05:00:00.000Z',
+    ])
+  })
+
+  test('22:00 is on the start day and 06:00 on the next, across a month end', () => {
+    expect(night('2026-01-31T11:00:00Z')).toEqual([
+      '2026-01-31T21:00:00.000Z',
+      '2026-02-01T05:00:00.000Z',
+    ])
+  })
+
+  test('agrees with the noon window it belongs to', () => {
+    const { startMs, endMs } = stockholmNoonOnOrBefore(Date.parse('2026-03-28T20:00:00Z'))
+    const n = stockholmNightInWindow(startMs)
+    expect(n.startMs).toBeGreaterThan(startMs)
+    expect(n.endMs).toBeLessThan(endMs)
   })
 })
