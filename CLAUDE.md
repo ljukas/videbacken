@@ -144,7 +144,7 @@ drizzle/, compose.yaml, vite.config.ts (Nitro: plugins, region, crons, queue tri
 - **Two roles:** `user`, `admin`. **Admins mutate, users are read-only:** reads use `protectedProcedure`;
   every mutation uses `adminProcedure`; the **sole exception** is a user managing their **own account**
   (`updateProfile`, `completeOnboarding`, own avatar) scoped to `context.user.id`.
-- **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → admin allowlist rows at startup (see Non-negotiables for the plugin rule).
+- **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → admin allowlist rows on each instance's first request (see Non-negotiables for the plugin rule).
   Sign in locally with one of those addresses to bootstrap the first admin.
 - Admins manage access at `/admin` (invite = add an allowlist row + courtesy email to `/login`;
   revoke = remove approval + soft-delete + revoke sessions; re-invite restores a revoked user).
@@ -201,6 +201,10 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
   A merged migration hits prod on the next production deploy — it can't be "held back".
 - **Client code may only `import type` from services.** A value import pulls `db` → `postgres` → `Buffer` into the
   browser bundle and crashes the page. Put shared constants/vocab in a client-safe module (e.g. `integrationHealth.ts`, `spotPrice/zones.ts`); the `clientSafe.browser.test.tsx` tests guard this.
+- **No DB or network I/O at module init or in a Nitro plugin's body.** Work started outside a request isn't
+  covered by `waitUntil`; Vercel may suspend the instance with it in flight (logs showed the approved-email
+  seed's connect timing out during the instance's first requests). Do it inside a request: a `request` hook
+  that hands the work to `waitUntil` from `@vercel/functions`.
 - **`src/routeTree.gen.ts`, `src/paraglide/`, `drizzle/meta/` and `betterAuth.ts` are generated** — regenerate, never edit.
 
 ---

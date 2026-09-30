@@ -5,7 +5,8 @@ import { addApproved, isApproved, normalizeEmail } from './services/approvedEmai
 // the INITIAL_ADMIN_EMAILS env var (comma-separated). Without this, a fresh
 // deployment would have an empty allowlist and nobody — not even the intended
 // admin — could sign in (both Google and magic-link are gated on the table).
-// Runs once at server startup, after migrations (see server/plugins).
+// Runs on each server instance's first request, after migrations (see
+// server/plugins/seedApprovedEmails.ts for why not at startup).
 export async function seedApprovedEmails(): Promise<void> {
   const emails = (process.env.INITIAL_ADMIN_EMAILS ?? '')
     .split(',')
