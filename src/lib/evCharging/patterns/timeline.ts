@@ -1,7 +1,7 @@
 // Client-safe: a session's plug-in → charging → plug-out segments. Zaptec
 // reports energy per (clock-hour) interval, so *where inside an hour* charging
 // ran is estimated: an interval delivering less than the session's peak rate
-// charged for kWh ÷ peak kW, placed at the interval's start (matches the car's
+// charged for kWh ÷ peak kW, placed at the start of the interval's visible part (matches the car's
 // end-of-charge taper and a scheduled start on the hour). The page says so.
 import { max } from 'd3-array'
 import { IDLE_INTERVAL_KWH, PEAK_MIN_INTERVAL_MS } from '~/lib/evCharging/counting'
@@ -15,7 +15,10 @@ const rateKw = (i: PatternInterval) => (i.energyKwh / ms(i)) * HOUR_MS
 export function sessionPeakKw(intervals: PatternInterval[]): number | null {
   const valid = intervals.filter((i) => ms(i) > 0)
   const long = valid.filter((i) => ms(i) >= PEAK_MIN_INTERVAL_MS)
-  const peak = max(long.length > 0 ? long : valid, rateKw)
+  // Deliberately includes out-of-window intervals (spec rule 1, same as listSessions).
+  const longPeak = max(long, rateKw)
+  if (longPeak !== undefined && longPeak > 0) return longPeak
+  const peak = max(valid, rateKw)
   return peak !== undefined && peak > 0 ? peak : null
 }
 
@@ -44,9 +47,10 @@ export function toTimelineSession(session: PatternSession): TimelineSession {
       if (charged >= FULL_HOUR_SHARE * ms(i)) {
         push(a, b, 'charging')
       } else {
-        const chargeStart = i.startAt.getTime()
-        push(a, chargeStart + charged, 'charging')
-        push(Math.max(a, chargeStart + charged), b, 'idle')
+        const burstStart = Math.max(a, winStart)
+        const burstEnd = Math.min(burstStart + charged, b)
+        push(burstStart, burstEnd, 'charging')
+        push(burstEnd, b, 'idle')
       }
     }
     cursor = Math.max(cursor, b)
