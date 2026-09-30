@@ -14,6 +14,7 @@ import {
   findAvatarByEmail,
   findRowById,
   inviteUser,
+  listActiveAdmins,
   listAll,
   listUsersAndPending,
   revokeUser,
@@ -158,6 +159,19 @@ test('countAdmins counts only active admins', async () => {
     { name: 'U1', email: 'u1@test.videbacken.local', role: 'user' },
   ])
   expect(await countAdmins()).toBe(2)
+})
+
+test('listActiveAdmins returns only active admins, ordered by name', async () => {
+  await db.insert(user).values([
+    { name: 'B Admin', email: 'b@test.videbacken.local', role: 'admin' },
+    { name: 'A Admin', email: 'a@test.videbacken.local', role: 'admin' },
+    { name: 'Gone', email: 'gone@test.videbacken.local', role: 'admin', deletedAt: new Date() },
+    { name: 'Member', email: 'm@test.videbacken.local', role: 'user' },
+  ])
+  expect((await listActiveAdmins()).map((r) => r.email)).toEqual([
+    'a@test.videbacken.local',
+    'b@test.videbacken.local',
+  ])
 })
 
 // ---------- inviteUser ----------
