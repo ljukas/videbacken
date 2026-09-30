@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
@@ -399,6 +400,65 @@ test('an estimated session draws no bars but still the price line', async () => 
   await expect
     .element(chartTable(screen).getByRole('row', { name: /^10:00–10:15/ }))
     .toHaveTextContent(/—/)
+  // No "Laddat" legend entry for bars that aren't there; a note says why.
+  expect(document.querySelector('[data-legend="actual"]')).toBeNull()
+  await expect.element(screen.getByText(m.charging_session_chart_no_hourly())).toBeVisible()
+})
+
+test('a session with hourly data has the "Laddat" legend entry and no note', async () => {
+  const { screen } = await renderChart()
+  await expect
+    .element(screen.getByText(m.charging_session_chart_actual(), { exact: true }))
+    .toBeVisible()
+  expect(screen.getByText(m.charging_session_chart_no_hourly()).elements()).toHaveLength(0)
+})
+
+// The keyboard path: the plot is one tab stop outside the aria-hidden svg, and
+// the arrows step the popover through the same rows the pointer picks from.
+const popoverText = () => document.querySelector('.visx-tooltip')?.textContent ?? null
+const announced = () => document.querySelector('[data-chart-announce]')?.textContent ?? ''
+
+test('the plot takes focus, named and described, outside the hidden svg', async () => {
+  const { screen } = await renderChart()
+  const plot = screen.getByRole('group', { name: m.charging_session_chart_title() })
+  await expect.element(plot).toHaveAttribute('tabindex', '0')
+  await expect.element(plot).toHaveAccessibleDescription(m.charging_session_chart_keyboard_hint())
+  expect(plot.element().closest('[aria-hidden="true"]')).toBeNull()
+})
+
+test('arrow keys step the popover through the rows; Escape closes it', async () => {
+  const { screen } = await renderChart()
+  const plot = screen.getByRole('group', { name: m.charging_session_chart_title() }).element()
+  ;(plot as HTMLElement).focus()
+  expect(popoverText()).toBeNull()
+
+  await userEvent.keyboard('{ArrowRight}')
+  await expect.poll(popoverText).toBe('09:00–09:15 · — kWh · 125 öre')
+  expect(announced()).toBe('09:00–09:15 · — kWh · 125 öre')
+  await userEvent.keyboard('{ArrowRight}')
+  await expect.poll(popoverText).toBe('09:15–09:30 · — kWh · 125 öre')
+  await userEvent.keyboard('{End}')
+  await expect.poll(popoverText).toBe('12:45–13:00 · — kWh · 125 öre')
+  await userEvent.keyboard('{ArrowLeft}')
+  await expect.poll(popoverText).toBe('12:30–12:45 · — kWh · — öre')
+  await userEvent.keyboard('{Home}')
+  await expect.poll(popoverText).toBe('09:00–09:15 · — kWh · 125 öre')
+  await userEvent.keyboard('{ArrowLeft}') // stays on the first row
+  await expect.poll(popoverText).toBe('09:00–09:15 · — kWh · 125 öre')
+
+  await userEvent.keyboard('{Escape}')
+  await expect.poll(popoverText).toBeNull()
+  expect(announced()).toBe('')
+})
+
+test('leaving the plot with the keyboard closes its popover', async () => {
+  const { screen } = await renderChart()
+  const plot = screen.getByRole('group', { name: m.charging_session_chart_title() }).element()
+  ;(plot as HTMLElement).focus()
+  await userEvent.keyboard('{ArrowRight}')
+  await expect.poll(popoverText).not.toBeNull()
+  ;(plot as HTMLElement).blur()
+  await expect.poll(popoverText).toBeNull()
 })
 
 test('an excluded session without an optimal schedule shows no toggle', async () => {

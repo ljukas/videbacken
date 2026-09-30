@@ -490,6 +490,8 @@
   "charging_session_chart_col_ore": "öre/kWh",
   "charging_session_chart_col_optimal": "Cheapest schedule (kWh)",
   "charging_session_chart_window": "Plugged in",
+  "charging_session_chart_no_hourly": "No hourly data from the charger",
+  "charging_session_chart_keyboard_hint": "Use the arrow keys to step through the intervals",
   "charging_economy_tile_none": "No sessions with complete prices",
   "charging_economy_tile_none_hourly": "No sessions with hourly data",
   "charging_economy_tile_none_comparable": "No comparable sessions",

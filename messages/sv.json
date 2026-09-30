@@ -490,6 +490,8 @@
   "charging_session_chart_col_ore": "öre/kWh",
   "charging_session_chart_col_optimal": "Billigaste schemat (kWh)",
   "charging_session_chart_window": "Inkopplad",
+  "charging_session_chart_no_hourly": "Ingen timdata från laddboxen",
+  "charging_session_chart_keyboard_hint": "Använd piltangenterna för att stega genom intervallen",
   "charging_economy_tile_none": "Inga sessioner med fullständiga priser",
   "charging_economy_tile_none_hourly": "Inga sessioner med timdata",
   "charging_economy_tile_none_comparable": "Inga jämförbara sessioner",

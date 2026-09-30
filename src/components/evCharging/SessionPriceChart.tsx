@@ -191,6 +191,7 @@ const sideMargin = (labels: string[]) =>
 export function SessionPriceChart({ detail }: { detail: Detail }) {
   const headingId = useId()
   const toggleId = useId()
+  const hintId = useId()
   const [showOptimal, setShowOptimal] = useState(true)
   const { parentRef, width } = useParentSize({ debounceTime: 100 })
   // A mask id valid in url(#…): useId's colons are not.
@@ -212,7 +213,8 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
   }, [popover.open])
 
   // The SVG depends only on layout + data, so hovering doesn't redraw it.
-  const svg = useMemo(() => {
+  // `place` is where a row's popover goes, for the keyboard as for the pointer.
+  const plot = useMemo(() => {
     if (width <= 0) return null
     const innerH = HEIGHT - MARGIN_TOP - MARGIN_BOTTOM
     const charged = intervals.filter((s) => s.kwh > 0 && s.endMs > s.startMs)
@@ -270,7 +272,10 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
       defined: (d: StepPoint) => d.ore !== null,
       curve: curveStepAfter,
     }
-    const popoverTop = (r: Row) => MARGIN_TOP + (r.spotOre === null ? innerH / 2 : yOre(r.spotOre))
+    const place = (r: Row) => ({
+      left: left + (x(r.startMs) + x(r.endMs)) / 2,
+      top: MARGIN_TOP + (r.spotOre === null ? innerH / 2 : yOre(r.spotOre)),
+    })
     // One overlay picks the row nearest the pointer, so a fingertip can hit a
     // 15-min slot a few pixels wide. pointerdown covers a tap (ChartPopover
     // keeps it open until a tap outside or Escape).
@@ -282,7 +287,8 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
       const row = candidates.sort((a, b) => dist(a) - dist(b))[0]
       if (!row || row === shownRef.current) return
       shownRef.current = row
-      show(row, left + (x(row.startMs) + x(row.endMs)) / 2, popoverTop(row))
+      const at = place(row)
+      show(row, at.left, at.top)
     }
     const rule = (ms: number, key: string) => (
       <line
@@ -297,7 +303,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
     )
     const axisProps = { stroke: 'var(--border)', tickStroke: 'var(--border)' }
 
-    return (
+    const svg = (
       // biome-ignore lint/a11y/noSvgWithoutTitle: decorative; the sr-only table carries the numbers
       <svg width={width} height={HEIGHT} aria-hidden className="block" data-chart="session-price">
         <Group left={left} top={MARGIN_TOP}>
@@ -441,6 +447,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
         </Group>
       </svg>
     )
+    return { svg, place }
   }, [
     width,
     win,
@@ -485,6 +492,54 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
 
   const active = popover.data
   const optimalShown = optimalSchedule !== null && showOptimal
+  // An estimated session has no intervals: no bars, so no "Laddat" entry, but a note.
+  const hasIntervals = intervals.length > 0
+  const tooltipText = (r: Row) =>
+    m.charging_session_chart_tooltip({
+      from: timeLabel(r.startMs, multiDay),
+      to: formatTime(new Date(r.endMs)),
+      kwh: kwhLabel(kwhWithin(intervals, r)),
+      ore: oreLabel(r.spotOre),
+    })
+
+  // Keyboard path to the same popover the pointer opens: the plot is one tab
+  // stop, and the arrows / Home / End step through `rows` (the pointer's rows).
+  // Screen readers keep the sr-only table as their way through the numbers;
+  // the portalled popover is not a live region, so it is never read out on its
+  // own. A keyboard step is announced once, through the polite live region
+  // below (pointer moves are not, or hovering would chatter).
+  const [announced, setAnnounced] = useState('')
+  const close = () => {
+    popover.hide()
+    setAnnounced('')
+  }
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') return close()
+    if (!plot || rows.length === 0) return
+    const last = rows.length - 1
+    const current = popover.open && active ? rows.indexOf(active) : -1
+    const next =
+      e.key === 'ArrowRight'
+        ? current < 0
+          ? 0
+          : Math.min(current + 1, last)
+        : e.key === 'ArrowLeft'
+          ? current < 0
+            ? last
+            : Math.max(current - 1, 0)
+          : e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? last
+              : null
+    const row = next === null ? undefined : rows[next]
+    if (!row) return
+    e.preventDefault()
+    shownRef.current = row
+    const at = plot.place(row)
+    show(row, at.left, at.top)
+    setAnnounced(tooltipText(row))
+  }
 
   return (
     <section aria-labelledby={headingId}>
@@ -510,25 +565,49 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div {...containerProps} className="relative w-full">
-            <div ref={parentRef} className="w-full" style={{ height: HEIGHT }}>
-              {svg}
+            {/* A named group that takes focus and keys; the svg inside stays aria-hidden. */}
+            {/* biome-ignore lint/a11y/useSemanticElements: a chart, not a form's fieldset */}
+            <div
+              ref={parentRef}
+              role="group"
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: the keyboard path to the chart's popover (see onKeyDown)
+              tabIndex={0}
+              aria-label={m.charging_session_chart_title()}
+              aria-describedby={hintId}
+              onKeyDown={onKeyDown}
+              onBlur={close}
+              data-chart-focus
+              className="peer w-full rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              style={{ height: HEIGHT }}
+            >
+              {plot?.svg}
+            </div>
+            {/* Shown while the plot has keyboard focus; always its description. */}
+            <p
+              id={hintId}
+              className="sr-only text-muted-foreground text-xs peer-focus-visible:not-sr-only peer-focus-visible:pt-1"
+            >
+              {m.charging_session_chart_keyboard_hint()}
+            </p>
+            <div className="sr-only" aria-live="polite" data-chart-announce>
+              {announced}
             </div>
             <ChartPopover state={popover} dataKey={active ? String(active.startMs) : undefined}>
-              {active
-                ? m.charging_session_chart_tooltip({
-                    from: timeLabel(active.startMs, multiDay),
-                    to: formatTime(new Date(active.endMs)),
-                    kwh: kwhLabel(kwhWithin(intervals, active)),
-                    ore: oreLabel(active.spotOre),
-                  })
-                : null}
+              {active ? tooltipText(active) : null}
             </ChartPopover>
           </div>
+          {hasIntervals ? null : (
+            <p className="text-muted-foreground text-xs" data-note="no-hourly">
+              {m.charging_session_chart_no_hourly()}
+            </p>
+          )}
           <ul className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
-            <li className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-t-sm" style={{ background: ACTUAL }} />
-              {m.charging_session_chart_actual()}
-            </li>
+            {hasIntervals ? (
+              <li className="flex items-center gap-1.5" data-legend="actual">
+                <span className="size-2.5 rounded-t-sm" style={{ background: ACTUAL }} />
+                {m.charging_session_chart_actual()}
+              </li>
+            ) : null}
             {optimalShown ? (
               <li className="flex items-center gap-1.5" data-legend="optimal">
                 <span
