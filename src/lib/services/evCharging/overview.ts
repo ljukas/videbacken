@@ -123,7 +123,7 @@ async function monthlyTotals(year: number): Promise<Map<number, Totals>> {
 // spanning New Year's) an interval's `start_at`. Unlike `monthlyTotals`, this
 // has no target year to filter against, so there's no sargable alternative to
 // scanning + extracting.
-async function distinctCountedYears(): Promise<Set<number>> {
+export async function distinctCountedYears(): Promise<Set<number>> {
   const yearOfSession = sql<number>`extract(year from ${evChargeSession.startAt} AT TIME ZONE 'Europe/Stockholm')::int`
   const yearOfInterval = sql<number>`extract(year from ${evChargeInterval.startAt} AT TIME ZONE 'Europe/Stockholm')::int`
 
