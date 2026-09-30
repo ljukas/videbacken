@@ -14,9 +14,10 @@ import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
+import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import {
   type ChartMetric,
-  ChartMetricToggle,
+  chartMetricOptions,
   MonthlyChart,
 } from '~/components/evCharging/MonthlyChart'
 import { PriceFootnote } from '~/components/evCharging/PriceFootnote'
@@ -251,7 +252,12 @@ function ChargingPage() {
               </h2>
               <div className="flex flex-wrap items-center gap-2">
                 {chartCost ? (
-                  <ChartMetricToggle value={chartMetric} onChange={setChartMetric} />
+                  <MetricToggle
+                    value={chartMetric}
+                    options={chartMetricOptions()}
+                    onChange={setChartMetric}
+                    aria-label={m.charging_chart_metric_label()}
+                  />
                 ) : null}
                 <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
               </div>

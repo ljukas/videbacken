@@ -8,17 +8,17 @@ import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
+import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { PatternLegend } from '~/components/evCharging/PatternLegend'
-import { type PatternMetric, slotValue } from '~/components/evCharging/patternChart'
+import { type PatternMetric, slotValue, valueLabel } from '~/components/evCharging/patternChart'
 import { SessionTimeline } from '~/components/evCharging/SessionTimeline'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
-import { valueLabel, WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
+import { WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
-import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { orpc } from '~/lib/orpc/client'
 import { stockholmDayOf } from '~/lib/time/stockholm'
@@ -143,24 +143,15 @@ function PatternsPage() {
                           ? m.charging_patterns_heatmap_title_kwh()
                           : m.charging_patterns_heatmap_title_plugged()}
                       </h2>
-                      <ToggleGroup
-                        type="single"
+                      <MetricToggle
                         value={metric}
-                        // Radix fires '' when the active item is re-pressed; keep one selected.
-                        onValueChange={(v) => {
-                          if (v) set({ metric: v as PatternMetric })
-                        }}
-                        variant="outline"
-                        size="sm"
+                        options={[
+                          { value: 'kwh', label: m.charging_patterns_metric_kwh() },
+                          { value: 'plugged', label: m.charging_patterns_metric_plugged() },
+                        ]}
+                        onChange={(v) => set({ metric: v })}
                         aria-label={m.charging_patterns_metric_label()}
-                      >
-                        <ToggleGroupItem value="kwh">
-                          {m.charging_patterns_metric_kwh()}
-                        </ToggleGroupItem>
-                        <ToggleGroupItem value="plugged">
-                          {m.charging_patterns_metric_plugged()}
-                        </ToggleGroupItem>
-                      </ToggleGroup>
+                      />
                     </div>
                     <PatternLegend maxLabel={heatmapMax} />
                   </CardHeader>

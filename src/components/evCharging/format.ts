@@ -38,8 +38,8 @@ export function formatDate(date: Date): string {
   }).format(date)
 }
 
-// "lör 5 sep" / "Sat 5 Sep": weekday and day in Stockholm time, no year.
-export function formatWeekdayDay(date: Date): string {
+// "lör 5 sep." / "Sat 5 Sep": weekday and day in Stockholm time, no year.
+export function formatWeekdayDay(date: Date | number): string {
   return format(date, 'EEE d MMM', {
     locale: getDateFnsLocale(),
     in: tz(STOCKHOLM_TIME_ZONE),

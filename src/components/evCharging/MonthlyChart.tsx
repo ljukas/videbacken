@@ -7,41 +7,25 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '~/components/ui/chart'
-import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { formatCount, formatOneDecimal, formatSek, formatShare, monthLabel } from './format'
+import type { MetricOption } from './MetricToggle'
 
 type Month = RouterOutputs['evCharging']['overview']['months'][number]
 type CostMonth = RouterOutputs['evCharging']['costOverview']['months'][number]
 export type ChartMetric = 'kwh' | 'sek'
 
-/** The kWh ↔ kr switch; the page puts it beside the year picker. */
-export function ChartMetricToggle({
-  value,
-  onChange,
-}: {
-  value: ChartMetric
-  onChange: (metric: ChartMetric) => void
-}) {
-  return (
-    <ToggleGroup
-      type="single"
-      value={value}
-      // Radix fires '' when the active item is re-pressed; keep one selected.
-      onValueChange={(v) => {
-        if (v) onChange(v as ChartMetric)
-      }}
-      variant="outline"
-      size="sm"
-      aria-label={m.charging_chart_metric_label()}
-    >
-      <ToggleGroupItem value="kwh">{m.charging_chart_metric_kwh()}</ToggleGroupItem>
-      <ToggleGroupItem value="sek" aria-label={m.charging_chart_metric_sek_label()}>
-        {m.charging_chart_metric_sek()}
-      </ToggleGroupItem>
-    </ToggleGroup>
-  )
+/** The kWh ↔ kr options for `MetricToggle`; the page puts it beside the year picker. */
+export function chartMetricOptions(): MetricOption<ChartMetric>[] {
+  return [
+    { value: 'kwh', label: m.charging_chart_metric_kwh() },
+    {
+      value: 'sek',
+      label: m.charging_chart_metric_sek(),
+      ariaLabel: m.charging_chart_metric_sek_label(),
+    },
+  ]
 }
 
 // kWh (or cost) per calendar month of the selected year — always 12 bars (the

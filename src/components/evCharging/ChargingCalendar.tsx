@@ -9,11 +9,11 @@ import {
   type MonthTotal,
   monthGrid,
 } from '~/lib/evCharging/patterns'
+import { stockholmDayBounds } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { ChartPopover, useChartPopover } from './ChartPopover'
-import { formatDay, monthLabel, monthName, weekdayLabel } from './format'
-import { intensity } from './patternChart'
-import { valueLabel } from './WeekdayHourHeatmap'
+import { formatDay, formatWeekdayDay, monthName, weekdayLabel } from './format'
+import { intensity, valueLabel } from './patternChart'
 
 // Weekday-initials row height as a share of one cell, so the SVG aspect ratio is known up front.
 const LABEL_ROWS = 0.75
@@ -201,7 +201,7 @@ function MonthCardImpl({
             dataKey={active ? `${active.day}-${active.kwh}-${active.sessions}` : undefined}
           >
             {active
-              ? `${weekdayLabel(active.weekday)} ${active.date} ${monthLabel(month)} · ${valueLabel(active.kwh, 'kwh')} · ${m.charging_patterns_day_sessions({ count: active.sessions })}`
+              ? `${formatWeekdayDay(stockholmDayBounds(active.day).startMs)} · ${valueLabel(active.kwh, 'kwh')} · ${m.charging_patterns_day_sessions({ count: active.sessions })}`
               : null}
           </ChartPopover>
         </div>

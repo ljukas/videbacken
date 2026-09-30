@@ -11,8 +11,7 @@ import {
 import type { Slot } from '~/lib/evCharging/patterns'
 import { m } from '~/paraglide/messages'
 import { formatCount, hourRangeLabel } from './format'
-import { type PatternMetric, slotValue } from './patternChart'
-import { valueLabel } from './WeekdayHourHeatmap'
+import { type PatternMetric, slotValue, valueLabel } from './patternChart'
 
 const NARROW_PX = 480
 const config = { value: { color: 'var(--brand)' } } satisfies ChartConfig

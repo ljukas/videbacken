@@ -7,19 +7,13 @@ import { useMemo } from 'react'
 import type { Slot } from '~/lib/evCharging/patterns'
 import { m } from '~/paraglide/messages'
 import { ChartPopover, useChartPopover } from './ChartPopover'
-import { formatOneDecimal, hourRangeLabel, weekdayLabel } from './format'
-import { intensity, type PatternMetric, slotValue } from './patternChart'
+import { hourRangeLabel, weekdayLabel } from './format'
+import { intensity, type PatternMetric, slotValue, valueLabel } from './patternChart'
 
 const NARROW_PX = 640
 const LABEL_W = 34
 const LABEL_H = 16
 type Cell = { weekday: number; hour: number; value: number; fill: string }
-
-export function valueLabel(value: number, metric: PatternMetric): string {
-  return metric === 'kwh'
-    ? m.charging_patterns_value_kwh({ value: formatOneDecimal(value) })
-    : m.charging_patterns_value_plugged({ value: formatOneDecimal(value) })
-}
 
 export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: PatternMetric }) {
   const { parentRef, width } = useParentSize({ debounceTime: 100 })

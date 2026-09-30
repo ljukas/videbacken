@@ -8,11 +8,11 @@ import { CalendarXIcon, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useMemo } from 'react'
 import { Button } from '~/components/ui/button'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
-import type { TimelineSession } from '~/lib/evCharging/patterns'
+import { HOUR_MS, type TimelineSession } from '~/lib/evCharging/patterns'
 import { stockholmNightInWindow, stockholmNoonOnOrBefore } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { formatOneDecimal, formatTime, formatWeekdayDay, monthName } from './format'
-import { valueLabel } from './WeekdayHourHeatmap'
+import { valueLabel } from './patternChart'
 
 const NARROW_PX = 640
 const LABEL_W = 200
@@ -21,7 +21,6 @@ const AXIS_H = 18
 const ROW_H = 22
 // Track + label + padding, for reserving height before the width is measured.
 const ROW_BLOCK = 40
-const HOUR_MS = 3_600_000
 const IDLE_FILL = 'color-mix(in oklch, var(--brand) 25%, transparent)'
 const IDLE_STROKE = 'color-mix(in oklch, var(--brand) 60%, transparent)'
 const NIGHT_FILL = 'var(--muted-foreground)'
