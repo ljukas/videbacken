@@ -19,6 +19,7 @@ import {
 } from '~/components/ui/table'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
+import { Estimated } from './Estimated'
 import { formatDuration, formatOneDecimal, formatSek, formatTime } from './format'
 import { SessionLink } from './SessionLink'
 import { SyncNowButton } from './SyncNowButton'
@@ -168,13 +169,7 @@ function SessionCostCell({ cost, pending }: { cost: SessionCost | undefined; pen
   }
   return (
     <div className="flex flex-col items-end">
-      <span title={cost.estimated ? m.charging_sessions_cost_estimated() : undefined}>
-        {cost.estimated ? '≈ ' : null}
-        {formatSek(cost.totalSek, 2)}
-        {cost.estimated ? (
-          <span className="sr-only"> ({m.charging_sessions_cost_estimated()})</span>
-        ) : null}
-      </span>
+      <Estimated estimated={cost.estimated}>{formatSek(cost.totalSek, 2)}</Estimated>
       <span className="hidden text-muted-foreground text-xs sm:inline">
         {m.charging_sessions_cost_spot({ spot: formatSek(cost.spotSek, 2) })}
       </span>

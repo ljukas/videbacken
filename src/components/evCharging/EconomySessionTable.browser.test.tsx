@@ -86,6 +86,24 @@ test('an excluded no_hourly session names its reason', async () => {
     .toHaveTextContent(`— ${m.charging_economy_reason_no_hourly()}`)
 })
 
+test('a no_hourly (estimated) session marks its cost "≈"; other rows do not', async () => {
+  const { screen } = await renderWithRouter(
+    <EconomySessionTable
+      sessions={[
+        row({ excluded: 'no_hourly', counterfactual: null }),
+        row({ sessionId: 'x', excluded: 'no_price', counterfactual: null }),
+        row({ sessionId: 'y' }),
+      ]}
+    />,
+  )
+  const cost = (i: number) => screen.getByRole('row').nth(i).getByRole('cell').nth(2)
+  await expect.element(cost(1)).toHaveTextContent(/^≈\s41,20\s?kr/)
+  await expect.element(cost(1)).toHaveTextContent(m.charging_sessions_cost_estimated())
+  for (const i of [2, 3]) {
+    await expect.element(cost(i)).toHaveTextContent(/^41,20\s?kr$/)
+  }
+})
+
 test('a flat-price session shows "—" for timing', async () => {
   const base = row()
   const { screen } = await renderWithRouter(

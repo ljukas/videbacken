@@ -8,6 +8,7 @@ import {
 } from '~/components/ui/table'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
+import { Estimated } from './Estimated'
 import { formatOneDecimal, formatScore, formatSek, formatSignedSek, formatTime } from './format'
 import { SessionLink } from './SessionLink'
 import { Unknown } from './Unknown'
@@ -85,7 +86,10 @@ export function EconomySessionTable({
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">
                 {r.actualComplete ? (
-                  formatSek(r.actual.totalSek, 2)
+                  // No hourly data means the cost was spread from the total: an estimate.
+                  <Estimated estimated={r.excluded === 'no_hourly'}>
+                    {formatSek(r.actual.totalSek, 2)}
+                  </Estimated>
                 ) : (
                   <Unknown label={m.charging_sessions_cost_unknown()} />
                 )}

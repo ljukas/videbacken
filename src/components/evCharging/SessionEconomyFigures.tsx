@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
+import { Estimated } from './Estimated'
 import { formatScore, formatSek } from './format'
 import { Unknown } from './Unknown'
 
@@ -22,13 +23,7 @@ export function SessionEconomyFigures({
 }) {
   const cf = economy.counterfactual
   const actual = economy.actualComplete ? (
-    <span title={estimated ? m.charging_sessions_cost_estimated() : undefined}>
-      {estimated ? '≈ ' : null}
-      {formatSek(economy.actual.totalSek, 2)}
-      {estimated ? (
-        <span className="sr-only"> ({m.charging_sessions_cost_estimated()})</span>
-      ) : null}
-    </span>
+    <Estimated estimated={estimated}>{formatSek(economy.actual.totalSek, 2)}</Estimated>
   ) : (
     <Unknown label={m.charging_sessions_cost_unknown()} />
   )
