@@ -1,7 +1,7 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { spotPrice } from '~/lib/db/schema'
-import { type PriceSlot, validateDaySlots } from '~/lib/spotPrice/slots'
+import { type DailySpot, type PriceSlot, validateDaySlots } from '~/lib/spotPrice/slots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
 import { stockholmDayBounds } from '~/lib/time/stockholm'
 import { SpotPriceDomainError } from './errors'
@@ -97,4 +97,38 @@ export async function daysWithSlots(
       and(eq(spotPrice.zone, zone), gte(spotPrice.slotStart, from), lt(spotPrice.slotStart, to)),
     )
   return new Set(rows.map((r) => r.day))
+}
+
+/**
+ * Per Stockholm day in `[fromDay, toDay]` (inclusive) with stored slots: the
+ * time-weighted average SEK/kWh (ex VAT) and how long the day has prices.
+ * Aggregated in Postgres — a year is ~35 000 slots but only 365 rows here —
+ * over a PK range scan. Slots never straddle local midnight (the sync stores
+ * whole validated days), so grouping by the slot start's local day is exact.
+ */
+export async function dailyAverageSpot(
+  zone: PriceZone,
+  fromDay: string,
+  toDay: string,
+): Promise<DailySpot[]> {
+  const from = new Date(stockholmDayBounds(fromDay).startMs).toISOString()
+  const to = new Date(stockholmDayBounds(toDay).endMs).toISOString()
+  const seconds = sql`extract(epoch FROM ${spotPrice.slotEnd} - ${spotPrice.slotStart})`
+  // Raw `execute` returns numeric aggregates as strings.
+  const { rows } = await db.execute<{ day: string; avg: string; covered_s: string }>(sql`
+    SELECT to_char(${spotPrice.slotStart} AT TIME ZONE 'Europe/Stockholm', 'YYYY-MM-DD') AS day,
+           sum(${spotPrice.sekPerKwh} * ${seconds}) / sum(${seconds}) AS avg,
+           sum(${seconds}) AS covered_s
+    FROM ${spotPrice}
+    WHERE ${spotPrice.zone} = ${zone}
+      AND ${spotPrice.slotStart} >= ${from}::timestamptz
+      AND ${spotPrice.slotStart} < ${to}::timestamptz
+    GROUP BY 1
+    ORDER BY 1
+  `)
+  return rows.map((r) => ({
+    day: r.day,
+    avgSekPerKwh: Number(r.avg),
+    coveredMs: Math.round(Number(r.covered_s) * 1000),
+  }))
 }

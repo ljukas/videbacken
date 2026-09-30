@@ -4,7 +4,7 @@ import { spotPrice } from '~/lib/db/schema'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import { setupDatabase } from '~test/setup'
 import { SpotPriceDomainError } from './errors'
-import { daysWithSlots, listSlotsOverlapping, replaceDay } from './spotPrice'
+import { dailyAverageSpot, daysWithSlots, listSlotsOverlapping, replaceDay } from './spotPrice'
 
 setupDatabase()
 
@@ -118,4 +118,42 @@ test('daysWithSlots groups by Stockholm day across the UTC boundary', async () =
 test('daysWithSlots sees a whole 25-hour fall-back day as one day', async () => {
   await replaceDay('SE3', '2025-10-26', daySlots('2025-10-26', 15))
   expect(await daysWithSlots('SE3', '2025-10-25', '2025-10-27')).toEqual(new Set(['2025-10-26']))
+})
+
+test('dailyAverageSpot averages each Stockholm day, weighting by slot length', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 15, (i) => i / 100),
+  )
+  await replaceDay(
+    'SE3',
+    '2025-09-15',
+    daySlots('2025-09-15', 60, () => 2),
+  )
+  await replaceDay(
+    'SE3',
+    '2026-09-29',
+    daySlots('2026-09-29', 15, () => 7),
+  ) // outside the range
+
+  const days = await dailyAverageSpot('SE3', '2025-09-01', '2026-09-28')
+  expect(days.map((d) => d.day)).toEqual(['2025-09-15', '2026-09-28'])
+  expect(days[0]).toEqual({ day: '2025-09-15', avgSekPerKwh: 2, coveredMs: 24 * 3_600_000 })
+  expect(days[1].avgSekPerKwh).toBeCloseTo(0.475) // mean of 0.00 … 0.95
+  expect(days[1].coveredMs).toBe(24 * 3_600_000)
+})
+
+test('dailyAverageSpot counts a 25-hour DST day as 25 hours', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-10-25',
+    daySlots('2026-10-25', 60, () => 1),
+  )
+  const [d] = await dailyAverageSpot('SE3', '2026-10-25', '2026-10-25')
+  expect(d.coveredMs).toBe(25 * 3_600_000)
+})
+
+test('dailyAverageSpot is empty without stored slots', async () => {
+  expect(await dailyAverageSpot('SE3', '2026-01-01', '2026-12-31')).toEqual([])
 })
