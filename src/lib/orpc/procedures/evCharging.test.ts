@@ -372,3 +372,52 @@ test('syncNow records zaptec timing sub-timings when context.timings is present'
   expect(priceTimings.elprisSyncMs).toBeGreaterThanOrEqual(0)
   expect(priceTimings.elprisFetchMs).toBeGreaterThanOrEqual(0)
 })
+
+test('patterns and timeline reject an unauthenticated caller', async () => {
+  await expect(
+    call(evChargingRouter.patterns, {}, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+  await expect(
+    call(evChargingRouter.timeline, {}, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+})
+
+test('patterns returns zero grids for a signed-in user with no data', async () => {
+  await signIn('user')
+  const result = await call(evChargingRouter.patterns, {}, { context: baseContext() })
+  expect(result.weekdayHour).toHaveLength(7)
+  expect(result.hourOfDay).toHaveLength(24)
+})
+
+test('timeline returns an empty month for a signed-in user with no data', async () => {
+  await signIn('user')
+  const result = await call(
+    evChargingRouter.timeline,
+    { year: 2026, month: 3 },
+    { context: baseContext() },
+  )
+  expect(result).toMatchObject({ year: 2026, month: 3, months: [], sessions: [] })
+})
+
+test('patterns and timeline reject out-of-range input', async () => {
+  await signIn('user')
+  await expect(
+    call(evChargingRouter.patterns, { year: 2019 }, { context: baseContext() }),
+  ).rejects.toBeDefined()
+  await expect(
+    call(evChargingRouter.timeline, { year: 2026, month: 0 }, { context: baseContext() }),
+  ).rejects.toBeDefined()
+  await expect(
+    call(evChargingRouter.timeline, { year: 2026, month: 13 }, { context: baseContext() }),
+  ).rejects.toBeDefined()
+})
+
+test('patterns records its sub-timings', async () => {
+  await signIn('user')
+  const timings: Record<string, number> = {}
+  await call(evChargingRouter.patterns, {}, { context: { ...baseContext(), timings } })
+  expect(timings).toMatchObject({
+    patternsFetchMs: expect.any(Number),
+    patternsAggregateMs: expect.any(Number),
+  })
+})
