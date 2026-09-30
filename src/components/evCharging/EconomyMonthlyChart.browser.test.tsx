@@ -47,10 +47,93 @@ test('draws three bar series, a legend naming them, and no bars for months witho
   )
 })
 
+const stubMonths = months.map((mo) =>
+  mo.month === 3 ? month(3, { sessions: 2, excluded: { noHourly: 0, noPrice: 2 } }) : mo,
+)
+
+test('a month whose sessions were all excluded draws one quiet stub and no kronor bars', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <EconomyMonthlyChart months={stubMonths} />
+    </div>,
+  )
+  await vi.waitFor(() => {
+    const legend = screen.container.querySelector('.recharts-legend-wrapper')?.textContent
+    expect(legend).toContain(m.charging_economy_series_not_comparable())
+  })
+  expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(4)
+  // Three kronor bars for September + exactly one stub for March.
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(4),
+  )
+})
+
+test('a year where every session was excluded still shows the stubs, not "no data"', async () => {
+  const all = Array.from({ length: 12 }, (_, i) =>
+    i === 0 ? month(1, { sessions: 1, excluded: { noHourly: 1, noPrice: 0 } }) : month(i + 1),
+  )
+  const { screen } = await renderWithProviders(<EconomyMonthlyChart months={all} />)
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(1),
+  )
+  expect(screen.getByText(m.charging_economy_chart_no_data()).elements()).toHaveLength(0)
+})
+
+test('a year with no stub months has no stub series or legend entry', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <EconomyMonthlyChart months={months} />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('.recharts-legend-wrapper')).not.toBeNull(),
+  )
+  expect(screen.container.querySelector('.recharts-legend-wrapper')?.textContent).not.toContain(
+    m.charging_economy_series_not_comparable(),
+  )
+  expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(3)
+})
+
 test('a year with nothing comparable says so instead of an empty 0 kr chart', async () => {
   const { screen } = await renderWithProviders(
     <EconomyMonthlyChart months={Array.from({ length: 12 }, (_, i) => month(i + 1))} />,
   )
   await expect.element(screen.getByText(m.charging_economy_chart_no_data())).toBeVisible()
   expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(0)
+})
+
+test('tooltips name the stub reason and flag a partly compared month', async () => {
+  const mixed = months.map((mo) => {
+    if (mo.month === 3) return month(3, { sessions: 1, excluded: { noHourly: 1, noPrice: 0 } })
+    if (mo.month === 9) return { ...mo, sessions: 3, excluded: { noHourly: 0, noPrice: 1 } }
+    return mo
+  })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <EconomyMonthlyChart months={mixed} />
+    </div>,
+  )
+  const hover = async (index: number) => {
+    const rects = () => [...screen.container.querySelectorAll('.recharts-bar-rectangle')]
+    await vi.waitFor(() => expect(rects().length).toBeGreaterThan(index))
+    const box = rects()[index].getBoundingClientRect()
+    rects()[index].dispatchEvent(
+      new MouseEvent('mousemove', {
+        bubbles: true,
+        clientX: box.x + box.width / 2,
+        clientY: box.y + box.height / 2,
+      }),
+    )
+  }
+  // Rectangles in DOM order: immediate, actual, optimal (Sep), then the stub (Mar).
+  await hover(2)
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain(
+      m.charging_economy_tooltip_compared({ included: 2, sessions: 3 }),
+    ),
+  )
+  await hover(3)
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain(m.charging_economy_series_no_hourly()),
+  )
 })

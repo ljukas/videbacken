@@ -71,3 +71,36 @@ test('flat prices (score null, sessions included) say so, not "none" or 0 %', as
   expect(screen.getByText(m.charging_economy_tile_none()).elements()).toHaveLength(0)
   expect(screen.getByText(/^0\s?%$/).elements()).toHaveLength(0)
 })
+
+const nothing: Totals = {
+  ...base,
+  included: 0,
+  actualSek: 0,
+  immediateSek: 0,
+  optimalSek: 0,
+  dearestSek: 0,
+  savedVsImmediateSek: 0,
+  leftOnTableSek: 0,
+  score: null,
+  paidSpotOre: null,
+}
+
+test('all excluded for missing hourly data → says hourly data, not prices', async () => {
+  const { screen } = await renderWithProviders(
+    <EconomyTiles tiles={{ ...nothing, excluded: { noHourly: 3, noPrice: 0 } }} />,
+  )
+  expect(screen.getByText(m.charging_economy_tile_none_hourly()).elements().length).toBeGreaterThan(
+    0,
+  )
+  expect(screen.getByText(m.charging_economy_tile_none()).elements()).toHaveLength(0)
+})
+
+test('all excluded for mixed reasons → "no comparable sessions"', async () => {
+  const { screen } = await renderWithProviders(
+    <EconomyTiles tiles={{ ...nothing, excluded: { noHourly: 1, noPrice: 2 } }} />,
+  )
+  expect(
+    screen.getByText(m.charging_economy_tile_none_comparable()).elements().length,
+  ).toBeGreaterThan(0)
+  expect(screen.getByText(m.charging_economy_tile_none()).elements()).toHaveLength(0)
+})

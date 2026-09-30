@@ -18,21 +18,54 @@ type Month = RouterOutputs['evCharging']['economy']['months'][number]
 //   immediate  --muted-foreground  4.7 / 6.7  (the quiet baseline)
 //   actual     --chart-3           9.1 / 8.1
 //   optimal    --chart-2           3.7 / 7.0
-const SERIES_ORDER = ['immediate', 'actual', 'optimal']
+//   stub       muted-foreground @45 %, as /charging's "Pris saknas" stub
+const SERIES_ORDER = ['immediate', 'actual', 'optimal', 'stub']
 const seriesOrder = (item: { dataKey?: unknown }) => SERIES_ORDER.indexOf(String(item.dataKey))
 
 // Per month: what charging at once would have cost, what we paid and the
 // cheapest schedule — side by side, over the month's comparable sessions only.
-// A month with none gets no bars (its gap is the honest state, never 0 kr).
+// A month with none gets no bars (never 0 kr); if it still had sessions, all
+// excluded, it gets a quiet stub saying why instead of looking like a month
+// without charging.
+const allExcluded = (mo: Month) => mo.sessions > 0 && mo.included === 0
+
+// Why a month's sessions were all left out, in the tooltip.
+function stubReason(mo: Month) {
+  const { noHourly, noPrice } = mo.excluded
+  if (noHourly === 0 && noPrice > 0) return m.charging_chart_no_price()
+  if (noPrice === 0 && noHourly > 0) return m.charging_economy_series_no_hourly()
+  return m.charging_economy_series_not_comparable()
+}
+
 export function EconomyMonthlyChart({ months }: { months: Month[] }) {
   const config = {
     immediate: { label: m.charging_economy_series_immediate(), color: 'var(--muted-foreground)' },
     actual: { label: m.charging_economy_series_actual(), color: 'var(--chart-3)' },
     optimal: { label: m.charging_economy_series_optimal(), color: 'var(--chart-2)' },
+    // One legend label true for every reason; the tooltip names the specific one.
+    stub: {
+      label: m.charging_economy_series_not_comparable(),
+      color: 'color-mix(in oklab, var(--muted-foreground) 45%, transparent)',
+    },
   } satisfies ChartConfig
-  if (!months.some((mo) => mo.included > 0)) return <NoData />
+  // Stubs are honest data: only a year with no sessions at all has nothing to show.
+  if (!months.some((mo) => mo.sessions > 0)) return <NoData />
+  const hasStub = months.some(allExcluded)
+  const hasBars = months.some((mo) => mo.included > 0)
+  // A sliver of the axis span, just enough to be seen (1 kr when nothing is
+  // comparable at all, where the axis carries no figures).
+  const top = Math.max(
+    ...months.map((mo) =>
+      mo.included > 0 ? Math.max(Math.abs(mo.immediateSek), Math.abs(mo.actualSek)) : 0,
+    ),
+  )
+  const stub = top > 0 ? top * 0.03 : 1
   const data = months.map((mo) => ({
     label: monthLabel(mo.month),
+    stub: allExcluded(mo) ? stub : null,
+    reason: allExcluded(mo) ? stubReason(mo) : null,
+    sessions: mo.sessions,
+    included: mo.included,
     // null (not 0): a month without comparable sessions has no bars, not 0 kr ones.
     immediate: mo.included > 0 ? mo.immediateSek : null,
     actual: mo.included > 0 ? mo.actualSek : null,
@@ -44,6 +77,7 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
         <CartesianGrid vertical={false} />
         <XAxis dataKey="label" tickLine={false} tickMargin={8} interval="preserveStartEnd" />
         <YAxis
+          hide={!hasBars}
           width="auto"
           tickLine={false}
           axisLine={false}
@@ -55,12 +89,24 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
           itemSorter={seriesOrder}
           content={
             <ChartTooltipContent
-              formatter={(value, name) => {
+              formatter={(value, name, item) => {
                 const series = config[name as keyof typeof config]
+                const { reason, included, sessions } = item.payload
+                // The stub has a label but no kronor value — nothing was compared.
+                if (name === 'stub') {
+                  return <TooltipRow label={reason ?? series.label} color={series.color} />
+                }
                 return (
-                  <TooltipRow label={series.label} color={series.color}>
-                    {formatSek(Number(value))}
-                  </TooltipRow>
+                  <div className="flex w-full flex-col gap-0.5">
+                    <TooltipRow label={series.label} color={series.color}>
+                      {formatSek(Number(value))}
+                    </TooltipRow>
+                    {name === 'optimal' && included < sessions ? (
+                      <span className="text-muted-foreground text-xs">
+                        {m.charging_economy_tooltip_compared({ included, sessions })}
+                      </span>
+                    ) : null}
+                  </div>
                 )
               }}
             />
@@ -78,6 +124,10 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
         />
         <Bar dataKey="actual" fill="var(--color-actual)" radius={3} isAnimationActive={false} />
         <Bar dataKey="optimal" fill="var(--color-optimal)" radius={3} isAnimationActive={false} />
+        {/* Lists the rendered series, so the stub's legend entry appears only with one. */}
+        {hasStub ? (
+          <Bar dataKey="stub" fill="var(--color-stub)" radius={3} isAnimationActive={false} />
+        ) : null}
       </BarChart>
     </ChartFrame>
   )

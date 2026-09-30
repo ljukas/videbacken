@@ -10,18 +10,26 @@ type Totals = RouterOutputs['evCharging']['economy']['tiles']
 // excluded) is said in words, never shown as 0 kr / 0 % (ADR-0020).
 export function EconomyTiles({ tiles }: { tiles: Totals }) {
   const none = tiles.included === 0
+  // Why nothing was compared: prices missing, hourly data missing, or both.
+  const { noHourly, noPrice } = tiles.excluded
+  const noneReason =
+    noHourly === 0
+      ? m.charging_economy_tile_none()
+      : noPrice === 0
+        ? m.charging_economy_tile_none_hourly()
+        : m.charging_economy_tile_none_comparable()
   const items = [
     {
       label: m.charging_economy_tile_saved(),
       value: none ? null : formatSignedSek(tiles.savedVsImmediateSek),
       hint: m.charging_economy_tile_saved_hint(),
-      emptyReason: m.charging_economy_tile_none(),
+      emptyReason: noneReason,
     },
     {
       label: m.charging_economy_tile_left(),
       value: none ? null : formatSignedSek(tiles.leftOnTableSek),
       hint: m.charging_economy_tile_left_hint(),
-      emptyReason: m.charging_economy_tile_none(),
+      emptyReason: noneReason,
     },
     {
       label: m.charging_economy_tile_score(),
@@ -29,7 +37,7 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
       hint: m.charging_economy_tile_score_hint(),
       // Flat prices (no spread between cheapest and dearest) give no score
       // even though sessions were compared.
-      emptyReason: none ? m.charging_economy_tile_none() : m.charging_economy_tile_no_spread(),
+      emptyReason: none ? noneReason : m.charging_economy_tile_no_spread(),
     },
     {
       label: m.charging_economy_tile_spot(),
@@ -41,7 +49,7 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
         tiles.avgSpotOre === null
           ? null
           : m.charging_economy_tile_spot_avg({ avg: formatOre(tiles.avgSpotOre) }),
-      emptyReason: none ? m.charging_economy_tile_none() : null,
+      emptyReason: none ? noneReason : null,
     },
   ]
   // Container query like TotalsTiles: 4 across only when the column is wide.

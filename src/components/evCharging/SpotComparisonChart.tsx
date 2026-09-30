@@ -28,6 +28,7 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
     avg: { label: m.charging_economy_series_avg(), color: 'var(--foreground)' },
   } satisfies ChartConfig
   if (!months.some((mo) => mo.paidSpotOre !== null || mo.avgSpotOre !== null)) return <NoData />
+  const hasPaid = months.some((mo) => mo.paidSpotOre !== null)
   const data = months.map((mo) => ({
     label: monthLabel(mo.month),
     paid: mo.paidSpotOre,
@@ -65,7 +66,10 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
           itemSorter={seriesOrder}
           content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
         />
-        <Bar dataKey="paid" fill="var(--color-paid)" radius={3} isAnimationActive={false} />
+        {/* Only with a paid price somewhere, so the legend never names a bar-less series. */}
+        {hasPaid ? (
+          <Bar dataKey="paid" fill="var(--color-paid)" radius={3} isAnimationActive={false} />
+        ) : null}
         <Line
           dataKey="avg"
           type="linear"

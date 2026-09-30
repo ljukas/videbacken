@@ -52,3 +52,23 @@ test('a year with no spot data says so', async () => {
   await expect.element(screen.getByText(m.charging_economy_chart_no_data())).toBeVisible()
   expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(0)
 })
+
+test('a year where nothing was paid (all excluded) draws the average line but no paid series', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <SpotComparisonChart
+        months={Array.from({ length: 12 }, (_, i) => month(i + 1, { avgSpotOre: 90 + i }))}
+      />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('.recharts-legend-wrapper')?.textContent).toContain(
+      m.charging_economy_series_avg(),
+    ),
+  )
+  expect(screen.container.querySelector('.recharts-legend-wrapper')?.textContent).not.toContain(
+    m.charging_economy_series_paid(),
+  )
+  expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(0)
+  expect(screen.container.querySelectorAll('.recharts-line')).toHaveLength(1)
+})
