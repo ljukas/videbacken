@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 // Tooltip sits above the mark so a fingertip doesn't cover it.
 const OFFSET_TOP = -34
+// Near the wrapper's top edge there's no room above: drop below the mark instead.
+const OFFSET_BELOW = 24
 
 export function useChartPopover<T>() {
   const { tooltipOpen, tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip } =
@@ -90,7 +92,7 @@ export function ChartPopover({
       applyPositionStyle
       left={state.left}
       top={state.top}
-      offsetTop={OFFSET_TOP}
+      offsetTop={(state.top ?? 0) < -OFFSET_TOP ? OFFSET_BELOW : OFFSET_TOP}
       className="pointer-events-none z-10 rounded-md bg-foreground px-2 py-1 text-background text-xs shadow-md"
     >
       {children}

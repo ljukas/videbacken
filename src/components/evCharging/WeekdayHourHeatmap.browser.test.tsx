@@ -81,14 +81,27 @@ async function renderWide() {
   return { ...r, cell, svg }
 }
 
+// React derives onPointerLeave from pointerout/pointerover, so that's what we dispatch.
+function out(pointerType: 'touch' | 'mouse') {
+  return new PointerEvent('pointerout', { pointerType, bubbles: true, relatedTarget: null })
+}
+
 test('a touch tap keeps the tooltip open after the finger lifts', async () => {
-  const { screen, cell, svg } = await renderWide()
+  const { screen, cell } = await renderWide()
   cell.dispatchEvent(touch('pointerdown'))
   await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).toBeInTheDocument()
   cell.dispatchEvent(touch('pointerup'))
-  svg.dispatchEvent(touch('pointerleave'))
+  cell.dispatchEvent(out('touch'))
   await new Promise((r) => setTimeout(r, 50))
   await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).toBeInTheDocument()
+})
+
+test('a mouse leaving the chart hides the tooltip', async () => {
+  const { screen, cell } = await renderWide()
+  cell.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', bubbles: true }))
+  await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).toBeInTheDocument()
+  cell.dispatchEvent(out('mouse'))
+  await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).not.toBeInTheDocument()
 })
 
 test('a tap outside the chart hides the tooltip', async () => {
