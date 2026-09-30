@@ -52,6 +52,7 @@ export async function renderWithRouter(
     initialPath = '/',
   }: RenderOptions & { initialPath?: string } = {},
 ) {
+  // `ui` is captured here: screen.rerender won't swap it — render again instead.
   const rootRoute = createRootRoute({ component: () => ui })
   const router = createRouter({
     routeTree: rootRoute,

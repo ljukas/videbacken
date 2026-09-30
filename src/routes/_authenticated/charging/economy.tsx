@@ -138,7 +138,10 @@ function EconomyPage() {
                     </h2>
                   </CardHeader>
                   <CardContent>
-                    <EconomySessionTable sessions={economy.sessions} />
+                    <EconomySessionTable
+                      sessions={economy.sessions}
+                      labelledBy={sessionsHeadingId}
+                    />
                   </CardContent>
                 </Card>
               </section>

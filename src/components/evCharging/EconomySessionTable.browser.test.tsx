@@ -72,7 +72,7 @@ test('an excluded session with a partial actual shows "—", not the partial kro
     />,
   )
   const cells = bodyRow(screen).getByRole('cell')
-  await expect.element(cells.nth(2)).toHaveTextContent(/^—$/)
+  await expect.element(cells.nth(2)).toHaveTextContent(/^—/)
   expect(screen.getByText(/17,50/).elements()).toHaveLength(0)
 })
 
@@ -94,7 +94,7 @@ test('a flat-price session shows "—" for timing', async () => {
       ]}
     />,
   )
-  await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toHaveTextContent(/^—$/)
+  await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toHaveTextContent(/^—/)
 })
 
 // The browser-test env has no Tailwind, so the phone layout is pinned by its
@@ -106,16 +106,28 @@ test('on a phone the comparison columns fold under the date', async () => {
       sessions={[row(), row({ sessionId: 'x', excluded: 'no_price', counterfactual: null })]}
     />,
   )
+  const tokens = (el: Element) => ({
+    hidden: el.classList.contains('hidden'),
+    smCell: el.classList.contains('sm:table-cell'),
+  })
   for (const name of [
     m.charging_economy_col_vs_immediate(),
     m.charging_economy_col_left(),
     m.charging_economy_col_score(),
   ]) {
     const header = screen.getByText(name, { exact: true }).element()
-    expect(header.className).toMatch(/\bhidden\b.*\bsm:table-cell\b/)
+    expect(tokens(header)).toEqual({ hidden: true, smCell: true })
   }
-  const folded = (i: number) =>
-    screen.getByRole('row').nth(i).getByRole('cell').first().element().querySelector('.sm\\:hidden')
-  expect(folded(1)?.textContent).toMatch(/12,40\s?kr · 3,20\s?kr · 90\s?%/)
+  const cells = (i: number) => screen.getByRole('row').nth(i).getByRole('cell')
+  for (const n of [3, 4, 5]) {
+    expect(tokens(cells(1).nth(n).element())).toEqual({ hidden: true, smCell: true })
+  }
+  expect(tokens(cells(2).nth(3).element())).toEqual({ hidden: true, smCell: true })
+  const folded = (i: number) => cells(i).first().element().querySelector('.sm\\:hidden')
+  expect(folded(1)?.textContent).toMatch(
+    new RegExp(
+      `${m.charging_economy_col_vs_immediate()} 12,40\\s?kr ${m.charging_economy_col_left()} 3,20\\s?kr ${m.charging_economy_col_score()} 90\\s?%`,
+    ),
+  )
   expect(folded(2)?.textContent).toBe(m.charging_economy_reason_no_price())
 })

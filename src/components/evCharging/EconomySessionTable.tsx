@@ -28,9 +28,15 @@ const reason = (r: Row) =>
 // sessions keep their actual cost when it is complete and say why the
 // comparison is missing. < sm the comparison folds under the date, like
 // SessionList.
-export function EconomySessionTable({ sessions }: { sessions: Row[] }) {
+export function EconomySessionTable({
+  sessions,
+  labelledBy,
+}: {
+  sessions: Row[]
+  labelledBy?: string
+}) {
   return (
-    <Table>
+    <Table aria-labelledby={labelledBy}>
       <TableHeader>
         <TableRow>
           <TableHead>{m.charging_economy_col_date()}</TableHead>
@@ -57,17 +63,37 @@ export function EconomySessionTable({ sessions }: { sessions: Row[] }) {
                 <div className="text-muted-foreground text-xs tabular-nums">
                   {formatTime(r.startAt)}–{formatTime(r.endAt)}
                 </div>
-                <div className="text-muted-foreground text-xs tabular-nums sm:hidden">
-                  {cf
-                    ? `${formatSignedSek(cf.savedVsImmediateSek, 2)} · ${formatSignedSek(cf.leftOnTableSek, 2)} · ${formatScore(cf.score)}`
-                    : reason(r)}
+                <div className="whitespace-normal text-muted-foreground text-xs tabular-nums sm:hidden">
+                  {cf ? (
+                    <>
+                      <FoldedValue
+                        label={m.charging_economy_col_vs_immediate()}
+                        value={formatSignedSek(cf.savedVsImmediateSek, 2)}
+                      />{' '}
+                      <FoldedValue
+                        label={m.charging_economy_col_left()}
+                        value={formatSignedSek(cf.leftOnTableSek, 2)}
+                      />{' '}
+                      <FoldedValue
+                        label={m.charging_economy_col_score()}
+                        value={formatScore(cf.score)}
+                        unknown={cf.score === null}
+                      />
+                    </>
+                  ) : (
+                    reason(r)
+                  )}
                 </div>
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">
                 {formatOneDecimal(r.kwh)} kWh
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">
-                {r.actualComplete ? formatSek(r.actual.totalSek, 2) : '—'}
+                {r.actualComplete ? (
+                  formatSek(r.actual.totalSek, 2)
+                ) : (
+                  <Unknown label={m.charging_sessions_cost_unknown()} />
+                )}
               </TableCell>
               {cf ? (
                 <>
@@ -78,7 +104,11 @@ export function EconomySessionTable({ sessions }: { sessions: Row[] }) {
                     {formatSignedSek(cf.leftOnTableSek, 2)}
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-right tabular-nums sm:table-cell">
-                    {formatScore(cf.score)}
+                    {cf.score === null ? (
+                      <Unknown label={m.charging_economy_tile_no_spread()} />
+                    ) : (
+                      formatScore(cf.score)
+                    )}
                   </TableCell>
                 </>
               ) : (
@@ -100,4 +130,32 @@ export function EconomySessionTable({ sessions }: { sessions: Row[] }) {
 // C1 turns this into a link to the session page.
 function SessionDate({ row }: { row: Row }) {
   return <span>{formatDate(row.startAt)}</span>
+}
+
+// One labelled value, wrapped whole so a line break falls between values.
+// The headers are hidden below `sm`, so the label travels with the value.
+function FoldedValue({
+  label,
+  value,
+  unknown,
+}: {
+  label: string
+  value: string
+  unknown?: boolean
+}) {
+  return (
+    <span className="inline-block">
+      {label} {unknown ? <Unknown label={m.charging_economy_tile_no_spread()} /> : value}
+    </span>
+  )
+}
+
+// A dash that still says why, for screen readers.
+function Unknown({ label }: { label: string }) {
+  return (
+    <span title={label}>
+      <span aria-hidden="true">—</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  )
 }
