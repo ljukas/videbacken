@@ -5,12 +5,85 @@ import {
   stockholmDayBounds,
   stockholmDayOf,
   stockholmFirstOfMonth,
+  stockholmMonthBounds,
+  stockholmNoonOnOrBefore,
   stockholmYearBounds,
   stockholmYearMonth,
 } from './stockholm'
 
 const HOUR = 60 * 60 * 1000
 const utc = (iso: string) => new Date(iso).getTime()
+
+describe('stockholmMonthBounds', () => {
+  const h = (b: { startMs: number; endMs: number }) => (b.endMs - b.startMs) / HOUR
+  test('spans local midnight to local midnight', () => {
+    expect(stockholmMonthBounds(2026, 3)).toEqual({
+      startMs: Date.parse('2026-02-28T23:00:00Z'), // 1 Mar 00:00 CET
+      endMs: Date.parse('2026-03-31T22:00:00Z'), // 1 Apr 00:00 CEST
+    })
+    expect(stockholmMonthBounds(2026, 12).endMs).toBe(Date.parse('2026-12-31T23:00:00Z'))
+    expect(stockholmMonthBounds(2026, 12).startMs).toBe(Date.parse('2026-11-30T23:00:00Z'))
+  })
+
+  test('January spans 31 CET days', () => {
+    expect(stockholmMonthBounds(2026, 1)).toEqual({
+      startMs: Date.parse('2025-12-31T23:00:00Z'),
+      endMs: Date.parse('2026-01-31T23:00:00Z'),
+    })
+  })
+
+  test('October 2026 (fall-back month) is 745 hours', () => {
+    const october = stockholmMonthBounds(2026, 10)
+    expect(october).toEqual({
+      startMs: Date.parse('2026-09-30T22:00:00Z'),
+      endMs: Date.parse('2026-10-31T23:00:00Z'),
+    })
+    expect(h(october)).toBe(745)
+  })
+})
+
+describe('stockholmNoonOnOrBefore', () => {
+  test('picks the same day after noon, the previous day before', () => {
+    expect(stockholmNoonOnOrBefore(Date.parse('2026-09-27T19:00:00Z'))).toEqual({
+      startMs: Date.parse('2026-09-27T10:00:00Z'),
+      endMs: Date.parse('2026-09-28T10:00:00Z'),
+    })
+    expect(stockholmNoonOnOrBefore(Date.parse('2026-09-28T05:00:00Z')).startMs).toBe(
+      Date.parse('2026-09-27T10:00:00Z'),
+    )
+  })
+
+  test('exactly 12:00 belongs to that day, 1 ms earlier to the previous', () => {
+    expect(stockholmNoonOnOrBefore(Date.parse('2026-09-27T10:00:00Z')).startMs).toBe(
+      Date.parse('2026-09-27T10:00:00Z'),
+    )
+    expect(stockholmNoonOnOrBefore(Date.parse('2026-09-27T09:59:59.999Z')).startMs).toBe(
+      Date.parse('2026-09-26T10:00:00Z'),
+    )
+  })
+
+  test('a noon-to-noon row over the fall-back night is 25 hours', () => {
+    const row = stockholmNoonOnOrBefore(Date.parse('2026-10-24T18:00:00Z'))
+    expect(row).toEqual({
+      startMs: Date.parse('2026-10-24T10:00:00Z'),
+      endMs: Date.parse('2026-10-25T11:00:00Z'),
+    })
+    expect((row.endMs - row.startMs) / HOUR).toBe(25)
+    // 06:00 CET on the DST day is before noon: still the previous day's row.
+    expect(stockholmNoonOnOrBefore(Date.parse('2026-10-25T05:00:00Z')).startMs).toBe(
+      Date.parse('2026-10-24T10:00:00Z'),
+    )
+  })
+
+  test('a noon-to-noon row over the spring-forward night is 23 hours', () => {
+    const row = stockholmNoonOnOrBefore(Date.parse('2026-03-28T20:00:00Z'))
+    expect(row).toEqual({
+      startMs: Date.parse('2026-03-28T11:00:00Z'),
+      endMs: Date.parse('2026-03-29T10:00:00Z'),
+    })
+    expect((row.endMs - row.startMs) / HOUR).toBe(23)
+  })
+})
 
 describe('stockholmDayOf', () => {
   test('switches day at local midnight, not UTC midnight', () => {

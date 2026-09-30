@@ -1,7 +1,11 @@
 import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
-import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import {
+  OVERVIEW_MAX_YEAR,
+  OVERVIEW_MIN_YEAR,
+  PEAK_MIN_INTERVAL_MS,
+} from '~/lib/evCharging/counting'
 import { stockholmYearBounds, stockholmYearMonth } from '~/lib/time/stockholm'
 import { countedSessionFilter } from './counted'
 
@@ -119,7 +123,7 @@ async function monthlyTotals(year: number): Promise<Map<number, Totals>> {
 // spanning New Year's) an interval's `start_at`. Unlike `monthlyTotals`, this
 // has no target year to filter against, so there's no sargable alternative to
 // scanning + extracting.
-async function distinctCountedYears(): Promise<Set<number>> {
+export async function distinctCountedYears(): Promise<Set<number>> {
   const yearOfSession = sql<number>`extract(year from ${evChargeSession.startAt} AT TIME ZONE 'Europe/Stockholm')::int`
   const yearOfInterval = sql<number>`extract(year from ${evChargeInterval.startAt} AT TIME ZONE 'Europe/Stockholm')::int`
 
@@ -210,9 +214,7 @@ export async function getOverview(input: { year?: number; now?: Date }): Promise
   }
 }
 
-// Intervals ≥ 10 minutes only — anything shorter is Zaptec sampling noise,
-// not a real sustained charge rate.
-const PEAK_MIN_DURATION_SEC = 600
+const PEAK_MIN_DURATION_SEC = PEAK_MIN_INTERVAL_MS / 1000
 
 export async function listSessions(input: {
   limit: number

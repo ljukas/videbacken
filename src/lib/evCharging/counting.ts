@@ -9,3 +9,9 @@ export const NOISE_THRESHOLD_KWH = 0.5
 // offer a year the procedure then rejects.
 export const OVERVIEW_MIN_YEAR = 2020
 export const OVERVIEW_MAX_YEAR = 2100
+
+// Intervals shorter than this are Zaptec sampling noise, not a sustained rate —
+// excluded from a session's peak kW (the session list and the timeline agree).
+export const PEAK_MIN_INTERVAL_MS = 600_000
+// An interval delivering less than this is plugged-in-but-idle, not charging.
+export const IDLE_INTERVAL_KWH = 0.05

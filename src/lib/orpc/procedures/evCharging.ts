@@ -4,6 +4,7 @@ import { type CostTimings, getCostOverview, getSessionCosts } from '~/lib/evChar
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { runZaptecSync } from '~/lib/evCharging/sync'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
+import type { PatternTimings } from '~/lib/services/evCharging'
 import * as evChargingService from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { runElprisSync } from '~/lib/spotPrice/sync'
@@ -12,6 +13,7 @@ import { runElprisSync } from '~/lib/spotPrice/sync'
 const chargingSource = z.enum(['zaptec', 'elpris'])
 /** `{ source }`, defaulting to Zaptec so existing callers keep their meaning. */
 const sourceInput = z.object({ source: chargingSource.default('zaptec') }).optional()
+const yearInput = z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional()
 /** Upper bound on how long `liveStatus` may wait on Zaptec. */
 const LIVE_BUDGET_MS = 6_000
 
@@ -20,11 +22,7 @@ export const evChargingRouter = {
   // non-admins. Overview runs several queries (see `getOverview`), so it's
   // one of the "heavier than a single query" cases the timing rule calls out.
   overview: protectedProcedure
-    .input(
-      z.object({
-        year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional(),
-      }),
-    )
+    .input(z.object({ year: yearInput }))
     .handler(async ({ input, context }) => {
       const startedAt = performance.now()
       const overview = await evChargingService.getOverview({ year: input.year })
@@ -45,15 +43,11 @@ export const evChargingRouter = {
   // or tariff problem degrades only the cost figures, never the kWh ones.
   // Several queries + the pure cost math → sub-timings (timing rule).
   costOverview: protectedProcedure
-    .input(
-      z.object({
-        year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional(),
-      }),
-    )
+    .input(z.object({ year: yearInput }))
     .handler(async ({ input, context }) => {
       const timings: CostTimings = {}
       const overview = await getCostOverview({ year: input.year, timings })
-      recordCostTimings(context.timings, timings)
+      recordPrefixedTimings(context.timings, 'cost', timings)
       return overview
     }),
 
@@ -64,8 +58,28 @@ export const evChargingRouter = {
     .handler(async ({ input, context }) => {
       const timings: CostTimings = {}
       const costs = await getSessionCosts({ sessionIds: input.sessionIds, timings })
-      recordCostTimings(context.timings, timings)
+      recordPrefixedTimings(context.timings, 'cost', timings)
       return costs
+    }),
+
+  // When-we-charge views (/charging/patterns). Two queries + pure aggregation
+  // each -> sub-timings (timing rule).
+  patterns: protectedProcedure
+    .input(z.object({ year: yearInput }))
+    .handler(async ({ input, context }) => {
+      const timings: PatternTimings = {}
+      const result = await evChargingService.getChargingPatterns({ year: input.year, timings })
+      recordPrefixedTimings(context.timings, 'patterns', timings)
+      return result
+    }),
+
+  timeline: protectedProcedure
+    .input(z.object({ year: yearInput, month: z.number().int().min(1).max(12).optional() }))
+    .handler(async ({ input, context }) => {
+      const timings: PatternTimings = {}
+      const result = await evChargingService.getChargingTimeline({ ...input, timings })
+      recordPrefixedTimings(context.timings, 'timeline', timings)
+      return result
     }),
 
   // `includeAdminDetail` is a flag derived from the caller's own role, never
@@ -158,11 +172,16 @@ export const evChargingRouter = {
   }),
 }
 
-// Copies the cost read model's sub-timings into the request's timing line
-// under `cost*` labels (e.g. `slotsMs` → `costSlotsMs`).
-function recordCostTimings(timings: Record<string, number> | undefined, cost: CostTimings): void {
+// Copies a read model's sub-timings into the request's timing line under a
+// prefix (e.g. `slotsMs` -> `costSlotsMs`).
+function recordPrefixedTimings(
+  timings: Record<string, number> | undefined,
+  prefix: string,
+  sub: Record<string, number | undefined>,
+): void {
   if (!timings) return
-  for (const [key, ms] of Object.entries(cost)) {
-    timings[`cost${key.charAt(0).toUpperCase()}${key.slice(1)}`] = ms
+  for (const [key, ms] of Object.entries(sub)) {
+    if (ms === undefined) continue
+    timings[`${prefix}${key.charAt(0).toUpperCase()}${key.slice(1)}`] = ms
   }
 }

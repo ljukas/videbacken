@@ -83,3 +83,35 @@ export function stockholmYearBounds(year: number): { startMs: number; endMs: num
     endMs: TZDate.tz(STOCKHOLM_TIME_ZONE, year + 1, 0, 1).getTime(),
   }
 }
+
+/** `[startMs, endMs)` of Stockholm calendar month `month` (1–12) of `year`. */
+export function stockholmMonthBounds(
+  year: number,
+  month: number,
+): { startMs: number; endMs: number } {
+  return {
+    startMs: TZDate.tz(STOCKHOLM_TIME_ZONE, year, month - 1, 1).getTime(),
+    endMs: TZDate.tz(STOCKHOLM_TIME_ZONE, year, month, 1).getTime(),
+  }
+}
+
+/**
+ * The Stockholm noon-to-noon window containing the instant: from 12:00 on its
+ * day (the previous day if it is before 12:00) to 12:00 the next day — 23, 24
+ * or 25 h over a DST night. The session timeline's row axis.
+ */
+export function stockholmNoonOnOrBefore(ms: number): { startMs: number; endMs: number } {
+  const day = toDay(ms)
+  const noonOf = (d: string) => {
+    const midnight = midnightOf(d)
+    return TZDate.tz(
+      STOCKHOLM_TIME_ZONE,
+      midnight.getFullYear(),
+      midnight.getMonth(),
+      midnight.getDate(),
+      12,
+    ).getTime()
+  }
+  const start = ms >= noonOf(day) ? day : addDays(day, -1)
+  return { startMs: noonOf(start), endMs: noonOf(addDays(start, 1)) }
+}
