@@ -50,7 +50,7 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
   validateSearch: searchSchema,
   loaderDeps: ({ search }) => ({ year: search.year, month: search.month }),
   // The pattern and timeline reads are prefetched, not ensured: a failure
-  // there must not take down the page (heading, tabs, sync health) — each
+  // there must not take down the page (heading, sync health) — each
   // section shows its own error Alert with a retry instead.
   loader: async ({ context: { queryClient }, deps }) => {
     await Promise.all([

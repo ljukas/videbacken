@@ -11,7 +11,12 @@ import { AppSidebar } from './AppSidebar'
 // Component tests are router-free (test/browser/render.tsx): `Link` becomes a
 // plain anchor and `useMatchRoute` matches against a scripted current path,
 // exactly unless `fuzzy` (the router's own semantics).
-const { current } = vi.hoisted(() => ({ current: { path: '/' } }))
+const { current, linkProps } = vi.hoisted(() => ({
+  current: { path: '/' },
+  // What each Link was given, by label: the router derives aria-current and the
+  // next URL's search from these, and they can't be exercised router-free.
+  linkProps: new Map<string, { search?: unknown; activeOptions?: unknown }>(),
+}))
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -20,19 +25,26 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
     Link: ({
       to,
       children,
-      search: _search,
-      activeOptions: _activeOptions,
+      search,
+      activeOptions,
       ...rest
     }: {
       to: string
       children: React.ReactNode
       search?: unknown
       activeOptions?: unknown
-    }) => (
-      <a href={to} {...rest}>
-        {children}
-      </a>
-    ),
+    }) => {
+      const label = (Array.isArray(children) ? children : [children])
+        .map((c) => (typeof c === 'object' && c && 'props' in c ? c.props.children : c))
+        .filter((c) => typeof c === 'string')
+        .join('')
+      linkProps.set(label, { search, activeOptions })
+      return (
+        <a href={to} {...rest}>
+          {children}
+        </a>
+      )
+    },
     useMatchRoute:
       () =>
       ({ to, fuzzy }: { to: string; fuzzy?: boolean }) =>
@@ -47,6 +59,7 @@ vi.mock('~/components/user/UserMenu', () => ({ SidebarUserMenu: () => null }))
 
 beforeEach(async () => {
   current.path = '/'
+  linkProps.clear()
   // Desktop: below md the sidebar is a closed drawer (Sheet).
   await page.viewport(1280, 800)
 })
@@ -91,4 +104,22 @@ test('elsewhere no charging item is active', async () => {
   expect(active(link(m.nav_charging()))).toBe(false)
   expect(active(link(m.nav_charging_overview()))).toBe(false)
   expect(active(link(m.nav_charging_patterns_short()))).toBe(false)
+})
+
+test("charging links match exactly, ignoring the views' own params, and keep the year", async () => {
+  current.path = '/charging/patterns'
+  await renderSidebar()
+  for (const label of [
+    m.nav_charging(),
+    m.nav_charging_overview(),
+    m.nav_charging_patterns_short(),
+  ]) {
+    const props = linkProps.get(label)
+    expect(props?.activeOptions, label).toEqual({ exact: true, includeSearch: false })
+    const search = props?.search as (prev: object) => object
+    expect(search({ year: 2025, month: 3, metric: 'plugged' })).toEqual({ year: 2025 })
+    expect(search({ range: '7d' })).toEqual({ year: undefined })
+  }
+  // Other sections keep the router's default matching.
+  expect(linkProps.get(m.nav_sensors())?.activeOptions).toBeUndefined()
 })

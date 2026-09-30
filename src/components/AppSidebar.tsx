@@ -38,6 +38,16 @@ const mainNavItems = linkOptions([
 type NavItem = (typeof mainNavItems)[number]
 type NavSubItem = (typeof chargingSubItems)[number]
 
+// Links into a section with sub-views. Link sets aria-current itself from its
+// own match, prefix by default, so it must be exact or /charging would read as
+// the current page on /charging/patterns too. The views' own params (month,
+// metric, dialog) mustn't count, so search is ignored for the match. The chosen
+// year is kept when switching between the views.
+const sectionLinkProps = {
+  search: (prev: { year?: number }) => ({ year: prev.year }),
+  activeOptions: { exact: true, includeSearch: false },
+} as const
+
 export function AppSidebar() {
   const matchRoute = useMatchRoute()
   const { setOpenMobile } = useSidebar()
@@ -49,7 +59,11 @@ export function AppSidebar() {
     return (
       <SidebarMenuItem key={item.to}>
         <SidebarMenuButton asChild isActive={isActive} tooltip={item.label()}>
-          <Link to={item.to} onClick={() => setOpenMobile(false)}>
+          <Link
+            to={item.to}
+            {...('subItems' in item ? sectionLinkProps : {})}
+            onClick={() => setOpenMobile(false)}
+          >
             <item.icon />
             <span>{item.label()}</span>
           </Link>
@@ -61,20 +75,14 @@ export function AppSidebar() {
     )
   }
 
-  // Sibling views of one section. Matched exactly: the overview's /charging is
-  // a prefix of /charging/patterns, so a fuzzy match would light up both.
+  // Sibling views of one section. Matched exactly (see sectionLinkProps): the
+  // overview's /charging is a prefix of /charging/patterns.
   function renderSubItem(item: NavSubItem) {
     const isActive = !!matchRoute({ to: item.to })
     return (
       <SidebarMenuSubItem key={item.to}>
         <SidebarMenuSubButton asChild isActive={isActive}>
-          <Link
-            to={item.to}
-            // Keep the chosen year when switching between the section's views.
-            search={(prev: { year?: number }) => ({ year: prev.year })}
-            activeOptions={{ exact: true }}
-            onClick={() => setOpenMobile(false)}
-          >
+          <Link to={item.to} {...sectionLinkProps} onClick={() => setOpenMobile(false)}>
             <span>{item.label()}</span>
           </Link>
         </SidebarMenuSubButton>
