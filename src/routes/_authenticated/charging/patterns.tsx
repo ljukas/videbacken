@@ -2,14 +2,14 @@ import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-qu
 import { createFileRoute } from '@tanstack/react-router'
 import { max } from 'd3-array'
 import { CalendarXIcon } from 'lucide-react'
-import { useRef } from 'react'
+import { useCallback, useId, useRef } from 'react'
 import { z } from 'zod'
 import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
 import { PatternLegend } from '~/components/evCharging/PatternLegend'
-import type { PatternMetric } from '~/components/evCharging/patternChart'
+import { type PatternMetric, slotValue } from '~/components/evCharging/patternChart'
 import { SessionTimeline } from '~/components/evCharging/SessionTimeline'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
@@ -75,13 +75,33 @@ function PatternsPage() {
     ...timelineQuery(search.year, search.month),
     placeholderData: keepPreviousData,
   })
-  const stale = patternsStale || timelineStale
-  const set = (next: Partial<typeof search>) =>
-    navigate({ to: '.', search: (s) => ({ ...s, ...next }), replace: true, resetScroll: false })
+  const set = useCallback(
+    (next: { year?: number; metric?: PatternMetric; month?: number }) =>
+      navigate({ to: '.', search: (s) => ({ ...s, ...next }), replace: true, resetScroll: false }),
+    [navigate],
+  )
+  const pickMonth = useCallback(
+    (mo: number) => {
+      set({ month: mo })
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      timelineRef.current?.scrollIntoView({
+        block: 'nearest',
+        behavior: reduce ? 'auto' : 'smooth',
+      })
+    },
+    [set],
+  )
+  const stepMonth = useCallback((mo: number) => set({ month: mo }), [set])
+  const ids = [useId(), useId(), useId(), useId()]
   const hasData = patterns ? patterns.months.some((mo) => mo.sessions > 0 || mo.kwh > 0) : false
   const calendarMax = patterns
-    ? `0 … ${valueLabel(max(patterns.daily, (d) => d.kwh) ?? 0, 'kwh')}`
+    ? valueLabel(max(patterns.daily, (d) => d.kwh) ?? 0, 'kwh')
     : undefined
+  const heatmapMax = patterns
+    ? valueLabel(max(patterns.weekdayHour.flat(), (c) => slotValue(c, metric)) ?? 0, metric)
+    : undefined
+  const today = stockholmDayOf(Date.now())
+  const dim = (stale: boolean) => cn('transition-opacity', stale && 'opacity-60')
   return (
     <PageContainer>
       <ChargingHeading
@@ -100,23 +120,7 @@ function PatternsPage() {
 
       {patterns ? (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <ToggleGroup
-              type="single"
-              value={metric}
-              // Radix fires '' when the active item is re-pressed; keep one selected.
-              onValueChange={(v) => {
-                if (v) set({ metric: v as PatternMetric })
-              }}
-              variant="outline"
-              size="sm"
-              aria-label={m.charging_patterns_metric_label()}
-            >
-              <ToggleGroupItem value="kwh">{m.charging_patterns_metric_kwh()}</ToggleGroupItem>
-              <ToggleGroupItem value="plugged">
-                {m.charging_patterns_metric_plugged()}
-              </ToggleGroupItem>
-            </ToggleGroup>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <YearSelector
               years={patterns.years}
               value={patterns.year}
@@ -125,81 +129,120 @@ function PatternsPage() {
           </div>
 
           {hasData ? (
-            <div
-              aria-busy={stale}
-              className={cn('flex flex-col gap-4', stale && 'opacity-60 transition-opacity')}
-            >
-              <Card>
-                <CardHeader className="gap-2">
-                  <h2 className="font-medium text-sm">
-                    {metric === 'kwh'
-                      ? m.charging_patterns_heatmap_title_kwh()
-                      : m.charging_patterns_heatmap_title_plugged()}
-                  </h2>
-                  <PatternLegend />
-                </CardHeader>
-                <CardContent className="flex flex-col gap-3">
-                  <WeekdayHourHeatmap grid={patterns.weekdayHour} metric={metric} />
-                  {patterns.unhourlySessions > 0 ? (
-                    <p className="text-muted-foreground text-xs">
-                      {m.charging_patterns_unhourly_note({ count: patterns.unhourlySessions })}
-                    </p>
-                  ) : null}
-                </CardContent>
-              </Card>
+            <div className="flex flex-col gap-4">
+              <section
+                aria-labelledby={ids[0]}
+                aria-busy={patternsStale}
+                className={dim(patternsStale)}
+              >
+                <Card>
+                  <CardHeader className="gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h2 id={ids[0]} className="font-medium text-sm">
+                        {metric === 'kwh'
+                          ? m.charging_patterns_heatmap_title_kwh()
+                          : m.charging_patterns_heatmap_title_plugged()}
+                      </h2>
+                      <ToggleGroup
+                        type="single"
+                        value={metric}
+                        // Radix fires '' when the active item is re-pressed; keep one selected.
+                        onValueChange={(v) => {
+                          if (v) set({ metric: v as PatternMetric })
+                        }}
+                        variant="outline"
+                        size="sm"
+                        aria-label={m.charging_patterns_metric_label()}
+                      >
+                        <ToggleGroupItem value="kwh">
+                          {m.charging_patterns_metric_kwh()}
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="plugged">
+                          {m.charging_patterns_metric_plugged()}
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
+                    <PatternLegend maxLabel={heatmapMax} />
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3">
+                    <WeekdayHourHeatmap grid={patterns.weekdayHour} metric={metric} />
+                    {patterns.unhourlySessions > 0 ? (
+                      <p className="text-muted-foreground text-xs">
+                        {m.charging_patterns_unhourly_note({ count: patterns.unhourlySessions })}
+                      </p>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </section>
 
-              <Card>
-                <CardHeader>
-                  <h2 className="font-medium text-sm">
-                    {metric === 'kwh'
-                      ? m.charging_patterns_hour_title_kwh()
-                      : m.charging_patterns_hour_title_plugged()}
-                  </h2>
-                </CardHeader>
-                <CardContent>
-                  <HourOfDayChart hours={patterns.hourOfDay} metric={metric} />
-                </CardContent>
-              </Card>
+              <section
+                aria-labelledby={ids[1]}
+                aria-busy={patternsStale}
+                className={dim(patternsStale)}
+              >
+                <Card>
+                  <CardHeader>
+                    <h2 id={ids[1]} className="font-medium text-sm">
+                      {metric === 'kwh'
+                        ? m.charging_patterns_hour_title_kwh()
+                        : m.charging_patterns_hour_title_plugged()}
+                    </h2>
+                  </CardHeader>
+                  <CardContent>
+                    <HourOfDayChart hours={patterns.hourOfDay} metric={metric} />
+                  </CardContent>
+                </Card>
+              </section>
 
-              <Card>
-                <CardHeader className="gap-2">
-                  <h2 className="font-medium text-sm">{m.charging_patterns_calendar_title()}</h2>
-                  <PatternLegend maxLabel={calendarMax} />
-                </CardHeader>
-                <CardContent>
-                  <ChargingCalendar
-                    year={patterns.year}
-                    daily={patterns.daily}
-                    months={patterns.months}
-                    today={stockholmDayOf(Date.now())}
-                    onPickMonth={(mo) => {
-                      set({ month: mo })
-                      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-                      timelineRef.current?.scrollIntoView({
-                        block: 'nearest',
-                        behavior: reduce ? 'auto' : 'smooth',
-                      })
-                    }}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card ref={timelineRef}>
-                <CardHeader>
-                  <h2 className="font-medium text-sm">{m.charging_patterns_timeline_title()}</h2>
-                </CardHeader>
-                <CardContent>
-                  {timeline ? (
-                    <SessionTimeline
-                      sessions={timeline.sessions}
-                      year={timeline.year}
-                      month={timeline.month}
-                      months={timeline.months}
-                      onMonth={(mo) => set({ month: mo })}
+              <section
+                aria-labelledby={ids[2]}
+                aria-busy={patternsStale}
+                className={dim(patternsStale)}
+              >
+                <Card>
+                  <CardHeader className="gap-2">
+                    <h2 id={ids[2]} className="font-medium text-sm">
+                      {m.charging_patterns_calendar_title()}
+                    </h2>
+                    <PatternLegend maxLabel={calendarMax} />
+                  </CardHeader>
+                  <CardContent>
+                    <ChargingCalendar
+                      year={patterns.year}
+                      daily={patterns.daily}
+                      months={patterns.months}
+                      today={today}
+                      onPickMonth={pickMonth}
                     />
-                  ) : null}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </section>
+
+              <section
+                ref={timelineRef}
+                aria-labelledby={ids[3]}
+                aria-busy={timelineStale}
+                className={dim(timelineStale)}
+              >
+                <Card>
+                  <CardHeader>
+                    <h2 id={ids[3]} className="font-medium text-sm">
+                      {m.charging_patterns_timeline_title()}
+                    </h2>
+                  </CardHeader>
+                  <CardContent>
+                    {timeline ? (
+                      <SessionTimeline
+                        sessions={timeline.sessions}
+                        year={timeline.year}
+                        month={timeline.month}
+                        months={timeline.months}
+                        onMonth={stepMonth}
+                      />
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </section>
             </div>
           ) : (
             <Empty className="brand-wash rounded-lg border">

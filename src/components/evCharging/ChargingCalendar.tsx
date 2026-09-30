@@ -2,7 +2,7 @@ import { Group } from '@visx/group'
 import { HeatmapRect } from '@visx/heatmap'
 import { useParentSize } from '@visx/responsive'
 import { max, range } from 'd3-array'
-import { useId, useMemo } from 'react'
+import { memo, useId, useMemo } from 'react'
 import {
   type CalendarDay,
   type DayTotal,
@@ -51,7 +51,10 @@ export function ChargingCalendar({ year, daily, months, today, onPickMonth }: Pr
   )
 }
 
-function MonthCard({
+// Memoised: a metric toggle or timeline step re-renders the page, not 12 month SVGs.
+const MonthCard = memo(MonthCardImpl)
+
+function MonthCardImpl({
   year,
   month,
   total,
