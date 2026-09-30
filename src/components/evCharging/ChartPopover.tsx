@@ -16,9 +16,10 @@ export function useChartPopover<T>() {
   // The tooltip renders in a portal on document.body, positioned from the chart
   // wrapper's bounds, so an overflow-hidden ancestor can't clip it; ChartPopover
   // keeps it inside the window.
-  const { containerRef, TooltipInPortal } = useTooltipInPortal({
+  // No `scroll: true`: that attaches a window scroll listener at mount which
+  // re-renders the host on every scroll frame. Bounds are measured once per open.
+  const { containerRef, forceRefreshBounds, TooltipInPortal } = useTooltipInPortal({
     detectBounds: false,
-    scroll: true,
   })
   const setRoot = useCallback(
     (node: HTMLDivElement | null) => {
@@ -29,9 +30,12 @@ export function useChartPopover<T>() {
   )
   // Stable callbacks: the heatmap's 168 cells close over `show`/`hide`.
   const show = useCallback(
-    (data: T, left: number, top: number) =>
-      showTooltip({ tooltipData: data, tooltipLeft: left, tooltipTop: top }),
-    [showTooltip],
+    (data: T, left: number, top: number) => {
+      // Re-measure the wrapper so the portal position reflects the current scroll.
+      forceRefreshBounds()
+      showTooltip({ tooltipData: data, tooltipLeft: left, tooltipTop: top })
+    },
+    [showTooltip, forceRefreshBounds],
   )
   const hide = useCallback(() => hideTooltip(), [hideTooltip])
 
@@ -107,12 +111,16 @@ const EDGE = 8
 // Nudge the tooltip back inside the window. visx's own `detectBounds` compares
 // page coordinates with the viewport size, so it misplaces the tooltip once the
 // page is scrolled; measuring the real rect sidesteps that.
-function keepInWindow(el: HTMLDivElement | null) {
+// A tooltip placed above the mark that would leave the top of the window drops
+// below the mark instead of being shifted over it.
+function keepInWindow(el: HTMLDivElement | null, above: boolean) {
   if (!el) return
   el.style.transform = ''
   const r = el.getBoundingClientRect()
   const dx = Math.max(EDGE - r.left, 0) + Math.min(window.innerWidth - EDGE - r.right, 0)
-  const dy = Math.max(EDGE - r.top, 0) + Math.min(window.innerHeight - EDGE - r.bottom, 0)
+  let dy = 0
+  if (above && r.top < EDGE) dy = OFFSET_BELOW - OFFSET_TOP
+  dy += Math.max(EDGE - (r.top + dy), 0) + Math.min(window.innerHeight - EDGE - (r.bottom + dy), 0)
   if (dx || dy) el.style.transform = `translate(${Math.round(dx)}px, ${Math.round(dy)}px)`
 }
 
@@ -130,8 +138,12 @@ export function ChartPopover({
 }) {
   // A new callback identity per position makes React re-run it, so the clamp
   // follows the mark as the pointer moves.
+  const above = (state.top ?? 0) >= -OFFSET_TOP
   // biome-ignore lint/correctness/useExhaustiveDependencies: left/top are the re-run triggers
-  const clampRef = useCallback(keepInWindow, [state.left, state.top])
+  const clampRef = useCallback(
+    (el: HTMLDivElement | null) => keepInWindow(el, above),
+    [state.left, state.top, above],
+  )
   if (!state.open) return null
   const { TooltipInPortal } = state
   return (
@@ -146,7 +158,7 @@ export function ChartPopover({
       left={state.left}
       top={state.top}
       offsetLeft={0}
-      offsetTop={(state.top ?? 0) < -OFFSET_TOP ? OFFSET_BELOW : OFFSET_TOP}
+      offsetTop={above ? OFFSET_TOP : OFFSET_BELOW}
       className="pointer-events-none z-10 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-background text-xs shadow-md"
     >
       {children}

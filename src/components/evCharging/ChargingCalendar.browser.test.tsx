@@ -1,3 +1,4 @@
+import { Profiler } from 'react'
 import { expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { renderWithProviders } from '~test/browser/render'
@@ -90,6 +91,95 @@ test('a tooltip for a mark at the window edge is kept inside the window', async 
   const t = tip.element().getBoundingClientRect()
   expect(t.left).toBeGreaterThanOrEqual(0)
   expect(t.right).toBeLessThanOrEqual(window.innerWidth)
+})
+
+test('a mark left of the window edge gets a tooltip inside the window', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ position: 'absolute', top: 0, left: -250, width: 400 }}>
+      <style>{'.whitespace-nowrap{white-space:nowrap}'}</style>
+      <ChargingCalendar
+        year={2026}
+        daily={[{ day: '2026-01-05', kwh: 4.2, sessions: 1 }]}
+        months={months}
+        today="2026-09-30"
+        onPickMonth={() => {}}
+      />
+    </div>,
+  )
+  await expect.poll(() => screen.container.querySelectorAll('rect[data-day]').length).toBe(365)
+  const cell = screen.container.querySelector('rect[data-day="2026-01-01"]')
+  if (!cell) throw new Error('missing cell')
+  expect(cell.getBoundingClientRect().left).toBeLessThan(0)
+  cell.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' }))
+  const tip = screen.getByText(/1 jan/)
+  await expect.element(tip).toBeInTheDocument()
+  const t = tip.element().getBoundingClientRect()
+  expect(t.left).toBeGreaterThanOrEqual(0)
+  expect(t.right).toBeLessThanOrEqual(window.innerWidth)
+})
+
+test('on a scrolled page the tooltip sits inside the window next to the cell', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 400 }}>
+      <style>{'.whitespace-nowrap{white-space:nowrap}'}</style>
+      <div style={{ height: 3000 }} />
+      <ChargingCalendar
+        year={2026}
+        daily={daily}
+        months={months}
+        today="2026-09-30"
+        onPickMonth={() => {}}
+      />
+      <div style={{ height: 3000 }} />
+    </div>,
+  )
+  await expect.poll(() => screen.container.querySelectorAll('rect[data-day]').length).toBe(365)
+  const cell = screen.container.querySelector('rect[data-day="2026-09-12"]')
+  if (!cell) throw new Error('missing cell')
+  window.scrollTo(0, window.scrollY + cell.getBoundingClientRect().top - window.innerHeight / 2)
+  await expect
+    .poll(() => Math.abs(cell.getBoundingClientRect().top - window.innerHeight / 2))
+    .toBeLessThan(2)
+  await userEvent.hover(cell)
+  const tip = screen.getByText(/12 sep.*10,5 kWh · 2 sessioner$/)
+  await expect.element(tip).toBeInTheDocument()
+  const t = tip.element().getBoundingClientRect()
+  const c = cell.getBoundingClientRect()
+  expect(t.top).toBeGreaterThanOrEqual(0)
+  expect(t.bottom).toBeLessThanOrEqual(window.innerHeight)
+  expect(t.left).toBeGreaterThanOrEqual(0)
+  expect(t.right).toBeLessThanOrEqual(window.innerWidth)
+  // Vertically adjacent to the cell: the tooltip overlaps it or sits just above/below.
+  expect(t.bottom).toBeGreaterThan(c.top - 60)
+  expect(t.top).toBeLessThan(c.bottom + 60)
+})
+
+test('scrolling does not re-render the chart while no tooltip is open', async () => {
+  let renders = 0
+  const { screen } = await renderWithProviders(
+    // pointer-events: none so a pointer resting from an earlier test can't open a tooltip as cells scroll under it.
+    <div style={{ width: 400, pointerEvents: 'none' }}>
+      <Profiler id="cal" onRender={() => renders++}>
+        <ChargingCalendar
+          year={2026}
+          daily={daily}
+          months={months}
+          today="2026-09-30"
+          onPickMonth={() => {}}
+        />
+      </Profiler>
+      <div style={{ height: 3000 }} />
+    </div>,
+  )
+  await expect.poll(() => screen.container.querySelectorAll('rect[data-day]').length).toBe(365)
+  await new Promise((r) => setTimeout(r, 400))
+  const before = renders
+  for (const y of [100, 300, 600, 900]) {
+    window.scrollTo(0, y)
+    await new Promise((r) => requestAnimationFrame(r))
+  }
+  await new Promise((r) => setTimeout(r, 100))
+  expect(renders).toBe(before)
 })
 
 test('a two-session day says sessioner', async () => {

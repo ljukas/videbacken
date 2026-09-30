@@ -68,6 +68,9 @@ function touch(type: string) {
 }
 
 async function renderWide() {
+  // Park the real pointer on neutral ground: one left resting over the chart by an
+  // earlier test would open its own tooltip once the SVG redraws under it.
+  await userEvent.hover(document.body)
   const r = await renderWithProviders(
     <div style={{ width: 900 }}>
       <p data-testid="outside">outside</p>
