@@ -60,6 +60,7 @@ export async function runCatalogueCheck(deps: {
     notified: 0,
   }
   let company: string | null = null
+  let publishFailures = 0
   let thrown: unknown
 
   try {
@@ -91,8 +92,12 @@ export async function runCatalogueCheck(deps: {
       ),
     )
     for (const p of published) {
-      if (p.status === 'fulfilled') result.notified++
-      else log.warn('grid tariff notice publish failed', { error: p.reason })
+      if (p.status === 'fulfilled') {
+        result.notified++
+      } else {
+        publishFailures++
+        log.warn('grid tariff notice publish failed', { error: p.reason })
+      }
     }
     return result
   } catch (error) {
@@ -111,14 +116,20 @@ export async function runCatalogueCheck(deps: {
       invalidEntries: result.invalidEntries,
       company,
       notified: result.notified,
+      publishFailures,
       durationMs: Math.round(performance.now() - started),
       requests: stats.requests,
       retries: stats.retries,
       fetchMs: Math.round(stats.fetchMs),
     }
+    // Info only for a clean answer; a covered run whose notice didn't reach
+    // every admin (or had no admin to reach) is a warning, like every other
+    // outcome someone should see.
+    const clean =
+      result.outcome === 'not_covered' ||
+      (result.outcome === 'covered' && result.notified > 0 && publishFailures === 0)
     if (thrown !== undefined) log.error('grid tariff catalogue check', { ...fields, error: thrown })
-    else if (result.outcome === 'covered' || result.outcome === 'not_covered')
-      log.info('grid tariff catalogue check', fields)
+    else if (clean) log.info('grid tariff catalogue check', fields)
     else log.warn('grid tariff catalogue check', fields)
   }
 }

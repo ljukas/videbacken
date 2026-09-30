@@ -145,9 +145,12 @@ describe('catalogue', () => {
     expect((await c.catalogue()).entries).toHaveLength(1)
   })
 
-  test('an empty catalogue is valid', async () => {
+  test('an empty catalogue is unexpected_response — the real one is never empty', async () => {
     const { c } = client({ [ROUTE]: () => jsonResponse([]) })
-    expect(await c.catalogue()).toEqual({ entries: [], invalidEntries: 0 })
+    expect(await rejection(c.catalogue())).toMatchObject({
+      code: 'unexpected_response',
+      status: 200,
+    })
   })
 
   test('a catalogue with no usable entry at all is unexpected_response, not empty', async () => {

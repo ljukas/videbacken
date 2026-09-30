@@ -24,11 +24,12 @@ const entrySchema = z.object({
 })
 
 /**
- * Validates the catalogue. A body that isn't an array, or a non-empty one with
- * no usable entry at all, is API drift (`unexpected_response`) — never an empty
- * catalogue that reads as "not covered". A single malformed entry is dropped and
- * counted instead, so one other company's bad row can't block the check; the
- * caller treats "no match, some dropped" as inconclusive.
+ * Validates the catalogue. A body that isn't an array, or one with no usable
+ * entry at all — an empty list included, since the real catalogue is never
+ * empty — is `unexpected_response`, never a catalogue that reads as "not
+ * covered". A single malformed entry is dropped and counted instead, so one
+ * other company's bad row can't block the check; the caller treats "no match,
+ * some dropped" as inconclusive.
  */
 export function parseCatalogue(body: unknown, status: number): Catalogue {
   if (!Array.isArray(body)) {
@@ -45,9 +46,9 @@ export function parseCatalogue(body: unknown, status: number): Catalogue {
     const { meteringPointIdFrom: from, meteringPointIdTo: to } = parsed.data
     if (BigInt(from) <= BigInt(to)) entries.push(parsed.data)
   }
-  if (body.length > 0 && entries.length === 0) {
+  if (entries.length === 0) {
     throw new EltariffError('unexpected_response', 'catalogue', status, {
-      message: `eltariff catalogue has no entry in the expected shape (HTTP ${status})`,
+      message: `eltariff catalogue has no usable entry (HTTP ${status})`,
     })
   }
   return { entries, invalidEntries: body.length - entries.length }

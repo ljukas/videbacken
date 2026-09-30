@@ -5,6 +5,7 @@ import { queue } from '~/lib/effects'
 import type { Catalogue, EltariffClient } from '~/lib/effects/eltariff'
 import { EltariffError } from '~/lib/effects/eltariff'
 import { createServerLogger } from '~/lib/logger/server'
+import * as userService from '~/lib/services/user'
 import { setupDatabase } from '~test/setup'
 import { runCatalogueCheck } from './catalogueCheck'
 
@@ -118,21 +119,57 @@ test('covered by an unnamed entry still notifies, with a null name', async () =>
 test('a failed publish is warned and not counted; the other admins still get theirs', async () => {
   await seedAdmins()
   publish.mockRejectedValueOnce(new Error('queue down'))
-  const { log, entries } = capturingLogger()
+  const { log, entries, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [covering], invalidEntries: 0 })
 
   const result = await runCatalogueCheck({ log, client, env: ENV })
 
   expect(result).toMatchObject({ outcome: 'covered', notified: 1 })
   expect(publish).toHaveBeenCalledTimes(2)
-  expect(entries().filter((e) => e.msg === 'grid tariff notice publish failed')).toHaveLength(1)
+  expect(entries().filter((e) => e.msg === 'grid tariff notice publish failed')).toEqual([
+    expect.objectContaining({ level: WARN }),
+  ])
+  // A notice that didn't reach everyone makes the run line a warning too.
+  expect(checkLines()).toEqual([
+    expect.objectContaining({ level: WARN, outcome: 'covered', notified: 1, publishFailures: 1 }),
+  ])
 })
 
-test('covered with no active admin notifies nobody', async () => {
+test('covered but every publish failed: notified 0, warned', async () => {
+  await seedAdmins()
+  publish.mockRejectedValue(new Error('queue down'))
+  const { log, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [covering], invalidEntries: 0 })
-  const result = await runCatalogueCheck({ log: capturingLogger().log, client, env: ENV })
+
+  const result = await runCatalogueCheck({ log, client, env: ENV })
+
+  expect(result).toMatchObject({ outcome: 'covered', notified: 0 })
+  expect(checkLines()).toEqual([
+    expect.objectContaining({ level: WARN, outcome: 'covered', publishFailures: 2 }),
+  ])
+})
+
+test('covered with no active admin notifies nobody, warned', async () => {
+  const { log, checkLines } = capturingLogger()
+  const client = fakeClient({ entries: [covering], invalidEntries: 0 })
+  const result = await runCatalogueCheck({ log, client, env: ENV })
   expect(result).toMatchObject({ outcome: 'covered', notified: 0 })
   expect(publish).not.toHaveBeenCalled()
+  expect(checkLines()).toEqual([expect.objectContaining({ level: WARN, outcome: 'covered' })])
+})
+
+test('an admin lookup failure is rethrown (a 500) and logged as error, not covered', async () => {
+  await seedAdmins()
+  const dbDown = new Error('db down')
+  vi.spyOn(userService, 'listActiveAdmins').mockRejectedValueOnce(dbDown)
+  const { log, checkLines } = capturingLogger()
+  const client = fakeClient({ entries: [covering], invalidEntries: 0 })
+
+  await expect(runCatalogueCheck({ log, client, env: ENV })).rejects.toBe(dbDown)
+  expect(publish).not.toHaveBeenCalled()
+  expect(checkLines()).toEqual([
+    expect.objectContaining({ level: ERROR, outcome: 'error', error: expect.anything() }),
+  ])
 })
 
 test('not covered: no email, one info line', async () => {
@@ -213,25 +250,45 @@ test('an unreadable catalogue is failed with its code: no email, warned', async 
   ])
 })
 
+test.each([
+  'forbidden',
+  'rate_limited',
+  'unreachable',
+] as const)('a %s catalogue read is failed with that code', async (code) => {
+  await seedAdmins()
+  const client = fakeClient(new EltariffError(code, 'catalogue'))
+  const result = await runCatalogueCheck({ log: capturingLogger().log, client, env: ENV })
+  expect(result).toMatchObject({ outcome: 'failed', code, notified: 0 })
+  expect(publish).not.toHaveBeenCalled()
+})
+
 test('an unexpected error is rethrown and logged once at error level', async () => {
   const { log, checkLines } = capturingLogger()
   const boom = new Error('bug')
   const client = fakeClient(boom)
 
   await expect(runCatalogueCheck({ log, client, env: ENV })).rejects.toBe(boom)
-  expect(checkLines()).toEqual([expect.objectContaining({ level: ERROR, outcome: 'error' })])
+  expect(checkLines()).toEqual([
+    expect.objectContaining({ level: ERROR, outcome: 'error', error: expect.anything() }),
+  ])
 })
 
-test('the facility ID never appears in the log output', async () => {
+test('the facility ID never appears in the log output, on any path', async () => {
   await seedAdmins()
   const { log, lines } = capturingLogger()
-  for (const client of [
+  const runs = [
     fakeClient({ entries: [covering], invalidEntries: 0 }),
+    fakeClient({ entries: [elsewhere], invalidEntries: 0 }),
     fakeClient({ entries: [elsewhere], invalidEntries: 1 }),
     fakeClient(new EltariffError('unreachable', 'catalogue')),
-  ]) {
-    await runCatalogueCheck({ log, client, env: ENV })
-  }
+  ]
+  for (const client of runs) await runCatalogueCheck({ log, client, env: ENV })
+  // A publish failure and an unexpected throw both log their error objects.
+  publish.mockRejectedValueOnce(new Error('queue down'))
+  await runCatalogueCheck({ log, client: runs[0], env: ENV })
+  await runCatalogueCheck({ log, client: fakeClient(new Error('bug')), env: ENV }).catch(() => {})
+
+  expect(lines.length).toBeGreaterThan(0)
   expect(lines.join('')).not.toContain(FACILITY)
 })
 

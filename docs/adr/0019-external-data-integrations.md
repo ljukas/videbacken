@@ -478,8 +478,8 @@ becomes a real source.
 What still holds:
 
 - **Fail closed.** An unset or malformed `GRID_FACILITY_ID` is `not_configured`, and nothing is fetched. An
-  unreadable catalogue is `failed` with its code. A non-empty catalogue with no usable entry is
-  `unexpected_response` (schema drift), not an empty list. A run with no match but some malformed entries dropped is
+  unreadable catalogue is `failed` with its code. A catalogue with no usable entry, an empty one included,
+  is `unexpected_response` (schema drift or an outage), never read as "not covered". A run with no match but some malformed entries dropped is
   `inconclusive` and warned, never read as "not covered". Only the two ID fields are required, so an entry without
   a company name still counts.
 - **One log line** per run (`grid tariff catalogue check`): info for `covered` / `not_covered`, warn otherwise, error
