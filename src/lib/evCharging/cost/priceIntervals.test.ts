@@ -10,6 +10,7 @@ import {
   SlotIndex,
   type TariffPeriod,
   tariffAt,
+  unitPrice,
 } from './index'
 
 const MIN = 60 * 1000
@@ -231,5 +232,17 @@ describe('mergeTotals', () => {
       feesSek: 1,
       totalSek: 4,
     })
+  })
+})
+
+describe('unitPrice', () => {
+  test('is the slot’s spot and the tariff’s fees per kWh, both incl VAT', () => {
+    const u = unitPrice(0.8, TARIFF)
+    expect(u.spotSek).toBeCloseTo(0.8 * 1.25)
+    expect(u.feesSek).toBeCloseTo((FEES_ORE / 100) * 1.25)
+  })
+
+  test('keeps a negative spot price negative', () => {
+    expect(unitPrice(-0.2, TARIFF).spotSek).toBeCloseTo(-0.25)
   })
 })

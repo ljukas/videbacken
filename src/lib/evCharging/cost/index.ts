@@ -13,5 +13,6 @@ export {
   priceIntervals,
   type TariffPeriod,
   tariffAt,
+  unitPrice,
 } from './priceIntervals'
 export { SlotIndex } from './slotIndex'

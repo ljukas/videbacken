@@ -67,6 +67,35 @@ new periods and follows the chosen year; it stays editable (some northern munici
 Grid fees will come from **Eltariff-API** once Vattenfall Eldistribution publishes (scope map "Phase 2b"); the retailer's
 monthly variable cost stays manual (no API).
 
+### Counterfactuals (Phase 4, 2026-09-30)
+
+[Phase 4 design](../superpowers/specs/2026-09-30-ev-charging-phase4-design.md). `src/lib/evCharging/economy/`
+(client-safe) re-delivers a session's energy inside its plug-in window — widened to cover every interval, so the
+actual schedule is always one of the candidates — at most at its **rate cap** (the highest observed kW, or kWh ÷
+window hours if higher), and prices the result with `priceIntervals`:
+
+- **immediate** fills the window's price pieces in time order from plug-in; **optimal** cheapest first; **dearest**
+  most expensive first. Pieces are ranked by the full price `(spot + fees) × (1 + VAT)` of the tariff at the slot's
+  Stockholm day (`unitPrice`, shared with `priceIntervals`). Greedy is exactly optimal: cost is linear in kWh with
+  independent per-slot capacity.
+- **Score** = (dearest − actual) ÷ (dearest − optimal), clamped to 0…1, null below a 0,01 kr gap. Saved =
+  immediate − actual (may be negative); left on the table = actual − optimal (never negative). Month/year scores
+  come from the **summed** totals (not an average of per-session scores) and are null when nothing is included.
+- A session without intervals (`no_hourly`) or with any part of its window lacking a price or tariff (`no_price`) is
+  **excluded and counted** — never priced over what remains.
+- Month/year sums bucket by the **session's start month** (counterfactuals only exist per session), so they can
+  differ by öre from the cost overview, which buckets by interval.
+- **Spot timing only**: everything is grid-bought (`gridShare` 1). Actual spreads each hour's energy over its
+  quarters while optimal can pick single quarters, so "left on the table" is slightly overstated. The rate cap pulls
+  the other way: it is built from **hourly averages**, so a car that drew 11 kW for 30 min of an hour gets a 5,5 kW
+  cap and the optimum is more constrained than the real charger, which understates "left on the table". The two
+  biases are unquantified and roughly offsetting; the page says "somewhat over- or understated".
+- Month average spot comes from `dailyAverageSpot` (per-day time-weighted average, aggregated in Postgres). The same
+  average feeds the year tile, and days without a tariff are skipped.
+- A session's `actualComplete` flag (`isComplete(actual)`) tells consumers whether `actual` prices every kWh; an
+  excluded `no_price` session can carry a partial actual, so kronor figures are shown only when it is set, and
+  `paidSpotOre` is null otherwise. `EconomyTotals` kronor are 0 when nothing is included: gate them on `included > 0`.
+
 ## Alternatives considered
 
 - **Materialize cost per session/interval.** Faster reads, but every tariff edit needs a recompute job and "which

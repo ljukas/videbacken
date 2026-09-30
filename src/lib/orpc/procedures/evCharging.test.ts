@@ -2,7 +2,7 @@ import { call } from '@orpc/server'
 import { afterEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
-import { evCharger, user } from '~/lib/db/schema'
+import { evChargeInterval, evCharger, evChargeSession, user } from '~/lib/db/schema'
 import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
 import { createZaptecClient, zaptec } from '~/lib/effects/zaptec'
 import {
@@ -14,6 +14,9 @@ import {
 } from '~/lib/effects/zaptec/fixtures'
 import type { Logger } from '~/lib/logger'
 import * as integrationSyncService from '~/lib/services/integrationSync'
+import { replaceDay } from '~/lib/services/spotPrice'
+import * as tariffService from '~/lib/services/tariff'
+import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import { setupDatabase } from '~test/setup'
 import { evChargingRouter } from './evCharging'
 
@@ -435,4 +438,117 @@ test('timeline records its sub-timings', async () => {
     timelineFetchMs: expect.any(Number),
     timelineAggregateMs: expect.any(Number),
   })
+})
+
+test('economy and session reject an unauthenticated caller', async () => {
+  await expect(
+    call(evChargingRouter.economy, {}, { context: baseContext() }),
+  ).rejects.toMatchObject({
+    code: 'UNAUTHORIZED',
+  })
+  await expect(
+    call(
+      evChargingRouter.session,
+      { sessionId: '00000000-0000-4000-8000-000000000000' },
+      { context: baseContext() },
+    ),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+})
+
+test('economy returns 12 empty months for a signed-in user with no data', async () => {
+  await signIn('user')
+  const result = await call(evChargingRouter.economy, {}, { context: baseContext() })
+  expect(result.months).toHaveLength(12)
+  expect(result.tiles).toMatchObject({ sessions: 0, included: 0, score: null })
+})
+
+test('economy rejects an out-of-range year as BAD_REQUEST', async () => {
+  await signIn('user')
+  await expect(
+    call(evChargingRouter.economy, { year: 2019 }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
+test('session maps an unknown id to EV_SESSION_NOT_FOUND (404) and a malformed one to BAD_REQUEST', async () => {
+  await signIn('user')
+  await expect(
+    call(
+      evChargingRouter.session,
+      { sessionId: '00000000-0000-4000-8000-000000000000' },
+      { context: baseContext() },
+    ),
+  ).rejects.toMatchObject({ code: 'EV_SESSION_NOT_FOUND', status: 404, defined: true })
+  await expect(
+    call(evChargingRouter.session, { sessionId: 'nope' }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
+test('economy records its sub-timings', async () => {
+  await signIn('user')
+  const timings: Record<string, number> = {}
+  await call(evChargingRouter.economy, {}, { context: { ...baseContext(), timings } })
+  expect(timings).toMatchObject({
+    economyEnergyMs: expect.any(Number),
+    economyTariffMs: expect.any(Number),
+    economySlotsMs: expect.any(Number),
+    economyDailySpotMs: expect.any(Number),
+    economyYearsMs: expect.any(Number),
+    economyComputeMs: expect.any(Number),
+  })
+})
+
+test('session records its sub-timings even when it fails', async () => {
+  await signIn('user')
+  const timings: Record<string, number> = {}
+  await call(
+    evChargingRouter.session,
+    { sessionId: '00000000-0000-4000-8000-000000000000' },
+    { context: { ...baseContext(), timings } },
+  ).catch(() => {})
+  expect(timings).toMatchObject({ economyEnergyMs: expect.any(Number) })
+})
+
+test('session returns one counted session with its economy for a signed-in user', async () => {
+  await signIn('user')
+  await tariffService.create({
+    validFrom: '2026-01-01',
+    retailMarkupOre: 5.331,
+    gridTransferOre: 35.6,
+    energyTaxOre: 36,
+    vatPercent: 25,
+  })
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 15, (i) => (i >= 40 && i < 44 ? 3 : 1)),
+  )
+  await db
+    .insert(evCharger)
+    .values({ id: 'charger-econ', name: 'Charger', installationId: 'install-econ' })
+  const [row] = await db
+    .insert(evChargeSession)
+    .values({
+      zaptecSessionId: 'zap-econ-1',
+      chargerId: 'charger-econ',
+      startAt: new Date('2026-09-28T08:00:00Z'),
+      endAt: new Date('2026-09-28T10:00:00Z'),
+      energyKwh: 10,
+    })
+    .returning({ id: evChargeSession.id })
+  await db.insert(evChargeInterval).values({
+    sessionId: row.id,
+    startAt: new Date('2026-09-28T08:00:00Z'),
+    endAt: new Date('2026-09-28T09:00:00Z'),
+    energyKwh: 10,
+  })
+
+  const result = await call(
+    evChargingRouter.session,
+    { sessionId: row.id },
+    { context: baseContext() },
+  )
+  expect(result.session.id).toBe(row.id)
+  expect(result.economy).toBeDefined()
+  expect(result.economy.excluded).toBeNull()
+  expect(result.economy.actualComplete).toBe(true)
 })

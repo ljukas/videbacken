@@ -2,7 +2,8 @@ import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
 import { setupDatabase } from '~test/setup'
-import { earliestCountedStartAt, listSessionEnergy } from './sessionEnergy'
+import { EvChargingDomainError } from './errors'
+import { earliestCountedStartAt, getSessionEnergy, listSessionEnergy } from './sessionEnergy'
 
 setupDatabase()
 
@@ -115,4 +116,47 @@ test('earliestCountedStartAt ignores uncounted sessions', async () => {
   await insertSession({ startAt: new Date('2026-01-29T08:00:00Z'), replacedByZaptecSessionId: 'z' })
   await insertSession({ startAt: new Date('2026-02-03T08:00:00Z') })
   expect(await earliestCountedStartAt()).toEqual(new Date('2026-02-03T08:00:00Z'))
+})
+
+test('getSessionEnergy returns one counted session with its stretches', async () => {
+  const id = await insertSession({ startAt: new Date('2026-09-03T20:00:00Z') })
+  await db.insert(evChargeInterval).values({
+    sessionId: id,
+    startAt: new Date('2026-09-03T20:00:00Z'),
+    endAt: new Date('2026-09-03T21:00:00Z'),
+    energyKwh: 10,
+  })
+  const s = await getSessionEnergy(id)
+  expect(s).toMatchObject({ sessionId: id, energyKwh: 10, estimated: false })
+  expect(s.stretches).toHaveLength(1)
+})
+
+test('getSessionEnergy throws EV_SESSION_NOT_FOUND for an unknown id', async () => {
+  await expect(getSessionEnergy('00000000-0000-4000-8000-000000000000')).rejects.toEqual(
+    new EvChargingDomainError('EV_SESSION_NOT_FOUND'),
+  )
+})
+
+test('getSessionEnergy picks the requested session among several counted ones', async () => {
+  const a = await insertSession({ startAt: new Date('2026-09-01T20:00:00Z') })
+  const b = await insertSession({ startAt: new Date('2026-09-02T20:00:00Z') })
+  expect((await getSessionEnergy(b)).sessionId).toBe(b)
+  expect((await getSessionEnergy(a)).sessionId).toBe(a)
+  await expect(getSessionEnergy('00000000-0000-4000-8000-000000000000')).rejects.toMatchObject({
+    code: 'EV_SESSION_NOT_FOUND',
+  })
+})
+
+test('getSessionEnergy throws EV_SESSION_NOT_FOUND for an uncounted (voided or noise) session', async () => {
+  const voided = await insertSession({ voided: true })
+  const noise = await insertSession({ energyKwh: 0.2 })
+  for (const id of [voided, noise]) {
+    await expect(getSessionEnergy(id)).rejects.toMatchObject({ code: 'EV_SESSION_NOT_FOUND' })
+  }
+})
+
+test('getSessionEnergy throws EV_SESSION_NOT_FOUND for a non-uuid id instead of a Postgres error', async () => {
+  await expect(getSessionEnergy('not-a-uuid')).rejects.toEqual(
+    new EvChargingDomainError('EV_SESSION_NOT_FOUND'),
+  )
 })

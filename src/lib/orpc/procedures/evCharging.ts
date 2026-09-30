@@ -1,11 +1,17 @@
 import { z } from 'zod'
 import { newCallStats, ZaptecError, zaptec } from '~/lib/effects/zaptec'
+import {
+  type EconomyTimings,
+  getEconomyOverview,
+  getSessionEconomy,
+} from '~/lib/evCharging/chargingEconomy'
 import { type CostTimings, getCostOverview, getSessionCosts } from '~/lib/evCharging/costing'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { runZaptecSync } from '~/lib/evCharging/sync'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import type { PatternTimings } from '~/lib/services/evCharging'
 import * as evChargingService from '~/lib/services/evCharging'
+import { EvChargingDomainError, type EvChargingDomainErrorCode } from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { runElprisSync } from '~/lib/spotPrice/sync'
 
@@ -16,6 +22,10 @@ const sourceInput = z.object({ source: chargingSource.default('zaptec') }).optio
 const yearInput = z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional()
 /** Upper bound on how long `liveStatus` may wait on Zaptec. */
 const LIVE_BUDGET_MS = 6_000
+
+const evChargingErrors = {
+  EV_SESSION_NOT_FOUND: { status: 404 },
+} satisfies Record<EvChargingDomainErrorCode, { status: number }>
 
 export const evChargingRouter = {
   // Reads — any signed-in (approved) user; the app is read-only for
@@ -80,6 +90,34 @@ export const evChargingRouter = {
       const result = await evChargingService.getChargingTimeline({ ...input, timings })
       recordPrefixedTimings(context.timings, 'timeline', timings)
       return result
+    }),
+
+  // How economically we charge (/charging/economy): counterfactual schedules
+  // over each plug-in window. Several queries + the pure math -> sub-timings.
+  economy: protectedProcedure
+    .input(z.object({ year: yearInput }))
+    .handler(async ({ input, context }) => {
+      const timings: EconomyTimings = {}
+      const result = await getEconomyOverview({ year: input.year, timings })
+      recordPrefixedTimings(context.timings, 'economy', timings)
+      return result
+    }),
+
+  // One session's economy + chart data (/charging/sessions/$sessionId). An
+  // unknown or uncounted id is a typed 404 the page turns into "not found".
+  session: protectedProcedure
+    .errors(evChargingErrors)
+    .input(z.object({ sessionId: z.uuid() }))
+    .handler(async ({ input, context, errors }) => {
+      const timings: EconomyTimings = {}
+      try {
+        return await getSessionEconomy({ sessionId: input.sessionId, timings })
+      } catch (err) {
+        if (err instanceof EvChargingDomainError) throw errors[err.code]()
+        throw err
+      } finally {
+        recordPrefixedTimings(context.timings, 'economy', timings)
+      }
     }),
 
   // `includeAdminDetail` is a flag derived from the caller's own role, never

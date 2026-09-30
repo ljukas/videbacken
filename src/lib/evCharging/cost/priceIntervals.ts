@@ -97,6 +97,20 @@ export function tariffAt(tariffsAsc: readonly TariffPeriod[], day: string): Tari
 }
 
 /**
+ * SEK per kWh incl VAT of a slot's spot price and of a tariff's per-kWh fees
+ * (markup + grid transfer + energy tax). The one formula every kronor figure
+ * uses — priced energy here, and slot ranking in the Phase 4 counterfactuals.
+ */
+export function unitPrice(
+  sekPerKwh: number,
+  tariff: TariffPeriod,
+): { spotSek: number; feesSek: number } {
+  const vat = 1 + tariff.vatPercent / 100
+  const feesOre = tariff.retailMarkupOre + tariff.gridTransferOre + tariff.energyTaxOre
+  return { spotSek: sekPerKwh * vat, feesSek: (feesOre / 100) * vat }
+}
+
+/**
  * Prices intervals against spot slots and tariffs. Each interval's grid kWh is
  * split into pieces by the slots it overlaps (kWh × overlap / duration); an
  * uncovered stretch is a no-price piece. A priced piece takes the tariff of its
@@ -130,10 +144,9 @@ export function priceIntervals(
         t.noTariffKwh += kwh
         continue
       }
-      const vat = 1 + tariff.vatPercent / 100
-      const spotSek = kwh * slot.sekPerKwh * vat
-      const feesOre = tariff.retailMarkupOre + tariff.gridTransferOre + tariff.energyTaxOre
-      const feesSek = ((kwh * feesOre) / 100) * vat
+      const unit = unitPrice(slot.sekPerKwh, tariff)
+      const spotSek = kwh * unit.spotSek
+      const feesSek = kwh * unit.feesSek
       t.fullKwh += kwh
       t.spotSek += spotSek
       t.feesSek += feesSek
