@@ -56,6 +56,26 @@ describe('windowPieces', () => {
     expect(windowPieces(WINDOW, partial, [TARIFF])).toBeNull()
   })
 
+  test('is null when the window starts before the first stored slot', () => {
+    const late = new SlotIndex(
+      daySlots('2026-09-28', 15).filter((s) => s.startMs >= utc('2026-09-28T08:30Z')),
+    )
+    expect(windowPieces(WINDOW, late, [TARIFF])).toBeNull()
+  })
+
+  test('is null when a whole price day is missing in the middle of an overnight window', () => {
+    const slots = new SlotIndex([...daySlots('2026-09-28', 15), ...daySlots('2026-09-30', 15)])
+    // local 2026-09-28 20:00 → 2026-09-30 02:00 (CEST)
+    const window = { startMs: utc('2026-09-28T18:00Z'), endMs: utc('2026-09-30T00:00Z') }
+    expect(windowPieces(window, slots, [TARIFF])).toBeNull()
+  })
+
+  test('is null for a zero-length window', () => {
+    const at = utc('2026-09-28T08:10Z')
+    expect(windowPieces({ startMs: at, endMs: at }, day, [TARIFF])).toBeNull()
+    expect(windowPieces({ startMs: at, endMs: at - 1 }, day, [TARIFF])).toBeNull()
+  })
+
   test('is null when a slot has no tariff in force', () => {
     expect(windowPieces(WINDOW, day, [{ ...TARIFF, validFrom: '2026-10-01' }])).toBeNull()
   })
@@ -153,6 +173,38 @@ describe('schedule', () => {
 
   test('no energy → no schedule', () => {
     expect(schedule('optimal', 0, 10, pieces)).toEqual([])
+  })
+
+  test.each([
+    ['rate 0', 5, 0],
+    ['rate -1', 5, -1],
+    ['rate NaN', 5, Number.NaN],
+    ['rate Infinity', 5, Number.POSITIVE_INFINITY],
+    ['kwh NaN', Number.NaN, 10],
+    ['kwh -1', -1, 10],
+  ])('invalid input throws: %s', (_name, kwh, rate) => {
+    expect(() => schedule('optimal', kwh, rate, pieces)).toThrow(RangeError)
+  })
+
+  test('zero energy needs no rate', () => {
+    expect(schedule('optimal', 0, 0, pieces)).toEqual([])
+  })
+
+  test('a session whose rate cap is energy ÷ window fills an off-grid window exactly', () => {
+    const session: EconomySession = {
+      startMs: utc('2026-09-28T08:07Z'),
+      endMs: utc('2026-09-28T12:07Z'),
+      stretches: [{ startMs: utc('2026-09-28T09:00Z'), endMs: utc('2026-09-28T09:00Z'), kwh: 20 }],
+      estimated: false,
+    }
+    const window = economyWindow(session)
+    const wp = windowPieces(window, day, [TARIFF]) ?? []
+    expect(wp.length).toBeGreaterThan(0)
+    const rate = rateCapKw(session, window)
+    for (const kind of ['immediate', 'optimal', 'dearest'] as const) {
+      const s = schedule(kind, sessionKwh(session), rate, wp)
+      expect(sum(s, (iv) => iv.kwh)).toBeCloseTo(sessionKwh(session))
+    }
   })
 
   test('more energy than the window can take at the rate is a caller bug', () => {

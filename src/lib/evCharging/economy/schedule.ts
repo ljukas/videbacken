@@ -66,6 +66,7 @@ export function windowPieces(
   slots: SlotIndex,
   tariffsAsc: readonly TariffPeriod[],
 ): PricedPiece[] | null {
+  if (!(window.endMs > window.startMs)) return null
   const pieces: PricedPiece[] = []
   let cursor = window.startMs
   for (const slot of slots.between(window.startMs, window.endMs)) {
@@ -92,8 +93,11 @@ export function schedule(
   rateKw: number,
   pieces: readonly PricedPiece[],
 ): EnergyInterval[] {
-  if (kwh <= 0) return []
-  if (!(rateKw > 0)) throw new RangeError('Rate cap must be positive')
+  if (!Number.isFinite(kwh) || kwh < 0)
+    throw new RangeError('Energy must be finite and non-negative')
+  if (kwh === 0) return []
+  if (!Number.isFinite(rateKw) || rateKw <= 0)
+    throw new RangeError('Rate cap must be finite and positive')
   const order =
     kind === 'immediate'
       ? pieces
