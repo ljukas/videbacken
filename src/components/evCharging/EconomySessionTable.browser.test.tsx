@@ -131,3 +131,13 @@ test('on a phone the comparison columns fold under the date', async () => {
   )
   expect(folded(2)?.textContent).toBe(m.charging_economy_reason_no_price())
 })
+
+test('the date links to the session page', async () => {
+  const { screen } = await renderWithRouter(<EconomySessionTable sessions={[row()]} />)
+  const link = screen.getByRole('link', {
+    name: m.charging_session_link_label({ date: '5 sep. 2026' }),
+  })
+  await expect
+    .element(link)
+    .toHaveAttribute('href', '/charging/sessions/11111111-1111-4111-8111-111111111111')
+})

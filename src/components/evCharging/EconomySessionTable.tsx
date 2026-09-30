@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import {
   Table,
   TableBody,
@@ -16,6 +17,7 @@ import {
   formatSignedSek,
   formatTime,
 } from './format'
+import { Unknown } from './Unknown'
 
 type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
 
@@ -127,9 +129,17 @@ export function EconomySessionTable({
   )
 }
 
-// C1 turns this into a link to the session page.
 function SessionDate({ row }: { row: Row }) {
-  return <span>{formatDate(row.startAt)}</span>
+  return (
+    <Link
+      to="/charging/sessions/$sessionId"
+      params={{ sessionId: row.sessionId }}
+      aria-label={m.charging_session_link_label({ date: formatDate(row.startAt) })}
+      className="font-medium underline-offset-4 hover:underline"
+    >
+      {formatDate(row.startAt)}
+    </Link>
+  )
 }
 
 // One labelled value, wrapped whole so a line break falls between values.
@@ -146,16 +156,6 @@ function FoldedValue({
   return (
     <span className="inline-block">
       {label} {unknown ? <Unknown label={m.charging_economy_tile_no_spread()} /> : value}
-    </span>
-  )
-}
-
-// A dash that still says why, for screen readers.
-function Unknown({ label }: { label: string }) {
-  return (
-    <span title={label}>
-      <span aria-hidden="true">—</span>
-      <span className="sr-only">{label}</span>
     </span>
   )
 }
