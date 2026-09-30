@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ZaptecError, zaptec } from '~/lib/effects/zaptec'
+import { newCallStats, ZaptecError, zaptec } from '~/lib/effects/zaptec'
 import { type CostTimings, getCostOverview, getSessionCosts } from '~/lib/evCharging/costing'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { runZaptecSync } from '~/lib/evCharging/sync'
@@ -89,17 +89,36 @@ export const evChargingRouter = {
     const charger = await evChargingService.findLiveCharger()
     if (context.timings) context.timings.findChargerMs = Math.round(performance.now() - findStart)
     if (!charger) return null
+    // Splits `zaptecLiveMs` for the timing line. `zaptecAuthMs`/`zaptecFetchMs`
+    // count only *this* caller's completed HTTP attempts (login / state read);
+    // `zaptecRequests`/`zaptecRetries` its attempts started. The remainder
+    // `zaptecLiveMs − auth − fetch` is waiting: on another caller's shared
+    // login, on a login still in flight when the budget expired (then auth 0,
+    // requests 1, `zaptecLiveFailed` 1), on retry backoff, or on the adapter's
+    // lazy import. `zaptecRequests` 0 means no HTTP at all: answered from the
+    // client's state cache, or — with `zaptecLiveFailed` 1 — its failure cache.
+    const stats = newCallStats()
     const liveStart = performance.now()
     try {
-      return await zaptec.liveState(charger.id, { signal: AbortSignal.timeout(LIVE_BUDGET_MS) })
+      return await zaptec.liveState(charger.id, {
+        signal: AbortSignal.timeout(LIVE_BUDGET_MS),
+        stats,
+      })
     } catch (err) {
       if (err instanceof ZaptecError) {
+        if (context.timings) context.timings.zaptecLiveFailed = 1
         context.log.debug('evCharging: liveStatus unavailable', { code: err.code })
         return null
       }
       throw err
     } finally {
-      if (context.timings) context.timings.zaptecLiveMs = Math.round(performance.now() - liveStart)
+      if (context.timings) {
+        context.timings.zaptecLiveMs = Math.round(performance.now() - liveStart)
+        context.timings.zaptecAuthMs = Math.round(stats.authMs)
+        context.timings.zaptecFetchMs = Math.round(stats.fetchMs)
+        context.timings.zaptecRequests = stats.requests
+        context.timings.zaptecRetries = stats.retries
+      }
     }
   }),
 
