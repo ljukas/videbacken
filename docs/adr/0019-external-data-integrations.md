@@ -482,7 +482,8 @@ What still holds:
   is `unexpected_response` (schema drift or an outage), never read as "not covered". A run with no match but some malformed entries dropped is
   `inconclusive` and warned, never read as "not covered". Only the two ID fields are required, so an entry without
   a company name still counts.
-- **One log line** per run (`grid tariff catalogue check`): info for `covered` / `not_covered`, warn otherwise, error
+- **One log line** per run (`grid tariff catalogue check`): info for `not_covered` and for a `covered` run whose
+  notice reached every admin; warn otherwise, including a `covered` run that reached nobody or not everyone; error
   for a bug. Failures surface only in Runtime Logs; that is accepted for this watcher.
 - **Cron status codes** as above: 200 for every checked outcome, 500 only for an unexpected throw.
 - **The facility ID never leaves the process.** Only `GET /tariffcatalogue/all` is fetched (never `lookup/{mpid}`),
@@ -521,6 +522,9 @@ a duplicate here) — these are pointers, not summaries to read instead of them.
   `double precision` energy columns and their CHECKs the importer re-validates in JS before writing.
 - `src/lib/effects/elpris/` — the keyless spot-price client (DST-safe slot parsing, unit cross-check);
   `src/lib/spotPrice/sync.ts` — `runElprisSync`, the missing-days planner.
+- `src/lib/effects/eltariff/` — the keyless Eltariff catalogue client (drop-and-count parse, no usable entry =
+  `unexpected_response`); `src/lib/gridTariff/` — the monthly watcher (`catalogueCheck.ts`) and its local `BigInt`
+  matcher. Not a source; see the 2026-09-30 amendment.
 - `src/lib/integrations/runPulledSync.ts` — `runPulledSync`, the source-generic run lifecycle
   (lease, deadline, record-once outcome, transition-only alert email, the one `integration sync run`
   log line) and `withDeadline`; `src/lib/integrations/cron.ts` — `verifyCronSecret` + `handleCronRun`

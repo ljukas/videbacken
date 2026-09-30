@@ -62,7 +62,7 @@ src/
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
     services/                   approvedEmail, user, file, sensor, evCharging, integrationSync, spotPrice, tariff — own all DB access + domain rules (ADR-0002)
-    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, eltariff (pulled, fail closed — ADR-0019); http.ts + testing/fakeFetch shared by the pulled clients
+    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris (pulled, fail closed — ADR-0019), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)

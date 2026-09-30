@@ -37,7 +37,7 @@
 >   already requires of oRPC procedures. Read that list as including "or the domain orchestrator an
 >   oRPC procedure and a cron route both call into," not literally only files under `orpc/procedures/`.
 > - **Sanctioned caller classes gain two more entrants**: `/api/cron/*` (currently
->   `/api/cron/zaptec-sync` and `/api/cron/elpris-sync`) and `/api/webhooks/shelly` (already shipped, undocumented here until
+>   `/api/cron/zaptec-sync`, `/api/cron/elpris-sync` and `/api/cron/grid-tariff-catalogue`) and `/api/webhooks/shelly` (already shipped, undocumented here until
 >   now) — both unauthenticated-by-transport routes that verify their own shared secret
 >   (`CRON_SECRET`, `SHELLY_WEBHOOK_TOKEN`) because their callers (Vercel Cron, a Shelly device) carry
 >   no session and aren't oRPC clients.

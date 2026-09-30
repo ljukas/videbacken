@@ -130,7 +130,9 @@ export default defineConfig({
                 { path: '/api/cron/zaptec-sync', schedule: '0 * * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 12 * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 15 * * *' },
-                // Monthly, the 1st at 06:00 UTC: the Eltariff catalogue changes rarely.
+                // Not a pulled integration: the grid-tariff watcher (ADR-0019's
+                // 2026-09-30 amendment), same secret gate. Monthly, the 1st at
+                // 06:00 UTC (src/lib/gridTariff/catalogueCheckCron.ts).
                 { path: '/api/cron/grid-tariff-catalogue', schedule: '0 6 1 * *' },
               ],
             },
