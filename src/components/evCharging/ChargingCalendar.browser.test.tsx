@@ -16,6 +16,8 @@ const daily = [
 function renderCalendar(onPickMonth: (month: number) => void = () => {}, width = 1000) {
   return renderWithProviders(
     <div style={{ width }}>
+      {/* No Tailwind in the browser project: stand in for the tooltip's whitespace-nowrap. */}
+      <style>{'.whitespace-nowrap{white-space:nowrap}'}</style>
       <ChargingCalendar
         year={2026}
         daily={daily}
@@ -63,6 +65,31 @@ test('hovering a day opens a singular-session tooltip above that cell', async ()
   expect(t.bottom).toBeLessThanOrEqual(c.top + 4)
   expect(t.left).toBeLessThan(c.right)
   expect(t.right).toBeGreaterThan(c.left)
+})
+
+test('a tooltip for a mark at the window edge is kept inside the window', async () => {
+  // A narrow chart pinned to the right edge: the tooltip (portalled to <body>) must not spill out.
+  const { screen } = await renderWithProviders(
+    <div style={{ position: 'absolute', top: 0, left: window.innerWidth - 120, width: 120 }}>
+      <style>{'.whitespace-nowrap{white-space:nowrap}'}</style>
+      <ChargingCalendar
+        year={2026}
+        daily={daily}
+        months={months}
+        today="2026-09-30"
+        onPickMonth={() => {}}
+      />
+    </div>,
+  )
+  await expect.poll(() => screen.container.querySelectorAll('rect[data-day]').length).toBe(365)
+  const cell = screen.container.querySelector('rect[data-day="2026-09-12"]')
+  if (!cell) throw new Error('missing cell')
+  await userEvent.hover(cell)
+  const tip = screen.getByText(/12 sep.*10,5 kWh · 2 sessioner$/)
+  await expect.element(tip).toBeInTheDocument()
+  const t = tip.element().getBoundingClientRect()
+  expect(t.left).toBeGreaterThanOrEqual(0)
+  expect(t.right).toBeLessThanOrEqual(window.innerWidth)
 })
 
 test('a two-session day says sessioner', async () => {
