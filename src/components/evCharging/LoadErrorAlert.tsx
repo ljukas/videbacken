@@ -5,7 +5,8 @@ import { SyncNowButton } from './SyncNowButton'
 
 // The slice of a `useQuery` result the alert reads.
 export type LoadErrorQuery = {
-  isError: boolean
+  data: unknown
+  errorUpdateCount: number
   isFetching: boolean
   refetch: () => unknown
 }
@@ -14,8 +15,13 @@ export type LoadErrorQuery = {
 // Alert with a retry, instead of a blank section. Render it where the query's
 // data would go; it renders nothing unless the load failed, and its retry
 // refetches the query.
+//
+// Keyed on errorUpdateCount, not isError: refetching a query that has no data
+// resets it to `pending` with `error: null` (query-core's fetchState), so
+// isError drops for the whole retry, backoff included, and the section would
+// blank. The count survives the reset; a success brings data and ends this.
 export function LoadErrorAlert({ title, query }: { title: string; query: LoadErrorQuery }) {
-  if (!query.isError) return null
+  if (query.data !== undefined || query.errorUpdateCount === 0) return null
   return (
     <Alert variant="destructive" role="alert">
       <AlertTriangleIcon />
