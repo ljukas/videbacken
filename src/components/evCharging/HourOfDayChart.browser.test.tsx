@@ -26,6 +26,22 @@ test('exposes the 24 values in an sr-only table', async () => {
   expect(screen.container.querySelectorAll('tbody tr')).toHaveLength(24)
 })
 
+test('hides the chart from assistive tech; the table carries the values', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <HourOfDayChart hours={hours} metric="kwh" />
+    </div>,
+  )
+  await vi.waitFor(() => {
+    expect(screen.container.querySelector('svg.recharts-surface')).not.toBeNull()
+  })
+  const svg = screen.container.querySelector('svg.recharts-surface')
+  expect(svg?.hasAttribute('tabindex')).toBe(false)
+  expect(svg?.getAttribute('role')).not.toBe('application')
+  expect(svg?.closest('[data-chart]')?.getAttribute('aria-hidden')).toBe('true')
+  expect(screen.container.querySelector('table.sr-only caption')).not.toBeNull()
+})
+
 test('stays readable at 320 px', async () => {
   const { screen } = await renderWithProviders(
     <div style={{ width: 320 }}>
