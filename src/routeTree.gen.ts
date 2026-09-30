@@ -24,6 +24,7 @@ import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authent
 import { Route as ApiWebhooksShellyRouteImport } from './routes/api/webhooks/shelly'
 import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
 import { Route as ApiCronZaptecSyncRouteImport } from './routes/api/cron/zaptec-sync'
+import { Route as ApiCronGridTariffCatalogueRouteImport } from './routes/api/cron/grid-tariff-catalogue'
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
@@ -103,6 +104,12 @@ const ApiCronZaptecSyncRoute = ApiCronZaptecSyncRouteImport.update({
   path: '/api/cron/zaptec-sync',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronGridTariffCatalogueRoute =
+  ApiCronGridTariffCatalogueRouteImport.update({
+    id: '/api/cron/grid-tariff-catalogue',
+    path: '/api/cron/grid-tariff-catalogue',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCronElprisSyncRoute = ApiCronElprisSyncRouteImport.update({
   id: '/api/cron/elpris-sync',
   path: '/api/cron/elpris-sync',
@@ -134,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
+  '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
@@ -152,6 +160,7 @@ export interface FileRoutesByTo {
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
+  '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
@@ -173,6 +182,7 @@ export interface FileRoutesById {
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
+  '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
@@ -194,6 +204,7 @@ export interface FileRouteTypes {
     | '/account/profile'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
+    | '/api/cron/grid-tariff-catalogue'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
@@ -212,6 +223,7 @@ export interface FileRouteTypes {
     | '/account/profile'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
+    | '/api/cron/grid-tariff-catalogue'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
@@ -232,6 +244,7 @@ export interface FileRouteTypes {
     | '/_authenticated/account/profile'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
+    | '/api/cron/grid-tariff-catalogue'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
@@ -246,6 +259,7 @@ export interface RootRouteChildren {
   ApiLogRoute: typeof ApiLogRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCronElprisSyncRoute: typeof ApiCronElprisSyncRoute
+  ApiCronGridTariffCatalogueRoute: typeof ApiCronGridTariffCatalogueRoute
   ApiCronZaptecSyncRoute: typeof ApiCronZaptecSyncRoute
   ApiRpcSplatRoute: typeof ApiRpcSplatRoute
   ApiWebhooksShellyRoute: typeof ApiWebhooksShellyRoute
@@ -358,6 +372,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronZaptecSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/grid-tariff-catalogue': {
+      id: '/api/cron/grid-tariff-catalogue'
+      path: '/api/cron/grid-tariff-catalogue'
+      fullPath: '/api/cron/grid-tariff-catalogue'
+      preLoaderRoute: typeof ApiCronGridTariffCatalogueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/elpris-sync': {
       id: '/api/cron/elpris-sync'
       path: '/api/cron/elpris-sync'
@@ -425,6 +446,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLogRoute: ApiLogRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCronElprisSyncRoute: ApiCronElprisSyncRoute,
+  ApiCronGridTariffCatalogueRoute: ApiCronGridTariffCatalogueRoute,
   ApiCronZaptecSyncRoute: ApiCronZaptecSyncRoute,
   ApiRpcSplatRoute: ApiRpcSplatRoute,
   ApiWebhooksShellyRoute: ApiWebhooksShellyRoute,

@@ -130,6 +130,8 @@ export default defineConfig({
                 { path: '/api/cron/zaptec-sync', schedule: '0 * * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 12 * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 15 * * *' },
+                // Monthly, the 1st at 06:00 UTC: the Eltariff catalogue changes rarely.
+                { path: '/api/cron/grid-tariff-catalogue', schedule: '0 6 1 * *' },
               ],
             },
             // Subscribes the Vercel preset's queue handler to each topic.
