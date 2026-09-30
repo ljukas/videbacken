@@ -119,12 +119,16 @@ test('only counted sessions of the selected year, newest first, bucketed by star
   await session('2026-09-28T11:00:00Z', '2026-09-28T12:00:00Z', 9, [], { voided: true })
   await session('2026-09-28T13:00:00Z', '2026-09-28T14:00:00Z', 0.2) // noise
   await session('2025-09-28T08:00:00Z', '2025-09-28T09:00:00Z', 5) // another year
+  await session('2026-09-28T15:00:00Z', '2026-09-28T16:00:00Z', 6, [], {
+    replacedByZaptecSessionId: 'zap-other',
+  })
 
   const o = await getEconomyOverview({ year: 2026, now: NOW })
   expect(o.sessions.map((s) => s.sessionId)).toEqual([september, overnight])
   expect(o.months[7]).toMatchObject({ month: 8, sessions: 1, included: 1 })
   expect(o.months[8]).toMatchObject({ month: 9, sessions: 1, included: 1 })
-  expect(o.tiles).toMatchObject({ sessions: 2, included: 2 })
+  expect(o.tiles).toMatchObject({ sessions: 2, included: 2, excluded: { noHourly: 0, noPrice: 0 } })
+  expect(o.months.reduce((n, m) => n + m.sessions, 0)).toBe(2)
   expect(o.years).toEqual([2026, 2025])
 })
 
@@ -180,6 +184,9 @@ test('getSessionEconomy throws EV_SESSION_NOT_FOUND for an unknown id', async ()
   await expect(
     getSessionEconomy({ sessionId: '00000000-0000-4000-8000-000000000000' }),
   ).rejects.toBeInstanceOf(EvChargingDomainError)
+  await expect(
+    getSessionEconomy({ sessionId: '00000000-0000-4000-8000-000000000000' }),
+  ).rejects.toMatchObject({ code: 'EV_SESSION_NOT_FOUND' })
 })
 
 test('both reads fill their timings sink', async () => {
@@ -190,6 +197,110 @@ test('both reads fill their timings sink', async () => {
     tariffMs: expect.any(Number),
     slotsMs: expect.any(Number),
     dailySpotMs: expect.any(Number),
+    yearsMs: expect.any(Number),
     computeMs: expect.any(Number),
   })
+})
+
+test('getSessionEconomy fills its timings sink', async () => {
+  await seedPrices()
+  const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 10, [
+    ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 10],
+  ])
+  const timings: Record<string, number> = {}
+  await getSessionEconomy({ sessionId: id, timings })
+  expect(timings).toMatchObject({
+    energyMs: expect.any(Number),
+    tariffMs: expect.any(Number),
+    slotsMs: expect.any(Number),
+    computeMs: expect.any(Number),
+  })
+})
+
+test('a session starting at 00:30 local on the 1st belongs to the new month', async () => {
+  await seedPrices()
+  await replaceDay(
+    'SE3',
+    '2026-09-01',
+    daySlots('2026-09-01', 15, () => 1),
+  )
+  // 22:30Z Aug 31 = 00:30 Sep 1 in Stockholm (UTC+2).
+  await session('2026-08-31T22:30:00Z', '2026-08-31T23:30:00Z', 5, [
+    ['2026-08-31T22:30:00Z', '2026-08-31T23:30:00Z', 5],
+  ])
+  const { months } = await getEconomyOverview({ year: 2026, now: NOW })
+  expect(months[8].sessions).toBe(1)
+  expect(months[7].sessions).toBe(0)
+})
+
+test('a session starting at 00:30 local on 1 January belongs to the new year', async () => {
+  await seedPrices()
+  // 23:30Z Dec 31 = 00:30 Jan 1 in Stockholm (UTC+1).
+  const id = await session('2025-12-31T23:30:00Z', '2026-01-01T00:30:00Z', 5, [
+    ['2025-12-31T23:30:00Z', '2026-01-01T00:30:00Z', 5],
+  ])
+  const y2026 = await getEconomyOverview({ year: 2026, now: NOW })
+  expect(y2026.sessions.map((s) => s.sessionId)).toEqual([id])
+  expect(y2026.months[0].sessions).toBe(1)
+  const y2025 = await getEconomyOverview({ year: 2025, now: NOW })
+  expect(y2025.sessions).toEqual([])
+})
+
+test('a non-current year selection reads that year’s months and price days', async () => {
+  await tariffService.create({ ...TARIFF, validFrom: '2025-01-01' })
+  await replaceDay(
+    'SE3',
+    '2025-06-10',
+    daySlots('2025-06-10', 15, () => 2),
+  )
+  const y2025 = await getEconomyOverview({ year: 2025, now: NOW })
+  expect(y2025.year).toBe(2025)
+  expect(y2025.months[5].avgSpotOre).toBeCloseTo(2 * 1.25 * 100)
+  expect(y2025.tiles.avgSpotOre).toBeCloseTo(2 * 1.25 * 100)
+  const y2026 = await getEconomyOverview({ year: 2026, now: NOW })
+  expect(y2026.months[5].avgSpotOre).toBeNull()
+  expect(y2026.tiles.avgSpotOre).toBeNull()
+})
+
+test('years: only counted sessions contribute, the future sorts first, and it ignores the selection', async () => {
+  await session('2027-03-01T08:00:00Z', '2027-03-01T09:00:00Z', 5)
+  await session('2025-03-01T08:00:00Z', '2025-03-01T09:00:00Z', 5)
+  await session('2024-03-01T08:00:00Z', '2024-03-01T09:00:00Z', 5, [], { voided: true })
+  await session('2023-03-01T08:00:00Z', '2023-03-01T09:00:00Z', 0.2) // noise
+  await session('2022-03-01T08:00:00Z', '2022-03-01T09:00:00Z', 5, [], {
+    replacedByZaptecSessionId: 'zap-other',
+  })
+  const current = await getEconomyOverview({ now: NOW })
+  expect(current.years).toEqual([2027, 2026, 2025])
+  const picked = await getEconomyOverview({ year: 2025, now: NOW })
+  expect(picked.years).toEqual([2027, 2026, 2025])
+})
+
+test('getSessionEconomy on a day without a tariff: null prices, excluded no_price', async () => {
+  // Prices but no tariff period at all.
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 15, () => 1),
+  )
+  const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 10, [
+    ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 10],
+  ])
+  const d = await getSessionEconomy({ sessionId: id })
+  expect(d.prices).toHaveLength(16)
+  expect(d.prices.every((p) => p.spotOre === null)).toBe(true)
+  expect(d.economy.excluded).toBe('no_price')
+  expect(d.economy.counterfactual).toBeNull()
+  expect(d.optimalSchedule).toBeNull()
+})
+
+test('getSessionEconomy on an estimated session (no intervals): no chart data, excluded no_hourly', async () => {
+  await seedPrices()
+  const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 10)
+  const d = await getSessionEconomy({ sessionId: id })
+  expect(d.session.estimated).toBe(true)
+  expect(d.session.peakKw).toBeNull()
+  expect(d.intervals).toEqual([])
+  expect(d.economy.excluded).toBe('no_hourly')
+  expect(d.optimalSchedule).toBeNull()
 })
