@@ -436,3 +436,71 @@ test('timeline records its sub-timings', async () => {
     timelineAggregateMs: expect.any(Number),
   })
 })
+
+test('economy and session reject an unauthenticated caller', async () => {
+  await expect(
+    call(evChargingRouter.economy, {}, { context: baseContext() }),
+  ).rejects.toMatchObject({
+    code: 'UNAUTHORIZED',
+  })
+  await expect(
+    call(
+      evChargingRouter.session,
+      { sessionId: '00000000-0000-4000-8000-000000000000' },
+      { context: baseContext() },
+    ),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+})
+
+test('economy returns 12 empty months for a signed-in user with no data', async () => {
+  await signIn('user')
+  const result = await call(evChargingRouter.economy, {}, { context: baseContext() })
+  expect(result.months).toHaveLength(12)
+  expect(result.tiles).toMatchObject({ sessions: 0, included: 0, score: null })
+})
+
+test('economy rejects an out-of-range year as BAD_REQUEST', async () => {
+  await signIn('user')
+  await expect(
+    call(evChargingRouter.economy, { year: 2019 }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
+test('session maps an unknown id to EV_SESSION_NOT_FOUND (404) and a malformed one to BAD_REQUEST', async () => {
+  await signIn('user')
+  await expect(
+    call(
+      evChargingRouter.session,
+      { sessionId: '00000000-0000-4000-8000-000000000000' },
+      { context: baseContext() },
+    ),
+  ).rejects.toMatchObject({ code: 'EV_SESSION_NOT_FOUND', status: 404, defined: true })
+  await expect(
+    call(evChargingRouter.session, { sessionId: 'nope' }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
+test('economy records its sub-timings', async () => {
+  await signIn('user')
+  const timings: Record<string, number> = {}
+  await call(evChargingRouter.economy, {}, { context: { ...baseContext(), timings } })
+  expect(timings).toMatchObject({
+    economyEnergyMs: expect.any(Number),
+    economyTariffMs: expect.any(Number),
+    economySlotsMs: expect.any(Number),
+    economyDailySpotMs: expect.any(Number),
+    economyYearsMs: expect.any(Number),
+    economyComputeMs: expect.any(Number),
+  })
+})
+
+test('session records its sub-timings even when it fails', async () => {
+  await signIn('user')
+  const timings: Record<string, number> = {}
+  await call(
+    evChargingRouter.session,
+    { sessionId: '00000000-0000-4000-8000-000000000000' },
+    { context: { ...baseContext(), timings } },
+  ).catch(() => {})
+  expect(timings).toMatchObject({ economyEnergyMs: expect.any(Number) })
+})
