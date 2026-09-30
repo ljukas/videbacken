@@ -17,9 +17,9 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as ApiLogRouteImport } from './routes/api/log'
 import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
 import { Route as AuthenticatedSensorsRouteImport } from './routes/_authenticated/sensors'
-import { Route as AuthenticatedChargingRouteImport } from './routes/_authenticated/charging'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
+import { Route as AuthenticatedChargingIndexRouteImport } from './routes/_authenticated/charging/index'
 import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authenticated/account/index'
 import { Route as ApiWebhooksShellyRouteImport } from './routes/api/webhooks/shelly'
 import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
@@ -67,11 +67,6 @@ const AuthenticatedSensorsRoute = AuthenticatedSensorsRouteImport.update({
   path: '/sensors',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedChargingRoute = AuthenticatedChargingRouteImport.update({
-  id: '/charging',
-  path: '/charging',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -82,6 +77,12 @@ const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
   path: '/account',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedChargingIndexRoute =
+  AuthenticatedChargingIndexRouteImport.update({
+    id: '/charging/',
+    path: '/charging/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAccountIndexRoute =
   AuthenticatedAccountIndexRouteImport.update({
     id: '/',
@@ -127,7 +128,6 @@ export interface FileRoutesByFullPath {
   '/signed-in': typeof SignedInRoute
   '/account': typeof AuthenticatedAccountRouteWithChildren
   '/admin': typeof AuthenticatedAdminRoute
-  '/charging': typeof AuthenticatedChargingRoute
   '/sensors': typeof AuthenticatedSensorsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
@@ -138,13 +138,13 @@ export interface FileRoutesByFullPath {
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account/': typeof AuthenticatedAccountIndexRoute
+  '/charging/': typeof AuthenticatedChargingIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/signed-in': typeof SignedInRoute
   '/admin': typeof AuthenticatedAdminRoute
-  '/charging': typeof AuthenticatedChargingRoute
   '/sensors': typeof AuthenticatedSensorsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
@@ -156,6 +156,7 @@ export interface FileRoutesByTo {
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account': typeof AuthenticatedAccountIndexRoute
+  '/charging': typeof AuthenticatedChargingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -165,7 +166,6 @@ export interface FileRoutesById {
   '/signed-in': typeof SignedInRoute
   '/_authenticated/account': typeof AuthenticatedAccountRouteWithChildren
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
-  '/_authenticated/charging': typeof AuthenticatedChargingRoute
   '/_authenticated/sensors': typeof AuthenticatedSensorsRoute
   '/_authenticated/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
@@ -177,6 +177,7 @@ export interface FileRoutesById {
   '/api/rpc/$': typeof ApiRpcSplatRoute
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/_authenticated/account/': typeof AuthenticatedAccountIndexRoute
+  '/_authenticated/charging/': typeof AuthenticatedChargingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -187,7 +188,6 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/account'
     | '/admin'
-    | '/charging'
     | '/sensors'
     | '/users'
     | '/api/log'
@@ -198,13 +198,13 @@ export interface FileRouteTypes {
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
     | '/account/'
+    | '/charging/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/onboarding'
     | '/signed-in'
     | '/admin'
-    | '/charging'
     | '/sensors'
     | '/users'
     | '/api/log'
@@ -216,6 +216,7 @@ export interface FileRouteTypes {
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
     | '/account'
+    | '/charging'
   id:
     | '__root__'
     | '/_authenticated'
@@ -224,7 +225,6 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/_authenticated/account'
     | '/_authenticated/admin'
-    | '/_authenticated/charging'
     | '/_authenticated/sensors'
     | '/_authenticated/users'
     | '/api/log'
@@ -236,6 +236,7 @@ export interface FileRouteTypes {
     | '/api/rpc/$'
     | '/api/webhooks/shelly'
     | '/_authenticated/account/'
+    | '/_authenticated/charging/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -309,13 +310,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSensorsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/charging': {
-      id: '/_authenticated/charging'
-      path: '/charging'
-      fullPath: '/charging'
-      preLoaderRoute: typeof AuthenticatedChargingRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -328,6 +322,13 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/account'
       preLoaderRoute: typeof AuthenticatedAccountRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/charging/': {
+      id: '/_authenticated/charging/'
+      path: '/charging'
+      fullPath: '/charging/'
+      preLoaderRoute: typeof AuthenticatedChargingIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/account/': {
@@ -398,19 +399,19 @@ const AuthenticatedAccountRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedAccountRoute: typeof AuthenticatedAccountRouteWithChildren
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
-  AuthenticatedChargingRoute: typeof AuthenticatedChargingRoute
   AuthenticatedSensorsRoute: typeof AuthenticatedSensorsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedChargingIndexRoute: typeof AuthenticatedChargingIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAccountRoute: AuthenticatedAccountRouteWithChildren,
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
-  AuthenticatedChargingRoute: AuthenticatedChargingRoute,
   AuthenticatedSensorsRoute: AuthenticatedSensorsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedChargingIndexRoute: AuthenticatedChargingIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -40,6 +40,6 @@ test('the tariff limits and tariff error copy are importable client-side', async
 })
 
 test('the /charging route module evaluates client-side without a db leak', async () => {
-  const mod = await import('~/routes/_authenticated/charging')
+  const mod = await import('~/routes/_authenticated/charging/index')
   expect(mod.Route).toBeDefined()
 })

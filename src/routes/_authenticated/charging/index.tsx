@@ -59,7 +59,7 @@ const pricesRunsQuery = orpc.evCharging.recentRuns.queryOptions({
   input: { source: 'elpris', limit: RECENT_RUNS },
 })
 
-export const Route = createFileRoute('/_authenticated/charging')({
+export const Route = createFileRoute('/_authenticated/charging/')({
   head: () => ({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
   }),
