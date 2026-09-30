@@ -10,6 +10,7 @@ import {
 } from '~/components/evCharging/format'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { SessionEconomyFigures } from '~/components/evCharging/SessionEconomyFigures'
+import { SessionPriceChart } from '~/components/evCharging/SessionPriceChart'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Button } from '~/components/ui/button'
 import { isSessionNotFound } from '~/lib/evCharging/sessionNotFound'
@@ -66,7 +67,7 @@ function SessionPage() {
             </p>
           </header>
           <SessionEconomyFigures economy={detail.economy} estimated={detail.session.estimated} />
-          {/* C2: SessionPriceChart */}
+          <SessionPriceChart detail={detail} />
           <EconomyFootnote excluded={{ noHourly: 0, noPrice: 0 }} bucketing={false} />
         </>
       ) : (
