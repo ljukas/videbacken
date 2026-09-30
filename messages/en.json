@@ -395,6 +395,7 @@
   "charging_patterns_value_kwh": "{value} kWh",
   "charging_patterns_value_plugged": "{value} h plugged in",
   "charging_patterns_heatmap_caption": "Charging by weekday and hour",
+  "charging_patterns_hour_caption": "Charging by hour of day",
   "charging_patterns_day_sessions": "{count} sessions",
   "charging_patterns_unhourly_note": "{count} sessions have no hourly data and are left out of the hourly views.",
   "charging_patterns_timeline_prev": "Previous month",
