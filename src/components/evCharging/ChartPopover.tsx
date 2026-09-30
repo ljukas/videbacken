@@ -1,17 +1,28 @@
 import { TooltipWithBounds, useTooltip } from '@visx/tooltip'
 import type * as React from 'react'
+import { useCallback, useMemo } from 'react'
 
 export function useChartPopover<T>() {
-  const t = useTooltip<T>()
-  return {
-    open: t.tooltipOpen,
-    data: t.tooltipData,
-    left: t.tooltipLeft,
-    top: t.tooltipTop,
-    show: (data: T, left: number, top: number) =>
-      t.showTooltip({ tooltipData: data, tooltipLeft: left, tooltipTop: top }),
-    hide: t.hideTooltip,
-  }
+  const { tooltipOpen, tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip } =
+    useTooltip<T>()
+  // Stable callbacks: the heatmap's 168 cells close over `show`/`hide`.
+  const show = useCallback(
+    (data: T, left: number, top: number) =>
+      showTooltip({ tooltipData: data, tooltipLeft: left, tooltipTop: top }),
+    [showTooltip],
+  )
+  const hide = useCallback(() => hideTooltip(), [hideTooltip])
+  return useMemo(
+    () => ({
+      open: tooltipOpen,
+      data: tooltipData,
+      left: tooltipLeft,
+      top: tooltipTop,
+      show,
+      hide,
+    }),
+    [tooltipOpen, tooltipData, tooltipLeft, tooltipTop, show, hide],
+  )
 }
 
 // Positioned relative to the nearest `relative` ancestor (the chart wrapper).

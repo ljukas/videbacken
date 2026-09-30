@@ -13,7 +13,7 @@ export function slotValue(slot: Slot, metric: PatternMetric): number {
 export function intensity(max: number): (value: number) => string {
   const share = scaleSqrt()
     .domain([0, Math.max(max, Number.EPSILON)])
-    .range([12, 100])
+    .range([28, 100])
     .clamp(true)
   return (value) =>
     value > 0
