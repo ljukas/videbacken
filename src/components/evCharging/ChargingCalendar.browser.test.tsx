@@ -91,3 +91,15 @@ test('the grid auto-fills 8.5 rem columns and the cells scale with their card', 
     .poll(() => screen.container.querySelector('rect[data-day]')?.getBoundingClientRect().width)
     .toBeGreaterThan(15)
 })
+
+test('days are coloured by quantile step and empty days are muted', async () => {
+  const { screen } = await renderCalendar()
+  await expect.poll(() => screen.container.querySelectorAll('rect[data-day]').length).toBe(365)
+  const style = (day: string) =>
+    screen.container.querySelector<SVGRectElement>(`rect[data-day="${day}"]`)?.style
+  // Two distinct values: the ramp's ends, so they never look alike.
+  expect(style('2026-09-12')?.fill).toBe('color-mix(in oklab, var(--brand) 20%, var(--card))')
+  expect(style('2026-09-05')?.fill).toBe('color-mix(in oklab, var(--brand) 100%, var(--card))')
+  expect(style('2026-09-06')?.fill).toBe('var(--muted)')
+  expect(style('2026-09-06')?.stroke).toBe('var(--border)')
+})

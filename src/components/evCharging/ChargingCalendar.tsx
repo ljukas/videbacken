@@ -1,7 +1,7 @@
 import { Group } from '@visx/group'
 import { HeatmapRect } from '@visx/heatmap'
 import { useParentSize } from '@visx/responsive'
-import { max, range } from 'd3-array'
+import { range } from 'd3-array'
 import { memo, useId, useMemo } from 'react'
 import {
   type CalendarDay,
@@ -13,7 +13,7 @@ import { stockholmDayBounds } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { ChartPopover, useChartPopover } from './ChartPopover'
 import { formatDay, formatWeekdayDay, monthName, weekdayLabel } from './format'
-import { intensity, valueLabel } from './patternChart'
+import { calendarIntensity, valueLabel } from './patternChart'
 
 // Weekday-initials row height as a share of one cell, so the SVG aspect ratio is known up front.
 const LABEL_ROWS = 0.75
@@ -30,7 +30,7 @@ type Props = {
 
 export function ChargingCalendar({ year, daily, months, today, onPickMonth }: Props) {
   const byDay = useMemo(() => new Map(daily.map((d) => [d.day, d])), [daily])
-  const fill = useMemo(() => intensity(max(daily, (d) => d.kwh) ?? 0), [daily])
+  const fill = useMemo(() => calendarIntensity(daily).fill, [daily])
   const byMonth = useMemo(() => new Map(months.map((t) => [t.month, t])), [months])
 
   return (

@@ -1,33 +1,51 @@
 import { m } from '~/paraglide/messages'
-import { intensity } from './patternChart'
+import { formatCount, formatOneDecimal } from './format'
+import { type Intensity, type PatternMetric, valueLabel, ZERO_FILL } from './patternChart'
 
-const STEPS = [0, 0.05, 0.2, 0.45, 0.7, 1]
-const fill = intensity(1)
-
-// "less [swatches] more" for the heatmap and calendar colour scale. The first
-// swatch is the empty-cell colour, so "less" is never darker than a zero cell.
-// `maxLabel` names what the darkest swatch means (e.g. "48 kWh").
-export function PatternLegend({ maxLabel }: { maxLabel?: string }) {
-  const less = m.charging_patterns_legend_less()
-  const more = m.charging_patterns_legend_more()
+// The heatmap / calendar colour steps with the values each one holds: the
+// empty-cell swatch ("0"), then one swatch per quantile step, lowest first.
+// Visually the unit is printed once, after the last step; the accessible name
+// spells every step out with its unit.
+export function PatternLegend({ scale, metric }: { scale: Intensity; metric: PatternMetric }) {
+  const zero = formatCount(0)
+  const items = scale.steps.map((step, i) => {
+    const from = formatOneDecimal(step.from)
+    const to = formatOneDecimal(step.to)
+    const withUnit =
+      from === to ? valueLabel(step.to, metric) : `${from}–${valueLabel(step.to, metric)}`
+    const bare = from === to ? from : `${from}–${to}`
+    return {
+      color: step.color,
+      label: i === scale.steps.length - 1 ? withUnit : bare,
+      spoken: withUnit,
+    }
+  })
   return (
     <div
       role="img"
-      aria-label={maxLabel ? `${less} … ${more}, ${maxLabel}` : `${less} … ${more}`}
-      className="flex flex-wrap items-center gap-1.5 text-muted-foreground text-xs"
+      aria-label={m.charging_patterns_legend_label({
+        steps: [zero, ...items.map((item) => item.spoken)].join('; '),
+      })}
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs"
     >
-      <span aria-hidden>{less}</span>
-      <span aria-hidden className="flex gap-0.5">
-        {STEPS.map((step) => (
-          <span key={step} className="size-3 rounded-sm" style={{ background: fill(step) }} />
-        ))}
+      <span aria-hidden className="flex items-center gap-1">
+        <span
+          data-swatch="zero"
+          className="size-3 rounded-sm"
+          style={{ background: ZERO_FILL, border: '1px solid var(--border)' }}
+        />
+        <span className="tabular-nums">{zero}</span>
       </span>
-      <span aria-hidden>{more}</span>
-      {maxLabel ? (
-        <span aria-hidden className="ml-1 tabular-nums">
-          {maxLabel}
+      {items.map((item) => (
+        <span key={item.color} aria-hidden className="flex items-center gap-1">
+          <span
+            data-swatch="step"
+            className="size-3 rounded-sm"
+            style={{ background: item.color }}
+          />
+          <span className="tabular-nums">{item.label}</span>
         </span>
-      ) : null}
+      ))}
     </div>
   )
 }

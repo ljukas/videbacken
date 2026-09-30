@@ -1,8 +1,7 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { max } from 'd3-array'
 import { CalendarXIcon } from 'lucide-react'
-import { useCallback, useId, useRef } from 'react'
+import { useCallback, useId, useMemo, useRef } from 'react'
 import { z } from 'zod'
 import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
@@ -10,7 +9,11 @@ import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { PatternLegend } from '~/components/evCharging/PatternLegend'
-import { type PatternMetric, slotValue, valueLabel } from '~/components/evCharging/patternChart'
+import {
+  calendarIntensity,
+  heatmapIntensity,
+  type PatternMetric,
+} from '~/components/evCharging/patternChart'
 import { SessionTimeline } from '~/components/evCharging/SessionTimeline'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
@@ -94,12 +97,15 @@ function PatternsPage() {
   const stepMonth = useCallback((mo: number) => set({ month: mo }), [set])
   const ids = [useId(), useId(), useId(), useId()]
   const hasData = patterns ? patterns.months.some((mo) => mo.sessions > 0 || mo.kwh > 0) : false
-  const calendarMax = patterns
-    ? valueLabel(max(patterns.daily, (d) => d.kwh) ?? 0, 'kwh')
-    : undefined
-  const heatmapMax = patterns
-    ? valueLabel(max(patterns.weekdayHour.flat(), (c) => slotValue(c, metric)) ?? 0, metric)
-    : undefined
+  // The same scales the heatmap and calendar derive for their cells.
+  const heatmapScale = useMemo(
+    () => (patterns ? heatmapIntensity(patterns.weekdayHour, metric) : undefined),
+    [patterns, metric],
+  )
+  const calendarScale = useMemo(
+    () => (patterns ? calendarIntensity(patterns.daily) : undefined),
+    [patterns],
+  )
   const today = stockholmDayOf(Date.now())
   const dim = (stale: boolean) => cn('transition-opacity', stale && 'opacity-60')
   return (
@@ -153,7 +159,7 @@ function PatternsPage() {
                         aria-label={m.charging_patterns_metric_label()}
                       />
                     </div>
-                    <PatternLegend maxLabel={heatmapMax} />
+                    {heatmapScale ? <PatternLegend scale={heatmapScale} metric={metric} /> : null}
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3">
                     <WeekdayHourHeatmap grid={patterns.weekdayHour} metric={metric} />
@@ -195,7 +201,7 @@ function PatternsPage() {
                     <h2 id={ids[2]} className="font-medium text-sm">
                       {m.charging_patterns_calendar_title()}
                     </h2>
-                    <PatternLegend maxLabel={calendarMax} />
+                    {calendarScale ? <PatternLegend scale={calendarScale} metric="kwh" /> : null}
                   </CardHeader>
                   <CardContent>
                     <ChargingCalendar

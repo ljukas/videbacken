@@ -1,14 +1,14 @@
 import { Group } from '@visx/group'
 import { HeatmapRect } from '@visx/heatmap'
 import { useParentSize } from '@visx/responsive'
-import { max, range, transpose } from 'd3-array'
+import { range, transpose } from 'd3-array'
 import { scaleBand } from 'd3-scale'
 import { useMemo } from 'react'
 import type { Slot } from '~/lib/evCharging/patterns'
 import { m } from '~/paraglide/messages'
 import { ChartPopover, useChartPopover } from './ChartPopover'
 import { hourRangeLabel, weekdayLabel } from './format'
-import { intensity, type PatternMetric, slotValue, valueLabel } from './patternChart'
+import { heatmapIntensity, type PatternMetric, slotValue, valueLabel } from './patternChart'
 
 const NARROW_PX = 640
 const LABEL_W = 34
@@ -22,10 +22,12 @@ export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: P
 
   // Fills are computed once per grid/metric, not per cell per hover.
   const cells = useMemo(() => {
-    const values = grid.map((row) => row.map((slot) => slotValue(slot, metric)))
-    const fill = intensity(max(values.flat()) ?? 0)
-    return values.map((row, weekday) =>
-      row.map((value, hour): Cell => ({ weekday, hour, value, fill: fill(value) })),
+    const { fill } = heatmapIntensity(grid, metric)
+    return grid.map((row, weekday) =>
+      row.map((slot, hour): Cell => {
+        const value = slotValue(slot, metric)
+        return { weekday, hour, value, fill: fill(value) }
+      }),
     )
   }, [grid, metric])
 

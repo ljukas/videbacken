@@ -132,3 +132,25 @@ test('the transposed layout stays short at 600 px', async () => {
   const height = Number(screen.container.querySelector('svg')?.getAttribute('height'))
   expect(height).toBeLessThanOrEqual(16 + 24 * 24)
 })
+
+test('cells are coloured by quantile step; empty cells are muted with a border', async () => {
+  // Five distinct evening values: one per step, darkest for the biggest.
+  const stepped = Array.from({ length: 7 }, (_, w) =>
+    Array.from({ length: 24 }, (_, h) => ({ kwh: h === 20 && w < 5 ? w + 1 : 0, pluggedHours: 0 })),
+  )
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 900 }}>
+      <WeekdayHourHeatmap grid={stepped} metric="kwh" />
+    </div>,
+  )
+  await expect.poll(() => screen.container.querySelectorAll('rect[data-cell]').length).toBe(168)
+  const fill = (id: string) =>
+    screen.container.querySelector<SVGRectElement>(`rect[data-cell="${id}"]`)?.style
+  const fills = [0, 1, 2, 3, 4].map((w) => fill(`${w}-20`)?.fill)
+  expect(fills).toEqual(
+    [20, 40, 60, 80, 100].map((p) => `color-mix(in oklab, var(--brand) ${p}%, var(--card))`),
+  )
+  expect(fill('0-0')?.fill).toBe('var(--muted)')
+  expect(fill('0-0')?.stroke).toBe('var(--border)')
+  expect(fill('0-20')?.stroke).toBe('')
+})
