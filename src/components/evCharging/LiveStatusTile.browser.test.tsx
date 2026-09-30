@@ -65,6 +65,18 @@ test('a failed liveStatus request shows unavailable instead of an endless skelet
   await expect.element(screen.getByText(m.charging_live_unavailable())).toBeVisible()
 })
 
+test('stays unavailable, not a skeleton, while a failed liveStatus poll retries', async () => {
+  liveFn.mockRejectedValueOnce(new Error('network down')).mockImplementationOnce(
+    () => new Promise(() => {}), // the next poll hangs in flight
+  )
+  const { screen, queryClient } = await renderWithProviders(<Harness />)
+  await expect.element(screen.getByText(m.charging_live_unavailable())).toBeVisible()
+  void queryClient.refetchQueries({ queryKey: ['evCharging', 'liveStatus'] })
+  await expect.poll(() => liveFn.mock.calls.length).toBe(2)
+  await new Promise((resolve) => setTimeout(resolve, 50)) // let the refetch's render land
+  expect(screen.getByText(m.charging_live_unavailable()).elements()).toHaveLength(1)
+})
+
 test('a successful liveStatus request renders the reading', async () => {
   liveFn.mockResolvedValue({ mode: 'charging', powerKw: 7.36, sessionKwh: null, observedAt })
   const { screen } = await renderWithProviders(<Harness />)
