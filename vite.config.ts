@@ -5,6 +5,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import { nitro } from 'nitro/vite'
 import { defineConfig } from 'vitest/config'
+import { vercelBuildOutput } from './server/vercelBuildOutput'
 import { IMAGE_SIZES } from './src/lib/image/sizes'
 
 const isTest = process.env.VITEST === 'true'
@@ -80,6 +81,9 @@ export default defineConfig({
           // - seedApprovedEmails.ts seeds INITIAL_ADMIN_EMAILS into
           //   approved_email at startup so the first admin can sign in.
           plugins: ['./server/plugins/queueConsumer.ts', './server/plugins/seedApprovedEmails.ts'],
+          // Build-time: a missing /assets file must 404 uncached on Vercel, not
+          // get the SSR page with the one-year immutable asset header.
+          modules: [vercelBuildOutput],
           // Activates Vercel Image Optimization for `/_vercel/image?url=…&w=…&q=…`.
           // The `unpic/providers/vercel` transformer (used by ~/lib/image/transformer)
           // produces URLs that resolve here in production. In `bun run dev` the
