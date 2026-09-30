@@ -355,6 +355,28 @@ test('the fall-back night labels its repeated 02:00 once', async () => {
   expect(new Set(ticks).size).toBe(ticks.length)
 })
 
+test('a window over 24 h keeps every tick, including a time of day repeated on the next day', async () => {
+  // Fri 18 Sep 18:00Z – Sat 19 Sep 20:00Z is Fri 20:00 – Sat 22:00 Stockholm;
+  // the axis spans Fri 19:00 – Sat 23:00 (28 h), so ticks fall every 4 h.
+  const fri = '2026-09-18'
+  await renderChart({
+    ...detail,
+    window: { startMs: at('18:00', fri), endMs: at('20:00', '2026-09-19') },
+    intervals: [],
+    prices: quarters(at('17:00', fri), 28 * 4, () => 100),
+    optimalSchedule: null,
+  })
+  expect(texts('[data-axis="time"]')).toEqual([
+    '20:00',
+    'lör 00:00',
+    '04:00',
+    '08:00',
+    '12:00',
+    '16:00',
+    '20:00',
+  ])
+})
+
 test('a window over midnight names the weekday on the midnight tick and in the table', async () => {
   // 21:00Z–23:00Z is 23:00–01:00 Stockholm, into Wednesday.
   const { screen } = await renderChart({

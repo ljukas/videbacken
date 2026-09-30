@@ -159,7 +159,8 @@ function stepPoints(prices: readonly Slot[]): StepPoint[] {
 // Whole Stockholm hours, every 1, 2, 3 … h so at most `maxTicks` fit. d3's
 // time ticks align to the browser's zone; the app shows Stockholm time, whose
 // hours start on UTC hours (a whole-hour offset). The fall-back day repeats
-// 02:00; the repeat gets no second tick.
+// 02:00; the repeat gets no second tick. Keyed on the Stockholm day as well,
+// so a window over 24 h keeps the next day's tick at the same time of day.
 function hourTicks(
   startMs: number,
   endMs: number,
@@ -172,9 +173,9 @@ function hourTicks(
   const seen = new Set<string>()
   return hours.filter((ms) => {
     if (stockholmHour(ms) % step !== 0) return false
-    const text = label(ms)
-    if (seen.has(text)) return false
-    seen.add(text)
+    const key = `${stockholmDayOf(ms)} ${label(ms)}`
+    if (seen.has(key)) return false
+    seen.add(key)
     return true
   })
 }
