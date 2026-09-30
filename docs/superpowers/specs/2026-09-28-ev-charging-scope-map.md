@@ -192,6 +192,9 @@ its sync outcome so a broken integration is visible instead of silently stale.
   (Vattenfall paused its effektavgift rollout in 2026-03).
 - Until then, a monthly catalogue check (own small PR) emails admins when the facility's range appears. The facility
   ID lives in an env var (not in the repo); the check matches ranges locally, never sending the ID.
+  **Built 2026-09-30** (`src/lib/gridTariff/`, cron `/api/cron/grid-tariff-catalogue` on the 1st at 06:00 UTC, env
+  `GRID_FACILITY_ID`). Stateless: it emails every month while covered. Delete it when Phase 2b lands. Not a
+  health-tracked source; see ADR-0019's watcher amendment. Re-probed 2026-09-30: still 13 entries, no Vattenfall.
 - Energy tax needs no API: statutory, same for everyone, changes 1 January → built-in table
   (`ENERGY_TAX_ORE_BY_YEAR`, pre-fills new periods). Bixia's monthly "rörliga kostnader" stays manual (no API).
 

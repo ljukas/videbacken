@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer'
+import { renderGridTariffAvailable } from '~/emails/GridTariffAvailableEmail'
 import { renderIntegrationSyncAlert } from '~/emails/IntegrationSyncAlertEmail'
 import { renderInviteUser } from '~/emails/InviteUserEmail'
 import { renderMagicLink } from '~/emails/MagicLinkEmail'
@@ -54,5 +55,16 @@ export const smtp: EmailEffects = {
       text,
     })
     logger.info('integration sync alert sent (smtp)', { to, source, transition })
+  },
+  async sendGridTariffAvailable({ to, companyName, locale }) {
+    const { subject, html, text } = await renderGridTariffAvailable({ companyName, locale })
+    await getTransport().sendMail({
+      from: process.env.EMAIL_FROM,
+      to,
+      subject,
+      html,
+      text,
+    })
+    logger.info('grid tariff available sent (smtp)', { to })
   },
 }

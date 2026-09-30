@@ -59,3 +59,11 @@ test('sendUserInvited resolves without throwing', async () => {
     }),
   ).resolves.toBeUndefined()
 })
+
+test('sendGridTariffAvailable resolves without throwing, with or without a company name', async () => {
+  for (const companyName of ['Nät AB', null]) {
+    await expect(
+      email.sendGridTariffAvailable({ to: 'gus@test.videbacken.local', companyName, locale: 'sv' }),
+    ).resolves.toBeUndefined()
+  }
+})

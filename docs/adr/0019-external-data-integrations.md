@@ -461,6 +461,34 @@ matching the old loop exactly. It supersedes these parts of "Timeout and retry p
 - Unchanged: status → code mapping (a dropped error body included), a caller abort is final and never retried,
   causes carry only `{ name, code }`, the `stats` counters, and no retry on a token 4xx or on `liveState`.
 
+## Amendment (2026-09-30): a watcher, not a source — the Eltariff catalogue check
+
+The grid-tariff watcher (`src/lib/gridTariff/`, monthly cron `/api/cron/grid-tariff-catalogue`) asks one question
+until Phase 2b replaces it: does a grid company publishing machine-readable tariffs (the RISE Eltariff-API catalogue)
+cover our facility? If so, it emails every active admin — on every monthly run, statelessly. Its client
+(`src/lib/effects/eltariff/`) follows this ADR's client rules: keyless `http` adapter by default, `notConfigured` only
+under VITEST, `EltariffError extends IntegrationError`, and `fetchWithRetry`.
+
+**It is deliberately not an integration source.** It has no `integration_sync` row, lease, run history, or transition
+alerts. It imports no data, a duplicate run at worst sends a second notice, and a missed month only delays a heads-up.
+A source would mean widening the `source` CHECK constraints (a migration and schema review), plus per-source copy and
+stale thresholds, all for a temporary feature. If the watcher grows into Phase 2b's grid-fee import, that import
+becomes a real source.
+
+What still holds:
+
+- **Fail closed.** An unset or malformed `GRID_FACILITY_ID` is `not_configured`, and nothing is fetched. An
+  unreadable catalogue is `failed` with its code. A catalogue with no usable entry, an empty one included,
+  is `unexpected_response` (schema drift or an outage), never read as "not covered". A run with no match but some malformed entries dropped is
+  `inconclusive` and warned, never read as "not covered". Only the two ID fields are required, so an entry without
+  a company name still counts.
+- **One log line** per run (`grid tariff catalogue check`): info for `not_covered` and for a `covered` run whose
+  notice reached every admin; warn otherwise, including a `covered` run that reached nobody or not everyone; error
+  for a bug. Failures surface only in Runtime Logs; that is accepted for this watcher.
+- **Cron status codes** as above: 200 for every checked outcome, 500 only for an unexpected throw.
+- **The facility ID never leaves the process.** Only `GET /tariffcatalogue/all` is fetched (never `lookup/{mpid}`),
+  the match runs locally with `BigInt` (18 digits exceed `Number`), and the ID is never logged, returned, or queued.
+
 ---
 
 ## Amendments to other ADRs
@@ -494,6 +522,9 @@ a duplicate here) — these are pointers, not summaries to read instead of them.
   `double precision` energy columns and their CHECKs the importer re-validates in JS before writing.
 - `src/lib/effects/elpris/` — the keyless spot-price client (DST-safe slot parsing, unit cross-check);
   `src/lib/spotPrice/sync.ts` — `runElprisSync`, the missing-days planner.
+- `src/lib/effects/eltariff/` — the keyless Eltariff catalogue client (drop-and-count parse, no usable entry =
+  `unexpected_response`); `src/lib/gridTariff/` — the monthly watcher (`catalogueCheck.ts`) and its local `BigInt`
+  matcher. Not a source; see the 2026-09-30 amendment.
 - `src/lib/integrations/runPulledSync.ts` — `runPulledSync`, the source-generic run lifecycle
   (lease, deadline, record-once outcome, transition-only alert email, the one `integration sync run`
   log line) and `withDeadline`; `src/lib/integrations/cron.ts` — `verifyCronSecret` + `handleCronRun`

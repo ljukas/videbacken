@@ -203,7 +203,7 @@ async function alertAdmins(
   if (transition === 'none') return
   let admins: { email: string }[]
   try {
-    admins = (await userService.listAll()).filter((u) => u.role === 'admin' && !u.deletedAt)
+    admins = await userService.listActiveAdmins()
   } catch (error) {
     log.warn('integration sync alert publish failed', { source, transition, error })
     return
