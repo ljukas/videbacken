@@ -50,3 +50,9 @@ test('the patterns module and the /charging/patterns route evaluate client-side'
   const route = await import('~/routes/_authenticated/charging/patterns')
   expect(route.Route).toBeDefined()
 })
+
+test('the charging economy math is importable client-side', async () => {
+  const economy = await import('~/lib/evCharging/economy')
+  expect(typeof economy.analyzeSession).toBe('function')
+  expect(economy.SCORE_MIN_GAP_SEK).toBe(0.01)
+})

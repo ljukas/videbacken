@@ -1,0 +1,97 @@
+// Client-safe: one session's counterfactuals (ADR-0020 "Counterfactuals").
+// Everything is priced by the same `priceIntervals` as the actual cost, so the
+// four figures can only differ by *when* the energy is delivered.
+import {
+  type EnergyInterval,
+  isComplete,
+  priceIntervals,
+  type SlotIndex,
+  type TariffPeriod,
+  tariffAt,
+  unitPrice,
+} from '~/lib/evCharging/cost'
+import { stockholmDayOf } from '~/lib/time/stockholm'
+import { economyWindow, rateCapKw, schedule, sessionKwh, windowPieces } from './schedule'
+import type { EconomyExclusion, EconomySession, EconomyWindow, SessionEconomy } from './types'
+
+/** Below this dearest − optimal gap (kr) the window left nothing to choose between. */
+export const SCORE_MIN_GAP_SEK = 0.01
+
+/** Where `actual` sits between dearest (0) and optimal (1); null when the gap is too small to mean anything. */
+export function timingScore(
+  actualSek: number,
+  optimalSek: number,
+  dearestSek: number,
+): number | null {
+  const gap = dearestSek - optimalSek
+  if (gap < SCORE_MIN_GAP_SEK) return null
+  return Math.min(1, Math.max(0, (dearestSek - actualSek) / gap))
+}
+
+/** Time-weighted average spot over the window, öre/kWh incl each slot day's VAT; null without any. */
+export function windowAvgSpotOre(
+  window: EconomyWindow,
+  slots: SlotIndex,
+  tariffsAsc: readonly TariffPeriod[],
+): number | null {
+  let weighted = 0
+  let coveredMs = 0
+  for (const slot of slots.between(window.startMs, window.endMs)) {
+    const overlapMs = Math.min(slot.endMs, window.endMs) - Math.max(slot.startMs, window.startMs)
+    const tariff = tariffAt(tariffsAsc, stockholmDayOf(slot.startMs))
+    if (overlapMs <= 0 || !tariff) continue
+    weighted += unitPrice(slot.sekPerKwh, tariff).spotSek * overlapMs
+    coveredMs += overlapMs
+  }
+  return coveredMs > 0 ? (weighted / coveredMs) * 100 : null
+}
+
+export function analyzeSession(
+  session: EconomySession,
+  slots: SlotIndex,
+  tariffsAsc: readonly TariffPeriod[],
+): { economy: SessionEconomy; optimalSchedule: EnergyInterval[] | null } {
+  const actual = priceIntervals(
+    session.stretches.map((s) => ({ ...s, gridShare: 1 })),
+    slots,
+    tariffsAsc,
+  )
+  const window = economyWindow(session)
+  const common = {
+    actual,
+    paidSpotOre: actual.fullKwh > 0 ? (actual.spotSek / actual.fullKwh) * 100 : null,
+    windowAvgSpotOre: windowAvgSpotOre(window, slots, tariffsAsc),
+  }
+  const exclude = (excluded: EconomyExclusion) => ({
+    economy: { ...common, excluded, counterfactual: null },
+    optimalSchedule: null,
+  })
+
+  if (session.estimated) return exclude('no_hourly')
+  const pieces = windowPieces(window, slots, tariffsAsc)
+  // A partly priced actual can't be compared either (e.g. a stretch past the last price).
+  if (!pieces || !isComplete(actual)) return exclude('no_price')
+
+  const kwh = sessionKwh(session)
+  const rate = rateCapKw(session, window)
+  const price = (ivs: EnergyInterval[]) => priceIntervals(ivs, slots, tariffsAsc)
+  const optimalSchedule = schedule('optimal', kwh, rate, pieces)
+  const optimal = price(optimalSchedule)
+  const immediate = price(schedule('immediate', kwh, rate, pieces))
+  const dearest = price(schedule('dearest', kwh, rate, pieces))
+  return {
+    economy: {
+      ...common,
+      excluded: null,
+      counterfactual: {
+        immediate,
+        optimal,
+        dearest,
+        score: timingScore(actual.totalSek, optimal.totalSek, dearest.totalSek),
+        savedVsImmediateSek: immediate.totalSek - actual.totalSek,
+        leftOnTableSek: Math.max(0, actual.totalSek - optimal.totalSek),
+      },
+    },
+    optimalSchedule,
+  }
+}
