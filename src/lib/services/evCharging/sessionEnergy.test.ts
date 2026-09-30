@@ -137,6 +137,16 @@ test('getSessionEnergy throws EV_SESSION_NOT_FOUND for an unknown id', async () 
   )
 })
 
+test('getSessionEnergy picks the requested session among several counted ones', async () => {
+  const a = await insertSession({ startAt: new Date('2026-09-01T20:00:00Z') })
+  const b = await insertSession({ startAt: new Date('2026-09-02T20:00:00Z') })
+  expect((await getSessionEnergy(b)).sessionId).toBe(b)
+  expect((await getSessionEnergy(a)).sessionId).toBe(a)
+  await expect(getSessionEnergy('00000000-0000-4000-8000-000000000000')).rejects.toMatchObject({
+    code: 'EV_SESSION_NOT_FOUND',
+  })
+})
+
 test('getSessionEnergy throws EV_SESSION_NOT_FOUND for an uncounted (voided or noise) session', async () => {
   const voided = await insertSession({ voided: true })
   const noise = await insertSession({ energyKwh: 0.2 })

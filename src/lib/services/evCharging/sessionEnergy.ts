@@ -87,7 +87,10 @@ export async function listSessionEnergy(
   })
 }
 
-/** One counted session's energy; throws `EV_SESSION_NOT_FOUND` for an unknown or uncounted id. */
+/**
+ * One counted session's energy; throws `EV_SESSION_NOT_FOUND` for an unknown or uncounted id.
+ * `sessionId` must be a uuid — callers validate (a non-uuid makes Postgres throw).
+ */
 export async function getSessionEnergy(sessionId: string): Promise<SessionEnergy> {
   const [session] = await listSessionEnergy({ sessionIds: [sessionId] })
   if (!session) throw new EvChargingDomainError('EV_SESSION_NOT_FOUND')
