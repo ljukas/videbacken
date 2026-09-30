@@ -1,5 +1,12 @@
 import { linkOptions } from '@tanstack/react-router'
-import { HomeIcon, ThermometerIcon, UserIcon, UsersIcon, ZapIcon } from 'lucide-react'
+import {
+  CalendarClockIcon,
+  HomeIcon,
+  ThermometerIcon,
+  UserIcon,
+  UsersIcon,
+  ZapIcon,
+} from 'lucide-react'
 import { m } from '~/paraglide/messages'
 
 // The palette's static navigate group. Same `linkOptions` + Lucide icon pattern
@@ -35,6 +42,13 @@ export const NAVIGATE_COMMANDS = linkOptions([
     label: m.nav_charging,
     keywords: m.cmd_kw_charging,
     icon: ZapIcon,
+    adminOnly: false,
+  },
+  {
+    to: '/charging/patterns',
+    label: m.nav_charging_patterns,
+    keywords: m.cmd_kw_charging_patterns,
+    icon: CalendarClockIcon,
     adminOnly: false,
   },
   {

@@ -26,6 +26,7 @@ import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
 import { Route as ApiCronZaptecSyncRouteImport } from './routes/api/cron/zaptec-sync'
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_authenticated/charging/patterns'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
 
 const SignedInRoute = SignedInRouteImport.update({
@@ -114,6 +115,12 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedChargingPatternsRoute =
+  AuthenticatedChargingPatternsRouteImport.update({
+    id: '/charging/patterns',
+    path: '/charging/patterns',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAccountProfileRoute =
   AuthenticatedAccountProfileRouteImport.update({
     id: '/profile',
@@ -132,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
+  '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
@@ -150,6 +158,7 @@ export interface FileRoutesByTo {
   '/api/log': typeof ApiLogRoute
   '/': typeof AuthenticatedIndexRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
+  '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
@@ -171,6 +180,7 @@ export interface FileRoutesById {
   '/api/log': typeof ApiLogRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
+  '/_authenticated/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
@@ -192,6 +202,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/api/log'
     | '/account/profile'
+    | '/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
     | '/api/cron/zaptec-sync'
@@ -210,6 +221,7 @@ export interface FileRouteTypes {
     | '/api/log'
     | '/'
     | '/account/profile'
+    | '/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
     | '/api/cron/zaptec-sync'
@@ -230,6 +242,7 @@ export interface FileRouteTypes {
     | '/api/log'
     | '/_authenticated/'
     | '/_authenticated/account/profile'
+    | '/_authenticated/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
     | '/api/cron/zaptec-sync'
@@ -373,6 +386,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/charging/patterns': {
+      id: '/_authenticated/charging/patterns'
+      path: '/charging/patterns'
+      fullPath: '/charging/patterns'
+      preLoaderRoute: typeof AuthenticatedChargingPatternsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/account/profile': {
       id: '/_authenticated/account/profile'
       path: '/profile'
@@ -402,6 +422,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSensorsRoute: typeof AuthenticatedSensorsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedChargingPatternsRoute: typeof AuthenticatedChargingPatternsRoute
   AuthenticatedChargingIndexRoute: typeof AuthenticatedChargingIndexRoute
 }
 
@@ -411,6 +432,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSensorsRoute: AuthenticatedSensorsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedChargingPatternsRoute: AuthenticatedChargingPatternsRoute,
   AuthenticatedChargingIndexRoute: AuthenticatedChargingIndexRoute,
 }
 

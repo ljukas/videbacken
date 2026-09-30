@@ -43,3 +43,10 @@ test('the /charging route module evaluates client-side without a db leak', async
   const mod = await import('~/routes/_authenticated/charging/index')
   expect(mod.Route).toBeDefined()
 })
+
+test('the patterns module and the /charging/patterns route evaluate client-side', async () => {
+  const patterns = await import('~/lib/evCharging/patterns')
+  expect(typeof patterns.buildPatterns).toBe('function')
+  const route = await import('~/routes/_authenticated/charging/patterns')
+  expect(route.Route).toBeDefined()
+})

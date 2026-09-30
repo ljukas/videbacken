@@ -90,6 +90,24 @@ export function monthLabel(month: number): string {
   )
 }
 
+// 2024-01-01 was a Monday — a fixed UTC anchor for weekday names.
+export function weekdayLabel(weekday: number, width: 'short' | 'long' = 'short'): string {
+  return new Intl.DateTimeFormat(getIntlLocale(), { weekday: width, timeZone: 'UTC' }).format(
+    new Date(Date.UTC(2024, 0, 1 + weekday, 12)),
+  )
+}
+
+export function hourRangeLabel(hour: number): string {
+  const pad = (h: number) => String(h % 24).padStart(2, '0')
+  return `${pad(hour)}–${pad(hour + 1)}`
+}
+
+export function monthName(month: number): string {
+  return new Intl.DateTimeFormat(getIntlLocale(), { month: 'long', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(2000, month - 1, 15, 12)),
+  )
+}
+
 /** A decimal as typed/read back in a form field: no grouping, up to 3 decimals. */
 export function formatDecimalInput(value: number): string {
   return new Intl.NumberFormat(getIntlLocale(), {
