@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
-import { LoadErrorAlert } from '~/components/evCharging/LoadErrorAlert'
+import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { PatternLegend } from '~/components/evCharging/PatternLegend'
 import {
@@ -83,7 +83,9 @@ function PatternsPage() {
     placeholderData: keepPreviousData,
   })
   const { data: patterns, isPlaceholderData: patternsStale } = patternsResult
-  const { data: timeline, isPlaceholderData: timelineStale } = timelineResult
+  const { data: timeline } = timelineResult
+  // A failed month's alert isn't a stale timeline: don't dim it or mark it busy.
+  const timelineStale = timelineResult.isPlaceholderData && !loadFailed(timelineResult)
   const set = useCallback(
     (next: { year?: number; metric?: PatternMetric; month?: number }) =>
       navigate({ to: '.', search: (s) => ({ ...s, ...next }), replace: true, resetScroll: false }),
@@ -130,7 +132,7 @@ function PatternsPage() {
         retrying={syncNow.isPendingFor('zaptec')}
       />
 
-      {patterns ? (
+      {patterns && !loadFailed(patternsResult) ? (
         <>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <YearSelector
@@ -235,7 +237,7 @@ function PatternsPage() {
                     </h2>
                   </CardHeader>
                   <CardContent>
-                    {timeline ? (
+                    {timeline && !loadFailed(timelineResult) ? (
                       <SessionTimeline
                         sessions={timeline.sessions}
                         year={timeline.year}
@@ -243,13 +245,12 @@ function PatternsPage() {
                         months={timeline.months}
                         onMonth={stepMonth}
                       />
-                    ) : timelineResult.isError ? (
+                    ) : (
                       <LoadErrorAlert
                         title={m.charging_patterns_timeline_error_title()}
-                        onRetry={() => void timelineResult.refetch()}
-                        retrying={timelineResult.isFetching}
+                        query={timelineResult}
                       />
-                    ) : null}
+                    )}
                   </CardContent>
                 </Card>
               </section>
@@ -266,13 +267,9 @@ function PatternsPage() {
             </Empty>
           )}
         </>
-      ) : patternsResult.isError ? (
-        <LoadErrorAlert
-          title={m.charging_patterns_error_title()}
-          onRetry={() => void patternsResult.refetch()}
-          retrying={patternsResult.isFetching}
-        />
-      ) : null}
+      ) : (
+        <LoadErrorAlert title={m.charging_patterns_error_title()} query={patternsResult} />
+      )}
     </PageContainer>
   )
 }

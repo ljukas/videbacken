@@ -21,13 +21,17 @@ const MODE_LABEL: Record<LiveMode, () => string> = {
 // The polled live status for `LiveStatusTile`. Client-only (not in the route
 // loader) so a live Zaptec call never blocks SSR. A failed request (network,
 // 5xx) reads as `null` — "unavailable" — rather than leaving the tile on its
-// loading skeleton forever.
+// loading skeleton forever. It stays `null` while the next poll retries: with
+// no data, a refetch resets the query to `pending` with `error: null`, so
+// isError alone would flip the tile back to the skeleton (errorUpdateCount
+// survives that reset).
 export function useLiveStatus(): LiveStatus | undefined {
   const query = useQuery({
     ...orpc.evCharging.liveStatus.queryOptions(),
     refetchInterval: 60_000,
   })
-  return query.isError ? null : query.data
+  const failed = query.isError || (query.data === undefined && query.errorUpdateCount > 0)
+  return failed ? null : query.data
 }
 
 // The charger's live mode + power. `undefined` = still loading (the query is
