@@ -5,7 +5,6 @@ import { useCallback, useId, useMemo, useRef } from 'react'
 import { z } from 'zod'
 import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
-import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
 import { LoadErrorAlert } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
@@ -118,12 +117,12 @@ function PatternsPage() {
   return (
     <PageContainer>
       <ChargingHeading
+        title={m.charging_patterns_title()}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
         }
       />
-      <ChargingTabs current="patterns" />
       <SyncHealthAlert
         health={health}
         isAdmin={isAdmin}

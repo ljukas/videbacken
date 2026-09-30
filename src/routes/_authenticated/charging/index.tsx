@@ -10,7 +10,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
-import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
@@ -212,7 +211,6 @@ function ChargingPage() {
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
         }
       />
-      <ChargingTabs current="overview" />
       <SyncHealthAlert
         health={health}
         isAdmin={isAdmin}

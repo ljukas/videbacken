@@ -12,6 +12,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   useSidebar,
 } from '~/components/ui/sidebar'
 import { SidebarUserMenu } from '~/components/user/UserMenu'
@@ -20,14 +23,20 @@ import { m } from '~/paraglide/messages'
 
 // label is a message function rather than a string: module scope evaluates
 // once per process, but the active locale is per request/render.
+const chargingSubItems = linkOptions([
+  { to: '/charging', label: m.nav_charging_overview },
+  { to: '/charging/patterns', label: m.nav_charging_patterns_short },
+])
+
 const mainNavItems = linkOptions([
   { to: '/', label: m.nav_home, icon: HomeIcon },
   { to: '/sensors', label: m.nav_sensors, icon: ThermometerIcon },
-  { to: '/charging', label: m.nav_charging, icon: ZapIcon },
+  { to: '/charging', label: m.nav_charging, icon: ZapIcon, subItems: chargingSubItems },
   { to: '/users', label: m.nav_users, icon: UsersIcon },
 ])
 
 type NavItem = (typeof mainNavItems)[number]
+type NavSubItem = (typeof chargingSubItems)[number]
 
 export function AppSidebar() {
   const matchRoute = useMatchRoute()
@@ -45,7 +54,31 @@ export function AppSidebar() {
             <span>{item.label()}</span>
           </Link>
         </SidebarMenuButton>
+        {'subItems' in item ? (
+          <SidebarMenuSub>{item.subItems.map(renderSubItem)}</SidebarMenuSub>
+        ) : null}
       </SidebarMenuItem>
+    )
+  }
+
+  // Sibling views of one section. Matched exactly: the overview's /charging is
+  // a prefix of /charging/patterns, so a fuzzy match would light up both.
+  function renderSubItem(item: NavSubItem) {
+    const isActive = !!matchRoute({ to: item.to })
+    return (
+      <SidebarMenuSubItem key={item.to}>
+        <SidebarMenuSubButton asChild isActive={isActive}>
+          <Link
+            to={item.to}
+            // Keep the chosen year when switching between the section's views.
+            search={(prev: { year?: number }) => ({ year: prev.year })}
+            activeOptions={{ exact: true }}
+            onClick={() => setOpenMobile(false)}
+          >
+            <span>{item.label()}</span>
+          </Link>
+        </SidebarMenuSubButton>
+      </SidebarMenuSubItem>
     )
   }
 
