@@ -18,6 +18,7 @@ export type QueueTopic =
   | 'email_user_invited'
   | 'heic_transcode'
   | 'email_integration_sync_alert'
+  | 'email_grid_tariff_available'
 
 /**
  * Per-topic payload shape. The blurhash payload carries a `kind` discriminant
@@ -52,6 +53,15 @@ export type QueuePayloadMap = {
     transition: 'started_failing' | 'recovered'
     code: IntegrationErrorCode | null
     failingSince: string | null // ISO
+    locale: Locale
+  }
+  // Grid-tariff watcher notice (tier-3): published by the monthly Eltariff
+  // catalogue check (`src/lib/gridTariff/catalogueCheck.ts`), one message per
+  // admin, on every run that finds our facility covered. Carries only the
+  // company's name — never the facility ID.
+  email_grid_tariff_available: {
+    to: string
+    companyName: string | null
     locale: Locale
   }
 }

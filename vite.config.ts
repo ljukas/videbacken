@@ -144,6 +144,7 @@ export default defineConfig({
                 { topic: 'email_user_invited' },
                 { topic: 'heic_transcode' },
                 { topic: 'email_integration_sync_alert' },
+                { topic: 'email_grid_tariff_available' },
               ],
             },
           },
