@@ -51,6 +51,7 @@ export function analyzeSession(
   slots: SlotIndex,
   tariffsAsc: readonly TariffPeriod[],
 ): { economy: SessionEconomy; optimalSchedule: EnergyInterval[] | null } {
+  // gridShare 1: keep in sync with `toIntervals` in ../costInputs.ts (Emaldo seam).
   const actual = priceIntervals(
     session.stretches.map((s) => ({ ...s, gridShare: 1 })),
     slots,

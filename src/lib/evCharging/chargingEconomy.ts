@@ -34,6 +34,7 @@ export type EconomyTimings = {
   tariffMs?: number
   slotsMs?: number
   dailySpotMs?: number
+  yearsMs?: number
   computeMs?: number
 }
 
@@ -98,7 +99,7 @@ export async function getEconomyOverview(input: {
   const [all, tariffsAsc, years] = await Promise.all([
     timed(t, 'energyMs', () => listSessionEnergy({ all: true })),
     timed(t, 'tariffMs', loadTariffs),
-    distinctCountedYears(),
+    timed(t, 'yearsMs', distinctCountedYears),
   ])
   years.add(currentYear)
   const inYear = all.filter((s) => stockholmYearMonth(s.startAt.getTime()).year === year)

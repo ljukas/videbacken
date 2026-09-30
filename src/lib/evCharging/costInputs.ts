@@ -2,8 +2,9 @@ import type { EnergyInterval, TariffPeriod } from '~/lib/evCharging/cost'
 import type { SessionEnergy } from '~/lib/services/evCharging'
 import * as tariffService from '~/lib/services/tariff'
 
-// Server-only. Inputs shared by the cost read models (`costing.ts`,
-// `chargingEconomy.ts`): each loaded through its own service, as the cost math wants it.
+// Server-only. Inputs shared by the cost read models: `costing.ts` uses all of
+// them, `chargingEconomy.ts` uses `timed` and `loadTariffs` (its pure math
+// builds its own grid intervals).
 
 /** Runs `fn`, recording its duration under `key` when a timings sink is given. */
 export async function timed<K extends string, T>(
@@ -33,6 +34,7 @@ export async function loadTariffs(): Promise<TariffPeriod[]> {
 
 // Every counted session is bought from the grid for now (gridShare 1) — the
 // seam where a solar/battery source (Emaldo) would supply a real share.
+// Keep in sync with the same `gridShare: 1` in economy/sessionEconomy.ts.
 export function toIntervals(session: SessionEnergy): EnergyInterval[] {
   return session.stretches.map((s) => ({ ...s, gridShare: 1 }))
 }
