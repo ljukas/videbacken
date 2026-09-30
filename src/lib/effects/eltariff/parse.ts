@@ -6,8 +6,16 @@ import { EltariffError } from './errors'
 const meteringPointId = z.string().regex(/^\d{18}$/)
 
 // The company name is third-party text that ends up in an admin email: one
-// line, bounded.
+// line, bounded, and without invisible format characters (bidi overrides,
+// zero-width) that could make it read as something else.
 const MAX_COMPANY_NAME = 100
+const cleanCompanyName = (name: string) =>
+  name
+    .replace(/\p{Cf}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_COMPANY_NAME)
+    .trim()
 
 // Only what matching needs is required: a registration whose name is missing
 // must still count as coverage, not be dropped as malformed.
@@ -18,9 +26,7 @@ const entrySchema = z.object({
     .string()
     .nullish()
     .catch(null)
-    .transform(
-      (name) => name?.replace(/\s+/g, ' ').trim().slice(0, MAX_COMPANY_NAME).trim() || null,
-    ),
+    .transform((name) => (name ? cleanCompanyName(name) : '') || null),
 })
 
 /**

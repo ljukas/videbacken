@@ -113,6 +113,19 @@ describe('catalogue', () => {
     expect(second.companyName).toBe('x'.repeat(99))
   })
 
+  test('the company name loses invisible format characters (bidi overrides, zero-width)', async () => {
+    const { c } = client({
+      [ROUTE]: () =>
+        jsonResponse([
+          { ...apiEntry(1), companyName: 'Nät‮ BA 1‬​ AB' },
+          { ...apiEntry(2), companyName: '​⁦⁩' }, // nothing visible left
+        ]),
+    })
+    const [first, second] = (await c.catalogue()).entries
+    expect(first.companyName).toBe('Nät BA 1 AB')
+    expect(second.companyName).toBeNull()
+  })
+
   test('drops and counts entries unusable for matching', async () => {
     const { from, to } = { from: 'meteringPointIdFrom', to: 'meteringPointIdTo' } as const
     const unusable = [
