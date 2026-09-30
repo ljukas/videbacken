@@ -5,7 +5,6 @@ import { useCallback, useId, useMemo, useRef } from 'react'
 import { z } from 'zod'
 import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
-import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
@@ -51,7 +50,7 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
   validateSearch: searchSchema,
   loaderDeps: ({ search }) => ({ year: search.year, month: search.month }),
   // The pattern and timeline reads are prefetched, not ensured: a failure
-  // there must not take down the page (heading, tabs, sync health) — each
+  // there must not take down the page (heading, sync health) — each
   // section shows its own error Alert with a retry instead.
   loader: async ({ context: { queryClient }, deps }) => {
     await Promise.all([
@@ -120,12 +119,12 @@ function PatternsPage() {
   return (
     <PageContainer>
       <ChargingHeading
+        title={m.charging_patterns_title()}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
         }
       />
-      <ChargingTabs current="patterns" />
       <SyncHealthAlert
         health={health}
         isAdmin={isAdmin}

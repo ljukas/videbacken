@@ -90,6 +90,23 @@ wrap; both read as a distinct surface (the standard inset look). Text contrast i
 > caller unchanged) so they compose into these rows without bypassing ADR-0005. This is the reusable
 > template for future settings screens.
 
+> **Amendment (2026-09-30) — a section's sibling views go in the sidebar; settings subpages stay
+> in-page.** Charging's two views (`/charging` Översikt, `/charging/patterns` Mönster) replaced their
+> in-page tab bar with sidebar sub-items: shadcn `SidebarMenuSub` under "Laddning" in
+> `src/components/AppSidebar.tsx`. The rule for which pattern applies:
+> - **Sidebar sub-items**: peer *views* of one top-level section that users move between as
+>   destinations. The links match exactly, ignoring search params, so `aria-current` lands on one
+>   link. Params shared between the views (the year) are carried across.
+> - **In-page inner nav** (the `AccountNav` template above): *settings* subpages of one screen.
+>
+> Trade-offs accepted: the sub-items hide in the icon-collapsed rail, where only the command palette
+> reaches the second view. On phones the views sit behind the drawer, with no in-page cue. Their rows
+> are shadcn's 28 px (`h-7`), below the 44 px touch guidance, and the top-level sidebar rows are
+> 32 px as well.
+>
+> **Revisit if** a section grows past about three views (switch to a `Collapsible` that opens with
+> the active section), or if phone users miss the second view (add an in-page link).
+
 > **Amendment (2026-06-29) — off-white content canvas so cards lift (light mode).** The original
 > "pure-white `--background` panel lifts above the near-white `--sidebar` wrap" reads flat for
 > card-based screens: in light mode `--background` and `--card` were both `oklch(1 0 0)`, so white

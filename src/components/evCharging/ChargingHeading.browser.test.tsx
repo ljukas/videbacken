@@ -28,3 +28,12 @@ test('renders the action slot', async () => {
   )
   await expect.element(screen.getByRole('button', { name: 'act' })).toBeVisible()
 })
+
+test('names the view when given a title', async () => {
+  const { screen } = await renderWithProviders(
+    <ChargingHeading title={m.charging_patterns_title()} lastSuccessAt={null} />,
+  )
+  await expect
+    .element(screen.getByRole('heading', { level: 1, name: m.charging_patterns_title() }))
+    .toBeVisible()
+})

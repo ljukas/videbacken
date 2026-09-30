@@ -12,6 +12,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   useSidebar,
 } from '~/components/ui/sidebar'
 import { SidebarUserMenu } from '~/components/user/UserMenu'
@@ -20,14 +23,30 @@ import { m } from '~/paraglide/messages'
 
 // label is a message function rather than a string: module scope evaluates
 // once per process, but the active locale is per request/render.
+const chargingSubItems = linkOptions([
+  { to: '/charging', label: m.nav_charging_overview },
+  { to: '/charging/patterns', label: m.nav_charging_patterns_short },
+])
+
 const mainNavItems = linkOptions([
   { to: '/', label: m.nav_home, icon: HomeIcon },
   { to: '/sensors', label: m.nav_sensors, icon: ThermometerIcon },
-  { to: '/charging', label: m.nav_charging, icon: ZapIcon },
+  { to: '/charging', label: m.nav_charging, icon: ZapIcon, subItems: chargingSubItems },
   { to: '/users', label: m.nav_users, icon: UsersIcon },
 ])
 
 type NavItem = (typeof mainNavItems)[number]
+type NavSubItem = (typeof chargingSubItems)[number]
+
+// Links into a section with sub-views. Link sets aria-current itself from its
+// own match, prefix by default, so it must be exact or /charging would read as
+// the current page on /charging/patterns too. The views' own params (month,
+// metric, dialog) mustn't count, so search is ignored for the match. The chosen
+// year is kept when switching between the views.
+const sectionLinkProps = {
+  search: (prev: { year?: number }) => ({ year: prev.year }),
+  activeOptions: { exact: true, includeSearch: false },
+} as const
 
 export function AppSidebar() {
   const matchRoute = useMatchRoute()
@@ -40,12 +59,34 @@ export function AppSidebar() {
     return (
       <SidebarMenuItem key={item.to}>
         <SidebarMenuButton asChild isActive={isActive} tooltip={item.label()}>
-          <Link to={item.to} onClick={() => setOpenMobile(false)}>
+          <Link
+            to={item.to}
+            {...('subItems' in item ? sectionLinkProps : {})}
+            onClick={() => setOpenMobile(false)}
+          >
             <item.icon />
             <span>{item.label()}</span>
           </Link>
         </SidebarMenuButton>
+        {'subItems' in item ? (
+          <SidebarMenuSub>{item.subItems.map(renderSubItem)}</SidebarMenuSub>
+        ) : null}
       </SidebarMenuItem>
+    )
+  }
+
+  // Sibling views of one section. Matched exactly (see sectionLinkProps): the
+  // overview's /charging is a prefix of /charging/patterns.
+  function renderSubItem(item: NavSubItem) {
+    const isActive = !!matchRoute({ to: item.to })
+    return (
+      <SidebarMenuSubItem key={item.to}>
+        <SidebarMenuSubButton asChild isActive={isActive}>
+          <Link to={item.to} {...sectionLinkProps} onClick={() => setOpenMobile(false)}>
+            <span>{item.label()}</span>
+          </Link>
+        </SidebarMenuSubButton>
+      </SidebarMenuSubItem>
     )
   }
 
