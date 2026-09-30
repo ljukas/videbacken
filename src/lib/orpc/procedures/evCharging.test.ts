@@ -399,17 +399,18 @@ test('timeline returns an empty month for a signed-in user with no data', async 
   expect(result).toMatchObject({ year: 2026, month: 3, months: [], sessions: [] })
 })
 
-test('patterns and timeline reject out-of-range input', async () => {
+test('patterns and timeline reject out-of-range input as BAD_REQUEST', async () => {
   await signIn('user')
+  // oRPC turns a failed input schema into ORPCError('BAD_REQUEST').
   await expect(
     call(evChargingRouter.patterns, { year: 2019 }, { context: baseContext() }),
-  ).rejects.toBeDefined()
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   await expect(
     call(evChargingRouter.timeline, { year: 2026, month: 0 }, { context: baseContext() }),
-  ).rejects.toBeDefined()
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   await expect(
     call(evChargingRouter.timeline, { year: 2026, month: 13 }, { context: baseContext() }),
-  ).rejects.toBeDefined()
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
 })
 
 test('patterns records its sub-timings', async () => {
@@ -419,5 +420,19 @@ test('patterns records its sub-timings', async () => {
   expect(timings).toMatchObject({
     patternsFetchMs: expect.any(Number),
     patternsAggregateMs: expect.any(Number),
+  })
+})
+
+test('timeline records its sub-timings', async () => {
+  await signIn('user')
+  const timings: Record<string, number> = {}
+  await call(
+    evChargingRouter.timeline,
+    { year: 2026, month: 9 },
+    { context: { ...baseContext(), timings } },
+  )
+  expect(timings).toMatchObject({
+    timelineFetchMs: expect.any(Number),
+    timelineAggregateMs: expect.any(Number),
   })
 })
