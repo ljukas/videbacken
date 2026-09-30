@@ -2,7 +2,7 @@ import { call } from '@orpc/server'
 import { afterEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
-import { evCharger, user } from '~/lib/db/schema'
+import { evChargeInterval, evCharger, evChargeSession, user } from '~/lib/db/schema'
 import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
 import { createZaptecClient, zaptec } from '~/lib/effects/zaptec'
 import {
@@ -14,6 +14,9 @@ import {
 } from '~/lib/effects/zaptec/fixtures'
 import type { Logger } from '~/lib/logger'
 import * as integrationSyncService from '~/lib/services/integrationSync'
+import { replaceDay } from '~/lib/services/spotPrice'
+import * as tariffService from '~/lib/services/tariff'
+import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import { setupDatabase } from '~test/setup'
 import { evChargingRouter } from './evCharging'
 
@@ -503,4 +506,49 @@ test('session records its sub-timings even when it fails', async () => {
     { context: { ...baseContext(), timings } },
   ).catch(() => {})
   expect(timings).toMatchObject({ economyEnergyMs: expect.any(Number) })
+})
+
+test('session returns one counted session with its economy for a signed-in user', async () => {
+  await signIn('user')
+  await tariffService.create({
+    validFrom: '2026-01-01',
+    retailMarkupOre: 5.331,
+    gridTransferOre: 35.6,
+    energyTaxOre: 36,
+    vatPercent: 25,
+  })
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 15, (i) => (i >= 40 && i < 44 ? 3 : 1)),
+  )
+  await db
+    .insert(evCharger)
+    .values({ id: 'charger-econ', name: 'Charger', installationId: 'install-econ' })
+  const [row] = await db
+    .insert(evChargeSession)
+    .values({
+      zaptecSessionId: 'zap-econ-1',
+      chargerId: 'charger-econ',
+      startAt: new Date('2026-09-28T08:00:00Z'),
+      endAt: new Date('2026-09-28T10:00:00Z'),
+      energyKwh: 10,
+    })
+    .returning({ id: evChargeSession.id })
+  await db.insert(evChargeInterval).values({
+    sessionId: row.id,
+    startAt: new Date('2026-09-28T08:00:00Z'),
+    endAt: new Date('2026-09-28T09:00:00Z'),
+    energyKwh: 10,
+  })
+
+  const result = await call(
+    evChargingRouter.session,
+    { sessionId: row.id },
+    { context: baseContext() },
+  )
+  expect(result.session.id).toBe(row.id)
+  expect(result.economy).toBeDefined()
+  expect(result.economy.excluded).toBeNull()
+  expect(result.economy.actualComplete).toBe(true)
 })

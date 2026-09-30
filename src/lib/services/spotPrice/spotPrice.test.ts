@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { spotPrice } from '~/lib/db/schema'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
+import type { PriceZone } from '~/lib/spotPrice/zones'
 import { setupDatabase } from '~test/setup'
 import { SpotPriceDomainError } from './errors'
 import { dailyAverageSpot, daysWithSlots, listSlotsOverlapping, replaceDay } from './spotPrice'
@@ -156,6 +157,13 @@ test('dailyAverageSpot counts a 25-hour DST day as 25 hours', async () => {
 
 test('dailyAverageSpot is empty without stored slots', async () => {
   expect(await dailyAverageSpot('SE3', '2026-01-01', '2026-12-31')).toEqual([])
+})
+
+test('dailyAverageSpot only reads the requested zone', async () => {
+  await replaceDay('SE3', '2026-09-28', daySlots('2026-09-28', 15))
+  // The zone CHECK constrains writes only; reading another zone is just an empty result.
+  expect(await dailyAverageSpot('SE4' as PriceZone, '2026-09-28', '2026-09-28')).toEqual([])
+  expect(await dailyAverageSpot('SE3', '2026-09-28', '2026-09-28')).toHaveLength(1)
 })
 
 test('dailyAverageSpot bounds the range on both ends, inclusively', async () => {

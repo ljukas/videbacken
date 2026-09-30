@@ -1,4 +1,5 @@
 import { and, asc, inArray, min } from 'drizzle-orm'
+import { z } from 'zod'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
 import { countedSessionFilter } from './counted'
@@ -88,10 +89,12 @@ export async function listSessionEnergy(
 }
 
 /**
- * One counted session's energy; throws `EV_SESSION_NOT_FOUND` for an unknown or uncounted id.
- * `sessionId` must be a uuid — callers validate (a non-uuid makes Postgres throw).
+ * One counted session's energy; throws `EV_SESSION_NOT_FOUND` for an unknown, uncounted
+ * or non-uuid id (checked here, since Postgres would throw on a non-uuid).
  */
 export async function getSessionEnergy(sessionId: string): Promise<SessionEnergy> {
+  if (!z.uuid().safeParse(sessionId).success)
+    throw new EvChargingDomainError('EV_SESSION_NOT_FOUND')
   const [session] = await listSessionEnergy({ sessionIds: [sessionId] })
   if (!session) throw new EvChargingDomainError('EV_SESSION_NOT_FOUND')
   return session

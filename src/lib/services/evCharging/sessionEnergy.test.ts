@@ -154,3 +154,9 @@ test('getSessionEnergy throws EV_SESSION_NOT_FOUND for an uncounted (voided or n
     await expect(getSessionEnergy(id)).rejects.toMatchObject({ code: 'EV_SESSION_NOT_FOUND' })
   }
 })
+
+test('getSessionEnergy throws EV_SESSION_NOT_FOUND for a non-uuid id instead of a Postgres error', async () => {
+  await expect(getSessionEnergy('not-a-uuid')).rejects.toEqual(
+    new EvChargingDomainError('EV_SESSION_NOT_FOUND'),
+  )
+})
