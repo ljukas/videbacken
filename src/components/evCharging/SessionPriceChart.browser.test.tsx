@@ -124,8 +124,15 @@ test('at phone width the cheapest schedule never covers the actual bars', async 
     if (drawnAfterBars(el)) expect(el.style.fill).toBe('none')
     else expect(el.dataset.ghost).toBe('fill')
     expect(el.style.fill).not.toBe('var(--card)')
-    // …and a card-coloured stroke is masked off inside every run.
+    // …and a card-coloured stroke runs only along the runs' top edges (no
+    // vertical cuts through bars), masked off inside every run.
     if (el.style.stroke === 'var(--card)') {
+      const segments = [
+        ...(el.getAttribute('d') ?? '').matchAll(/M([\d.]+),([\d.]+)L([\d.]+),([\d.]+)/g),
+      ]
+      expect(segments.length).toBe(18) // one per scheduled quarter
+      for (const [, , y1, , y2] of segments) expect(y1).toBe(y2)
+      expect((el.getAttribute('d') ?? '').replace(/M[\d.]+,[\d.]+L[\d.]+,[\d.]+/g, '')).toBe('')
       const id = el.getAttribute('mask')?.match(/url\(#(.+)\)/)?.[1]
       const mask = id ? document.getElementById(id) : null
       expect(mask?.querySelectorAll('path[fill="black"]')).toHaveLength(2)
@@ -290,8 +297,46 @@ test('a four-digit negative tick fits inside the chart', async () => {
     ?.getBoundingClientRect().right
   const labels = [...document.querySelectorAll('[data-axis="ore"] text')]
   expect(labels.some((t) => /^[−-]1\s?000$/.test(t.textContent ?? ''))).toBe(true)
+  const plot = overlay().getBoundingClientRect()
   for (const label of labels) {
-    expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(svgRight ?? 0)
+    const box = label.getBoundingClientRect()
+    expect(box.right).toBeLessThanOrEqual(svgRight ?? 0)
+    // Right of the plot, not drawn back into it.
+    expect(box.left).toBeGreaterThanOrEqual(plot.right)
+  }
+})
+
+test('the kW labels sit inside the left margin, beside their ticks', async () => {
+  await renderChart()
+  const svgLeft = document
+    .querySelector('svg[data-chart="session-price"]')
+    ?.getBoundingClientRect().left
+  const plot = overlay().getBoundingClientRect()
+  const ticks = [...document.querySelectorAll('[data-axis="kw"] .visx-axis-tick')]
+  expect(ticks.length).toBeGreaterThan(1)
+  for (const tick of ticks) {
+    const label = tick.querySelector('text')?.getBoundingClientRect()
+    const line = tick.querySelector('line')?.getBoundingClientRect()
+    if (!label || !line) throw new Error('tick without label or line')
+    expect(label.right).toBeLessThanOrEqual(plot.left + 1)
+    expect(label.left).toBeGreaterThanOrEqual(svgLeft ?? 0)
+    // Vertically centred on its tick, not above it.
+    expect(Math.abs((label.top + label.bottom) / 2 - line.top)).toBeLessThan(3)
+  }
+})
+
+test('time labels are centred under their ticks', async () => {
+  await renderChart()
+  const ticks = [...document.querySelectorAll('[data-axis="time"] .visx-axis-tick')]
+  expect(ticks.length).toBeGreaterThan(1)
+  for (const tick of ticks) {
+    const text = tick.querySelector('text')
+    const label = text?.getBoundingClientRect()
+    const line = tick.querySelector('line')?.getBoundingClientRect()
+    if (!text || !label || !line) throw new Error('tick without label or line')
+    expect(text.getAttribute('text-anchor')).toBe('middle')
+    expect(Math.abs((label.left + label.right) / 2 - line.left)).toBeLessThan(1.5)
+    expect(label.top).toBeGreaterThanOrEqual(line.bottom - 1)
   }
 })
 

@@ -33,22 +33,24 @@ const NARROW_PX = 480
 const TICK_STEPS_H = [1, 2, 3, 4, 6, 12, 24]
 // Side margins fit the widest tick label. Measured at 10 px, "−1 000" is 28 px
 // in Times, 31 px in Arial and 37 px in Verdana (4.7–6.2 px a character), so
-// 6.5 px a character covers a wide sans like Switzer. Labels start 8 px out
-// (the tick), plus a 4 px spare.
+// 6.5 px a character covers a wide sans like Switzer. Labels start 10.5 px out
+// (the 8 px tick + 0.25 em), plus a spare.
 const CHAR_PX = 6.5
-const TICK_GAP = 12
+const TICK_GAP = 14
 const MIN_SIDE = 28
 
 // Colours, as contrast ratios light / dark (WCAG, from the oklch tokens):
 //   actual   --chart-3 fill                      vs card 9.1 / 8.1
 //   optimal  --chart-2 dashed outline            vs card 3.7 / 7.0
 //     One outline per run of consecutive schedule pieces, with a faint fill
-//     drawn behind the actual bars. The outline sits over the bars, and a
-//     --card halo is painted only outside the run (masked off inside), so the
-//     line always has card on its outer side (3.7 / 7.0) even where it crosses
-//     an actual bar: --chart-2 alone is only 2.5 / 1.15 against --chart-3. The
-//     halo never paints inside a run, so it never covers actual energy under
-//     the schedule; at most it trims ~2 px off a bar just outside a run's edge.
+//     drawn behind the actual bars. The outline sits over the bars. Along its
+//     top edge a --card halo is painted only above the run (masked off
+//     inside), so the top line has card on its outer side (3.7 / 7.0) even
+//     over a taller actual bar: --chart-2 alone is only 2.5 / 1.15 against
+//     --chart-3. The run's vertical edges get no halo — a halo there would cut
+//     card columns through hourly bars, swallow narrow bars and gaps at phone
+//     width, and trim the window rules — so they sit directly on bars or card;
+//     the haloed top edge and the fill already identify the run.
 //   spot     --foreground line                   vs card 19.8 / 15.9
 //            over a --card halo (the line alone is 2.2 / 2.0 against --chart-3)
 //   window   --muted-foreground dashed rules     vs card 4.7 / 6.7
@@ -62,7 +64,13 @@ const HALO = 'var(--card)'
 // As SVG attributes, not a class: the size is then the same in tests (which
 // load no app CSS) and in the app, so the margin estimate holds in both.
 const LABEL_PX = 10
-const TICK_LABEL = () => ({ className: 'fill-muted-foreground', fontSize: LABEL_PX })
+// Given as functions, visx skips its per-axis defaults (and their Arial), so
+// each mirrors its axis's default placement (@visx/axis left/right/bottom
+// TickLabelProps) and keeps the app font.
+const LABEL = { className: 'fill-muted-foreground', fontSize: LABEL_PX }
+const LEFT_LABEL = () => ({ ...LABEL, dx: '-0.25em', dy: '0.25em', textAnchor: 'end' as const })
+const RIGHT_LABEL = () => ({ ...LABEL, dx: '0.25em', dy: '0.25em', textAnchor: 'start' as const })
+const BOTTOM_LABEL = () => ({ ...LABEL, dy: '0.25em', textAnchor: 'middle' as const })
 const BAR_RADIUS = 2
 const GHOST_HALO_PX = 4
 const byStart = bisector((r: Row) => r.startMs)
@@ -244,7 +252,14 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
           const x0 = x(run[0]?.startMs ?? 0)
           const x1 = x(run.at(-1)?.endMs ?? 0)
           const outline = `M${x0},${innerH}${tops}L${x1},${innerH}`
-          return { key: run[0]?.startMs ?? 0, outline, shape: `${outline}Z` }
+          // The top edge alone, one horizontal segment per piece, for the halo.
+          const topEdge = run
+            .map((p) => {
+              const y = yKw(avgKw(p))
+              return `M${x(p.startMs)},${y}L${x(p.endMs)},${y}`
+            })
+            .join('')
+          return { key: run[0]?.startMs ?? 0, outline, topEdge, shape: `${outline}Z` }
         })
       : []
     const line = {
@@ -338,7 +353,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               </mask>
               <path
                 data-ghost="halo"
-                d={ghosts.map((g) => g.outline).join(' ')}
+                d={ghosts.map((g) => g.topEdge).join('')}
                 mask={`url(#${maskId})`}
                 style={{ fill: 'none', stroke: HALO, strokeWidth: GHOST_HALO_PX }}
               />
@@ -385,17 +400,19 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
                 tickLabel(ms, multiDay),
               )}
               tickFormat={(d) => tickLabel(Number(d), multiDay)}
-              tickLabelProps={TICK_LABEL}
+              tickLabelProps={BOTTOM_LABEL}
               {...axisProps}
             />
           </g>
-          <AxisLeft
-            scale={yKw}
-            numTicks={4}
-            tickFormat={(v) => formatOneDecimal(Number(v))}
-            tickLabelProps={TICK_LABEL}
-            {...axisProps}
-          />
+          <g data-axis="kw">
+            <AxisLeft
+              scale={yKw}
+              numTicks={4}
+              tickFormat={(v) => formatOneDecimal(Number(v))}
+              tickLabelProps={LEFT_LABEL}
+              {...axisProps}
+            />
+          </g>
           {hasPrice ? (
             <g data-axis="ore">
               <AxisRight
@@ -403,7 +420,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
                 scale={yOre}
                 numTicks={4}
                 tickFormat={(v) => formatOre(Number(v))}
-                tickLabelProps={TICK_LABEL}
+                tickLabelProps={RIGHT_LABEL}
                 {...axisProps}
               />
               <text x={innerW + 8} y={-8} fontSize={LABEL_PX} className="fill-muted-foreground">
