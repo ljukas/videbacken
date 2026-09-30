@@ -1,10 +1,15 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { renderToString } from 'react-dom/server'
 import { expect, test, vi } from 'vitest'
 import { renderWithProviders } from '~test/browser/render'
-import { LoadErrorAlert, type LoadErrorQuery } from './LoadErrorAlert'
+import { LoadErrorAlert, type LoadErrorQuery, loadFailed } from './LoadErrorAlert'
+
+// The retry's queryFn call is synchronous but its re-render is not; let it land.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
 
 const failed = (over: Partial<LoadErrorQuery> = {}): LoadErrorQuery => ({
   data: undefined,
+  isPlaceholderData: false,
   errorUpdateCount: 1,
   isFetching: false,
   refetch: () => {},
@@ -56,9 +61,56 @@ test('stays up, retry disabled, while a retry of a failed load is in flight', as
   const retry = screen.getByRole('button', { name: 'Försök igen' })
   await retry.click()
   await expect.poll(() => queryFn.mock.calls.length).toBe(2)
-  await expect.element(screen.getByRole('alert')).toBeVisible()
+  await settle()
+  expect(screen.getByRole('alert').elements()).toHaveLength(1)
   await expect.element(retry).toBeDisabled()
   resolveRetry('loaded')
   await expect.element(screen.getByText('loaded')).toBeVisible()
   expect(screen.getByRole('alert').elements()).toHaveLength(0)
+})
+
+// The route's shape: keep the previous key's data while the next one loads.
+function KeyedSection({ id, queryFn }: { id: string; queryFn: (id: string) => Promise<string> }) {
+  const query = useQuery({
+    queryKey: ['keyed', id],
+    queryFn: () => queryFn(id),
+    placeholderData: keepPreviousData,
+  })
+  return query.data && !loadFailed(query) ? (
+    <p>{query.data}</p>
+  ) : (
+    <LoadErrorAlert title="x" query={query} />
+  )
+}
+
+test('a retry after a failed key switch keeps the alert, not the previous key', async () => {
+  let resolveRetry: (value: string) => void = () => {}
+  const queryFn = vi
+    .fn<(id: string) => Promise<string>>()
+    .mockResolvedValueOnce('year A')
+    .mockRejectedValueOnce(new Error('down'))
+    .mockImplementationOnce(() => new Promise((resolve) => (resolveRetry = resolve)))
+  const { screen, queryClient } = await renderWithProviders(
+    <KeyedSection id="A" queryFn={queryFn} />,
+  )
+  await expect.element(screen.getByText('year A')).toBeVisible()
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>
+      <KeyedSection id="B" queryFn={queryFn} />
+    </QueryClientProvider>,
+  )
+  const retry = screen.getByRole('button', { name: 'Försök igen' })
+  await retry.click()
+  await expect.poll(() => queryFn.mock.calls.length).toBe(3)
+  await settle()
+  expect(screen.getByRole('alert').elements()).toHaveLength(1)
+  expect(screen.getByText('year A').elements()).toHaveLength(0)
+  resolveRetry('year B')
+  await expect.element(screen.getByText('year B')).toBeVisible()
+})
+
+// A loader prefetch that failed on the server isn't dehydrated, so the client
+// hydrates with no error; the server must render nothing too.
+test('renders nothing on the server, so hydration matches the client', () => {
+  expect(renderToString(<LoadErrorAlert title="x" query={failed({ isFetching: true })} />)).toBe('')
 })

@@ -7,7 +7,7 @@ import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
-import { LoadErrorAlert } from '~/components/evCharging/LoadErrorAlert'
+import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { PatternLegend } from '~/components/evCharging/PatternLegend'
 import {
@@ -131,7 +131,7 @@ function PatternsPage() {
         retrying={syncNow.isPendingFor('zaptec')}
       />
 
-      {patterns ? (
+      {patterns && !loadFailed(patternsResult) ? (
         <>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <YearSelector
@@ -236,7 +236,7 @@ function PatternsPage() {
                     </h2>
                   </CardHeader>
                   <CardContent>
-                    {timeline ? (
+                    {timeline && !loadFailed(timelineResult) ? (
                       <SessionTimeline
                         sessions={timeline.sessions}
                         year={timeline.year}
