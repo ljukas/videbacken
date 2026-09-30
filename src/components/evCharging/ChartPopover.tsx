@@ -93,7 +93,7 @@ export function ChartPopover({
       left={state.left}
       top={state.top}
       offsetTop={(state.top ?? 0) < -OFFSET_TOP ? OFFSET_BELOW : OFFSET_TOP}
-      className="pointer-events-none z-10 rounded-md bg-foreground px-2 py-1 text-background text-xs shadow-md"
+      className="pointer-events-none z-10 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-background text-xs shadow-md"
     >
       {children}
     </TooltipWithBounds>

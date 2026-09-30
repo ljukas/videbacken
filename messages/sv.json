@@ -396,8 +396,22 @@
   "charging_patterns_value_plugged": "{value} h inkopplad",
   "charging_patterns_heatmap_caption": "Laddning per veckodag och timme",
   "charging_patterns_hour_caption": "Laddning per timme på dygnet",
-  "charging_patterns_calendar_caption": "Laddning per dag i {month}",
-  "charging_patterns_day_sessions": "{count} sessioner",
+  "charging_patterns_calendar_caption": "Laddning per dag i {month} {year}",
+  "charging_patterns_calendar_pick": "Visa {month} i tidslinjen",
+  "charging_patterns_day_sessions": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} session",
+        "countPlural=other": "{countFormatted} sessioner"
+      }
+    }
+  ],
   "charging_patterns_unhourly_note": "{count} sessioner saknar timdata och ingår inte i timvyerna.",
   "charging_patterns_timeline_prev": "Föregående månad",
   "charging_patterns_timeline_next": "Nästa månad",
