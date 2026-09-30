@@ -84,7 +84,9 @@ function PatternsPage() {
     placeholderData: keepPreviousData,
   })
   const { data: patterns, isPlaceholderData: patternsStale } = patternsResult
-  const { data: timeline, isPlaceholderData: timelineStale } = timelineResult
+  const { data: timeline } = timelineResult
+  // A failed month's alert isn't a stale timeline: don't dim it or mark it busy.
+  const timelineStale = timelineResult.isPlaceholderData && !loadFailed(timelineResult)
   const set = useCallback(
     (next: { year?: number; metric?: PatternMetric; month?: number }) =>
       navigate({ to: '.', search: (s) => ({ ...s, ...next }), replace: true, resetScroll: false }),

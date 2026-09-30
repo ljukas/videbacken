@@ -18,13 +18,16 @@ export type LoadErrorQuery = {
 // to `pending` with `error: null` (query-core's fetchState), so isError drops
 // for the whole retry, backoff included. The count survives the reset, and a
 // success brings data and ends this. Placeholder data (keepPreviousData) is the
-// previous key's, not this one's, so it doesn't count as something to show.
+// previous key's, not this one's, so it doesn't count as something to show:
+// revisiting a key that never loaded shows the alert (retrying), not the
+// previous key's figures.
 export const loadFailed = (query: LoadErrorQuery) =>
   (query.data === undefined || query.isPlaceholderData) && query.errorUpdateCount > 0
 
 // A query that failed with nothing to show (ADR-0016): the shared destructive
-// Alert with a retry, instead of a blank section. Render it where the query's
-// data would go, gated on `loadFailed`; its retry refetches the query.
+// Alert with a retry, instead of a blank section. It gates itself; the caller
+// must gate its content on `!loadFailed(query)` too, not on `data` alone, since
+// placeholder data is `data`. The retry refetches the query.
 //
 // Client-only: a loader prefetch that failed on the server isn't dehydrated
 // (router.tsx), so the client hydrates without the error. Rendering the alert
