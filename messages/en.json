@@ -437,5 +437,8 @@
   "charging_patterns_timeline_continues": "continues past midnight",
   "charging_patterns_timeline_night": "night 22–06",
   "charging_patterns_empty_title": "No charging in {year}",
-  "charging_patterns_empty_description": "Patterns show up here once the car has charged."
+  "charging_patterns_empty_description": "Patterns show up here once the car has charged.",
+  "charging_patterns_error_title": "Couldn't load the charging patterns",
+  "charging_patterns_timeline_error_title": "Couldn't load the sessions",
+  "charging_patterns_error_description": "Check your connection and try again."
 }

@@ -437,5 +437,8 @@
   "charging_patterns_timeline_continues": "fortsätter efter midnatt",
   "charging_patterns_timeline_night": "natt 22–06",
   "charging_patterns_empty_title": "Inga laddningar {year}",
-  "charging_patterns_empty_description": "När bilen har laddats visas mönstren här."
+  "charging_patterns_empty_description": "När bilen har laddats visas mönstren här.",
+  "charging_patterns_error_title": "Laddmönstren kunde inte hämtas",
+  "charging_patterns_timeline_error_title": "Sessionerna kunde inte hämtas",
+  "charging_patterns_error_description": "Kontrollera anslutningen och försök igen."
 }

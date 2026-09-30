@@ -7,10 +7,12 @@ import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { ChargingTabs } from '~/components/evCharging/ChargingTabs'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
+import { LoadErrorAlert } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { PatternLegend } from '~/components/evCharging/PatternLegend'
 import {
   calendarIntensity,
+  hasPatternData,
   heatmapIntensity,
   type PatternMetric,
 } from '~/components/evCharging/patternChart'
@@ -48,10 +50,13 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
   }),
   validateSearch: searchSchema,
   loaderDeps: ({ search }) => ({ year: search.year, month: search.month }),
+  // The pattern and timeline reads are prefetched, not ensured: a failure
+  // there must not take down the page (heading, tabs, sync health) — each
+  // section shows its own error Alert with a retry instead.
   loader: async ({ context: { queryClient }, deps }) => {
     await Promise.all([
-      queryClient.ensureQueryData(patternsQuery(deps.year)),
-      queryClient.ensureQueryData(timelineQuery(deps.year, deps.month)),
+      queryClient.prefetchQuery(patternsQuery(deps.year)),
+      queryClient.prefetchQuery(timelineQuery(deps.year, deps.month)),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
     ])
   },
@@ -70,14 +75,16 @@ function PatternsPage() {
   const search = Route.useSearch()
   const metric: PatternMetric = search.metric ?? 'kwh'
   const timelineRef = useRef<HTMLDivElement>(null)
-  const { data: patterns, isPlaceholderData: patternsStale } = useQuery({
+  const patternsResult = useQuery({
     ...patternsQuery(search.year),
     placeholderData: keepPreviousData, // keep the old page while another year loads
   })
-  const { data: timeline, isPlaceholderData: timelineStale } = useQuery({
+  const timelineResult = useQuery({
     ...timelineQuery(search.year, search.month),
     placeholderData: keepPreviousData,
   })
+  const { data: patterns, isPlaceholderData: patternsStale } = patternsResult
+  const { data: timeline, isPlaceholderData: timelineStale } = timelineResult
   const set = useCallback(
     (next: { year?: number; metric?: PatternMetric; month?: number }) =>
       navigate({ to: '.', search: (s) => ({ ...s, ...next }), replace: true, resetScroll: false }),
@@ -96,7 +103,7 @@ function PatternsPage() {
   )
   const stepMonth = useCallback((mo: number) => set({ month: mo }), [set])
   const ids = [useId(), useId(), useId(), useId()]
-  const hasData = patterns ? patterns.months.some((mo) => mo.sessions > 0 || mo.kwh > 0) : false
+  const hasData = patterns ? hasPatternData(patterns) : false
   // The same scales the heatmap and calendar derive for their cells.
   const heatmapScale = useMemo(
     () => (patterns ? heatmapIntensity(patterns.weekdayHour, metric) : undefined),
@@ -163,7 +170,8 @@ function PatternsPage() {
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3">
                     <WeekdayHourHeatmap grid={patterns.weekdayHour} metric={metric} />
-                    {patterns.unhourlySessions > 0 ? (
+                    {/* Interval-less sessions do count in the plugged-in view. */}
+                    {metric === 'kwh' && patterns.unhourlySessions > 0 ? (
                       <p className="text-muted-foreground text-xs">
                         {m.charging_patterns_unhourly_note({ count: patterns.unhourlySessions })}
                       </p>
@@ -236,6 +244,12 @@ function PatternsPage() {
                         months={timeline.months}
                         onMonth={stepMonth}
                       />
+                    ) : timelineResult.isError ? (
+                      <LoadErrorAlert
+                        title={m.charging_patterns_timeline_error_title()}
+                        onRetry={() => void timelineResult.refetch()}
+                        retrying={timelineResult.isFetching}
+                      />
                     ) : null}
                   </CardContent>
                 </Card>
@@ -253,6 +267,12 @@ function PatternsPage() {
             </Empty>
           )}
         </>
+      ) : patternsResult.isError ? (
+        <LoadErrorAlert
+          title={m.charging_patterns_error_title()}
+          onRetry={() => void patternsResult.refetch()}
+          retrying={patternsResult.isFetching}
+        />
       ) : null}
     </PageContainer>
   )

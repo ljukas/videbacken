@@ -1,6 +1,6 @@
 import { ascending, bisectLeft, range } from 'd3-array'
 import { scaleQuantile, scaleThreshold } from 'd3-scale'
-import type { DayTotal, Slot } from '~/lib/evCharging/patterns'
+import type { DayTotal, PatternAggregates, Slot } from '~/lib/evCharging/patterns'
 import { m } from '~/paraglide/messages'
 import { formatOneDecimal } from './format'
 
@@ -15,6 +15,19 @@ export function valueLabel(value: number, metric: PatternMetric): string {
   return metric === 'kwh'
     ? m.charging_patterns_value_kwh({ value: formatOneDecimal(value) })
     : m.charging_patterns_value_plugged({ value: formatOneDecimal(value) })
+}
+
+/**
+ * Whether a year has anything to draw: a counted session or kWh in some month,
+ * or plugged-in hours / kWh in some hour. The last catches a year whose only
+ * data is a zero-kWh session spilling over from the previous year's evening
+ * (its session and kWh count in the year it started).
+ */
+export function hasPatternData(p: Pick<PatternAggregates, 'months' | 'hourOfDay'>): boolean {
+  return (
+    p.months.some((mo) => mo.sessions > 0 || mo.kwh > 0) ||
+    p.hourOfDay.some((h) => h.kwh > 0 || h.pluggedHours > 0)
+  )
 }
 
 /** The empty-cell fill; empty cells also get a `var(--border)` stroke. */
