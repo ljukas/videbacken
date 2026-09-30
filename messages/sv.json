@@ -422,6 +422,8 @@
   "charging_patterns_timeline_summary": "laddar {charging} h av {plugged} h inkopplad",
   "charging_patterns_timeline_no_hourly": "ingen timdata",
   "charging_patterns_timeline_empty": "Inga laddningar i {month}.",
+  "charging_patterns_timeline_continues": "fortsätter efter 12:00",
+  "charging_patterns_timeline_night": "natt 22–06",
   "charging_patterns_empty_title": "Inga laddningar {year}",
   "charging_patterns_empty_description": "När bilen har laddats visas mönstren här."
 }

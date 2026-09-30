@@ -422,6 +422,8 @@
   "charging_patterns_timeline_summary": "charging {charging} h of {plugged} h plugged in",
   "charging_patterns_timeline_no_hourly": "no hourly data",
   "charging_patterns_timeline_empty": "No charging in {month}.",
+  "charging_patterns_timeline_continues": "continues past 12:00",
+  "charging_patterns_timeline_night": "night 22–06",
   "charging_patterns_empty_title": "No charging in {year}",
   "charging_patterns_empty_description": "Patterns show up here once the car has charged."
 }

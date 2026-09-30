@@ -4,11 +4,12 @@ import { useParentSize } from '@visx/responsive'
 import { Bar } from '@visx/shape'
 import { bisectLeft, bisectRight, range } from 'd3-array'
 import { scaleLinear } from 'd3-scale'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarXIcon, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useMemo } from 'react'
 import { Button } from '~/components/ui/button'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import type { TimelineSession } from '~/lib/evCharging/patterns'
-import { stockholmNoonOnOrBefore } from '~/lib/time/stockholm'
+import { stockholmNightInWindow, stockholmNoonOnOrBefore } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { formatOneDecimal, formatTime, formatWeekdayDay, monthName } from './format'
 import { valueLabel } from './WeekdayHourHeatmap'
@@ -18,16 +19,27 @@ const LABEL_W = 200
 const GAP = 12
 const AXIS_H = 18
 const ROW_H = 22
+// Track + label + padding, for reserving height before the width is measured.
+const ROW_BLOCK = 40
 const HOUR_MS = 3_600_000
-const IDLE_FILL = 'color-mix(in oklch, var(--brand) 18%, transparent)'
-const IDLE_STROKE = 'color-mix(in oklch, var(--brand) 35%, transparent)'
-// 22:00-06:00 on a 12:00 -> 12:00 axis.
-const NIGHT_FROM = 10 / 24
-const NIGHT_TO = 18 / 24
+const IDLE_FILL = 'color-mix(in oklch, var(--brand) 25%, transparent)'
+const IDLE_STROKE = 'color-mix(in oklch, var(--brand) 60%, transparent)'
+const NIGHT_FILL = 'var(--muted-foreground)'
+const NIGHT_OPACITY = 0.1
+const MIN_CHARGING_PX = 2
+const MARK_W = 6
+// A foreground triangle with a card-coloured halo: readable over bar or background.
+const MARK_STYLE = {
+  fill: 'var(--foreground)',
+  stroke: 'var(--card)',
+  strokeWidth: 2,
+  paintOrder: 'stroke',
+} as const
 
 type Row = {
   session: TimelineSession
   bars: { key: string; x: number; width: number; kind: 'charging' | 'idle' }[]
+  night: { x: number; width: number }
   clippedLeft: boolean
   clippedRight: boolean
 }
@@ -38,11 +50,16 @@ function buildRow(session: TimelineSession, trackW: number): Row {
   const bars = session.segments.map((seg, i) => {
     const x0 = x(seg.startAt.getTime())
     const x1 = x(seg.endAt.getTime())
-    return { key: `${i}-${seg.kind}`, x: x0, width: Math.max(0, x1 - x0), kind: seg.kind }
+    const min = seg.kind === 'charging' ? MIN_CHARGING_PX : 0
+    return { key: `${i}-${seg.kind}`, x: x0, width: Math.max(min, x1 - x0), kind: seg.kind }
   })
+  const night = stockholmNightInWindow(startMs)
+  const nx0 = x(night.startMs)
+  const nx1 = x(night.endMs)
   return {
     session,
     bars,
+    night: { x: nx0, width: Math.max(0, nx1 - nx0) },
     clippedLeft: session.startAt.getTime() < startMs,
     clippedRight: session.endAt.getTime() > endMs,
   }
@@ -74,7 +91,7 @@ function MonthStepper({
       >
         <ChevronLeft />
       </Button>
-      <span className="min-w-32 text-center font-medium text-sm capitalize">
+      <span aria-live="polite" className="min-w-32 text-center font-medium text-sm capitalize">
         {monthName(month)} {year}
       </span>
       <Button
@@ -129,11 +146,12 @@ export function SessionTimeline({
           tickLength={4}
           stroke="var(--border)"
           tickStroke="var(--border)"
-          tickLabelProps={{
+          tickLabelProps={(_v, i, all) => ({
             className: 'fill-muted-foreground text-[10px]',
-            textAnchor: 'middle',
+            // End labels stay inside the track instead of overhanging it.
+            textAnchor: i === 0 ? 'start' : i === all.length - 1 ? 'end' : 'middle',
             dy: '-0.25em',
-          }}
+          })}
         />
       </svg>
     ) : null
@@ -154,15 +172,33 @@ export function SessionTimeline({
             />
             {m.charging_patterns_timeline_idle()}
           </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="size-2.5 rounded-sm"
+              style={{ background: NIGHT_FILL, opacity: NIGHT_OPACITY * 2 }}
+            />
+            {m.charging_patterns_timeline_night()}
+          </span>
         </div>
       </div>
 
       {sessions.length === 0 ? (
-        <p className="py-6 text-center text-muted-foreground text-sm">
-          {m.charging_patterns_timeline_empty({ month: monthName(month) })}
-        </p>
+        <Empty className="py-6">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <CalendarXIcon />
+            </EmptyMedia>
+            <EmptyTitle>
+              {m.charging_patterns_timeline_empty({ month: monthName(month) })}
+            </EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
-        <div ref={parentRef} className="w-full" style={{ minHeight: AXIS_H + ROW_H }}>
+        <div
+          ref={parentRef}
+          className="w-full"
+          style={{ minHeight: AXIS_H + sessions.length * ROW_BLOCK }}
+        >
           {trackW > 0 && (
             <>
               <div
@@ -171,7 +207,8 @@ export function SessionTimeline({
               >
                 {axis}
               </div>
-              <ul className="flex flex-col">
+              {/* biome-ignore lint/a11y/noRedundantRoles: list-style none makes Safari drop the list semantics */}
+              <ul role="list" className="flex flex-col">
                 {rows.map((row) => (
                   <TimelineRow key={row.session.id} row={row} trackW={trackW} narrow={narrow} />
                 ))}
@@ -213,20 +250,24 @@ function TimelineRow({ row, trackW, narrow }: { row: Row; trackW: number; narrow
                 plugged: formatOneDecimal(pluggedHours),
               })
             : m.charging_patterns_timeline_no_hourly()}
+          {row.clippedRight && ` · ${m.charging_patterns_timeline_continues()}`}
         </div>
       </div>
       {/* biome-ignore lint/a11y/noSvgWithoutTitle: decorative; the row label carries the information */}
       <svg width={trackW} height={ROW_H} aria-hidden className="block shrink-0">
         <Group>
           <rect
-            x={NIGHT_FROM * trackW}
+            data-night
+            x={row.night.x}
             y={0}
-            width={(NIGHT_TO - NIGHT_FROM) * trackW}
+            width={row.night.width}
             height={ROW_H}
-            style={{ fill: 'var(--muted)' }}
-            opacity={0.5}
+            style={{ fill: NIGHT_FILL, fillOpacity: NIGHT_OPACITY }}
           />
-          {row.bars.map((b) => (
+          {[
+            ...row.bars.filter((b) => b.kind === 'idle'),
+            ...row.bars.filter((b) => b.kind === 'charging'),
+          ].map((b) => (
             <Bar
               key={b.key}
               data-segment={b.kind}
@@ -243,27 +284,18 @@ function TimelineRow({ row, trackW, narrow }: { row: Row; trackW: number; narrow
             />
           ))}
           {row.clippedLeft && (
-            <text
+            <path
               data-clipped="left"
-              x={2}
-              y={ROW_H / 2}
-              dominantBaseline="middle"
-              className="fill-muted-foreground text-xs"
-            >
-              ‹
-            </text>
+              d={`M ${MARK_W + 1} ${ROW_H / 2 - 5} L 1 ${ROW_H / 2} L ${MARK_W + 1} ${ROW_H / 2 + 5} Z`}
+              style={MARK_STYLE}
+            />
           )}
           {row.clippedRight && (
-            <text
+            <path
               data-clipped="right"
-              x={trackW - 2}
-              y={ROW_H / 2}
-              textAnchor="end"
-              dominantBaseline="middle"
-              className="fill-muted-foreground text-xs"
-            >
-              ›
-            </text>
+              d={`M ${trackW - MARK_W - 1} ${ROW_H / 2 - 5} L ${trackW - 1} ${ROW_H / 2} L ${trackW - MARK_W - 1} ${ROW_H / 2 + 5} Z`}
+              style={MARK_STYLE}
+            />
           )}
         </Group>
       </svg>

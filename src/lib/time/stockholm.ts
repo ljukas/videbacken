@@ -115,3 +115,18 @@ export function stockholmNoonOnOrBefore(ms: number): { startMs: number; endMs: n
   const start = ms >= noonOf(day) ? day : addDays(day, -1)
   return { startMs: noonOf(start), endMs: noonOf(addDays(start, 1)) }
 }
+
+/**
+ * The night (22:00 to 06:00 Stockholm) inside the noon-to-noon window that
+ * starts at `noonMs`, as true instants (DST nights are 23/25 h long).
+ */
+export function stockholmNightInWindow(noonMs: number): { startMs: number; endMs: number } {
+  const noon = new TZDate(noonMs, STOCKHOLM_TIME_ZONE)
+  const y = noon.getFullYear()
+  const mo = noon.getMonth()
+  const d = noon.getDate()
+  return {
+    startMs: TZDate.tz(STOCKHOLM_TIME_ZONE, y, mo, d, 22).getTime(),
+    endMs: TZDate.tz(STOCKHOLM_TIME_ZONE, y, mo, d + 1, 6).getTime(),
+  }
+}

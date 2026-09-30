@@ -91,12 +91,9 @@ export function formatRunDuration(ms: number): string {
   return `${new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 1 }).format(ms / 1000)} s`
 }
 
-// Short month labels ("jan.", "feb." / "Jan", "Feb") for 1-based months.
+// Short month labels ("jan", "feb" / "Jan", "Feb") for 1-based months.
 export function monthLabel(month: number): string {
-  // Mid-month UTC noon: the same calendar month in every time zone.
-  return new Intl.DateTimeFormat(getIntlLocale(), { month: 'short', timeZone: 'UTC' }).format(
-    new Date(Date.UTC(2000, month - 1, 15, 12)),
-  )
+  return getDateFnsLocale().localize.month((month - 1) as Month, { width: 'abbreviated' })
 }
 
 // weekday: 0 = Monday … 6 = Sunday. date-fns counts from Sunday = 0.

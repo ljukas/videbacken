@@ -112,3 +112,63 @@ test('with no months at all both buttons are disabled', async () => {
   await expect.element(screen.getByRole('button', { name: 'Föregående månad' })).toBeDisabled()
   await expect.element(screen.getByRole('button', { name: 'Nästa månad' })).toBeDisabled()
 })
+
+test('an empty month uses the shared Empty', async () => {
+  const { screen } = await render({ sessions: [] })
+  await expect.poll(() => screen.container.querySelector('[data-slot="empty"]')).not.toBeNull()
+})
+
+test('a clipped row draws a marker and announces that it continues', async () => {
+  const { screen } = await render()
+  await expect
+    .poll(() => screen.container.querySelectorAll('path[data-clipped="right"]').length)
+    .toBe(1)
+  await expect.element(screen.getByText(/fortsätter efter 12:00/)).toBeInTheDocument()
+})
+
+test('the rows are a list and the month label is a polite live region', async () => {
+  const { screen } = await render()
+  await expect.element(screen.getByRole('list')).toBeInTheDocument()
+  expect(screen.container.querySelector('[aria-live="polite"]')?.textContent).toMatch(
+    /september 2026/i,
+  )
+})
+
+test('a five-minute charge is still at least 2 px wide', async () => {
+  const short: TimelineSession = {
+    ...overnight,
+    id: 's',
+    segments: [
+      { startAt: d('2026-09-05T19:10:00Z'), endAt: d('2026-09-05T19:15:00Z'), kind: 'charging' },
+      { startAt: d('2026-09-05T19:15:00Z'), endAt: d('2026-09-06T05:02:00Z'), kind: 'idle' },
+    ],
+  }
+  const { screen } = await render({ sessions: [short] })
+  await expect
+    .poll(() => screen.container.querySelector('rect[data-segment="charging"]'))
+    .not.toBeNull()
+  const w = Number(
+    screen.container.querySelector('rect[data-segment="charging"]')?.getAttribute('width'),
+  )
+  expect(w).toBeGreaterThanOrEqual(2)
+})
+
+test('the night band sits at the true 22:00-06:00 instants on a spring-forward row', async () => {
+  // Sat 28 Mar 2026 12:00 CET -> Sun 29 Mar 12:00 CEST is a 23 h row.
+  const dst: TimelineSession = {
+    ...overnight,
+    id: 'dst',
+    startAt: d('2026-03-28T20:00:00Z'),
+    endAt: d('2026-03-29T06:00:00Z'),
+    segments: [
+      { startAt: d('2026-03-28T20:00:00Z'), endAt: d('2026-03-29T06:00:00Z'), kind: 'idle' },
+    ],
+  }
+  const { screen } = await render({ sessions: [dst], month: 3, months: [3] })
+  await expect.poll(() => screen.container.querySelector('rect[data-night]')).not.toBeNull()
+  const band = screen.container.querySelector('rect[data-night]') as SVGRectElement
+  const trackW = Number(band.closest('svg')?.getAttribute('width'))
+  // Row: 11:00Z -> 10:00Z (23 h). Night: 21:00Z -> 04:00Z (7 h, starting 10 h in).
+  expect(Number(band.getAttribute('x'))).toBeCloseTo((10 / 23) * trackW, 3)
+  expect(Number(band.getAttribute('width'))).toBeCloseTo((7 / 23) * trackW, 3)
+})
