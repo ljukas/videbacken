@@ -51,7 +51,7 @@ src/
     onboarding.tsx              full-screen 2-step wizard (name → avatar); guard while onboardedAt null
     signed-in.tsx               magic-link "continue here" confirmation
     api/{auth/$.ts, rpc/$.ts, log.ts}   Better Auth / oRPC catch-alls; browser log sink
-    api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, elpris-sync.ts 12:30+15:30 UTC)
+    api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
     _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging, sensors
@@ -62,13 +62,14 @@ src/
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
     services/                   approvedEmail, user, file, sensor, evCharging, integrationSync, spotPrice, tariff — own all DB access + domain rules (ADR-0002)
-    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris (pulled, fail closed — ADR-0019); http.ts + testing/fakeFetch shared by the pulled clients
+    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, eltariff (pulled, fail closed — ADR-0019); http.ts + testing/fakeFetch shared by the pulled clients
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
     evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, tariff limits + energy tax (ADR-0019, ADR-0020)
     integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019)
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
+    gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
     time/stockholm.ts           client-safe Stockholm calendar helpers (DST-aware day bounds)
     integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — ADR-0019)
     files/, image/              upload helpers: EXIF / blurhash, HEIC transcode, sizes
@@ -189,6 +190,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 - Storage `BLOB_*` (prod) / `S3_*` (local RustFS); email `RESEND_API_KEY`+`EMAIL_FROM` (prod) / `SMTP_*` (local Mailpit); `REDIS_URL` (local queue); `LOG_LEVEL`.
   `STORAGE_ADAPTER=devLog` / `EMAIL_ADAPTER=devLog` force the no-op adapters (offline dev without docker).
 - `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (unset → fails closed as `not_configured`, ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data).
+- `GRID_FACILITY_ID` (18-digit metering-point ID, prod only, never committed/logged; unset → the monthly catalogue check is skipped).
 - `CRON_SECRET` (Bearer token gating `/api/cron/*`); `SHELLY_WEBHOOK_TOKEN` (query-param token for `/api/webhooks/shelly`).
 
 ---

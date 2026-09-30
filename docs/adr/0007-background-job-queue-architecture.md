@@ -93,12 +93,14 @@ export type QueueTopic =
   | 'email_user_invited'
   | 'heic_transcode'
   | 'email_integration_sync_alert'
+  | 'email_grid_tariff_available'
 
 export type QueuePayloadMap = {
   blurhash: { fileId: string; kind: 'avatar'; userId: string }
   email_user_invited: { to: string; inviteUrl: string; locale: Locale } // ADR-0017
   heic_transcode: { fileId: string; kind: 'avatar'; userId: string }
   email_integration_sync_alert: { to: string; source: IntegrationSource; /* … */ } // ADR-0019
+  email_grid_tariff_available: { to: string; companyName: string | null; locale: Locale } // ADR-0019 (watcher)
 }
 
 export interface QueueEffects {
@@ -182,6 +184,7 @@ nitro({
         { topic: 'email_user_invited' },
         { topic: 'heic_transcode' },
         { topic: 'email_integration_sync_alert' },
+        { topic: 'email_grid_tariff_available' },
       ],
     },
   },
@@ -317,10 +320,11 @@ After this ADR's pattern lands or is touched:
 - `src/lib/effects/queue/adapters/bullmqQueue.ts` — local dev adapter (BullMQ `Queue` per topic).
 - `src/lib/effects/queue/adapters/devLog.ts` — no-op adapter (tests + offline dev).
 - `src/lib/effects/queue/queue.test.ts` — contract test.
-- `src/lib/effects/index.ts` — re-exports `queue` alongside `email`, `storage`, `zaptec`, `elpris`.
+- `src/lib/effects/index.ts` — re-exports `queue` alongside `email`, `storage`, `zaptec`, `elpris`, `eltariff`.
 - `src/lib/queue/handlers/blurhash.ts` — shared consumer handler (`blurhash` topic).
 - `src/lib/queue/handlers/heicTranscode.ts` — shared consumer handler (`heic_transcode` topic). Producer is `confirmAvatarUpload` (`src/lib/orpc/procedures/image.ts`).
 - `src/lib/queue/handlers/emailIntegrationSyncAlert.ts` — shared consumer handler (`email_integration_sync_alert` topic; ADR-0019). Producer is `runPulledSync` (`src/lib/integrations/runPulledSync.ts`).
+- `src/lib/queue/handlers/emailGridTariffAvailable.ts` — shared consumer handler (`email_grid_tariff_available` topic; ADR-0019's watcher amendment). Producer is the monthly catalogue check (`src/lib/gridTariff/catalogueCheck.ts`).
 - `src/lib/queue/handlers/emailUserInvited.ts` — shared consumer handler (`email_user_invited` topic; ADR-0017). Producer is the `invite` / `resendInvite` oRPC procedures (`src/lib/orpc/procedures/user.ts`).
 - `src/lib/queue/dispatch.ts` / `src/lib/queue/index.ts` — the dispatcher (handler contract, outcome log line, delivery cap) and the handler table both consumers use.
 - `server/plugins/queueConsumer.ts` — Vercel Queues consumer (Nitro `vercel:queue` hook).

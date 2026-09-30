@@ -110,3 +110,6 @@ CLAUDE.md, CONTEXT.md. Browser verification of `/charging` (desktop/tablet/mobil
 Monthly cron: fetch `https://eltariff.se/tariffcatalogue/all`, match the facility ID from an env var
 (`GRID_FACILITY_ID`, not committed) against each entry's `meteringPointIdFrom/To` locally, and email admins once it's
 covered (then Phase 2b — see the scope map). Fails closed; no personal data leaves the app.
+
+Built as a lightweight watcher (owner's call): no `integration_sync` row, stateless monthly email while covered. See
+ADR-0019's watcher amendment.
