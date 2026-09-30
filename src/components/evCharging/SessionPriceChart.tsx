@@ -31,18 +31,24 @@ const MARGIN_TOP = 20
 const MARGIN_BOTTOM = 28
 const NARROW_PX = 480
 const TICK_STEPS_H = [1, 2, 3, 4, 6, 12, 24]
-// Side margins fit the widest tick label: 10 px text stays under 7.5 px a
-// character (digits, minus, the narrow group space), plus the 8 px tick and a gap.
-const CHAR_PX = 7.5
-const TICK_GAP = 14
+// Side margins fit the widest tick label. Measured at 10 px, "−1 000" is 28 px
+// in Times, 31 px in Arial and 37 px in Verdana (4.7–6.2 px a character), so
+// 6.5 px a character covers a wide sans like Switzer. Labels start 8 px out
+// (the tick), plus a 4 px spare.
+const CHAR_PX = 6.5
+const TICK_GAP = 12
 const MIN_SIDE = 28
 
 // Colours, as contrast ratios light / dark (WCAG, from the oklch tokens):
 //   actual   --chart-3 fill                      vs card 9.1 / 8.1
 //   optimal  --chart-2 dashed outline            vs card 3.7 / 7.0
-//            over a solid --card underlay ring   vs --chart-3 9.1 / 8.1
-//     --chart-2 alone is only 2.5 / 1.15 against --chart-3, so the ring is what
-//     keeps a ghost bar visible where it overlaps an actual bar.
+//     One outline per run of consecutive schedule pieces, with a faint fill
+//     drawn behind the actual bars. The outline sits over the bars, and a
+//     --card halo is painted only outside the run (masked off inside), so the
+//     line always has card on its outer side (3.7 / 7.0) even where it crosses
+//     an actual bar: --chart-2 alone is only 2.5 / 1.15 against --chart-3. The
+//     halo never paints inside a run, so it never covers actual energy under
+//     the schedule; at most it trims ~2 px off a bar just outside a run's edge.
 //   spot     --foreground line                   vs card 19.8 / 15.9
 //            over a --card halo (the line alone is 2.2 / 2.0 against --chart-3)
 //   window   --muted-foreground dashed rules     vs card 4.7 / 6.7
@@ -53,8 +59,24 @@ const OPTIMAL = 'var(--chart-2)'
 const SPOT = 'var(--foreground)'
 const RULE = 'var(--muted-foreground)'
 const HALO = 'var(--card)'
-const TICK_LABEL = () => ({ className: 'fill-muted-foreground text-[10px]' })
+// As SVG attributes, not a class: the size is then the same in tests (which
+// load no app CSS) and in the app, so the margin estimate holds in both.
+const LABEL_PX = 10
+const TICK_LABEL = () => ({ className: 'fill-muted-foreground', fontSize: LABEL_PX })
+const BAR_RADIUS = 2
+const GHOST_HALO_PX = 4
 const byStart = bisector((r: Row) => r.startMs)
+
+// Consecutive schedule pieces, merged into runs drawn as one outline each.
+function scheduleRuns(pieces: readonly Stretch[]): Stretch[][] {
+  const runs: Stretch[][] = []
+  for (const p of [...pieces].sort((a, b) => a.startMs - b.startMs)) {
+    const run = runs.at(-1)
+    if (run && run.at(-1)?.endMs === p.startMs) run.push(p)
+    else runs.push([p])
+  }
+  return runs
+}
 
 const stockholmHour = (ms: number) => getHours(ms, { in: tz(STOCKHOLM_TIME_ZONE) })
 
@@ -162,6 +184,8 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
   const toggleId = useId()
   const [showOptimal, setShowOptimal] = useState(true)
   const { parentRef, width } = useParentSize({ debounceTime: 100 })
+  // A mask id valid in url(#…): useId's colons are not.
+  const maskId = `ghost-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const popover = useChartPopover<Row>()
   const { show, containerProps } = popover
   const { window: win, intervals, prices, optimalSchedule } = detail
@@ -207,6 +231,22 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
       const y0 = yKw(avgKw(s))
       return { x: x0, y: y0, width: Math.max(1, x(s.endMs) - x0 - 1), height: innerH - y0 }
     }
+    // Each run of the cheapest schedule: its stepped top edge from baseline to
+    // baseline (the outline, open at the bottom) and the same shape closed.
+    const ghosts = showOptimal
+      ? scheduleRuns(optimal).map((run) => {
+          const tops = run
+            .map((p) => {
+              const y = yKw(avgKw(p))
+              return `L${x(p.startMs)},${y}L${x(p.endMs)},${y}`
+            })
+            .join('')
+          const x0 = x(run[0]?.startMs ?? 0)
+          const x1 = x(run.at(-1)?.endMs ?? 0)
+          const outline = `M${x0},${innerH}${tops}L${x1},${innerH}`
+          return { key: run[0]?.startMs ?? 0, outline, shape: `${outline}Z` }
+        })
+      : []
     const line = {
       data: stepPoints(prices),
       x: (d: StepPoint) => x(d.t),
@@ -257,33 +297,67 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               style={{ stroke: RULE, strokeWidth: 1, strokeDasharray: '1 3' }}
             />
           ) : null}
-          {charged.map((s) => (
-            <BarRounded
-              key={`a${s.startMs}`}
-              data-series="actual"
-              {...bar(s)}
-              radius={2}
-              top
-              style={{ fill: ACTUAL }}
+          {ghosts.map((g) => (
+            <path
+              key={`f${g.key}`}
+              data-ghost="fill"
+              d={g.shape}
+              style={{ fill: OPTIMAL, fillOpacity: 0.15 }}
             />
           ))}
-          {showOptimal
-            ? optimal.map((s) => (
-                <g key={`o${s.startMs}`} data-series="optimal">
-                  <Bar {...bar(s)} style={{ fill: 'none', stroke: HALO, strokeWidth: 3.5 }} />
-                  <Bar
-                    {...bar(s)}
-                    style={{
-                      fill: OPTIMAL,
-                      fillOpacity: 0.15,
-                      stroke: OPTIMAL,
-                      strokeWidth: 1.5,
-                      strokeDasharray: '4 2',
-                    }}
-                  />
-                </g>
-              ))
-            : null}
+          {charged.map((s) => {
+            const b = bar(s)
+            // BarRounded clamps its radius to >= 1 px and would poke a sliver
+            // below the baseline; a bar too short to round is a plain rect.
+            return b.height >= 2 * BAR_RADIUS ? (
+              <BarRounded
+                key={`a${s.startMs}`}
+                data-series="actual"
+                {...b}
+                radius={BAR_RADIUS}
+                top
+                style={{ fill: ACTUAL }}
+              />
+            ) : (
+              <Bar key={`a${s.startMs}`} data-series="actual" {...b} style={{ fill: ACTUAL }} />
+            )
+          })}
+          {ghosts.length > 0 ? (
+            <>
+              <mask id={maskId} maskUnits="userSpaceOnUse">
+                <rect
+                  x={-GHOST_HALO_PX}
+                  y={-GHOST_HALO_PX}
+                  width={innerW + 2 * GHOST_HALO_PX}
+                  height={innerH + 2 * GHOST_HALO_PX}
+                  fill="white"
+                />
+                {ghosts.map((g) => (
+                  <path key={`m${g.key}`} d={g.shape} fill="black" />
+                ))}
+              </mask>
+              <path
+                data-ghost="halo"
+                d={ghosts.map((g) => g.outline).join(' ')}
+                mask={`url(#${maskId})`}
+                style={{ fill: 'none', stroke: HALO, strokeWidth: GHOST_HALO_PX }}
+              />
+              {ghosts.map((g) => (
+                <path
+                  key={`o${g.key}`}
+                  data-ghost="outline"
+                  data-series="optimal"
+                  d={g.outline}
+                  style={{
+                    fill: 'none',
+                    stroke: OPTIMAL,
+                    strokeWidth: 1.5,
+                    strokeDasharray: '4 2',
+                  }}
+                />
+              ))}
+            </>
+          ) : null}
           <LinePath
             {...line}
             style={{ fill: 'none', stroke: HALO, strokeWidth: 4.5, strokeLinejoin: 'round' }}
@@ -332,12 +406,18 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
                 tickLabelProps={TICK_LABEL}
                 {...axisProps}
               />
-              <text x={innerW + 8} y={-8} className="fill-muted-foreground text-[10px]">
+              <text x={innerW + 8} y={-8} fontSize={LABEL_PX} className="fill-muted-foreground">
                 öre
               </text>
             </g>
           ) : null}
-          <text x={-8} y={-8} textAnchor="end" className="fill-muted-foreground text-[10px]">
+          <text
+            x={-8}
+            y={-8}
+            textAnchor="end"
+            fontSize={LABEL_PX}
+            className="fill-muted-foreground"
+          >
             kW
           </text>
         </Group>
@@ -355,6 +435,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
     startMs,
     endMs,
     multiDay,
+    maskId,
   ])
 
   const table = useMemo(

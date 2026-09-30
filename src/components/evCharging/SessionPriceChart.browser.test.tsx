@@ -85,8 +85,72 @@ test('draws a bar per charged interval, ghost bars for the optimal schedule and 
     .element(screen.getByRole('heading', { level: 2, name: m.charging_session_chart_title() }))
     .toBeVisible()
   expect(series('actual')).toHaveLength(1) // the 0-kWh hour draws nothing
-  expect(series('optimal')).toHaveLength(4)
+  expect(series('optimal')).toHaveLength(1) // four consecutive quarters: one run, one outline
   expect(series('spot')).toHaveLength(1)
+})
+
+// An overnight session at phone width: plugged in 22:00–06:00 Stockholm, hourly
+// bars at 11 kW, and a cheapest schedule at the same rate in two runs, one of
+// them right over charged hours. Quarters are ~5 px wide here.
+const HOUR = 4 * QUARTER
+const night = at('20:00')
+const overnight = {
+  ...detail,
+  window: { startMs: night, endMs: night + 8 * HOUR },
+  intervals: [0, 1, 2, 3].map((h) => ({
+    startMs: night + h * HOUR,
+    endMs: night + (h + 1) * HOUR,
+    kwh: 11,
+  })),
+  prices: quarters(night - HOUR, 40, () => 100),
+  optimalSchedule: [
+    ...quarters(night + HOUR, 2, () => 0),
+    ...quarters(night + 3 * HOUR, 16, () => 0),
+  ].map((q) => ({ startMs: q.startMs, endMs: q.endMs, kwh: 2.75 })),
+} as Detail
+
+test('at phone width the cheapest schedule never covers the actual bars', async () => {
+  await renderChart(overnight, 360)
+  expect(series('actual')).toHaveLength(4)
+  expect(series('optimal')).toHaveLength(2) // one outline per run
+  const firstBar = series('actual')[0]
+  if (!firstBar) throw new Error('no actual bar')
+  const drawnAfterBars = (el: Element) =>
+    (firstBar.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  const ghosts = [...document.querySelectorAll<SVGElement>('[data-ghost]')]
+  expect(ghosts.length).toBeGreaterThan(0)
+  for (const el of ghosts) {
+    // Anything painted in over the bars is a stroke, never a fill…
+    if (drawnAfterBars(el)) expect(el.style.fill).toBe('none')
+    else expect(el.dataset.ghost).toBe('fill')
+    expect(el.style.fill).not.toBe('var(--card)')
+    // …and a card-coloured stroke is masked off inside every run.
+    if (el.style.stroke === 'var(--card)') {
+      const id = el.getAttribute('mask')?.match(/url\(#(.+)\)/)?.[1]
+      const mask = id ? document.getElementById(id) : null
+      expect(mask?.querySelectorAll('path[fill="black"]')).toHaveLength(2)
+    }
+  }
+})
+
+test('a bar too short to round is a plain rect, not rounded below the baseline', async () => {
+  await renderChart({
+    ...detail,
+    intervals: [
+      { startMs: at('08:00'), endMs: at('09:00'), kwh: 10 },
+      { startMs: at('09:00'), endMs: at('10:00'), kwh: 0.05 },
+    ],
+  })
+  const [tall, short] = [...series('actual')]
+  expect(tall?.tagName).toBe('path') // rounded top
+  expect(short?.tagName).toBe('rect')
+})
+
+test("tick labels carry their size as an attribute, so tests measure the app's text", async () => {
+  await renderChart()
+  for (const text of document.querySelectorAll('svg[data-chart="session-price"] text')) {
+    expect(text.getAttribute('font-size')).toBe('10')
+  }
 })
 
 test('the chart card is a region named by its heading; the svg is left to the table', async () => {
