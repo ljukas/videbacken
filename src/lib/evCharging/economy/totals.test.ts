@@ -27,6 +27,7 @@ const included = (
   actualExtra: Partial<CostTotals> = {},
 ): SessionEconomy => ({
   actual: totals(actual, actualExtra),
+  actualComplete: true,
   paidSpotOre: null,
   windowAvgSpotOre: null,
   excluded: null,
@@ -41,6 +42,7 @@ const included = (
 })
 const excluded = (reason: 'no_hourly' | 'no_price'): SessionEconomy => ({
   actual: totals(99),
+  actualComplete: true,
   paidSpotOre: null,
   windowAvgSpotOre: null,
   excluded: reason,

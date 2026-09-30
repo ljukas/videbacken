@@ -42,6 +42,7 @@ export type EconomySessionRow = SessionEconomy & {
   sessionId: string
   startAt: Date
   endAt: Date
+  /** The session's `energyKwh` (as SessionList shows it); the money covers the interval sum, which can differ slightly. */
   kwh: number
 }
 

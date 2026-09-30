@@ -39,8 +39,11 @@ export type Counterfactual = {
 }
 
 export type SessionEconomy = {
+  /** Partial (priced hours only) when `actualComplete` is false — never show it as the session's cost then. */
   actual: CostTotals
-  /** Spot paid, öre/kWh incl VAT, over the priced energy; null when nothing is priced. */
+  /** `isComplete(actual)`: every kWh priced. Gate any kronor figure on it (an excluded `no_price` session may be partial). */
+  actualComplete: boolean
+  /** Spot paid, öre/kWh incl VAT, over the session's energy; null when the actual is incomplete or empty. */
   paidSpotOre: number | null
   /** Time-weighted average spot over the window, öre/kWh incl VAT; null without prices. */
   windowAvgSpotOre: number | null
@@ -49,7 +52,11 @@ export type SessionEconomy = {
   | { excluded: EconomyExclusion; counterfactual: null }
 )
 
-/** Sums over a set of sessions (a month, a year). Kronor cover only the included sessions. */
+/**
+ * Sums over a set of sessions (a month, a year). Kronor cover only the included sessions.
+ * With `included === 0` the kronor sums are numeric 0, not "unknown": consumers must gate
+ * kronor on `included > 0` and never render 0 kr for missing data (ADR-0020).
+ */
 export type EconomyTotals = {
   sessions: number
   included: number

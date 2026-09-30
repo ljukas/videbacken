@@ -98,6 +98,30 @@ describe('analyzeSession', () => {
     expect(analyzeSession(session(), holey, [TARIFF]).economy.excluded).toBe('no_price')
   })
 
+  test('an excluded no_price session with a partly priced actual is flagged incomplete, without a paid spot', () => {
+    // Slot 42 (10:30 local) is in the charged hour: some energy is priced, some is not.
+    const holey = new SlotIndex(daySlots('2026-09-28', 15).filter((_, i) => i !== 42))
+    const { economy } = analyzeSession(session(), holey, [TARIFF])
+    expect(economy.excluded).toBe('no_price')
+    expect(economy.actual.fullKwh).toBeGreaterThan(0)
+    expect(economy.actualComplete).toBe(false)
+    expect(economy.paidSpotOre).toBeNull()
+  })
+
+  test('an included session has a complete actual', () => {
+    expect(analyzeSession(session(), slots, [TARIFF]).economy.actualComplete).toBe(true)
+  })
+
+  test('a no_hourly session with fully priced estimated energy has a complete actual', () => {
+    const flat = session({
+      stretches: [{ startMs: utc('2026-09-28T08:00Z'), endMs: utc('2026-09-28T10:00Z'), kwh: 10 }],
+      estimated: true,
+    })
+    const { economy } = analyzeSession(flat, slots, [TARIFF])
+    expect(economy.excluded).toBe('no_hourly')
+    expect(economy.actualComplete).toBe(true)
+  })
+
   test('a window without a tariff is excluded as no_price', () => {
     const later = [{ ...TARIFF, validFrom: '2026-10-01' }]
     const { economy } = analyzeSession(session(), slots, later)

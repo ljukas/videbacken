@@ -58,9 +58,13 @@ export function analyzeSession(
     tariffsAsc,
   )
   const window = economyWindow(session)
+  const actualComplete = isComplete(actual)
   const common = {
     actual,
-    paidSpotOre: actual.fullKwh > 0 ? (actual.spotSek / actual.fullKwh) * 100 : null,
+    actualComplete,
+    // Not over a partly priced actual: that would be the paid spot of only the priced hours.
+    paidSpotOre:
+      actualComplete && actual.fullKwh > 0 ? (actual.spotSek / actual.fullKwh) * 100 : null,
     windowAvgSpotOre: windowAvgSpotOre(window, slots, tariffsAsc),
   }
   const exclude = (excluded: EconomyExclusion) => ({
@@ -71,7 +75,7 @@ export function analyzeSession(
   if (session.estimated) return exclude('no_hourly')
   const pieces = windowPieces(window, slots, tariffsAsc)
   // A partly priced actual can't be compared either (e.g. a stretch past the last price).
-  if (!pieces || !isComplete(actual)) return exclude('no_price')
+  if (!pieces || !actualComplete) return exclude('no_price')
 
   const kwh = sessionKwh(session)
   const rate = rateCapKw(session, window)
