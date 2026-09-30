@@ -25,7 +25,7 @@ export function PatternLegend({ scale, metric }: { scale: Intensity; metric: Pat
       <span
         aria-hidden
         data-swatch="zero"
-        className="size-3 rounded-sm"
+        className="size-3 rounded-[3px]"
         style={{ background: ZERO_FILL, border: '1px solid var(--border)' }}
       />
       {scale.steps.map((step) => (
@@ -33,7 +33,7 @@ export function PatternLegend({ scale, metric }: { scale: Intensity; metric: Pat
           key={step.color}
           aria-hidden
           data-swatch="step"
-          className="size-3 rounded-sm"
+          className="size-3 rounded-[3px]"
           style={{ background: step.color }}
         />
       ))}
