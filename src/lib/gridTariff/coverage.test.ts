@@ -7,7 +7,6 @@ const entry = (companyName: string, from: string, to: string): CatalogueEntry =>
   companyName,
   meteringPointIdFrom: from,
   meteringPointIdTo: to,
-  apiUrl: `https://${companyName.toLowerCase()}.example/tariffs`,
 })
 const catalogue = [
   entry('Alpha', '735999144000000000', '735999144999999999'),
@@ -34,6 +33,16 @@ test('compares exactly beyond Number precision', () => {
   expect(Number('735999100000000001')).toBe(Number('735999100000000002'))
   expect(findCoveringEntry('735999100000000001', narrow)).toBeUndefined()
   expect(findCoveringEntry('735999100000000002', narrow)?.companyName).toBe('Gamma')
+})
+
+test('an inverted range covers nothing', () => {
+  const inverted = [entry('Delta', '735999144999999999', '735999144000000000')]
+  expect(findCoveringEntry('735999144123456789', inverted)).toBeUndefined()
+})
+
+test('with overlapping ranges, the first listed entry wins', () => {
+  const overlapping = [...catalogue, entry('Wide', '735999100000000000', '735999199999999999')]
+  expect(findCoveringEntry('735999144123456789', overlapping)?.companyName).toBe('Alpha')
 })
 
 test('an empty catalogue covers nothing', () => {

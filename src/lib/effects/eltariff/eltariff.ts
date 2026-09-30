@@ -16,17 +16,19 @@ import { lazy } from '../lazy'
  * callers pass a `stats` sink and log it themselves.
  */
 
-/** One grid company's registration. IDs are 18-digit strings (beyond `Number`). */
+/**
+ * One grid company's registration: an inclusive metering-point ID range, as
+ * 18-digit strings (beyond `Number`). The name is null when the catalogue omits it.
+ */
 export interface CatalogueEntry {
-  companyName: string
   meteringPointIdFrom: string
   meteringPointIdTo: string
-  apiUrl: string
+  companyName: string | null
 }
 
 export interface Catalogue {
   entries: CatalogueEntry[]
-  /** Entries dropped because they didn't match the expected shape. */
+  /** Entries dropped as unusable for matching (bad IDs or an inverted range). */
   invalidEntries: number
 }
 

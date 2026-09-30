@@ -1,4 +1,5 @@
 export { elpris } from './elpris'
+export { eltariff } from './eltariff'
 export { email } from './email'
 export { queue } from './queue'
 export { storage } from './storage'
