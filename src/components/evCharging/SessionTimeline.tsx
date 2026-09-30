@@ -9,13 +9,14 @@ import { useMemo } from 'react'
 import { Button } from '~/components/ui/button'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { HOUR_MS, type TimelineSession } from '~/lib/evCharging/patterns'
-import { stockholmNightInWindow, stockholmNoonOnOrBefore } from '~/lib/time/stockholm'
+import { stockholmDayBounds, stockholmDayOf, stockholmNightsOfDay } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { formatOneDecimal, formatTime, formatWeekdayDay, monthName } from './format'
 import { valueLabel } from './patternChart'
 
 const NARROW_PX = 640
-const LABEL_W = 200
+// Wide enough that "mån 14 sep. · 09:39–14:46 · 15,0 kWh" stays on one line.
+const LABEL_W = 240
 const GAP = 12
 const AXIS_H = 18
 const ROW_H = 22
@@ -38,13 +39,20 @@ const MARK_STYLE = {
 type Row = {
   session: TimelineSession
   bars: { key: string; x: number; width: number; kind: 'charging' | 'idle' }[]
-  night: { x: number; width: number }
-  clippedLeft: boolean
-  clippedRight: boolean
+  nights: { key: string; x: number; width: number }[]
+  clipped: boolean
 }
 
+// Each row spans 00:00 → 24:00 of the Stockholm day the car was plugged in,
+// so daytime (solar) charging sits mid-row. A session always starts inside
+// its own row; one that ends after that day's midnight is clipped on the
+// right. The row maps the day's true instants (23 or 25 h on a DST day) onto
+// the full width, while the shared axis ticks are fixed at 3 h steps of a
+// 24 h day — on a DST day a tick drifts by at most an hour (accepted; the
+// night band and the bars are exact).
 function buildRow(session: TimelineSession, trackW: number): Row {
-  const { startMs, endMs } = stockholmNoonOnOrBefore(session.startAt.getTime())
+  const day = stockholmDayOf(session.startAt.getTime())
+  const { startMs, endMs } = stockholmDayBounds(day)
   const x = scaleLinear().domain([startMs, endMs]).range([0, trackW]).clamp(true)
   const bars = session.segments.map((seg, i) => {
     const x0 = x(seg.startAt.getTime())
@@ -52,16 +60,12 @@ function buildRow(session: TimelineSession, trackW: number): Row {
     const min = seg.kind === 'charging' ? MIN_CHARGING_PX : 0
     return { key: `${i}-${seg.kind}`, x: x0, width: Math.max(min, x1 - x0), kind: seg.kind }
   })
-  const night = stockholmNightInWindow(startMs)
-  const nx0 = x(night.startMs)
-  const nx1 = x(night.endMs)
-  return {
-    session,
-    bars,
-    night: { x: nx0, width: Math.max(0, nx1 - nx0) },
-    clippedLeft: session.startAt.getTime() < startMs,
-    clippedRight: session.endAt.getTime() > endMs,
-  }
+  const nights = stockholmNightsOfDay(day).map((n, i) => ({
+    key: i === 0 ? 'morning' : 'evening',
+    x: x(n.startMs),
+    width: Math.max(0, x(n.endMs) - x(n.startMs)),
+  }))
+  return { session, bars, nights, clipped: session.endAt.getTime() > endMs }
 }
 
 function MonthStepper({
@@ -140,7 +144,7 @@ export function SessionTimeline({
           scale={axisScale}
           top={AXIS_H - 1}
           tickValues={ticks}
-          tickFormat={(v) => String((12 + Number(v) * 24) % 24).padStart(2, '0')}
+          tickFormat={(v) => String(Math.round(Number(v) * 24)).padStart(2, '0')}
           hideAxisLine
           tickLength={4}
           stroke="var(--border)"
@@ -213,8 +217,9 @@ export function SessionTimeline({
                 ))}
               </ul>
               <p className="mt-2 text-muted-foreground text-xs">
-                {m.charging_patterns_timeline_clipped()}
-                {' · '}
+                {rows.some((row) => row.clipped)
+                  ? `${m.charging_patterns_timeline_clipped()} · `
+                  : null}
                 {m.charging_patterns_timeline_estimate()}
               </p>
             </>
@@ -249,20 +254,23 @@ function TimelineRow({ row, trackW, narrow }: { row: Row; trackW: number; narrow
                 plugged: formatOneDecimal(pluggedHours),
               })
             : m.charging_patterns_timeline_no_hourly()}
-          {row.clippedRight && ` · ${m.charging_patterns_timeline_continues()}`}
+          {row.clipped && ` · ${m.charging_patterns_timeline_continues()}`}
         </div>
       </div>
       {/* biome-ignore lint/a11y/noSvgWithoutTitle: decorative; the row label carries the information */}
       <svg width={trackW} height={ROW_H} aria-hidden className="block shrink-0">
         <Group>
-          <rect
-            data-night
-            x={row.night.x}
-            y={0}
-            width={row.night.width}
-            height={ROW_H}
-            style={{ fill: NIGHT_FILL, fillOpacity: NIGHT_OPACITY }}
-          />
+          {row.nights.map((n) => (
+            <rect
+              key={n.key}
+              data-night={n.key}
+              x={n.x}
+              y={0}
+              width={n.width}
+              height={ROW_H}
+              style={{ fill: NIGHT_FILL, fillOpacity: NIGHT_OPACITY }}
+            />
+          ))}
           {[
             ...row.bars.filter((b) => b.kind === 'idle'),
             ...row.bars.filter((b) => b.kind === 'charging'),
@@ -282,14 +290,7 @@ function TimelineRow({ row, trackW, narrow }: { row: Row; trackW: number; narrow
               }
             />
           ))}
-          {row.clippedLeft && (
-            <path
-              data-clipped="left"
-              d={`M ${MARK_W + 1} ${ROW_H / 2 - 5} L 1 ${ROW_H / 2} L ${MARK_W + 1} ${ROW_H / 2 + 5} Z`}
-              style={MARK_STYLE}
-            />
-          )}
-          {row.clippedRight && (
+          {row.clipped && (
             <path
               data-clipped="right"
               d={`M ${trackW - MARK_W - 1} ${ROW_H / 2 - 5} L ${trackW - 1} ${ROW_H / 2} L ${trackW - MARK_W - 1} ${ROW_H / 2 + 5} Z`}
