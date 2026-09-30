@@ -3,14 +3,14 @@ import { sum } from 'd3-array'
 import { type TariffPeriod, tariffAt, unitPrice } from '~/lib/evCharging/cost'
 import type { DailySpot } from '~/lib/spotPrice/slots'
 import { timingScore } from './sessionEconomy'
-import type { Counterfactual, EconomyTotals, SessionEconomy } from './types'
+import type { EconomyTotals, SessionEconomy } from './types'
 
 export function sumEconomy(
   items: readonly SessionEconomy[],
   avgSpotOre: number | null,
 ): EconomyTotals {
   const included = items.flatMap((e) =>
-    e.counterfactual ? [{ actual: e.actual, cf: e.counterfactual as Counterfactual }] : [],
+    e.counterfactual ? [{ actual: e.actual, cf: e.counterfactual }] : [],
   )
   const actualSek = sum(included, (e) => e.actual.totalSek)
   const immediateSek = sum(included, (e) => e.cf.immediate.totalSek)

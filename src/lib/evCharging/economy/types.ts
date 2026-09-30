@@ -44,10 +44,10 @@ export type SessionEconomy = {
   paidSpotOre: number | null
   /** Time-weighted average spot over the window, öre/kWh incl VAT; null without prices. */
   windowAvgSpotOre: number | null
-  excluded: EconomyExclusion | null
-  /** Present iff `excluded` is null. */
-  counterfactual: Counterfactual | null
-}
+} & (
+  | { excluded: null; counterfactual: Counterfactual }
+  | { excluded: EconomyExclusion; counterfactual: null }
+)
 
 /** Sums over a set of sessions (a month, a year). Kronor cover only the included sessions. */
 export type EconomyTotals = {
