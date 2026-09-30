@@ -24,7 +24,7 @@ export function valueLabel(value: number, metric: PatternMetric): string {
 export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: PatternMetric }) {
   const { parentRef, width } = useParentSize({ debounceTime: 100 })
   const popover = useChartPopover<Cell>()
-  const { show, hide } = popover
+  const { markProps, containerProps } = popover
 
   // Fills are computed once per grid/metric, not per cell per hover.
   const cells = useMemo(() => {
@@ -46,7 +46,7 @@ export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: P
     const nRows = narrow ? 24 : 7
     const plotW = Math.max(0, width - LABEL_W)
     const step = plotW / nCols
-    const rowStep = narrow ? step / 2.2 : step
+    const rowStep = narrow ? Math.min(Math.max(step / 2.2, 18), 24) : step
     const x = scaleBand<number>().domain(range(nCols)).range([0, plotW])
     const y = scaleBand<number>()
       .domain(range(nRows))
@@ -62,7 +62,6 @@ export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: P
         height={LABEL_H + rowStep * nRows}
         aria-hidden
         data-orientation={narrow ? 'weekdays-across' : 'hours-across'}
-        onPointerLeave={hide}
       >
         <Group left={LABEL_W}>
           {range(nCols).map((i) => (
@@ -113,8 +112,12 @@ export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: P
                     width={b.width}
                     height={b.height}
                     rx={3}
-                    style={{ fill: b.bin.fill }}
-                    onPointerEnter={() => show(b.bin, LABEL_W + b.x + b.width / 2, LABEL_H + b.y)}
+                    style={
+                      b.bin.value > 0
+                        ? { fill: b.bin.fill }
+                        : { fill: b.bin.fill, stroke: 'var(--border)', strokeWidth: 1 }
+                    }
+                    {...markProps(b.bin, LABEL_W + b.x + b.width / 2, LABEL_H + b.y)}
                   />
                 ))
             }
@@ -122,20 +125,15 @@ export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: P
         </Group>
       </svg>
     )
-  }, [width, narrow, cells, show, hide])
+  }, [width, narrow, cells, markProps])
 
-  return (
-    <div ref={parentRef} className="relative w-full">
-      {svg}
-      <ChartPopover state={popover}>
-        {popover.data
-          ? `${weekdayLabel(popover.data.weekday)} ${hourRangeLabel(popover.data.hour)} · ${valueLabel(popover.data.value, metric)}`
-          : null}
-      </ChartPopover>
+  const table = useMemo(
+    () => (
       <table className="sr-only">
+        <caption>{m.charging_patterns_heatmap_caption()}</caption>
         <thead>
           <tr>
-            <th />
+            <td />
             {range(24).map((h) => (
               <th key={h} scope="col">
                 {hourRangeLabel(h)}
@@ -154,6 +152,26 @@ export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: P
           ))}
         </tbody>
       </table>
+    ),
+    [cells, metric],
+  )
+
+  const active = popover.data ? cells[popover.data.weekday]?.[popover.data.hour] : undefined
+
+  return (
+    <div {...containerProps} className="relative w-full">
+      <div ref={parentRef} className="min-h-44 w-full">
+        {svg}
+      </div>
+      <ChartPopover
+        state={popover}
+        dataKey={active ? `${active.weekday}-${active.hour}-${active.value}` : undefined}
+      >
+        {active
+          ? `${weekdayLabel(active.weekday)} ${hourRangeLabel(active.hour)} · ${valueLabel(active.value, metric)}`
+          : null}
+      </ChartPopover>
+      {table}
     </div>
   )
 }

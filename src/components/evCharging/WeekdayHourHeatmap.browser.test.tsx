@@ -62,3 +62,60 @@ test('hovering a cell shows its weekday, hour and value', async () => {
   await userEvent.hover(cell)
   await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).toBeInTheDocument()
 })
+
+function touch(type: string) {
+  return new PointerEvent(type, { pointerType: 'touch', bubbles: true })
+}
+
+async function renderWide() {
+  const r = await renderWithProviders(
+    <div style={{ width: 900 }}>
+      <p data-testid="outside">outside</p>
+      <WeekdayHourHeatmap grid={grid} metric="kwh" />
+    </div>,
+  )
+  await expect.poll(() => r.screen.container.querySelector('rect[data-cell="1-21"]')).not.toBeNull()
+  const cell = r.screen.container.querySelector('rect[data-cell="1-21"]')
+  const svg = r.screen.container.querySelector('svg')
+  if (!cell || !svg) throw new Error('chart missing')
+  return { ...r, cell, svg }
+}
+
+test('a touch tap keeps the tooltip open after the finger lifts', async () => {
+  const { screen, cell, svg } = await renderWide()
+  cell.dispatchEvent(touch('pointerdown'))
+  await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).toBeInTheDocument()
+  cell.dispatchEvent(touch('pointerup'))
+  svg.dispatchEvent(touch('pointerleave'))
+  await new Promise((r) => setTimeout(r, 50))
+  await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).toBeInTheDocument()
+})
+
+test('a tap outside the chart hides the tooltip', async () => {
+  const { screen, cell } = await renderWide()
+  cell.dispatchEvent(touch('pointerdown'))
+  await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).toBeInTheDocument()
+  screen.container.querySelector('[data-testid="outside"]')?.dispatchEvent(touch('pointerdown'))
+  await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).not.toBeInTheDocument()
+})
+
+test('Escape hides the tooltip', async () => {
+  const { screen, cell } = await renderWide()
+  cell.dispatchEvent(touch('pointerdown'))
+  await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).toBeInTheDocument()
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await expect.element(screen.getByText(/tis 21–22 · 38,4 kWh/)).not.toBeInTheDocument()
+})
+
+test('the transposed layout stays short at 600 px', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 600 }}>
+      <WeekdayHourHeatmap grid={grid} metric="kwh" />
+    </div>,
+  )
+  await expect
+    .poll(() => screen.container.querySelector('svg')?.dataset.orientation)
+    .toBe('weekdays-across')
+  const height = Number(screen.container.querySelector('svg')?.getAttribute('height'))
+  expect(height).toBeLessThanOrEqual(16 + 24 * 24)
+})
