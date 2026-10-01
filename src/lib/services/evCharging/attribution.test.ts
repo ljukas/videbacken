@@ -76,6 +76,20 @@ test('touching intervals do not overlap', async () => {
   expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'skoda' })
 })
 
+test('a record ending exactly at the session start does not overlap', async () => {
+  await seedCoverage()
+  const id = await insertSession({
+    startAt: at('2026-02-10T10:00:00Z'),
+    endAt: at('2026-02-10T12:00:00Z'),
+  })
+  await insertVehicleRecord({
+    startAt: at('2026-02-10T09:00:00Z'),
+    endAt: at('2026-02-10T10:00:00Z'),
+  })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'skoda' })
+})
+
 test('a public record never makes a session ours', async () => {
   await seedCoverage()
   const id = await insertSession({
@@ -93,6 +107,10 @@ test('a public record never makes a session ours', async () => {
 
 test('sessions outside coverage, admin-tagged or uncounted are left alone', async () => {
   await seedCoverage()
+  const before = await insertSession({
+    startAt: at('2026-01-15T10:00:00Z'),
+    endAt: at('2026-01-15T12:00:00Z'),
+  })
   const after = await insertSession({
     startAt: at('2026-04-02T10:00:00Z'),
     endAt: at('2026-04-02T12:00:00Z'),
@@ -108,10 +126,23 @@ test('sessions outside coverage, admin-tagged or uncounted are left alone', asyn
     endAt: at('2026-02-11T10:05:00Z'),
     energyKwh: 0.1,
   })
-  await reattributeSessions()
+  const voided = await insertSession({
+    startAt: at('2026-02-12T10:00:00Z'),
+    endAt: at('2026-02-12T12:00:00Z'),
+    voided: true,
+  })
+  const replaced = await insertSession({
+    startAt: at('2026-02-13T10:00:00Z'),
+    endAt: at('2026-02-13T12:00:00Z'),
+    replacedByZaptecSessionId: 'zap-successor',
+  })
+  expect(await reattributeSessions()).toEqual({ ours: 0, other: 0, changed: 0 })
+  expect(await attribution(before)).toMatchObject({ vehicle: 'ours', source: 'default' })
   expect(await attribution(after)).toMatchObject({ vehicle: 'ours', source: 'default' })
   expect(await attribution(tagged)).toMatchObject({ vehicle: 'ours', source: 'admin' })
   expect(await attribution(noise)).toMatchObject({ vehicle: 'ours', source: 'default' })
+  expect(await attribution(voided)).toMatchObject({ vehicle: 'ours', source: 'default' })
+  expect(await attribution(replaced)).toMatchObject({ vehicle: 'ours', source: 'default' })
 })
 
 test('a session starting inside coverage and ending after it is decided', async () => {
@@ -134,6 +165,22 @@ test('a second pass changes nothing and leaves updated_at alone', async () => {
   const before = await attribution(id)
   expect(await reattributeSessions()).toEqual({ ours: 0, other: 1, changed: 0 })
   expect((await attribution(id)).updatedAt).toEqual(before.updatedAt)
+})
+
+test('a later home record flips a session decided as other to ours', async () => {
+  await seedCoverage()
+  const id = await insertSession({
+    startAt: at('2026-02-20T10:00:00Z'),
+    endAt: at('2026-02-20T12:00:00Z'),
+  })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'skoda' })
+  await insertVehicleRecord({
+    startAt: at('2026-02-20T11:00:00Z'),
+    endAt: at('2026-02-20T13:00:00Z'),
+  })
+  expect(await reattributeSessions()).toEqual({ ours: 1, other: 0, changed: 1 })
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'skoda' })
 })
 
 test('sessionId limits the pass to one session', async () => {
@@ -171,6 +218,12 @@ test('setSessionVehicle tags as admin, and a later pass keeps it', async () => {
   expect(await setSessionVehicle(id, 'ours')).toEqual({ vehicle: 'ours', vehicleSource: 'admin' })
   await reattributeSessions()
   expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'admin' })
+  expect(await setSessionVehicle(id, 'other')).toEqual({
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'admin' })
 })
 
 test('setSessionVehicle(null) resets to automatic and re-derives', async () => {
@@ -197,9 +250,26 @@ test('setSessionVehicle(null) resets to automatic and re-derives', async () => {
   })
 })
 
-test('setSessionVehicle rejects unknown, non-uuid and uncounted sessions', async () => {
+test('setSessionVehicle(null) on a guest tag over a home record re-derives ours', async () => {
+  await seedCoverage()
+  const id = await insertSession({
+    startAt: at('2026-02-20T10:00:00Z'),
+    endAt: at('2026-02-20T12:00:00Z'),
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  await insertVehicleRecord({
+    startAt: at('2026-02-20T11:00:00Z'),
+    endAt: at('2026-02-20T13:00:00Z'),
+  })
+  expect(await setSessionVehicle(id, null)).toEqual({ vehicle: 'ours', vehicleSource: 'skoda' })
+})
+
+test('setSessionVehicle rejects unknown, non-uuid, noise, voided and replaced sessions', async () => {
   const noise = await insertSession({ energyKwh: 0.1 })
-  for (const id of ['00000000-0000-4000-8000-000000000000', 'nope', noise]) {
+  const voided = await insertSession({ voided: true })
+  const replaced = await insertSession({ replacedByZaptecSessionId: 'zap-successor' })
+  for (const id of ['00000000-0000-4000-8000-000000000000', 'nope', noise, voided, replaced]) {
     await expect(setSessionVehicle(id, 'other')).rejects.toEqual(
       new EvChargingDomainError('EV_SESSION_NOT_FOUND'),
     )
