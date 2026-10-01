@@ -1,5 +1,5 @@
 import { ORPCError } from '@orpc/client'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { statutoryEnergyTaxOre } from '~/lib/evCharging/tariff'
 import { tariffErrorMessage } from '~/lib/orpc/tariffErrorMessage'
 import { stockholmDayOf } from '~/lib/time/stockholm'
@@ -41,6 +41,10 @@ const AUG: Tariff = {
   createdAt: new Date('2026-08-01T00:00:00Z'),
   updatedAt: new Date('2026-08-01T00:00:00Z'),
 }
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 beforeEach(() => {
   createFn.mockReset().mockResolvedValue(AUG)
@@ -233,6 +237,11 @@ test('a 0 grid fee is a real amount, not a kronor mistake', async () => {
 })
 
 test('the taken-date error survives a blur and clears once the date changes', async () => {
+  // A new period defaults to the 1st of the current month. Pin Date (only) so
+  // that default is 2026-09-01 whatever month CI runs in; otherwise filling
+  // 2026-10-01 is "no change" during October 2026 and the error never clears.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-09-15T12:00:00Z'))
   createFn.mockRejectedValue(
     new ORPCError('TARIFF_VALID_FROM_TAKEN', { defined: true, status: 409 }),
   )
