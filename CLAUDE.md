@@ -134,6 +134,7 @@ drizzle/, compose.yaml, vite.config.ts (Nitro: plugins, region, crons, queue tri
 | Polled sync replaces realtime SSE | 0018 |
 | External data integrations (fail-closed sync, health tracking, lease) | **0019** |
 | Spot prices & charging cost model (on-read, missing ≠ 0 kr, gridShare seam) | **0020** |
+| Charging-session vehicle attribution (ours by default, Škoda log re-match, admin wins) | **0021** |
 
 ---
 
