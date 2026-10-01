@@ -9,37 +9,31 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SignedInRouteImport } from './routes/signed-in'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as SignedInRouteImport } from './routes/signed-in'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as ApiLogRouteImport } from './routes/api/log'
-import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
-import { Route as AuthenticatedSensorsRouteImport } from './routes/_authenticated/sensors'
-import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
-import { Route as AuthenticatedChargingIndexRouteImport } from './routes/_authenticated/charging/index'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedSensorsRouteImport } from './routes/_authenticated/sensors'
+import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
+import { Route as ApiLogRouteImport } from './routes/api/log'
 import { Route as AuthenticatedAccountIndexRouteImport } from './routes/_authenticated/account/index'
-import { Route as ApiWebhooksShellyRouteImport } from './routes/api/webhooks/shelly'
-import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
-import { Route as ApiCronZaptecSyncRouteImport } from './routes/api/cron/zaptec-sync'
-import { Route as ApiCronGridTariffCatalogueRouteImport } from './routes/api/cron/grid-tariff-catalogue'
-import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_authenticated/charging/patterns'
-import { Route as AuthenticatedChargingEconomyRouteImport } from './routes/_authenticated/charging/economy'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
+import { Route as AuthenticatedChargingIndexRouteImport } from './routes/_authenticated/charging/index'
+import { Route as AuthenticatedChargingEconomyRouteImport } from './routes/_authenticated/charging/economy'
+import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_authenticated/charging/patterns'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
+import { Route as ApiCronGridTariffCatalogueRouteImport } from './routes/api/cron/grid-tariff-catalogue'
+import { Route as ApiCronZaptecSyncRouteImport } from './routes/api/cron/zaptec-sync'
+import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
+import { Route as ApiWebhooksShellyRouteImport } from './routes/api/webhooks/shelly'
 import { Route as AuthenticatedChargingSessionsSessionIdRouteImport } from './routes/_authenticated/charging/sessions/$sessionId'
 
-const SignedInRoute = SignedInRouteImport.update({
-  id: '/signed-in',
-  path: '/signed-in',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OnboardingRoute = OnboardingRouteImport.update({
-  id: '/onboarding',
-  path: '/onboarding',
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -47,8 +41,14 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRoute = AuthenticatedRouteImport.update({
-  id: '/_authenticated',
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignedInRoute = SignedInRouteImport.update({
+  id: '/signed-in',
+  path: '/signed-in',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
@@ -56,19 +56,9 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const ApiLogRoute = ApiLogRouteImport.update({
-  id: '/api/log',
-  path: '/api/log',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedSensorsRoute = AuthenticatedSensorsRouteImport.update({
-  id: '/sensors',
-  path: '/sensors',
+const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
@@ -76,58 +66,37 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
-  id: '/account',
-  path: '/account',
+const AuthenticatedSensorsRoute = AuthenticatedSensorsRouteImport.update({
+  id: '/sensors',
+  path: '/sensors',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedChargingIndexRoute =
-  AuthenticatedChargingIndexRouteImport.update({
-    id: '/charging/',
-    path: '/charging/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
+const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const ApiLogRoute = ApiLogRouteImport.update({
+  id: '/api/log',
+  path: '/api/log',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAccountIndexRoute =
   AuthenticatedAccountIndexRouteImport.update({
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedAccountRoute,
   } as any)
-const ApiWebhooksShellyRoute = ApiWebhooksShellyRouteImport.update({
-  id: '/api/webhooks/shelly',
-  path: '/api/webhooks/shelly',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRpcSplatRoute = ApiRpcSplatRouteImport.update({
-  id: '/api/rpc/$',
-  path: '/api/rpc/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCronZaptecSyncRoute = ApiCronZaptecSyncRouteImport.update({
-  id: '/api/cron/zaptec-sync',
-  path: '/api/cron/zaptec-sync',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCronGridTariffCatalogueRoute =
-  ApiCronGridTariffCatalogueRouteImport.update({
-    id: '/api/cron/grid-tariff-catalogue',
-    path: '/api/cron/grid-tariff-catalogue',
-    getParentRoute: () => rootRouteImport,
+const AuthenticatedAccountProfileRoute =
+  AuthenticatedAccountProfileRouteImport.update({
+    id: '/profile',
+    path: '/profile',
+    getParentRoute: () => AuthenticatedAccountRoute,
   } as any)
-const ApiCronElprisSyncRoute = ApiCronElprisSyncRouteImport.update({
-  id: '/api/cron/elpris-sync',
-  path: '/api/cron/elpris-sync',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedChargingPatternsRoute =
-  AuthenticatedChargingPatternsRouteImport.update({
-    id: '/charging/patterns',
-    path: '/charging/patterns',
+const AuthenticatedChargingIndexRoute =
+  AuthenticatedChargingIndexRouteImport.update({
+    id: '/charging/',
+    path: '/charging/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedChargingEconomyRoute =
@@ -136,12 +105,43 @@ const AuthenticatedChargingEconomyRoute =
     path: '/charging/economy',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedAccountProfileRoute =
-  AuthenticatedAccountProfileRouteImport.update({
-    id: '/profile',
-    path: '/profile',
-    getParentRoute: () => AuthenticatedAccountRoute,
+const AuthenticatedChargingPatternsRoute =
+  AuthenticatedChargingPatternsRouteImport.update({
+    id: '/charging/patterns',
+    path: '/charging/patterns',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCronElprisSyncRoute = ApiCronElprisSyncRouteImport.update({
+  id: '/api/cron/elpris-sync',
+  path: '/api/cron/elpris-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCronGridTariffCatalogueRoute =
+  ApiCronGridTariffCatalogueRouteImport.update({
+    id: '/api/cron/grid-tariff-catalogue',
+    path: '/api/cron/grid-tariff-catalogue',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCronZaptecSyncRoute = ApiCronZaptecSyncRouteImport.update({
+  id: '/api/cron/zaptec-sync',
+  path: '/api/cron/zaptec-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRpcSplatRoute = ApiRpcSplatRouteImport.update({
+  id: '/api/rpc/$',
+  path: '/api/rpc/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebhooksShellyRoute = ApiWebhooksShellyRouteImport.update({
+  id: '/api/webhooks/shelly',
+  path: '/api/webhooks/shelly',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedChargingSessionsSessionIdRoute =
   AuthenticatedChargingSessionsSessionIdRouteImport.update({
     id: '/charging/sessions/$sessionId',
@@ -307,18 +307,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/signed-in': {
-      id: '/signed-in'
-      path: '/signed-in'
-      fullPath: '/signed-in'
-      preLoaderRoute: typeof SignedInRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/onboarding': {
-      id: '/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof OnboardingRouteImport
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -328,11 +321,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated': {
-      id: '/_authenticated'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedRouteImport
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signed-in': {
+      id: '/signed-in'
+      path: '/signed-in'
+      fullPath: '/signed-in'
+      preLoaderRoute: typeof SignedInRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/': {
@@ -342,25 +342,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/api/log': {
-      id: '/api/log'
-      path: '/api/log'
-      fullPath: '/api/log'
-      preLoaderRoute: typeof ApiLogRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/users': {
-      id: '/_authenticated/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof AuthenticatedUsersRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/sensors': {
-      id: '/_authenticated/sensors'
-      path: '/sensors'
-      fullPath: '/sensors'
-      preLoaderRoute: typeof AuthenticatedSensorsRouteImport
+    '/_authenticated/account': {
+      id: '/_authenticated/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AuthenticatedAccountRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin': {
@@ -370,19 +356,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/account': {
-      id: '/_authenticated/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof AuthenticatedAccountRouteImport
+    '/_authenticated/sensors': {
+      id: '/_authenticated/sensors'
+      path: '/sensors'
+      fullPath: '/sensors'
+      preLoaderRoute: typeof AuthenticatedSensorsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/charging/': {
-      id: '/_authenticated/charging/'
-      path: '/charging'
-      fullPath: '/charging/'
-      preLoaderRoute: typeof AuthenticatedChargingIndexRouteImport
+    '/_authenticated/users': {
+      id: '/_authenticated/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof AuthenticatedUsersRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/log': {
+      id: '/api/log'
+      path: '/api/log'
+      fullPath: '/api/log'
+      preLoaderRoute: typeof ApiLogRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/account/': {
       id: '/_authenticated/account/'
@@ -391,53 +384,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAccountIndexRouteImport
       parentRoute: typeof AuthenticatedAccountRoute
     }
-    '/api/webhooks/shelly': {
-      id: '/api/webhooks/shelly'
-      path: '/api/webhooks/shelly'
-      fullPath: '/api/webhooks/shelly'
-      preLoaderRoute: typeof ApiWebhooksShellyRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_authenticated/account/profile': {
+      id: '/_authenticated/account/profile'
+      path: '/profile'
+      fullPath: '/account/profile'
+      preLoaderRoute: typeof AuthenticatedAccountProfileRouteImport
+      parentRoute: typeof AuthenticatedAccountRoute
     }
-    '/api/rpc/$': {
-      id: '/api/rpc/$'
-      path: '/api/rpc/$'
-      fullPath: '/api/rpc/$'
-      preLoaderRoute: typeof ApiRpcSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/zaptec-sync': {
-      id: '/api/cron/zaptec-sync'
-      path: '/api/cron/zaptec-sync'
-      fullPath: '/api/cron/zaptec-sync'
-      preLoaderRoute: typeof ApiCronZaptecSyncRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/grid-tariff-catalogue': {
-      id: '/api/cron/grid-tariff-catalogue'
-      path: '/api/cron/grid-tariff-catalogue'
-      fullPath: '/api/cron/grid-tariff-catalogue'
-      preLoaderRoute: typeof ApiCronGridTariffCatalogueRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/elpris-sync': {
-      id: '/api/cron/elpris-sync'
-      path: '/api/cron/elpris-sync'
-      fullPath: '/api/cron/elpris-sync'
-      preLoaderRoute: typeof ApiCronElprisSyncRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/charging/patterns': {
-      id: '/_authenticated/charging/patterns'
-      path: '/charging/patterns'
-      fullPath: '/charging/patterns'
-      preLoaderRoute: typeof AuthenticatedChargingPatternsRouteImport
+    '/_authenticated/charging/': {
+      id: '/_authenticated/charging/'
+      path: '/charging'
+      fullPath: '/charging/'
+      preLoaderRoute: typeof AuthenticatedChargingIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/charging/economy': {
@@ -447,12 +405,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChargingEconomyRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/account/profile': {
-      id: '/_authenticated/account/profile'
-      path: '/profile'
-      fullPath: '/account/profile'
-      preLoaderRoute: typeof AuthenticatedAccountProfileRouteImport
-      parentRoute: typeof AuthenticatedAccountRoute
+    '/_authenticated/charging/patterns': {
+      id: '/_authenticated/charging/patterns'
+      path: '/charging/patterns'
+      fullPath: '/charging/patterns'
+      preLoaderRoute: typeof AuthenticatedChargingPatternsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/elpris-sync': {
+      id: '/api/cron/elpris-sync'
+      path: '/api/cron/elpris-sync'
+      fullPath: '/api/cron/elpris-sync'
+      preLoaderRoute: typeof ApiCronElprisSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/grid-tariff-catalogue': {
+      id: '/api/cron/grid-tariff-catalogue'
+      path: '/api/cron/grid-tariff-catalogue'
+      fullPath: '/api/cron/grid-tariff-catalogue'
+      preLoaderRoute: typeof ApiCronGridTariffCatalogueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/zaptec-sync': {
+      id: '/api/cron/zaptec-sync'
+      path: '/api/cron/zaptec-sync'
+      fullPath: '/api/cron/zaptec-sync'
+      preLoaderRoute: typeof ApiCronZaptecSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rpc/$': {
+      id: '/api/rpc/$'
+      path: '/api/rpc/$'
+      fullPath: '/api/rpc/$'
+      preLoaderRoute: typeof ApiRpcSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/webhooks/shelly': {
+      id: '/api/webhooks/shelly'
+      path: '/api/webhooks/shelly'
+      fullPath: '/api/webhooks/shelly'
+      preLoaderRoute: typeof ApiWebhooksShellyRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/charging/sessions/$sessionId': {
       id: '/_authenticated/charging/sessions/$sessionId'
