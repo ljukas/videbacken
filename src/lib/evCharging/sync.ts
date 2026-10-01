@@ -11,7 +11,7 @@ import type { SyncTrigger } from '~/lib/integrationHealth'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
-import { importSessions, upsertChargers } from '~/lib/services/evCharging'
+import * as evChargingService from '~/lib/services/evCharging'
 import { getLastSuccessStartedAt, type RunStats } from '~/lib/services/integrationSync'
 
 /**
@@ -40,6 +40,8 @@ export type SyncRun = RunBase & {
    * parser (unexpected shape) or rejected by the charging service.
    */
   skipped: number
+  /** Time spent re-deriving vehicle attribution after the import. */
+  reattributeMs: number
 }
 
 const SOURCE = 'zaptec'
@@ -100,8 +102,21 @@ export async function runZaptecSync(opts: {
       upserted: 0,
       voided: 0,
       skipped: 0,
+      reattributeMs: 0,
     }),
-    execute: ({ run, signal, now }) => fetchAndImport(client, run, stats, signal, now),
+    execute: async ({ run, signal, now, log }) => {
+      await fetchAndImport(client, run, stats, signal, now)
+      // Attribution follows the import (ADR-0021). Health tracks Zaptec, not
+      // attribution, so a failure here is a warning, never a failed run.
+      const started = performance.now()
+      try {
+        await evChargingService.reattributeSessions()
+      } catch (error) {
+        log.warn('zaptec sync: vehicle re-match failed', { error })
+      } finally {
+        run.reattributeMs = Math.round(performance.now() - started)
+      }
+    },
     toRunStats: (run) => runStats(run, stats),
     finalize: (run) => {
       run.authMs = Math.round(stats.authMs)
@@ -119,6 +134,7 @@ export async function runZaptecSync(opts: {
       upserted: run.upserted,
       voided: run.voided,
       skipped: run.skipped,
+      reattributeMs: run.reattributeMs,
     }),
   })
 }
@@ -142,7 +158,7 @@ async function fetchAndImport(
     deadlineError('chargers'),
   )
   run.chargers = chargers.length
-  await upsertChargers(chargers)
+  await evChargingService.upsertChargers(chargers)
 
   const lastSuccessStartedAt = await getLastSuccessStartedAt(SOURCE)
   const since = lastSuccessStartedAt
@@ -200,7 +216,7 @@ async function importWindow(
       run.pages++
       run.sessionsSeen += page.length
       const importStart = performance.now()
-      const result = await importSessions(page, { installationId })
+      const result = await evChargingService.importSessions(page, { installationId })
       run.importMs += performance.now() - importStart
       run.upserted += result.upserted
       run.voided += result.voided
@@ -232,6 +248,7 @@ function runStats(run: SyncRun, stats: ZaptecCallStats): RunStats {
       authMs: Math.round(stats.authMs),
       fetchMs: Math.round(stats.fetchMs),
       importMs: Math.round(run.importMs),
+      reattributeMs: run.reattributeMs,
       requests: stats.requests,
       retries: stats.retries,
     },

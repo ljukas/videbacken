@@ -5,8 +5,10 @@ import { queue } from '~/lib/effects'
 import { type CallOpts, type ZaptecClient, ZaptecError } from '~/lib/effects/zaptec'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
 import { createServerLogger, logger } from '~/lib/logger/server'
+import * as evChargingService from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, getLastSuccessStartedAt } from '~/lib/services/integrationSync'
+import { insertVehicleRecord } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { runZaptecSync } from './sync'
 
@@ -477,6 +479,55 @@ test('a failed alert publish is logged as a warning and does not fail the run', 
   const warning = entries().find((e) => e.msg === 'integration sync alert publish failed')
   expect(warning).toMatchObject({ level: WARN, source: 'zaptec', transition: 'started_failing' })
   expect(runLines()).toHaveLength(1)
+})
+
+async function attributionRows() {
+  return db
+    .select({
+      zaptecSessionId: evChargeSession.zaptecSessionId,
+      vehicle: evChargeSession.vehicle,
+      vehicleSource: evChargeSession.vehicleSource,
+    })
+    .from(evChargeSession)
+    .orderBy(evChargeSession.zaptecSessionId)
+}
+
+test('a successful sync re-derives attribution and keeps admin tags', async () => {
+  await insertVehicleRecord({
+    startAt: new Date(T1.getTime() - 10 * DAY),
+    endAt: new Date(T1.getTime() - 10 * DAY + HOUR),
+  })
+  await insertVehicleRecord({
+    startAt: new Date(T1.getTime() - HOUR),
+    endAt: new Date(T1.getTime()),
+  })
+  const { client } = fakeZaptec([session('s0', new Date(T1.getTime() - 3 * DAY))])
+  const { log, runLines } = capturingLogger()
+  const run = await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
+  expect(run.outcome).toBe('ok')
+  const [row] = await attributionRows()
+  // s0 overlaps no record but sits inside coverage, so it is a guest.
+  expect(row).toMatchObject({ zaptecSessionId: 's0', vehicle: 'other', vehicleSource: 'skoda' })
+  expect(runLines()[0]).toHaveProperty('reattributeMs')
+
+  await db.update(evChargeSession).set({ vehicle: 'ours', vehicleSource: 'admin' })
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + HOUR),
+    deps: { zaptec: client, log },
+  })
+  expect((await attributionRows())[0]).toMatchObject({ vehicle: 'ours', vehicleSource: 'admin' })
+})
+
+test('a failed re-match is logged as a warning and does not fail the run', async () => {
+  vi.spyOn(evChargingService, 'reattributeSessions').mockRejectedValueOnce(new Error('db hiccup'))
+  const { client } = fakeZaptec([session('s0', new Date(T1.getTime() - DAY))])
+  const { log, entries } = capturingLogger()
+  const run = await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
+  expect(run.outcome).toBe('ok')
+  expect(entries().find((e) => e.msg === 'zaptec sync: vehicle re-match failed')).toMatchObject({
+    level: WARN,
+  })
 })
 
 test('a page-2 failure keeps page 1 and does not advance the watermark', async () => {
