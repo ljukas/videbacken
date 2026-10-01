@@ -35,6 +35,16 @@ export function setupDatabase() {
   let counter = 0
   let currentSchema: string | null = null
 
+  // The pool is pinned to one connection, but pg-pool discards a connection
+  // whose query failed (e.g. a deliberate constraint violation) and opens a
+  // new one. `search_path` is per-session, so the replacement would silently
+  // run the rest of the test against `public`. Re-apply it on every new
+  // connection; pg queues queries per client in order, so this SET runs
+  // before the caller's query.
+  pool.on('connect', (client) => {
+    if (currentSchema) void client.query(`SET search_path TO "${currentSchema}", public`)
+  })
+
   beforeAll(async () => {
     // Drop any straggler schemas from a crashed prior run in this worker.
     const { rows: stragglers } = await pool.query<{ nspname: string }>(
@@ -50,10 +60,9 @@ export function setupDatabase() {
     counter += 1
     const schema = `${SCHEMA_PREFIX}${counter}`
     currentSchema = schema
-    // `public` stays on the search_path so pg_trgm (pinned to public — see
-    // drizzle/0011_document_management.sql) resolves `gin_trgm_ops` and
-    // `word_similarity` without each per-test schema reinstalling the
-    // extension. Per-test tables/types take priority via the leading entry.
+    // `public` stays on the search_path so extension objects installed there
+    // resolve without each per-test schema reinstalling the extension.
+    // Per-test tables/types take priority via the leading entry.
     await pool.query(
       `CREATE SCHEMA "${schema}";\nSET search_path TO "${schema}", public;\n${MIGRATIONS_SQL}`,
     )
