@@ -161,6 +161,7 @@ heals it. The admin tag is re-checked in the UPDATE's own WHERE, so a concurrent
   preview is cleared and nothing is submittable; the dialog can't be closed (Esc, overlay, Cancel) while the import
   is in flight, and stays open with an error toast on failure so it can be retried.
 - Commit `/data/private/` to `.gitignore` (today it's only in a local `.git/info/exclude`).
+- **Spot chart in a sparse scope** (Ekonomi, "Spotpris per månad"): the month average is drawn only for months where the scope has a priced session (`paidSpotOre !== null`); no priced month at all shows the no-data state. A real near-zero paid price still gets a visible bar (`minPointSize`); null draws none (missing ≠ 0, ADR-0020).
 - All strings in `messages/sv.json` + `en.json`. Responsive: on mobile the year + scope controls stack.
 
 ## Errors and edge cases
