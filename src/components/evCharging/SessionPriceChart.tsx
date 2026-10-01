@@ -17,7 +17,14 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { STOCKHOLM_TIME_ZONE, stockholmDayOf } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { ChartPopover, useChartPopover } from './ChartPopover'
-import { formatOneDecimal, formatOre, formatShortWeekday, formatTime, mergeRuns } from './format'
+import {
+  formatOneDecimal,
+  formatOre,
+  formatOrePrecise,
+  formatShortWeekday,
+  formatTime,
+  mergeRuns,
+} from './format'
 
 type Detail = RouterOutputs['evCharging']['session']
 type Stretch = Detail['intervals'][number]
@@ -160,7 +167,7 @@ const tickLabel = (ms: number, multiDay: boolean) =>
   timeLabel(ms, multiDay && stockholmHour(ms) === 0)
 
 const kwhLabel = (kwh: number | null) => (kwh === null ? '—' : formatOneDecimal(kwh))
-const oreLabel = (ore: number | null) => (ore === null ? '—' : formatOre(ore))
+const oreLabel = (ore: number | null) => (ore === null ? '—' : formatOrePrecise(ore))
 
 // Each slot's price held from its start to its end. A slot without a price (a
 // day without a tariff) or a gap between slots (a day that never synced)

@@ -3,6 +3,8 @@ import { baseLocale, getLocale, type Locale, overwriteGetLocale } from '~/paragl
 import {
   formatDay,
   formatDuration,
+  formatOre,
+  formatOrePrecise,
   formatScore,
   formatSessionDay,
   formatSessionTimeRange,
@@ -350,3 +352,28 @@ const hm = (ms = 0) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(ms)
+
+describe('formatOre / formatOrePrecise', () => {
+  test('formatOre stays whole öre (axis ticks)', () => {
+    inLocale('sv')
+    expect(formatOre(0.17)).toBe('0')
+    expect(formatOre(123.4)).toBe('123')
+  })
+
+  test('formatOrePrecise never prints 0 for a real value, symmetric around zero', () => {
+    inLocale('sv')
+    expect(formatOrePrecise(0)).toBe('0')
+    expect(formatOrePrecise(0.17)).toBe('0,17')
+    expect(formatOrePrecise(-0.17)).toBe('\u22120,17')
+    expect(formatOrePrecise(-0.4)).toBe('\u22120,4')
+    expect(formatOrePrecise(0.004)).toBe('< 0,01')
+    expect(formatOrePrecise(-0.004)).toBe('> \u22120,01')
+    expect(formatOrePrecise(1.6)).toBe('2')
+    expect(formatOrePrecise(123)).toBe('123')
+  })
+
+  test('formatOrePrecise follows the locale', () => {
+    inLocale('en')
+    expect(formatOrePrecise(0.17)).toBe('0.17')
+  })
+})
