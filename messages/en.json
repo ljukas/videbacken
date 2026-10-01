@@ -582,5 +582,15 @@
   "charging_vehicle_chart_empty_other": "No guest charging in {year}.",
   "charging_overview_error_title": "The charging overview couldn't be loaded",
   "charging_sessions_error_title": "The charging sessions couldn't be loaded",
-  "charging_vehicle_sessions_empty_other": "No guest charging yet"
+  "charging_vehicle_sessions_empty_other": "No guest charging yet",
+  "charging_vehicle_guest_badge": "Guest",
+  "charging_vehicle_who_label": "Who charged?",
+  "charging_vehicle_ours": "Our car",
+  "charging_vehicle_other": "Guest",
+  "charging_vehicle_source_default": "assumed",
+  "charging_vehicle_source_skoda": "matched against the car's log",
+  "charging_vehicle_source_admin": "set by an admin",
+  "charging_vehicle_auto": "Automatic",
+  "charging_vehicle_saved": "Saved",
+  "charging_vehicle_save_error": "Couldn't save who charged"
 }

@@ -21,6 +21,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { Estimated } from './Estimated'
 import { formatDuration, formatOneDecimal, formatSek, formatTime } from './format'
+import { GuestBadge } from './GuestBadge'
 import { SessionLink } from './SessionLink'
 import { SyncNowButton } from './SyncNowButton'
 
@@ -105,7 +106,10 @@ export function SessionList({
             {sessions.map((s) => (
               <TableRow key={s.id}>
                 <TableCell className="whitespace-nowrap">
-                  <SessionLink sessionId={s.id} startAt={s.startAt} />
+                  <div className="flex items-center gap-2">
+                    <SessionLink sessionId={s.id} startAt={s.startAt} />
+                    {s.vehicle === 'other' ? <GuestBadge /> : null}
+                  </div>
                   <div className="text-muted-foreground text-xs tabular-nums sm:hidden">
                     {timeRange(s)}
                   </div>

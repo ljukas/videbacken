@@ -240,3 +240,16 @@ test('the date links to the session page', async () => {
   })
   await expect.element(link).toHaveAttribute('href', '/charging/sessions/s1')
 })
+
+test('a guest session carries the Gäst badge; our own does not', async () => {
+  const { screen } = await renderWithRouter(
+    <SessionList
+      sessions={[session, { ...session, id: 's2', vehicle: 'other' }]}
+      hasMore={false}
+      onShowMore={noop}
+      loadingMore={false}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_guest_badge())).toBeVisible()
+  expect(screen.getByText(m.charging_vehicle_guest_badge()).elements()).toHaveLength(1)
+})

@@ -582,5 +582,15 @@
   "charging_vehicle_chart_empty_other": "Inga gästladdningar under {year}.",
   "charging_overview_error_title": "Laddningsöversikten kunde inte hämtas",
   "charging_sessions_error_title": "Laddsessionerna kunde inte hämtas",
-  "charging_vehicle_sessions_empty_other": "Inga gästladdningar ännu"
+  "charging_vehicle_sessions_empty_other": "Inga gästladdningar ännu",
+  "charging_vehicle_guest_badge": "Gäst",
+  "charging_vehicle_who_label": "Vem laddade?",
+  "charging_vehicle_ours": "Vår bil",
+  "charging_vehicle_other": "Gäst",
+  "charging_vehicle_source_default": "antaget",
+  "charging_vehicle_source_skoda": "matchad mot bilens laddlogg",
+  "charging_vehicle_source_admin": "satt av admin",
+  "charging_vehicle_auto": "Automatiskt",
+  "charging_vehicle_saved": "Sparat",
+  "charging_vehicle_save_error": "Kunde inte spara vem som laddade"
 }

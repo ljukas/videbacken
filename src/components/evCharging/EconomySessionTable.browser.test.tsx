@@ -26,6 +26,7 @@ const row = (over: Partial<Row> = {}) =>
     actualComplete: true,
     paidSpotOre: 40,
     windowAvgSpotOre: 55,
+    vehicle: 'ours',
     excluded: null,
     counterfactual: {
       immediate: cost(53.6),
@@ -194,4 +195,17 @@ test('the date links to the session page', async () => {
   await expect
     .element(link)
     .toHaveAttribute('href', '/charging/sessions/11111111-1111-4111-8111-111111111111')
+})
+
+test('a guest session carries the Gäst badge; our own does not', async () => {
+  const { screen } = await renderWithRouter(
+    <EconomySessionTable
+      sessions={[
+        row(),
+        row({ sessionId: '22222222-2222-4222-8222-222222222222', vehicle: 'other' }),
+      ]}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_guest_badge())).toBeVisible()
+  expect(screen.getByText(m.charging_vehicle_guest_badge()).elements()).toHaveLength(1)
 })
