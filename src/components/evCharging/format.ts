@@ -1,7 +1,7 @@
 import { tz } from '@date-fns/tz'
-import { type Day, format, formatDistanceStrict, type Month } from 'date-fns'
+import { type Day, format, formatDistanceStrict, isSameDay, isSameYear, type Month } from 'date-fns'
 import { getDateFnsLocale, getIntlLocale } from '~/lib/i18n/format'
-import { STOCKHOLM_TIME_ZONE } from '~/lib/time/stockholm'
+import { STOCKHOLM_TIME_ZONE, stockholmDayOf } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 
 // Charging data is bucketed in Stockholm time server-side (calendar months,
@@ -46,12 +46,103 @@ export function formatWeekdayDay(date: Date | number): string {
   })
 }
 
+// A session's heading day: "lör 5 sep." in the current Stockholm year, with the
+// year ("lör 5 sep. 2025") for any other.
+export function formatSessionDay(date: Date, now: Date = new Date()): string {
+  const inStockholm = { in: tz(STOCKHOLM_TIME_ZONE) }
+  return isSameYear(date, now, inStockholm)
+    ? formatWeekdayDay(date)
+    : format(date, 'EEE d MMM yyyy', { locale: getDateFnsLocale(), ...inStockholm })
+}
+
+// "22:10–lör 06:30": the end time, prefixed with its short weekday when it
+// falls on another Stockholm day than the start.
+export function formatSessionTimeRange(startAt: Date, endAt: Date): string {
+  const end = isSameDay(startAt, endAt, { in: tz(STOCKHOLM_TIME_ZONE) })
+    ? formatTime(endAt)
+    : `${formatShortWeekday(endAt)} ${formatTime(endAt)}`
+  return `${formatTime(startAt)}–${end}`
+}
+
+// "lör" / "Sat": the short weekday in Stockholm time.
+export function formatShortWeekday(date: Date | number): string {
+  return format(date, 'EEE', { locale: getDateFnsLocale(), in: tz(STOCKHOLM_TIME_ZONE) })
+}
+
 export function formatTime(date: Date): string {
   return new Intl.DateTimeFormat(getIntlLocale(), {
     timeZone: STOCKHOLM_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
+}
+
+/**
+ * Pieces grouped into runs: sorted by start, a piece joining the run before it
+ * when it starts at or before that run's end. The one definition both the
+ * summary's windows text and the chart's schedule band use, so they never drift.
+ */
+export function mergeRuns<T extends { startMs: number; endMs: number }>(
+  pieces: readonly T[],
+): T[][] {
+  const runs: T[][] = []
+  let runEnd = Number.NEGATIVE_INFINITY
+  for (const p of pieces.toSorted((a, b) => a.startMs - b.startMs)) {
+    const run = runs.at(-1)
+    if (run && p.startMs <= runEnd) {
+      run.push(p)
+      runEnd = Math.max(runEnd, p.endMs)
+    } else {
+      runs.push([p])
+      runEnd = p.endMs
+    }
+  }
+  return runs
+}
+
+/**
+ * The cheapest schedule's pieces as the session summary explains them: merged
+ * into runs (a piece starting where the previous one ends), one or two runs
+ * listed ("00:00–06:30", "00:00–02:00 och 05:00–06:30"), more as "{n} perioder
+ * mellan {first start} och {last end}". Stockholm time; a time on another
+ * Stockholm day than the one before it (the plug-in's, at first) gets its
+ * weekday (joined by a no-break space, so it never wraps away from its time),
+ * so a day is named once. Null without pieces.
+ */
+export function scheduleWindows(
+  pieces: readonly { startMs: number; endMs: number }[],
+  plugInMs: number,
+): string | null {
+  const runs = mergeRuns(pieces).map((run) => ({
+    startMs: run[0]?.startMs ?? 0,
+    endMs: Math.max(...run.map((p) => p.endMs)),
+  }))
+  const first = runs[0]
+  const last = runs.at(-1)
+  if (!first || !last) return null
+
+  let day = stockholmDayOf(plugInMs)
+  const at = (ms: number) => {
+    const time = formatTime(new Date(ms))
+    const text = stockholmDayOf(ms) === day ? time : `${formatShortWeekday(ms)}\u00a0${time}`
+    day = stockholmDayOf(ms)
+    return text
+  }
+  const range = (run: { startMs: number; endMs: number }) => {
+    const from = at(run.startMs)
+    return `${from}–${at(run.endMs)}`
+  }
+  if (runs.length === 1) return range(first)
+  if (runs.length === 2) {
+    const firstText = range(first)
+    return m.charging_session_windows_two({ first: firstText, second: range(last) })
+  }
+  const from = at(first.startMs)
+  return m.charging_session_windows_many({
+    count: formatCount(runs.length),
+    from,
+    to: at(last.endMs),
+  })
 }
 
 export function formatDateTime(date: Date): string {

@@ -8,16 +8,17 @@ import {
 } from '~/components/ui/table'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import {
-  formatDate,
-  formatOneDecimal,
-  formatScore,
-  formatSek,
-  formatSignedSek,
-  formatTime,
-} from './format'
+import { Estimated } from './Estimated'
+import { formatOneDecimal, formatScore, formatSek, formatSignedSek, formatTime } from './format'
+import { SessionLink } from './SessionLink'
+import { Unknown } from './Unknown'
 
 type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
+
+const noSpread = (cf: NonNullable<Row['counterfactual']>) =>
+  m.charging_economy_tile_no_spread({
+    spread: formatSek(cf.dearest.totalSek - cf.optimal.totalSek, 2),
+  })
 
 const reason = (r: Row) =>
   r.excluded === 'no_hourly'
@@ -59,7 +60,7 @@ export function EconomySessionTable({
           return (
             <TableRow key={r.sessionId}>
               <TableCell className="whitespace-nowrap">
-                <SessionDate row={r} />
+                <SessionLink sessionId={r.sessionId} startAt={r.startAt} />
                 <div className="text-muted-foreground text-xs tabular-nums">
                   {formatTime(r.startAt)}–{formatTime(r.endAt)}
                 </div>
@@ -77,7 +78,7 @@ export function EconomySessionTable({
                       <FoldedValue
                         label={m.charging_economy_col_score()}
                         value={formatScore(cf.score)}
-                        unknown={cf.score === null}
+                        unknownLabel={cf.score === null ? noSpread(cf) : undefined}
                       />
                     </>
                   ) : (
@@ -90,7 +91,10 @@ export function EconomySessionTable({
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">
                 {r.actualComplete ? (
-                  formatSek(r.actual.totalSek, 2)
+                  // No hourly data means the cost was spread from the total: an estimate.
+                  <Estimated estimated={r.excluded === 'no_hourly'}>
+                    {formatSek(r.actual.totalSek, 2)}
+                  </Estimated>
                 ) : (
                   <Unknown label={m.charging_sessions_cost_unknown()} />
                 )}
@@ -104,11 +108,7 @@ export function EconomySessionTable({
                     {formatSignedSek(cf.leftOnTableSek, 2)}
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-right tabular-nums sm:table-cell">
-                    {cf.score === null ? (
-                      <Unknown label={m.charging_economy_tile_no_spread()} />
-                    ) : (
-                      formatScore(cf.score)
-                    )}
+                    {cf.score === null ? <Unknown label={noSpread(cf)} /> : formatScore(cf.score)}
                   </TableCell>
                 </>
               ) : (
@@ -127,35 +127,21 @@ export function EconomySessionTable({
   )
 }
 
-// C1 turns this into a link to the session page.
-function SessionDate({ row }: { row: Row }) {
-  return <span>{formatDate(row.startAt)}</span>
-}
-
 // One labelled value, wrapped whole so a line break falls between values.
 // The headers are hidden below `sm`, so the label travels with the value.
 function FoldedValue({
   label,
   value,
-  unknown,
+  unknownLabel,
 }: {
   label: string
   value: string
-  unknown?: boolean
+  /** Set when the value is unknown: the reason, read out in place of the dash. */
+  unknownLabel?: string
 }) {
   return (
     <span className="inline-block">
-      {label} {unknown ? <Unknown label={m.charging_economy_tile_no_spread()} /> : value}
-    </span>
-  )
-}
-
-// A dash that still says why, for screen readers.
-function Unknown({ label }: { label: string }) {
-  return (
-    <span title={label}>
-      <span aria-hidden="true">—</span>
-      <span className="sr-only">{label}</span>
+      {label} {unknownLabel ? <Unknown label={unknownLabel} /> : value}
     </span>
   )
 }

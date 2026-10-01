@@ -108,6 +108,28 @@ describe('analyzeSession', () => {
     expect(economy.paidSpotOre).toBeNull()
   })
 
+  test('rateKw: the cap the schedules used when included, null on every exclusion path', () => {
+    // Included: 10 kWh in one hour.
+    expect(analyzeSession(session(), slots, [TARIFF]).rateKw).toBeCloseTo(10)
+    // no_hourly.
+    expect(analyzeSession(session({ estimated: true }), slots, [TARIFF]).rateKw).toBeNull()
+    // no_price, no pieces: a slot missing from the window.
+    const holey = new SlotIndex(daySlots('2026-09-28', 15).filter((_, i) => i !== 46))
+    expect(analyzeSession(session(), holey, [TARIFF]).rateKw).toBeNull()
+    // no_price with every piece priced, but an actual that can't be: a zero-length stretch
+    // holding energy (the DB's interval CHECK rules it out; the math still must not score it).
+    const unpriceable = session({
+      stretches: [
+        ...session().stretches,
+        { startMs: utc('2026-09-28T09:30Z'), endMs: utc('2026-09-28T09:30Z'), kwh: 1 },
+      ],
+    })
+    const r = analyzeSession(unpriceable, slots, [TARIFF])
+    expect(r.economy.excluded).toBe('no_price')
+    expect(r.economy.actualComplete).toBe(false)
+    expect(r.rateKw).toBeNull()
+  })
+
   test('an included session has a complete actual', () => {
     expect(analyzeSession(session(), slots, [TARIFF]).economy.actualComplete).toBe(true)
   })
@@ -241,6 +263,29 @@ describe('timingScore', () => {
   })
   test('is null when there was nothing to choose between', () => {
     expect(timingScore(10, 10, 10.005)).toBeNull()
+  })
+  test('is null below the absolute gap floor (0,4 kr)', () => {
+    expect(timingScore(10.2, 10, 10.4)).toBeNull()
+  })
+  test('is null below the relative floor: 0,9 kr gap on a 20 kr session (5 % = 1,0 kr)', () => {
+    expect(timingScore(20, 19.5, 20.4)).toBeNull()
+  })
+  test('scores a 1,2 kr gap on a 20 kr session', () => {
+    expect(timingScore(20, 19, 20.2)).toBeCloseTo(0.2 / 1.2)
+  })
+  test('uses |actual| for the relative floor when actual is negative', () => {
+    // 5 % of |-30| = 1,5 kr: a 1,2 kr gap is below it, a 1,6 kr gap is not.
+    expect(timingScore(-30, -31, -29.8)).toBeNull()
+    // (dearest − actual) ÷ gap = 0,6 ÷ 1,6
+    expect(timingScore(-30, -31, -29.4)).toBeCloseTo(0.375)
+  })
+  test('at actual 0 the absolute floor governs', () => {
+    expect(timingScore(0, -0.2, 0.2)).toBeNull()
+    expect(timingScore(0, -0.2, 0.4)).toBeCloseTo(0.4 / 0.6)
+  })
+  test('the exact boundary scores (the rule is "<")', () => {
+    // 0,5 kr is exact in binary, so gap === threshold holds without rounding.
+    expect(timingScore(5, 5, 5.5)).toBe(1)
   })
   test('is clamped to 0…1 against float noise', () => {
     expect(timingScore(9.9999999, 10, 20)).toBe(1)

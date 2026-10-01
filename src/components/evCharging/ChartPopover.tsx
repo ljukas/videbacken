@@ -1,13 +1,14 @@
-import { useTooltip, useTooltipInPortal } from '@visx/tooltip'
+import { Tooltip, useTooltip, useTooltipInPortal } from '@visx/tooltip'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 // Tooltip sits above the mark so a fingertip doesn't cover it.
 const OFFSET_TOP = -34
 // Near the wrapper's top edge there's no room above: drop below the mark instead.
 const OFFSET_BELOW = 24
 
-type PortalTooltip = ReturnType<typeof useTooltipInPortal>['TooltipInPortal']
+type Bounds = ReturnType<typeof useTooltipInPortal>['containerBounds']
 
 export function useChartPopover<T>() {
   const { tooltipOpen, tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip } =
@@ -18,7 +19,12 @@ export function useChartPopover<T>() {
   // keeps it inside the window.
   // No `scroll: true`: that attaches a window scroll listener at mount which
   // re-renders the host on every scroll frame. Bounds are measured once per open.
-  const { containerRef, forceRefreshBounds, TooltipInPortal } = useTooltipInPortal({
+  // Only the measuring is used: its TooltipInPortal renders through visx's
+  // Portal, which builds its node in render() and removes it on unmount, so
+  // StrictMode's dev-time unmount/remount leaves the tooltip in a detached
+  // node — open, but never on screen. ChartPopover portals with React's own
+  // createPortal instead.
+  const { containerRef, containerBounds, forceRefreshBounds } = useTooltipInPortal({
     detectBounds: false,
   })
   const setRoot = useCallback(
@@ -89,7 +95,7 @@ export function useChartPopover<T>() {
       hide,
       markProps,
       containerProps,
-      TooltipInPortal,
+      containerBounds,
     }),
     [
       tooltipOpen,
@@ -100,7 +106,7 @@ export function useChartPopover<T>() {
       hide,
       markProps,
       containerProps,
-      TooltipInPortal,
+      containerBounds,
     ],
   )
 }
@@ -125,43 +131,47 @@ function keepInWindow(el: HTMLDivElement | null, above: boolean) {
 }
 
 // `left`/`top` are in the chart wrapper's coordinates (the element carrying
-// `containerProps`); the portal converts them to page coordinates. `dataKey`
-// re-mounts the tooltip when its content changes.
+// `containerProps`), converted to page coordinates from its measured bounds.
+// `dataKey` re-mounts the tooltip when its content changes.
 export function ChartPopover({
   state,
   dataKey,
   children,
 }: {
-  state: { open: boolean; left?: number; top?: number; TooltipInPortal: PortalTooltip }
+  state: { open: boolean; left?: number; top?: number; containerBounds: Bounds }
   dataKey?: string
   children: React.ReactNode
 }) {
+  const bounds = state.containerBounds
+  // Rendered (closed) during SSR too, where there is no window.
+  const hasWindow = typeof window !== 'undefined'
+  const pageLeft = (state.left ?? 0) + bounds.left + (hasWindow ? window.scrollX : 0)
+  const pageTop = (state.top ?? 0) + bounds.top + (hasWindow ? window.scrollY : 0)
   // A new callback identity per position makes React re-run it, so the clamp
-  // follows the mark as the pointer moves.
+  // follows the mark as the pointer moves (and the wrapper, once re-measured).
   const above = (state.top ?? 0) >= -OFFSET_TOP
-  // biome-ignore lint/correctness/useExhaustiveDependencies: left/top are the re-run triggers
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the position is the re-run trigger
   const clampRef = useCallback(
     (el: HTMLDivElement | null) => keepInWindow(el, above),
-    [state.left, state.top, above],
+    [pageLeft, pageTop, above],
   )
   if (!state.open) return null
-  const { TooltipInPortal } = state
-  return (
-    <TooltipInPortal
+  return createPortal(
+    <Tooltip
       key={dataKey}
-      // React 19 forwards `ref` as a prop through visx's wrapper to its div; its
-      // prop types just don't declare it.
+      // React 19 passes `ref` as a prop; visx's Tooltip spreads it onto its
+      // div, its prop types just don't declare it.
       {...({ ref: clampRef } as object)}
       unstyled
       applyPositionStyle
-      detectBounds={false}
-      left={state.left}
-      top={state.top}
+      left={pageLeft}
+      top={pageTop}
       offsetLeft={0}
       offsetTop={above ? OFFSET_TOP : OFFSET_BELOW}
       className="pointer-events-none z-10 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-background text-xs shadow-md"
     >
       {children}
-    </TooltipInPortal>
+    </Tooltip>,
+    document.body,
   )
 }

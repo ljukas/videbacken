@@ -1,7 +1,8 @@
 import { expect, test, vi } from 'vitest'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { renderWithProviders } from '~test/browser/render'
+import { renderWithRouter } from '~test/browser/render'
+import { formatDate, formatTime } from './format'
 import { SessionList } from './SessionList'
 
 type Session = RouterOutputs['evCharging']['sessions']['sessions'][number]
@@ -21,7 +22,7 @@ const noop = () => {}
 
 test('empty (admin): the shared Empty state with a "Synka nu" CTA', async () => {
   const onSync = vi.fn()
-  const { screen } = await renderWithProviders(
+  const { screen } = await renderWithRouter(
     <SessionList
       sessions={[]}
       hasMore={false}
@@ -37,7 +38,7 @@ test('empty (admin): the shared Empty state with a "Synka nu" CTA', async () => 
 })
 
 test('empty (non-admin): no CTA', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen } = await renderWithRouter(
     <SessionList sessions={[]} hasMore={false} onShowMore={noop} loadingMore={false} />,
   )
   await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
@@ -45,7 +46,7 @@ test('empty (non-admin): no CTA', async () => {
 })
 
 test('populated: date, Stockholm start–end, duration, kWh and peak kW', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen } = await renderWithRouter(
     <div style={{ width: 1024 }}>
       <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />
     </div>,
@@ -66,7 +67,7 @@ test('populated: date, Stockholm start–end, duration, kWh and peak kW', async 
 })
 
 test('a session without intervals shows an em-dash for peak power', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen } = await renderWithRouter(
     <SessionList
       sessions={[{ ...session, peakKw: null }]}
       hasMore={false}
@@ -81,7 +82,7 @@ test('a session without intervals shows an em-dash for peak power', async () => 
 
 test('"Visa fler" appears while hasMore and asks for more', async () => {
   const onShowMore = vi.fn()
-  const { screen } = await renderWithProviders(
+  const { screen } = await renderWithRouter(
     <SessionList sessions={[session]} hasMore onShowMore={onShowMore} loadingMore={false} />,
   )
   await screen.getByRole('button', { name: m.charging_sessions_show_more() }).click()
@@ -89,7 +90,7 @@ test('"Visa fler" appears while hasMore and asks for more', async () => {
 })
 
 test('"Visa fler" is disabled while the next page loads', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen } = await renderWithRouter(
     <SessionList sessions={[session]} hasMore onShowMore={noop} loadingMore />,
   )
   await expect
@@ -114,7 +115,7 @@ const priced: SessionCost = {
 }
 
 function renderWithCost(cost: SessionCost | undefined, pending = false) {
-  return renderWithProviders(
+  return renderWithRouter(
     <div style={{ width: 1024 }}>
       <SessionList
         sessions={[session]}
@@ -191,7 +192,7 @@ test('a priced, measured session has no ≈ legend', async () => {
 })
 
 test('without cost (nothing priced yet) there is no cost column', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen } = await renderWithRouter(
     <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />,
   )
   expect(screen.getByText(m.charging_sessions_col_cost(), { exact: true }).elements()).toHaveLength(
@@ -210,4 +211,17 @@ test('on a phone the time moves under the date and the spot line hides', async (
   expect(dateCell.querySelector('.sm\\:hidden')?.textContent).toMatch(/\d{2}:\d{2}–\d{2}:\d{2}/)
   const spot = screen.getByText(/varav spotpris 8,97\s?kr/).element()
   expect(spot.className).toMatch(/\bhidden\b.*\bsm:inline\b/)
+})
+
+test('the date links to the session page', async () => {
+  const { screen } = await renderWithRouter(
+    <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />,
+  )
+  const link = screen.getByRole('link', {
+    name: m.charging_session_link_label({
+      date: formatDate(session.startAt),
+      time: formatTime(session.startAt),
+    }),
+  })
+  await expect.element(link).toHaveAttribute('href', '/charging/sessions/s1')
 })

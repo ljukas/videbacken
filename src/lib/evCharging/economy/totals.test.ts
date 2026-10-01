@@ -50,6 +50,28 @@ const excluded = (reason: 'no_hourly' | 'no_price'): SessionEconomy => ({
 })
 
 describe('sumEconomy', () => {
+  describe('score rule on the summed totals', () => {
+    test('is null when the summed gap is under 0,50 kr, though sessions were included', () => {
+      const t = sumEconomy([included(10, 10, 10, 10.4)], null)
+      expect(t.included).toBe(1)
+      expect(t.score).toBeNull()
+    })
+    test('is null when the summed gap is under 5 % of the summed actual', () => {
+      // gap 2 + 2 = 4 kr < 5 % × 100 kr
+      const t = sumEconomy([included(50, 50, 49, 51), included(50, 50, 49, 51)], null)
+      expect(t.included).toBe(2)
+      expect(t.score).toBeNull()
+    })
+    test('scores when every session is null alone but the sum clears the rule', () => {
+      // each: gap 0,46 < 0,5 (null); sum: 9,2 kr >= 5 % × 180 kr = 9
+      const each = included(9, 9, 9, 9.46)
+      const sessions = Array.from({ length: 20 }, () => each)
+      expect(sumEconomy([each], null).score).toBeNull()
+      expect(sumEconomy(sessions, null).score).toBe(1)
+    })
+    // The reverse (sessions that all score alone, a sum that does not) cannot
+    // happen: gaps add, and 5 % × |Σ actual| <= Σ 5 % × |actual|.
+  })
   test('sums the included sessions and scores the sums', () => {
     const t = sumEconomy([included(15, 20, 10, 20), included(10, 10, 10, 20)], 120)
     expect(t).toMatchObject({

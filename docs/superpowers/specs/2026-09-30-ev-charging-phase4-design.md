@@ -24,7 +24,7 @@ of scope.
 | 2 | Three schedules per session: **immediate** (from plug-in, in time order), **optimal** (cheapest slots in the window first), **dearest** (most expensive first), each capped at the session's **rate cap**. |
 | 3 | **Rate cap** = max(highest observed kW over any interval, session kWh ÷ window hours). Using the highest observed rate makes the actual session a feasible schedule, so `optimal ≤ actual ≤ dearest`. |
 | 4 | Slots are ranked by the **full price incl fees + VAT** under the tariff of the slot's Stockholm day (a tariff change inside a window re-ranks correctly). Greedy is exactly optimal: cost is linear in kWh with per-slot capacity (fractional knapsack). |
-| 5 | **Score** ("Pristajming") = (dearest − actual) ÷ (dearest − optimal), clamped to 0…1; **null** when dearest − optimal < 0.01 kr (nothing to choose between). |
+| 5 | **Score** ("Pristajming") = (dearest − actual) ÷ (dearest − optimal), clamped to 0…1; **null** when dearest − optimal < max(0.5 kr, 5 % of \|actual\|) (nothing real to choose between; amended 2026-10-01: was 0.01 kr, a ≈4 öre gap graded 18 %, owner feedback). |
 | 6 | Headline kronor: **"Sparat mot direktladdning"** = immediate − actual (may be negative); **"Kvar att hämta"** = actual − optimal. |
 | 7 | Price comparison: **paid spot** öre/kWh (energy-weighted, incl VAT) vs the **plug-in window's** time-weighted average spot (per session) and the **month's** time-weighted average spot (per month). |
 | 8 | Sessions are **excluded** from counterfactuals (and counted, with the reason) when they have **no hourly data** (`no_hourly`: energy is spread evenly, nothing to compare) or when any part of the window lacks a **price or tariff** (`no_price`). Never 0 kr (ADR-0020). |
@@ -188,7 +188,7 @@ date-fns with `getDateFnsLocale()` + `tz(STOCKHOLM_TIME_ZONE)`.
 - **Pure module (test-first, node):** immediate fills chronologically and stops at kWh; optimal/dearest greedy by
   full price with per-slot capacity and partial edge slots; a tariff change at midnight inside the window
   re-ranks; negative prices first; rate-cap rules; **invariant `optimal ≤ actual ≤ dearest`** over seeded random
-  fixtures (a loop over seeds, no new dependency); score null below 0.01 kr gap; a DST-straddling window; hourly
+  fixtures (a loop over seeds, no new dependency); score null below the max(0.5 kr, 5 % of \|actual\|) gap (amended 2026-10-01); a DST-straddling window; hourly
   slots before 2025-10-01; `no_hourly` / `no_price` (missing slot, missing tariff) exclusions; month sums skip
   excluded sessions; window/month average spot weighting.
 - **`slotPriceOre` extraction:** existing `priceIntervals` tests stay green unchanged.

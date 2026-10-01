@@ -4,6 +4,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithRouter } from '~test/browser/render'
 import { EconomySessionTable } from './EconomySessionTable'
+import { formatDate, formatSek, formatTime } from './format'
 
 type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
 const cost = (totalSek: number) => ({
@@ -85,6 +86,24 @@ test('an excluded no_hourly session names its reason', async () => {
     .toHaveTextContent(`— ${m.charging_economy_reason_no_hourly()}`)
 })
 
+test('a no_hourly (estimated) session marks its cost "≈"; other rows do not', async () => {
+  const { screen } = await renderWithRouter(
+    <EconomySessionTable
+      sessions={[
+        row({ excluded: 'no_hourly', counterfactual: null }),
+        row({ sessionId: 'x', excluded: 'no_price', counterfactual: null }),
+        row({ sessionId: 'y' }),
+      ]}
+    />,
+  )
+  const cost = (i: number) => screen.getByRole('row').nth(i).getByRole('cell').nth(2)
+  await expect.element(cost(1)).toHaveTextContent(/^≈\s41,20\s?kr/)
+  await expect.element(cost(1)).toHaveTextContent(m.charging_sessions_cost_estimated())
+  for (const i of [2, 3]) {
+    await expect.element(cost(i)).toHaveTextContent(/^41,20\s?kr$/)
+  }
+})
+
 test('a flat-price session shows "—" for timing', async () => {
   const base = row()
   const { screen } = await renderWithRouter(
@@ -95,6 +114,37 @@ test('a flat-price session shows "—" for timing', async () => {
     />,
   )
   await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toHaveTextContent(/^—/)
+  // The sr-only reason names the spread that was too small (row() prices 70 − 38 = 32 kr).
+  await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toHaveTextContent(
+    new RegExp(
+      m
+        .charging_economy_tile_no_spread({ spread: formatSek(32, 2) })
+        .replace(/[()]/g, '\\$&')
+        .replace(/\s/g, '\\s'),
+    ),
+  )
+})
+
+test('on a phone a null-score row keeps the spread reason inside the folded line', async () => {
+  const base = row()
+  await renderWithRouter(
+    <EconomySessionTable
+      sessions={[
+        row({ counterfactual: base.counterfactual && { ...base.counterfactual, score: null } }),
+      ]}
+    />,
+  )
+  // No Tailwind here, so the folded line is found by its `sm:hidden` class.
+  const folded = document.querySelector('div.sm\\:hidden')
+  expect(folded?.textContent).toContain(m.charging_economy_col_score())
+  expect(folded?.textContent).toMatch(
+    new RegExp(
+      m
+        .charging_economy_tile_no_spread({ spread: formatSek(32, 2) })
+        .replace(/[()]/g, '\\$&')
+        .replace(/\s/g, '\\s'),
+    ),
+  )
 })
 
 // The browser-test env has no Tailwind, so the phone layout is pinned by its
@@ -130,4 +180,18 @@ test('on a phone the comparison columns fold under the date', async () => {
     ),
   )
   expect(folded(2)?.textContent).toBe(m.charging_economy_reason_no_price())
+})
+
+test('the date links to the session page', async () => {
+  const { screen } = await renderWithRouter(<EconomySessionTable sessions={[row()]} />)
+  const { startAt } = row()
+  const link = screen.getByRole('link', {
+    name: m.charging_session_link_label({
+      date: formatDate(startAt),
+      time: formatTime(startAt),
+    }),
+  })
+  await expect
+    .element(link)
+    .toHaveAttribute('href', '/charging/sessions/11111111-1111-4111-8111-111111111111')
 })

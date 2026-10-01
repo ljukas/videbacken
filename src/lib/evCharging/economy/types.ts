@@ -30,7 +30,7 @@ export type Counterfactual = {
   immediate: CostTotals
   optimal: CostTotals
   dearest: CostTotals
-  /** 0…1, or null when the window left nothing to choose between (gap < 0.01 kr). */
+  /** 0…1, or null when the window left nothing to choose between (gap < max(0.5 kr, 5 % of |actual|)). */
   score: number | null
   /** immediate − actual; negative when charging at once would have been cheaper. */
   savedVsImmediateSek: number

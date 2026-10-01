@@ -19,7 +19,9 @@ import {
 } from '~/components/ui/table'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { formatDate, formatDuration, formatOneDecimal, formatSek, formatTime } from './format'
+import { Estimated } from './Estimated'
+import { formatDuration, formatOneDecimal, formatSek, formatTime } from './format'
+import { SessionLink } from './SessionLink'
 import { SyncNowButton } from './SyncNowButton'
 
 type Session = RouterOutputs['evCharging']['sessions']['sessions'][number]
@@ -97,7 +99,7 @@ export function SessionList({
             {sessions.map((s) => (
               <TableRow key={s.id}>
                 <TableCell className="whitespace-nowrap">
-                  {formatDate(s.startAt)}
+                  <SessionLink sessionId={s.id} startAt={s.startAt} />
                   <div className="text-muted-foreground text-xs tabular-nums sm:hidden">
                     {timeRange(s)}
                   </div>
@@ -167,13 +169,7 @@ function SessionCostCell({ cost, pending }: { cost: SessionCost | undefined; pen
   }
   return (
     <div className="flex flex-col items-end">
-      <span title={cost.estimated ? m.charging_sessions_cost_estimated() : undefined}>
-        {cost.estimated ? '≈ ' : null}
-        {formatSek(cost.totalSek, 2)}
-        {cost.estimated ? (
-          <span className="sr-only"> ({m.charging_sessions_cost_estimated()})</span>
-        ) : null}
-      </span>
+      <Estimated estimated={cost.estimated}>{formatSek(cost.totalSek, 2)}</Estimated>
       <span className="hidden text-muted-foreground text-xs sm:inline">
         {m.charging_sessions_cost_spot({ spot: formatSek(cost.spotSek, 2) })}
       </span>

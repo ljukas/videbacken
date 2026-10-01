@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { formatOre, formatScore, formatSignedSek } from './format'
+import { formatOre, formatScore, formatSek, formatSignedSek } from './format'
 
 type Totals = RouterOutputs['evCharging']['economy']['tiles']
 
@@ -18,7 +18,14 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
       : noPrice === 0
         ? m.charging_economy_tile_none_hourly()
         : m.charging_economy_tile_none_comparable()
-  const items = [
+  const spread = formatSek(tiles.dearestSek - tiles.optimalSek, 2)
+  const items: {
+    label: string
+    value: string | null
+    hint: string | null
+    spreadLine?: string
+    emptyReason: string | null
+  }[] = [
     {
       label: m.charging_economy_tile_saved(),
       value: none ? null : formatSignedSek(tiles.savedVsImmediateSek),
@@ -35,9 +42,11 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
       label: m.charging_economy_tile_score(),
       value: none || tiles.score === null ? null : formatScore(tiles.score),
       hint: m.charging_economy_tile_score_hint(),
-      // Flat prices (no spread between cheapest and dearest) give no score
-      // even though sessions were compared.
-      emptyReason: none ? noneReason : m.charging_economy_tile_no_spread(),
+      // Shown above the hint when there is a score.
+      spreadLine: m.charging_economy_score_spread({ spread }),
+      // Too small a price spread (flat prices, or a gap that is noise) gives no
+      // score even though sessions were compared.
+      emptyReason: none ? noneReason : m.charging_economy_tile_no_spread({ spread }),
     },
     {
       label: m.charging_economy_tile_spot(),
@@ -76,6 +85,9 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
               ) : (
                 <>
                   <span className="font-semibold text-2xl tabular-nums">{item.value}</span>
+                  {item.spreadLine ? (
+                    <span className="text-muted-foreground text-xs">{item.spreadLine}</span>
+                  ) : null}
                   {item.hint ? (
                     <span className="text-muted-foreground text-xs">{item.hint}</span>
                   ) : null}

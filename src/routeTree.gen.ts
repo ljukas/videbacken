@@ -30,6 +30,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_authenticated/charging/patterns'
 import { Route as AuthenticatedChargingEconomyRouteImport } from './routes/_authenticated/charging/economy'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
+import { Route as AuthenticatedChargingSessionsSessionIdRouteImport } from './routes/_authenticated/charging/sessions/$sessionId'
 
 const SignedInRoute = SignedInRouteImport.update({
   id: '/signed-in',
@@ -141,6 +142,12 @@ const AuthenticatedAccountProfileRoute =
     path: '/profile',
     getParentRoute: () => AuthenticatedAccountRoute,
   } as any)
+const AuthenticatedChargingSessionsSessionIdRoute =
+  AuthenticatedChargingSessionsSessionIdRouteImport.update({
+    id: '/charging/sessions/$sessionId',
+    path: '/charging/sessions/$sessionId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account/': typeof AuthenticatedAccountIndexRoute
   '/charging/': typeof AuthenticatedChargingIndexRoute
+  '/charging/sessions/$sessionId': typeof AuthenticatedChargingSessionsSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -184,6 +192,7 @@ export interface FileRoutesByTo {
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account': typeof AuthenticatedAccountIndexRoute
   '/charging': typeof AuthenticatedChargingIndexRoute
+  '/charging/sessions/$sessionId': typeof AuthenticatedChargingSessionsSessionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -208,6 +217,7 @@ export interface FileRoutesById {
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/_authenticated/account/': typeof AuthenticatedAccountIndexRoute
   '/_authenticated/charging/': typeof AuthenticatedChargingIndexRoute
+  '/_authenticated/charging/sessions/$sessionId': typeof AuthenticatedChargingSessionsSessionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/shelly'
     | '/account/'
     | '/charging/'
+    | '/charging/sessions/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -253,6 +264,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/shelly'
     | '/account'
     | '/charging'
+    | '/charging/sessions/$sessionId'
   id:
     | '__root__'
     | '/_authenticated'
@@ -276,6 +288,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/shelly'
     | '/_authenticated/account/'
     | '/_authenticated/charging/'
+    | '/_authenticated/charging/sessions/$sessionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -441,6 +454,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAccountProfileRouteImport
       parentRoute: typeof AuthenticatedAccountRoute
     }
+    '/_authenticated/charging/sessions/$sessionId': {
+      id: '/_authenticated/charging/sessions/$sessionId'
+      path: '/charging/sessions/$sessionId'
+      fullPath: '/charging/sessions/$sessionId'
+      preLoaderRoute: typeof AuthenticatedChargingSessionsSessionIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
@@ -466,6 +486,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedChargingEconomyRoute: typeof AuthenticatedChargingEconomyRoute
   AuthenticatedChargingPatternsRoute: typeof AuthenticatedChargingPatternsRoute
   AuthenticatedChargingIndexRoute: typeof AuthenticatedChargingIndexRoute
+  AuthenticatedChargingSessionsSessionIdRoute: typeof AuthenticatedChargingSessionsSessionIdRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -477,6 +498,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedChargingEconomyRoute: AuthenticatedChargingEconomyRoute,
   AuthenticatedChargingPatternsRoute: AuthenticatedChargingPatternsRoute,
   AuthenticatedChargingIndexRoute: AuthenticatedChargingIndexRoute,
+  AuthenticatedChargingSessionsSessionIdRoute:
+    AuthenticatedChargingSessionsSessionIdRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
