@@ -8,7 +8,8 @@ import type { VehicleRecordInput, VehicleRecordSource } from '~/lib/evCharging/v
  * `(source, source_session_id)`: an already-imported id is left as it was
  * (the export never revises a past charge), so re-importing reports it
  * `unchanged`. One statement, so an import lands whole or not at all.
- * ≤ 5 000 rows × 9 params stays under Postgres's 65 535 bind-parameter cap.
+ * `MAX_IMPORT_ROWS` rows × 9 params stays under Postgres's 65 535 bind-parameter
+ * cap; the caller (the procedure's zod input) enforces it, so no chunking here.
  */
 export async function importRecords(
   rows: readonly VehicleRecordInput[],
