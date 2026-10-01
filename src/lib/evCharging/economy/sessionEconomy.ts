@@ -55,7 +55,12 @@ export function analyzeSession(
   session: EconomySession,
   slots: SlotIndex,
   tariffsAsc: readonly TariffPeriod[],
-): { economy: SessionEconomy; optimalSchedule: EnergyInterval[] | null } {
+): {
+  economy: SessionEconomy
+  optimalSchedule: EnergyInterval[] | null
+  /** The kW cap every counterfactual schedule charged at (`rateCapKw`); null when excluded. */
+  rateKw: number | null
+} {
   // gridShare 1: keep in sync with `toIntervals` in ../costInputs.ts (Emaldo seam).
   const actual = priceIntervals(
     session.stretches.map((s) => ({ ...s, gridShare: 1 })),
@@ -75,6 +80,7 @@ export function analyzeSession(
   const exclude = (excluded: EconomyExclusion) => ({
     economy: { ...common, excluded, counterfactual: null },
     optimalSchedule: null,
+    rateKw: null,
   })
 
   if (session.estimated) return exclude('no_hourly')
@@ -103,5 +109,6 @@ export function analyzeSession(
       },
     },
     optimalSchedule,
+    rateKw: rate,
   }
 }

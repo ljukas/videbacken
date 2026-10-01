@@ -180,6 +180,15 @@ test('getSessionEconomy returns the chart data: stretches, prices ±1 h, the opt
   expect(d.economy.counterfactual?.score).toBeCloseTo(0)
 })
 
+test('getSessionEconomy exposes the rate the counterfactuals charged at', async () => {
+  await seedPrices()
+  // 6 kWh over 08:00Z–08:30Z: the observed 12 kW, not the window average (6 kWh / 2 h = 3 kW).
+  const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 6, [
+    ['2026-09-28T08:00:00Z', '2026-09-28T08:30:00Z', 6],
+  ])
+  expect((await getSessionEconomy({ sessionId: id })).rateKw).toBeCloseTo(12)
+})
+
 test('getSessionEconomy throws EV_SESSION_NOT_FOUND for an unknown id', async () => {
   await expect(
     getSessionEconomy({ sessionId: '00000000-0000-4000-8000-000000000000' }),
@@ -292,6 +301,7 @@ test('getSessionEconomy on a day without a tariff: null prices, excluded no_pric
   expect(d.economy.excluded).toBe('no_price')
   expect(d.economy.counterfactual).toBeNull()
   expect(d.optimalSchedule).toBeNull()
+  expect(d.rateKw).toBeNull()
 })
 
 test('getSessionEconomy on an estimated session (no intervals): no chart data, excluded no_hourly', async () => {
@@ -303,4 +313,5 @@ test('getSessionEconomy on an estimated session (no intervals): no chart data, e
   expect(d.intervals).toEqual([])
   expect(d.economy.excluded).toBe('no_hourly')
   expect(d.optimalSchedule).toBeNull()
+  expect(d.rateKw).toBeNull()
 })

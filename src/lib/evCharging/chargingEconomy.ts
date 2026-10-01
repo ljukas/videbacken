@@ -72,6 +72,8 @@ export type SessionEconomyDetail = {
   /** Spot slots over the window ± 1 h, öre/kWh incl VAT; null on a day without a tariff. */
   prices: { startMs: number; endMs: number; spotOre: number | null }[]
   optimalSchedule: EconomyStretch[] | null
+  /** The kW the counterfactual schedules charged at (the session's rate cap); null when excluded. */
+  rateKw: number | null
   economy: SessionEconomy
 }
 
@@ -157,7 +159,11 @@ export async function getSessionEconomy(input: {
   )
 
   const computeStart = performance.now()
-  const { economy, optimalSchedule } = analyzeSession(session, new SlotIndex(slots), tariffsAsc)
+  const { economy, optimalSchedule, rateKw } = analyzeSession(
+    session,
+    new SlotIndex(slots),
+    tariffsAsc,
+  )
   const intervals = energy.estimated ? [] : energy.stretches
   const detail: SessionEconomyDetail = {
     session: {
@@ -186,6 +192,7 @@ export async function getSessionEconomy(input: {
     }),
     optimalSchedule:
       optimalSchedule?.map(({ startMs, endMs, kwh }) => ({ startMs, endMs, kwh })) ?? null,
+    rateKw,
     economy,
   }
   if (t) t.computeMs = Math.round(performance.now() - computeStart)
