@@ -278,3 +278,39 @@ test('listSessions excludes voided, replaced, and noise sessions', async () => {
   const { sessions } = await listSessions({ limit: 10 })
   expect(sessions.map((s) => s.id)).toEqual([counted])
 })
+
+test('getOverview and listSessions follow the vehicle scope', async () => {
+  const ours = await insertSession({
+    startAt: new Date('2026-03-01T10:00:00Z'),
+    endAt: new Date('2026-03-01T11:00:00Z'),
+    energyKwh: 10,
+  })
+  const guest = await insertSession({
+    startAt: new Date('2026-03-02T10:00:00Z'),
+    endAt: new Date('2026-03-02T11:00:00Z'),
+    energyKwh: 4,
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const now = new Date('2026-03-15T12:00:00Z')
+  const mine = await getOverview({ year: 2026, now, vehicle: 'ours' })
+  expect(mine.tiles.allTime).toEqual({ kwh: 10, sessions: 1 })
+  expect(mine.tiles.thisYear).toEqual({ kwh: 10, sessions: 1 })
+  expect(mine.months[2]).toEqual({ month: 3, kwh: 10, sessions: 1 })
+  const theirs = await getOverview({ year: 2026, now, vehicle: 'other' })
+  expect(theirs.tiles.allTime).toEqual({ kwh: 4, sessions: 1 })
+  expect(theirs.months[2]).toEqual({ month: 3, kwh: 4, sessions: 1 })
+  expect((await getOverview({ year: 2026, now })).tiles.allTime).toEqual({ kwh: 14, sessions: 2 })
+  expect((await getOverview({ year: 2026, now, vehicle: 'all' })).tiles.allTime).toEqual({
+    kwh: 14,
+    sessions: 2,
+  })
+  expect(theirs.years).toContain(2026) // years stay unscoped
+
+  const list = await listSessions({ limit: 10, vehicle: 'other' })
+  expect(list.sessions.map((s) => [s.id, s.vehicle])).toEqual([[guest, 'other']])
+  expect((await listSessions({ limit: 10, vehicle: 'ours' })).sessions.map((s) => s.id)).toEqual([
+    ours,
+  ])
+  expect((await listSessions({ limit: 10 })).sessions.map((s) => s.id)).toEqual([guest, ours])
+})

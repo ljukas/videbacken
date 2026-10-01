@@ -240,3 +240,17 @@ test('an interval-less session is priced over its whole span in the overview', a
   expect(sep).toMatchObject({ kwh: 4, complete: true })
   expect(sep.spotSek).toBeCloseTo(4 * 2 * 1.25)
 })
+
+test('getCostOverview follows the vehicle scope', async () => {
+  await session('2026-09-10T10:00:00Z', '2026-09-10T11:00:00Z', 10)
+  await session('2026-09-11T10:00:00Z', '2026-09-11T11:00:00Z', 4, [], {
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const allTimeKwh = async (vehicle?: 'ours' | 'other' | 'all') =>
+    (await getCostOverview({ now: NOW, vehicle })).tiles.allTime.kwh
+  expect(await allTimeKwh('ours')).toBeCloseTo(10)
+  expect(await allTimeKwh('other')).toBeCloseTo(4)
+  expect(await allTimeKwh('all')).toBeCloseTo(14)
+  expect(await allTimeKwh()).toBeCloseTo(14)
+})

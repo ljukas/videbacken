@@ -12,6 +12,7 @@ import {
   sumEconomy,
 } from '~/lib/evCharging/economy'
 import { sessionPeakKw } from '~/lib/evCharging/patterns'
+import type { Vehicle, VehicleScope, VehicleSource } from '~/lib/evCharging/vehicle'
 import {
   distinctCountedYears,
   getSessionEnergy,
@@ -44,6 +45,7 @@ export type EconomySessionRow = SessionEconomy & {
   endAt: Date
   /** The session's `energyKwh` (as SessionList shows it); the money covers the interval sum, which can differ slightly. */
   kwh: number
+  vehicle: Vehicle
 }
 
 export type EconomyOverview = {
@@ -65,6 +67,8 @@ export type SessionEconomyDetail = {
     kwh: number
     peakKw: number | null
     estimated: boolean
+    vehicle: Vehicle
+    vehicleSource: VehicleSource
   }
   window: EconomyWindow
   /** Zaptec intervals; empty when the session has none. */
@@ -93,6 +97,7 @@ export async function getEconomyOverview(input: {
   year?: number
   now?: Date
   timings?: EconomyTimings
+  vehicle?: VehicleScope
 }): Promise<EconomyOverview> {
   const t = input.timings
   const now = input.now ?? new Date()
@@ -100,7 +105,7 @@ export async function getEconomyOverview(input: {
   const year = input.year ?? currentYear
 
   const [all, tariffsAsc, years] = await Promise.all([
-    timed(t, 'energyMs', () => listSessionEnergy({ all: true })),
+    timed(t, 'energyMs', () => listSessionEnergy({ all: true, vehicle: input.vehicle })),
     timed(t, 'tariffMs', loadTariffs),
     timed(t, 'yearsMs', distinctCountedYears),
   ])
@@ -120,6 +125,7 @@ export async function getEconomyOverview(input: {
     startAt: s.startAt,
     endAt: s.endAt,
     kwh: s.energyKwh,
+    vehicle: s.vehicle,
     ...analyzeSession(sessions[i], index, tariffsAsc).economy,
   }))
   const rowsByMonth = Map.groupBy(rows, (r) => stockholmYearMonth(r.startAt.getTime()).month)
@@ -179,6 +185,8 @@ export async function getSessionEconomy(input: {
         })),
       ),
       estimated: energy.estimated,
+      vehicle: energy.vehicle,
+      vehicleSource: energy.vehicleSource,
     },
     window,
     intervals,

@@ -9,6 +9,7 @@ import {
   type PatternSession,
   toTimelineSession,
 } from '~/lib/evCharging/patterns'
+import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { stockholmMonthBounds, stockholmYearBounds, stockholmYearMonth } from '~/lib/time/stockholm'
 import { countedSessionFilter } from './counted'
 import { distinctCountedYears } from './overview'
@@ -20,7 +21,10 @@ export type PatternTimings = { fetchMs?: number; aggregateMs?: number }
 // start_at filter sargable instead of scanning on end_at).
 const LOOKBACK_MS = 7 * 24 * 3_600_000
 
-async function fetchSessions(where: SQL | undefined): Promise<PatternSession[]> {
+async function fetchSessions(
+  where: SQL | undefined,
+  vehicle?: VehicleScope,
+): Promise<PatternSession[]> {
   const sessions = await db
     .select({
       id: evChargeSession.id,
@@ -29,7 +33,7 @@ async function fetchSessions(where: SQL | undefined): Promise<PatternSession[]> 
       energyKwh: evChargeSession.energyKwh,
     })
     .from(evChargeSession)
-    .where(and(countedSessionFilter(), where))
+    .where(and(countedSessionFilter({ vehicle }), where))
     .orderBy(asc(evChargeSession.startAt))
   if (sessions.length === 0) return []
   const intervals = await db
@@ -83,13 +87,17 @@ export async function getChargingPatterns(input: {
   year?: number
   now?: Date
   timings?: PatternTimings
+  vehicle?: VehicleScope
 }): Promise<ChargingPatterns> {
   const now = input.now ?? new Date()
   const current = stockholmYearMonth(now.getTime()).year
   const year = input.year ?? current
   const { startMs, endMs } = stockholmYearBounds(year)
   const [sessions, years] = await timed(input.timings, 'fetchMs', () =>
-    Promise.all([fetchSessions(overlapping(startMs, endMs)), distinctCountedYears()]),
+    Promise.all([
+      fetchSessions(overlapping(startMs, endMs), input.vehicle),
+      distinctCountedYears(),
+    ]),
   )
   const aggregates = await timed(input.timings, 'aggregateMs', () => buildPatterns(sessions, year))
   years.add(current)
@@ -101,6 +109,7 @@ export async function getChargingTimeline(input: {
   month?: number
   now?: Date
   timings?: PatternTimings
+  vehicle?: VehicleScope
 }): Promise<ChargingTimeline> {
   const now = input.now ?? new Date()
   const current = stockholmYearMonth(now.getTime())
@@ -113,7 +122,7 @@ export async function getChargingTimeline(input: {
       .from(evChargeSession)
       .where(
         and(
-          countedSessionFilter(),
+          countedSessionFilter({ vehicle: input.vehicle }),
           gte(evChargeSession.startAt, new Date(yearStart)),
           lt(evChargeSession.startAt, new Date(yearEnd)),
         ),
@@ -126,6 +135,7 @@ export async function getChargingTimeline(input: {
         gte(evChargeSession.startAt, new Date(startMs)),
         lt(evChargeSession.startAt, new Date(endMs)),
       ),
+      input.vehicle,
     )
     return { months, month, sessions }
   })

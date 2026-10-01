@@ -160,3 +160,21 @@ test('getSessionEnergy throws EV_SESSION_NOT_FOUND for a non-uuid id instead of 
     new EvChargingDomainError('EV_SESSION_NOT_FOUND'),
   )
 })
+
+test('listSessionEnergy scopes { all: true } by vehicle; id lookups and the earliest start stay unscoped', async () => {
+  const ours = await insertSession({ startAt: new Date('2026-09-02T20:00:00Z') })
+  const guest = await insertSession({
+    startAt: new Date('2026-09-01T20:00:00Z'),
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const ids = async (vehicle?: 'ours' | 'other' | 'all') =>
+    (await listSessionEnergy({ all: true, vehicle })).map((s) => s.sessionId)
+  expect(await ids('ours')).toEqual([ours])
+  expect(await ids('other')).toEqual([guest])
+  expect(await ids('all')).toEqual([guest, ours])
+  expect(await ids()).toEqual([guest, ours])
+  expect(await getSessionEnergy(guest)).toMatchObject({ vehicle: 'other', vehicleSource: 'admin' })
+  expect(await getSessionEnergy(ours)).toMatchObject({ vehicle: 'ours', vehicleSource: 'default' })
+  expect(await earliestCountedStartAt()).toEqual(new Date('2026-09-01T20:00:00Z'))
+})

@@ -323,3 +323,26 @@ test('getSessionEconomy on an estimated session (no intervals): no chart data, e
   expect(d.optimalSchedule).toBeNull()
   expect(d.rateKw).toBeNull()
 })
+
+test('economy overview follows the vehicle scope; the session detail carries the attribution', async () => {
+  const ours = await session('2026-09-10T10:00:00Z', '2026-09-10T11:00:00Z', 10)
+  const guest = await session('2026-09-11T10:00:00Z', '2026-09-11T11:00:00Z', 4, [], {
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const rows = async (vehicle?: 'ours' | 'other' | 'all') =>
+    (await getEconomyOverview({ year: 2026, now: NOW, vehicle })).sessions.map((s) => [
+      s.sessionId,
+      s.vehicle,
+    ])
+  expect(await rows('ours')).toEqual([[ours, 'ours']])
+  expect(await rows('other')).toEqual([[guest, 'other']])
+  expect(await rows('all')).toEqual([
+    [guest, 'other'],
+    [ours, 'ours'],
+  ])
+  expect(await rows()).toHaveLength(2)
+
+  const detail = await getSessionEconomy({ sessionId: guest })
+  expect(detail.session).toMatchObject({ vehicle: 'other', vehicleSource: 'admin' })
+})

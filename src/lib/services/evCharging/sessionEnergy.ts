@@ -1,7 +1,8 @@
-import { and, asc, inArray, min } from 'drizzle-orm'
+import { and, asc, inArray, min, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
+import type { Vehicle, VehicleScope, VehicleSource } from '~/lib/evCharging/vehicle'
 import { countedSessionFilter } from './counted'
 import { EvChargingDomainError } from './errors'
 
@@ -21,6 +22,8 @@ export type SessionEnergy = {
   energyKwh: number
   stretches: EnergyStretch[]
   estimated: boolean
+  vehicle: Vehicle
+  vehicleSource: VehicleSource
 }
 
 /**
@@ -28,19 +31,21 @@ export type SessionEnergy = {
  * (sessions, then their intervals) regardless of how many sessions.
  */
 export async function listSessionEnergy(
-  filter: { all: true } | { sessionIds: readonly string[] },
+  filter: { all: true; vehicle?: VehicleScope } | { sessionIds: readonly string[] },
 ): Promise<SessionEnergy[]> {
   if ('sessionIds' in filter && filter.sessionIds.length === 0) return []
   const sessionFilter =
     'sessionIds' in filter
       ? and(countedSessionFilter(), inArray(evChargeSession.id, [...filter.sessionIds]))
-      : countedSessionFilter()
+      : countedSessionFilter({ vehicle: filter.vehicle })
   const sessions = await db
     .select({
       id: evChargeSession.id,
       startAt: evChargeSession.startAt,
       endAt: evChargeSession.endAt,
       energyKwh: evChargeSession.energyKwh,
+      vehicle: sql<Vehicle>`${evChargeSession.vehicle}`,
+      vehicleSource: sql<VehicleSource>`${evChargeSession.vehicleSource}`,
     })
     .from(evChargeSession)
     .where(sessionFilter)
@@ -84,6 +89,8 @@ export async function listSessionEnergy(
         { startMs: s.startAt.getTime(), endMs: s.endAt.getTime(), kwh: s.energyKwh },
       ],
       estimated: stretches === undefined,
+      vehicle: s.vehicle,
+      vehicleSource: s.vehicleSource,
     }
   })
 }
