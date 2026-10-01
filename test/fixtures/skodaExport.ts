@@ -9,4 +9,4 @@ const LINES = [
   '"s-4","n/a","2026-03-06T10:00:00Z","0","0","1.00","","","","","","","","","",""',
 ]
 
-export const SKODA_EXPORT_FIXTURE: string = `﻿${LINES.join('\r\n')}\r\n`
+export const SKODA_EXPORT_FIXTURE: string = `\uFEFF${LINES.join('\r\n')}\r\n`

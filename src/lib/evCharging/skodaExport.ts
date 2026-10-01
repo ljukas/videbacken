@@ -26,8 +26,12 @@ export type SkodaParseResult =
     }
   | { ok: false; error: 'not_skoda_export' | 'empty' }
 
+// An explicit zone (Z or +hh:mm) is required: parseISO reads a zone-less value
+// as browser-local time, which would shift the session by the UTC offset.
+const HAS_ZONE = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i
 const date = (v: string | undefined) => {
-  const d = v?.trim() ? parseISO(v.trim()) : new Date(Number.NaN)
+  const t = v?.trim()
+  const d = t && HAS_ZONE.test(t) && t.includes('T') ? parseISO(t) : new Date(Number.NaN)
   return isValid(d) ? d : null
 }
 /** A blank cell is NaN (the schema rejects it), never 0. */
@@ -36,7 +40,7 @@ const num = (v: string | undefined) => (v?.trim() ? Number(v) : Number.NaN)
 const soc = (v: string | undefined) => (v?.trim() ? Math.round(Number(v)) : null)
 
 export function parseSkodaExport(text: string): SkodaParseResult {
-  const parsed = Papa.parse<Record<string, string>>(text.replace(/^﻿/, ''), {
+  const parsed = Papa.parse<Record<string, string>>(text, {
     header: true,
     skipEmptyLines: true,
   })
