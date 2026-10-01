@@ -3,6 +3,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { EconomyTiles } from './EconomyTiles'
+import { formatSek } from './format'
 
 type Totals = RouterOutputs['evCharging']['economy']['tiles']
 const base: Totals = {
@@ -27,6 +28,11 @@ test('shows saved, left on the table, score and paid vs average spot', async () 
   await expect.element(screen.getByText('30 kr')).toBeVisible()
   await expect.element(screen.getByText('20 kr')).toBeVisible()
   await expect.element(screen.getByText(/^71\s?%$/)).toBeVisible()
+  // dearest 140 − optimal 70 = 70 kr to choose from, above the scale hint.
+  await expect
+    .element(screen.getByText(m.charging_economy_score_spread({ spread: formatSek(70, 2) })))
+    .toBeVisible()
+  await expect.element(screen.getByText(m.charging_economy_tile_score_hint())).toBeVisible()
   await expect.element(screen.getByText(m.charging_economy_ore({ value: '62' }))).toBeVisible()
   await expect
     .element(screen.getByText(m.charging_economy_tile_spot_avg({ avg: '80' })))
@@ -64,10 +70,14 @@ test('nothing included → "—" with the reason, never 0 kr or 0 %', async () =
   expect(screen.getByText(m.charging_economy_tile_none()).elements().length).toBeGreaterThan(0)
 })
 
-test('flat prices (score null, sessions included) say so, not "none" or 0 %', async () => {
-  const { screen } = await renderWithProviders(<EconomyTiles tiles={{ ...base, score: null }} />)
+test('too little price spread (score null, sessions included) says so with the spread, not "none" or 0 %', async () => {
+  const { screen } = await renderWithProviders(
+    <EconomyTiles tiles={{ ...base, dearestSek: 70.04, score: null }} />,
+  )
   expect(screen.getByText('—').elements()).toHaveLength(1)
-  await expect.element(screen.getByText(m.charging_economy_tile_no_spread())).toBeVisible()
+  await expect
+    .element(screen.getByText(m.charging_economy_tile_no_spread({ spread: formatSek(0.04, 2) })))
+    .toBeVisible()
   expect(screen.getByText(m.charging_economy_tile_none()).elements()).toHaveLength(0)
   expect(screen.getByText(/^0\s?%$/).elements()).toHaveLength(0)
 })

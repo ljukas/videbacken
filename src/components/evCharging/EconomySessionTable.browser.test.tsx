@@ -4,7 +4,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithRouter } from '~test/browser/render'
 import { EconomySessionTable } from './EconomySessionTable'
-import { formatDate, formatTime } from './format'
+import { formatDate, formatSek, formatTime } from './format'
 
 type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
 const cost = (totalSek: number) => ({
@@ -114,6 +114,15 @@ test('a flat-price session shows "—" for timing', async () => {
     />,
   )
   await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toHaveTextContent(/^—/)
+  // The sr-only reason names the spread that was too small (row() prices 70 − 38 = 32 kr).
+  await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toHaveTextContent(
+    new RegExp(
+      m
+        .charging_economy_tile_no_spread({ spread: formatSek(32, 2) })
+        .replace(/[()]/g, '\\$&')
+        .replace(/\s/g, '\\s'),
+    ),
+  )
 })
 
 // The browser-test env has no Tailwind, so the phone layout is pinned by its

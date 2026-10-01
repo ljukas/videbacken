@@ -28,10 +28,12 @@ export function SessionEconomyFigures({
   ) : (
     <Unknown label={m.charging_sessions_cost_unknown()} />
   )
-  // `hint` is a visible line under the value, as on the economy page's tiles.
+  // `hints` are visible lines under the value, as on the economy page's tiles.
   // A flat-price session has no score: its dash is hidden from screen readers
-  // and the visible line gives the reason instead of the hint.
-  const items: { label: string; value: React.ReactNode; hint?: string }[] = cf
+  // and the visible line gives the reason (with the price spread) instead of the hint.
+  // A score shows the spread too.
+  const spread = cf ? formatSek(cf.dearest.totalSek - cf.optimal.totalSek, 2) : ''
+  const items: { label: string; value: React.ReactNode; hints?: string[] }[] = cf
     ? [
         { label: m.charging_session_fig_actual(), value: actual },
         { label: m.charging_session_fig_immediate(), value: formatSek(cf.immediate.totalSek, 2) },
@@ -40,12 +42,15 @@ export function SessionEconomyFigures({
           ? {
               label: m.charging_session_fig_score(),
               value: <span aria-hidden="true">—</span>,
-              hint: m.charging_economy_tile_no_spread(),
+              hints: [m.charging_economy_tile_no_spread({ spread })],
             }
           : {
               label: m.charging_session_fig_score(),
               value: formatScore(cf.score),
-              hint: m.charging_economy_tile_score_hint(),
+              hints: [
+                m.charging_economy_score_spread({ spread }),
+                m.charging_economy_tile_score_hint(),
+              ],
             },
       ]
     : [{ label: m.charging_session_fig_actual(), value: actual }]
@@ -66,9 +71,11 @@ export function SessionEconomyFigures({
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
                 <span className="font-semibold text-2xl tabular-nums">{item.value}</span>
-                {item.hint ? (
-                  <span className="text-muted-foreground text-xs">{item.hint}</span>
-                ) : null}
+                {item.hints?.map((hint) => (
+                  <span key={hint} className="text-muted-foreground text-xs">
+                    {hint}
+                  </span>
+                ))}
               </CardContent>
             </Card>
           ))}

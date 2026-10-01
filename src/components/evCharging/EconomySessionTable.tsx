@@ -15,6 +15,11 @@ import { Unknown } from './Unknown'
 
 type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
 
+const noSpread = (cf: NonNullable<Row['counterfactual']>) =>
+  m.charging_economy_tile_no_spread({
+    spread: formatSek(cf.dearest.totalSek - cf.optimal.totalSek, 2),
+  })
+
 const reason = (r: Row) =>
   r.excluded === 'no_hourly'
     ? m.charging_economy_reason_no_hourly()
@@ -74,6 +79,7 @@ export function EconomySessionTable({
                         label={m.charging_economy_col_score()}
                         value={formatScore(cf.score)}
                         unknown={cf.score === null}
+                        unknownLabel={noSpread(cf)}
                       />
                     </>
                   ) : (
@@ -103,11 +109,7 @@ export function EconomySessionTable({
                     {formatSignedSek(cf.leftOnTableSek, 2)}
                   </TableCell>
                   <TableCell className="hidden whitespace-nowrap text-right tabular-nums sm:table-cell">
-                    {cf.score === null ? (
-                      <Unknown label={m.charging_economy_tile_no_spread()} />
-                    ) : (
-                      formatScore(cf.score)
-                    )}
+                    {cf.score === null ? <Unknown label={noSpread(cf)} /> : formatScore(cf.score)}
                   </TableCell>
                 </>
               ) : (
@@ -132,14 +134,16 @@ function FoldedValue({
   label,
   value,
   unknown,
+  unknownLabel,
 }: {
   label: string
   value: string
   unknown?: boolean
+  unknownLabel?: string
 }) {
   return (
     <span className="inline-block">
-      {label} {unknown ? <Unknown label={m.charging_economy_tile_no_spread()} /> : value}
+      {label} {unknown && unknownLabel ? <Unknown label={unknownLabel} /> : value}
     </span>
   )
 }
