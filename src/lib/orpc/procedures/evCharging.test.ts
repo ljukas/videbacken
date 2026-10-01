@@ -12,6 +12,7 @@ import {
   TEST_CREDS,
   tokenBody,
 } from '~/lib/effects/zaptec/fixtures'
+import { MAX_IMPORT_ROWS } from '~/lib/evCharging/vehicle'
 import type { Logger } from '~/lib/logger'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { replaceDay } from '~/lib/services/spotPrice'
@@ -551,4 +552,145 @@ test('session returns one counted session with its economy for a signed-in user'
   expect(result.economy).toBeDefined()
   expect(result.economy.excluded).toBeNull()
   expect(result.economy.actualComplete).toBe(true)
+})
+
+// --- Vehicle attribution (ADR-0021) ---
+
+let sessionSeq = 0
+async function insertSession(
+  over: Partial<typeof evChargeSession.$inferInsert> = {},
+): Promise<string> {
+  sessionSeq += 1
+  await db
+    .insert(evCharger)
+    .values({ id: 'charger-veh', name: 'Charger', installationId: 'install-veh' })
+    .onConflictDoNothing()
+  const [row] = await db
+    .insert(evChargeSession)
+    .values({
+      zaptecSessionId: `zap-veh-${sessionSeq}`,
+      chargerId: 'charger-veh',
+      startAt: new Date('2026-03-01T10:00:00Z'),
+      endAt: new Date('2026-03-01T11:00:00Z'),
+      energyKwh: 5,
+      ...over,
+    })
+    .returning({ id: evChargeSession.id })
+  return row.id
+}
+
+const importRow = (id: string, start = '2026-02-01T10:00:00Z', end = '2026-02-01T11:00:00Z') => ({
+  sourceSessionId: id,
+  startAt: new Date(start),
+  endAt: new Date(end),
+  energyKwh: 5,
+  startSocPercent: 20,
+  endSocPercent: 40,
+  isPublic: false,
+})
+
+test('reads take a vehicle scope and default to all', async () => {
+  await signIn('user')
+  await insertSession({
+    startAt: new Date('2026-03-01T10:00:00Z'),
+    endAt: new Date('2026-03-01T11:00:00Z'),
+  })
+  await insertSession({
+    startAt: new Date('2026-03-02T10:00:00Z'),
+    endAt: new Date('2026-03-02T11:00:00Z'),
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const all = await call(evChargingRouter.sessions, { limit: 10 }, { context: baseContext() })
+  const guests = await call(
+    evChargingRouter.sessions,
+    { limit: 10, vehicle: 'other' },
+    { context: baseContext() },
+  )
+  expect(all.sessions).toHaveLength(2)
+  expect(guests.sessions.map((s) => s.vehicle)).toEqual(['other'])
+  await expect(
+    call(
+      evChargingRouter.sessions,
+      { limit: 10, vehicle: 'x' as never },
+      { context: baseContext() },
+    ),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
+test('the attribution mutations and coverage are admin-only', async () => {
+  await signIn('user')
+  const id = await insertSession()
+  for (const [proc, input] of [
+    [evChargingRouter.setSessionVehicle, { sessionId: id, vehicle: 'other' }],
+    [evChargingRouter.importVehicleRecords, { rows: [importRow('a')] }],
+    [evChargingRouter.vehicleRecordCoverage, undefined],
+  ] as const) {
+    await expect(
+      call(proc as never, input as never, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  }
+})
+
+test('importVehicleRecords stores rows, re-matches, and is idempotent', async () => {
+  await signIn('admin')
+  const id = await insertSession({
+    startAt: new Date('2026-02-10T10:00:00Z'),
+    endAt: new Date('2026-02-10T12:00:00Z'),
+  })
+  const rows = [importRow('a', '2026-02-10T09:30:00Z', '2026-02-10T13:00:00Z')]
+  expect(
+    await call(evChargingRouter.importVehicleRecords, { rows }, { context: baseContext() }),
+  ).toEqual({ inserted: 1, unchanged: 0, ours: 1, other: 0 })
+  expect(
+    await call(evChargingRouter.importVehicleRecords, { rows }, { context: baseContext() }),
+  ).toEqual({ inserted: 0, unchanged: 1, ours: 1, other: 0 })
+  expect(
+    await call(evChargingRouter.vehicleRecordCoverage, undefined, { context: baseContext() }),
+  ).toMatchObject({ count: 1 })
+  expect(
+    await call(
+      evChargingRouter.setSessionVehicle,
+      { sessionId: id, vehicle: 'other' },
+      { context: baseContext() },
+    ),
+  ).toEqual({ vehicle: 'other', vehicleSource: 'admin' })
+})
+
+test('importVehicleRecords records its sub-timings', async () => {
+  await signIn('admin')
+  const timings: Record<string, number> = {}
+  await call(
+    evChargingRouter.importVehicleRecords,
+    { rows: [importRow('a')] },
+    { context: { ...baseContext(), timings } },
+  )
+  expect(timings).toMatchObject({
+    vehicleImportMs: expect.any(Number),
+    vehicleReattributeMs: expect.any(Number),
+  })
+})
+
+test('importVehicleRecords rejects an empty, oversized or inverted import', async () => {
+  await signIn('admin')
+  for (const rows of [
+    [],
+    Array.from({ length: MAX_IMPORT_ROWS + 1 }, (_, i) => importRow(`r${i}`)),
+    [importRow('a', '2026-02-10T12:00:00Z', '2026-02-10T11:00:00Z')],
+  ]) {
+    await expect(
+      call(evChargingRouter.importVehicleRecords, { rows }, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  }
+})
+
+test('setSessionVehicle maps an unknown session to EV_SESSION_NOT_FOUND (404)', async () => {
+  await signIn('admin')
+  await expect(
+    call(
+      evChargingRouter.setSessionVehicle,
+      { sessionId: '00000000-0000-4000-8000-000000000000', vehicle: null },
+      { context: baseContext() },
+    ),
+  ).rejects.toMatchObject({ code: 'EV_SESSION_NOT_FOUND', status: 404, defined: true })
 })
