@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { formatOre, formatScore, formatSek, formatSignedSek } from './format'
+import { formatOrePrecise, formatScore, formatSek, formatSignedSek } from './format'
 
 type Totals = RouterOutputs['evCharging']['economy']['tiles']
 
@@ -53,11 +53,12 @@ export function EconomyTiles({ tiles }: { tiles: Totals }) {
       value:
         tiles.paidSpotOre === null
           ? null
-          : m.charging_economy_ore({ value: formatOre(tiles.paidSpotOre) }),
+          : m.charging_economy_ore({ value: formatOrePrecise(tiles.paidSpotOre) }),
       hint:
-        tiles.avgSpotOre === null
+        // The average only sits beside a paid price (same months, chart rule).
+        tiles.paidSpotOre === null || tiles.avgSpotOre === null
           ? null
-          : m.charging_economy_tile_spot_avg({ avg: formatOre(tiles.avgSpotOre) }),
+          : m.charging_economy_tile_spot_avg({ avg: formatOrePrecise(tiles.avgSpotOre) }),
       emptyReason: none ? noneReason : null,
     },
   ]

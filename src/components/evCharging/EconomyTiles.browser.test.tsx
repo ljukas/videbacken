@@ -114,3 +114,20 @@ test('all excluded for mixed reasons → "no comparable sessions"', async () => 
   ).toBeGreaterThan(0)
   expect(screen.getByText(m.charging_economy_tile_none()).elements()).toHaveLength(0)
 })
+
+test('no average-spot hint without a paid price', async () => {
+  const { screen } = await renderWithProviders(
+    <EconomyTiles tiles={{ ...base, paidSpotOre: null, avgSpotOre: 80.2 }} />,
+  )
+  await expect.element(screen.getByText(m.charging_economy_tile_spot())).toBeVisible()
+  expect(screen.getByText(m.charging_economy_tile_spot_avg({ avg: '80' })).elements()).toHaveLength(
+    0,
+  )
+})
+
+test('a sub-1 öre paid price never reads as 0', async () => {
+  const { screen } = await renderWithProviders(
+    <EconomyTiles tiles={{ ...base, paidSpotOre: 0.17 }} />,
+  )
+  await expect.element(screen.getByText(m.charging_economy_ore({ value: '0,17' }))).toBeVisible()
+})

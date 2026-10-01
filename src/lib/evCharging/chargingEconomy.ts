@@ -130,17 +130,21 @@ export async function getEconomyOverview(input: {
   }))
   const rowsByMonth = Map.groupBy(rows, (r) => stockholmYearMonth(r.startAt.getTime()).month)
   const daysByMonth = Map.groupBy(days, (d) => Number(d.day.slice(5, 7)))
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    ...sumEconomy(
+      rowsByMonth.get(i + 1) ?? [],
+      averageSpotOre(daysByMonth.get(i + 1) ?? [], tariffsAsc),
+    ),
+  }))
+  // The year's average sits beside the year's paid price, so it covers only the
+  // months where the scope has a priced session (the spot chart's rule).
+  const pricedDays = days.filter((d) => months[Number(d.day.slice(5, 7)) - 1].paidSpotOre !== null)
   const overview: EconomyOverview = {
     year,
     years: [...years].sort((a, b) => b - a),
-    tiles: sumEconomy(rows, averageSpotOre(days, tariffsAsc)),
-    months: Array.from({ length: 12 }, (_, i) => ({
-      month: i + 1,
-      ...sumEconomy(
-        rowsByMonth.get(i + 1) ?? [],
-        averageSpotOre(daysByMonth.get(i + 1) ?? [], tariffsAsc),
-      ),
-    })),
+    tiles: sumEconomy(rows, averageSpotOre(pricedDays, tariffsAsc)),
+    months,
     sessions: rows.toReversed(),
   }
   if (t) t.computeMs = Math.round(performance.now() - computeStart)
