@@ -14,17 +14,22 @@ import { stockholmDayOf } from '~/lib/time/stockholm'
 import { economyWindow, rateCapKw, schedule, sessionKwh, windowPieces } from './schedule'
 import type { EconomyExclusion, EconomySession, EconomyWindow, SessionEconomy } from './types'
 
-/** Below this dearest − optimal gap (kr) the window left nothing to choose between. */
-export const SCORE_MIN_GAP_SEK = 0.01
+/**
+ * The dearest − optimal gap must be at least this large (kr), and at least `SCORE_MIN_GAP_SHARE` of
+ * |actual|, for the window to have offered a real choice; below it a score would grade noise
+ * (amended 2026-10-01: a ≈4 öre gap scored 18 %).
+ */
+export const SCORE_MIN_GAP_SEK = 0.5
+export const SCORE_MIN_GAP_SHARE = 0.05
 
-/** Where `actual` sits between dearest (0) and optimal (1); null when the gap is too small to mean anything. */
+/** Where `actual` sits between dearest (0) and optimal (1); null when the window offered no real choice. */
 export function timingScore(
   actualSek: number,
   optimalSek: number,
   dearestSek: number,
 ): number | null {
   const gap = dearestSek - optimalSek
-  if (gap < SCORE_MIN_GAP_SEK) return null
+  if (gap < Math.max(SCORE_MIN_GAP_SEK, SCORE_MIN_GAP_SHARE * Math.abs(actualSek))) return null
   return Math.min(1, Math.max(0, (dearestSek - actualSek) / gap))
 }
 

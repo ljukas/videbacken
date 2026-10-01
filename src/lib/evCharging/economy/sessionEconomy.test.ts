@@ -242,6 +242,25 @@ describe('timingScore', () => {
   test('is null when there was nothing to choose between', () => {
     expect(timingScore(10, 10, 10.005)).toBeNull()
   })
+  test('is null below the absolute gap floor (0,4 kr)', () => {
+    expect(timingScore(10.2, 10, 10.4)).toBeNull()
+  })
+  test('is null below the relative floor: 0,9 kr gap on a 20 kr session (5 % = 1,0 kr)', () => {
+    expect(timingScore(20, 19.5, 20.4)).toBeNull()
+  })
+  test('scores a 1,2 kr gap on a 20 kr session', () => {
+    expect(timingScore(20, 19, 20.2)).toBeCloseTo(0.2 / 1.2)
+  })
+  test('uses |actual| for the relative floor when actual is negative', () => {
+    // 5 % of |-30| = 1,5 kr: a 1,2 kr gap is below it, a 1,6 kr gap is not.
+    expect(timingScore(-30, -31, -29.8)).toBeNull()
+    expect(timingScore(-30, -31, -29.4)).not.toBeNull()
+  })
+  test('the exact boundary scores (the rule is "<")', () => {
+    expect(timingScore(5, 5, 5.5)).toBe(1)
+    // Relative floor: 5 % of 30 kr = 1,5 kr exactly.
+    expect(timingScore(30, 28.5, 30)).toBe(0)
+  })
   test('is clamped to 0…1 against float noise', () => {
     expect(timingScore(9.9999999, 10, 20)).toBe(1)
     expect(timingScore(20.0000001, 10, 20)).toBe(0)
