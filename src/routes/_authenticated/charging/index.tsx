@@ -348,25 +348,30 @@ function ChargingPage() {
 
       <section className="flex flex-col gap-2">
         <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
-        <SessionList
-          sessions={sessions.data?.sessions ?? []}
-          hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
-          onShowMore={() =>
-            showMore.mutate({
-              limit: Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX),
-              scope: vehicle,
-            })
-          }
-          loadingMore={showMore.isPending}
-          costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
-          // A sync can't create guest sessions: an admin marks them instead.
-          onSync={isAdmin && vehicle !== 'other' ? () => syncNow.syncSource('zaptec') : undefined}
-          syncing={syncNow.isPendingFor('zaptec')}
-          emptyTitle={vehicle === 'other' ? m.charging_vehicle_sessions_empty_other() : undefined}
-          emptyDescription={
-            vehicle === 'other' ? m.charging_vehicle_empty_other_description() : undefined
-          }
-        />
+        {loadFailed(sessions) ? (
+          // An error must never read as "no sessions" (ADR-0016).
+          <LoadErrorAlert title={m.charging_sessions_error_title()} query={sessions} />
+        ) : (
+          <SessionList
+            sessions={sessions.data?.sessions ?? []}
+            hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
+            onShowMore={() =>
+              showMore.mutate({
+                limit: Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX),
+                scope: vehicle,
+              })
+            }
+            loadingMore={showMore.isPending}
+            costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
+            // A sync can't create guest sessions: an admin marks them instead.
+            onSync={isAdmin && vehicle !== 'other' ? () => syncNow.syncSource('zaptec') : undefined}
+            syncing={syncNow.isPendingFor('zaptec')}
+            emptyTitle={vehicle === 'other' ? m.charging_vehicle_sessions_empty_other() : undefined}
+            emptyDescription={
+              vehicle === 'other' ? m.charging_vehicle_empty_other_description() : undefined
+            }
+          />
+        )}
       </section>
 
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}

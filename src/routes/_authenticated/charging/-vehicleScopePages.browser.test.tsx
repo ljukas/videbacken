@@ -177,14 +177,14 @@ test('Översikt: switching scope never shows the sessions empty state mid-switch
   const otherKey = orpc.evCharging.sessions.queryOptions({
     input: { limit: 20, vehicle: 'other' },
   }).queryKey
-  const original = qc.ensureQueryData.bind(qc)
-  vi.spyOn(qc, 'ensureQueryData').mockImplementation(((opts: { queryKey: unknown[] }) => {
+  const original = qc.prefetchQuery.bind(qc)
+  vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) => {
     if (JSON.stringify(opts.queryKey) !== JSON.stringify(otherKey)) return original(opts as never)
     return new Promise((resolve) =>
       setTimeout(() => {
         const data = { sessions: [], hasMore: false }
         qc.setQueryData(otherKey, data as never)
-        resolve(data)
+        resolve(undefined)
       }, 500),
     )
   }) as never)
@@ -217,4 +217,22 @@ test('Översikt: a failed overview read shows the alert and the toggle; Vår bil
     .element(radio(screen, m.charging_vehicle_scope_ours()))
     .toHaveAttribute('aria-checked', 'true')
   expect(router.state.location.search).not.toHaveProperty('vehicle')
+})
+
+test('Översikt: a failed sessions read shows an error, never the empty list or a sync offer', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedOverview(qc, 'ours', [])
+    qc.removeQueries({
+      queryKey: orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'ours' } })
+        .queryKey,
+    })
+  })
+  await expect
+    .element(screen.getByRole('alert'))
+    .toHaveTextContent(m.charging_sessions_error_title())
+  expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_sessions_empty_description()).elements()).toHaveLength(0)
+  // Only the heading's "Synka nu" remains; the alert's button says "Försök igen".
+  expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(1)
 })
