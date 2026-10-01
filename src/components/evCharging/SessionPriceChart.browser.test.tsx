@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { expect, test } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import type { RouterOutputs } from '~/lib/orpc/client'
@@ -48,14 +49,16 @@ const detail = {
   economy: null,
 } as unknown as Detail
 
-async function renderChart(d: Detail = detail, width = 900) {
-  const result = await renderWithProviders(
+// `strict` renders under StrictMode, as the app's dev entry does.
+async function renderChart(d: Detail = detail, width = 900, { strict = false } = {}) {
+  const chart = (
     <div style={{ width }}>
       <SessionPriceChart detail={d} />
-    </div>,
+    </div>
   )
+  const result = await renderWithProviders(strict ? <StrictMode>{chart}</StrictMode> : chart)
   // The SVG draws once the container has been measured.
-  await expect.poll(() => document.querySelector('[data-series="spot"]')).not.toBeNull()
+  await expect.poll(() => document.querySelector('[data-hover-overlay]')).not.toBeNull()
   return result
 }
 
@@ -146,7 +149,8 @@ test('a bar too short to round is a plain rect, not rounded below the baseline',
     ...detail,
     intervals: [
       { startMs: at('08:00'), endMs: at('09:00'), kwh: 10 },
-      { startMs: at('09:00'), endMs: at('10:00'), kwh: 0.05 },
+      // 0.2 kW on the 10 kW / 144 px panel: ≈ 2.9 px, under 2 × the 2 px radius.
+      { startMs: at('09:00'), endMs: at('10:00'), kwh: 0.2 },
     ],
   })
   const [tall, short] = [...series('actual')]
@@ -276,6 +280,68 @@ test('hovering draws one crosshair through both panels at the slot, gone on leav
   await expect.poll(crosshair).toBeNull()
 })
 
+const popoverBox = () => document.querySelector('.visx-tooltip')?.getBoundingClientRect() ?? null
+
+// The app's dev entry renders under StrictMode, whose simulated unmount /
+// remount detached visx's Portal node: the popover was "open" (the crosshair
+// drew) yet never on screen. Assert it is on the page, inside the window.
+test('under StrictMode a hover opens the popover on screen, not just in state', async () => {
+  const { screen } = await renderChart(detail, 900, { strict: true })
+  pointAt('pointermove', at('08:07'))
+  await expect.poll(crosshair).not.toBeNull()
+  await expect.element(screen.getByText('10:00–10:15 · 2,5 kWh · 375 öre')).toBeVisible()
+  const tip = document.querySelector('.visx-tooltip')
+  expect(tip?.isConnected).toBe(true)
+  const box = popoverBox()
+  if (!box) throw new Error('no popover')
+  expect(box.width).toBeGreaterThan(0)
+  expect(box.left).toBeGreaterThanOrEqual(0)
+  expect(box.top).toBeGreaterThanOrEqual(0)
+  expect(box.right).toBeLessThanOrEqual(window.innerWidth)
+  expect(box.bottom).toBeLessThanOrEqual(window.innerHeight)
+  // At its slot (left edge on the anchor, unless nudged in from the window's
+  // edge), not somewhere else on the page: it spans the crosshair.
+  const x = crosshair()?.x ?? Number.NaN
+  expect(box.left).toBeLessThanOrEqual(x + 0.5)
+  expect(box.right).toBeGreaterThanOrEqual(x)
+  // Moving on keeps it on screen (each slot re-mounts it).
+  pointAt('pointermove', at('09:20'))
+  await expect.element(screen.getByText('11:15–11:30 · 0,0 kWh · 125 öre')).toBeVisible()
+  expect(document.querySelector('.visx-tooltip')?.isConnected).toBe(true)
+})
+
+test('the crosshair marks the active slot on the price line with a dot', async () => {
+  await renderChart()
+  pointAt('pointermove', at('08:07'))
+  await expect.poll(() => document.querySelector('[data-crosshair-dot]')).not.toBeNull()
+  const dot = document.querySelector('[data-crosshair-dot]')?.getBoundingClientRect()
+  // The 375 öre stretch is the line's highest step: its smallest y.
+  const ys = [...(series('spot')[0]?.getAttribute('d') ?? '').matchAll(/,([\d.]+)/g)].map(([, y]) =>
+    Number(y),
+  )
+  const top = overlay().getBoundingClientRect().top + Math.min(...ys)
+  expect(Math.abs(((dot?.top ?? 0) + (dot?.bottom ?? 0)) / 2 - top)).toBeLessThan(0.5)
+  expect(Math.abs(((dot?.left ?? 0) + (dot?.right ?? 0)) / 2 - (crosshair()?.x ?? 0))).toBeLessThan(
+    0.5,
+  )
+  // At least 8 px across (the dataviz marker floor).
+  expect(dot?.width ?? 0).toBeGreaterThanOrEqual(8)
+})
+
+test("a priced slot's popover points into the price panel, an unpriced one into the energy", async () => {
+  const { screen } = await renderChart()
+  const plot = screen.getByRole('group', { name: m.charging_session_chart_title() }).element()
+  ;(plot as HTMLElement).focus()
+  await userEvent.keyboard('{ArrowRight}')
+  await expect.poll(popoverText).toBe('09:00–09:15 · — kWh · 125 öre')
+  expect(popoverBox()?.top ?? Number.POSITIVE_INFINITY).toBeLessThan(axisBox('ore').bottom)
+  await userEvent.keyboard('{End}{ArrowLeft}')
+  await expect.poll(popoverText).toBe('12:30–12:45 · — kWh · — öre')
+  // No price there and no dot; the popover sits over the energy panel.
+  expect(document.querySelector('[data-crosshair-dot]')).toBeNull()
+  expect(popoverBox()?.top ?? 0).toBeGreaterThan(axisBox('ore').bottom)
+})
+
 test('a tap on a phone-width chart opens the slot under the finger', async () => {
   const { screen } = await renderChart(detail, 360)
   pointAt('pointerdown', at('09:05'), 'touch')
@@ -308,8 +374,11 @@ test('without any price there is no line and no price axis, and nothing breaks',
     ...detail,
     prices: prices.map((p) => ({ ...p, spotOre: null })),
   })
-  expect(series('spot')[0]?.getAttribute('d') ?? '').not.toMatch(/M/)
+  // No price panel at all: no zero-height group, no empty line, no axis or unit.
+  expect(document.querySelector('[data-panel="price"]')).toBeNull()
+  expect(series('spot')).toHaveLength(0)
   expect(document.querySelector('[data-axis="ore"]')).toBeNull()
+  expect(document.querySelector('[data-unit="ore"]')).toBeNull()
   expect(document.querySelector('[data-legend="spot"]')).toBeNull()
   // No empty price panel: the energy panel takes the whole plot.
   const plot = overlay().getBoundingClientRect()
@@ -387,11 +456,84 @@ test('price on top and energy below, each on its own left axis, with no right ax
       expect(y).toBeLessThanOrEqual(box.bottom + 0.5)
     }
   }
+  const svgRight =
+    document.querySelector('svg[data-chart="session-price"]')?.getBoundingClientRect().right ?? 0
   for (const text of document.querySelectorAll('svg[data-chart="session-price"] text')) {
-    expect(text.getBoundingClientRect().left).toBeLessThan(plot.right)
+    const box = text.getBoundingClientRect()
+    expect(box.left).toBeLessThan(plot.right)
+    expect(box.right).toBeLessThanOrEqual(svgRight)
   }
-  expect(texts('[data-axis="ore"]')).toContain('öre/kWh')
-  expect(texts('[data-axis="kw"]')).toContain('kW')
+  expect(texts('[data-unit="ore"]')).toEqual(['öre/kWh'])
+  expect(texts('[data-unit="kw"]')).toEqual(['kW'])
+})
+
+// A unit label's text box and its backing, in client px.
+const unitBoxes = (name: string) => {
+  const g = document.querySelector(`[data-unit="${name}"]`)
+  const text = g?.querySelector('text')?.getBoundingClientRect()
+  const backing = g?.querySelector('[data-unit-backing]')
+  if (!g || !text || !backing) throw new Error(`${name} unit missing`)
+  return { g, text, backing }
+}
+const overlaps = (a: DOMRect, b: DOMRect) =>
+  a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+test('both units sit the same way over their panel, each on a card backing', async () => {
+  await renderChart()
+  const plot = overlay().getBoundingClientRect()
+  for (const [name, panelTop] of [
+    ['ore', axisBox('ore').top],
+    ['kw', axisBox('kw').top],
+  ] as const) {
+    const { text, backing } = unitBoxes(name)
+    const back = backing.getBoundingClientRect()
+    // Just over its panel's top-left corner, at the plot's left edge.
+    expect(Math.abs(text.left - plot.left)).toBeLessThan(1)
+    expect(text.bottom).toBeLessThanOrEqual(panelTop + 0.5)
+    expect(panelTop - text.bottom).toBeLessThan(4)
+    // The backing covers the text and is card-coloured.
+    expect(back.left).toBeLessThanOrEqual(text.left)
+    expect(back.right).toBeGreaterThanOrEqual(text.right)
+    expect((backing as SVGElement).style.fill).toBe('var(--card)')
+  }
+  // The kW unit stays inside the gap, clear of the price panel above it.
+  expect(unitBoxes('kw').backing.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+    axisBox('ore').bottom,
+  )
+})
+
+// An overnight plug-in at phone width: the window-start rule lands near the
+// plot's left edge, where the kW unit sits in the gap.
+const longWindow = (hours: number) =>
+  ({
+    ...detail,
+    window: { startMs: night, endMs: night + hours * HOUR },
+    intervals: [{ startMs: night, endMs: night + HOUR, kwh: 11 }],
+    prices: quarters(night - HOUR, (hours + 2) * 4, () => 100),
+    optimalSchedule: null,
+  }) as Detail
+
+test('at 360 px a 15 h plug-in window keeps its start rule clear of the kW unit', async () => {
+  await renderChart(longWindow(15), 360)
+  const rule = document.querySelector('[data-window="start"]')?.getBoundingClientRect()
+  if (!rule) throw new Error('no start rule')
+  expect(overlaps(rule, unitBoxes('kw').text)).toBe(false)
+})
+
+test('when a rule does cross a unit, the unit is painted over it on its backing', async () => {
+  // 30 h at 360 px: an hour is ~10 px, so the start rule runs through "kW".
+  await renderChart(longWindow(30), 360)
+  const ruleEl = document.querySelector('[data-window="start"]')
+  const rule = ruleEl?.getBoundingClientRect()
+  if (!ruleEl || !rule) throw new Error('no start rule')
+  for (const name of ['ore', 'kw']) {
+    const { g, backing } = unitBoxes(name)
+    const back = backing.getBoundingClientRect()
+    // Painted after the rule (and the crosshair layer), over it.
+    expect(ruleEl.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    if (name === 'kw') expect(rule.left).toBeGreaterThan(back.left)
+    if (name === 'kw') expect(rule.right).toBeLessThan(back.right)
+  }
 })
 
 test('the plug-in window rules and the hover overlay span both panels', async () => {
@@ -453,6 +595,31 @@ test("the price panel shades the cheapest schedule's runs behind the line", asyn
     if (!line) throw new Error('no line')
     expect(band.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
   })
+  // Each run's start and end get a dashed --chart-2 edge over the panel's
+  // height (the fill alone can't clear 3:1 against the card).
+  const edge = document.querySelector<SVGElement>('[data-band-edge]')
+  expect(edge?.style.stroke).toBe('var(--chart-2)')
+  expect(edge?.style.strokeDasharray).not.toBe('')
+  const segments = [...(edge?.getAttribute('d') ?? '').matchAll(/M([\d.]+),0V([\d.]+)/g)]
+  expect(segments).toHaveLength(4)
+  const bandXs = bands.flatMap((b) => {
+    const x = Number(b.getAttribute('x'))
+    return [x, x + Number(b.getAttribute('width'))]
+  })
+  expect(segments.map(([, x]) => Number(Number(x).toFixed(1)))).toEqual(
+    bandXs.map((x) => Number(x.toFixed(1))),
+  )
+  // Drawn before the line, so the price stays on top.
+  const line = series('spot')[0]
+  if (!edge || !line) throw new Error('no edge or line')
+  expect(edge.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+})
+
+test("the legend's cheapest-schedule entry shows both its marks: the band and the ghost bar", async () => {
+  await renderChart()
+  const entry = document.querySelector('[data-legend="optimal"]')
+  expect(entry?.querySelector('[data-swatch="band"]')).not.toBeNull()
+  expect(entry?.querySelector('[data-swatch="ghost"]')).not.toBeNull()
 })
 
 test('hiding the cheapest schedule hides its price band too', async () => {
@@ -476,6 +643,35 @@ test('an idle hour of a few Wh draws no bar, not a hairline on the baseline', as
   await expect
     .element(chartTable(screen).getByRole('row', { name: /^11:00–11:15/ }))
     .toHaveTextContent(/11:00–11:15\s*0,0\s*125/)
+})
+
+test('an idle night logged as one long interval draws no hairline under the night', async () => {
+  // As Zaptec logged the owner's Sun–Mon session: one interval over the idle
+  // hours with a little standby energy (0.1 kW: ≈ 1.4 px on 10 kW / 144 px).
+  await renderChart({
+    ...detail,
+    intervals: [
+      { startMs: at('08:00'), endMs: at('09:00'), kwh: 10 },
+      { startMs: at('09:00'), endMs: at('11:00'), kwh: 0.2 },
+    ],
+  })
+  expect(series('actual')).toHaveLength(1)
+})
+
+test('a small but real hour still draws: just over 2 px is a bar', async () => {
+  await renderChart({
+    ...detail,
+    intervals: [
+      { startMs: at('08:00'), endMs: at('09:00'), kwh: 10 },
+      // 0.15 kW on 10 kW / 144 px: ≈ 2.2 px.
+      { startMs: at('09:00'), endMs: at('10:00'), kwh: 0.15 },
+    ],
+  })
+  const bars = [...series('actual')]
+  expect(bars).toHaveLength(2)
+  const height = bars[1]?.getBoundingClientRect().height ?? 0
+  expect(height).toBeGreaterThanOrEqual(2)
+  expect(height).toBeLessThan(2.5)
 })
 
 test('the kW labels sit inside the left margin, beside their ticks', async () => {

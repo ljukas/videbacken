@@ -57,20 +57,28 @@ const MIN_RIGHT = 12
 //     card columns through hourly bars, swallow narrow bars and gaps at phone
 //     width, and trim the window rules — so they sit directly on bars or card;
 //     the haloed top edge and the fill already identify the run.
-//     In the price panel the same runs are a --chart-2 band at the ghost
-//     fill's 15 %, behind the line (band vs card 1.2 / 1.3): a highlight of
-//     when, not a mark to read a value off; the outline below carries the
-//     series' 3:1.
+//   band     the same runs in the price panel, behind the line:
+//            --chart-2 dashed edges (the outline's stroke) vs card 3.7 / 7.0,
+//            around a --chart-2 fill at 25 %. A fill never clears 3:1 against
+//            the card: 1.35 / 1.55 composited in gamma sRGB as browsers do
+//            (1.22 / 2.51 blended in linear light), so the edges mark the
+//            stretch and the fill only tints it.
 //   spot     --foreground line                   vs card 19.8 / 15.9
-//            vs the band 16.5 / 12.5 (no bars in its panel, so no halo)
+//            vs the band 14.6 / 10.2 (no bars in its panel, so no halo)
+//            its crosshair dot: the same, ringed in --card
 //   window   --muted-foreground dashed rules     vs card 4.7 / 6.7
-//   crosshair --muted-foreground hairline        vs card 4.7 / 6.7, band 4.0 / 5.3
+//   crosshair --muted-foreground hairline        vs card 4.7 / 6.7, band 3.5 / 4.3
 //            over a --card halo (the line alone is 1.9 / 1.2 against --chart-3)
 //   zero öre --muted-foreground dotted rule      vs card 4.7 / 6.7
+//   units    --muted-foreground text on a --card backing, so a rule or the
+//            crosshair passing under it never cuts it: 4.7 / 6.7
 // --chart-1 and --chart-4 fail one theme each (see EconomyMonthlyChart).
 const ACTUAL = 'var(--chart-3)'
 const OPTIMAL = 'var(--chart-2)'
 const OPTIMAL_FILL_OPACITY = 0.15
+const BAND_FILL_OPACITY = 0.25
+const OPTIMAL_DASH = '4 2'
+const OPTIMAL_STROKE_PX = 1.5
 const SPOT = 'var(--foreground)'
 const RULE = 'var(--muted-foreground)'
 const HALO = 'var(--card)'
@@ -84,9 +92,21 @@ const LABEL = { className: 'fill-muted-foreground', fontSize: LABEL_PX }
 const LEFT_LABEL = () => ({ ...LABEL, dx: '-0.25em', dy: '0.25em', textAnchor: 'end' as const })
 const BOTTOM_LABEL = () => ({ ...LABEL, dy: '0.25em', textAnchor: 'middle' as const })
 const BAR_RADIUS = 2
-// A bar shorter than this draws nothing: an idle hour's few Wh would otherwise
-// paint a hairline along the baseline.
-const MIN_BAR_PX = 0.5
+// A bar shorter than this draws nothing: under 2 px it has no body and reads
+// as a second baseline. Zaptec logs an idle night as one long interval with a
+// little standby energy (1.25 kWh over 14 h: 0.09 kW, 1.2 px on a 10 kW
+// domain), which drew a hairline along the axis through the whole night. On
+// the 144 px panel this hides an average under domain / 72 (0.06–0.35 kW on a
+// 4–25 kW domain); a charged stretch is at least ~1.4 kW, so only an hour
+// that charged for a few minutes or less goes unseen. The energy stays in the
+// session's total, the table and the popover.
+const MIN_BAR_PX = 2
+const DOT_R = 4
+// A unit over its panel's top-left: the backing's padding and height, and the
+// text baseline above the panel (it sits in the top margin or the panel gap).
+const UNIT_PAD = 2
+const UNIT_BOX_H = 10
+const UNIT_BASELINE = 3
 const GHOST_HALO_PX = 4
 const byStart = bisector((r: Row) => r.startMs)
 
@@ -303,10 +323,18 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
         })
       : []
     const crossX = (r: Row) => (x(r.startMs) + x(r.endMs)) / 2
-    const place = (r: Row) => ({
-      left: left + crossX(r),
-      top: MARGIN_TOP + (r.spotOre === null ? plotH / 2 : yOre(r.spotOre)),
-    })
+    // The price step's y at a row, for the crosshair's dot on the line.
+    const dotY = (r: Row) => (r.spotOre === null ? null : yOre(r.spotOre))
+    // A priced row's popover points at the price; an unpriced one at its
+    // energy (the bar top), or the energy panel's middle without any.
+    const anchorY = (r: Row) => {
+      const y = dotY(r)
+      if (y !== null) return y
+      const kwh = kwhWithin(intervals, r)
+      const kw = kwh === null ? null : (kwh / (r.endMs - r.startMs)) * millisecondsInHour
+      return energyTop + (kw === null ? energyH / 2 : yKw(kw))
+    }
+    const place = (r: Row) => ({ left: left + crossX(r), top: MARGIN_TOP + anchorY(r) })
     // One overlay over both panels picks the row nearest the pointer, so a
     // fingertip can hit a 15-min slot a few pixels wide. pointerdown covers a
     // tap (ChartPopover keeps it open until a tap outside or Escape).
@@ -334,11 +362,34 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
       />
     )
     const axisProps = { stroke: 'var(--border)', tickStroke: 'var(--border)' }
-    // A unit over its panel's plot, clear of the tick labels in the margin.
-    const unit = (text: string, y: number) => (
-      <text x={0} y={y} fontSize={LABEL_PX} className="fill-muted-foreground">
-        {text}
-      </text>
+    // A unit just over its panel's top-left corner (in the top margin, or the
+    // gap between the panels), clear of the tick labels in the margin. Its
+    // --card backing is painted over the rules and the crosshair, so neither
+    // cuts through it; it is sized from the same 6.5 px a character as the
+    // margins, so it errs wide.
+    const unit = (name: string, text: string, panelTop: number) => {
+      const baseline = panelTop - UNIT_BASELINE
+      return (
+        <g data-unit={name}>
+          <rect
+            data-unit-backing
+            x={-UNIT_PAD}
+            y={baseline + UNIT_PAD - UNIT_BOX_H}
+            width={Math.ceil(text.length * CHAR_PX) + 2 * UNIT_PAD}
+            height={UNIT_BOX_H}
+            style={{ fill: HALO }}
+          />
+          <text x={0} y={baseline} fontSize={LABEL_PX} className="fill-muted-foreground">
+            {text}
+          </text>
+        </g>
+      )
+    }
+    const units = (
+      <>
+        {hasPrice ? unit('ore', 'öre/kWh', 0) : null}
+        {unit('kw', 'kW', energyTop)}
+      </>
     )
     const line = {
       data: stepPoints(prices),
@@ -352,34 +403,46 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
       <>
         {rule(win.startMs, 'start')}
         {rule(win.endMs, 'end')}
-        <Group data-panel="price">
-          {ghosts.map((g) => (
-            <rect
-              key={`b${g.key}`}
-              data-band="optimal"
-              x={g.x0}
-              y={0}
-              width={g.x1 - g.x0}
-              height={priceH}
-              style={{ fill: OPTIMAL, fillOpacity: OPTIMAL_FILL_OPACITY }}
+        {hasPrice ? (
+          <Group data-panel="price">
+            {ghosts.map((g) => (
+              <rect
+                key={`b${g.key}`}
+                data-band="optimal"
+                x={g.x0}
+                y={0}
+                width={g.x1 - g.x0}
+                height={priceH}
+                style={{ fill: OPTIMAL, fillOpacity: BAND_FILL_OPACITY }}
+              />
+            ))}
+            {ghosts.length > 0 ? (
+              <path
+                data-band-edge
+                d={ghosts.map((g) => `M${g.x0},0V${priceH}M${g.x1},0V${priceH}`).join('')}
+                style={{
+                  fill: 'none',
+                  stroke: OPTIMAL,
+                  strokeWidth: OPTIMAL_STROKE_PX,
+                  strokeDasharray: OPTIMAL_DASH,
+                }}
+              />
+            ) : null}
+            {hasNegative ? (
+              <line
+                data-ref="zero-ore"
+                x1={0}
+                x2={innerW}
+                y1={yOre(0)}
+                y2={yOre(0)}
+                style={{ stroke: RULE, strokeWidth: 1, strokeDasharray: '1 3' }}
+              />
+            ) : null}
+            <LinePath
+              {...line}
+              data-series="spot"
+              style={{ fill: 'none', stroke: SPOT, strokeWidth: 2, strokeLinejoin: 'round' }}
             />
-          ))}
-          {hasNegative ? (
-            <line
-              data-ref="zero-ore"
-              x1={0}
-              x2={innerW}
-              y1={yOre(0)}
-              y2={yOre(0)}
-              style={{ stroke: RULE, strokeWidth: 1, strokeDasharray: '1 3' }}
-            />
-          ) : null}
-          <LinePath
-            {...line}
-            data-series="spot"
-            style={{ fill: 'none', stroke: SPOT, strokeWidth: 2, strokeLinejoin: 'round' }}
-          />
-          {hasPrice ? (
             <g data-axis="ore">
               <AxisLeft
                 scale={yOre}
@@ -388,10 +451,9 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
                 tickLabelProps={LEFT_LABEL}
                 {...axisProps}
               />
-              {unit('öre/kWh', -8)}
             </g>
-          ) : null}
-        </Group>
+          </Group>
+        ) : null}
         <Group top={energyTop} data-panel="energy">
           {ghosts.map((g) => (
             <path
@@ -446,8 +508,8 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
                   style={{
                     fill: 'none',
                     stroke: OPTIMAL,
-                    strokeWidth: 1.5,
-                    strokeDasharray: '4 2',
+                    strokeWidth: OPTIMAL_STROKE_PX,
+                    strokeDasharray: OPTIMAL_DASH,
                   }}
                 />
               ))}
@@ -461,8 +523,6 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               tickLabelProps={LEFT_LABEL}
               {...axisProps}
             />
-            {/* In the gap (or the top margin), over the plot: beside the axis it would meet the tick labels. */}
-            {unit('kW', hasPrice ? -3 : -8)}
           </g>
           <g data-axis="time">
             <AxisBottom
@@ -489,7 +549,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
         onPointerDown={pick}
       />
     )
-    return { left, plotH, marks, overlay, place, crossX }
+    return { left, plotH, marks, units, overlay, place, crossX, dotY }
   }, [
     width,
     win,
@@ -535,6 +595,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
 
   const active = popover.data
   const crossX = plot && popover.open && active ? plot.crossX(active) : null
+  const dotY = plot && popover.open && active ? plot.dotY(active) : null
   const optimalShown = optimalSchedule !== null && showOptimal
   // An estimated session has no intervals: no bars, so no "Laddat" entry, but a note.
   const hasIntervals = intervals.length > 0
@@ -653,8 +714,19 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
                           y2={plot.plotH}
                           style={{ stroke: RULE, strokeWidth: 1 }}
                         />
+                        {/* The active slot on the price line, tying the panels together. */}
+                        {dotY === null ? null : (
+                          <circle
+                            data-crosshair-dot
+                            cx={crossX}
+                            cy={dotY}
+                            r={DOT_R}
+                            style={{ fill: SPOT, stroke: HALO, strokeWidth: 1.5 }}
+                          />
+                        )}
                       </g>
                     )}
+                    {plot.units}
                     {plot.overlay}
                   </Group>
                 </svg>
@@ -695,7 +767,17 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
             ) : null}
             {optimalShown ? (
               <li className="flex items-center gap-1.5" data-legend="optimal">
+                {/* Both of its marks: the band over the price, the ghost bars under it. */}
                 <span
+                  data-swatch="band"
+                  className="h-2.5 w-3 border-x-[1.5px] border-dashed"
+                  style={{
+                    borderColor: OPTIMAL,
+                    background: `color-mix(in oklab, ${OPTIMAL} ${BAND_FILL_OPACITY * 100}%, transparent)`,
+                  }}
+                />
+                <span
+                  data-swatch="ghost"
                   className="size-2.5 border-[1.5px] border-dashed"
                   style={{
                     borderColor: OPTIMAL,
