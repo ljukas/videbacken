@@ -592,5 +592,22 @@
   "charging_vehicle_source_admin": "satt av admin",
   "charging_vehicle_auto": "Automatiskt",
   "charging_vehicle_saved": "Sparat",
-  "charging_vehicle_save_error": "Kunde inte spara vem som laddade"
+  "charging_vehicle_save_error": "Kunde inte spara vem som laddade",
+  "charging_vehicle_log_title": "Bilens laddlogg",
+  "charging_vehicle_log_description": "Används för att avgöra vilka laddningar som är vår bil.",
+  "charging_vehicle_log_coverage": "{count} laddningar, {from} – {to}",
+  "charging_vehicle_log_none": "Ingen laddlogg importerad",
+  "charging_vehicle_import_button": "Importera",
+  "charging_vehicle_import_title": "Importera bilens laddlogg",
+  "charging_vehicle_import_description": "Välj CSV-exporten från MySkoda-appen. Filen läses i din webbläsare; platser sparas inte.",
+  "charging_vehicle_import_file": "Fil",
+  "charging_vehicle_import_preview": "{count} laddningar · {from} – {to} · {public} publika (plats sparas inte)",
+  "charging_vehicle_import_dropped": "{count} rader kunde inte läsas och hoppas över",
+  "charging_vehicle_import_wrong_file": "Filen ser inte ut som en MySkoda-export",
+  "charging_vehicle_import_empty": "Filen innehåller inga laddningar",
+  "charging_vehicle_import_too_many": "Filen har för många laddningar (högst {max})",
+  "charging_vehicle_import_read_error": "Det gick inte att läsa filen",
+  "charging_vehicle_import_choose": "Välj en fil först",
+  "charging_vehicle_import_done": "{ours} laddningar vår bil, {other} gäster",
+  "charging_vehicle_import_error": "Importen misslyckades"
 }

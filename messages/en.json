@@ -592,5 +592,22 @@
   "charging_vehicle_source_admin": "set by an admin",
   "charging_vehicle_auto": "Automatic",
   "charging_vehicle_saved": "Saved",
-  "charging_vehicle_save_error": "Couldn't save who charged"
+  "charging_vehicle_save_error": "Couldn't save who charged",
+  "charging_vehicle_log_title": "The car's charging log",
+  "charging_vehicle_log_description": "Used to tell which sessions are our car.",
+  "charging_vehicle_log_coverage": "{count} charges, {from} – {to}",
+  "charging_vehicle_log_none": "No charging log imported",
+  "charging_vehicle_import_button": "Import",
+  "charging_vehicle_import_title": "Import the car's charging log",
+  "charging_vehicle_import_description": "Pick the CSV export from the MySkoda app. The file is read in your browser; locations are not stored.",
+  "charging_vehicle_import_file": "File",
+  "charging_vehicle_import_preview": "{count} charges · {from} – {to} · {public} public (location not stored)",
+  "charging_vehicle_import_dropped": "{count} rows couldn't be read and are skipped",
+  "charging_vehicle_import_wrong_file": "This doesn't look like a MySkoda export",
+  "charging_vehicle_import_empty": "The file contains no charges",
+  "charging_vehicle_import_too_many": "The file has too many charges (at most {max})",
+  "charging_vehicle_import_read_error": "The file couldn't be read",
+  "charging_vehicle_import_choose": "Pick a file first",
+  "charging_vehicle_import_done": "{ours} sessions our car, {other} guests",
+  "charging_vehicle_import_error": "The import failed"
 }

@@ -127,6 +127,7 @@ function seedOverviewShell(qc: QueryClient) {
     orpc.evCharging.recentRuns.queryOptions({ input: { source: 'elpris', limit: 20 } }).queryKey,
     [],
   )
+  qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
 }
 
 test('Översikt, guests with nothing: guest copy, no sync button, even for an admin', async () => {
@@ -235,4 +236,13 @@ test('Översikt: a failed sessions read shows an error, never the empty list or 
   expect(screen.getByText(m.charging_sessions_empty_description()).elements()).toHaveLength(0)
   // Only the heading's "Synka nu" remains; the alert's button says "Försök igen".
   expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(1)
+})
+
+test('Översikt: an admin sees the car-log card, and ?dialog=vehicleImport opens the import', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '?dialog=vehicleImport', (qc) => {
+    seedOverviewShell(qc)
+    seedOverview(qc, 'ours', [])
+  })
+  await expect.element(screen.getByText(m.charging_vehicle_log_none())).toBeVisible()
+  await expect.element(screen.getByText(m.charging_vehicle_import_title())).toBeVisible()
 })

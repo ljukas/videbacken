@@ -28,6 +28,8 @@ import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton
 import { TariffCard } from '~/components/evCharging/TariffCard'
 import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
+import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
+import { VehicleLogCard } from '~/components/evCharging/VehicleLogCard'
 import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
@@ -42,8 +44,11 @@ import { seo } from '~/utils/seo'
 // `?year=` falls back to the current year instead of erroring the loader.
 const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
-  // Tariff dialogs (ADR-0013): new (optionally pre-filled), edit, delete.
-  dialog: z.enum(['tariffNew', 'tariffEdit', 'tariffDelete']).optional().catch(undefined),
+  // Dialogs (ADR-0013): tariff new (optionally pre-filled), edit, delete; the car's log import.
+  dialog: z
+    .enum(['tariffNew', 'tariffEdit', 'tariffDelete', 'vehicleImport'])
+    .optional()
+    .catch(undefined),
   tariffId: z.string().optional().catch(undefined),
   // Whose charging: a clean URL means our car.
   vehicle: vehicleScope.optional().catch(undefined),
@@ -62,6 +67,7 @@ const sessionCostsQuery = (sessionIds: string[]) =>
 // Spot price sync (elpris). Zaptec's keep their input-less calls, so their
 // query keys are unchanged; prices always pass their source.
 const pricesHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } })
+const vehicleCoverageQuery = orpc.evCharging.vehicleRecordCoverage.queryOptions()
 const pricesRunsQuery = orpc.evCharging.recentRuns.queryOptions({
   input: { source: 'elpris', limit: RECENT_RUNS },
 })
@@ -109,6 +115,7 @@ export const Route = createFileRoute('/_authenticated/charging/')({
           )
         : null,
       user.role === 'admin' ? queryClient.ensureQueryData(pricesRunsQuery) : null,
+      user.role === 'admin' ? queryClient.ensureQueryData(vehicleCoverageQuery) : null,
     ])
   },
   component: ChargingPage,
@@ -137,7 +144,8 @@ function ChargingPage() {
   // A tariff dialog that can't show (a non-admin, or a tariffId that no longer
   // exists) is cleared from the URL instead of lingering there.
   const dialogUnavailable =
-    dialog !== undefined && (!isAdmin || (dialog !== 'tariffNew' && !selectedTariff))
+    dialog !== undefined &&
+    (!isAdmin || (dialog !== 'tariffNew' && dialog !== 'vehicleImport' && !selectedTariff))
   useEffect(() => {
     // `replace`, so Back doesn't return to the bad URL (and bounce again).
     if (dialogUnavailable) {
@@ -214,6 +222,7 @@ function ChargingPage() {
     enabled: isAdmin,
   })
   const { data: pricesRuns } = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
+  const { data: vehicleCoverage } = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
 
   // "Visa fler" fetches the longer page first and only then switches to it, so
   // a failed fetch leaves the rows on screen (with a toast; the button stays
@@ -346,6 +355,14 @@ function ChargingPage() {
         }
       />
 
+      {isAdmin ? (
+        <VehicleLogCard
+          // Prefetched by the loader; a failed read falls back to the "none imported" line.
+          coverage={vehicleCoverage ?? null}
+          onImport={() => open('vehicleImport')}
+        />
+      ) : null}
+
       <section className="flex flex-col gap-2">
         <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
         {loadFailed(sessions) ? (
@@ -388,6 +405,12 @@ function ChargingPage() {
                   ? { kind: 'new', from: latestTariff }
                   : undefined
             }
+            onOpenChange={(o) => {
+              if (!o) close()
+            }}
+          />
+          <VehicleImportDialog
+            open={isOpen('vehicleImport')}
             onOpenChange={(o) => {
               if (!o) close()
             }}
