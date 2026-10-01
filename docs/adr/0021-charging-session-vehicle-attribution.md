@@ -60,8 +60,12 @@ figures agree too loosely to use, and the planned peak-power hint fails because 
 
 ## Consequences
 
-- Every charging read gains a `vehicle` scope; forgetting to thread it shows up as guests in "our" totals, which the
-  per-read scope tests guard.
+- Every charging list/aggregate read gains a `vehicle` scope; forgetting to thread it shows up as guests in "our"
+  totals, which the per-read scope tests guard. By-id reads (the session page, `sessionCosts`, which prices the ids
+  the scoped list chose) and the years list / spot-price backfill are deliberately unscoped.
+- `services/evCharging/attribution.ts` reads `vehicle_charge_record` (owned by `services/vehicleCharge`) for the
+  single `UPDATE … FROM` re-match: a deliberate read-only exception to ADR-0002 table ownership, since one
+  statement can't span two services. A CHECK (`ev_charge_session_vehicle_default_check`) keeps `default` rows 'ours'.
 - Sessions after the export are "ours · antaget" until tagged — a forgotten guest silently inflates our cost. The
   session page shows the source so it's visible.
 - An admin tag on a session that Zaptec later voids/replaces does not carry over to the replacement.

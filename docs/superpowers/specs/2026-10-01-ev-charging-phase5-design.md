@@ -47,7 +47,8 @@ export (197 sessions, 2025-10-10 → 2026-09-27; see the `skoda-charging-export`
 | `vehicle` | `text not null default 'ours'`, CHECK `in ('ours','other')` | who charged |
 | `vehicle_source` | `text not null default 'default'`, CHECK `in ('default','skoda','admin')` | why we think so |
 
-- `default` — no rule decided; counts as ours (decision 2).
+- `default` — no rule decided; counts as ours (decision 2). A third CHECK, `ev_charge_session_vehicle_default_check`
+  (`vehicle_source <> 'default' OR vehicle = 'ours'`, migration 0008), keeps an undecided row from being 'other'.
 - `skoda` — derived from `vehicle_charge_record` by the re-match rule.
 - `admin` — set by an admin; nothing automatic ever overwrites it.
 
@@ -84,7 +85,8 @@ For every **counted** session (`countedSessionFilter()`) whose `start_at` lies i
 
 Sessions outside coverage are left as they are (`default` stays `default`). Public records never match (a public
 charge can't be at our charger). The update is idempotent and deterministic, so concurrent runs (import + sync)
-converge on the same result.
+converge by the next re-match: a statement's snapshot can write back a stale answer once, and the hourly sync
+heals it. The admin tag is re-checked in the UPDATE's own WHERE, so a concurrent admin tag is never overwritten.
 
 ## Services
 
@@ -94,13 +96,14 @@ converge on the same result.
 - **The one seam**: `countedSessionFilter({ vehicle? })` (`services/evCharging/counted.ts`) adds
   `eq(vehicle, …)` for `ours`/`other`; nothing for `all`/omitted. Threaded through as a `vehicle` input:
   `getOverview`, `listSessions`, `getChargingPatterns`, `getChargingTimeline`, `listSessionEnergy`, and via it
-  `getCostOverview`, `getSessionCosts`, `getEconomyOverview`.
-- **Deliberately unscoped**: `distinctCountedYears` (the year list doesn't change with the scope),
+  `getCostOverview`, `getEconomyOverview`.
+- **Deliberately unscoped**: `getSessionCosts` (it prices the ids the scoped list chose), `distinctCountedYears` (the year list doesn't change with the scope),
   `earliestCountedStartAt` (spot-price backfill must cover every session), `getSessionEnergy` /
   `getSessionEconomy` (a session page opens whatever its vehicle).
 - **`services/evCharging/attribution.ts`** (writes session rows):
-  - `reattributeSessions({ sessionId? }): { ours, other }` — the re-match rule above, one statement; `sessionId`
-    limits it to one session (used by the reset).
+  - `reattributeSessions({ sessionId? }): { ours, other, changed }` — the re-match rule above, one statement;
+    `ours`/`other` count every session the rule decided, `changed` the rows written. `sessionId` limits it to one
+    session (used by the reset); a non-uuid id decides nothing.
   - `setSessionVehicle(sessionId, vehicle | null)` — `'ours'|'other'` sets `vehicle_source = 'admin'`; `null`
     ("Automatiskt") resets to `vehicle = 'ours', vehicle_source = 'default'` then re-runs the rule for that session. Unknown or
     uncounted id → `EvChargingDomainError('EV_SESSION_NOT_FOUND')` (existing code).
@@ -112,17 +115,24 @@ converge on the same result.
 
 ## Procedures (`orpc/procedures/evCharging.ts`)
 
-- Reads `overview`, `sessions`, `costOverview`, `sessionCosts`, `patterns`, `timeline`, `economy` take
+- Reads `overview`, `sessions`, `costOverview`, `patterns`, `timeline`, `economy` take
   `vehicle: vehicleScope.default('all')` — the procedure default keeps old callers' meaning; **routes pass
   `'ours'`** by default.
 - `setSessionVehicle` — `adminProcedure`, `{ sessionId: uuid, vehicle: 'ours' | 'other' | null }` →
   `{ vehicle, vehicleSource }`; `EV_SESSION_NOT_FOUND` → 404.
 - `importVehicleRecords` — `adminProcedure`, `{ rows }` (≤ 5 000; a year is ≈ 200, ≈150 B/row, far below the
   4.5 MB body limit) → `importRecords` then `reattributeSessions` → `{ inserted, unchanged, ours, other }`;
-  sub-timings `importMs`, `reattributeMs`.
+  sub-timings `vehicleImportMs`, `vehicleReattributeMs`. `setSessionVehicle` records `vehicleTagMs`.
+  **Import-row contract** (`vehicleRecordInput`; the PR 2 parser must meet it exactly): a strict object (an extra
+  key → BAD_REQUEST); `startAt`/`endAt` dates within 2000-01-01..2100-01-01 with `endAt >= startAt`;
+  `energyKwh` 0..1000; `sourceSessionId` trimmed, 1..100 chars; `startSocPercent`/`endSocPercent` integer 0..100
+  or null; `isPublic` boolean; 1..5 000 rows.
 - `vehicleRecordCoverage` — `adminProcedure` → `coverage()`.
-- **Sync hook**: `runZaptecSync` calls `reattributeSessions()` after a successful import. A failure there is logged
-  (warn) and does not fail the sync — health tracks Zaptec, not attribution (ADR-0019).
+- **Sync hook**: `runZaptecSync` calls `reattributeSessions()` after a successful import. The re-match is skipped
+  (warn) when the run signal has already aborted, and otherwise raced against the run deadline. A failure or
+  cut-off is a warn, never a failed run — health tracks Zaptec, not attribution (ADR-0019). The SQL isn't
+  cancelled by a cut-off; the next sync re-derives. The sync records `reattributeMs` in the run row's timings and
+  `reattributeChanged` on the run line.
 
 ## UI
 
@@ -155,7 +165,8 @@ converge on the same result.
 | Gap in the car's log | a real Enyaq session marked other; admin tag fixes it |
 | Session straddling the coverage end | inside iff `start_at` is inside coverage |
 | Voided/replaced session | replacement arrives `default`, next re-match covers it; an admin tag on the old row does **not** carry over (documented) |
-| Import fails mid-way | one transaction, nothing written |
+| Record insert fails | one statement, all or nothing |
+| Re-match fails after the import | import + re-match are two writes: the records stay stored; re-importing (the re-match runs regardless of `inserted`) or the next sync recovers |
 | Unparseable CSV rows | dropped client-side, counted in the preview; the server's zod is strict |
 | Re-match fails inside sync | warn log; sync result unaffected |
 

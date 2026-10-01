@@ -60,13 +60,13 @@ src/
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
-    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
-    services/                   approvedEmail, user, file, sensor, evCharging, integrationSync, spotPrice, tariff — own all DB access + domain rules (ADR-0002)
+    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
+    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff — own all DB access + domain rules (ADR-0002)
     effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris (pulled, fail closed — ADR-0019), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
-    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, tariff limits + energy tax (ADR-0019, ADR-0020)
+    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
     integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019)
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
