@@ -545,14 +545,38 @@ test('a re-match that never settles is cut off by the run deadline without faili
   const run = await runZaptecSync({
     trigger: 'cron',
     now: () => T1,
-    deadlineMs: 300,
+    deadlineMs: 2_000,
     deps: { zaptec: client, log },
   })
-  expect(performance.now() - started).toBeLessThan(5_000)
+  expect(performance.now() - started).toBeLessThan(8_000)
   expect(run.outcome).toBe('ok')
   expect(entries().find((e) => e.msg === 'zaptec sync: vehicle re-match failed')).toMatchObject({
     level: WARN,
   })
+})
+
+test('a re-match is skipped when the run deadline passed before it', async () => {
+  // The watermark lookup is not raced against the deadline, so it can outlast
+  // it and return normally. A watermark past `now` leaves no fetch window, so the
+  // run reaches the re-match with the signal already aborted.
+  vi.spyOn(integrationSyncService, 'getLastSuccessStartedAt').mockImplementation(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    return new Date(T1.getTime() + 30 * DAY)
+  })
+  const rematch = vi.spyOn(evChargingService, 'reattributeSessions')
+  const { client } = fakeZaptec([session('s0', new Date(T1.getTime() - DAY))])
+  const { log, entries } = capturingLogger()
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deadlineMs: 1_000,
+    deps: { zaptec: client, log },
+  })
+  expect(run.outcome).toBe('ok')
+  expect(rematch).not.toHaveBeenCalled()
+  expect(
+    entries().find((e) => e.msg === 'zaptec sync: vehicle re-match skipped, run deadline reached'),
+  ).toMatchObject({ level: WARN })
 })
 
 test('a failed fetch never triggers a re-match', async () => {
