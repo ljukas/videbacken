@@ -11,10 +11,13 @@ export function ChargingHeading({
   title = m.charging_title(),
   lastSuccessAt,
   action,
+  note,
 }: {
   title?: string
   lastSuccessAt: Date | null
   action?: React.ReactNode
+  /** A line under the description, e.g. which vehicles the page covers. */
+  note?: string
 }) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -24,6 +27,7 @@ export function ChargingHeading({
           {m.charging_description()}{' '}
           {m.charging_noise_note({ threshold: formatThreshold(NOISE_THRESHOLD_KWH) })}
         </p>
+        {note ? <p className="text-muted-foreground text-sm">{note}</p> : null}
         {/* The relative time is measured against `new Date()`, which differs
             slightly between SSR and hydration — a benign mismatch, suppressed
             the same way as CurrentReadingTiles' "last seen". */}

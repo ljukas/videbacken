@@ -46,6 +46,20 @@ test('empty (non-admin): no CTA', async () => {
   expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(0)
 })
 
+test('empty: an emptyTitle override replaces the default title', async () => {
+  const { screen } = await renderWithRouter(
+    <SessionList
+      sessions={[]}
+      hasMore={false}
+      onShowMore={noop}
+      loadingMore={false}
+      emptyTitle={m.charging_vehicle_sessions_empty_other()}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_sessions_empty_other())).toBeVisible()
+  expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
+})
+
 test('populated: date, Stockholm start–end, duration, kWh and peak kW', async () => {
   const { screen } = await renderWithRouter(
     <div style={{ width: 1024 }}>

@@ -570,5 +570,14 @@
         "countPlural=other": "{countFormatted} sessions lack a spot price or fees while plugged in and aren't compared."
       }
     }
-  ]
+  ],
+  "charging_vehicle_scope_label": "Whose charging",
+  "charging_vehicle_scope_ours": "Our car",
+  "charging_vehicle_scope_other": "Guests",
+  "charging_vehicle_scope_all": "All",
+  "charging_vehicle_note_ours": "Showing our car only",
+  "charging_vehicle_note_other": "Showing guests only",
+  "charging_vehicle_empty_other_title": "No guest charging in {year}",
+  "charging_vehicle_empty_other_description": "Guest sessions show up here once an admin marks them.",
+  "charging_vehicle_sessions_empty_other": "No guest charging yet"
 }

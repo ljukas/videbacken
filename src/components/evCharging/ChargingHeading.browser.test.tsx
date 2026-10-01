@@ -37,3 +37,10 @@ test('names the view when given a title', async () => {
     .element(screen.getByRole('heading', { level: 1, name: m.charging_patterns_title() }))
     .toBeVisible()
 })
+
+test('renders the optional note line', async () => {
+  const { screen } = await renderWithProviders(
+    <ChargingHeading lastSuccessAt={null} note={m.charging_vehicle_note_ours()} />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_note_ours())).toBeVisible()
+})

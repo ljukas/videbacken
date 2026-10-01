@@ -570,5 +570,14 @@
         "countPlural=other": "{countFormatted} sessioner saknar spotpris eller avgifter under inkopplingen och ingår inte i jämförelsen."
       }
     }
-  ]
+  ],
+  "charging_vehicle_scope_label": "Vems laddningar",
+  "charging_vehicle_scope_ours": "Vår bil",
+  "charging_vehicle_scope_other": "Gäster",
+  "charging_vehicle_scope_all": "Alla",
+  "charging_vehicle_note_ours": "Visar bara vår bil",
+  "charging_vehicle_note_other": "Visar bara gäster",
+  "charging_vehicle_empty_other_title": "Inga gästladdningar {year}",
+  "charging_vehicle_empty_other_description": "Gästladdningar visas här när en admin har markerat dem.",
+  "charging_vehicle_sessions_empty_other": "Inga gästladdningar ännu"
 }

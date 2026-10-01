@@ -39,6 +39,7 @@ export function SessionList({
   onSync,
   syncing = false,
   costs,
+  emptyTitle = m.charging_sessions_empty_title(),
 }: {
   sessions: Session[]
   hasMore: boolean
@@ -51,6 +52,8 @@ export function SessionList({
    * without an entry are still loading (a placeholder), not missing a price.
    */
   costs?: { byId: ReadonlyMap<string, SessionCost>; pending: boolean }
+  /** Overrides the empty state's title, e.g. when a vehicle scope has no sessions. */
+  emptyTitle?: string
 }) {
   if (sessions.length === 0) {
     return (
@@ -59,7 +62,7 @@ export function SessionList({
           <EmptyMedia variant="icon">
             <ZapIcon />
           </EmptyMedia>
-          <EmptyTitle>{m.charging_sessions_empty_title()}</EmptyTitle>
+          <EmptyTitle>{emptyTitle}</EmptyTitle>
           <EmptyDescription>{m.charging_sessions_empty_description()}</EmptyDescription>
         </EmptyHeader>
         {onSync ? (
