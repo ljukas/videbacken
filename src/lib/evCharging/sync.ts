@@ -42,6 +42,8 @@ export type SyncRun = RunBase & {
   skipped: number
   /** Time spent re-deriving vehicle attribution after the import. */
   reattributeMs: number
+  /** Sessions whose attribution the post-import re-match changed; 0 when skipped or failed. */
+  reattributeChanged: number
 }
 
 const SOURCE = 'zaptec'
@@ -103,6 +105,7 @@ export async function runZaptecSync(opts: {
       voided: 0,
       skipped: 0,
       reattributeMs: 0,
+      reattributeChanged: 0,
     }),
     execute: async ({ run, signal, now, log }) => {
       await fetchAndImport(client, run, stats, signal, now)
@@ -110,7 +113,21 @@ export async function runZaptecSync(opts: {
       // attribution, so a failure here is a warning, never a failed run.
       const started = performance.now()
       try {
-        await evChargingService.reattributeSessions()
+        if (signal.aborted) {
+          log.warn('zaptec sync: vehicle re-match skipped, run deadline reached')
+        } else {
+          // Raced against the run deadline so a stalled re-match cannot hold the
+          // run past its lease; the next sync re-derives anyway.
+          const result = await withDeadline(
+            evChargingService.reattributeSessions(),
+            signal,
+            () =>
+              new ZaptecError('unreachable', 'sessions', undefined, {
+                message: 'Vehicle re-match did not finish within the sync deadline',
+              }),
+          )
+          run.reattributeChanged = result.changed
+        }
       } catch (error) {
         log.warn('zaptec sync: vehicle re-match failed', { error })
       } finally {
@@ -135,6 +152,7 @@ export async function runZaptecSync(opts: {
       voided: run.voided,
       skipped: run.skipped,
       reattributeMs: run.reattributeMs,
+      reattributeChanged: run.reattributeChanged,
     }),
   })
 }
