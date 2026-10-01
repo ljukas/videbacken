@@ -578,7 +578,7 @@
   "charging_vehicle_note_ours": "Showing our car only",
   "charging_vehicle_note_other": "Showing guests only",
   "charging_vehicle_empty_other_title": "No guest charging in {year}",
-  "charging_vehicle_empty_other_description": "Guest sessions show up here once an admin marks them.",
+  "charging_vehicle_empty_other_description": "Guest sessions show up here once the car's log or an admin marks them.",
   "charging_vehicle_chart_empty_other": "No guest charging in {year}.",
   "charging_overview_error_title": "The charging overview couldn't be loaded",
   "charging_sessions_error_title": "The charging sessions couldn't be loaded",
@@ -588,7 +588,7 @@
   "charging_vehicle_ours": "Our car",
   "charging_vehicle_other": "Guest",
   "charging_vehicle_source_default": "assumed",
-  "charging_vehicle_source_skoda": "matched against the car's log",
+  "charging_vehicle_source_skoda": "according to the car's log",
   "charging_vehicle_source_admin": "set by an admin",
   "charging_vehicle_auto": "Automatic",
   "charging_vehicle_saved": "Saved",
@@ -624,12 +624,13 @@
         "input to",
         "input public",
         "local countPlural = count: plural",
-        "local countFormatted = count: number"
+        "local countFormatted = count: number",
+        "local publicFormatted = public: number"
       ],
       "selectors": ["countPlural"],
       "match": {
-        "countPlural=one": "{countFormatted} charge · {from} – {to} · {public} public (location not stored)",
-        "countPlural=other": "{countFormatted} charges · {from} – {to} · {public} public (location not stored)"
+        "countPlural=one": "{countFormatted} charge · {from} – {to} · public: {publicFormatted} (location not stored)",
+        "countPlural=other": "{countFormatted} charges · {from} – {to} · public: {publicFormatted} (location not stored)"
       }
     }
   ],
@@ -649,7 +650,16 @@
   ],
   "charging_vehicle_import_wrong_file": "This doesn't look like a MySkoda export",
   "charging_vehicle_import_empty": "The file contains no charges",
-  "charging_vehicle_import_too_many": "The file has too many charges (at most {max})",
+  "charging_vehicle_import_too_many": [
+    {
+      "declarations": ["input max", "local maxFormatted = max: number"],
+      "selectors": ["maxFormatted"],
+      "match": {
+        "*": "The file has too many charges (at most {maxFormatted})"
+      }
+    }
+  ],
+  "charging_vehicle_import_too_big": "The file is too large",
   "charging_vehicle_import_read_error": "The file couldn't be read",
   "charging_vehicle_import_choose": "Pick a file first",
   "charging_vehicle_import_done": "Our car: {ours} · Guests: {other}",

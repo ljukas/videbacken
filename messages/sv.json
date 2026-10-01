@@ -578,7 +578,7 @@
   "charging_vehicle_note_ours": "Visar bara vår bil",
   "charging_vehicle_note_other": "Visar bara gäster",
   "charging_vehicle_empty_other_title": "Inga gästladdningar {year}",
-  "charging_vehicle_empty_other_description": "Gästladdningar visas här när en admin har markerat dem.",
+  "charging_vehicle_empty_other_description": "Gästladdningar visas här när bilens laddlogg eller en admin har markerat dem.",
   "charging_vehicle_chart_empty_other": "Inga gästladdningar under {year}.",
   "charging_overview_error_title": "Laddningsöversikten kunde inte hämtas",
   "charging_sessions_error_title": "Laddsessionerna kunde inte hämtas",
@@ -588,7 +588,7 @@
   "charging_vehicle_ours": "Vår bil",
   "charging_vehicle_other": "Gäst",
   "charging_vehicle_source_default": "antaget",
-  "charging_vehicle_source_skoda": "matchad mot bilens laddlogg",
+  "charging_vehicle_source_skoda": "enligt bilens laddlogg",
   "charging_vehicle_source_admin": "satt av admin",
   "charging_vehicle_auto": "Automatiskt",
   "charging_vehicle_saved": "Sparat",
@@ -624,12 +624,13 @@
         "input to",
         "input public",
         "local countPlural = count: plural",
-        "local countFormatted = count: number"
+        "local countFormatted = count: number",
+        "local publicFormatted = public: number"
       ],
       "selectors": ["countPlural"],
       "match": {
-        "countPlural=one": "{countFormatted} laddning · {from} – {to} · {public} publika (plats sparas inte)",
-        "countPlural=other": "{countFormatted} laddningar · {from} – {to} · {public} publika (plats sparas inte)"
+        "countPlural=one": "{countFormatted} laddning · {from} – {to} · publika: {publicFormatted} (plats sparas inte)",
+        "countPlural=other": "{countFormatted} laddningar · {from} – {to} · publika: {publicFormatted} (plats sparas inte)"
       }
     }
   ],
@@ -649,7 +650,16 @@
   ],
   "charging_vehicle_import_wrong_file": "Filen ser inte ut som en MySkoda-export",
   "charging_vehicle_import_empty": "Filen innehåller inga laddningar",
-  "charging_vehicle_import_too_many": "Filen har för många laddningar (högst {max})",
+  "charging_vehicle_import_too_many": [
+    {
+      "declarations": ["input max", "local maxFormatted = max: number"],
+      "selectors": ["maxFormatted"],
+      "match": {
+        "*": "Filen har för många laddningar (högst {maxFormatted})"
+      }
+    }
+  ],
+  "charging_vehicle_import_too_big": "Filen är för stor",
   "charging_vehicle_import_read_error": "Det gick inte att läsa filen",
   "charging_vehicle_import_choose": "Välj en fil först",
   "charging_vehicle_import_done": "Vår bil: {ours} · Gäster: {other}",

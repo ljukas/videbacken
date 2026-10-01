@@ -47,6 +47,9 @@ export function SessionVehicle({
       onSettled: () => queryClient.invalidateQueries({ queryKey: orpc.evCharging.key() }),
     }),
   )
+  const stored = vehicleSource === 'admin' ? vehicle : AUTO
+  // Until the refetch lands the stored props are stale: show what was just chosen.
+  const shown = save.isPending && save.variables ? (save.variables.vehicle ?? AUTO) : stored
   const summary = `${VEHICLE_LABEL[vehicle]()} · ${SOURCE_LABEL[vehicleSource]()}`
   return (
     <div aria-busy={save.isPending} className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
@@ -56,7 +59,7 @@ export function SessionVehicle({
       <span>{summary}</span>
       {isAdmin ? (
         <Select
-          value={vehicleSource === 'admin' ? vehicle : AUTO}
+          value={shown}
           // Not `disabled`: that would drop focus to <body> as Radix returns it to
           // the trigger. Guard double submits instead and dim the trigger.
           onValueChange={(v) => {

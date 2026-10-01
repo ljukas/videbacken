@@ -21,7 +21,9 @@ import { formatDate } from './format'
 
 // What the file picker left in the form: the parser's verdict, or why it never
 // got that far (unreadable file / more rows than the server accepts).
-type Picked = SkodaParseResult | { ok: false; error: 'read_failed' | 'too_many' | 'reading' }
+type Picked =
+  | SkodaParseResult
+  | { ok: false; error: 'read_failed' | 'too_many' | 'too_big' | 'reading' }
 
 // A 5 000-row export is a few hundred kB; anything this large is not one, and
 // reading it would block the main thread.
@@ -73,6 +75,8 @@ function pickedError(picked: Picked & { ok: false }): string {
       return m.charging_vehicle_import_empty()
     case 'too_many':
       return m.charging_vehicle_import_too_many({ max: MAX_IMPORT_ROWS })
+    case 'too_big':
+      return m.charging_vehicle_import_too_big()
     case 'reading':
       return m.charging_vehicle_import_reading()
     case 'read_failed':
@@ -81,7 +85,7 @@ function pickedError(picked: Picked & { ok: false }): string {
 }
 
 async function readPicked(file: File): Promise<Picked> {
-  if (file.size > MAX_FILE_BYTES) return { ok: false, error: 'too_many' }
+  if (file.size > MAX_FILE_BYTES) return { ok: false, error: 'too_big' }
   try {
     // Lazy: papaparse only loads when an admin actually picks a file.
     const { parseSkodaExport } = await import('~/lib/evCharging/skodaExport')
@@ -136,6 +140,8 @@ function ImportForm({
     },
   })
   const attempts = useStore(form.store, (s) => s.submissionAttempts)
+  // Reactive: `form.state` read in render doesn't re-render on change.
+  const submitting = useStore(form.store, (s) => s.isSubmitting)
 
   return (
     <form
@@ -158,7 +164,7 @@ function ImportForm({
                 type="file"
                 accept=".csv,text/csv"
                 // Not `disabled` while submitting: that would drop the focus it holds.
-                aria-disabled={form.state.isSubmitting}
+                aria-disabled={submitting}
                 aria-invalid={failed}
                 aria-describedby={STATUS_ID}
                 onChange={async (e) => {

@@ -370,10 +370,12 @@ function ChargingPage() {
         {loadFailed(sessions) ? (
           // An error must never read as "no sessions" (ADR-0016).
           <LoadErrorAlert title={m.charging_sessions_error_title()} query={sessions} />
-        ) : (
+        ) : sessions.data ? (
+          // Not rendered while pending: an unseeded query (failed SSR prefetch) must
+          // not flash "no sessions" before its first result (ADR-0016).
           <SessionList
-            sessions={sessions.data?.sessions ?? []}
-            hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
+            sessions={sessions.data.sessions}
+            hasMore={sessions.data.hasMore && sessionLimit < SESSIONS_MAX}
             onShowMore={() =>
               showMore.mutate({
                 limit: Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX),
@@ -390,7 +392,7 @@ function ChargingPage() {
               vehicle === 'other' ? m.charging_vehicle_empty_other_description() : undefined
             }
           />
-        )}
+        ) : null}
       </section>
 
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
