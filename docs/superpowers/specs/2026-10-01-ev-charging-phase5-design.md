@@ -137,14 +137,16 @@ heals it. The admin tag is re-checked in the UPDATE's own WHERE, so a concurrent
 ## UI
 
 - **Scope selector** (everyone): segmented control **Vår bil · Gäster · Alla** beside the `YearSelector` on
-  Översikt, Mönster and Ekonomi (the `MetricToggle` pattern, Radix ToggleGroup). Search param
+  Mönster and Ekonomi, and on Översikt in the chart header next to the kWh/kr toggle (the `MetricToggle` pattern,
+  Radix ToggleGroup). Search param
   `vehicle: z.enum(['ours','other','all']).optional().catch(undefined)`; missing = `ours`, so a clean URL shows our
   car. In `loaderDeps`, so SSR prefetch and query keys follow it; switching keeps the year and uses `replace`.
   Every tile, chart and table on the page follows it. Under the heading, when not Alla: "Visar bara vår bil" /
-  "Visar bara gäster". Scope-aware empty states ("Inga gästladdningar 2026").
+  "Visar bara gäster". Scope-aware empty states ("Inga gästladdningar 2026"); under Gäster they drop the "Synka nu" offer, since a sync
+  can't create guest sessions (an admin marks them instead).
 - **Gäst badge** on guest rows in `SessionList`, `EconomySessionTable` and the session page header. Our sessions
   carry no badge.
-- **Session page — "Vem laddade?"**: everyone sees one line, e.g. "Vår bil · matchad mot bilens laddlogg"
+- **Session page — "Vem laddade?"**: everyone sees one line, e.g. "Vår bil · enligt bilens laddlogg"
   (`skoda`), "Vår bil · antaget" (`default`), "Gäst · satt av admin" (`admin`). Admins also get an inline select
   **Vår bil / Gäst / Automatiskt**, saved immediately with a toast (ADR-0016; one field, no dialog), invalidating the
   `evCharging` queries.
@@ -152,8 +154,12 @@ heals it. The admin tag is re-checked in the UPDATE's own WHERE, so a concurrent
   2026") or "Ingen laddlogg importerad", and **Importera** → `?dialog=vehicleImport` (responsive overlay,
   ADR-0013; `useAppForm`, ADR-0005). In the dialog: pick the CSV → papaparse (dynamically imported) → zod per row →
   preview ("197 laddningar · 10 okt 2025 – 27 sep 2026 · 12 publika (plats sparas inte)", plus a count of rows
-  dropped as unreadable) → **Importera** → "91 laddningar vår bil, 4 gäster". Wrong file → "Filen ser inte ut som
-  en MySkoda-export".
+  dropped as unreadable) → **Importera** → result toast "Vår bil: 91 · Gäster: 4". Other dialog states: wrong file →
+  "Filen ser inte ut som en MySkoda-export"; empty file → "Filen innehåller inga laddningar"; refused above 5 000
+  rows ("för många laddningar") or above 5 MB ("Filen är för stor"), without reading a file that size; unreadable
+  file → "Det gick inte att läsa filen"; submitting with nothing picked → "Välj en fil först"; while a file is read the
+  preview is cleared and nothing is submittable; the dialog can't be closed (Esc, overlay, Cancel) while the import
+  is in flight, and stays open with an error toast on failure so it can be retried.
 - Commit `/data/private/` to `.gitignore` (today it's only in a local `.git/info/exclude`).
 - All strings in `messages/sv.json` + `en.json`. Responsive: on mobile the year + scope controls stack.
 
@@ -168,6 +174,9 @@ heals it. The admin tag is re-checked in the UPDATE's own WHERE, so a concurrent
 | Record insert fails | one statement, all or nothing |
 | Re-match fails after the import | import + re-match are two writes: the records stay stored; re-importing (the re-match runs regardless of `inserted`) or the next sync recovers |
 | Unparseable CSV rows | dropped client-side, counted in the preview; the server's zod is strict |
+| Blank energy cell | row dropped (never imported as 0 kWh) |
+| Timestamp without a zone | row dropped (a zone-less time is ambiguous) |
+| A scoped read fails | an alert with a retry; the scope toggle stays mounted so the user can switch back |
 | Re-match fails inside sync | warn log; sync result unaffected |
 
 ## Testing
