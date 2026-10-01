@@ -20,13 +20,14 @@ One card, top to bottom:
 
 1. **Hero row.** Label "Kostnad", the actual cost as the page's one hero figure (≥48 px on desktop, proportional
    figures), with "{kWh} kWh · {kr/kWh} kr/kWh" beside/below it. On the right a **verdict pill** (icon + label, never
-   colour alone):
+   colour alone). The thresholds apply to the displayed whole percent (`Math.round(score × 100)`), so the pill
+   never contradicts the "Pristajming {score} %" next to it:
 
-   | Score | Pill | Token |
+   | Score (shown %) | Pill | Token |
    |---|---|---|
-   | ≥ 0,67 | "Bra tajming" + check icon | `--success` |
-   | 0,33 – < 0,67 | "Okej tajming" + minus icon | `--warning` |
-   | < 0,33 | "Dyr tajming" + alert icon | `--destructive` |
+   | ≥ 67 % | "Bra tajming" + check icon | `--success` |
+   | 33–66 % | "Okej tajming" + minus icon | `--warning` |
+   | ≤ 32 % | "Dyr tajming" + alert icon | `--destructive` |
    | null (spread below the D1 threshold) | "Inget att välja mellan" + neutral icon | muted |
 
 2. **Verdict sentence**, plain language, built from the figures. Templates:

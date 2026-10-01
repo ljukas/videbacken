@@ -5,12 +5,21 @@ describe('timingVerdict', () => {
   test('grades the score in thirds, with null as nothing to choose between', () => {
     expect(timingVerdict(1)).toBe('good')
     expect(timingVerdict(0.67)).toBe('good')
-    expect(timingVerdict(0.669)).toBe('ok')
     expect(timingVerdict(0.5)).toBe('ok')
     expect(timingVerdict(0.33)).toBe('ok')
-    expect(timingVerdict(0.329)).toBe('poor')
     expect(timingVerdict(0)).toBe('poor')
     expect(timingVerdict(null)).toBe('none')
+  })
+
+  test('grades the whole percent the UI shows, so the pill never contradicts it', () => {
+    // 2/3 and 0,666 show "67 %".
+    expect(timingVerdict(2 / 3)).toBe('good')
+    expect(timingVerdict(0.666)).toBe('good')
+    // 0,664 shows "66 %".
+    expect(timingVerdict(0.664)).toBe('ok')
+    // 0,329 shows "33 %"; 0,324 shows "32 %".
+    expect(timingVerdict(0.329)).toBe('ok')
+    expect(timingVerdict(0.324)).toBe('poor')
   })
 })
 

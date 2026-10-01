@@ -103,7 +103,7 @@ export function scheduleWindows(
   let day = stockholmDayOf(plugInMs)
   const at = (ms: number) => {
     const time = formatTime(new Date(ms))
-    const text = stockholmDayOf(ms) === day ? time : `${formatShortWeekday(ms)} ${time}`
+    const text = stockholmDayOf(ms) === day ? time : `${formatShortWeekday(ms)}\u00a0${time}`
     day = stockholmDayOf(ms)
     return text
   }

@@ -106,6 +106,8 @@ export function SessionSummary({
 
 // The page's one hero figure. A partial cost (an excluded no_price session) is
 // "—", never the partial kronor; a cost priced from the total alone is "≈".
+// An excluded session keeps only its cost (no kWh · kr/kWh line): an estimated
+// session is always excluded, so the line never shows an unmarked estimate.
 function Hero({ detail }: { detail: Pick<Detail, 'session' | 'economy'> }) {
   const { session, economy } = detail
   const { actual } = economy
@@ -114,15 +116,15 @@ function Hero({ detail }: { detail: Pick<Detail, 'session' | 'economy'> }) {
       <span className="font-medium text-muted-foreground text-sm">
         {m.charging_session_fig_actual()}
       </span>
-      {/* Proportional figures at display size: tabular digits look loose here. */}
-      <span className="font-semibold text-4xl leading-tight tracking-tight md:text-5xl">
+      {/* The heading face (ADR-0015), with proportional figures: tabular digits look loose at display size. */}
+      <span className="font-heading font-semibold text-4xl leading-tight tracking-tight md:text-5xl">
         {economy.actualComplete ? (
           <Estimated estimated={session.estimated}>{formatSek(actual.totalSek, 2)}</Estimated>
         ) : (
           <Unknown label={m.charging_sessions_cost_unknown()} />
         )}
       </span>
-      {economy.actualComplete && actual.fullKwh > 0 ? (
+      {economy.excluded === null && actual.fullKwh > 0 ? (
         <span className="text-muted-foreground text-sm">
           {m.charging_session_kwh_unit_price({
             kwh: formatOneDecimal(session.kwh),

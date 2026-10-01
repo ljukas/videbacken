@@ -265,6 +265,42 @@ describe('scheduleWindows', () => {
     expect(scheduleWindows(gap, PLUG_IN)).toBe('mån\u00a000:00–00:22 och 00:30–00:45')
   })
 
+  test('a run ending exactly at Stockholm midnight ends on the next day at 00:00', () => {
+    inLocale('sv')
+    // Sun 22:00 → Mon 00:00 Stockholm.
+    expect(scheduleWindows(quarters('2026-09-27T20:00:00Z', '2026-09-27T22:00:00Z'), PLUG_IN)).toBe(
+      '22:00–mån\u00a000:00',
+    )
+  })
+
+  test('a run over the autumn DST change reads in wall-clock time, the repeated hour included', () => {
+    inLocale('sv')
+    // 25 Oct 2026 00:00Z–01:00Z = 02:00 CEST → 02:00 CET (clocks go back at 03:00 CEST).
+    const pieces = quarters('2026-10-25T00:00:00Z', '2026-10-25T01:00:00Z')
+    // Plugged in Sat 24 Oct 20:00 CEST: the run is on Sunday.
+    expect(scheduleWindows(pieces, Date.parse('2026-10-24T18:00:00Z'))).toBe('sön\u00a002:00–02:00')
+    // Plugged in Sun 01:30 CEST: the same day.
+    expect(scheduleWindows(pieces, Date.parse('2026-10-24T23:30:00Z'))).toBe('02:00–02:00')
+  })
+
+  test('overlapping or contained pieces merge into one run that ends at the latest end', () => {
+    inLocale('sv')
+    const piece = (from: string, to: string) => ({
+      startMs: Date.parse(from),
+      endMs: Date.parse(to),
+    })
+    expect(
+      scheduleWindows(
+        [
+          piece('2026-09-27T22:00:00Z', '2026-09-27T23:00:00Z'),
+          piece('2026-09-27T22:10:00Z', '2026-09-27T22:20:00Z'),
+          piece('2026-09-27T22:45:00Z', '2026-09-27T23:15:00Z'),
+        ],
+        PLUG_IN,
+      ),
+    ).toBe('mån\u00a000:00–01:15')
+  })
+
   test('order of the input does not matter', () => {
     inLocale('sv')
     const pieces = quarters('2026-09-27T22:00:00Z', '2026-09-28T00:00:00Z').toReversed()

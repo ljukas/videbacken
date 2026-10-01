@@ -4,11 +4,15 @@ import type { Counterfactual } from './types'
 
 export type TimingVerdict = 'good' | 'ok' | 'poor' | 'none'
 
-/** The timing score in thirds; `none` when the window left nothing to choose between. */
+/**
+ * The timing score in thirds, graded on the whole percent the UI shows (so "67 %" is never "Okej"
+ * and "33 %" never "Dyr"); `none` when the window left nothing to choose between.
+ */
 export function timingVerdict(score: number | null): TimingVerdict {
   if (score === null) return 'none'
-  if (score >= 0.67) return 'good'
-  if (score >= 0.33) return 'ok'
+  const percent = Math.round(score * 100)
+  if (percent >= 67) return 'good'
+  if (percent >= 33) return 'ok'
   return 'poor'
 }
 

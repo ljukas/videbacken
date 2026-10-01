@@ -108,6 +108,28 @@ describe('analyzeSession', () => {
     expect(economy.paidSpotOre).toBeNull()
   })
 
+  test('rateKw: the cap the schedules used when included, null on every exclusion path', () => {
+    // Included: 10 kWh in one hour.
+    expect(analyzeSession(session(), slots, [TARIFF]).rateKw).toBeCloseTo(10)
+    // no_hourly.
+    expect(analyzeSession(session({ estimated: true }), slots, [TARIFF]).rateKw).toBeNull()
+    // no_price, no pieces: a slot missing from the window.
+    const holey = new SlotIndex(daySlots('2026-09-28', 15).filter((_, i) => i !== 46))
+    expect(analyzeSession(session(), holey, [TARIFF]).rateKw).toBeNull()
+    // no_price with every piece priced, but an actual that can't be: a zero-length stretch
+    // holding energy (the DB's interval CHECK rules it out; the math still must not score it).
+    const unpriceable = session({
+      stretches: [
+        ...session().stretches,
+        { startMs: utc('2026-09-28T09:30Z'), endMs: utc('2026-09-28T09:30Z'), kwh: 1 },
+      ],
+    })
+    const r = analyzeSession(unpriceable, slots, [TARIFF])
+    expect(r.economy.excluded).toBe('no_price')
+    expect(r.economy.actualComplete).toBe(false)
+    expect(r.rateKw).toBeNull()
+  })
+
   test('an included session has a complete actual', () => {
     expect(analyzeSession(session(), slots, [TARIFF]).economy.actualComplete).toBe(true)
   })

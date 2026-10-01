@@ -186,7 +186,15 @@ test('getSessionEconomy exposes the rate the counterfactuals charged at', async 
   const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 6, [
     ['2026-09-28T08:00:00Z', '2026-09-28T08:30:00Z', 6],
   ])
-  expect((await getSessionEconomy({ sessionId: id })).rateKw).toBeCloseTo(12)
+  const d = await getSessionEconomy({ sessionId: id })
+  expect(d.rateKw).toBeCloseTo(12)
+  // It is the rate the schedules were filled at: every optimal piece holds rate × its hours.
+  expect(d.optimalSchedule?.length).toBeGreaterThan(0)
+  for (const piece of d.optimalSchedule ?? []) {
+    expect(piece.kwh).toBeCloseTo((12 * (piece.endMs - piece.startMs)) / 3_600_000)
+  }
+  // 6 kWh at 12 kW: two cheap quarters of 3 kWh (= 12 kW × 0,25 h).
+  expect(d.optimalSchedule?.map((p) => p.kwh)).toEqual([3, 3])
 })
 
 test('getSessionEconomy throws EV_SESSION_NOT_FOUND for an unknown id', async () => {

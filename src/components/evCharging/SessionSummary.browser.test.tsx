@@ -98,7 +98,7 @@ test('the owner’s session: hero cost, verdict, sentence, range bar and both ex
     left: formatSek(35.69, 2),
     saved: formatSek(33.14, 2),
   })
-  expect(sentence.replaceAll(' ', ' ')).toBe(
+  expect(sentence.replaceAll('\u00a0', ' ')).toBe(
     '35,69 kr dyrare än billigaste möjliga, men 33,14 kr billigare än att ladda direkt vid inkoppling.',
   )
   await expect.element(card.getByText(sentence)).toBeVisible()
@@ -136,6 +136,8 @@ test('the range bar is one image summarised in its label, its markers placed bet
   // (95,13 − 59,44) / (130,82 − 59,44) = 0,5; (128,27 − 59,44) / 71,38 = 0,964.
   expect(marker('actual')?.style.left).toBe('50%')
   expect(marker('immediate')?.style.left).toBe('96.4%')
+  // The outline marker names what it is, as the sentence does.
+  expect(m.charging_session_range_immediate()).toBe('Direkt vid inkoppling')
   // Every end and marker carries its kronor visibly too.
   for (const text of [
     `${m.charging_session_range_actual()} ${formatSek(95.13, 2)}`,
@@ -163,6 +165,9 @@ describe('verdict tiers', () => {
   test.each([
     [0.9, 'good', m.charging_session_verdict_good()],
     [0.67, 'good', m.charging_session_verdict_good()],
+    // Graded on the shown whole percent: 2/3 reads "67 %", so it's good, not ok.
+    [2 / 3, 'good', m.charging_session_verdict_good()],
+    [0.329, 'ok', m.charging_session_verdict_ok()],
     [0.5, 'ok', m.charging_session_verdict_ok()],
     [0.2, 'poor', m.charging_session_verdict_poor()],
   ] as const)('score %s reads %s', async (score, verdict, label) => {
@@ -237,7 +242,7 @@ describe('the verdict sentence', () => {
     expect(
       m
         .charging_session_sentence_lost({ left: formatSek(12, 2), lost: formatSek(4, 2) })
-        .replaceAll(' ', ' '),
+        .replaceAll('\u00a0', ' '),
     ).toBe(
       '12,00 kr dyrare än billigaste möjliga och 4,00 kr dyrare än att ladda direkt vid inkoppling.',
     )
@@ -325,6 +330,8 @@ describe('an excluded session', () => {
     expect(
       screen.getByRole('group', { name: m.charging_session_left_title() }).elements(),
     ).toHaveLength(0)
+    // Nothing added under the cost either.
+    expect(screen.getByText(/kr\/kWh/).elements()).toHaveLength(0)
   })
 
   test('no_price with a complete actual shows the cost and the reason', async () => {
@@ -332,6 +339,7 @@ describe('an excluded session', () => {
     await expect.element(screen.getByText(/95,13/)).toBeVisible()
     await expect.element(screen.getByText(m.charging_session_excluded_no_price())).toBeVisible()
     expect(screen.getByText(m.charging_sessions_cost_unknown()).elements()).toHaveLength(0)
+    expect(screen.getByText(/kr\/kWh/).elements()).toHaveLength(0)
   })
 
   test('a partial actual shows "—" with its reason, never the partial kronor', async () => {
@@ -352,6 +360,8 @@ test('an estimated session marks its cost "≈" with the reason for screen reade
   const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
   await expect.element(card).toHaveTextContent(/≈\s95,13/)
   await expect.element(card).toHaveTextContent(m.charging_sessions_cost_estimated())
+  // No unmarked kWh · kr/kWh line derived from the estimate.
+  expect(screen.getByText(/kr\/kWh/).elements()).toHaveLength(0)
 })
 
 test('an exact session has no "≈"', async () => {
