@@ -580,5 +580,6 @@
   "charging_vehicle_empty_other_title": "Inga gästladdningar {year}",
   "charging_vehicle_empty_other_description": "Gästladdningar visas här när en admin har markerat dem.",
   "charging_vehicle_chart_empty_other": "Inga gästladdningar under {year}.",
+  "charging_overview_error_title": "Laddningsöversikten kunde inte hämtas",
   "charging_vehicle_sessions_empty_other": "Inga gästladdningar ännu"
 }

@@ -83,7 +83,6 @@ test.each([
   await expect
     .element(radio(screen, m.charging_vehicle_scope_ours()))
     .toHaveAttribute('aria-checked', 'true')
-  expect('vehicle' in (router.state.location.search as object)).toBe(false)
   expect(router.state.location.search).not.toHaveProperty('vehicle')
 })
 
@@ -196,4 +195,26 @@ test('Översikt: switching scope never shows the sessions empty state mid-switch
   expect(screen.getByText(m.charging_vehicle_sessions_empty_other()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
   await expect.element(screen.getByText(m.charging_vehicle_sessions_empty_other())).toBeVisible()
+})
+
+test('Översikt: a failed overview read shows the alert and the toggle; Vår bil gives a clean URL', async () => {
+  // Nothing seeded for the overview: the loader's prefetch and the page's read both fail.
+  const { screen, router } = await renderPage(Overview, '/charging', '?vehicle=other', (qc) => {
+    seedOverviewShell(qc)
+    qc.setQueryData(
+      orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'other' } }).queryKey,
+      { sessions: [], hasMore: false } as never,
+    )
+  })
+  await expect
+    .element(screen.getByRole('alert'))
+    .toHaveTextContent(m.charging_overview_error_title())
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_other()))
+    .toHaveAttribute('aria-checked', 'true')
+  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .toHaveAttribute('aria-checked', 'true')
+  expect(router.state.location.search).not.toHaveProperty('vehicle')
 })

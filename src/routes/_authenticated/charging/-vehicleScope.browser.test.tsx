@@ -42,10 +42,11 @@ async function runLoader(route: RouteLike, search: Record<string, unknown>) {
     calls.push(opts)
     return Promise.resolve({ sessions: [], years: [], months: [] })
   }
-  const queryClient = { ensureQueryData: vi.fn(record), prefetchQuery: vi.fn(record) } as {
-    ensureQueryData: Spy
-    prefetchQuery: Spy
-  }
+  const queryClient = {
+    ensureQueryData: vi.fn(record),
+    prefetchQuery: vi.fn(record),
+    getQueryData: vi.fn(() => undefined),
+  } as { ensureQueryData: Spy; prefetchQuery: Spy; getQueryData: Spy }
   const loader = route.options.loader as (a: unknown) => Promise<unknown>
   await loader({
     context: { queryClient, user: { role: 'user' } },

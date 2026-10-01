@@ -13,6 +13,7 @@ import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
+import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import {
   type ChartMetric,
@@ -73,7 +74,9 @@ export const Route = createFileRoute('/_authenticated/charging/')({
   loaderDeps: ({ search }) => ({ year: search.year, vehicle: search.vehicle ?? 'ours' }),
   loader: async ({ context: { queryClient, user }, deps }) => {
     await Promise.all([
-      queryClient.ensureQueryData(
+      // Prefetched, not ensured: a failed read must not take down the page (and
+      // with it the scope toggle) — the component shows an alert with a retry.
+      queryClient.prefetchQuery(
         orpc.evCharging.overview.queryOptions({
           input: { year: deps.year, vehicle: deps.vehicle },
         }),
@@ -82,13 +85,16 @@ export const Route = createFileRoute('/_authenticated/charging/')({
       // failure degrades only the cost figures, never the page. Awaited so the
       // tiles render with their kronor headline instead of jumping when it
       // arrives; the sessions' costs follow the sessions (they need the ids).
-      queryClient
-        .ensureQueryData(sessionsQuery(SESSIONS_PAGE, deps.vehicle))
-        .then(({ sessions }) =>
-          sessions.length > 0
-            ? queryClient.prefetchQuery(sessionCostsQuery(sessions.map((sess) => sess.id)))
-            : undefined,
-        ),
+      // Prefetched too (a failed read must not unmount the scope toggle); the
+      // costs chain reads the sessions back from the cache.
+      queryClient.prefetchQuery(sessionsQuery(SESSIONS_PAGE, deps.vehicle)).then(() => {
+        const sessions = queryClient.getQueryData(
+          sessionsQuery(SESSIONS_PAGE, deps.vehicle).queryKey,
+        )?.sessions
+        return sessions?.length
+          ? queryClient.prefetchQuery(sessionCostsQuery(sessions.map((sess) => sess.id)))
+          : undefined
+      }),
       queryClient.prefetchQuery(
         orpc.evCharging.costOverview.queryOptions({
           input: { year: deps.year, vehicle: deps.vehicle },
@@ -148,10 +154,13 @@ function ChargingPage() {
 
   // Hourly data: no polling on overview/sessions — the default focus refetch
   // plus `syncNow`'s invalidation keep them fresh (ADR-0018).
-  const { data: overview, isPlaceholderData: overviewStale } = useQuery({
+  const overviewResult = useQuery({
     ...orpc.evCharging.overview.queryOptions({ input: { year, vehicle } }),
     placeholderData: keepPreviousData, // keep the old chart while another year loads
   })
+  const { isPlaceholderData: overviewStale } = overviewResult
+  // Placeholder data is the previous key's, so a failed read doesn't show it.
+  const overview = loadFailed(overviewResult) ? undefined : overviewResult.data
   const sessions = useQuery({
     ...sessionsQuery(sessionLimit, vehicle),
     placeholderData: keepPreviousData, // never flash the empty state while another scope loads
@@ -315,10 +324,13 @@ function ChargingPage() {
           {showCost ? <PriceFootnote /> : null}
         </>
       ) : (
-        // The overview read failed: the scope stays switchable.
-        <div className="flex justify-end">
-          <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
-        </div>
+        <>
+          {/* The scope stays switchable when its read fails, or the user can't switch back. */}
+          <div className="flex justify-end">
+            <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
+          </div>
+          <LoadErrorAlert title={m.charging_overview_error_title()} query={overviewResult} />
+        </>
       )}
 
       <TariffCard

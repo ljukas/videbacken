@@ -580,5 +580,6 @@
   "charging_vehicle_empty_other_title": "No guest charging in {year}",
   "charging_vehicle_empty_other_description": "Guest sessions show up here once an admin marks them.",
   "charging_vehicle_chart_empty_other": "No guest charging in {year}.",
+  "charging_overview_error_title": "The charging overview couldn't be loaded",
   "charging_vehicle_sessions_empty_other": "No guest charging yet"
 }
