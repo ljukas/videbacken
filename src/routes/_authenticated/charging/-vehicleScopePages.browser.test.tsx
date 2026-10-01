@@ -41,6 +41,7 @@ async function renderPage(
   path: string,
   search: string,
   prepare: (qc: QueryClient) => void,
+  role: 'admin' | 'user' = 'admin',
 ) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
@@ -56,7 +57,7 @@ async function renderPage(
   })
   const router = createRouter({
     routeTree: root.addChildren([route as never]),
-    context: { queryClient: qc, user: { role: 'admin' } },
+    context: { queryClient: qc, user: { role } },
     history: createMemoryHistory({ initialEntries: [`${path}${search}`] }),
   })
   await router.load()
@@ -120,14 +121,15 @@ function seedOverview(qc: QueryClient, vehicle: 'ours' | 'other', sessions: unkn
   )
 }
 
-function seedOverviewShell(qc: QueryClient) {
+function seedOverviewShell(qc: QueryClient, opts: { coverage?: boolean } = {}) {
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [] as never)
   qc.setQueryData(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey, [])
   qc.setQueryData(
     orpc.evCharging.recentRuns.queryOptions({ input: { source: 'elpris', limit: 20 } }).queryKey,
     [],
   )
-  qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
+  if (opts.coverage !== false)
+    qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
 }
 
 test('Översikt, guests with nothing: guest copy, no sync button, even for an admin', async () => {
@@ -245,4 +247,30 @@ test('Översikt: an admin sees the car-log card, and ?dialog=vehicleImport opens
   })
   await expect.element(screen.getByText(m.charging_vehicle_log_none())).toBeVisible()
   await expect.element(screen.getByText(m.charging_vehicle_import_title())).toBeVisible()
+})
+
+test('Översikt: a failed coverage read shows an error in the card, not "no log imported"', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc, { coverage: false })
+    seedOverview(qc, 'ours', [])
+  })
+  await expect.element(screen.getByText(m.charging_vehicle_log_error_title())).toBeVisible()
+  expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
+})
+
+test('Översikt: a non-admin gets no card, no dialog, and the param is cleared', async () => {
+  const { screen, router } = await renderPage(
+    Overview,
+    '/charging',
+    '?dialog=vehicleImport',
+    (qc) => {
+      seedOverviewShell(qc)
+      seedOverview(qc, 'ours', [])
+    },
+    'user',
+  )
+  await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
+  expect(screen.getByText(m.charging_vehicle_log_title()).elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_vehicle_import_title()).elements()).toHaveLength(0)
+  await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
 })

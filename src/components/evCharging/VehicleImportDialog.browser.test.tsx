@@ -124,3 +124,78 @@ test('a failed import is a toast, keeps the dialog open and is not the wrong-fil
   expect(toastMock.success).not.toHaveBeenCalled()
   expect(onOpenChange).not.toHaveBeenCalledWith(false)
 })
+
+test('a slow first pick cannot overwrite a second one: preview and rows are the second file', async () => {
+  let release: () => void = () => {}
+  const gate = new Promise<void>((r) => {
+    release = r
+  })
+  const realText = File.prototype.text
+  vi.spyOn(File.prototype, 'text').mockImplementation(async function (this: File) {
+    if (this.name === 'slow.csv') await gate
+    return realText.call(this)
+  })
+  importFn.mockResolvedValue({ inserted: 1, unchanged: 0, ours: 1, other: 0 })
+  const lines = SKODA_EXPORT_FIXTURE.split('\r\n')
+  const single = `${lines[0]}\r\n${lines[1]}\r\n`
+  const { screen, fileInput } = await setup()
+  await userEvent.upload(fileInput, new File([SKODA_EXPORT_FIXTURE], 'slow.csv'))
+  // While the first is still being read, nothing is submittable.
+  await expect.element(screen.getByText(m.charging_vehicle_import_reading())).toBeVisible()
+  await userEvent.upload(fileInput, new File([single], 'fast.csv'))
+  await expect.element(screen.getByText(/1 laddning ·/)).toBeVisible()
+  release()
+  await new Promise((r) => setTimeout(r, 100))
+  await expect.element(screen.getByText(/1 laddning ·/)).toBeVisible()
+  await importButton(screen).click()
+  await vi.waitFor(() => expect(importFn).toHaveBeenCalled())
+  expect(importFn.mock.calls[0][0].rows).toHaveLength(1)
+  vi.restoreAllMocks()
+})
+
+test('submitting while a file is still being read sends nothing', async () => {
+  const gate = new Promise<void>(() => {})
+  const realText = File.prototype.text
+  vi.spyOn(File.prototype, 'text').mockImplementation(async function (this: File) {
+    await gate
+    return realText.call(this)
+  })
+  const { screen, fileInput } = await setup()
+  await userEvent.upload(fileInput, fixture())
+  await importButton(screen).click()
+  expect(importFn).not.toHaveBeenCalled()
+  vi.restoreAllMocks()
+})
+
+test('a file over the size cap is refused without being read', async () => {
+  const text = vi.spyOn(File.prototype, 'text')
+  const { screen, fileInput } = await setup()
+  await userEvent.upload(fileInput, new File(['x'.repeat(5 * 1024 * 1024 + 1)], 'huge.csv'))
+  await expect
+    .element(screen.getByText(m.charging_vehicle_import_too_many({ max: MAX_IMPORT_ROWS })))
+    .toBeVisible()
+  expect(text).not.toHaveBeenCalled()
+  vi.restoreAllMocks()
+})
+
+test('the dialog cannot be closed while the import is in flight', async () => {
+  let finish: (v: unknown) => void = () => {}
+  importFn.mockReturnValue(new Promise((r) => (finish = r)))
+  const onOpenChange = vi.fn()
+  const { screen, fileInput } = await setup(onOpenChange)
+  await userEvent.upload(fileInput, fixture())
+  await expect.element(screen.getByText(/3 laddningar/)).toBeVisible()
+  await importButton(screen).click()
+  await vi.waitFor(() => expect(importFn).toHaveBeenCalled())
+  await userEvent.keyboard('{Escape}')
+  expect(onOpenChange).not.toHaveBeenCalled()
+  finish({ inserted: 3, unchanged: 0, ours: 2, other: 1 })
+  await vi.waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+})
+
+test('the preview is a polite status the file input points at', async () => {
+  const { screen, fileInput } = await setup()
+  await userEvent.upload(fileInput, fixture())
+  await expect.element(screen.getByRole('status')).toHaveTextContent(/3 laddningar/)
+  await expect.element(fileInput).toHaveAttribute('aria-describedby', 'vehicleExport-status')
+})

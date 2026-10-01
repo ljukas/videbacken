@@ -34,3 +34,24 @@ test('the import button calls onImport', async () => {
   await screen.getByRole('button', { name: m.charging_vehicle_import_button() }).click()
   expect(onImport).toHaveBeenCalledOnce()
 })
+
+test('a failed coverage read shows an error with retry, never "none imported"', async () => {
+  const refetch = vi.fn()
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard
+      coverage={undefined}
+      loadError={{
+        data: undefined,
+        isPlaceholderData: false,
+        errorUpdateCount: 1,
+        isFetching: false,
+        refetch,
+      }}
+      onImport={() => {}}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_log_error_title())).toBeVisible()
+  expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
+  await screen.getByRole('button', { name: m.common_try_again() }).click()
+  expect(refetch).toHaveBeenCalled()
+})
