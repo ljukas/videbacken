@@ -721,14 +721,14 @@ getEconomyOverview(input: { year?; now?; timings?; vehicle?: VehicleScope }) // 
 - **Unscoped on purpose:** `distinctCountedYears`, `earliestCountedStartAt`, `getSessionEnergy`, `getSessionEconomy`, `getSessionCosts`.
 
 - [ ] **Step 1: Write the failing scope tests.** One per read model, each seeding one `ours` and one `other`
-  session (`insertSession({ vehicle: 'other' })` / the files' local `session(..., overrides)` helpers) and asserting
+  session (`insertSession({ vehicle: 'other', vehicleSource: 'admin' })` — never `other` with source `default`, which the `ev_charge_session_vehicle_default_check` CHECK rejects — / the files' local `session(..., overrides)` helpers) and asserting
   `ours` → only ours, `other` → only the guest, omitted/`all` → both. Concretely:
 
 ```ts
 // overview.test.ts
 test('getOverview and listSessions follow the vehicle scope', async () => {
   const ours = await insertSession({ startAt: new Date('2026-03-01T10:00:00Z'), endAt: new Date('2026-03-01T11:00:00Z'), energyKwh: 10 })
-  const guest = await insertSession({ startAt: new Date('2026-03-02T10:00:00Z'), endAt: new Date('2026-03-02T11:00:00Z'), energyKwh: 4, vehicle: 'other' })
+  const guest = await insertSession({ startAt: new Date('2026-03-02T10:00:00Z'), endAt: new Date('2026-03-02T11:00:00Z'), energyKwh: 4, vehicle: 'other', vehicleSource: 'admin' })
   const now = new Date('2026-03-15T12:00:00Z')
   expect((await getOverview({ year: 2026, now, vehicle: 'ours' })).tiles.allTime).toMatchObject({ kwh: 10, sessions: 1 })
   expect((await getOverview({ year: 2026, now, vehicle: 'other' })).tiles.allTime).toMatchObject({ kwh: 4, sessions: 1 })
@@ -747,7 +747,7 @@ test('getOverview and listSessions follow the vehicle scope', async () => {
   still sees the guest), `costing.test.ts` (`getCostOverview({ vehicle: 'ours' })` all-time kWh excludes the guest),
   `chargingEconomy.test.ts` (`getEconomyOverview({ vehicle: 'other' }).sessions` = the guest row with
   `vehicle: 'other'`; **`getSessionEconomy({ sessionId: guestId }).session` has `vehicle: 'other'` and
-  `vehicleSource: 'default'`** — Review Focus 4).
+  `vehicleSource: 'admin'`** — Review Focus 4).
 
 - [ ] **Step 2: Run** — `bunx vitest run src/lib/services/evCharging src/lib/evCharging` → FAIL.
 
@@ -872,7 +872,7 @@ evCharging.vehicleRecordCoverage admin → { from: Date; to: Date; count: number
 test('reads take a vehicle scope and default to all', async () => {
   await signIn('user')
   await insertSession({ startAt: new Date('2026-03-01T10:00:00Z'), endAt: new Date('2026-03-01T11:00:00Z') })
-  await insertSession({ startAt: new Date('2026-03-02T10:00:00Z'), endAt: new Date('2026-03-02T11:00:00Z'), vehicle: 'other' })
+  await insertSession({ startAt: new Date('2026-03-02T10:00:00Z'), endAt: new Date('2026-03-02T11:00:00Z'), vehicle: 'other', vehicleSource: 'admin' })
   const all = await call(evChargingRouter.sessions, { limit: 10 }, { context: baseContext() })
   const guests = await call(evChargingRouter.sessions, { limit: 10, vehicle: 'other' }, { context: baseContext() })
   expect(all.sessions).toHaveLength(2)
