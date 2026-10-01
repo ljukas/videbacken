@@ -17,7 +17,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { STOCKHOLM_TIME_ZONE, stockholmDayOf } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 import { ChartPopover, useChartPopover } from './ChartPopover'
-import { formatOneDecimal, formatOre, formatShortWeekday, formatTime } from './format'
+import { formatOneDecimal, formatOre, formatShortWeekday, formatTime, mergeRuns } from './format'
 
 type Detail = RouterOutputs['evCharging']['session']
 type Stretch = Detail['intervals'][number]
@@ -109,17 +109,6 @@ const UNIT_BOX_H = 10
 const UNIT_BASELINE = 3
 const GHOST_HALO_PX = 4
 const byStart = bisector((r: Row) => r.startMs)
-
-// Consecutive schedule pieces, merged into runs drawn as one outline each.
-function scheduleRuns(pieces: readonly Stretch[]): Stretch[][] {
-  const runs: Stretch[][] = []
-  for (const p of [...pieces].sort((a, b) => a.startMs - b.startMs)) {
-    const run = runs.at(-1)
-    if (run && run.at(-1)?.endMs === p.startMs) run.push(p)
-    else runs.push([p])
-  }
-  return runs
-}
 
 const stockholmHour = (ms: number) => getHours(ms, { in: tz(STOCKHOLM_TIME_ZONE) })
 
@@ -302,7 +291,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
     // Each run of the cheapest schedule: its stepped top edge from baseline to
     // baseline (the outline, open at the bottom) and the same shape closed.
     const ghosts = showOptimal
-      ? scheduleRuns(optimal).map((run) => {
+      ? mergeRuns(optimal).map((run) => {
           const tops = run
             .map((p) => {
               const y = yKw(avgKw(p))

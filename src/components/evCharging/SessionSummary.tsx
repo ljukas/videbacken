@@ -12,6 +12,7 @@ import type * as React from 'react'
 import { Alert, AlertDescription } from '~/components/ui/alert'
 import { Card } from '~/components/ui/card'
 import {
+  NEGLIGIBLE_SEK,
   rangePosition,
   summarySentence,
   type TimingVerdict,
@@ -76,7 +77,12 @@ export function SessionSummary({
               </p>
               {cf.score === null ? null : <RangeBar cf={cf} actualSek={economy.actual.totalSek} />}
               <div className="grid @lg:grid-cols-2 gap-x-8 gap-y-5 border-t pt-5">
-                <SavedTile cf={cf} plugIn={session.startAt} rateKw={detail.rateKw} />
+                <SavedTile
+                  cf={cf}
+                  plugIn={session.startAt}
+                  rateKw={detail.rateKw}
+                  peakKw={session.peakKw}
+                />
                 <LeftTile
                   cf={cf}
                   windows={
@@ -127,7 +133,6 @@ function Hero({ detail }: { detail: Pick<Detail, 'session' | 'economy'> }) {
       {economy.excluded === null && actual.fullKwh > 0 ? (
         <span className="text-muted-foreground text-sm">
           {m.charging_session_kwh_unit_price({
-            kwh: formatOneDecimal(session.kwh),
             price: formatKronor(actual.totalSek / actual.fullKwh, 2),
           })}
         </span>
@@ -317,18 +322,29 @@ function DeltaTile({
   )
 }
 
-// Signed: green above zero, red below, neutral at zero (as rounded to öre).
+// Signed: green above zero, red below. Neutral when there was nothing to
+// choose between (no score) or the saving is negligible: the sentence above
+// then says "ungefär som att ladda direkt", and a coloured figure would
+// contradict it.
 function SavedTile({
   cf,
   plugIn,
   rateKw,
+  peakKw,
 }: {
   cf: Counterfactual
   plugIn: Date
   rateKw: number | null
+  peakKw: number | null
 }) {
   const saved = cf.savedVsImmediateSek
-  const sign = Math.round(saved * 100) === 0 ? 0 : Math.sign(saved)
+  const negligible = cf.score === null || Math.abs(saved) < NEGLIGIBLE_SEK
+  const sign = negligible || Math.round(saved * 100) === 0 ? 0 : Math.sign(saved)
+  // The header's peak skips sub-10-minute intervals and the rate counts every
+  // one; two different kW figures on one page confuse, so the number is shown
+  // only when both round to the same value.
+  const sameAsPeak =
+    rateKw !== null && peakKw !== null && formatOneDecimal(rateKw) === formatOneDecimal(peakKw)
   const Icon = sign > 0 ? ArrowUpIcon : sign < 0 ? ArrowDownIcon : MinusIcon
   return (
     <DeltaTile
@@ -351,10 +367,12 @@ function SavedTile({
       explainer={
         rateKw === null
           ? null
-          : m.charging_session_saved_explainer({
-              time: formatTime(plugIn),
-              rate: formatOneDecimal(rateKw),
-            })
+          : sameAsPeak
+            ? m.charging_session_saved_explainer({
+                time: formatTime(plugIn),
+                rate: formatOneDecimal(rateKw),
+              })
+            : m.charging_session_saved_explainer_no_rate({ time: formatTime(plugIn) })
       }
     />
   )

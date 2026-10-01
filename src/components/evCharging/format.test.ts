@@ -9,6 +9,7 @@ import {
   formatSignedSek,
   formatWeekdayDay,
   hourRangeLabel,
+  mergeRuns,
   monthLabel,
   monthName,
   scheduleWindows,
@@ -311,3 +312,44 @@ describe('scheduleWindows', () => {
     expect(scheduleWindows([], PLUG_IN)).toBeNull()
   })
 })
+
+describe('mergeRuns', () => {
+  const piece = (from: number, to: number) => ({ startMs: from, endMs: to })
+
+  test('joins pieces that touch or overlap, in start order', () => {
+    const runs = mergeRuns([piece(20, 30), piece(0, 10), piece(10, 15), piece(12, 18)])
+    expect(runs.map((r) => r.map((p) => p.startMs))).toEqual([
+      [0, 10, 12],
+      [20],
+    ])
+  })
+
+  test('a gap splits the runs', () => {
+    expect(mergeRuns([piece(0, 10), piece(11, 20)])).toHaveLength(2)
+  })
+
+  test('scheduleWindows reads the same runs as the chart band', () => {
+    inLocale('sv')
+    const start = Date.parse('2026-09-27T22:00:00Z')
+    const q = 15 * 60_000
+    const pieces = [
+      piece(start, start + q),
+      piece(start + q, start + 2 * q),
+      piece(start + 2 * q - 1, start + 3 * q), // overlaps by a millisecond
+      piece(start + 5 * q, start + 6 * q),
+    ]
+    const runs = mergeRuns(pieces)
+    expect(runs).toHaveLength(2)
+    const [a, b] = runs
+    expect(scheduleWindows(pieces, start)).toBe(
+      `${hm(a?.[0]?.startMs)}–${hm(a?.at(-1)?.endMs)} och ${hm(b?.[0]?.startMs)}–${hm(b?.at(-1)?.endMs)}`,
+    )
+  })
+})
+
+const hm = (ms = 0) =>
+  new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(ms)

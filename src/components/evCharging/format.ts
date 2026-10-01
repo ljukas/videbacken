@@ -78,6 +78,29 @@ export function formatTime(date: Date): string {
 }
 
 /**
+ * Pieces grouped into runs: sorted by start, a piece joining the run before it
+ * when it starts at or before that run's end. The one definition both the
+ * summary's windows text and the chart's schedule band use, so they never drift.
+ */
+export function mergeRuns<T extends { startMs: number; endMs: number }>(
+  pieces: readonly T[],
+): T[][] {
+  const runs: T[][] = []
+  let runEnd = Number.NEGATIVE_INFINITY
+  for (const p of pieces.toSorted((a, b) => a.startMs - b.startMs)) {
+    const run = runs.at(-1)
+    if (run && p.startMs <= runEnd) {
+      run.push(p)
+      runEnd = Math.max(runEnd, p.endMs)
+    } else {
+      runs.push([p])
+      runEnd = p.endMs
+    }
+  }
+  return runs
+}
+
+/**
  * The cheapest schedule's pieces as the session summary explains them: merged
  * into runs (a piece starting where the previous one ends), one or two runs
  * listed ("00:00–06:30", "00:00–02:00 och 05:00–06:30"), more as "{n} perioder
@@ -90,12 +113,10 @@ export function scheduleWindows(
   pieces: readonly { startMs: number; endMs: number }[],
   plugInMs: number,
 ): string | null {
-  const runs: { startMs: number; endMs: number }[] = []
-  for (const p of pieces.toSorted((a, b) => a.startMs - b.startMs)) {
-    const last = runs.at(-1)
-    if (last && p.startMs <= last.endMs) last.endMs = Math.max(last.endMs, p.endMs)
-    else runs.push({ startMs: p.startMs, endMs: p.endMs })
-  }
+  const runs = mergeRuns(pieces).map((run) => ({
+    startMs: run[0]?.startMs ?? 0,
+    endMs: Math.max(...run.map((p) => p.endMs)),
+  }))
   const first = runs[0]
   const last = runs.at(-1)
   if (!first || !last) return null

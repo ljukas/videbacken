@@ -49,6 +49,7 @@ const detail = (
     estimated?: boolean
     optimalSchedule?: Detail['optimalSchedule']
     rateKw?: number | null
+    peakKw?: number | null
   } = {},
 ) => {
   const economy = {
@@ -66,7 +67,7 @@ const detail = (
       startAt: PLUG_IN,
       endAt: new Date('2026-09-28T14:49:00Z'),
       kwh: 56,
-      peakKw: 8.9,
+      peakKw: 'peakKw' in over ? (over.peakKw ?? null) : 8.9,
       estimated: over.estimated ?? false,
     },
     economy,
@@ -88,7 +89,9 @@ test('the owner’s session: hero cost, verdict, sentence, range bar and both ex
   const { screen } = await render(detail())
   const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
   await expect.element(card).toHaveTextContent(/95,13\s?kr/)
-  await expect.element(card.getByText(/56,0 kWh · 1,70 kr\/kWh/)).toBeVisible()
+  // The kWh lives in the page header, not repeated in the hero.
+  expect(card.element().textContent).not.toMatch(/56,0\s?kWh/)
+  await expect.element(card.getByText('1,70 kr/kWh i snitt')).toBeVisible()
   await expect.element(card.getByText(m.charging_session_verdict_ok())).toBeVisible()
   await expect
     .element(card.getByText(m.charging_session_verdict_ok()))
@@ -116,7 +119,7 @@ test('the owner’s session: hero cost, verdict, sentence, range bar and both ex
   await expect
     .element(left)
     .toHaveTextContent(
-      'Om laddningen lagts på de billigaste perioderna medan bilen var inkopplad: mån 00:00–06:30.',
+      'Om laddningen följt billigaste schemat (markerat i grafen): mån 00:00–06:30.',
     )
 })
 
@@ -266,6 +269,50 @@ describe('saved vs charging at once', () => {
     const tile = await savedTile(-4)
     await expect.element(tile).toHaveTextContent(/−4,00\s?kr/)
     expect(tile.element().querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('bad')
+  })
+
+  test.each([
+    ['a negligible saving', 0.3],
+    ['a negligible loss', -0.3],
+  ])('%s is neutral, so it never contradicts "ungefär lika"', async (_name, saved) => {
+    const tile = await savedTile(saved)
+    expect(tile.element().querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('neutral')
+  })
+
+  test('half a krona is the first coloured saving', async () => {
+    const tile = await savedTile(0.5)
+    expect(tile.element().querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('good')
+  })
+
+  test('without a score (nothing to choose between) the tile is neutral', async () => {
+    const { screen } = await render(
+      detail({
+        economy: { counterfactual: counterfactual({ score: null, savedVsImmediateSek: 12 }) },
+      }),
+    )
+    const tile = screen.getByRole('group', { name: m.charging_session_saved_title() })
+    expect(tile.element().querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('neutral')
+  })
+
+  test('the rate is named when it matches the header peak', async () => {
+    const { screen } = await render(detail({ peakKw: 5.29, rateKw: 5.29 }))
+    const tile = screen.getByRole('group', { name: m.charging_session_saved_title() })
+    await expect.element(tile).toHaveTextContent('(5,3 kW)')
+  })
+
+  test('a rate that differs from the header peak is worded without a number', async () => {
+    const { screen } = await render(detail({ peakKw: 2.91, rateKw: 5.29 }))
+    const tile = screen.getByRole('group', { name: m.charging_session_saved_title() })
+    await expect
+      .element(tile)
+      .toHaveTextContent(m.charging_session_saved_explainer_no_rate({ time: '17:10' }))
+    expect(tile.element().textContent).not.toMatch(/kW/)
+  })
+
+  test('without a header peak the rate is not named', async () => {
+    const { screen } = await render(detail({ peakKw: null, rateKw: 5.29 }))
+    const tile = screen.getByRole('group', { name: m.charging_session_saved_title() })
+    expect(tile.element().textContent).not.toMatch(/5,3/)
   })
 
   test('zero is neutral, never "−0"', async () => {

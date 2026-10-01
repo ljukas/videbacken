@@ -11,7 +11,9 @@ import {
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { NotFound } from '~/components/NotFound'
+import { emptyTotals } from '~/lib/evCharging/cost'
 import { logger } from '~/lib/logger/browser'
+import { orpc, type RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
 import { Route } from './$sessionId'
@@ -133,4 +135,76 @@ test('a failed load keeps one h1 above the load-error alert', async () => {
     .element(screen.getByRole('heading', { level: 1 }))
     .toHaveTextContent(m.meta_charging_session_title())
   expect(warn).toHaveBeenCalledWith('session prefetch failed', expect.anything())
+})
+
+// One found session through the real route component: the summary and the
+// chart render together under one h1.
+test('a found session shows the header, summary and chart together', async () => {
+  const at = (hhmm: string) => Date.parse(`2026-09-15T${hhmm}:00Z`)
+  const QUARTER = 15 * 60_000
+  const cost = (totalSek: number) => ({
+    ...emptyTotals(),
+    kwh: 10,
+    gridKwh: 10,
+    fullKwh: 10,
+    totalSek,
+  })
+  const detail = {
+    session: {
+      id: SESSION_ID,
+      startAt: new Date(at('08:00')),
+      endAt: new Date(at('10:00')),
+      kwh: 10,
+      peakKw: 10,
+      estimated: false,
+    },
+    window: { startMs: at('08:00'), endMs: at('10:00') },
+    intervals: [{ startMs: at('08:00'), endMs: at('09:00'), kwh: 10 }],
+    prices: Array.from({ length: 16 }, (_, i) => ({
+      startMs: at('07:00') + i * QUARTER,
+      endMs: at('07:00') + (i + 1) * QUARTER,
+      spotOre: 125,
+    })),
+    optimalSchedule: [0, 1, 2, 3].map((i) => ({
+      startMs: at('09:00') + i * QUARTER,
+      endMs: at('09:00') + (i + 1) * QUARTER,
+      kwh: 2.5,
+    })),
+    rateKw: 10,
+    economy: {
+      actual: cost(20),
+      actualComplete: true,
+      paidSpotOre: 125,
+      windowAvgSpotOre: 125,
+      excluded: null,
+      counterfactual: {
+        immediate: cost(22),
+        optimal: cost(15),
+        dearest: cost(30),
+        score: 0.67,
+        savedVsImmediateSek: 2,
+        leftOnTableSek: 5,
+      },
+    },
+  } as unknown as RouterOutputs['evCharging']['session']
+  const screen = await renderPage(SESSION_ID, (queryClient) => {
+    queryClient.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
+    queryClient.setQueryData(
+      orpc.evCharging.session.queryOptions({ input: { sessionId: SESSION_ID } }).queryKey,
+      detail,
+    )
+  })
+  await expect.element(screen.getByRole('heading', { level: 1 })).toBeVisible()
+  expect(screen.getByRole('heading', { level: 1 }).elements()).toHaveLength(1)
+  // Summary: the verdict pill and the range bar.
+  await expect.poll(() => document.querySelector('[data-verdict]')).not.toBeNull()
+  await expect
+    .element(screen.getByRole('img', { name: new RegExp(`^${m.charging_session_range_actual()}`) }))
+    .toBeVisible()
+  // Chart: heading and both panels.
+  await expect
+    .element(screen.getByRole('heading', { level: 2, name: m.charging_session_chart_title() }))
+    .toBeVisible()
+  await expect.poll(() => document.querySelector('[data-panel="price"]')).not.toBeNull()
+  expect(document.querySelector('[data-panel="energy"]')).not.toBeNull()
 })
