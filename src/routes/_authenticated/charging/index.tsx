@@ -115,7 +115,8 @@ export const Route = createFileRoute('/_authenticated/charging/')({
           )
         : null,
       user.role === 'admin' ? queryClient.ensureQueryData(pricesRunsQuery) : null,
-      user.role === 'admin' ? queryClient.ensureQueryData(vehicleCoverageQuery) : null,
+      // Prefetched: a failed read shows in its card, it must not take the page down.
+      user.role === 'admin' ? queryClient.prefetchQuery(vehicleCoverageQuery) : null,
     ])
   },
   component: ChargingPage,
@@ -222,7 +223,7 @@ function ChargingPage() {
     enabled: isAdmin,
   })
   const { data: pricesRuns } = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
-  const { data: vehicleCoverage } = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
+  const vehicleCoverage = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
 
   // "Visa fler" fetches the longer page first and only then switches to it, so
   // a failed fetch leaves the rows on screen (with a toast; the button stays
@@ -357,8 +358,9 @@ function ChargingPage() {
 
       {isAdmin ? (
         <VehicleLogCard
-          // Prefetched by the loader; a failed read falls back to the "none imported" line.
-          coverage={vehicleCoverage ?? null}
+          // Prefetched by the loader; a failed read shows an error, never "none imported".
+          coverage={vehicleCoverage.data}
+          loadError={vehicleCoverage}
           onImport={() => open('vehicleImport')}
         />
       ) : null}
