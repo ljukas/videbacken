@@ -60,3 +60,26 @@ test('stays readable at 320 px', async () => {
     ).toHaveLength(4)
   })
 })
+
+const barHeights = (container: Element, bar = 0) =>
+  [
+    ...container
+      .querySelectorAll('.recharts-bar')
+      [bar].querySelectorAll('.recharts-bar-rectangle path'),
+  ].map((p) => p.getBoundingClientRect().height)
+
+test('a tiny real hour keeps a visible bar; a genuine 0 hour stays empty', async () => {
+  const sparse = Array.from({ length: 24 }, (_, h) => ({
+    kwh: h === 6 ? 100 : h === 5 ? 0.01 : 0,
+    pluggedHours: 0,
+  }))
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 220 }}>
+      <HourOfDayChart hours={sparse} metric="kwh" />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(2),
+  )
+  expect(Math.min(...barHeights(screen.container))).toBeGreaterThanOrEqual(2)
+})

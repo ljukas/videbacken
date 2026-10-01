@@ -11,6 +11,7 @@ import { m } from '~/paraglide/messages'
 import { ChartFrame, TooltipRow } from './ChartFrame'
 import { formatCount, formatOneDecimal, formatSek, formatShare, monthLabel } from './format'
 import type { MetricOption } from './MetricToggle'
+import { minBarFor } from './minBar'
 
 type Month = RouterOutputs['evCharging']['overview']['months'][number]
 type CostMonth = RouterOutputs['evCharging']['costOverview']['months'][number]
@@ -77,7 +78,13 @@ function EnergyChart({ months }: { months: Month[] }) {
             />
           }
         />
-        <Bar dataKey="kwh" fill="var(--color-kwh)" radius={4} isAnimationActive={false} />
+        <Bar
+          dataKey="kwh"
+          fill="var(--color-kwh)"
+          radius={4}
+          minPointSize={minBarFor(data.map((d) => d.kwh))}
+          isAnimationActive={false}
+        />
       </BarChart>
     </ChartFrame>
   )
@@ -181,6 +188,7 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
           dataKey="spot"
           stackId="sek"
           fill="var(--color-spot)"
+          minPointSize={minBarFor(data.map((d) => d.spot))}
           {...seam}
           isAnimationActive={false}
         />
@@ -189,6 +197,7 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
           stackId="sek"
           fill="var(--color-fees)"
           radius={[4, 4, 0, 0]}
+          minPointSize={minBarFor(data.map((d) => d.fees))}
           {...seam}
           isAnimationActive={false}
         />
@@ -198,6 +207,7 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
             stackId="sek"
             fill="var(--color-unpriced)"
             radius={[4, 4, 0, 0]}
+            minPointSize={minBarFor(data.map((d) => d.unpriced))}
             isAnimationActive={false}
           />
         ) : null}

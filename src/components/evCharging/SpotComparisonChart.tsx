@@ -9,7 +9,8 @@ import {
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { ChartFrame, NoData, TooltipRow } from './ChartFrame'
-import { formatOre, monthLabel } from './format'
+import { formatOre, formatOrePrecise, monthLabel } from './format'
+import { minBarFor } from './minBar'
 
 type Month = RouterOutputs['evCharging']['economy']['months'][number]
 
@@ -56,7 +57,7 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
                 const series = config[name as keyof typeof config]
                 return (
                   <TooltipRow label={series.label} color={series.color}>
-                    {m.charging_economy_ore({ value: formatOre(Number(value)) })}
+                    {m.charging_economy_ore({ value: formatOrePrecise(Number(value)) })}
                   </TooltipRow>
                 )
               }}
@@ -67,12 +68,15 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
           itemSorter={seriesOrder}
           content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
         />
-        {/* minPointSize: a real near-zero price must not vanish (null still draws no bar). */}
+        {/* A real near-zero price (even 0) must not vanish; null draws no bar. */}
         <Bar
           dataKey="paid"
           fill="var(--color-paid)"
           radius={3}
-          minPointSize={3}
+          minPointSize={minBarFor(
+            data.map((d) => d.paid),
+            { zeroIsData: true },
+          )}
           isAnimationActive={false}
         />
         <Line

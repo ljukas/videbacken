@@ -186,3 +186,29 @@ test('tooltips: no_price stub reads "Pris saknas", mixed reads "Inte jämförbar
   await reveal(m.charging_chart_no_price())
   await reveal(m.charging_economy_series_not_comparable())
 })
+
+const barHeights = (container: Element, bar = 0) =>
+  [
+    ...container
+      .querySelectorAll('.recharts-bar')
+      [bar].querySelectorAll('.recharts-bar-rectangle path'),
+  ].map((p) => p.getBoundingClientRect().height)
+
+test('a real 0 or near-0 kr counterfactual in an included month is a visible bar', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <EconomyMonthlyChart
+        months={months.map((mo) =>
+          mo.month === 9 ? { ...mo, immediateSek: 120, actualSek: 0, optimalSek: 0.01 } : mo,
+        )}
+      />
+    </div>,
+  )
+  // Three series in the one included month; the other eleven (null) have none.
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(3),
+  )
+  for (const bar of [0, 1, 2]) {
+    expect(Math.min(...barHeights(screen.container, bar))).toBeGreaterThanOrEqual(2)
+  }
+})

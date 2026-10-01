@@ -161,7 +161,7 @@ heals it. The admin tag is re-checked in the UPDATE's own WHERE, so a concurrent
   preview is cleared and nothing is submittable; the dialog can't be closed (Esc, overlay, Cancel) while the import
   is in flight, and stays open with an error toast on failure so it can be retried.
 - Commit `/data/private/` to `.gitignore` (today it's only in a local `.git/info/exclude`).
-- **Spot chart in a sparse scope** (Ekonomi, "Spotpris per månad"): the month average is drawn only for months where the scope has a priced session (`paidSpotOre !== null`); no priced month at all shows the no-data state. A real near-zero paid price still gets a visible bar (`minPointSize`); null draws none (missing ≠ 0, ADR-0020).
+- **Spot chart in a sparse scope** (Ekonomi, "Spotpris per månad"): the month average is drawn only for months where the scope has a priced session (`paidSpotOre !== null`); no priced month at all shows the no-data state. A real near-zero paid price still gets a visible bar (`minPointSize`); null draws none (missing ≠ 0, ADR-0020). The same rules hold across the charging charts: a tiny real value always gets a visible bar (`minBarFor`, per-series, so a real 0 component or a month with nothing stays empty; a real 0 kr counterfactual in an included month is data and is drawn), and the Ekonomi spot tile's average follows the scope's priced months only, with no hint when nothing was paid. Öre in tooltips and tiles use `formatOrePrecise` (never "0" for a real sub-1 öre price); axis ticks keep whole öre.
 - All strings in `messages/sv.json` + `en.json`. Responsive: on mobile the year + scope controls stack.
 
 ## Errors and edge cases

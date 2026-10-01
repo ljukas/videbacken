@@ -11,6 +11,7 @@ import {
 import type { Slot } from '~/lib/evCharging/patterns'
 import { m } from '~/paraglide/messages'
 import { formatCount, hourRangeLabel } from './format'
+import { minBarFor } from './minBar'
 import { type PatternMetric, slotValue, valueLabel } from './patternChart'
 
 const NARROW_PX = 480
@@ -86,7 +87,13 @@ export function HourOfDayChart({ hours, metric }: { hours: Slot[]; metric: Patte
               />
             }
           />
-          <Bar dataKey="value" fill="var(--color-value)" radius={4} isAnimationActive={false} />
+          <Bar
+            dataKey="value"
+            fill="var(--color-value)"
+            radius={4}
+            minPointSize={minBarFor(data.map((d) => d.value))}
+            isAnimationActive={false}
+          />
         </BarChart>
       </ChartContainer>
       {table}

@@ -165,3 +165,48 @@ test('a year with nothing priced says so in the kr view instead of drawing 0 kr'
   await expect.element(screen.getByText(m.charging_chart_cost_empty({ year: 2023 }))).toBeVisible()
   expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(0)
 })
+
+const barHeights = (container: Element, bar = 0) =>
+  [
+    ...container
+      .querySelectorAll('.recharts-bar')
+      [bar].querySelectorAll('.recharts-bar-rectangle path'),
+  ].map((p) => p.getBoundingClientRect().height)
+
+test('a tiny real kWh month keeps a visible bar; a genuine 0 month stays empty', async () => {
+  const sparse = months.map((mo) => ({
+    ...mo,
+    kwh: mo.month === 1 ? 1000 : mo.month === 2 ? 0.01 : 0,
+  }))
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={sparse} />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(2),
+  )
+  const heights = barHeights(screen.container)
+  expect(Math.min(...heights)).toBeGreaterThanOrEqual(2)
+})
+
+test('the kr view keeps a tiny real month visible, and invents no stub for a real 0 component', async () => {
+  const sparse = costMonths.map((c) => {
+    const base = { ...c, kwh: 0, gridKwh: 0, fullKwh: 0, spotSek: 0, feesSek: 0, totalSek: 0 }
+    if (c.month === 1) return { ...c, spotSek: 400, feesSek: 100, totalSek: 500 }
+    // A real tiny spot cost with genuinely 0 fees.
+    if (c.month === 2) return { ...c, spotSek: 0.01, feesSek: 0, totalSek: 0.01 }
+    return base
+  })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: sparse }} metric="sek" />
+    </div>,
+  )
+  // spot: months 1 + 2; fees: month 1 only (month 2's 0 fees means nothing).
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(3),
+  )
+  expect(Math.min(...barHeights(screen.container, 0))).toBeGreaterThanOrEqual(2)
+  expect(barHeights(screen.container, 1)).toHaveLength(1)
+})
