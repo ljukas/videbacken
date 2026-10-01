@@ -16,6 +16,7 @@ const session: Session = {
   peakKw: 7.2,
   offline: false,
   reliableClock: true,
+  vehicle: 'ours',
 }
 
 const noop = () => {}

@@ -170,6 +170,7 @@ its sync outcome so a broken integration is visible instead of silently stale.
 - Price overlay on a session detail chart (energy bars + spot line).
 
 ### Phase 5 — Ours vs others
+Design (supersedes details below): [phase5 design](./2026-10-01-ev-charging-phase5-design.md), ADR-0021.
 - Attribution steps 1–3 above; per-vehicle split in every chart/total.
 - **Guest ledger**: kWh + total cost per guest per month — "what X owes us" (Swish
   amount), marked as settled by an admin.

@@ -247,3 +247,39 @@ test('timeline timings are recorded', async () => {
   await getChargingTimeline({ year: 2026, month: 9, timings })
   expect(timings).toEqual({ fetchMs: expect.any(Number), aggregateMs: expect.any(Number) })
 })
+
+test('patterns and timeline follow the vehicle scope', async () => {
+  await overnight('2026-03-10T20:00:00Z', [2, 2])
+  const guest = await insertSession({
+    startAt: new Date('2026-04-10T20:00:00Z'),
+    endAt: new Date('2026-04-10T22:00:00Z'),
+    energyKwh: 3,
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const now = new Date('2026-06-15T12:00:00Z')
+  const sumKwh = (p: Awaited<ReturnType<typeof getChargingPatterns>>) =>
+    p.months.reduce((a, m) => a + m.kwh, 0)
+  expect(sumKwh(await getChargingPatterns({ year: 2026, now, vehicle: 'ours' }))).toBeCloseTo(4)
+  expect(sumKwh(await getChargingPatterns({ year: 2026, now, vehicle: 'other' }))).toBeCloseTo(3)
+  expect(sumKwh(await getChargingPatterns({ year: 2026, now }))).toBeCloseTo(7)
+
+  const theirs = await getChargingTimeline({ year: 2026, now, vehicle: 'other' })
+  expect(theirs.months).toEqual([4])
+  expect(theirs.sessions.map((s) => s.id)).toEqual([guest])
+  const mine = await getChargingTimeline({ year: 2026, now, vehicle: 'ours' })
+  expect(mine.months).toEqual([3])
+  expect(mine.sessions).toHaveLength(1)
+  expect((await getChargingTimeline({ year: 2026, now })).months).toEqual([3, 4])
+})
+
+test('patterns years stay unscoped', async () => {
+  await insertSession({
+    startAt: new Date('2025-05-01T10:00:00Z'),
+    endAt: new Date('2025-05-01T11:00:00Z'),
+  })
+  const now = new Date('2026-06-15T12:00:00Z')
+  expect((await getChargingPatterns({ year: 2026, now, vehicle: 'other' })).years).toEqual([
+    2026, 2025,
+  ])
+})

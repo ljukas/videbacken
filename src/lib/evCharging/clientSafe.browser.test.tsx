@@ -57,3 +57,8 @@ test('the charging economy math is importable client-side', async () => {
   expect(economy.SCORE_MIN_GAP_SEK).toBe(0.5)
   expect(economy.SCORE_MIN_GAP_SHARE).toBe(0.05)
 })
+
+test('vehicle vocabulary is importable client-side', async () => {
+  const mod = await import('~/lib/evCharging/vehicle')
+  expect(mod.VEHICLE_SCOPES).toEqual(['ours', 'other', 'all'])
+})

@@ -7,6 +7,7 @@ import {
   priceIntervals,
   SlotIndex,
 } from '~/lib/evCharging/cost'
+import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { listSessionEnergy, type SessionEnergy } from '~/lib/services/evCharging'
 import { listSlotsOverlapping } from '~/lib/services/spotPrice'
 import { SPOT_ZONE } from '~/lib/spotPrice/zones'
@@ -69,6 +70,7 @@ export async function getCostOverview(input: {
   year?: number
   now?: Date
   timings?: CostTimings
+  vehicle?: VehicleScope
 }): Promise<CostOverview> {
   const now = input.now ?? new Date()
   const current = stockholmYearMonth(now.getTime())
@@ -76,7 +78,9 @@ export async function getCostOverview(input: {
 
   // Tariffs don't depend on the sessions, so they load alongside them.
   const [sessions, tariffsAsc] = await Promise.all([
-    timed(input.timings, 'energyMs', () => listSessionEnergy({ all: true })),
+    timed(input.timings, 'energyMs', () =>
+      listSessionEnergy({ all: true, vehicle: input.vehicle }),
+    ),
     timed(input.timings, 'tariffMs', loadTariffs),
   ])
   const index = await loadSlots(sessions, input.timings)

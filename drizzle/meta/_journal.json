@@ -50,6 +50,20 @@
       "when": 1790660730302,
       "tag": "0006_spot_price_and_electricity_tariff",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790850620365,
+      "tag": "0007_vehicle_attribution",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790850894183,
+      "tag": "0008_vehicle_default_check",
+      "breakpoints": true
     }
   ]
 }

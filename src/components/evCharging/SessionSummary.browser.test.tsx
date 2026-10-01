@@ -69,6 +69,8 @@ const detail = (
       kwh: 56,
       peakKw: 'peakKw' in over ? (over.peakKw ?? null) : 8.9,
       estimated: over.estimated ?? false,
+      vehicle: 'ours' as const,
+      vehicleSource: 'default' as const,
     },
     economy,
     optimalSchedule: 'optimalSchedule' in over ? (over.optimalSchedule ?? null) : OWNER_SCHEDULE,

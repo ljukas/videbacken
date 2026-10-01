@@ -6,6 +6,7 @@ import {
   OVERVIEW_MIN_YEAR,
   PEAK_MIN_INTERVAL_MS,
 } from '~/lib/evCharging/counting'
+import type { Vehicle, VehicleScope } from '~/lib/evCharging/vehicle'
 import { stockholmYearBounds, stockholmYearMonth } from '~/lib/time/stockholm'
 import { countedSessionFilter } from './counted'
 
@@ -26,6 +27,7 @@ export type SessionRow = {
   peakKw: number | null
   offline: boolean
   reliableClock: boolean
+  vehicle: Vehicle
 }
 
 // The driver can return sum()/count() aggregates as strings even over
@@ -57,7 +59,7 @@ function stockholmYearRange(year: number): { start: Date; end: Date } {
 // intervals falls back to its own `energy_kwh` in the month of its own
 // `start_at`. Session count is always by the session's own `start_at` month,
 // regardless of how its kWh split across months.
-async function monthlyTotals(year: number): Promise<Map<number, Totals>> {
+async function monthlyTotals(year: number, vehicle?: VehicleScope): Promise<Map<number, Totals>> {
   const { start, end } = stockholmYearRange(year)
   const monthOfInterval = sql<number>`extract(month from ${evChargeInterval.startAt} AT TIME ZONE 'Europe/Stockholm')::int`
   const monthOfSession = sql<number>`extract(month from ${evChargeSession.startAt} AT TIME ZONE 'Europe/Stockholm')::int`
@@ -68,7 +70,7 @@ async function monthlyTotals(year: number): Promise<Map<number, Totals>> {
     .innerJoin(evChargeSession, eq(evChargeInterval.sessionId, evChargeSession.id))
     .where(
       and(
-        countedSessionFilter(),
+        countedSessionFilter({ vehicle }),
         gte(evChargeInterval.startAt, start),
         lt(evChargeInterval.startAt, end),
       ),
@@ -81,7 +83,7 @@ async function monthlyTotals(year: number): Promise<Map<number, Totals>> {
     .leftJoin(evChargeInterval, eq(evChargeInterval.sessionId, evChargeSession.id))
     .where(
       and(
-        countedSessionFilter(),
+        countedSessionFilter({ vehicle }),
         isNull(evChargeInterval.sessionId),
         gte(evChargeSession.startAt, start),
         lt(evChargeSession.startAt, end),
@@ -94,7 +96,7 @@ async function monthlyTotals(year: number): Promise<Map<number, Totals>> {
     .from(evChargeSession)
     .where(
       and(
-        countedSessionFilter(),
+        countedSessionFilter({ vehicle }),
         gte(evChargeSession.startAt, start),
         lt(evChargeSession.startAt, end),
       ),
@@ -148,23 +150,23 @@ export async function distinctCountedYears(): Promise<Set<number>> {
 }
 
 // No year restriction at all — the only tile that spans every year of data.
-async function allTimeTotals(): Promise<Totals> {
+async function allTimeTotals(vehicle?: VehicleScope): Promise<Totals> {
   const [intervalRow] = await db
     .select({ kwh: sql<string | null>`sum(${evChargeInterval.energyKwh})` })
     .from(evChargeInterval)
     .innerJoin(evChargeSession, eq(evChargeInterval.sessionId, evChargeSession.id))
-    .where(countedSessionFilter())
+    .where(countedSessionFilter({ vehicle }))
 
   const [fallbackRow] = await db
     .select({ kwh: sql<string | null>`sum(${evChargeSession.energyKwh})` })
     .from(evChargeSession)
     .leftJoin(evChargeInterval, eq(evChargeInterval.sessionId, evChargeSession.id))
-    .where(and(countedSessionFilter(), isNull(evChargeInterval.sessionId)))
+    .where(and(countedSessionFilter({ vehicle }), isNull(evChargeInterval.sessionId)))
 
   const [sessionRow] = await db
     .select({ sessions: sql<string>`count(*)` })
     .from(evChargeSession)
-    .where(countedSessionFilter())
+    .where(countedSessionFilter({ vehicle }))
 
   return {
     kwh: toNumber(intervalRow?.kwh ?? null) + toNumber(fallbackRow?.kwh ?? null),
@@ -178,7 +180,11 @@ const ZERO_MONTHS: (Totals & { month: number })[] = Array.from({ length: 12 }, (
   sessions: 0,
 }))
 
-export async function getOverview(input: { year?: number; now?: Date }): Promise<ChargingOverview> {
+export async function getOverview(input: {
+  year?: number
+  now?: Date
+  vehicle?: VehicleScope
+}): Promise<ChargingOverview> {
   const now = input.now ?? new Date()
   // The shared helper (also used by the cost read model) so kWh and cost
   // buckets can never disagree on which month an instant falls in.
@@ -186,9 +192,9 @@ export async function getOverview(input: { year?: number; now?: Date }): Promise
   const year = input.year ?? currentYear
 
   const [selectedYearTotals, currentYearTotals, allTime, years] = await Promise.all([
-    monthlyTotals(year),
-    year === currentYear ? Promise.resolve(null) : monthlyTotals(currentYear),
-    allTimeTotals(),
+    monthlyTotals(year, input.vehicle),
+    year === currentYear ? Promise.resolve(null) : monthlyTotals(currentYear, input.vehicle),
+    allTimeTotals(input.vehicle),
     distinctCountedYears(),
   ])
   const thisYearTotals = currentYearTotals ?? selectedYearTotals
@@ -218,6 +224,7 @@ const PEAK_MIN_DURATION_SEC = PEAK_MIN_INTERVAL_MS / 1000
 
 export async function listSessions(input: {
   limit: number
+  vehicle?: VehicleScope
 }): Promise<{ sessions: SessionRow[]; hasMore: boolean }> {
   const rows = await db
     .select({
@@ -227,9 +234,10 @@ export async function listSessions(input: {
       energyKwh: evChargeSession.energyKwh,
       offline: evChargeSession.offline,
       reliableClock: evChargeSession.reliableClock,
+      vehicle: sql<Vehicle>`${evChargeSession.vehicle}`,
     })
     .from(evChargeSession)
-    .where(countedSessionFilter())
+    .where(countedSessionFilter({ vehicle: input.vehicle }))
     .orderBy(desc(evChargeSession.startAt))
     .limit(input.limit + 1)
 

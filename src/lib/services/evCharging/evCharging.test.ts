@@ -3,6 +3,8 @@ import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
+import { expectConstraintViolation } from '~test/expectConstraintViolation'
+import { insertSession, insertVehicleRecord } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { findLiveCharger, importSessions, listChargers, upsertChargers } from './evCharging'
 
@@ -305,4 +307,62 @@ test('importSessions inserts more intervals than one statement can bind', async 
   expect(result).toEqual({ upserted: 1, voided: 0, skipped: 0 })
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(evChargeInterval)
   expect(count).toBe(20_000)
+})
+
+test('a new session defaults to ours, decided by default', async () => {
+  const id = await insertSession()
+  const [row] = await db
+    .select({ vehicle: evChargeSession.vehicle, source: evChargeSession.vehicleSource })
+    .from(evChargeSession)
+    .where(eq(evChargeSession.id, id))
+  expect(row).toEqual({ vehicle: 'ours', source: 'default' })
+})
+
+test('vehicle and vehicle_source reject unknown values', async () => {
+  await expectConstraintViolation(
+    insertSession({ vehicle: 'neighbour' }),
+    'ev_charge_session_vehicle_check',
+  )
+  await expectConstraintViolation(
+    insertSession({ vehicleSource: 'guess' }),
+    'ev_charge_session_vehicle_source_check',
+  )
+})
+
+test('a guest session needs a deciding source', async () => {
+  await expectConstraintViolation(
+    insertSession({ vehicle: 'other' }),
+    'ev_charge_session_vehicle_default_check',
+  )
+  await expect(insertSession({ vehicle: 'other', vehicleSource: 'admin' })).resolves.toBeTypeOf(
+    'string',
+  )
+})
+
+test('vehicle_charge_record enforces its checks and (source, source_session_id) uniqueness', async () => {
+  await insertVehicleRecord({ sourceSessionId: 'a' })
+  await expectConstraintViolation(
+    insertVehicleRecord({ sourceSessionId: 'a' }),
+    'vehicle_charge_record_source_session_id_unique',
+  )
+  await expectConstraintViolation(
+    insertVehicleRecord({ endAt: new Date('2026-01-01T09:00:00Z') }),
+    'vehicle_charge_record_end_at_check',
+  )
+  await expectConstraintViolation(
+    insertVehicleRecord({ energyKwh: -1 }),
+    'vehicle_charge_record_energy_kwh_nonneg_check',
+  )
+  await expectConstraintViolation(
+    insertVehicleRecord({ startSocPercent: 101 }),
+    'vehicle_charge_record_start_soc_percent_check',
+  )
+  await expectConstraintViolation(
+    insertVehicleRecord({ endSocPercent: 101 }),
+    'vehicle_charge_record_end_soc_percent_check',
+  )
+  await expectConstraintViolation(
+    insertVehicleRecord({ source: 'myskoda_api' }),
+    'vehicle_charge_record_source_check',
+  )
 })
