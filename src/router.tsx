@@ -2,7 +2,7 @@ import '~/lib/zodLocale'
 import { StandardRPCJsonSerializer } from '@orpc/client/standard'
 import { defaultShouldDehydrateQuery, QueryClient } from '@tanstack/react-query'
 import { createRouter } from '@tanstack/react-router'
-import { routerWithQueryClient } from '@tanstack/react-router-with-query'
+import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query'
 import { DefaultCatchBoundary } from './components/DefaultCatchBoundary'
 import { NotFound } from './components/NotFound'
 import { installGlobalHandlers } from './lib/logger/browser'
@@ -48,5 +48,9 @@ export function getRouter() {
     scrollRestoration: true,
   })
 
-  return routerWithQueryClient(router, queryClient)
+  // Provides the QueryClient and streams/hydrates the cache across SSR. With no
+  // explicit dehydrate/hydrate options it uses the client's defaults above, so
+  // the oRPC serializer and the pending-query rule still apply.
+  setupRouterSsrQueryIntegration({ router, queryClient })
+  return router
 }
