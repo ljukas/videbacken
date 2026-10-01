@@ -230,8 +230,14 @@ test('a found session shows the header, summary and chart together', async () =>
 test('a guest session shows the badge; only an admin gets the select', async () => {
   const user = await renderFound('other')
   await expect
-    .poll(() => document.querySelector('[data-slot="badge"]')?.textContent)
-    .toContain(m.charging_vehicle_guest_badge())
+    .element(
+      user
+        .getByText(`${m.charging_vehicle_who_label()}: ${m.charging_vehicle_guest_badge()}`, {
+          exact: false,
+        })
+        .first(),
+    )
+    .toBeVisible()
   await expect
     .element(user.getByText(m.charging_vehicle_who_label(), { exact: true }).first())
     .toBeVisible()

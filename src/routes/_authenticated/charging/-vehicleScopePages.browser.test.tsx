@@ -42,6 +42,7 @@ async function renderPage(
   search: string,
   prepare: (qc: QueryClient) => void,
   role: 'admin' | 'user' = 'admin',
+  afterLoad?: (qc: QueryClient) => void,
 ) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
@@ -61,6 +62,7 @@ async function renderPage(
     history: createMemoryHistory({ initialEntries: [`${path}${search}`] }),
   })
   await router.load()
+  afterLoad?.(qc)
   const screen = await render(
     <QueryClientProvider client={qc}>
       <RouterProvider router={router} />
@@ -181,23 +183,59 @@ test('Översikt: switching scope never shows the sessions empty state mid-switch
     input: { limit: 20, vehicle: 'other' },
   }).queryKey
   const original = qc.prefetchQuery.bind(qc)
+  // Released by hand: no timer to race against the assertions under CI load.
+  let release!: () => void
+  const gate = new Promise<void>((r) => {
+    release = r
+  })
+  let held = false
   vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) => {
     if (JSON.stringify(opts.queryKey) !== JSON.stringify(otherKey)) return original(opts as never)
-    return new Promise((resolve) =>
-      setTimeout(() => {
-        const data = { sessions: [], hasMore: false }
-        qc.setQueryData(otherKey, data as never)
-        resolve(undefined)
-      }, 500),
-    )
+    held = true
+    return gate.then(() => {
+      qc.setQueryData(otherKey, { sessions: [], hasMore: false } as never)
+    })
   }) as never)
   await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
   await radio(screen, m.charging_vehicle_scope_other()).click()
-  // Mid-switch: the old rows stay, and the empty state hasn't appeared.
-  await new Promise((r) => setTimeout(r, 200))
+  // Mid-switch (the loader is held on the guests' sessions): the old rows stay and
+  // no empty state shows.
+  await expect.poll(() => held).toBe(true)
+  await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
   expect(screen.getByText(m.charging_vehicle_sessions_empty_other()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
+  release()
   await expect.element(screen.getByText(m.charging_vehicle_sessions_empty_other())).toBeVisible()
+})
+
+test('Översikt: a sessions read still pending shows no empty state or sync offer', async () => {
+  // Staged like a failed SSR prefetch: the loader's read fails and nothing is dehydrated,
+  // so the client mounts the query unseeded and its read stays pending (an in-flight
+  // fetch is joined by the page's own observer).
+  const key = orpc.evCharging.sessions.queryOptions({
+    input: { limit: 20, vehicle: 'ours' },
+  }).queryKey
+  const { screen } = await renderPage(
+    Overview,
+    '/charging',
+    '',
+    (qc) => {
+      seedOverviewShell(qc)
+      seedOverview(qc, 'ours', [])
+      qc.removeQueries({ queryKey: key })
+    },
+    'admin',
+    (qc) => {
+      qc.removeQueries({ queryKey: key })
+      void qc.prefetchQuery({ queryKey: key, queryFn: () => new Promise(() => {}) })
+    },
+  )
+  await expect
+    .element(screen.getByRole('heading', { name: m.charging_sessions_heading() }))
+    .toBeVisible()
+  expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_sessions_empty_description()).elements()).toHaveLength(0)
+  expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(1)
 })
 
 test('Översikt: a failed overview read shows the alert and the toggle; Vår bil gives a clean URL', async () => {
@@ -273,4 +311,38 @@ test('Översikt: a non-admin gets no card, no dialog, and the param is cleared',
   expect(screen.getByText(m.charging_vehicle_log_title()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_vehicle_import_title()).elements()).toHaveLength(0)
   await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
+})
+
+// --- Scope switch keeps the year ---------------------------------------------
+
+test.each([
+  ['index', Overview, '/charging', '?year=2025&vehicle=other'],
+  ['patterns', Patterns, '/charging/patterns', '?year=2025&vehicle=other'],
+  ['economy', Economy, '/charging/economy', '?year=2025&vehicle=other'],
+] as const)('%s: switching scope keeps the chosen year', async (_n, route, path, search) => {
+  const { screen, router } = await renderPage(route, path, search, (qc) => seedOverviewShell(qc))
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_other()))
+    .toHaveAttribute('aria-checked', 'true')
+  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .toHaveAttribute('aria-checked', 'true')
+  expect(router.state.location.search).toMatchObject({ year: 2025 })
+  expect(router.state.location.search).not.toHaveProperty('vehicle')
+})
+
+test('patterns: switching scope clears the month', async () => {
+  const { screen, router } = await renderPage(
+    Patterns,
+    '/charging/patterns',
+    '?year=2025&month=3&vehicle=other',
+    () => {},
+  )
+  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .toHaveAttribute('aria-checked', 'true')
+  expect(router.state.location.search).toMatchObject({ year: 2025 })
+  expect(router.state.location.search).not.toHaveProperty('month')
 })

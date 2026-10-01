@@ -92,3 +92,17 @@ test('while saving, focus stays on the trigger and a second choice is ignored', 
   await screen.getByRole('option', { name: m.charging_vehicle_auto() }).click()
   expect(setVehicleFn).toHaveBeenCalledTimes(1)
 })
+
+test('while saving the select shows the chosen value, not the stale stored one', async () => {
+  setVehicleFn.mockReturnValue(new Promise(() => {}))
+  const { screen } = await renderWithProviders(
+    <SessionVehicle sessionId={ID} vehicle="ours" vehicleSource="default" isAdmin />,
+  )
+  const trigger = screen.getByRole('combobox', { name: m.charging_vehicle_who_label() })
+  await expect.element(trigger).toHaveTextContent(m.charging_vehicle_auto())
+  await trigger.click()
+  await screen.getByRole('option', { name: m.charging_vehicle_other() }).click()
+  await vi.waitFor(() => expect(setVehicleFn).toHaveBeenCalled())
+  await expect.element(trigger).toHaveTextContent(m.charging_vehicle_other())
+  await expect.element(trigger).not.toHaveTextContent(m.charging_vehicle_auto())
+})

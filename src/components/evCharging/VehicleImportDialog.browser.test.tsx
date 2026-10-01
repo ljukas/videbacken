@@ -1,5 +1,5 @@
 import { ORPCError } from '@orpc/client'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { MAX_IMPORT_ROWS } from '~/lib/evCharging/vehicle'
 import { m } from '~/paraglide/messages'
@@ -22,6 +22,10 @@ vi.mock('~/lib/orpc/client', () => ({
   },
 }))
 vi.mock('sonner', () => ({ toast: toastMock }))
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 beforeEach(() => {
   importFn.mockReset()
@@ -131,9 +135,11 @@ test('a slow first pick cannot overwrite a second one: preview and rows are the 
     release = r
   })
   const realText = File.prototype.text
-  vi.spyOn(File.prototype, 'text').mockImplementation(async function (this: File) {
-    if (this.name === 'slow.csv') await gate
-    return realText.call(this)
+  let slowRead: Promise<string> = Promise.resolve('')
+  vi.spyOn(File.prototype, 'text').mockImplementation(function (this: File) {
+    if (this.name !== 'slow.csv') return realText.call(this)
+    slowRead = gate.then(() => realText.call(this))
+    return slowRead
   })
   importFn.mockResolvedValue({ inserted: 1, unchanged: 0, ours: 1, other: 0 })
   const lines = SKODA_EXPORT_FIXTURE.split('\r\n')
@@ -145,12 +151,13 @@ test('a slow first pick cannot overwrite a second one: preview and rows are the 
   await userEvent.upload(fileInput, new File([single], 'fast.csv'))
   await expect.element(screen.getByText(/1 laddning ·/)).toBeVisible()
   release()
-  await new Promise((r) => setTimeout(r, 100))
+  // The slow read finishes after the newer pick; a frame lets its continuation run.
+  await slowRead
+  await new Promise((r) => requestAnimationFrame(() => r(undefined)))
   await expect.element(screen.getByText(/1 laddning ·/)).toBeVisible()
   await importButton(screen).click()
   await vi.waitFor(() => expect(importFn).toHaveBeenCalled())
   expect(importFn.mock.calls[0][0].rows).toHaveLength(1)
-  vi.restoreAllMocks()
 })
 
 test('submitting while a file is still being read sends nothing', async () => {
@@ -164,18 +171,14 @@ test('submitting while a file is still being read sends nothing', async () => {
   await userEvent.upload(fileInput, fixture())
   await importButton(screen).click()
   expect(importFn).not.toHaveBeenCalled()
-  vi.restoreAllMocks()
 })
 
 test('a file over the size cap is refused without being read', async () => {
   const text = vi.spyOn(File.prototype, 'text')
   const { screen, fileInput } = await setup()
   await userEvent.upload(fileInput, new File(['x'.repeat(5 * 1024 * 1024 + 1)], 'huge.csv'))
-  await expect
-    .element(screen.getByText(m.charging_vehicle_import_too_many({ max: MAX_IMPORT_ROWS })))
-    .toBeVisible()
+  await expect.element(screen.getByText(m.charging_vehicle_import_too_big())).toBeVisible()
   expect(text).not.toHaveBeenCalled()
-  vi.restoreAllMocks()
 })
 
 test('the dialog cannot be closed while the import is in flight', async () => {
