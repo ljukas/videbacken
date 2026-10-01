@@ -235,6 +235,47 @@ test('hovering shows the nearest slot with the same kWh share as the table', asy
   await expect.element(screen.getByText('10:15–10:30 · 2,5 kWh · 375 öre')).toBeInTheDocument()
 })
 
+// The crosshair's hairline, in client px: its x and vertical extent.
+function crosshair() {
+  const lines = document.querySelectorAll('[data-crosshair] line')
+  const hair = lines[lines.length - 1]
+  if (!hair) return null
+  const box = hair.getBoundingClientRect()
+  return { x: (box.left + box.right) / 2, top: box.top, bottom: box.bottom }
+}
+// The client x of a time on the overlay's axis (07:00Z–11:00Z in the fixture).
+const clientXAt = (ms: number) => {
+  const box = overlay().getBoundingClientRect()
+  return box.left + ((ms - at('07:00')) / (at('11:00') - at('07:00'))) * box.width
+}
+
+test('hovering draws one crosshair through both panels at the slot, gone on leaving', async () => {
+  await renderChart()
+  expect(crosshair()).toBeNull()
+  pointAt('pointermove', at('08:07'))
+  await expect.poll(crosshair).not.toBeNull()
+  const hair = crosshair()
+  // Snapped to the middle of 08:00–08:15Z, not to the pointer at 08:07.
+  const mid = (clientXAt(at('08:00')) + clientXAt(at('08:15'))) / 2
+  expect(Math.abs((hair?.x ?? 0) - mid)).toBeLessThan(0.5)
+  expect(hair?.top ?? 0).toBeLessThanOrEqual(axisBox('ore').top + 0.5)
+  expect(hair?.bottom ?? 0).toBeGreaterThanOrEqual(axisBox('kw').bottom - 0.5)
+  // Only one, and it never takes the pointer from the overlay.
+  expect(document.querySelectorAll('[data-crosshair]')).toHaveLength(1)
+  expect(
+    (document.querySelector('[data-crosshair]') as SVGElement | null)?.style.pointerEvents,
+  ).toBe('none')
+  // React derives onPointerLeave from pointerout towards an element outside.
+  overlay().dispatchEvent(
+    new PointerEvent('pointerout', {
+      pointerType: 'mouse',
+      bubbles: true,
+      relatedTarget: document.body,
+    }),
+  )
+  await expect.poll(crosshair).toBeNull()
+})
+
 test('a tap on a phone-width chart opens the slot under the finger', async () => {
   const { screen } = await renderChart(detail, 360)
   pointAt('pointerdown', at('09:05'), 'touch')
@@ -269,6 +310,10 @@ test('without any price there is no line and no price axis, and nothing breaks',
   })
   expect(series('spot')[0]?.getAttribute('d') ?? '').not.toMatch(/M/)
   expect(document.querySelector('[data-axis="ore"]')).toBeNull()
+  expect(document.querySelector('[data-legend="spot"]')).toBeNull()
+  // No empty price panel: the energy panel takes the whole plot.
+  const plot = overlay().getBoundingClientRect()
+  expect(Math.abs(axisBox('kw').top - plot.top)).toBeLessThanOrEqual(0.5)
   await expect
     .element(chartTable(screen).getByRole('row', { name: /^10:00–10:15/ }))
     .toHaveTextContent(/10:00–10:15\s*2,5\s*—/)
@@ -288,23 +333,149 @@ test('negative spot prices stay on the price axis, with a zero line', async () =
   expect(document.querySelector('[data-ref="zero-ore"]')).not.toBeNull()
 })
 
-test('a four-digit negative tick fits inside the chart', async () => {
+test('a four-digit negative tick fits inside the left margin', async () => {
   await renderChart({
     ...detail,
     prices: prices.map((p, i) => ({ ...p, spotOre: i === 0 ? -1250 : 1250 })),
   })
-  const svgRight = document
+  const svgLeft = document
     .querySelector('svg[data-chart="session-price"]')
-    ?.getBoundingClientRect().right
-  const labels = [...document.querySelectorAll('[data-axis="ore"] text')]
+    ?.getBoundingClientRect().left
+  const labels = [...document.querySelectorAll('[data-axis="ore"] .visx-axis-tick text')]
   expect(labels.some((t) => /^[−-]1\s?000$/.test(t.textContent ?? ''))).toBe(true)
   const plot = overlay().getBoundingClientRect()
   for (const label of labels) {
     const box = label.getBoundingClientRect()
-    expect(box.right).toBeLessThanOrEqual(svgRight ?? 0)
-    // Right of the plot, not drawn back into it.
-    expect(box.left).toBeGreaterThanOrEqual(plot.right)
+    expect(box.left).toBeGreaterThanOrEqual(svgLeft ?? 0)
+    // Left of the plot, not drawn into it.
+    expect(box.right).toBeLessThanOrEqual(plot.left + 1)
   }
+})
+
+// The two panels, by their y-axes' tick lines (the domain line spans the panel).
+const axisBox = (name: string) => {
+  const el = document.querySelector(`[data-axis="${name}"] .visx-axis-line`)
+  if (!el) throw new Error(`${name} axis missing`)
+  return el.getBoundingClientRect()
+}
+
+test('price on top and energy below, each on its own left axis, with no right axis', async () => {
+  await renderChart()
+  const price = axisBox('ore')
+  const energy = axisBox('kw')
+  const time = axisBox('time')
+  // Stacked with a small gap, the price panel ≈ 40 % of the two.
+  const gap = energy.top - price.bottom
+  expect(gap).toBeGreaterThanOrEqual(8)
+  expect(gap).toBeLessThanOrEqual(12)
+  expect(price.height / (price.height + energy.height)).toBeCloseTo(0.4, 1)
+  // Both axes on the same left edge; the one time axis under the energy panel.
+  expect(Math.abs(price.left - energy.left)).toBeLessThan(0.5)
+  expect(Math.abs(time.top - energy.bottom)).toBeLessThan(1)
+  expect(document.querySelectorAll('[data-axis="time"]')).toHaveLength(1)
+  // Each panel's ticks stay in its own panel; nothing is labelled right of the plot.
+  const plot = overlay().getBoundingClientRect()
+  for (const [name, box] of [
+    ['ore', price],
+    ['kw', energy],
+  ] as const) {
+    const ticks = [...document.querySelectorAll(`[data-axis="${name}"] .visx-axis-tick line`)]
+    expect(ticks.length).toBeGreaterThan(1)
+    for (const tick of ticks) {
+      const y = tick.getBoundingClientRect().top
+      expect(y).toBeGreaterThanOrEqual(box.top - 0.5)
+      expect(y).toBeLessThanOrEqual(box.bottom + 0.5)
+    }
+  }
+  for (const text of document.querySelectorAll('svg[data-chart="session-price"] text')) {
+    expect(text.getBoundingClientRect().left).toBeLessThan(plot.right)
+  }
+  expect(texts('[data-axis="ore"]')).toContain('öre/kWh')
+  expect(texts('[data-axis="kw"]')).toContain('kW')
+})
+
+test('the plug-in window rules and the hover overlay span both panels', async () => {
+  await renderChart()
+  const top = axisBox('ore').top
+  const bottom = axisBox('kw').bottom
+  const plot = overlay().getBoundingClientRect()
+  expect(plot.top).toBeLessThanOrEqual(top + 0.5)
+  expect(plot.bottom).toBeGreaterThanOrEqual(bottom - 0.5)
+  for (const rule of document.querySelectorAll('[data-window]')) {
+    const box = rule.getBoundingClientRect()
+    expect(box.top).toBeLessThanOrEqual(top + 0.5)
+    expect(box.bottom).toBeGreaterThanOrEqual(bottom - 0.5)
+  }
+})
+
+// The x of the price step at 08:00Z (125 → 375 öre), in client px: the line's
+// first vertical segment.
+function priceStepX() {
+  const d = series('spot')[0]?.getAttribute('d') ?? ''
+  const points = [...d.matchAll(/([\d.]+),([\d.]+)/g)].map(([, px, py]) => [Number(px), Number(py)])
+  const i = points.findIndex(([px, py], k) => {
+    const [nx, ny] = points[k + 1] ?? []
+    return nx !== undefined && Math.abs(nx - (px ?? 0)) < 0.01 && ny !== py
+  })
+  const xStep = points[i]?.[0]
+  if (xStep === undefined) throw new Error('no step in the price line')
+  return overlay().getBoundingClientRect().left + xStep
+}
+
+test.each([
+  900, 360,
+])('the panels share one x at %i px: a bar starts where the price steps at the same time', async (width) => {
+  await renderChart(detail, width)
+  const barLeft = series('actual')[0]?.getBoundingClientRect().left ?? Number.NaN
+  expect(Math.abs(barLeft - priceStepX())).toBeLessThanOrEqual(0.5)
+})
+
+test("the price panel shades the cheapest schedule's runs behind the line", async () => {
+  await renderChart(overnight, 900)
+  const bands = [...document.querySelectorAll('[data-band="optimal"]')]
+  const outlines = [...series('optimal')]
+  expect(bands).toHaveLength(2)
+  bands.forEach((band, i) => {
+    // The run's outline goes baseline → steps → baseline: its first and last x.
+    const xs = [...(outlines[i]?.getAttribute('d') ?? '').matchAll(/[ML]([\d.]+),/g)].map(([, v]) =>
+      Number(v),
+    )
+    const x = Number(band.getAttribute('x'))
+    expect(x).toBeCloseTo(xs[0] ?? Number.NaN, 1)
+    expect(x + Number(band.getAttribute('width'))).toBeCloseTo(xs.at(-1) ?? Number.NaN, 1)
+    // Over the price panel's full height, and drawn before (behind) the line.
+    const box = band.getBoundingClientRect()
+    const price = axisBox('ore')
+    // (within visx's half-pixel axis alignment)
+    expect(Math.abs(box.top - price.top)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(box.bottom - price.bottom)).toBeLessThanOrEqual(0.5)
+    const line = series('spot')[0]
+    if (!line) throw new Error('no line')
+    expect(band.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  })
+})
+
+test('hiding the cheapest schedule hides its price band too', async () => {
+  const { screen } = await renderChart()
+  expect(document.querySelectorAll('[data-band="optimal"]')).toHaveLength(1)
+  await screen.getByRole('checkbox', { name: m.charging_session_chart_show_optimal() }).click()
+  await expect.poll(() => document.querySelectorAll('[data-band="optimal"]').length).toBe(0)
+})
+
+test('an idle hour of a few Wh draws no bar, not a hairline on the baseline', async () => {
+  const { screen } = await renderChart({
+    ...detail,
+    intervals: [
+      { startMs: at('08:00'), endMs: at('09:00'), kwh: 10 },
+      { startMs: at('09:00'), endMs: at('10:00'), kwh: 0.002 },
+      { startMs: at('10:00'), endMs: at('10:30'), kwh: 0 },
+    ],
+  })
+  expect(series('actual')).toHaveLength(1)
+  // The table still has the idle hour's energy, rounded.
+  await expect
+    .element(chartTable(screen).getByRole('row', { name: /^11:00–11:15/ }))
+    .toHaveTextContent(/11:00–11:15\s*0,0\s*125/)
 })
 
 test('the kW labels sit inside the left margin, beside their ticks', async () => {
@@ -435,8 +606,13 @@ test('arrow keys step the popover through the rows; Escape closes it', async () 
   await userEvent.keyboard('{ArrowRight}')
   await expect.poll(popoverText).toBe('09:00–09:15 · — kWh · 125 öre')
   expect(announced()).toBe('09:00–09:15 · — kWh · 125 öre')
+  // The crosshair follows the keyboard: the first row's middle, then one quarter on.
+  const first = crosshair()?.x ?? Number.NaN
+  expect(Math.abs(first - (clientXAt(at('07:00')) + clientXAt(at('07:15'))) / 2)).toBeLessThan(0.5)
   await userEvent.keyboard('{ArrowRight}')
   await expect.poll(popoverText).toBe('09:15–09:30 · — kWh · 125 öre')
+  const quarterPx = clientXAt(at('07:15')) - clientXAt(at('07:00'))
+  expect(Math.abs((crosshair()?.x ?? Number.NaN) - first - quarterPx)).toBeLessThan(0.5)
   await userEvent.keyboard('{End}')
   await expect.poll(popoverText).toBe('12:45–13:00 · — kWh · 125 öre')
   await userEvent.keyboard('{ArrowLeft}')
@@ -449,6 +625,7 @@ test('arrow keys step the popover through the rows; Escape closes it', async () 
   await userEvent.keyboard('{Escape}')
   await expect.poll(popoverText).toBeNull()
   expect(announced()).toBe('')
+  expect(crosshair()).toBeNull()
 })
 
 test('leaving the plot with the keyboard closes its popover', async () => {

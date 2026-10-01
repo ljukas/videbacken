@@ -1,5 +1,5 @@
 import { tz } from '@date-fns/tz'
-import { AxisBottom, AxisLeft, AxisRight } from '@visx/axis'
+import { AxisBottom, AxisLeft } from '@visx/axis'
 import { curveStepAfter } from '@visx/curve'
 import { Group } from '@visx/group'
 import { useParentSize } from '@visx/responsive'
@@ -26,9 +26,13 @@ type Slot = Detail['prices'][number]
 type Row = Slot
 type StepPoint = { t: number; ore: number | null }
 
-const HEIGHT = 260
+// Two panels on one time axis: the spot price on top (≈ 40 % of the plot), the
+// energy below (≈ 60 %), each on its own y-axis — never two scales on one plot.
+const HEIGHT = 300
 const MARGIN_TOP = 20
 const MARGIN_BOTTOM = 28
+const PANEL_GAP = 12
+const PRICE_SHARE = 0.4
 const NARROW_PX = 480
 const TICK_STEPS_H = [1, 2, 3, 4, 6, 12, 24]
 // Side margins fit the widest tick label. Measured at 10 px, "−1 000" is 28 px
@@ -38,6 +42,8 @@ const TICK_STEPS_H = [1, 2, 3, 4, 6, 12, 24]
 const CHAR_PX = 6.5
 const TICK_GAP = 14
 const MIN_SIDE = 28
+// The right margin only has to hold half of the last time label.
+const MIN_RIGHT = 12
 
 // Colours, as contrast ratios light / dark (WCAG, from the oklch tokens):
 //   actual   --chart-3 fill                      vs card 9.1 / 8.1
@@ -51,13 +57,20 @@ const MIN_SIDE = 28
 //     card columns through hourly bars, swallow narrow bars and gaps at phone
 //     width, and trim the window rules — so they sit directly on bars or card;
 //     the haloed top edge and the fill already identify the run.
+//     In the price panel the same runs are a --chart-2 band at the ghost
+//     fill's 15 %, behind the line (band vs card 1.2 / 1.3): a highlight of
+//     when, not a mark to read a value off; the outline below carries the
+//     series' 3:1.
 //   spot     --foreground line                   vs card 19.8 / 15.9
-//            over a --card halo (the line alone is 2.2 / 2.0 against --chart-3)
+//            vs the band 16.5 / 12.5 (no bars in its panel, so no halo)
 //   window   --muted-foreground dashed rules     vs card 4.7 / 6.7
+//   crosshair --muted-foreground hairline        vs card 4.7 / 6.7, band 4.0 / 5.3
+//            over a --card halo (the line alone is 1.9 / 1.2 against --chart-3)
 //   zero öre --muted-foreground dotted rule      vs card 4.7 / 6.7
 // --chart-1 and --chart-4 fail one theme each (see EconomyMonthlyChart).
 const ACTUAL = 'var(--chart-3)'
 const OPTIMAL = 'var(--chart-2)'
+const OPTIMAL_FILL_OPACITY = 0.15
 const SPOT = 'var(--foreground)'
 const RULE = 'var(--muted-foreground)'
 const HALO = 'var(--card)'
@@ -65,13 +78,15 @@ const HALO = 'var(--card)'
 // load no app CSS) and in the app, so the margin estimate holds in both.
 const LABEL_PX = 10
 // Given as functions, visx skips its per-axis defaults (and their Arial), so
-// each mirrors its axis's default placement (@visx/axis left/right/bottom
+// each mirrors its axis's default placement (@visx/axis left/bottom
 // TickLabelProps) and keeps the app font.
 const LABEL = { className: 'fill-muted-foreground', fontSize: LABEL_PX }
 const LEFT_LABEL = () => ({ ...LABEL, dx: '-0.25em', dy: '0.25em', textAnchor: 'end' as const })
-const RIGHT_LABEL = () => ({ ...LABEL, dx: '0.25em', dy: '0.25em', textAnchor: 'start' as const })
 const BOTTOM_LABEL = () => ({ ...LABEL, dy: '0.25em', textAnchor: 'middle' as const })
 const BAR_RADIUS = 2
+// A bar shorter than this draws nothing: an idle hour's few Wh would otherwise
+// paint a hairline along the baseline.
+const MIN_BAR_PX = 0.5
 const GHOST_HALO_PX = 4
 const byStart = bisector((r: Row) => r.startMs)
 
@@ -183,11 +198,14 @@ function hourTicks(
 const sideMargin = (labels: string[]) =>
   Math.max(MIN_SIDE, Math.ceil((max(labels, (l) => l.length) ?? 0) * CHAR_PX) + TICK_GAP)
 
-// A session's energy (bars at their true times: Zaptec's hourly intervals)
-// against the 15-min spot price (a step line), with the cheapest schedule as
-// dashed ghost bars. Mixed resolution needs a real time axis, hence visx +
-// d3-scale rather than Recharts' category axis. Dashed rules mark the plug-in
-// window. An estimated session has no intervals: no bars, still the price.
+// A session in two panels on one time axis: the 15-min spot price (a step
+// line) on top, the energy below (bars at their true times: Zaptec's hourly
+// intervals), with the cheapest schedule as dashed ghost bars below and a
+// shaded band behind the price above. Each panel has its own y-axis: two
+// measures never share a plot. Mixed resolution needs a real time axis, hence
+// visx + d3-scale rather than Recharts' category axis. Dashed rules mark the
+// plug-in window across both panels. An estimated session has no intervals:
+// no bars, still the price.
 export function SessionPriceChart({ detail }: { detail: Detail }) {
   const headingId = useId()
   const toggleId = useId()
@@ -205,6 +223,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
   const endMs = Math.max(win.endMs + millisecondsInHour, rows.at(-1)?.endMs ?? -Infinity)
   // Over more than one Stockholm day, times carry their weekday.
   const multiDay = stockholmDayOf(startMs) !== stockholmDayOf(endMs - 1)
+  const hasPrice = prices.some((p) => p.spotOre !== null)
 
   // The row under the pointer, so moving within it doesn't re-open the popover.
   const shownRef = useRef<Row | null>(null)
@@ -212,36 +231,54 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
     if (!popover.open) shownRef.current = null
   }, [popover.open])
 
-  // The SVG depends only on layout + data, so hovering doesn't redraw it.
-  // `place` is where a row's popover goes, for the keyboard as for the pointer.
+  // The SVG depends only on layout + data, so hovering doesn't redraw it: the
+  // crosshair is drawn apart, between `marks` and `overlay`. `place` is where
+  // a row's popover goes and `crossX` its crosshair, for keyboard and pointer.
   const plot = useMemo(() => {
     if (width <= 0) return null
-    const innerH = HEIGHT - MARGIN_TOP - MARGIN_BOTTOM
+    // Both panels and the gap between them; without any price the energy
+    // panel takes it all rather than leave an empty price panel.
+    const plotH = HEIGHT - MARGIN_TOP - MARGIN_BOTTOM
+    const priceH = hasPrice ? Math.round((plotH - PANEL_GAP) * PRICE_SHARE) : 0
+    const energyTop = hasPrice ? priceH + PANEL_GAP : 0
+    const energyH = plotH - energyTop
     const charged = intervals.filter((s) => s.kwh > 0 && s.endMs > s.startMs)
     const optimal = (optimalSchedule ?? []).filter((s) => s.endMs > s.startMs)
     // The kW scale includes the schedule even while it's hidden, so the toggle never rescales.
     const yKw = scaleLinear()
       .domain([0, Math.max(1, max([...charged, ...optimal], avgKw) ?? 0)])
       .nice()
-      .range([innerH, 0])
+      .range([energyH, 0])
     const ores = prices.flatMap((p) => (p.spotOre === null ? [] : [p.spotOre]))
-    const hasPrice = ores.length > 0
     const hasNegative = ores.some((o) => o < 0)
     // Negative spot prices happen: the price axis reaches below 0 to keep them.
     // At least 10 öre tall, so whole-öre ticks never repeat.
     const yOre = scaleLinear()
       .domain([Math.min(0, min(ores) ?? 0), Math.max(10, max(ores) ?? 0)])
       .nice()
-      .range([innerH, 0])
-    const left = sideMargin(yKw.ticks(4).map((v) => formatOneDecimal(v)))
-    const right = hasPrice ? sideMargin(yOre.ticks(4).map((v) => formatOre(v))) : MIN_SIDE
+      .range([priceH, 0])
+    const timeTicks = hourTicks(startMs, endMs, width < NARROW_PX ? 4 : 8, (ms) =>
+      tickLabel(ms, multiDay),
+    )
+    // The first and last time labels are centred on the plot's edges at most.
+    const halfTime = Math.ceil(
+      ((max(timeTicks, (ms) => tickLabel(ms, multiDay).length) ?? 0) * CHAR_PX) / 2,
+    )
+    // One left margin for both panels, so they align to the pixel.
+    const left = Math.max(
+      sideMargin(yKw.ticks(4).map((v) => formatOneDecimal(v))),
+      hasPrice ? sideMargin(yOre.ticks(4).map((v) => formatOre(v))) : 0,
+      halfTime,
+    )
+    const right = Math.max(MIN_RIGHT, halfTime)
     const innerW = Math.max(0, width - left - right)
     const x = scaleTime().domain([startMs, endMs]).range([0, innerW])
     const bar = (s: Stretch) => {
       const x0 = x(s.startMs)
       const y0 = yKw(avgKw(s))
-      return { x: x0, y: y0, width: Math.max(1, x(s.endMs) - x0 - 1), height: innerH - y0 }
+      return { x: x0, y: y0, width: Math.max(1, x(s.endMs) - x0 - 1), height: energyH - y0 }
     }
+    const bars = charged.map((s) => ({ s, b: bar(s) })).filter(({ b }) => b.height >= MIN_BAR_PX)
     // Each run of the cheapest schedule: its stepped top edge from baseline to
     // baseline (the outline, open at the bottom) and the same shape closed.
     const ghosts = showOptimal
@@ -254,7 +291,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
             .join('')
           const x0 = x(run[0]?.startMs ?? 0)
           const x1 = x(run.at(-1)?.endMs ?? 0)
-          const outline = `M${x0},${innerH}${tops}L${x1},${innerH}`
+          const outline = `M${x0},${energyH}${tops}L${x1},${energyH}`
           // The top edge alone, one horizontal segment per piece, for the halo.
           const topEdge = run
             .map((p) => {
@@ -262,23 +299,17 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               return `M${x(p.startMs)},${y}L${x(p.endMs)},${y}`
             })
             .join('')
-          return { key: run[0]?.startMs ?? 0, outline, topEdge, shape: `${outline}Z` }
+          return { key: run[0]?.startMs ?? 0, x0, x1, outline, topEdge, shape: `${outline}Z` }
         })
       : []
-    const line = {
-      data: stepPoints(prices),
-      x: (d: StepPoint) => x(d.t),
-      y: (d: StepPoint) => yOre(d.ore ?? 0),
-      defined: (d: StepPoint) => d.ore !== null,
-      curve: curveStepAfter,
-    }
+    const crossX = (r: Row) => (x(r.startMs) + x(r.endMs)) / 2
     const place = (r: Row) => ({
-      left: left + (x(r.startMs) + x(r.endMs)) / 2,
-      top: MARGIN_TOP + (r.spotOre === null ? innerH / 2 : yOre(r.spotOre)),
+      left: left + crossX(r),
+      top: MARGIN_TOP + (r.spotOre === null ? plotH / 2 : yOre(r.spotOre)),
     })
-    // One overlay picks the row nearest the pointer, so a fingertip can hit a
-    // 15-min slot a few pixels wide. pointerdown covers a tap (ChartPopover
-    // keeps it open until a tap outside or Escape).
+    // One overlay over both panels picks the row nearest the pointer, so a
+    // fingertip can hit a 15-min slot a few pixels wide. pointerdown covers a
+    // tap (ChartPopover keeps it open until a tap outside or Escape).
     const pick = (e: React.PointerEvent<SVGRectElement>) => {
       const t = x.invert(e.clientX - e.currentTarget.getBoundingClientRect().left).getTime()
       const i = byStart.right(rows, t) - 1
@@ -290,6 +321,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
       const at = place(row)
       show(row, at.left, at.top)
     }
+    // Through both panels and the gap between them.
     const rule = (ms: number, key: string) => (
       <line
         key={key}
@@ -297,18 +329,41 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
         x1={x(ms)}
         x2={x(ms)}
         y1={0}
-        y2={innerH}
+        y2={plotH}
         style={{ stroke: RULE, strokeWidth: 1, strokeDasharray: '4 3' }}
       />
     )
     const axisProps = { stroke: 'var(--border)', tickStroke: 'var(--border)' }
+    // A unit over its panel's plot, clear of the tick labels in the margin.
+    const unit = (text: string, y: number) => (
+      <text x={0} y={y} fontSize={LABEL_PX} className="fill-muted-foreground">
+        {text}
+      </text>
+    )
+    const line = {
+      data: stepPoints(prices),
+      x: (d: StepPoint) => x(d.t),
+      y: (d: StepPoint) => yOre(d.ore ?? 0),
+      defined: (d: StepPoint) => d.ore !== null,
+      curve: curveStepAfter,
+    }
 
-    const svg = (
-      // biome-ignore lint/a11y/noSvgWithoutTitle: decorative; the sr-only table carries the numbers
-      <svg width={width} height={HEIGHT} aria-hidden className="block" data-chart="session-price">
-        <Group left={left} top={MARGIN_TOP}>
-          {rule(win.startMs, 'start')}
-          {rule(win.endMs, 'end')}
+    const marks = (
+      <>
+        {rule(win.startMs, 'start')}
+        {rule(win.endMs, 'end')}
+        <Group data-panel="price">
+          {ghosts.map((g) => (
+            <rect
+              key={`b${g.key}`}
+              data-band="optimal"
+              x={g.x0}
+              y={0}
+              width={g.x1 - g.x0}
+              height={priceH}
+              style={{ fill: OPTIMAL, fillOpacity: OPTIMAL_FILL_OPACITY }}
+            />
+          ))}
           {hasNegative ? (
             <line
               data-ref="zero-ore"
@@ -319,19 +374,37 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               style={{ stroke: RULE, strokeWidth: 1, strokeDasharray: '1 3' }}
             />
           ) : null}
+          <LinePath
+            {...line}
+            data-series="spot"
+            style={{ fill: 'none', stroke: SPOT, strokeWidth: 2, strokeLinejoin: 'round' }}
+          />
+          {hasPrice ? (
+            <g data-axis="ore">
+              <AxisLeft
+                scale={yOre}
+                numTicks={4}
+                tickFormat={(v) => formatOre(Number(v))}
+                tickLabelProps={LEFT_LABEL}
+                {...axisProps}
+              />
+              {unit('öre/kWh', -8)}
+            </g>
+          ) : null}
+        </Group>
+        <Group top={energyTop} data-panel="energy">
           {ghosts.map((g) => (
             <path
               key={`f${g.key}`}
               data-ghost="fill"
               d={g.shape}
-              style={{ fill: OPTIMAL, fillOpacity: 0.15 }}
+              style={{ fill: OPTIMAL, fillOpacity: OPTIMAL_FILL_OPACITY }}
             />
           ))}
-          {charged.map((s) => {
-            const b = bar(s)
+          {bars.map(({ s, b }) =>
             // BarRounded clamps its radius to >= 1 px and would poke a sliver
             // below the baseline; a bar too short to round is a plain rect.
-            return b.height >= 2 * BAR_RADIUS ? (
+            b.height >= 2 * BAR_RADIUS ? (
               <BarRounded
                 key={`a${s.startMs}`}
                 data-series="actual"
@@ -342,8 +415,8 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               />
             ) : (
               <Bar key={`a${s.startMs}`} data-series="actual" {...b} style={{ fill: ACTUAL }} />
-            )
-          })}
+            ),
+          )}
           {ghosts.length > 0 ? (
             <>
               <mask id={maskId} maskUnits="userSpaceOnUse">
@@ -351,7 +424,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
                   x={-GHOST_HALO_PX}
                   y={-GHOST_HALO_PX}
                   width={innerW + 2 * GHOST_HALO_PX}
-                  height={innerH + 2 * GHOST_HALO_PX}
+                  height={energyH + 2 * GHOST_HALO_PX}
                   fill="white"
                 />
                 {ghosts.map((g) => (
@@ -380,37 +453,6 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               ))}
             </>
           ) : null}
-          <LinePath
-            {...line}
-            style={{ fill: 'none', stroke: HALO, strokeWidth: 4.5, strokeLinejoin: 'round' }}
-          />
-          <LinePath
-            {...line}
-            data-series="spot"
-            style={{ fill: 'none', stroke: SPOT, strokeWidth: 2, strokeLinejoin: 'round' }}
-          />
-          <rect
-            data-hover-overlay
-            x={0}
-            y={0}
-            width={innerW}
-            height={innerH}
-            style={{ fill: 'transparent' }}
-            onPointerMove={pick}
-            onPointerDown={pick}
-          />
-          <g data-axis="time">
-            <AxisBottom
-              top={innerH}
-              scale={x}
-              tickValues={hourTicks(startMs, endMs, width < NARROW_PX ? 4 : 8, (ms) =>
-                tickLabel(ms, multiDay),
-              )}
-              tickFormat={(d) => tickLabel(Number(d), multiDay)}
-              tickLabelProps={BOTTOM_LABEL}
-              {...axisProps}
-            />
-          </g>
           <g data-axis="kw">
             <AxisLeft
               scale={yKw}
@@ -419,35 +461,35 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               tickLabelProps={LEFT_LABEL}
               {...axisProps}
             />
+            {/* In the gap (or the top margin), over the plot: beside the axis it would meet the tick labels. */}
+            {unit('kW', hasPrice ? -3 : -8)}
           </g>
-          {hasPrice ? (
-            <g data-axis="ore">
-              <AxisRight
-                left={innerW}
-                scale={yOre}
-                numTicks={4}
-                tickFormat={(v) => formatOre(Number(v))}
-                tickLabelProps={RIGHT_LABEL}
-                {...axisProps}
-              />
-              <text x={innerW + 8} y={-8} fontSize={LABEL_PX} className="fill-muted-foreground">
-                öre
-              </text>
-            </g>
-          ) : null}
-          <text
-            x={-8}
-            y={-8}
-            textAnchor="end"
-            fontSize={LABEL_PX}
-            className="fill-muted-foreground"
-          >
-            kW
-          </text>
+          <g data-axis="time">
+            <AxisBottom
+              top={energyH}
+              scale={x}
+              tickValues={timeTicks}
+              tickFormat={(d) => tickLabel(Number(d), multiDay)}
+              tickLabelProps={BOTTOM_LABEL}
+              {...axisProps}
+            />
+          </g>
         </Group>
-      </svg>
+      </>
     )
-    return { svg, place }
+    const overlay = (
+      <rect
+        data-hover-overlay
+        x={0}
+        y={0}
+        width={innerW}
+        height={plotH}
+        style={{ fill: 'transparent' }}
+        onPointerMove={pick}
+        onPointerDown={pick}
+      />
+    )
+    return { left, plotH, marks, overlay, place, crossX }
   }, [
     width,
     win,
@@ -460,6 +502,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
     startMs,
     endMs,
     multiDay,
+    hasPrice,
     maskId,
   ])
 
@@ -491,6 +534,7 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
   )
 
   const active = popover.data
+  const crossX = plot && popover.open && active ? plot.crossX(active) : null
   const optimalShown = optimalSchedule !== null && showOptimal
   // An estimated session has no intervals: no bars, so no "Laddat" entry, but a note.
   const hasIntervals = intervals.length > 0
@@ -580,7 +624,41 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               className="peer w-full rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               style={{ height: HEIGHT }}
             >
-              {plot?.svg}
+              {plot ? (
+                // biome-ignore lint/a11y/noSvgWithoutTitle: decorative; the sr-only table carries the numbers
+                <svg
+                  width={width}
+                  height={HEIGHT}
+                  aria-hidden
+                  className="block"
+                  data-chart="session-price"
+                >
+                  <Group left={plot.left} top={MARGIN_TOP}>
+                    {plot.marks}
+                    {crossX === null ? null : (
+                      // One hairline through both panels at the active row,
+                      // over a card halo so it reads across the bars too.
+                      <g data-crosshair style={{ pointerEvents: 'none' }}>
+                        <line
+                          x1={crossX}
+                          x2={crossX}
+                          y1={0}
+                          y2={plot.plotH}
+                          style={{ stroke: HALO, strokeWidth: 3 }}
+                        />
+                        <line
+                          x1={crossX}
+                          x2={crossX}
+                          y1={0}
+                          y2={plot.plotH}
+                          style={{ stroke: RULE, strokeWidth: 1 }}
+                        />
+                      </g>
+                    )}
+                    {plot.overlay}
+                  </Group>
+                </svg>
+              ) : null}
             </div>
             {/* Shown while the plot has keyboard focus; always its description. */}
             <p
@@ -601,7 +679,14 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
               {m.charging_session_chart_no_hourly()}
             </p>
           )}
+          {/* One legend for both panels, in their order: the price, then the energy. */}
           <ul className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
+            {hasPrice ? (
+              <li className="flex items-center gap-1.5" data-legend="spot">
+                <span className="h-0.5 w-3" style={{ background: SPOT }} />
+                {m.charging_session_chart_spot()}
+              </li>
+            ) : null}
             {hasIntervals ? (
               <li className="flex items-center gap-1.5" data-legend="actual">
                 <span className="size-2.5 rounded-t-sm" style={{ background: ACTUAL }} />
@@ -614,16 +699,12 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
                   className="size-2.5 border-[1.5px] border-dashed"
                   style={{
                     borderColor: OPTIMAL,
-                    background: `color-mix(in oklab, ${OPTIMAL} 15%, transparent)`,
+                    background: `color-mix(in oklab, ${OPTIMAL} ${OPTIMAL_FILL_OPACITY * 100}%, transparent)`,
                   }}
                 />
                 {m.charging_session_chart_optimal()}
               </li>
             ) : null}
-            <li className="flex items-center gap-1.5">
-              <span className="h-0.5 w-3" style={{ background: SPOT }} />
-              {m.charging_session_chart_spot()}
-            </li>
             <li className="flex items-center gap-1.5">
               <span className="h-2.5 w-3 border-x border-dashed" style={{ borderColor: RULE }} />
               {m.charging_session_chart_window()}
