@@ -28,6 +28,8 @@ export type SkodaParseResult =
 
 // An explicit zone (Z or +hh:mm) is required: parseISO reads a zone-less value
 // as browser-local time, which would shift the session by the UTC offset.
+// The `T` check in `date` is a second rule: the zone regex alone would accept a
+// date-only "2026-02-01" through its trailing "-01".
 const HAS_ZONE = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i
 const date = (v: string | undefined) => {
   const t = v?.trim()

@@ -75,7 +75,7 @@ test('a blank energy is dropped, not counted as 0 kWh', () => {
   if (result.ok) expect(result.rows.map((r) => r.sourceSessionId)).toEqual(['z'])
 })
 
-const header = fixture.split(/\r?\n/)[0].replace('﻿', '')
+const header = fixture.split(/\r?\n/)[0].replace('\uFEFF', '')
 const row = (cells: Record<string, string>) => {
   const cols = [...header.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => m[1].replace(/""/g, '"'))
   const base: Record<string, string> = {
@@ -162,7 +162,7 @@ test.each([
   'End SOC (%)',
   'Location name',
 ])('a header missing "%s" is not a MySkoda export', (col) => {
-  const lines = fixture.replace('﻿', '').split(/\r\n/)
+  const lines = fixture.replace('\uFEFF', '').split(/\r\n/)
   const idx = [...lines[0].matchAll(/"((?:[^"]|"")*)"/g)].findIndex((m) => m[1] === col)
   // Quoted commas make a naive split unsafe; rebuild each line from its quoted cells.
   const cut = (line: string) => {
