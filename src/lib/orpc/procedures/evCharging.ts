@@ -214,18 +214,29 @@ export const evChargingRouter = {
 
   // The car's own charging log, parsed in the admin's browser (no file bytes
   // here — ADR-0006), then one re-match. Two writes -> sub-timings.
+  // Deliberately NOT one transaction: if the re-match fails the records stay
+  // stored, and re-importing is the recovery (the re-match runs regardless of
+  // `inserted`); the next Zaptec sync re-derives attribution anyway.
+  // `ours`/`other` count every session the rule decided, not just changed ones.
   importVehicleRecords: adminProcedure
     .input(z.object({ rows: z.array(vehicleRecordInput).min(1).max(MAX_IMPORT_ROWS) }))
     .handler(async ({ input, context }) => {
       const importStart = performance.now()
-      const imported = await vehicleChargeService.importRecords(input.rows)
-      const reattributeStart = performance.now()
-      const { ours, other } = await evChargingService.reattributeSessions()
-      if (context.timings) {
-        context.timings.vehicleImportMs = Math.round(reattributeStart - importStart)
-        context.timings.vehicleReattributeMs = Math.round(performance.now() - reattributeStart)
+      let reattributeStart: number | undefined
+      try {
+        const imported = await vehicleChargeService.importRecords(input.rows)
+        reattributeStart = performance.now()
+        const { ours, other } = await evChargingService.reattributeSessions()
+        return { ...imported, ours, other }
+      } finally {
+        if (context.timings) {
+          const end = performance.now()
+          context.timings.vehicleImportMs = Math.round((reattributeStart ?? end) - importStart)
+          if (reattributeStart !== undefined) {
+            context.timings.vehicleReattributeMs = Math.round(end - reattributeStart)
+          }
+        }
       }
-      return { ...imported, ours, other }
     }),
 
   vehicleRecordCoverage: adminProcedure.handler(() => vehicleChargeService.coverage()),

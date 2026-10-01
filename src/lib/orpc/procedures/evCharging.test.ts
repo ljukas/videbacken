@@ -1,8 +1,15 @@
 import { call } from '@orpc/server'
+import { eq } from 'drizzle-orm'
 import { afterEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
-import { evChargeInterval, evCharger, evChargeSession, user } from '~/lib/db/schema'
+import {
+  evChargeInterval,
+  evCharger,
+  evChargeSession,
+  user,
+  vehicleChargeRecord,
+} from '~/lib/db/schema'
 import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
 import { createZaptecClient, zaptec } from '~/lib/effects/zaptec'
 import {
@@ -14,6 +21,7 @@ import {
 } from '~/lib/effects/zaptec/fixtures'
 import { MAX_IMPORT_ROWS } from '~/lib/evCharging/vehicle'
 import type { Logger } from '~/lib/logger'
+import * as evChargingService from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { replaceDay } from '~/lib/services/spotPrice'
 import * as tariffService from '~/lib/services/tariff'
@@ -693,4 +701,118 @@ test('setSessionVehicle maps an unknown session to EV_SESSION_NOT_FOUND (404)', 
       { context: baseContext() },
     ),
   ).rejects.toMatchObject({ code: 'EV_SESSION_NOT_FOUND', status: 404, defined: true })
+})
+
+test('every scoped read passes the vehicle through to its read model', async () => {
+  await signIn('user')
+  await insertSession({
+    startAt: new Date('2026-03-01T10:00:00Z'),
+    endAt: new Date('2026-03-01T11:00:00Z'),
+    energyKwh: 5,
+  })
+  await insertSession({
+    startAt: new Date('2026-04-01T10:00:00Z'),
+    endAt: new Date('2026-04-01T11:00:00Z'),
+    energyKwh: 7,
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const ctx = { context: baseContext() }
+  const input = { year: 2026 }
+
+  const overview = (v: 'all' | 'other') =>
+    call(evChargingRouter.overview, { ...input, vehicle: v }, ctx)
+  expect((await overview('all')).tiles.allTime.sessions).toBe(2)
+  expect((await overview('other')).tiles.allTime.sessions).toBe(1)
+
+  const cost = (v: 'all' | 'other') =>
+    call(evChargingRouter.costOverview, { ...input, vehicle: v }, ctx)
+  expect((await cost('all')).tiles.allTime.kwh).toBe(12)
+  expect((await cost('other')).tiles.allTime.kwh).toBe(7)
+
+  const patternHours = async (v: 'all' | 'other') =>
+    (await call(evChargingRouter.patterns, { ...input, vehicle: v }, ctx)).weekdayHour
+      .flat()
+      .reduce((sum, c) => sum + c.pluggedHours, 0)
+  expect(await patternHours('all')).toBeCloseTo(2)
+  expect(await patternHours('other')).toBeCloseTo(1)
+
+  const timeline = (v: 'all' | 'other') =>
+    call(evChargingRouter.timeline, { ...input, vehicle: v }, ctx)
+  expect((await timeline('all')).months).toEqual([3, 4])
+  expect((await timeline('other')).months).toEqual([4])
+
+  const economy = (v: 'all' | 'other') =>
+    call(evChargingRouter.economy, { ...input, vehicle: v }, ctx)
+  expect((await economy('all')).tiles.sessions).toBe(2)
+  expect((await economy('other')).tiles.sessions).toBe(1)
+})
+
+test('a re-import with nothing inserted still re-matches a stale attribution', async () => {
+  await signIn('admin')
+  const id = await insertSession({
+    startAt: new Date('2026-02-10T10:00:00Z'),
+    endAt: new Date('2026-02-10T12:00:00Z'),
+  })
+  const rows = [importRow('a', '2026-02-10T09:30:00Z', '2026-02-10T13:00:00Z')]
+  await call(evChargingRouter.importVehicleRecords, { rows }, { context: baseContext() })
+  await db
+    .update(evChargeSession)
+    .set({ vehicle: 'other', vehicleSource: 'skoda' })
+    .where(eq(evChargeSession.id, id))
+  const again = await call(
+    evChargingRouter.importVehicleRecords,
+    { rows },
+    { context: baseContext() },
+  )
+  expect(again).toMatchObject({ inserted: 0, unchanged: 1, ours: 1 })
+  const [after] = await db
+    .select({ vehicle: evChargeSession.vehicle, vehicleSource: evChargeSession.vehicleSource })
+    .from(evChargeSession)
+    .where(eq(evChargeSession.id, id))
+  expect(after).toEqual({ vehicle: 'ours', vehicleSource: 'skoda' })
+})
+
+test('importVehicleRecords still reports its import timing when the re-match fails', async () => {
+  await signIn('admin')
+  vi.spyOn(evChargingService, 'reattributeSessions').mockRejectedValue(new Error('boom'))
+  const timings: Record<string, number> = {}
+  await expect(
+    call(
+      evChargingRouter.importVehicleRecords,
+      { rows: [importRow('a')] },
+      { context: { ...baseContext(), timings } },
+    ),
+  ).rejects.toBeDefined()
+  expect(timings).toHaveProperty('vehicleImportMs')
+  const stored = await db.select().from(vehicleChargeRecord)
+  expect(stored).toHaveLength(1)
+})
+
+test('the attribution procedures reject an unauthenticated caller', async () => {
+  for (const [proc, input] of [
+    [
+      evChargingRouter.setSessionVehicle,
+      { sessionId: '00000000-0000-4000-8000-000000000000', vehicle: 'other' },
+    ],
+    [evChargingRouter.importVehicleRecords, { rows: [importRow('a')] }],
+    [evChargingRouter.vehicleRecordCoverage, undefined],
+  ] as const) {
+    await expect(
+      call(proc as never, input as never, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+  }
+})
+
+test('importVehicleRecords rejects an extra key and an out-of-range timestamp', async () => {
+  await signIn('admin')
+  for (const row of [
+    { ...importRow('a'), locationName: 'Home' },
+    importRow('a', '1969-12-31T00:00:00Z', '2026-02-01T11:00:00Z'),
+    importRow('a', '2026-02-01T10:00:00Z', '2200-01-01T00:00:00Z'),
+  ]) {
+    await expect(
+      call(evChargingRouter.importVehicleRecords, { rows: [row] }, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  }
 })
