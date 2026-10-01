@@ -74,6 +74,12 @@ export const evChargeSession = pgTable(
       'ev_charge_session_vehicle_source_check',
       sql`${table.vehicleSource} IN (${sqlList(VEHICLE_SOURCES)})`,
     ),
+    // 'default' means nobody decided, which counts as ours; a guest session
+    // therefore needs a deciding source.
+    check(
+      'ev_charge_session_vehicle_default_check',
+      sql`${table.vehicleSource} <> 'default' OR ${table.vehicle} = 'ours'`,
+    ),
   ],
 ).enableRLS()
 

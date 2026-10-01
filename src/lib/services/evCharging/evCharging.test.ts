@@ -329,6 +329,16 @@ test('vehicle and vehicle_source reject unknown values', async () => {
   )
 })
 
+test('a guest session needs a deciding source', async () => {
+  await expectConstraintViolation(
+    insertSession({ vehicle: 'other' }),
+    'ev_charge_session_vehicle_default_check',
+  )
+  await expect(insertSession({ vehicle: 'other', vehicleSource: 'admin' })).resolves.toBeTypeOf(
+    'string',
+  )
+})
+
 test('vehicle_charge_record enforces its checks and (source, source_session_id) uniqueness', async () => {
   await insertVehicleRecord({ sourceSessionId: 'a' })
   await expectConstraintViolation(
@@ -346,6 +356,10 @@ test('vehicle_charge_record enforces its checks and (source, source_session_id) 
   await expectConstraintViolation(
     insertVehicleRecord({ startSocPercent: 101 }),
     'vehicle_charge_record_start_soc_percent_check',
+  )
+  await expectConstraintViolation(
+    insertVehicleRecord({ endSocPercent: 101 }),
+    'vehicle_charge_record_end_soc_percent_check',
   )
   await expectConstraintViolation(
     insertVehicleRecord({ source: 'myskoda_api' }),

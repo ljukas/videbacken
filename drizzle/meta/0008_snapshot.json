@@ -1,0 +1,1709 @@
+{
+  "id": "2aa71547-7067-4319-963c-3e266f2fa7a2",
+  "prevId": "f4a15413-c29a-4339-b575-9ebd3211820d",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.approved_email": {
+      "name": "approved_email",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'user'"
+        },
+        "added_by_user_id": {
+          "name": "added_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "approved_email_email_unique": {
+          "name": "approved_email_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.account": {
+      "name": "account",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "pg_catalog.gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id_token": {
+          "name": "id_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_token_expires_at": {
+          "name": "access_token_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_token_expires_at": {
+          "name": "refresh_token_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "account_userId_idx": {
+          "name": "account_userId_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "account_user_id_user_id_fk": {
+          "name": "account_user_id_user_id_fk",
+          "tableFrom": "account",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.rate_limit": {
+      "name": "rate_limit",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "pg_catalog.gen_random_uuid()"
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_request": {
+          "name": "last_request",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "rate_limit_key_unique": {
+          "name": "rate_limit_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.session": {
+      "name": "session",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "pg_catalog.gen_random_uuid()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "impersonated_by": {
+          "name": "impersonated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "session_userId_idx": {
+          "name": "session_userId_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "session_user_id_user_id_fk": {
+          "name": "session_user_id_user_id_fk",
+          "tableFrom": "session",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "session_token_unique": {
+          "name": "session_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.user": {
+      "name": "user",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "pg_catalog.gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banned": {
+          "name": "banned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "ban_reason": {
+          "name": "ban_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ban_expires": {
+          "name": "ban_expires",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_blurhash": {
+          "name": "image_blurhash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "onboarded_at": {
+          "name": "onboarded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_email_unique": {
+          "name": "user_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.verification": {
+      "name": "verification",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "pg_catalog.gen_random_uuid()"
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "verification_identifier_idx": {
+          "name": "verification_identifier_idx",
+          "columns": [
+            {
+              "expression": "identifier",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.electricity_tariff": {
+      "name": "electricity_tariff",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "retail_markup_ore": {
+          "name": "retail_markup_ore",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "grid_transfer_ore": {
+          "name": "grid_transfer_ore",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "energy_tax_ore": {
+          "name": "energy_tax_ore",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vat_percent": {
+          "name": "vat_percent",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "electricity_tariff_valid_from_unique": {
+          "name": "electricity_tariff_valid_from_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "valid_from"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "electricity_tariff_ore_check": {
+          "name": "electricity_tariff_ore_check",
+          "value": "\"electricity_tariff\".\"retail_markup_ore\" BETWEEN -1000 AND 1000 AND \"electricity_tariff\".\"grid_transfer_ore\" BETWEEN 0 AND 1000 AND \"electricity_tariff\".\"energy_tax_ore\" BETWEEN 0 AND 1000"
+        },
+        "electricity_tariff_vat_percent_check": {
+          "name": "electricity_tariff_vat_percent_check",
+          "value": "\"electricity_tariff\".\"vat_percent\" BETWEEN 0 AND 100"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.ev_charge_interval": {
+      "name": "ev_charge_interval",
+      "schema": "",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_at": {
+          "name": "start_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_at": {
+          "name": "end_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "energy_kwh": {
+          "name": "energy_kwh",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "ev_charge_interval_session_id_ev_charge_session_id_fk": {
+          "name": "ev_charge_interval_session_id_ev_charge_session_id_fk",
+          "tableFrom": "ev_charge_interval",
+          "tableTo": "ev_charge_session",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "ev_charge_interval_pk": {
+          "name": "ev_charge_interval_pk",
+          "columns": [
+            "session_id",
+            "start_at"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ev_charge_interval_end_at_check": {
+          "name": "ev_charge_interval_end_at_check",
+          "value": "\"ev_charge_interval\".\"end_at\" > \"ev_charge_interval\".\"start_at\""
+        },
+        "ev_charge_interval_energy_kwh_nonneg_check": {
+          "name": "ev_charge_interval_energy_kwh_nonneg_check",
+          "value": "\"ev_charge_interval\".\"energy_kwh\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.ev_charge_session": {
+      "name": "ev_charge_session",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "zaptec_session_id": {
+          "name": "zaptec_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "charger_id": {
+          "name": "charger_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_at": {
+          "name": "start_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_at": {
+          "name": "end_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "energy_kwh": {
+          "name": "energy_kwh",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authorized_user_email": {
+          "name": "authorized_user_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "authorized_user_name": {
+          "name": "authorized_user_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_name": {
+          "name": "token_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voided": {
+          "name": "voided",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "replaced_by_zaptec_session_id": {
+          "name": "replaced_by_zaptec_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "offline": {
+          "name": "offline",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "reliable_clock": {
+          "name": "reliable_clock",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "vehicle": {
+          "name": "vehicle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ours'"
+        },
+        "vehicle_source": {
+          "name": "vehicle_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ev_charge_session_start_at_idx": {
+          "name": "ev_charge_session_start_at_idx",
+          "columns": [
+            {
+              "expression": "start_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ev_charge_session_charger_id_start_at_idx": {
+          "name": "ev_charge_session_charger_id_start_at_idx",
+          "columns": [
+            {
+              "expression": "charger_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "start_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ev_charge_session_charger_id_ev_charger_id_fk": {
+          "name": "ev_charge_session_charger_id_ev_charger_id_fk",
+          "tableFrom": "ev_charge_session",
+          "tableTo": "ev_charger",
+          "columnsFrom": [
+            "charger_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "ev_charge_session_zaptec_session_id_unique": {
+          "name": "ev_charge_session_zaptec_session_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "zaptec_session_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ev_charge_session_energy_kwh_nonneg_check": {
+          "name": "ev_charge_session_energy_kwh_nonneg_check",
+          "value": "\"ev_charge_session\".\"energy_kwh\" >= 0"
+        },
+        "ev_charge_session_end_at_check": {
+          "name": "ev_charge_session_end_at_check",
+          "value": "\"ev_charge_session\".\"end_at\" >= \"ev_charge_session\".\"start_at\""
+        },
+        "ev_charge_session_vehicle_check": {
+          "name": "ev_charge_session_vehicle_check",
+          "value": "\"ev_charge_session\".\"vehicle\" IN ('ours', 'other')"
+        },
+        "ev_charge_session_vehicle_source_check": {
+          "name": "ev_charge_session_vehicle_source_check",
+          "value": "\"ev_charge_session\".\"vehicle_source\" IN ('default', 'skoda', 'admin')"
+        },
+        "ev_charge_session_vehicle_default_check": {
+          "name": "ev_charge_session_vehicle_default_check",
+          "value": "\"ev_charge_session\".\"vehicle_source\" <> 'default' OR \"ev_charge_session\".\"vehicle\" = 'ours'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.ev_charger": {
+      "name": "ev_charger",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.file": {
+      "name": "file",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pathname": {
+          "name": "pathname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime": {
+          "name": "mime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access": {
+          "name": "access",
+          "type": "file_access",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blurhash": {
+          "name": "blurhash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transcode_failed_at": {
+          "name": "transcode_failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "file_owner_id_idx": {
+          "name": "file_owner_id_idx",
+          "columns": [
+            {
+              "expression": "owner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "file_access_idx": {
+          "name": "file_access_idx",
+          "columns": [
+            {
+              "expression": "access",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "file_owner_id_user_id_fk": {
+          "name": "file_owner_id_user_id_fk",
+          "tableFrom": "file",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "file_pathname_unique": {
+          "name": "file_pathname_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "pathname"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "file_size_bytes_nonneg_check": {
+          "name": "file_size_bytes_nonneg_check",
+          "value": "\"file\".\"size_bytes\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.integration_sync": {
+      "name": "integration_sync",
+      "schema": "",
+      "columns": {
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_attempt_at": {
+          "name": "last_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_success_at": {
+          "name": "last_success_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_success_started_at": {
+          "name": "last_success_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failing_since": {
+          "name": "failing_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "alerted_at": {
+          "name": "alerted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "running_since": {
+          "name": "running_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consecutive_failures": {
+          "name": "consecutive_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error_message": {
+          "name": "last_error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "integration_sync_source_check": {
+          "name": "integration_sync_source_check",
+          "value": "\"integration_sync\".\"source\" IN ('zaptec', 'elpris', 'skoda')"
+        },
+        "integration_sync_consecutive_failures_nonneg_check": {
+          "name": "integration_sync_consecutive_failures_nonneg_check",
+          "value": "\"integration_sync\".\"consecutive_failures\" >= 0"
+        },
+        "integration_sync_error_code_check": {
+          "name": "integration_sync_error_code_check",
+          "value": "\"integration_sync\".\"error_code\" IS NULL OR \"integration_sync\".\"error_code\" IN ('auth_failed', 'forbidden', 'rate_limited', 'unreachable', 'unexpected_response', 'not_configured', 'internal_error')"
+        },
+        "integration_sync_last_error_message_length_check": {
+          "name": "integration_sync_last_error_message_length_check",
+          "value": "\"integration_sync\".\"last_error_message\" IS NULL OR char_length(\"integration_sync\".\"last_error_message\") <= 500"
+        },
+        "integration_sync_failures_error_code_check": {
+          "name": "integration_sync_failures_error_code_check",
+          "value": "(\"integration_sync\".\"consecutive_failures\" = 0) = (\"integration_sync\".\"error_code\" IS NULL)"
+        },
+        "integration_sync_error_code_failing_since_check": {
+          "name": "integration_sync_error_code_failing_since_check",
+          "value": "(\"integration_sync\".\"error_code\" IS NULL) = (\"integration_sync\".\"failing_since\" IS NULL)"
+        },
+        "integration_sync_alerted_at_error_code_check": {
+          "name": "integration_sync_alerted_at_error_code_check",
+          "value": "\"integration_sync\".\"alerted_at\" IS NULL OR \"integration_sync\".\"error_code\" IS NOT NULL"
+        },
+        "integration_sync_last_error_message_error_code_check": {
+          "name": "integration_sync_last_error_message_error_code_check",
+          "value": "\"integration_sync\".\"last_error_message\" IS NULL OR \"integration_sync\".\"error_code\" IS NOT NULL"
+        },
+        "integration_sync_running_since_lease_until_check": {
+          "name": "integration_sync_running_since_lease_until_check",
+          "value": "(\"integration_sync\".\"running_since\" IS NULL) = (\"integration_sync\".\"lease_until\" IS NULL)"
+        },
+        "integration_sync_lease_until_token_check": {
+          "name": "integration_sync_lease_until_token_check",
+          "value": "(\"integration_sync\".\"lease_until\" IS NULL) = (\"integration_sync\".\"lease_token\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.integration_sync_run": {
+      "name": "integration_sync_run",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "since": {
+          "name": "since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pages": {
+          "name": "pages",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "sessions_seen": {
+          "name": "sessions_seen",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "upserted": {
+          "name": "upserted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "voided": {
+          "name": "voided",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "timings": {
+          "name": "timings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        }
+      },
+      "indexes": {
+        "integration_sync_run_source_started_idx": {
+          "name": "integration_sync_run_source_started_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "integration_sync_run_source_check": {
+          "name": "integration_sync_run_source_check",
+          "value": "\"integration_sync_run\".\"source\" IN ('zaptec', 'elpris', 'skoda')"
+        },
+        "integration_sync_run_trigger_check": {
+          "name": "integration_sync_run_trigger_check",
+          "value": "\"integration_sync_run\".\"trigger\" IN ('cron', 'admin')"
+        },
+        "integration_sync_run_duration_ms_nonneg_check": {
+          "name": "integration_sync_run_duration_ms_nonneg_check",
+          "value": "\"integration_sync_run\".\"duration_ms\" >= 0"
+        },
+        "integration_sync_run_outcome_check": {
+          "name": "integration_sync_run_outcome_check",
+          "value": "\"integration_sync_run\".\"outcome\" IN ('ok', 'failed', 'error')"
+        },
+        "integration_sync_run_error_code_check": {
+          "name": "integration_sync_run_error_code_check",
+          "value": "\"integration_sync_run\".\"error_code\" IS NULL OR \"integration_sync_run\".\"error_code\" IN ('auth_failed', 'forbidden', 'rate_limited', 'unreachable', 'unexpected_response', 'not_configured', 'internal_error')"
+        },
+        "integration_sync_run_error_message_length_check": {
+          "name": "integration_sync_run_error_message_length_check",
+          "value": "\"integration_sync_run\".\"error_message\" IS NULL OR char_length(\"integration_sync_run\".\"error_message\") <= 500"
+        },
+        "integration_sync_run_outcome_error_code_check": {
+          "name": "integration_sync_run_outcome_error_code_check",
+          "value": "(\"integration_sync_run\".\"outcome\" = 'ok') = (\"integration_sync_run\".\"error_code\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.sensor_device": {
+      "name": "sensor_device",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "mac": {
+          "name": "mac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "location": {
+          "name": "location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "battery_pct": {
+          "name": "battery_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "sensor_device_mac_unique": {
+          "name": "sensor_device_mac_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "mac"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.sensor_reading": {
+      "name": "sensor_reading",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "temperature_c": {
+          "name": "temperature_c",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "humidity_pct": {
+          "name": "humidity_pct",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "battery_pct": {
+          "name": "battery_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "sensor_reading_device_recorded_idx": {
+          "name": "sensor_reading_device_recorded_idx",
+          "columns": [
+            {
+              "expression": "device_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sensor_reading_device_id_sensor_device_id_fk": {
+          "name": "sensor_reading_device_id_sensor_device_id_fk",
+          "tableFrom": "sensor_reading",
+          "tableTo": "sensor_device",
+          "columnsFrom": [
+            "device_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "sensor_reading_temp_range_check": {
+          "name": "sensor_reading_temp_range_check",
+          "value": "\"sensor_reading\".\"temperature_c\" IS NULL OR \"sensor_reading\".\"temperature_c\" BETWEEN -60 AND 100"
+        },
+        "sensor_reading_humidity_range_check": {
+          "name": "sensor_reading_humidity_range_check",
+          "value": "\"sensor_reading\".\"humidity_pct\" IS NULL OR \"sensor_reading\".\"humidity_pct\" BETWEEN 0 AND 100"
+        },
+        "sensor_reading_battery_range_check": {
+          "name": "sensor_reading_battery_range_check",
+          "value": "\"sensor_reading\".\"battery_pct\" IS NULL OR \"sensor_reading\".\"battery_pct\" BETWEEN 0 AND 100"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.spot_price": {
+      "name": "spot_price",
+      "schema": "",
+      "columns": {
+        "zone": {
+          "name": "zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slot_start": {
+          "name": "slot_start",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slot_end": {
+          "name": "slot_end",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sek_per_kwh": {
+          "name": "sek_per_kwh",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "spot_price_pk": {
+          "name": "spot_price_pk",
+          "columns": [
+            "zone",
+            "slot_start"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "spot_price_zone_check": {
+          "name": "spot_price_zone_check",
+          "value": "\"spot_price\".\"zone\" IN ('SE3')"
+        },
+        "spot_price_slot_check": {
+          "name": "spot_price_slot_check",
+          "value": "\"spot_price\".\"slot_end\" > \"spot_price\".\"slot_start\" AND \"spot_price\".\"slot_end\" - \"spot_price\".\"slot_start\" <= interval '1 hour'"
+        },
+        "spot_price_sek_per_kwh_check": {
+          "name": "spot_price_sek_per_kwh_check",
+          "value": "\"spot_price\".\"sek_per_kwh\" > -100 AND \"spot_price\".\"sek_per_kwh\" < 100"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.vehicle_charge_record": {
+      "name": "vehicle_charge_record",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_session_id": {
+          "name": "source_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_at": {
+          "name": "start_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_at": {
+          "name": "end_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "energy_kwh": {
+          "name": "energy_kwh",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_soc_percent": {
+          "name": "start_soc_percent",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "end_soc_percent": {
+          "name": "end_soc_percent",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_public": {
+          "name": "is_public",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "vehicle_charge_record_source_session_id_unique": {
+          "name": "vehicle_charge_record_source_session_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "source",
+            "source_session_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "vehicle_charge_record_source_check": {
+          "name": "vehicle_charge_record_source_check",
+          "value": "\"vehicle_charge_record\".\"source\" IN ('skoda_export')"
+        },
+        "vehicle_charge_record_end_at_check": {
+          "name": "vehicle_charge_record_end_at_check",
+          "value": "\"vehicle_charge_record\".\"end_at\" >= \"vehicle_charge_record\".\"start_at\""
+        },
+        "vehicle_charge_record_energy_kwh_nonneg_check": {
+          "name": "vehicle_charge_record_energy_kwh_nonneg_check",
+          "value": "\"vehicle_charge_record\".\"energy_kwh\" >= 0"
+        },
+        "vehicle_charge_record_start_soc_percent_check": {
+          "name": "vehicle_charge_record_start_soc_percent_check",
+          "value": "\"vehicle_charge_record\".\"start_soc_percent\" IS NULL OR \"vehicle_charge_record\".\"start_soc_percent\" BETWEEN 0 AND 100"
+        },
+        "vehicle_charge_record_end_soc_percent_check": {
+          "name": "vehicle_charge_record_end_soc_percent_check",
+          "value": "\"vehicle_charge_record\".\"end_soc_percent\" IS NULL OR \"vehicle_charge_record\".\"end_soc_percent\" BETWEEN 0 AND 100"
+        }
+      },
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {
+    "public.file_access": {
+      "name": "file_access",
+      "schema": "public",
+      "values": [
+        "public",
+        "private"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

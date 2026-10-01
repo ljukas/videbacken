@@ -57,6 +57,13 @@
       "when": 1790850620365,
       "tag": "0007_vehicle_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790850894183,
+      "tag": "0008_vehicle_default_check",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "ev_charge_session" ADD CONSTRAINT "ev_charge_session_vehicle_default_check" CHECK ("ev_charge_session"."vehicle_source" <> 'default' OR "ev_charge_session"."vehicle" = 'ours');
