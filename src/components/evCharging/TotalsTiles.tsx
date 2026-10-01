@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
-import { formatKronor, formatOneDecimal, formatOre, formatSek, formatShare } from './format'
+import { formatKronor, formatOneDecimal, formatOrePrecise, formatSek, formatShare } from './format'
 
 type Tiles = RouterOutputs['evCharging']['overview']['tiles']
 type Totals = Tiles['thisMonth']
@@ -109,7 +109,7 @@ function tileFooter(
   if (short) return m.charging_cost_partial_hint({ share: formatShare(missingKwh / cost.gridKwh) })
   if (!cost.complete) return m.charging_cost_partial_hint_generic()
   // The average covers priced energy only, so it's shown beside a complete total only.
-  return cost.avgOre === null ? null : m.charging_cost_avg({ avg: formatOre(cost.avgOre) })
+  return cost.avgOre === null ? null : m.charging_cost_avg({ avg: formatOrePrecise(cost.avgOre) })
 }
 
 // One figure: a small label, the number large with its unit set small beside

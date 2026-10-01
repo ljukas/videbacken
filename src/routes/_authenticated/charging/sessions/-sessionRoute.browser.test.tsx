@@ -86,10 +86,14 @@ test('a found session resolves', async () => {
 async function renderPage(
   sessionId: string,
   prepare: (queryClient: QueryClient) => void = () => {},
+  role: 'admin' | 'user' = 'user',
 ) {
   const queryClient = makeTestQueryClient()
   prepare(queryClient)
-  const root = createRootRouteWithContext<{ queryClient: typeof queryClient }>()({
+  const root = createRootRouteWithContext<{
+    queryClient: typeof queryClient
+    user: { role: 'admin' | 'user' }
+  }>()({
     component: Outlet,
     notFoundComponent: () => <NotFound />,
   })
@@ -100,7 +104,7 @@ async function renderPage(
   } as never)
   const router = createRouter({
     routeTree: root.addChildren([Route]),
-    context: { queryClient },
+    context: { queryClient, user: { role } },
     history: createMemoryHistory({ initialEntries: [`/charging/sessions/${sessionId}`] }),
   })
   await router.load()
@@ -139,7 +143,7 @@ test('a failed load keeps one h1 above the load-error alert', async () => {
 
 // One found session through the real route component: the summary and the
 // chart render together under one h1.
-test('a found session shows the header, summary and chart together', async () => {
+const foundDetail = (vehicle: 'ours' | 'other' = 'ours') => {
   const at = (hhmm: string) => Date.parse(`2026-09-15T${hhmm}:00Z`)
   const QUARTER = 15 * 60_000
   const cost = (totalSek: number) => ({
@@ -157,6 +161,8 @@ test('a found session shows the header, summary and chart together', async () =>
       kwh: 10,
       peakKw: 10,
       estimated: false,
+      vehicle: 'ours',
+      vehicleSource: 'default',
     },
     window: { startMs: at('08:00'), endMs: at('10:00') },
     intervals: [{ startMs: at('08:00'), endMs: at('09:00'), kwh: 10 }],
@@ -187,13 +193,25 @@ test('a found session shows the header, summary and chart together', async () =>
       },
     },
   } as unknown as RouterOutputs['evCharging']['session']
-  const screen = await renderPage(SESSION_ID, (queryClient) => {
-    queryClient.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
-    queryClient.setQueryData(
-      orpc.evCharging.session.queryOptions({ input: { sessionId: SESSION_ID } }).queryKey,
-      detail,
-    )
-  })
+  detail.session.vehicle = vehicle
+  return detail
+}
+
+const renderFound = (vehicle: 'ours' | 'other', role: 'admin' | 'user' = 'user') =>
+  renderPage(
+    SESSION_ID,
+    (queryClient) => {
+      queryClient.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
+      queryClient.setQueryData(
+        orpc.evCharging.session.queryOptions({ input: { sessionId: SESSION_ID } }).queryKey,
+        foundDetail(vehicle),
+      )
+    },
+    role,
+  )
+
+test('a found session shows the header, summary and chart together', async () => {
+  const screen = await renderFound('ours')
   await expect.element(screen.getByRole('heading', { level: 1 })).toBeVisible()
   expect(screen.getByRole('heading', { level: 1 }).elements()).toHaveLength(1)
   // Summary: the verdict pill and the range bar.
@@ -207,4 +225,27 @@ test('a found session shows the header, summary and chart together', async () =>
     .toBeVisible()
   await expect.poll(() => document.querySelector('[data-panel="price"]')).not.toBeNull()
   expect(document.querySelector('[data-panel="energy"]')).not.toBeNull()
+})
+
+test('a guest session shows the badge; only an admin gets the select', async () => {
+  const user = await renderFound('other')
+  await expect
+    .element(
+      user
+        .getByText(`${m.charging_vehicle_who_label()}: ${m.charging_vehicle_guest_badge()}`, {
+          exact: false,
+        })
+        .first(),
+    )
+    .toBeVisible()
+  await expect
+    .element(user.getByText(m.charging_vehicle_who_label(), { exact: true }).first())
+    .toBeVisible()
+  expect(user.getByRole('combobox').query()).toBeNull()
+  await user.unmount()
+
+  const admin = await renderFound('other', 'admin')
+  await expect
+    .element(admin.getByRole('combobox', { name: m.charging_vehicle_who_label() }))
+    .toBeVisible()
 })

@@ -10,6 +10,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { Estimated } from './Estimated'
 import { formatOneDecimal, formatScore, formatSek, formatSignedSek, formatTime } from './format'
+import { GuestBadge } from './GuestBadge'
 import { SessionLink } from './SessionLink'
 import { Unknown } from './Unknown'
 
@@ -60,7 +61,10 @@ export function EconomySessionTable({
           return (
             <TableRow key={r.sessionId}>
               <TableCell className="whitespace-nowrap">
-                <SessionLink sessionId={r.sessionId} startAt={r.startAt} />
+                <div className="flex items-center gap-2">
+                  <SessionLink sessionId={r.sessionId} startAt={r.startAt} />
+                  {r.vehicle === 'other' ? <GuestBadge /> : null}
+                </div>
                 <div className="text-muted-foreground text-xs tabular-nums">
                   {formatTime(r.startAt)}–{formatTime(r.endAt)}
                 </div>

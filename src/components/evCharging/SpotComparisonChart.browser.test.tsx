@@ -53,22 +53,43 @@ test('a year with no spot data says so', async () => {
   expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(0)
 })
 
-test('a year where nothing was paid (all excluded) draws the average line but no paid series', async () => {
+test('a year where nothing was paid (all excluded) says there is no data, not an average-only chart', async () => {
+  const { screen } = await renderWithProviders(
+    <SpotComparisonChart
+      months={Array.from({ length: 12 }, (_, i) => month(i + 1, { avgSpotOre: 90 + i }))}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_economy_chart_no_data())).toBeVisible()
+  expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(0)
+  expect(screen.container.querySelectorAll('.recharts-line')).toHaveLength(0)
+})
+
+test('the month average is drawn only for months where the scope has a priced session', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <SpotComparisonChart months={months} />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(1),
+  )
+  // Eleven months carry market data but no paid price: no average point for them.
+  expect(screen.container.querySelectorAll('.recharts-line-dot')).toHaveLength(1)
+})
+
+test('a near-zero paid price still draws a visible bar', async () => {
   const { screen } = await renderWithProviders(
     <div style={{ width: 720 }}>
       <SpotComparisonChart
-        months={Array.from({ length: 12 }, (_, i) => month(i + 1, { avgSpotOre: 90 + i }))}
+        months={months.map((mo) =>
+          mo.month === 9 ? { ...mo, paidSpotOre: 0.17, avgSpotOre: 100 } : mo,
+        )}
       />
     </div>,
   )
   await vi.waitFor(() =>
-    expect(screen.container.querySelector('.recharts-legend-wrapper')?.textContent).toContain(
-      m.charging_economy_series_avg(),
-    ),
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(1),
   )
-  expect(screen.container.querySelector('.recharts-legend-wrapper')?.textContent).not.toContain(
-    m.charging_economy_series_paid(),
-  )
-  expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(0)
-  expect(screen.container.querySelectorAll('.recharts-line')).toHaveLength(1)
+  const bar = screen.container.querySelector('.recharts-bar-rectangle path')
+  expect(bar?.getBoundingClientRect().height ?? 0).toBeGreaterThanOrEqual(2)
 })

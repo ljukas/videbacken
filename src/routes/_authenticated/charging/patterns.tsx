@@ -18,12 +18,14 @@ import {
 import { SessionTimeline } from '~/components/evCharging/SessionTimeline'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { stockholmDayOf } from '~/lib/time/stockholm'
 import { cn } from '~/lib/utils'
@@ -34,11 +36,17 @@ const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
   metric: z.enum(['kwh', 'plugged']).optional().catch(undefined),
   month: z.number().int().min(1).max(12).optional().catch(undefined),
+  // Whose charging: a clean URL means our car.
+  vehicle: vehicleScope.optional().catch(undefined),
 })
 
-const patternsQuery = (year?: number) => orpc.evCharging.patterns.queryOptions({ input: { year } })
-const timelineQuery = (year?: number, month?: number) =>
-  orpc.evCharging.timeline.queryOptions({ input: { year, month } })
+const patternsQuery = (year: number | undefined, vehicle: VehicleScope) =>
+  orpc.evCharging.patterns.queryOptions({ input: { year, vehicle } })
+const timelineQuery = (
+  year: number | undefined,
+  month: number | undefined,
+  vehicle: VehicleScope,
+) => orpc.evCharging.timeline.queryOptions({ input: { year, month, vehicle } })
 
 export const Route = createFileRoute('/_authenticated/charging/patterns')({
   head: () => ({
@@ -48,14 +56,18 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
     }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ year: search.year, month: search.month }),
+  loaderDeps: ({ search }) => ({
+    year: search.year,
+    month: search.month,
+    vehicle: search.vehicle ?? 'ours',
+  }),
   // The pattern and timeline reads are prefetched, not ensured: a failure
   // there must not take down the page (heading, sync health) — each
   // section shows its own error Alert with a retry instead.
   loader: async ({ context: { queryClient }, deps }) => {
     await Promise.all([
-      queryClient.prefetchQuery(patternsQuery(deps.year)),
-      queryClient.prefetchQuery(timelineQuery(deps.year, deps.month)),
+      queryClient.prefetchQuery(patternsQuery(deps.year, deps.vehicle)),
+      queryClient.prefetchQuery(timelineQuery(deps.year, deps.month, deps.vehicle)),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
     ])
   },
@@ -73,13 +85,14 @@ function PatternsPage() {
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const metric: PatternMetric = search.metric ?? 'kwh'
+  const vehicle: VehicleScope = search.vehicle ?? 'ours'
   const timelineRef = useRef<HTMLDivElement>(null)
   const patternsResult = useQuery({
-    ...patternsQuery(search.year),
+    ...patternsQuery(search.year, vehicle),
     placeholderData: keepPreviousData, // keep the old page while another year loads
   })
   const timelineResult = useQuery({
-    ...timelineQuery(search.year, search.month),
+    ...timelineQuery(search.year, search.month, vehicle),
     placeholderData: keepPreviousData,
   })
   const { data: patterns, isPlaceholderData: patternsStale } = patternsResult
@@ -87,7 +100,7 @@ function PatternsPage() {
   // A failed month's alert isn't a stale timeline: don't dim it or mark it busy.
   const timelineStale = timelineResult.isPlaceholderData && !loadFailed(timelineResult)
   const set = useCallback(
-    (next: { year?: number; metric?: PatternMetric; month?: number }) =>
+    (next: { year?: number; metric?: PatternMetric; month?: number; vehicle?: VehicleScope }) =>
       navigate({ to: '.', search: (s) => ({ ...s, ...next }), replace: true, resetScroll: false }),
     [navigate],
   )
@@ -120,6 +133,7 @@ function PatternsPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_patterns_title()}
+        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -132,16 +146,25 @@ function PatternsPage() {
         retrying={syncNow.isPendingFor('zaptec')}
       />
 
+      {/* Outside the load branches: a failed read for one scope must not take
+          the control away, or the user can't switch back. */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <VehicleScopeToggle
+          value={vehicle}
+          // A scope change clears the month, like a year change does.
+          onChange={(v) => set({ vehicle: v === 'ours' ? undefined : v, month: undefined })}
+        />
+        {patterns && !loadFailed(patternsResult) ? (
+          <YearSelector
+            years={patterns.years}
+            value={patterns.year}
+            onChange={(y) => set({ year: y, month: undefined })}
+          />
+        ) : null}
+      </div>
+
       {patterns && !loadFailed(patternsResult) ? (
         <>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <YearSelector
-              years={patterns.years}
-              value={patterns.year}
-              onChange={(y) => set({ year: y, month: undefined })}
-            />
-          </div>
-
           {hasData ? (
             <div className="flex flex-col gap-4">
               <section
@@ -261,8 +284,16 @@ function PatternsPage() {
                 <EmptyMedia variant="icon">
                   <CalendarXIcon />
                 </EmptyMedia>
-                <EmptyTitle>{m.charging_patterns_empty_title({ year: patterns.year })}</EmptyTitle>
-                <EmptyDescription>{m.charging_patterns_empty_description()}</EmptyDescription>
+                <EmptyTitle>
+                  {vehicle === 'other'
+                    ? m.charging_vehicle_empty_other_title({ year: patterns.year })
+                    : m.charging_patterns_empty_title({ year: patterns.year })}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {vehicle === 'other'
+                    ? m.charging_vehicle_empty_other_description()
+                    : m.charging_patterns_empty_description()}
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}

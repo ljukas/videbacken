@@ -21,6 +21,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { Estimated } from './Estimated'
 import { formatDuration, formatOneDecimal, formatSek, formatTime } from './format'
+import { GuestBadge } from './GuestBadge'
 import { SessionLink } from './SessionLink'
 import { SyncNowButton } from './SyncNowButton'
 
@@ -39,6 +40,8 @@ export function SessionList({
   onSync,
   syncing = false,
   costs,
+  emptyTitle = m.charging_sessions_empty_title(),
+  emptyDescription = m.charging_sessions_empty_description(),
 }: {
   sessions: Session[]
   hasMore: boolean
@@ -51,6 +54,10 @@ export function SessionList({
    * without an entry are still loading (a placeholder), not missing a price.
    */
   costs?: { byId: ReadonlyMap<string, SessionCost>; pending: boolean }
+  /** Overrides the empty state's title, e.g. when a vehicle scope has no sessions. */
+  emptyTitle?: string
+  /** Overrides the empty state's description; pair it with no `onSync` when a sync wouldn't help. */
+  emptyDescription?: string
 }) {
   if (sessions.length === 0) {
     return (
@@ -59,8 +66,8 @@ export function SessionList({
           <EmptyMedia variant="icon">
             <ZapIcon />
           </EmptyMedia>
-          <EmptyTitle>{m.charging_sessions_empty_title()}</EmptyTitle>
-          <EmptyDescription>{m.charging_sessions_empty_description()}</EmptyDescription>
+          <EmptyTitle>{emptyTitle}</EmptyTitle>
+          <EmptyDescription>{emptyDescription}</EmptyDescription>
         </EmptyHeader>
         {onSync ? (
           <EmptyContent>
@@ -99,7 +106,10 @@ export function SessionList({
             {sessions.map((s) => (
               <TableRow key={s.id}>
                 <TableCell className="whitespace-nowrap">
-                  <SessionLink sessionId={s.id} startAt={s.startAt} />
+                  <div className="flex items-center gap-2">
+                    <SessionLink sessionId={s.id} startAt={s.startAt} />
+                    {s.vehicle === 'other' ? <GuestBadge /> : null}
+                  </div>
                   <div className="text-muted-foreground text-xs tabular-nums sm:hidden">
                     {timeRange(s)}
                   </div>

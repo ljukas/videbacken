@@ -281,7 +281,19 @@ export function formatShare(share: number): string {
   return share > 0 && share < 0.005 ? `< ${percent.format(0.01)}` : percent.format(share)
 }
 
-/** An average öre/kWh, whole öre (e.g. "159"). */
+/** An average öre/kWh, whole öre (e.g. "159"). For axis ticks; labels use {@link formatOrePrecise}. */
 export function formatOre(value: number): string {
   return new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 0 }).format(value)
+}
+
+/**
+ * An öre/kWh price for a tooltip, tile or table: whole öre like {@link formatOre},
+ * but a real price under 1 öre keeps two decimals and never reads as "0" or "−0"
+ * (sign-symmetric; below 0.005 it is "< 0,01" / "> −0,01"). Exactly 0 is "0".
+ */
+export function formatOrePrecise(value: number): string {
+  if (value === 0 || Math.abs(value) >= 1) return formatOre(value)
+  const two = new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 2 })
+  if (Math.abs(value) >= 0.005) return two.format(value)
+  return value > 0 ? `< ${two.format(0.01)}` : `> ${two.format(-0.01)}`
 }

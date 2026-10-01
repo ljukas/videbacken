@@ -153,8 +153,27 @@ test('the month and year average spot cover every priced day, charged or not', a
   // One day stored: 4 of 96 quarters at 3 SEK, the rest at 1.
   const avg = ((4 * 3 + 92 * 1) / 96) * 1.25 * 100
   expect(months[8].avgSpotOre).toBeCloseTo(avg)
-  expect(tiles.avgSpotOre).toBeCloseTo(avg)
   expect(months[0].avgSpotOre).toBeNull()
+  // No session in scope: the year tile has no average to put beside a paid price.
+  expect(tiles.paidSpotOre).toBeNull()
+  expect(tiles.avgSpotOre).toBeNull()
+})
+
+test('the tile average covers only months where the scope has a priced session', async () => {
+  await seedPrices()
+  // A priced day in August, but the only session is in September.
+  await replaceDay(
+    'SE3',
+    '2026-08-10',
+    daySlots('2026-08-10', 15, () => 5),
+  )
+  await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 10, [
+    ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 10],
+  ])
+  const { months, tiles } = await getEconomyOverview({ year: 2026, now: NOW })
+  expect(months[7].avgSpotOre).not.toBeNull()
+  expect(months[8].paidSpotOre).not.toBeNull()
+  expect(tiles.avgSpotOre).toBeCloseTo(months[8].avgSpotOre as number)
 })
 
 test('the selected year defaults to the current Stockholm year and the list always offers it', async () => {
@@ -273,7 +292,7 @@ test('a non-current year selection reads that year’s months and price days', a
   const y2025 = await getEconomyOverview({ year: 2025, now: NOW })
   expect(y2025.year).toBe(2025)
   expect(y2025.months[5].avgSpotOre).toBeCloseTo(2 * 1.25 * 100)
-  expect(y2025.tiles.avgSpotOre).toBeCloseTo(2 * 1.25 * 100)
+  expect(y2025.tiles.avgSpotOre).toBeNull() // no session this year
   const y2026 = await getEconomyOverview({ year: 2026, now: NOW })
   expect(y2026.months[5].avgSpotOre).toBeNull()
   expect(y2026.tiles.avgSpotOre).toBeNull()

@@ -15,9 +15,11 @@ import {
   formatSessionDay,
   formatSessionTimeRange,
 } from '~/components/evCharging/format'
+import { GuestBadge } from '~/components/evCharging/GuestBadge'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { SessionPriceChart } from '~/components/evCharging/SessionPriceChart'
 import { SessionSummary } from '~/components/evCharging/SessionSummary'
+import { SessionVehicle } from '~/components/evCharging/SessionVehicle'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Button } from '~/components/ui/button'
 import { isSessionNotFound } from '~/lib/evCharging/sessionNotFound'
@@ -52,6 +54,7 @@ export const Route = createFileRoute('/_authenticated/charging/sessions/$session
 
 function SessionPage() {
   const { sessionId } = Route.useParams()
+  const { user } = Route.useRouteContext()
   const result = useQuery(sessionQuery(sessionId))
   const detail = result.data
   return (
@@ -60,10 +63,13 @@ function SessionPage() {
       {detail && !loadFailed(result) ? (
         <>
           <header className="flex flex-col gap-1">
-            <h1 className="text-balance font-bold text-2xl tracking-tight md:text-3xl">
-              {formatSessionDay(detail.session.startAt)} ·{' '}
-              {formatSessionTimeRange(detail.session.startAt, detail.session.endAt)}
-            </h1>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h1 className="text-balance font-bold text-2xl tracking-tight md:text-3xl">
+                {formatSessionDay(detail.session.startAt)} ·{' '}
+                {formatSessionTimeRange(detail.session.startAt, detail.session.endAt)}
+              </h1>
+              {detail.session.vehicle === 'other' ? <GuestBadge /> : null}
+            </div>
             <p className="text-muted-foreground text-sm">
               {detail.session.peakKw === null
                 ? m.charging_session_summary_no_peak({ kwh: formatOneDecimal(detail.session.kwh) })
@@ -73,6 +79,12 @@ function SessionPage() {
                   })}
             </p>
           </header>
+          <SessionVehicle
+            sessionId={detail.session.id}
+            vehicle={detail.session.vehicle}
+            vehicleSource={detail.session.vehicleSource}
+            isAdmin={user.role === 'admin'}
+          />
           <SessionSummary detail={detail} />
           <SessionPriceChart detail={detail} />
           <EconomyFootnote excluded={{ noHourly: 0, noPrice: 0 }} bucketing={false} />

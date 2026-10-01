@@ -28,3 +28,6 @@ yarn.lock
 # Vitest Browser Mode artifacts (failure screenshots + attachments)
 .vitest-attachments/
 **/__screenshots__/
+
+# Personal exports (e.g. the MySkoda CSV) — never commit
+/data/private/

@@ -10,6 +10,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { ChartFrame, NoData, TooltipRow } from './ChartFrame'
 import { formatSek, monthLabel } from './format'
+import { minBarFor } from './minBar'
 
 type Month = RouterOutputs['evCharging']['economy']['months'][number]
 
@@ -74,6 +75,13 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
     actual: mo.included > 0 ? mo.actualSek : null,
     optimal: mo.included > 0 ? mo.optimalSek : null,
   }))
+  // A real 0 or near-0 kr counterfactual in an included month is data and gets
+  // a visible bar; null (excluded month) stays empty.
+  const floorFor = (key: 'immediate' | 'actual' | 'optimal' | 'stub') =>
+    minBarFor(
+      data.map((d) => d[key]),
+      { zeroIsData: true },
+    )
   return (
     <ChartFrame config={config}>
       <BarChart data={data} margin={{ left: 4, right: 12, top: 8, bottom: 0 }} barGap={2}>
@@ -123,6 +131,7 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
         <Bar
           dataKey="immediate"
           fill="var(--color-immediate)"
+          minPointSize={floorFor('immediate')}
           radius={3}
           isAnimationActive={false}
         />
@@ -130,16 +139,24 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
           dataKey="actual"
           stackId="mid"
           fill="var(--color-actual)"
+          minPointSize={floorFor('actual')}
           radius={3}
           isAnimationActive={false}
         />
-        <Bar dataKey="optimal" fill="var(--color-optimal)" radius={3} isAnimationActive={false} />
+        <Bar
+          dataKey="optimal"
+          fill="var(--color-optimal)"
+          radius={3}
+          minPointSize={floorFor('optimal')}
+          isAnimationActive={false}
+        />
         {/* Lists the rendered series, so the stub's legend entry appears only with one. */}
         {hasStub ? (
           <Bar
             dataKey="stub"
             stackId="mid"
             fill="var(--color-stub)"
+            minPointSize={floorFor('stub')}
             radius={3}
             isAnimationActive={false}
           />

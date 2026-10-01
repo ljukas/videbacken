@@ -13,6 +13,7 @@ import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
+import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import {
   type ChartMetric,
@@ -27,10 +28,14 @@ import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton
 import { TariffCard } from '~/components/evCharging/TariffCard'
 import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
+import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
+import { VehicleLogCard } from '~/components/evCharging/VehicleLogCard'
+import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
@@ -39,9 +44,14 @@ import { seo } from '~/utils/seo'
 // `?year=` falls back to the current year instead of erroring the loader.
 const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
-  // Tariff dialogs (ADR-0013): new (optionally pre-filled), edit, delete.
-  dialog: z.enum(['tariffNew', 'tariffEdit', 'tariffDelete']).optional().catch(undefined),
+  // Dialogs (ADR-0013): tariff new (optionally pre-filled), edit, delete; the car's log import.
+  dialog: z
+    .enum(['tariffNew', 'tariffEdit', 'tariffDelete', 'vehicleImport'])
+    .optional()
+    .catch(undefined),
   tariffId: z.string().optional().catch(undefined),
+  // Whose charging: a clean URL means our car.
+  vehicle: vehicleScope.optional().catch(undefined),
 })
 type ChargingSearch = z.infer<typeof searchSchema>
 type ChargingDialog = NonNullable<ChargingSearch['dialog']>
@@ -50,12 +60,14 @@ const SESSIONS_PAGE = 20
 const SESSIONS_MAX = 500 // the `sessions` procedure's `limit` cap
 const RECENT_RUNS = 20
 
-const sessionsQuery = (limit: number) => orpc.evCharging.sessions.queryOptions({ input: { limit } })
+const sessionsQuery = (limit: number, vehicle: VehicleScope) =>
+  orpc.evCharging.sessions.queryOptions({ input: { limit, vehicle } })
 const sessionCostsQuery = (sessionIds: string[]) =>
   orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } })
 // Spot price sync (elpris). Zaptec's keep their input-less calls, so their
 // query keys are unchanged; prices always pass their source.
 const pricesHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } })
+const vehicleCoverageQuery = orpc.evCharging.vehicleRecordCoverage.queryOptions()
 const pricesRunsQuery = orpc.evCharging.recentRuns.queryOptions({
   input: { source: 'elpris', limit: RECENT_RUNS },
 })
@@ -65,25 +77,34 @@ export const Route = createFileRoute('/_authenticated/charging/')({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ year: search.year }),
+  loaderDeps: ({ search }) => ({ year: search.year, vehicle: search.vehicle ?? 'ours' }),
   loader: async ({ context: { queryClient, user }, deps }) => {
     await Promise.all([
-      queryClient.ensureQueryData(
-        orpc.evCharging.overview.queryOptions({ input: { year: deps.year } }),
+      // Prefetched, not ensured: a failed read must not take down the page (and
+      // with it the scope toggle) — the component shows an alert with a retry.
+      queryClient.prefetchQuery(
+        orpc.evCharging.overview.queryOptions({
+          input: { year: deps.year, vehicle: deps.vehicle },
+        }),
       ),
       // Cost is best-effort: prefetchQuery never throws, so a price/tariff
       // failure degrades only the cost figures, never the page. Awaited so the
       // tiles render with their kronor headline instead of jumping when it
       // arrives; the sessions' costs follow the sessions (they need the ids).
-      queryClient
-        .ensureQueryData(sessionsQuery(SESSIONS_PAGE))
-        .then(({ sessions }) =>
-          sessions.length > 0
-            ? queryClient.prefetchQuery(sessionCostsQuery(sessions.map((sess) => sess.id)))
-            : undefined,
-        ),
+      // Prefetched too (a failed read must not unmount the scope toggle); the
+      // costs chain reads the sessions back from the cache.
+      queryClient.prefetchQuery(sessionsQuery(SESSIONS_PAGE, deps.vehicle)).then(() => {
+        const sessions = queryClient.getQueryData(
+          sessionsQuery(SESSIONS_PAGE, deps.vehicle).queryKey,
+        )?.sessions
+        return sessions?.length
+          ? queryClient.prefetchQuery(sessionCostsQuery(sessions.map((sess) => sess.id)))
+          : undefined
+      }),
       queryClient.prefetchQuery(
-        orpc.evCharging.costOverview.queryOptions({ input: { year: deps.year } }),
+        orpc.evCharging.costOverview.queryOptions({
+          input: { year: deps.year, vehicle: deps.vehicle },
+        }),
       ),
       queryClient.ensureQueryData(orpc.tariff.list.queryOptions()),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
@@ -94,6 +115,8 @@ export const Route = createFileRoute('/_authenticated/charging/')({
           )
         : null,
       user.role === 'admin' ? queryClient.ensureQueryData(pricesRunsQuery) : null,
+      // Prefetched: a failed read shows in its card, it must not take the page down.
+      user.role === 'admin' ? queryClient.prefetchQuery(vehicleCoverageQuery) : null,
     ])
   },
   component: ChargingPage,
@@ -104,8 +127,11 @@ function ChargingPage() {
   const isAdmin = user.role === 'admin'
   const navigate = Route.useNavigate()
   const year = Route.useSearch({ select: (s) => s.year })
+  const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? 'ours' })
   const queryClient = useQueryClient()
-  const [sessionLimit, setSessionLimit] = useState(SESSIONS_PAGE)
+  // The page size belongs to the scope it was grown in: another scope starts at its first page.
+  const [limitState, setLimitState] = useState({ vehicle, limit: SESSIONS_PAGE })
+  const sessionLimit = limitState.vehicle === vehicle ? limitState.limit : SESSIONS_PAGE
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
@@ -119,7 +145,8 @@ function ChargingPage() {
   // A tariff dialog that can't show (a non-admin, or a tariffId that no longer
   // exists) is cleared from the URL instead of lingering there.
   const dialogUnavailable =
-    dialog !== undefined && (!isAdmin || (dialog !== 'tariffNew' && !selectedTariff))
+    dialog !== undefined &&
+    (!isAdmin || (dialog !== 'tariffNew' && dialog !== 'vehicleImport' && !selectedTariff))
   useEffect(() => {
     // `replace`, so Back doesn't return to the bad URL (and bounce again).
     if (dialogUnavailable) {
@@ -136,17 +163,24 @@ function ChargingPage() {
 
   // Hourly data: no polling on overview/sessions — the default focus refetch
   // plus `syncNow`'s invalidation keep them fresh (ADR-0018).
-  const { data: overview } = useQuery({
-    ...orpc.evCharging.overview.queryOptions({ input: { year } }),
+  const overviewResult = useQuery({
+    ...orpc.evCharging.overview.queryOptions({ input: { year, vehicle } }),
     placeholderData: keepPreviousData, // keep the old chart while another year loads
   })
-  const sessions = useQuery(sessionsQuery(sessionLimit))
+  const { isPlaceholderData: overviewStale } = overviewResult
+  // Placeholder data is the previous key's, so a failed read doesn't show it.
+  const overview = loadFailed(overviewResult) ? undefined : overviewResult.data
+  const sessions = useQuery({
+    ...sessionsQuery(sessionLimit, vehicle),
+    placeholderData: keepPreviousData, // never flash the empty state while another scope loads
+  })
   const { data: cost, isPlaceholderData: costIsStale } = useQuery({
-    ...orpc.evCharging.costOverview.queryOptions({ input: { year } }),
+    ...orpc.evCharging.costOverview.queryOptions({ input: { year, vehicle } }),
     placeholderData: keepPreviousData,
   })
-  // Cost is shown once anything at all is priced (year-independent, so a year
-  // switch doesn't flicker the kr toggle away); until then one notice says why.
+  // Cost is shown once anything at all is priced in the chosen scope (all-time,
+  // so a year switch doesn't flicker the kr toggle away; a scope with nothing
+  // priced, e.g. guests, shows the notice instead); until then one notice says why.
   const showCost = tariffs.length > 0 && cost?.tiles.allTime.avgOre != null
   const hasEnergy = (overview?.tiles.allTime.kwh ?? 0) > 0
   const costNotice: CostNoticeReason | null = !hasEnergy
@@ -189,13 +223,17 @@ function ChargingPage() {
     enabled: isAdmin,
   })
   const { data: pricesRuns } = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
+  const vehicleCoverage = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
 
   // "Visa fler" fetches the longer page first and only then switches to it, so
   // a failed fetch leaves the rows on screen (with a toast; the button stays
   // for a retry) instead of swapping the list for an errored, empty query.
   const showMore = useMutation({
-    mutationFn: (limit: number) => queryClient.fetchQuery(sessionsQuery(limit)),
-    onSuccess: (_data, limit) => setSessionLimit(limit),
+    mutationFn: ({ limit, scope }: { limit: number; scope: VehicleScope }) =>
+      queryClient.fetchQuery(sessionsQuery(limit, scope)),
+    // Keyed to the scope it was fetched for: a result that lands after a scope
+    // switch can't leak its limit into the new scope.
+    onSuccess: (_data, { limit, scope }) => setLimitState({ vehicle: scope, limit }),
     onError: () => toast.error(m.charging_sessions_show_more_failed()),
   })
 
@@ -203,9 +241,20 @@ function ChargingPage() {
     navigate({ to: '.', search: (s) => ({ ...s, year: y }), replace: true, resetScroll: false })
   }
 
+  function setVehicle(v: VehicleScope) {
+    // A clean URL means our car.
+    navigate({
+      to: '.',
+      search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v }),
+      replace: true,
+      resetScroll: false,
+    })
+  }
+
   return (
     <PageContainer>
       <ChargingHeading
+        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -240,7 +289,12 @@ function ChargingPage() {
           ) : null}
           <section className="flex flex-col gap-2">
             <h2 className="sr-only">{m.charging_totals_heading()}</h2>
-            <TotalsTiles tiles={overview.tiles} cost={showCost ? cost?.tiles : undefined} />
+            <div
+              aria-busy={overviewStale}
+              className={overviewStale ? 'opacity-60 transition-opacity' : 'transition-opacity'}
+            >
+              <TotalsTiles tiles={overview.tiles} cost={showCost ? cost?.tiles : undefined} />
+            </div>
           </section>
 
           <section className="flex flex-col gap-2">
@@ -257,6 +311,7 @@ function ChargingPage() {
                     aria-label={m.charging_chart_metric_label()}
                   />
                 ) : null}
+                <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
                 <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
               </div>
             </div>
@@ -270,13 +325,23 @@ function ChargingPage() {
               </div>
             ) : (
               <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
-                {m.charging_chart_empty({ year: overview.year })}
+                {vehicle === 'other'
+                  ? m.charging_vehicle_chart_empty_other({ year: overview.year })
+                  : m.charging_chart_empty({ year: overview.year })}
               </div>
             )}
           </section>
           {showCost ? <PriceFootnote /> : null}
         </>
-      ) : null}
+      ) : (
+        <>
+          {/* The scope stays switchable when its read fails, or the user can't switch back. */}
+          <div className="flex justify-end">
+            <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
+          </div>
+          <LoadErrorAlert title={m.charging_overview_error_title()} query={overviewResult} />
+        </>
+      )}
 
       <TariffCard
         tariffs={tariffs}
@@ -291,17 +356,43 @@ function ChargingPage() {
         }
       />
 
+      {isAdmin ? (
+        <VehicleLogCard
+          // Prefetched by the loader; a failed read shows an error, never "none imported".
+          coverage={vehicleCoverage.data}
+          loadError={vehicleCoverage}
+          onImport={() => open('vehicleImport')}
+        />
+      ) : null}
+
       <section className="flex flex-col gap-2">
         <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
-        <SessionList
-          sessions={sessions.data?.sessions ?? []}
-          hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
-          onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
-          loadingMore={showMore.isPending}
-          costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
-          onSync={isAdmin ? () => syncNow.syncSource('zaptec') : undefined}
-          syncing={syncNow.isPendingFor('zaptec')}
-        />
+        {loadFailed(sessions) ? (
+          // An error must never read as "no sessions" (ADR-0016).
+          <LoadErrorAlert title={m.charging_sessions_error_title()} query={sessions} />
+        ) : sessions.data ? (
+          // Not rendered while pending: an unseeded query (failed SSR prefetch) must
+          // not flash "no sessions" before its first result (ADR-0016).
+          <SessionList
+            sessions={sessions.data.sessions}
+            hasMore={sessions.data.hasMore && sessionLimit < SESSIONS_MAX}
+            onShowMore={() =>
+              showMore.mutate({
+                limit: Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX),
+                scope: vehicle,
+              })
+            }
+            loadingMore={showMore.isPending}
+            costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
+            // A sync can't create guest sessions: an admin marks them instead.
+            onSync={isAdmin && vehicle !== 'other' ? () => syncNow.syncSource('zaptec') : undefined}
+            syncing={syncNow.isPendingFor('zaptec')}
+            emptyTitle={vehicle === 'other' ? m.charging_vehicle_sessions_empty_other() : undefined}
+            emptyDescription={
+              vehicle === 'other' ? m.charging_vehicle_empty_other_description() : undefined
+            }
+          />
+        ) : null}
       </section>
 
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
@@ -318,6 +409,12 @@ function ChargingPage() {
                   ? { kind: 'new', from: latestTariff }
                   : undefined
             }
+            onOpenChange={(o) => {
+              if (!o) close()
+            }}
+          />
+          <VehicleImportDialog
+            open={isOpen('vehicleImport')}
             onOpenChange={(o) => {
               if (!o) close()
             }}
