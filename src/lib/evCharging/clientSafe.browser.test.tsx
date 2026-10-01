@@ -62,3 +62,13 @@ test('vehicle vocabulary is importable client-side', async () => {
   const mod = await import('~/lib/evCharging/vehicle')
   expect(mod.VEHICLE_SCOPES).toEqual(['ours', 'other', 'all'])
 })
+
+test('the MySkoda export parser is importable and runs client-side', async () => {
+  const mod = await import('~/lib/evCharging/skodaExport')
+  const { SKODA_EXPORT_FIXTURE } = await import('~test/fixtures/skodaExport')
+  expect(mod.parseSkodaExport(SKODA_EXPORT_FIXTURE)).toMatchObject({
+    ok: true,
+    dropped: 1,
+    publicCount: 1,
+  })
+})
