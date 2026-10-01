@@ -299,26 +299,32 @@ test('an admin tag committed while the re-match waits on the row survives', asyn
     options: `-c search_path=${schema},public`,
   })
   await admin.connect()
+  let pass: ReturnType<typeof reattributeSessions> | undefined
+  let blocked = false
   try {
     await admin.query('begin')
     await admin.query(
       `update ev_charge_session set vehicle = 'other', vehicle_source = 'admin' where id = $1`,
       [id],
     )
-    const pass = reattributeSessions()
+    pass = reattributeSessions()
     // Commit only once the re-match is blocked on the row lock the admin holds.
-    for (let i = 0; i < 500; i++) {
+    for (let i = 0; i < 500 && !blocked; i++) {
       const { rows } = await admin.query<{ waiting: boolean }>(
         `select wait_event_type = 'Lock' as waiting from pg_stat_activity where pid = $1`,
         [pid],
       )
-      if (rows[0]?.waiting) break
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      blocked = rows[0]?.waiting === true
+      if (!blocked) await new Promise((resolve) => setTimeout(resolve, 10))
     }
-    await admin.query('commit')
-    await pass
   } finally {
-    await admin.end()
+    // Whatever failed above: release the admin's row lock, close the client,
+    // and settle the pass (its rejection fails the test instead of escaping).
+    await admin
+      .query('commit')
+      .finally(() => admin.end())
+      .finally(() => pass)
   }
+  expect(blocked, 're-match never blocked on the admin row lock').toBe(true)
   expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'admin' })
 })
