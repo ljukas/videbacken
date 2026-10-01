@@ -11,6 +11,7 @@ import {
   hourRangeLabel,
   monthLabel,
   monthName,
+  scheduleWindows,
   weekdayLabel,
 } from './format'
 
@@ -184,5 +185,93 @@ describe('formatSessionTimeRange', () => {
     expect(formatSessionTimeRange(at('2026-09-05T20:10:00Z'), at('2026-09-06T04:30:00Z'))).toBe(
       '22:10–sön 06:30',
     )
+  })
+})
+
+describe('scheduleWindows', () => {
+  // Plug-in Sun 27 Sep 17:10 Stockholm (CEST, UTC+2).
+  const PLUG_IN = Date.parse('2026-09-27T15:10:00Z')
+  const QUARTER = 15 * 60_000
+  // Back-to-back 15-min pieces covering [fromIso, toIso), as the optimal schedule returns them.
+  const quarters = (fromIso: string, toIso: string) => {
+    const out: { startMs: number; endMs: number }[] = []
+    for (let t = Date.parse(fromIso); t < Date.parse(toIso); t += QUARTER) {
+      out.push({ startMs: t, endMs: Math.min(t + QUARTER, Date.parse(toIso)) })
+    }
+    return out
+  }
+
+  // The weekday is joined to its time by a no-break space, so it never wraps away from it.
+  test('one run on the next day: merged, with its weekday', () => {
+    inLocale('sv')
+    // Mon 00:00–06:30 Stockholm.
+    expect(scheduleWindows(quarters('2026-09-27T22:00:00Z', '2026-09-28T04:30:00Z'), PLUG_IN)).toBe(
+      'mån\u00a000:00–06:30',
+    )
+    inLocale('en')
+    expect(scheduleWindows(quarters('2026-09-27T22:00:00Z', '2026-09-28T04:30:00Z'), PLUG_IN)).toBe(
+      'Mon\u00a000:00–06:30',
+    )
+  })
+
+  test('a run on the plug-in day has no weekday', () => {
+    inLocale('sv')
+    expect(scheduleWindows(quarters('2026-09-27T16:00:00Z', '2026-09-27T18:00:00Z'), PLUG_IN)).toBe(
+      '18:00–20:00',
+    )
+  })
+
+  test('a run across midnight prefixes its end', () => {
+    inLocale('sv')
+    expect(scheduleWindows(quarters('2026-09-27T21:00:00Z', '2026-09-27T23:00:00Z'), PLUG_IN)).toBe(
+      '23:00–mån\u00a001:00',
+    )
+  })
+
+  test('two runs, the weekday said once per day', () => {
+    const pieces = [
+      ...quarters('2026-09-27T22:00:00Z', '2026-09-28T00:00:00Z'),
+      ...quarters('2026-09-28T03:00:00Z', '2026-09-28T04:30:00Z'),
+    ]
+    inLocale('sv')
+    expect(scheduleWindows(pieces, PLUG_IN)).toBe('mån\u00a000:00–02:00 och 05:00–06:30')
+    inLocale('en')
+    expect(scheduleWindows(pieces, PLUG_IN)).toBe('Mon\u00a000:00–02:00 and 05:00–06:30')
+  })
+
+  test('three or more runs: their count and the span from first start to last end', () => {
+    const pieces = [
+      ...quarters('2026-09-27T20:00:00Z', '2026-09-27T20:30:00Z'),
+      ...quarters('2026-09-27T23:00:00Z', '2026-09-28T00:00:00Z'),
+      ...quarters('2026-09-28T03:00:00Z', '2026-09-28T04:30:00Z'),
+    ]
+    inLocale('sv')
+    expect(scheduleWindows(pieces, PLUG_IN)).toBe('3 perioder mellan 22:00 och mån\u00a006:30')
+    inLocale('en')
+    expect(scheduleWindows(pieces, PLUG_IN)).toBe('3 periods between 22:00 and Mon\u00a006:30')
+  })
+
+  test('a partly filled piece ends its run where the energy ran out; a gap splits runs', () => {
+    inLocale('sv')
+    const partial = [
+      { startMs: Date.parse('2026-09-27T22:00:00Z'), endMs: Date.parse('2026-09-27T22:15:00Z') },
+      { startMs: Date.parse('2026-09-27T22:15:00Z'), endMs: Date.parse('2026-09-27T22:22:30Z') },
+    ]
+    expect(scheduleWindows(partial, PLUG_IN)).toBe('mån\u00a000:00–00:22')
+    const gap = [
+      ...partial,
+      { startMs: Date.parse('2026-09-27T22:30:00Z'), endMs: Date.parse('2026-09-27T22:45:00Z') },
+    ]
+    expect(scheduleWindows(gap, PLUG_IN)).toBe('mån\u00a000:00–00:22 och 00:30–00:45')
+  })
+
+  test('order of the input does not matter', () => {
+    inLocale('sv')
+    const pieces = quarters('2026-09-27T22:00:00Z', '2026-09-28T00:00:00Z').toReversed()
+    expect(scheduleWindows(pieces, PLUG_IN)).toBe('mån\u00a000:00–02:00')
+  })
+
+  test('no pieces: no windows', () => {
+    expect(scheduleWindows([], PLUG_IN)).toBeNull()
   })
 })

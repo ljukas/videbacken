@@ -1,7 +1,7 @@
 import { tz } from '@date-fns/tz'
 import { type Day, format, formatDistanceStrict, isSameDay, isSameYear, type Month } from 'date-fns'
 import { getDateFnsLocale, getIntlLocale } from '~/lib/i18n/format'
-import { STOCKHOLM_TIME_ZONE } from '~/lib/time/stockholm'
+import { STOCKHOLM_TIME_ZONE, stockholmDayOf } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 
 // Charging data is bucketed in Stockholm time server-side (calendar months,
@@ -75,6 +75,53 @@ export function formatTime(date: Date): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
+}
+
+/**
+ * The cheapest schedule's pieces as the session summary explains them: merged
+ * into runs (a piece starting where the previous one ends), one or two runs
+ * listed ("00:00–06:30", "00:00–02:00 och 05:00–06:30"), more as "{n} perioder
+ * mellan {first start} och {last end}". Stockholm time; a time on another
+ * Stockholm day than the one before it (the plug-in's, at first) gets its
+ * weekday (joined by a no-break space, so it never wraps away from its time),
+ * so a day is named once. Null without pieces.
+ */
+export function scheduleWindows(
+  pieces: readonly { startMs: number; endMs: number }[],
+  plugInMs: number,
+): string | null {
+  const runs: { startMs: number; endMs: number }[] = []
+  for (const p of pieces.toSorted((a, b) => a.startMs - b.startMs)) {
+    const last = runs.at(-1)
+    if (last && p.startMs <= last.endMs) last.endMs = Math.max(last.endMs, p.endMs)
+    else runs.push({ startMs: p.startMs, endMs: p.endMs })
+  }
+  const first = runs[0]
+  const last = runs.at(-1)
+  if (!first || !last) return null
+
+  let day = stockholmDayOf(plugInMs)
+  const at = (ms: number) => {
+    const time = formatTime(new Date(ms))
+    const text = stockholmDayOf(ms) === day ? time : `${formatShortWeekday(ms)} ${time}`
+    day = stockholmDayOf(ms)
+    return text
+  }
+  const range = (run: { startMs: number; endMs: number }) => {
+    const from = at(run.startMs)
+    return `${from}–${at(run.endMs)}`
+  }
+  if (runs.length === 1) return range(first)
+  if (runs.length === 2) {
+    const firstText = range(first)
+    return m.charging_session_windows_two({ first: firstText, second: range(last) })
+  }
+  const from = at(first.startMs)
+  return m.charging_session_windows_many({
+    count: formatCount(runs.length),
+    from,
+    to: at(last.endMs),
+  })
 }
 
 export function formatDateTime(date: Date): string {
