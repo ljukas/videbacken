@@ -318,10 +318,7 @@ describe('mergeRuns', () => {
 
   test('joins pieces that touch or overlap, in start order', () => {
     const runs = mergeRuns([piece(20, 30), piece(0, 10), piece(10, 15), piece(12, 18)])
-    expect(runs.map((r) => r.map((p) => p.startMs))).toEqual([
-      [0, 10, 12],
-      [20],
-    ])
+    expect(runs.map((r) => r.map((p) => p.startMs))).toEqual([[0, 10, 12], [20]])
   })
 
   test('a gap splits the runs', () => {
