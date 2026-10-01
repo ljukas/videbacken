@@ -254,3 +254,12 @@ test('getCostOverview follows the vehicle scope', async () => {
   expect(await allTimeKwh('all')).toBeCloseTo(14)
   expect(await allTimeKwh()).toBeCloseTo(14)
 })
+
+test('getSessionCosts prices a guest session (unscoped by id)', async () => {
+  const guest = await session('2026-09-11T10:00:00Z', '2026-09-11T11:00:00Z', 4, [], {
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const costs = await getSessionCosts({ sessionIds: [guest] })
+  expect(costs.map((c) => [c.sessionId, c.kwh])).toEqual([[guest, 4]])
+})

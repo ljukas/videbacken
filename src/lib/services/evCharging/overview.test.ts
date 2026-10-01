@@ -305,7 +305,6 @@ test('getOverview and listSessions follow the vehicle scope', async () => {
     kwh: 14,
     sessions: 2,
   })
-  expect(theirs.years).toContain(2026) // years stay unscoped
 
   const list = await listSessions({ limit: 10, vehicle: 'other' })
   expect(list.sessions.map((s) => [s.id, s.vehicle])).toEqual([[guest, 'other']])
@@ -313,4 +312,106 @@ test('getOverview and listSessions follow the vehicle scope', async () => {
     ours,
   ])
   expect((await listSessions({ limit: 10 })).sessions.map((s) => s.id)).toEqual([guest, ours])
+})
+
+test('years stay unscoped: a guest-only year is listed under every scope', async () => {
+  await insertSession({
+    startAt: new Date('2025-05-01T10:00:00Z'),
+    endAt: new Date('2025-05-01T11:00:00Z'),
+  })
+  await insertSession({
+    startAt: new Date('2024-05-01T10:00:00Z'),
+    endAt: new Date('2024-05-01T11:00:00Z'),
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const now = new Date('2026-03-15T12:00:00Z')
+  for (const vehicle of ['ours', 'other', 'all'] as const)
+    expect((await getOverview({ year: 2026, now, vehicle })).years).toEqual([2026, 2025, 2024])
+})
+
+test('the interval-sum queries follow the vehicle scope (intervals differ from session energy)', async () => {
+  const H = 3_600_000
+  const ours = await insertSession({
+    startAt: new Date('2026-03-01T10:00:00Z'),
+    endAt: new Date('2026-03-01T12:00:00Z'),
+    energyKwh: 10,
+  })
+  await insertInterval(
+    ours,
+    new Date('2026-03-01T10:00:00Z'),
+    new Date(Date.parse('2026-03-01T10:00:00Z') + H),
+    3,
+  )
+  await insertInterval(
+    ours,
+    new Date('2026-03-01T11:00:00Z'),
+    new Date(Date.parse('2026-03-01T11:00:00Z') + H),
+    4,
+  )
+  const guest = await insertSession({
+    startAt: new Date('2026-03-02T10:00:00Z'),
+    endAt: new Date('2026-03-02T12:00:00Z'),
+    energyKwh: 9,
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  await insertInterval(
+    guest,
+    new Date('2026-03-02T10:00:00Z'),
+    new Date(Date.parse('2026-03-02T10:00:00Z') + H),
+    2,
+  )
+  await insertInterval(
+    guest,
+    new Date('2026-03-02T11:00:00Z'),
+    new Date(Date.parse('2026-03-02T11:00:00Z') + H),
+    0.5,
+  )
+  // Interval-less sessions keep the fallback path covered.
+  await insertSession({
+    startAt: new Date('2026-03-03T10:00:00Z'),
+    endAt: new Date('2026-03-03T11:00:00Z'),
+    energyKwh: 1,
+  })
+  await insertSession({
+    startAt: new Date('2026-03-04T10:00:00Z'),
+    endAt: new Date('2026-03-04T11:00:00Z'),
+    energyKwh: 0.8,
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const now = new Date('2026-03-15T12:00:00Z')
+  const mine = await getOverview({ year: 2026, now, vehicle: 'ours' })
+  expect(mine.tiles.allTime).toEqual({ kwh: 8, sessions: 2 })
+  expect(mine.months[2]).toEqual({ month: 3, kwh: 8, sessions: 2 })
+  const theirs = await getOverview({ year: 2026, now, vehicle: 'other' })
+  expect(theirs.tiles.allTime.kwh).toBeCloseTo(3.3)
+  expect(theirs.tiles.allTime.sessions).toBe(2)
+  expect(theirs.months[2].kwh).toBeCloseTo(3.3)
+  const both = await getOverview({ year: 2026, now })
+  expect(both.tiles.allTime.kwh).toBeCloseTo(11.3)
+})
+
+test('this year / this month follow the scope when the selected year is not the current one', async () => {
+  await insertSession({
+    startAt: new Date('2026-03-01T10:00:00Z'),
+    endAt: new Date('2026-03-01T11:00:00Z'),
+    energyKwh: 10,
+  })
+  await insertSession({
+    startAt: new Date('2026-03-02T10:00:00Z'),
+    endAt: new Date('2026-03-02T11:00:00Z'),
+    energyKwh: 4,
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const now = new Date('2026-03-15T12:00:00Z')
+  const ours = await getOverview({ year: 2025, now, vehicle: 'ours' })
+  expect(ours.tiles.thisYear).toEqual({ kwh: 10, sessions: 1 })
+  expect(ours.tiles.thisMonth).toEqual({ kwh: 10, sessions: 1 })
+  const theirs = await getOverview({ year: 2025, now, vehicle: 'other' })
+  expect(theirs.tiles.thisYear).toEqual({ kwh: 4, sessions: 1 })
+  expect(theirs.tiles.thisMonth).toEqual({ kwh: 4, sessions: 1 })
+  expect(theirs.months.every((m) => m.kwh === 0)).toBe(true)
 })

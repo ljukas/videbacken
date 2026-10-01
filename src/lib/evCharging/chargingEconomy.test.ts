@@ -342,6 +342,17 @@ test('economy overview follows the vehicle scope; the session detail carries the
     [ours, 'ours'],
   ])
   expect(await rows()).toHaveLength(2)
+  const tiles = async (vehicle?: 'ours' | 'other' | 'all') =>
+    (await getEconomyOverview({ year: 2026, now: NOW, vehicle })).tiles.sessions
+  expect(await tiles('other')).toBe(1)
+  expect(await tiles('ours')).toBe(1)
+  expect(await tiles()).toBe(2)
+  // years stay unscoped
+  const earlier = await session('2025-05-01T10:00:00Z', '2025-05-01T11:00:00Z', 3)
+  expect(earlier).toBeTruthy()
+  expect((await getEconomyOverview({ year: 2026, now: NOW, vehicle: 'other' })).years).toContain(
+    2025,
+  )
 
   const detail = await getSessionEconomy({ sessionId: guest })
   expect(detail.session).toMatchObject({ vehicle: 'other', vehicleSource: 'admin' })
