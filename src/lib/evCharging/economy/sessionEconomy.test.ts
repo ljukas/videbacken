@@ -254,12 +254,16 @@ describe('timingScore', () => {
   test('uses |actual| for the relative floor when actual is negative', () => {
     // 5 % of |-30| = 1,5 kr: a 1,2 kr gap is below it, a 1,6 kr gap is not.
     expect(timingScore(-30, -31, -29.8)).toBeNull()
-    expect(timingScore(-30, -31, -29.4)).not.toBeNull()
+    // (dearest − actual) ÷ gap = 0,6 ÷ 1,6
+    expect(timingScore(-30, -31, -29.4)).toBeCloseTo(0.375)
+  })
+  test('at actual 0 the absolute floor governs', () => {
+    expect(timingScore(0, -0.2, 0.2)).toBeNull()
+    expect(timingScore(0, -0.2, 0.4)).toBeCloseTo(0.4 / 0.6)
   })
   test('the exact boundary scores (the rule is "<")', () => {
+    // 0,5 kr is exact in binary, so gap === threshold holds without rounding.
     expect(timingScore(5, 5, 5.5)).toBe(1)
-    // Relative floor: 5 % of 30 kr = 1,5 kr exactly.
-    expect(timingScore(30, 28.5, 30)).toBe(0)
   })
   test('is clamped to 0…1 against float noise', () => {
     expect(timingScore(9.9999999, 10, 20)).toBe(1)

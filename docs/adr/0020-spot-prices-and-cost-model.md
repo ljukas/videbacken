@@ -78,7 +78,7 @@ window hours if higher), and prices the result with `priceIntervals`:
   most expensive first. Pieces are ranked by the full price `(spot + fees) × (1 + VAT)` of the tariff at the slot's
   Stockholm day (`unitPrice`, shared with `priceIntervals`). Greedy is exactly optimal: cost is linear in kWh with
   independent per-slot capacity.
-- **Score** = (dearest − actual) ÷ (dearest − optimal), clamped to 0…1, null below a gap of max(0,5 kr, 5 % of |actual|) (amended 2026-10-01: a ≈4 öre gap graded 18 %, owner feedback). Saved =
+- **Score** = (dearest − actual) ÷ (dearest − optimal), clamped to 0…1, null below a gap of max(0,5 kr, 5 % of |actual|) (amended 2026-10-01: a ≈4 öre gap graded 18 %, owner feedback; month/year scores apply the same rule to the summed totals, a ratio of sums, so individually unscored sessions can still contribute to a scored month/year). Saved =
   immediate − actual (may be negative); left on the table = actual − optimal (never negative). Month/year scores
   come from the **summed** totals (not an average of per-session scores) and are null when nothing is included.
 - A session without intervals (`no_hourly`) or with any part of its window lacking a price or tariff (`no_price`) is

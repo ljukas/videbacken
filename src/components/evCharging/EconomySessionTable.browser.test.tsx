@@ -125,6 +125,28 @@ test('a flat-price session shows "—" for timing', async () => {
   )
 })
 
+test('on a phone a null-score row keeps the spread reason inside the folded line', async () => {
+  const base = row()
+  await renderWithRouter(
+    <EconomySessionTable
+      sessions={[
+        row({ counterfactual: base.counterfactual && { ...base.counterfactual, score: null } }),
+      ]}
+    />,
+  )
+  // No Tailwind here, so the folded line is found by its `sm:hidden` class.
+  const folded = document.querySelector('div.sm\\:hidden')
+  expect(folded?.textContent).toContain(m.charging_economy_col_score())
+  expect(folded?.textContent).toMatch(
+    new RegExp(
+      m
+        .charging_economy_tile_no_spread({ spread: formatSek(32, 2) })
+        .replace(/[()]/g, '\\$&')
+        .replace(/\s/g, '\\s'),
+    ),
+  )
+})
+
 // The browser-test env has no Tailwind, so the phone layout is pinned by its
 // classes: the comparison headers hide below `sm` and the comparison repeats
 // under the date (or the reason, for an excluded row).

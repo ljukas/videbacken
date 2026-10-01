@@ -78,8 +78,7 @@ export function EconomySessionTable({
                       <FoldedValue
                         label={m.charging_economy_col_score()}
                         value={formatScore(cf.score)}
-                        unknown={cf.score === null}
-                        unknownLabel={noSpread(cf)}
+                        unknownLabel={cf.score === null ? noSpread(cf) : undefined}
                       />
                     </>
                   ) : (
@@ -133,17 +132,16 @@ export function EconomySessionTable({
 function FoldedValue({
   label,
   value,
-  unknown,
   unknownLabel,
 }: {
   label: string
   value: string
-  unknown?: boolean
+  /** Set when the value is unknown: the reason, read out in place of the dash. */
   unknownLabel?: string
 }) {
   return (
     <span className="inline-block">
-      {label} {unknown && unknownLabel ? <Unknown label={unknownLabel} /> : value}
+      {label} {unknownLabel ? <Unknown label={unknownLabel} /> : value}
     </span>
   )
 }

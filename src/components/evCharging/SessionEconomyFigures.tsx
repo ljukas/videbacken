@@ -29,7 +29,7 @@ export function SessionEconomyFigures({
     <Unknown label={m.charging_sessions_cost_unknown()} />
   )
   // `hints` are visible lines under the value, as on the economy page's tiles.
-  // A flat-price session has no score: its dash is hidden from screen readers
+  // A session with too little price spread has no score: its dash is hidden from screen readers
   // and the visible line gives the reason (with the price spread) instead of the hint.
   // A score shows the spread too.
   const spread = cf ? formatSek(cf.dearest.totalSek - cf.optimal.totalSek, 2) : ''

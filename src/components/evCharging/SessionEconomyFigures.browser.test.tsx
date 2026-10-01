@@ -104,8 +104,10 @@ test('a session with too little price spread shows "—" for timing, with its re
   const { screen } = await renderWithProviders(
     <SessionEconomyFigures
       economy={economy({
+        actual: cost(38.02),
         counterfactual: base.counterfactual && {
           ...base.counterfactual,
+          immediate: cost(38.03),
           dearest: cost(38.04),
           score: null,
         },
