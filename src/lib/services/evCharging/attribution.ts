@@ -36,10 +36,16 @@ export async function reattributeSessions(
         and ${countedSessionFilter()}
         ${onlyOne}
     ),
+    -- target reads a snapshot from statement start. If an admin tags (or a
+    -- sync voids) a row while this UPDATE waits on its lock, READ COMMITTED
+    -- re-checks only this WHERE against the new row version, so the admin and
+    -- counted rules are repeated here, or the re-match would overwrite the tag.
     updated as (
       update ${s} set vehicle = target.vehicle, vehicle_source = 'skoda', updated_at = now()
       from target
       where ${s.id} = target.id
+        and ${s.vehicleSource} <> 'admin'
+        and ${countedSessionFilter()}
         and (${s.vehicle} <> target.vehicle or ${s.vehicleSource} <> 'skoda')
       returning ${s.id}
     )

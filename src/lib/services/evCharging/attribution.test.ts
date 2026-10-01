@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import { Client } from 'pg'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeSession } from '~/lib/db/schema'
@@ -191,4 +192,51 @@ test('setSessionVehicle rejects unknown, non-uuid and uncounted sessions', async
       new EvChargingDomainError('EV_SESSION_NOT_FOUND'),
     )
   }
+})
+
+// Under READ COMMITTED the re-match's `target` is a snapshot from statement
+// start; when an admin tag commits while the UPDATE waits on that row's lock,
+// Postgres re-checks only the UPDATE's own WHERE against the new row version.
+test('an admin tag committed while the re-match waits on the row survives', async () => {
+  await seedCoverage()
+  const id = await insertSession({
+    startAt: at('2026-02-10T10:00:00Z'),
+    endAt: at('2026-02-10T12:00:00Z'),
+  })
+  await insertVehicleRecord({
+    startAt: at('2026-02-10T11:00:00Z'),
+    endAt: at('2026-02-10T13:00:00Z'),
+  })
+  const {
+    rows: [{ schema, pid }],
+  } = await db.execute<{ schema: string; pid: number }>(
+    sql`select current_schema() as schema, pg_backend_pid() as pid`,
+  )
+  const admin = new Client({
+    connectionString: process.env.DATABASE_URL,
+    options: `-c search_path=${schema},public`,
+  })
+  await admin.connect()
+  try {
+    await admin.query('begin')
+    await admin.query(
+      `update ev_charge_session set vehicle = 'other', vehicle_source = 'admin' where id = $1`,
+      [id],
+    )
+    const pass = reattributeSessions()
+    // Commit only once the re-match is blocked on the row lock the admin holds.
+    for (let i = 0; i < 500; i++) {
+      const { rows } = await admin.query<{ waiting: boolean }>(
+        `select wait_event_type = 'Lock' as waiting from pg_stat_activity where pid = $1`,
+        [pid],
+      )
+      if (rows[0]?.waiting) break
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    await admin.query('commit')
+    await pass
+  } finally {
+    await admin.end()
+  }
+  expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'admin' })
 })
