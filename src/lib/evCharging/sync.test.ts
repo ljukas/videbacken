@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { evChargeInterval, evChargeSession, user } from '~/lib/db/schema'
+import { evChargeInterval, evChargeSession, integrationSyncRun, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { type CallOpts, type ZaptecClient, ZaptecError } from '~/lib/effects/zaptec'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
@@ -505,17 +505,21 @@ test('a successful sync re-derives attribution and keeps admin tags', async () =
   const { log, runLines } = capturingLogger()
   const run = await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
   expect(run.outcome).toBe('ok')
+  expect(run.reattributeChanged).toBe(1)
   const [row] = await attributionRows()
   // s0 overlaps no record but sits inside coverage, so it is a guest.
   expect(row).toMatchObject({ zaptecSessionId: 's0', vehicle: 'other', vehicleSource: 'skoda' })
-  expect(runLines()[0]).toHaveProperty('reattributeMs')
+  expect(typeof runLines()[0].reattributeMs).toBe('number')
+  expect(runLines()[0].reattributeChanged).toBe(1)
 
   await db.update(evChargeSession).set({ vehicle: 'ours', vehicleSource: 'admin' })
-  await runZaptecSync({
+  const second = await runZaptecSync({
     trigger: 'cron',
     now: () => new Date(T1.getTime() + HOUR),
     deps: { zaptec: client, log },
   })
+  expect(second).toMatchObject({ outcome: 'ok' })
+  expect(second.upserted).toBeGreaterThanOrEqual(1)
   expect((await attributionRows())[0]).toMatchObject({ vehicle: 'ours', vehicleSource: 'admin' })
 })
 
@@ -527,7 +531,46 @@ test('a failed re-match is logged as a warning and does not fail the run', async
   expect(run.outcome).toBe('ok')
   expect(entries().find((e) => e.msg === 'zaptec sync: vehicle re-match failed')).toMatchObject({
     level: WARN,
+    error: expect.anything(),
   })
+  expect(typeof run.reattributeMs).toBe('number')
+  expect(run.reattributeChanged).toBe(0)
+})
+
+test('a re-match that never settles is cut off by the run deadline without failing the run', async () => {
+  vi.spyOn(evChargingService, 'reattributeSessions').mockReturnValueOnce(new Promise(() => {}))
+  const { client } = fakeZaptec([session('s0', new Date(T1.getTime() - DAY))])
+  const { log, entries } = capturingLogger()
+  const started = performance.now()
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deadlineMs: 300,
+    deps: { zaptec: client, log },
+  })
+  expect(performance.now() - started).toBeLessThan(5_000)
+  expect(run.outcome).toBe('ok')
+  expect(entries().find((e) => e.msg === 'zaptec sync: vehicle re-match failed')).toMatchObject({
+    level: WARN,
+  })
+})
+
+test('a failed fetch never triggers a re-match', async () => {
+  const rematch = vi.spyOn(evChargingService, 'reattributeSessions')
+  const { client, state } = fakeZaptec()
+  state.chargersError = new ZaptecError('unreachable', 'chargers', 503)
+  const { log } = capturingLogger()
+  const run = await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
+  expect(run.outcome).toBe('failed')
+  expect(rematch).not.toHaveBeenCalled()
+})
+
+test('the run row records an integer reattributeMs timing', async () => {
+  const { client } = fakeZaptec([session('s0', new Date(T1.getTime() - DAY))])
+  const { log } = capturingLogger()
+  await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
+  const [row] = await db.select({ timings: integrationSyncRun.timings }).from(integrationSyncRun)
+  expect(Number.isInteger(row.timings.reattributeMs)).toBe(true)
 })
 
 test('a page-2 failure keeps page 1 and does not advance the watermark', async () => {
@@ -673,7 +716,7 @@ test('run-line timings are integers', async () => {
   })
 
   expect(run.authMs).toBe(5)
-  for (const key of ['authMs', 'fetchMs', 'importMs'] as const) {
+  for (const key of ['authMs', 'fetchMs', 'importMs', 'reattributeMs'] as const) {
     expect(Number.isInteger(run[key])).toBe(true)
     expect(Number.isInteger(runLines()[0][key])).toBe(true)
   }
