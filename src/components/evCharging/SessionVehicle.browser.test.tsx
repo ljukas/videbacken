@@ -75,3 +75,20 @@ test('Automatiskt sends null; a failure shows the error toast and keeps the save
   await expect.element(trigger).toHaveTextContent(m.charging_vehicle_other())
   await expect.element(trigger).not.toHaveTextContent(m.charging_vehicle_auto())
 })
+
+test('while saving, focus stays on the trigger and a second choice is ignored', async () => {
+  setVehicleFn.mockReturnValue(new Promise(() => {}))
+  const { screen } = await renderWithProviders(
+    <SessionVehicle sessionId={ID} vehicle="ours" vehicleSource="default" isAdmin />,
+  )
+  const trigger = screen.getByRole('combobox', { name: m.charging_vehicle_who_label() })
+  await trigger.click()
+  await screen.getByRole('option', { name: m.charging_vehicle_other() }).click()
+  await vi.waitFor(() => expect(setVehicleFn).toHaveBeenCalledTimes(1))
+  await expect.element(trigger).toHaveAttribute('aria-disabled', 'true')
+  await expect.poll(() => document.activeElement === trigger.element()).toBe(true)
+  // aria-disabled isn't native, so the menu still opens; the choice must be ignored.
+  await trigger.click({ force: true })
+  await screen.getByRole('option', { name: m.charging_vehicle_auto() }).click()
+  expect(setVehicleFn).toHaveBeenCalledTimes(1)
+})

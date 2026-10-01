@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useId } from 'react'
 import { toast } from 'sonner'
 import {
   Select,
@@ -38,6 +39,7 @@ export function SessionVehicle({
   isAdmin: boolean
 }) {
   const queryClient = useQueryClient()
+  const labelId = useId()
   const save = useMutation(
     orpc.evCharging.setSessionVehicle.mutationOptions({
       onSuccess: () => toast.success(m.charging_vehicle_saved()),
@@ -47,21 +49,26 @@ export function SessionVehicle({
   )
   const summary = `${VEHICLE_LABEL[vehicle]()} · ${SOURCE_LABEL[vehicleSource]()}`
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-      <span className="text-muted-foreground">{m.charging_vehicle_who_label()}</span>
+    <div aria-busy={save.isPending} className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+      <span id={labelId} className="text-muted-foreground">
+        {m.charging_vehicle_who_label()}
+      </span>
       <span>{summary}</span>
       {isAdmin ? (
         <Select
           value={vehicleSource === 'admin' ? vehicle : AUTO}
-          disabled={save.isPending}
-          onValueChange={(v) =>
+          // Not `disabled`: that would drop focus to <body> as Radix returns it to
+          // the trigger. Guard double submits instead and dim the trigger.
+          onValueChange={(v) => {
+            if (save.isPending) return
             save.mutate({ sessionId, vehicle: v === AUTO ? null : (v as Vehicle) })
-          }
+          }}
         >
           <SelectTrigger
             size="sm"
-            className="w-auto min-w-32"
-            aria-label={m.charging_vehicle_who_label()}
+            className="w-auto min-w-32 aria-disabled:opacity-50"
+            aria-labelledby={labelId}
+            aria-disabled={save.isPending}
           >
             <SelectValue />
           </SelectTrigger>

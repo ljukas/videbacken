@@ -3,5 +3,10 @@ import { Badge } from '~/components/ui/badge'
 import { m } from '~/paraglide/messages'
 
 export function GuestBadge() {
-  return <Badge variant="outline">{m.charging_vehicle_guest_badge()}</Badge>
+  return (
+    <Badge variant="outline">
+      <span className="sr-only">{m.charging_vehicle_who_label()}: </span>
+      {m.charging_vehicle_guest_badge()}
+    </Badge>
+  )
 }
