@@ -10,6 +10,8 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core'
+import { VEHICLE_SOURCES, VEHICLES } from '../../evCharging/vehicle'
+import { sqlList } from '../sqlList'
 
 // One row per Zaptec charger (`id` is the Zaptec charger id itself — not a
 // synthetic uuid — so upserts from the sync run are a plain `ON CONFLICT (id)`).
@@ -47,6 +49,10 @@ export const evChargeSession = pgTable(
     replacedByZaptecSessionId: text('replaced_by_zaptec_session_id'),
     offline: boolean('offline').notNull().default(false),
     reliableClock: boolean('reliable_clock').notNull().default(true),
+    // Who charged (ADR-0021). Never in `zaptecOwnedSessionUpdateSet`, so the
+    // Zaptec sync can't clobber an attribution. 'default' counts as ours.
+    vehicle: text('vehicle').notNull().default('ours'),
+    vehicleSource: text('vehicle_source').notNull().default('default'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
@@ -63,6 +69,11 @@ export const evChargeSession = pgTable(
     index('ev_charge_session_charger_id_start_at_idx').on(table.chargerId, table.startAt),
     check('ev_charge_session_energy_kwh_nonneg_check', sql`${table.energyKwh} >= 0`),
     check('ev_charge_session_end_at_check', sql`${table.endAt} >= ${table.startAt}`),
+    check('ev_charge_session_vehicle_check', sql`${table.vehicle} IN (${sqlList(VEHICLES)})`),
+    check(
+      'ev_charge_session_vehicle_source_check',
+      sql`${table.vehicleSource} IN (${sqlList(VEHICLE_SOURCES)})`,
+    ),
   ],
 ).enableRLS()
 
