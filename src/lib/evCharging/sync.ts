@@ -117,14 +117,12 @@ export async function runZaptecSync(opts: {
           log.warn('zaptec sync: vehicle re-match skipped, run deadline reached')
         } else {
           // Raced against the run deadline so a stalled re-match cannot hold the
-          // run past its lease; the next sync re-derives anyway.
+          // run past its lease. withDeadline doesn't cancel the SQL (idempotent,
+          // row-guarded; the next sync re-derives). A plain Error: it is only warned.
           const result = await withDeadline(
             evChargingService.reattributeSessions(),
             signal,
-            () =>
-              new ZaptecError('unreachable', 'sessions', undefined, {
-                message: 'Vehicle re-match did not finish within the sync deadline',
-              }),
+            () => new Error('vehicle re-match did not finish within the sync deadline'),
           )
           run.reattributeChanged = result.changed
         }

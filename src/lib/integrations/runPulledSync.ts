@@ -164,13 +164,13 @@ export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>):
 }
 
 /**
- * Races a remote call against the run deadline; a hit rejects with `makeError()`
+ * (typically an `IntegrationError`, so the run records `failed`, `unreachable`; any Error works for callers that only catch it).
  * (an `IntegrationError`, so the run records `failed`, typically `unreachable`).
  */
 export function withDeadline<T>(
   p: Promise<T>,
   signal: AbortSignal,
-  makeError: () => IntegrationError,
+  makeError: () => Error,
 ): Promise<T> {
   // A call that settles after the deadline must not surface as unhandled.
   p.catch(() => {})

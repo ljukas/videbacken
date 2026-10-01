@@ -679,6 +679,20 @@ test('importVehicleRecords records its sub-timings', async () => {
   })
 })
 
+test('setSessionVehicle records its sub-timing, also on the reset path', async () => {
+  await signIn('admin')
+  const id = await insertSession()
+  for (const vehicle of ['other', null] as const) {
+    const timings: Record<string, number> = {}
+    await call(
+      evChargingRouter.setSessionVehicle,
+      { sessionId: id, vehicle },
+      { context: { ...baseContext(), timings } },
+    )
+    expect(timings).toMatchObject({ vehicleTagMs: expect.any(Number) })
+  }
+})
+
 test('importVehicleRecords rejects an empty, oversized or inverted import', async () => {
   await signIn('admin')
   for (const rows of [

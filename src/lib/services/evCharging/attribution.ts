@@ -22,6 +22,7 @@ export async function reattributeSessions(
     return { ours: 0, other: 0, changed: 0 }
   }
   const s = evChargeSession
+  // Cross-service read of vehicle_charge_record (owned by services/vehicleCharge): deliberate, read-only, see ADR-0021.
   const r = vehicleChargeRecord
   const onlyOne = opts.sessionId !== undefined ? sql`and ${s.id} = ${opts.sessionId}` : sql``
   const result = await db.execute<{ ours: string; other: string; changed: string }>(sql`

@@ -203,12 +203,16 @@ export const evChargingRouter = {
   setSessionVehicle: adminProcedure
     .errors(evChargingErrors)
     .input(z.object({ sessionId: z.uuid(), vehicle: z.enum(VEHICLES).nullable() }))
-    .handler(async ({ input, errors }) => {
+    .handler(async ({ input, errors, context }) => {
+      // The reset path (vehicle = null) runs three statements, so time it.
+      const start = performance.now()
       try {
         return await evChargingService.setSessionVehicle(input.sessionId, input.vehicle)
       } catch (err) {
         if (err instanceof EvChargingDomainError) throw errors[err.code]()
         throw err
+      } finally {
+        if (context.timings) context.timings.vehicleTagMs = Math.round(performance.now() - start)
       }
     }),
 
