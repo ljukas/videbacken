@@ -2,6 +2,7 @@ import { linkOptions } from '@tanstack/react-router'
 import {
   CalendarClockIcon,
   HomeIcon,
+  PiggyBankIcon,
   ThermometerIcon,
   UserIcon,
   UsersIcon,
@@ -49,6 +50,13 @@ export const NAVIGATE_COMMANDS = linkOptions([
     label: m.nav_charging_patterns,
     keywords: m.cmd_kw_charging_patterns,
     icon: CalendarClockIcon,
+    adminOnly: false,
+  },
+  {
+    to: '/charging/economy',
+    label: m.nav_charging_economy,
+    keywords: m.cmd_kw_charging_economy,
+    icon: PiggyBankIcon,
     adminOnly: false,
   },
   {

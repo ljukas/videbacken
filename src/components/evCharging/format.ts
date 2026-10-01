@@ -159,6 +159,25 @@ export function formatSek(value: number, fractionDigits = 0): string {
   return `${formatKronor(value, fractionDigits)}\u00a0kr`
 }
 
+/** Kronor with a typographic minus for a negative amount; rounds −0,2 kr to "0 kr", never "−0 kr". */
+export function formatSignedSek(value: number, fractionDigits = 0): string {
+  const factor = 10 ** fractionDigits
+  // Round the magnitude so ±12,5 round alike; a tiny negative never reads "−0".
+  const magnitude = Math.round(Math.abs(value) * factor) / factor
+  return value < 0 && magnitude > 0
+    ? `−${formatSek(magnitude, fractionDigits)}`
+    : formatSek(magnitude, fractionDigits)
+}
+
+/** A timing score (0…1) as a whole percent; "—" when there was nothing to compare. */
+export function formatScore(score: number | null): string {
+  if (score === null) return '—'
+  return new Intl.NumberFormat(getIntlLocale(), {
+    style: 'percent',
+    maximumFractionDigits: 0,
+  }).format(score)
+}
+
 /**
  * A share (0…1) as a whole percent ("39 %"). A small but real share never
  * rounds to "0 %": it reads "< 1 %".

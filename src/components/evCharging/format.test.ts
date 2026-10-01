@@ -3,6 +3,8 @@ import { baseLocale, getLocale, type Locale, overwriteGetLocale } from '~/paragl
 import {
   formatDay,
   formatDuration,
+  formatScore,
+  formatSignedSek,
   formatWeekdayDay,
   hourRangeLabel,
   monthLabel,
@@ -134,5 +136,24 @@ describe('formatDuration', () => {
   test('a negative span (end before start) reads as zero', () => {
     inLocale('sv')
     expect(formatDuration(at('2026-09-27T20:00:00Z'), at('2026-09-27T19:00:00Z'))).toBe('0 min')
+  })
+})
+
+describe('formatSignedSek', () => {
+  test('prefixes a real minus and never shows −0', () => {
+    inLocale('sv')
+    expect(formatSignedSek(-12.4)).toBe('−12\u00a0kr')
+    expect(formatSignedSek(12.4)).toBe('12\u00a0kr')
+    expect(formatSignedSek(-12.5)).toBe('−13\u00a0kr')
+    expect(formatSignedSek(12.5)).toBe('13\u00a0kr')
+    expect(formatSignedSek(-0.2)).toBe('0\u00a0kr')
+  })
+})
+
+describe('formatScore', () => {
+  test('is a whole percent, "—" when null', () => {
+    inLocale('sv')
+    expect(formatScore(0.724)).toMatch(/^72\s?%$/)
+    expect(formatScore(null)).toBe('—')
   })
 })

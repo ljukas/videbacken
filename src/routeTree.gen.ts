@@ -28,6 +28,7 @@ import { Route as ApiCronGridTariffCatalogueRouteImport } from './routes/api/cro
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_authenticated/charging/patterns'
+import { Route as AuthenticatedChargingEconomyRouteImport } from './routes/_authenticated/charging/economy'
 import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authenticated/account/profile'
 
 const SignedInRoute = SignedInRouteImport.update({
@@ -128,6 +129,12 @@ const AuthenticatedChargingPatternsRoute =
     path: '/charging/patterns',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedChargingEconomyRoute =
+  AuthenticatedChargingEconomyRouteImport.update({
+    id: '/charging/economy',
+    path: '/charging/economy',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAccountProfileRoute =
   AuthenticatedAccountProfileRouteImport.update({
     id: '/profile',
@@ -146,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/users': typeof AuthenticatedUsersRoute
   '/api/log': typeof ApiLogRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
+  '/charging/economy': typeof AuthenticatedChargingEconomyRoute
   '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
@@ -166,6 +174,7 @@ export interface FileRoutesByTo {
   '/api/log': typeof ApiLogRoute
   '/': typeof AuthenticatedIndexRoute
   '/account/profile': typeof AuthenticatedAccountProfileRoute
+  '/charging/economy': typeof AuthenticatedChargingEconomyRoute
   '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
@@ -189,6 +198,7 @@ export interface FileRoutesById {
   '/api/log': typeof ApiLogRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
+  '/_authenticated/charging/economy': typeof AuthenticatedChargingEconomyRoute
   '/_authenticated/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
@@ -212,6 +222,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/api/log'
     | '/account/profile'
+    | '/charging/economy'
     | '/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
@@ -232,6 +243,7 @@ export interface FileRouteTypes {
     | '/api/log'
     | '/'
     | '/account/profile'
+    | '/charging/economy'
     | '/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
@@ -254,6 +266,7 @@ export interface FileRouteTypes {
     | '/api/log'
     | '/_authenticated/'
     | '/_authenticated/account/profile'
+    | '/_authenticated/charging/economy'
     | '/_authenticated/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
@@ -414,6 +427,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChargingPatternsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/charging/economy': {
+      id: '/_authenticated/charging/economy'
+      path: '/charging/economy'
+      fullPath: '/charging/economy'
+      preLoaderRoute: typeof AuthenticatedChargingEconomyRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/account/profile': {
       id: '/_authenticated/account/profile'
       path: '/profile'
@@ -443,6 +463,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSensorsRoute: typeof AuthenticatedSensorsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedChargingEconomyRoute: typeof AuthenticatedChargingEconomyRoute
   AuthenticatedChargingPatternsRoute: typeof AuthenticatedChargingPatternsRoute
   AuthenticatedChargingIndexRoute: typeof AuthenticatedChargingIndexRoute
 }
@@ -453,6 +474,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSensorsRoute: AuthenticatedSensorsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedChargingEconomyRoute: AuthenticatedChargingEconomyRoute,
   AuthenticatedChargingPatternsRoute: AuthenticatedChargingPatternsRoute,
   AuthenticatedChargingIndexRoute: AuthenticatedChargingIndexRoute,
 }
