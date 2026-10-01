@@ -27,12 +27,13 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
     paid: { label: m.charging_economy_series_paid(), color: 'var(--chart-2)' },
     avg: { label: m.charging_economy_series_avg(), color: 'var(--foreground)' },
   } satisfies ChartConfig
-  if (!months.some((mo) => mo.paidSpotOre !== null || mo.avgSpotOre !== null)) return <NoData />
-  const hasPaid = months.some((mo) => mo.paidSpotOre !== null)
+  // No priced session in scope: nothing to compare (an average-only chart would be market data, not ours).
+  if (!months.some((mo) => mo.paidSpotOre !== null)) return <NoData />
   const data = months.map((mo) => ({
     label: monthLabel(mo.month),
     paid: mo.paidSpotOre,
-    avg: mo.avgSpotOre,
+    // The average is a reference for what we paid: drawn only where the scope paid something.
+    avg: mo.paidSpotOre === null ? null : mo.avgSpotOre,
   }))
   return (
     <ChartFrame config={config}>
@@ -66,10 +67,14 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
           itemSorter={seriesOrder}
           content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
         />
-        {/* Only with a paid price somewhere, so the legend never names a bar-less series. */}
-        {hasPaid ? (
-          <Bar dataKey="paid" fill="var(--color-paid)" radius={3} isAnimationActive={false} />
-        ) : null}
+        {/* minPointSize: a real near-zero price must not vanish (null still draws no bar). */}
+        <Bar
+          dataKey="paid"
+          fill="var(--color-paid)"
+          radius={3}
+          minPointSize={3}
+          isAnimationActive={false}
+        />
         <Line
           dataKey="avg"
           type="linear"

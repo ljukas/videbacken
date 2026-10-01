@@ -281,7 +281,9 @@ export function formatShare(share: number): string {
   return share > 0 && share < 0.005 ? `< ${percent.format(0.01)}` : percent.format(share)
 }
 
-/** An average öre/kWh, whole öre (e.g. "159"). */
+/** An average öre/kWh, whole öre (e.g. "159"); a real price under 1 öre keeps two decimals, never "0". */
 export function formatOre(value: number): string {
-  return new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 0 }).format(value)
+  return new Intl.NumberFormat(getIntlLocale(), {
+    maximumFractionDigits: value > 0 && value < 1 ? 2 : 0,
+  }).format(value)
 }
