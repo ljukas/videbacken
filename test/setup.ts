@@ -38,12 +38,13 @@ export function setupDatabase() {
   // The pool is pinned to one connection, but pg-pool discards a connection
   // whose query failed (e.g. a deliberate constraint violation) and opens a
   // new one. `search_path` is per-session, so the replacement would silently
-  // run the rest of the test against `public`. Re-apply it on every new
-  // connection; pg queues queries per client in order, so this SET runs
-  // before the caller's query.
-  pool.on('connect', (client) => {
-    if (currentSchema) void client.query(`SET search_path TO "${currentSchema}", public`)
-  })
+  // run the rest of the test against `public`. pg-pool reads `pool.options`
+  // for every new client, so set the startup `search_path` there (and clear it
+  // in afterEach): a replacement connection starts on the test schema with no
+  // extra query. Schema names are `test_w<id>_<n>`, safe unquoted in `-c`.
+  const setStartupSchema = (schema: string | null) => {
+    pool.options.options = schema ? `-c search_path=${schema},public` : undefined
+  }
 
   beforeAll(async () => {
     // Drop any straggler schemas from a crashed prior run in this worker.
@@ -60,6 +61,7 @@ export function setupDatabase() {
     counter += 1
     const schema = `${SCHEMA_PREFIX}${counter}`
     currentSchema = schema
+    setStartupSchema(schema)
     // `public` stays on the search_path so extension objects installed there
     // resolve without each per-test schema reinstalling the extension.
     // Per-test tables/types take priority via the leading entry.
@@ -72,6 +74,7 @@ export function setupDatabase() {
     if (!currentSchema) return
     const schema = currentSchema
     currentSchema = null
+    setStartupSchema(null)
     try {
       await pool.query(`DROP SCHEMA "${schema}" CASCADE`)
     } catch {
