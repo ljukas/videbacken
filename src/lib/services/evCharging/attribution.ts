@@ -16,9 +16,14 @@ import { EvChargingDomainError } from './errors'
 export async function reattributeSessions(
   opts: { sessionId?: string } = {},
 ): Promise<{ ours: number; other: number; changed: number }> {
+  // Any given sessionId narrows the pass (even ''); one that can't be a
+  // session id decides nothing rather than raising a raw uuid cast error.
+  if (opts.sessionId !== undefined && !z.uuid().safeParse(opts.sessionId).success) {
+    return { ours: 0, other: 0, changed: 0 }
+  }
   const s = evChargeSession
   const r = vehicleChargeRecord
-  const onlyOne = opts.sessionId ? sql`and ${s.id} = ${opts.sessionId}` : sql``
+  const onlyOne = opts.sessionId !== undefined ? sql`and ${s.id} = ${opts.sessionId}` : sql``
   const result = await db.execute<{ ours: string; other: string; changed: string }>(sql`
     with coverage as (
       select min(${r.startAt}) as from_at, max(${r.endAt}) as to_at from ${r}
@@ -83,7 +88,10 @@ export async function setSessionVehicle(
     .returning({ vehicle: evChargeSession.vehicle, vehicleSource: evChargeSession.vehicleSource })
   if (!row) throw new EvChargingDomainError('EV_SESSION_NOT_FOUND')
   if (vehicle !== null) return row as { vehicle: Vehicle; vehicleSource: VehicleSource }
-  // Reset: the re-match may have just re-decided this session, so read it back.
+  // Reset: three statements, deliberately without a transaction. If the
+  // re-match fails, the session is left as ours/default, a valid state the
+  // next re-match (import or sync) decides. It may have just re-decided this
+  // session, so read it back.
   await reattributeSessions({ sessionId })
   const [after] = await db
     .select({ vehicle: evChargeSession.vehicle, vehicleSource: evChargeSession.vehicleSource })

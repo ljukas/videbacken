@@ -150,6 +150,18 @@ test('sessionId limits the pass to one session', async () => {
   expect(await attribution(b)).toMatchObject({ source: 'default' })
 })
 
+test('a non-uuid or empty sessionId decides nothing instead of the whole table', async () => {
+  await seedCoverage()
+  const id = await insertSession({
+    startAt: at('2026-02-20T10:00:00Z'),
+    endAt: at('2026-02-20T12:00:00Z'),
+  })
+  for (const sessionId of ['nope', '']) {
+    expect(await reattributeSessions({ sessionId })).toEqual({ ours: 0, other: 0, changed: 0 })
+  }
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'default' })
+})
+
 test('setSessionVehicle tags as admin, and a later pass keeps it', async () => {
   await seedCoverage()
   const id = await insertSession({
