@@ -95,7 +95,7 @@ function EconomyPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_economy_title()}
-        note={scopeNote(vehicle)}
+        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -115,12 +115,16 @@ function EconomyPage() {
         onRetry={() => syncNow.syncSource('elpris')}
         retrying={syncNow.isPendingFor('elpris')}
       />
+      {/* Outside the load branches: a failed read for one scope must not take
+          the control away, or the user can't switch back. */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
+        {economy && !loadFailed(result) ? (
+          <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
+        ) : null}
+      </div>
       {economy && !loadFailed(result) ? (
         <>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
-            <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
-          </div>
           {economy.tiles.sessions > 0 ? (
             <div
               className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}

@@ -133,7 +133,7 @@ function PatternsPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_patterns_title()}
-        note={scopeNote(vehicle)}
+        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -146,21 +146,25 @@ function PatternsPage() {
         retrying={syncNow.isPendingFor('zaptec')}
       />
 
+      {/* Outside the load branches: a failed read for one scope must not take
+          the control away, or the user can't switch back. */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <VehicleScopeToggle
+          value={vehicle}
+          // A scope change clears the month, like a year change does.
+          onChange={(v) => set({ vehicle: v === 'ours' ? undefined : v, month: undefined })}
+        />
+        {patterns && !loadFailed(patternsResult) ? (
+          <YearSelector
+            years={patterns.years}
+            value={patterns.year}
+            onChange={(y) => set({ year: y, month: undefined })}
+          />
+        ) : null}
+      </div>
+
       {patterns && !loadFailed(patternsResult) ? (
         <>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <VehicleScopeToggle
-              value={vehicle}
-              // A scope change clears the month, like a year change does.
-              onChange={(v) => set({ vehicle: v === 'ours' ? undefined : v, month: undefined })}
-            />
-            <YearSelector
-              years={patterns.years}
-              value={patterns.year}
-              onChange={(y) => set({ year: y, month: undefined })}
-            />
-          </div>
-
           {hasData ? (
             <div className="flex flex-col gap-4">
               <section

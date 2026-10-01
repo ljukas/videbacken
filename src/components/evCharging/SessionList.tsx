@@ -40,6 +40,7 @@ export function SessionList({
   syncing = false,
   costs,
   emptyTitle = m.charging_sessions_empty_title(),
+  emptyDescription = m.charging_sessions_empty_description(),
 }: {
   sessions: Session[]
   hasMore: boolean
@@ -54,6 +55,8 @@ export function SessionList({
   costs?: { byId: ReadonlyMap<string, SessionCost>; pending: boolean }
   /** Overrides the empty state's title, e.g. when a vehicle scope has no sessions. */
   emptyTitle?: string
+  /** Overrides the empty state's description; pair it with no `onSync` when a sync wouldn't help. */
+  emptyDescription?: string
 }) {
   if (sessions.length === 0) {
     return (
@@ -63,7 +66,7 @@ export function SessionList({
             <ZapIcon />
           </EmptyMedia>
           <EmptyTitle>{emptyTitle}</EmptyTitle>
-          <EmptyDescription>{m.charging_sessions_empty_description()}</EmptyDescription>
+          <EmptyDescription>{emptyDescription}</EmptyDescription>
         </EmptyHeader>
         {onSync ? (
           <EmptyContent>

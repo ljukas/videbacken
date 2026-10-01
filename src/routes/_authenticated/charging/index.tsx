@@ -115,7 +115,9 @@ function ChargingPage() {
   const year = Route.useSearch({ select: (s) => s.year })
   const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? 'ours' })
   const queryClient = useQueryClient()
-  const [sessionLimit, setSessionLimit] = useState(SESSIONS_PAGE)
+  // The page size belongs to the scope it was grown in: another scope starts at its first page.
+  const [limitState, setLimitState] = useState({ vehicle, limit: SESSIONS_PAGE })
+  const sessionLimit = limitState.vehicle === vehicle ? limitState.limit : SESSIONS_PAGE
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
@@ -146,17 +148,21 @@ function ChargingPage() {
 
   // Hourly data: no polling on overview/sessions — the default focus refetch
   // plus `syncNow`'s invalidation keep them fresh (ADR-0018).
-  const { data: overview } = useQuery({
+  const { data: overview, isPlaceholderData: overviewStale } = useQuery({
     ...orpc.evCharging.overview.queryOptions({ input: { year, vehicle } }),
     placeholderData: keepPreviousData, // keep the old chart while another year loads
   })
-  const sessions = useQuery(sessionsQuery(sessionLimit, vehicle))
+  const sessions = useQuery({
+    ...sessionsQuery(sessionLimit, vehicle),
+    placeholderData: keepPreviousData, // never flash the empty state while another scope loads
+  })
   const { data: cost, isPlaceholderData: costIsStale } = useQuery({
     ...orpc.evCharging.costOverview.queryOptions({ input: { year, vehicle } }),
     placeholderData: keepPreviousData,
   })
-  // Cost is shown once anything at all is priced (year-independent, so a year
-  // switch doesn't flicker the kr toggle away); until then one notice says why.
+  // Cost is shown once anything at all is priced in the chosen scope (all-time,
+  // so a year switch doesn't flicker the kr toggle away; a scope with nothing
+  // priced, e.g. guests, shows the notice instead); until then one notice says why.
   const showCost = tariffs.length > 0 && cost?.tiles.allTime.avgOre != null
   const hasEnergy = (overview?.tiles.allTime.kwh ?? 0) > 0
   const costNotice: CostNoticeReason | null = !hasEnergy
@@ -204,8 +210,11 @@ function ChargingPage() {
   // a failed fetch leaves the rows on screen (with a toast; the button stays
   // for a retry) instead of swapping the list for an errored, empty query.
   const showMore = useMutation({
-    mutationFn: (limit: number) => queryClient.fetchQuery(sessionsQuery(limit, vehicle)),
-    onSuccess: (_data, limit) => setSessionLimit(limit),
+    mutationFn: ({ limit, scope }: { limit: number; scope: VehicleScope }) =>
+      queryClient.fetchQuery(sessionsQuery(limit, scope)),
+    // Keyed to the scope it was fetched for: a result that lands after a scope
+    // switch can't leak its limit into the new scope.
+    onSuccess: (_data, { limit, scope }) => setLimitState({ vehicle: scope, limit }),
     onError: () => toast.error(m.charging_sessions_show_more_failed()),
   })
 
@@ -214,8 +223,7 @@ function ChargingPage() {
   }
 
   function setVehicle(v: VehicleScope) {
-    // A clean URL means our car. The session list restarts at its first page.
-    setSessionLimit(SESSIONS_PAGE)
+    // A clean URL means our car.
     navigate({
       to: '.',
       search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v }),
@@ -227,7 +235,7 @@ function ChargingPage() {
   return (
     <PageContainer>
       <ChargingHeading
-        note={scopeNote(vehicle)}
+        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -262,7 +270,12 @@ function ChargingPage() {
           ) : null}
           <section className="flex flex-col gap-2">
             <h2 className="sr-only">{m.charging_totals_heading()}</h2>
-            <TotalsTiles tiles={overview.tiles} cost={showCost ? cost?.tiles : undefined} />
+            <div
+              aria-busy={overviewStale}
+              className={overviewStale ? 'opacity-60 transition-opacity' : 'transition-opacity'}
+            >
+              <TotalsTiles tiles={overview.tiles} cost={showCost ? cost?.tiles : undefined} />
+            </div>
           </section>
 
           <section className="flex flex-col gap-2">
@@ -294,14 +307,19 @@ function ChargingPage() {
             ) : (
               <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
                 {vehicle === 'other'
-                  ? m.charging_vehicle_empty_other_title({ year: overview.year })
+                  ? m.charging_vehicle_chart_empty_other({ year: overview.year })
                   : m.charging_chart_empty({ year: overview.year })}
               </div>
             )}
           </section>
           {showCost ? <PriceFootnote /> : null}
         </>
-      ) : null}
+      ) : (
+        // The overview read failed: the scope stays switchable.
+        <div className="flex justify-end">
+          <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
+        </div>
+      )}
 
       <TariffCard
         tariffs={tariffs}
@@ -321,12 +339,21 @@ function ChargingPage() {
         <SessionList
           sessions={sessions.data?.sessions ?? []}
           hasMore={(sessions.data?.hasMore ?? false) && sessionLimit < SESSIONS_MAX}
-          onShowMore={() => showMore.mutate(Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX))}
+          onShowMore={() =>
+            showMore.mutate({
+              limit: Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX),
+              scope: vehicle,
+            })
+          }
           loadingMore={showMore.isPending}
           costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
-          onSync={isAdmin ? () => syncNow.syncSource('zaptec') : undefined}
+          // A sync can't create guest sessions: an admin marks them instead.
+          onSync={isAdmin && vehicle !== 'other' ? () => syncNow.syncSource('zaptec') : undefined}
           syncing={syncNow.isPendingFor('zaptec')}
           emptyTitle={vehicle === 'other' ? m.charging_vehicle_sessions_empty_other() : undefined}
+          emptyDescription={
+            vehicle === 'other' ? m.charging_vehicle_empty_other_description() : undefined
+          }
         />
       </section>
 
