@@ -131,3 +131,15 @@ test('the card fetches the car status with its own labelled button', async () =>
   await screen.getByRole('button', { name: m.charging_sync_skoda_now() }).click()
   expect(onSyncLive).toHaveBeenCalledOnce()
 })
+
+test('shows until when the Škoda key is valid', async () => {
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard
+      coverage={null}
+      live={null}
+      keyExpiresAt={new Date('2027-01-15T12:00:00.500Z')}
+      onImport={() => {}}
+    />,
+  )
+  await expect.element(screen.getByText(/Nyckeln gäller till 15 jan\. 2027/)).toBeVisible()
+})

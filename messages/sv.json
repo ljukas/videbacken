@@ -682,5 +682,22 @@
   "charging_vehicle_import_done": "Vår bil: {ours} · Gäster: {other}",
   "charging_vehicle_import_error": "Importen misslyckades",
   "charging_vehicle_import_reading": "Läser filen …",
-  "charging_vehicle_log_error_title": "Bilens laddlogg kunde inte hämtas"
+  "charging_vehicle_log_error_title": "Bilens laddlogg kunde inte hämtas",
+  "charging_skoda_key_expiring_title": "Škoda-nyckeln går snart ut",
+  "charging_skoda_key_expiring_body": [
+    {
+      "declarations": [
+        "input date",
+        "input days",
+        "local daysPlural = days: plural",
+        "local daysFormatted = days: number"
+      ],
+      "selectors": ["daysPlural"],
+      "match": {
+        "daysPlural=one": "Den går ut {date} (om {daysFormatted} dag). Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om.",
+        "daysPlural=other": "Den går ut {date} (om {daysFormatted} dagar). Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om."
+      }
+    }
+  ],
+  "charging_vehicle_key_valid_until": "Nyckeln gäller till {date}"
 }

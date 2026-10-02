@@ -682,5 +682,22 @@
   "charging_vehicle_import_done": "Our car: {ours} · Guests: {other}",
   "charging_vehicle_import_error": "The import failed",
   "charging_vehicle_import_reading": "Reading the file …",
-  "charging_vehicle_log_error_title": "The car's charging log couldn't be loaded"
+  "charging_vehicle_log_error_title": "The car's charging log couldn't be loaded",
+  "charging_skoda_key_expiring_title": "The Škoda key expires soon",
+  "charging_skoda_key_expiring_body": [
+    {
+      "declarations": [
+        "input date",
+        "input days",
+        "local daysPlural = days: plural",
+        "local daysFormatted = days: number"
+      ],
+      "selectors": ["daysPlural"],
+      "match": {
+        "daysPlural=one": "It expires on {date} (in {daysFormatted} day). Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy.",
+        "daysPlural=other": "It expires on {date} (in {daysFormatted} days). Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy."
+      }
+    }
+  ],
+  "charging_vehicle_key_valid_until": "The key is valid until {date}"
 }

@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
+import { CredentialExpiryAlert } from '~/components/evCharging/CredentialExpiryAlert'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
@@ -298,6 +299,9 @@ function ChargingPage() {
           retrying={syncNow.isPendingFor('skoda')}
         />
       ) : null}
+      {isAdmin && skodaHealth?.state === 'ok' ? (
+        <CredentialExpiryAlert expiry={skodaHealth.adminDetail?.credentialExpiry ?? null} />
+      ) : null}
 
       <LiveStatusTile live={live} />
 
@@ -388,6 +392,7 @@ function ChargingPage() {
           liveLoadError={vehicleLatest}
           onSyncLive={() => syncNow.syncSource('skoda')}
           syncingLive={syncNow.isPendingFor('skoda')}
+          keyExpiresAt={skodaHealth?.adminDetail?.credentialExpiry?.expiresAt ?? null}
         />
       ) : null}
 
