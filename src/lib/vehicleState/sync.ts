@@ -1,10 +1,15 @@
+import { queue } from '~/lib/effects'
 import { type LatLon, newCallStats, type SkodaClient, SkodaError, skoda } from '~/lib/effects/skoda'
 import type { SyncTrigger } from '~/lib/integrationHealth'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import * as evChargingService from '~/lib/services/evCharging'
+import type { CredentialReminderClaim } from '~/lib/services/integrationSync'
+import * as integrationSyncService from '~/lib/services/integrationSync'
+import * as userService from '~/lib/services/user'
 import * as vehicleStateService from '~/lib/services/vehicleState'
+import { baseLocale } from '~/paraglide/runtime'
 import { atHome, parseHomePoint } from './geofence'
 
 /**
@@ -29,6 +34,7 @@ export type SkodaSyncRun = RunBase & {
   invalidParts: number
   reattributeMs: number
   reattributeChanged: number
+  reminderMs: number
 }
 
 const SOURCE = 'skoda'
@@ -73,9 +79,10 @@ export async function runSkodaSync(opts: {
       invalidParts: 0,
       reattributeMs: 0,
       reattributeChanged: 0,
+      reminderMs: 0,
     }),
     execute: async ({ run, signal, now, log }) => {
-      const { state } = await withDeadline(
+      const { state, keyExpiresAt } = await withDeadline(
         client.vehicleState({ signal, stats }),
         signal,
         () =>
@@ -116,6 +123,21 @@ export async function runSkodaSync(opts: {
       })
       run.snapshotMs = Math.round(performance.now() - started)
       run.stored = true
+      // Key expiry (ADR-0022): stored on every success; a reminder at 30 and at 7
+      // days is claimed atomically (no two runs claim it) and released again if
+      // nobody could be emailed, so the next poll retries. Best effort: never
+      // fails the poll.
+      const reminderStart = performance.now()
+      try {
+        if (!keyExpiresAt) log.warn('skoda sync: key expiry header missing')
+        await integrationSyncService.recordCredentialExpiry(SOURCE, keyExpiresAt)
+        const claim = await integrationSyncService.claimCredentialReminder(SOURCE, now())
+        if (claim) await sendReminder(claim, log)
+      } catch (error) {
+        log.warn('skoda sync: key reminder failed', { error })
+      } finally {
+        run.reminderMs = Math.round(performance.now() - reminderStart)
+      }
       // Recovery path. In steady state the Zaptec sync that imports a finished
       // session already re-matches it (every poll in its window exists by then);
       // this catches a Zaptec re-match that failed or hit its deadline, and the
@@ -151,6 +173,7 @@ export async function runSkodaSync(opts: {
         fetchMs: Math.round(stats.fetchMs),
         snapshotMs: run.snapshotMs,
         reattributeMs: run.reattributeMs,
+        reminderMs: run.reminderMs,
         requests: stats.requests,
         retries: stats.retries,
       },
@@ -171,6 +194,35 @@ export async function runSkodaSync(opts: {
       invalidParts: run.invalidParts,
       reattributeMs: run.reattributeMs,
       reattributeChanged: run.reattributeChanged,
+      reminderMs: run.reminderMs,
     }),
   })
+}
+
+async function sendReminder(claim: CredentialReminderClaim, log: Logger): Promise<void> {
+  let sent = 0
+  try {
+    const admins = await userService.listActiveAdmins()
+    const results = await Promise.allSettled(
+      admins.map((admin) =>
+        queue.publish('email_credential_expiry', {
+          to: admin.email,
+          source: SOURCE,
+          expiresAt: claim.expiresAt.toISOString(),
+          days: claim.days,
+          locale: baseLocale,
+        }),
+      ),
+    )
+    sent = results.filter((r) => r.status === 'fulfilled').length
+    const failed = results.length - sent
+    if (failed > 0)
+      log.warn('skoda sync: key reminder partly failed', { days: claim.days, sent, failed })
+    else if (sent > 0) log.info('skoda sync: key reminder sent', { days: claim.days, admins: sent })
+  } finally {
+    if (sent === 0) {
+      await integrationSyncService.releaseCredentialReminder(SOURCE, claim)
+      log.warn('skoda sync: key reminder not sent, will retry', { days: claim.days })
+    }
+  }
 }

@@ -278,6 +278,7 @@ export const evChargingRouter = {
         context.timings.skodaFetchMs = run.fetchMs
         context.timings.skodaSnapshotMs = run.snapshotMs
         context.timings.skodaReattributeMs = run.reattributeMs
+        context.timings.skodaReminderMs = run.reminderMs
       }
       return { outcome: run.outcome, code: run.code, upserted: run.stored ? 1 : 0 }
     }

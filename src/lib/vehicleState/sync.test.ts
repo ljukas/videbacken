@@ -372,3 +372,65 @@ test('the re-match is skipped when the snapshot write outlasted the run deadline
   expect(row).toMatchObject({ outcome: 'ok', upserted: 1 })
   expect(typeof row?.timings.reattributeMs).toBe('number')
 })
+
+const EXPIRES = new Date('2027-01-15T12:00:00Z')
+const before = (days: number) => new Date(EXPIRES.getTime() - days * 86_400_000)
+const withExpiry = (expiresAt: Date | null = EXPIRES) =>
+  fakeSkoda(async () => reading({}, expiresAt))
+const reminders = () => publish.mock.calls.filter(([topic]) => topic === 'email_credential_expiry')
+
+test('stores the key expiry and emails every admin once at 30 days, again at 7', async () => {
+  await seedAdmin()
+  await run(withExpiry(), { now: before(30) })
+  await run(withExpiry(), { now: before(29) })
+  expect(reminders()).toHaveLength(1)
+  expect(reminders()[0]?.[1]).toMatchObject({
+    to: 'a@example.com',
+    source: 'skoda',
+    expiresAt: EXPIRES.toISOString(),
+    days: 30,
+  })
+  await run(withExpiry(), { now: before(7) })
+  expect(reminders()).toHaveLength(2)
+  expect(reminders()[1]?.[1]).toMatchObject({ days: 7 })
+  const health = await getHealth('skoda', { now: before(7), includeAdminDetail: true })
+  expect(health.adminDetail?.credentialExpiry).toMatchObject({ daysLeft: 7, warn: true })
+})
+
+test('no reminder with plenty of time left', async () => {
+  await seedAdmin()
+  await run(withExpiry(), { now: before(180) })
+  expect(reminders()).toHaveLength(0)
+})
+
+test('a reminder nobody could be sent is retried on the next poll', async () => {
+  await seedAdmin()
+  publish.mockRejectedValueOnce(new Error('queue down'))
+  const { log, entries } = capturingLogger()
+  expect((await run(withExpiry(), { now: before(7), log })).outcome).toBe('ok')
+  expect(entries().some((e) => e.msg === 'skoda sync: key reminder not sent, will retry')).toBe(
+    true,
+  )
+  await run(withExpiry(), { now: before(6) })
+  expect(reminders().at(-1)?.[1]).toMatchObject({ days: 7 })
+})
+
+test('with no active admins the reminder is not used up', async () => {
+  const { log, entries } = capturingLogger()
+  await run(withExpiry(), { now: before(7), log })
+  expect(entries().some((e) => e.msg === 'skoda sync: key reminder not sent, will retry')).toBe(
+    true,
+  )
+  await seedAdmin()
+  await run(withExpiry(), { now: before(6) })
+  expect(reminders()).toHaveLength(1)
+})
+
+test('a missing expiry header keeps the stored date and warns', async () => {
+  await run(withExpiry(), { now: before(100) })
+  const { log, entries } = capturingLogger()
+  await run(withExpiry(null), { now: before(99), log })
+  expect(entries().some((e) => e.msg === 'skoda sync: key expiry header missing')).toBe(true)
+  const health = await getHealth('skoda', { now: before(99), includeAdminDetail: true })
+  expect(health.adminDetail?.credentialExpiry?.expiresAt).toEqual(EXPIRES)
+})

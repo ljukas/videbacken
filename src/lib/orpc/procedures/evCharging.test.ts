@@ -128,7 +128,7 @@ test('syncStatus hides adminDetail for a non-admin user', async () => {
 test('syncStatus exposes adminDetail for an admin', async () => {
   await signIn('admin')
   const health = await call(evChargingRouter.syncStatus, undefined, { context: baseContext() })
-  expect(health.adminDetail).toEqual({ lastErrorMessage: null })
+  expect(health.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
 })
 
 test('liveStatus rejects an unauthenticated caller', async () => {
