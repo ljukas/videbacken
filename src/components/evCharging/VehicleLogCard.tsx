@@ -26,8 +26,8 @@ type Props = {
   liveLoadError?: LoadErrorQuery
   onSyncLive?: () => void
   syncingLive?: boolean
-  /** When the Škoda API key expires (admin-only detail); null/undefined hides the line. */
-  keyExpiresAt?: Date | null
+  /** When the Škoda API key expires and whether it has (admin-only detail, server-decided); null/undefined hides the line. */
+  keyExpiry?: { expiresAt: Date; expired: boolean } | null
 }
 
 // Admin-only: the car's own log decides which sessions are ours (ADR-0021);
@@ -41,7 +41,7 @@ export function VehicleLogCard({
   liveLoadError,
   onSyncLive,
   syncingLive,
-  keyExpiresAt,
+  keyExpiry,
 }: Props) {
   const failed = loadError !== undefined && loadFailed(loadError)
   const liveFailed = liveLoadError !== undefined && loadFailed(liveLoadError)
@@ -96,11 +96,11 @@ export function VehicleLogCard({
             ) : null}
           </div>
         ) : null}
-        {keyExpiresAt ? (
+        {keyExpiry ? (
           <p className="text-muted-foreground">
-            {keyExpiresAt.getTime() <= Date.now()
-              ? m.charging_vehicle_key_expired({ date: formatDate(keyExpiresAt) })
-              : m.charging_vehicle_key_expires({ date: formatDate(keyExpiresAt) })}
+            {keyExpiry.expired
+              ? m.charging_vehicle_key_expired({ date: formatDate(keyExpiry.expiresAt) })
+              : m.charging_vehicle_key_expires({ date: formatDate(keyExpiry.expiresAt) })}
           </p>
         ) : null}
       </CardContent>

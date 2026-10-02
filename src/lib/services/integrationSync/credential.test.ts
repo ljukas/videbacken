@@ -17,25 +17,58 @@ const EXPIRES = new Date('2027-01-15T12:00:00.500Z')
 const daysBefore = (d: number) => new Date(EXPIRES.getTime() - d * 86_400_000)
 const seed = () => beginAttempt('skoda', { now: daysBefore(200) }) // creates the row
 
-test('credentialExpiryOf rounds fractional days up', () => {
-  expect(credentialExpiryOf(EXPIRES, daysBefore(10.2))).toMatchObject({ daysLeft: 11 })
-  expect(credentialExpiryOf(EXPIRES, daysBefore(30.4))).toMatchObject({ daysLeft: 31, warn: false })
-})
-
-test('credentialExpiryOf: days left rounded up, warning from 30 days', () => {
+test('credentialExpiryOf counts Stockholm calendar days, warning from 30 days', () => {
   expect(credentialExpiryOf(null, daysBefore(10))).toBeNull()
   expect(credentialExpiryOf(EXPIRES, daysBefore(31))).toEqual({
     expiresAt: EXPIRES,
     daysLeft: 31,
     warn: false,
+    expired: false,
   })
   expect(credentialExpiryOf(EXPIRES, daysBefore(30))).toEqual({
     expiresAt: EXPIRES,
     daysLeft: 30,
     warn: true,
+    expired: false,
   })
-  expect(credentialExpiryOf(EXPIRES, daysBefore(0.5))).toMatchObject({ daysLeft: 1, warn: true })
-  expect(credentialExpiryOf(EXPIRES, daysBefore(-1))).toMatchObject({ daysLeft: 0, warn: true })
+  // Part days don't round up: 10.2 days before is still 10 calendar days.
+  expect(credentialExpiryOf(EXPIRES, daysBefore(10.2))).toMatchObject({ daysLeft: 10 })
+  expect(credentialExpiryOf(EXPIRES, daysBefore(-1))).toMatchObject({
+    daysLeft: 0,
+    warn: true,
+    expired: true,
+  })
+})
+
+test('credentialExpiryOf: the expiry day itself is 0 days left until the instant passes', () => {
+  const expires = new Date('2027-01-15T12:00:00Z')
+  expect(credentialExpiryOf(expires, new Date('2027-01-15T07:00:00Z'))).toMatchObject({
+    daysLeft: 0,
+    expired: false,
+    warn: true,
+  })
+  expect(credentialExpiryOf(expires, new Date('2027-01-14T09:00:00Z'))).toMatchObject({
+    daysLeft: 1,
+    expired: false,
+  })
+  expect(credentialExpiryOf(expires, new Date('2027-01-15T12:00:00Z'))).toMatchObject({
+    daysLeft: 0,
+    expired: true,
+  })
+})
+
+test('credentialExpiryOf counts calendar days across the DST change', () => {
+  // Sweden springs forward on 2027-03-28: 47 hours, but two calendar days.
+  expect(
+    credentialExpiryOf(new Date('2027-03-29T10:00:00Z'), new Date('2027-03-27T10:00:00Z')),
+  ).toMatchObject({ daysLeft: 2 })
+})
+
+test('credentialExpiryOf counts days in Stockholm, not UTC', () => {
+  // 23:30 UTC on the 15th is the 16th in Stockholm: one day after the 15th.
+  expect(
+    credentialExpiryOf(new Date('2027-01-15T23:30:00Z'), new Date('2027-01-15T10:00:00Z')),
+  ).toMatchObject({ daysLeft: 1 })
 })
 
 test('no reminder before 30 days; one at 30, none again, one at 7, none again', async () => {
@@ -113,6 +146,7 @@ test('a null expiry (header missing) keeps the stored one; only admins see it', 
     expiresAt: EXPIRES,
     daysLeft: 10,
     warn: true,
+    expired: false,
   })
   const member = await getHealth('skoda', { now: daysBefore(10), includeAdminDetail: false })
   expect(member.adminDetail).toBeNull()
@@ -199,4 +233,13 @@ test('a renewal to an earlier date after the 7-day reminder resets and allows a 
   expect(
     await claimCredentialReminder('skoda', new Date(earlier.getTime() - 5 * 86_400_000)),
   ).toMatchObject({ days: 7, previous: null, expiresAt: earlier })
+})
+
+test('a reminder falls due at Stockholm midnight, not a full 24 h multiple before expiry', async () => {
+  await seed()
+  await recordCredentialExpiry('skoda', EXPIRES)
+  // 00:30 on 16 Dec in Stockholm: 30 calendar days before 15 Jan, though 30.5 days of time.
+  expect(await claimCredentialReminder('skoda', new Date('2026-12-15T23:30:00Z'))).toMatchObject({
+    days: 30,
+  })
 })

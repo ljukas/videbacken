@@ -1,3 +1,5 @@
+import { tz } from '@date-fns/tz'
+import { differenceInCalendarDays } from 'date-fns'
 import { and, eq, gt, isNull, ne, or } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { integrationSync } from '~/lib/db/schema'
@@ -7,16 +9,34 @@ import {
   type CredentialReminderDays,
   type IntegrationSource,
 } from '~/lib/integrationHealth'
+import { STOCKHOLM_TIME_ZONE } from '~/lib/time/stockholm'
 
-const DAY_MS = 86_400_000
+const inStockholm = tz(STOCKHOLM_TIME_ZONE)
 
-export type CredentialExpiry = { expiresAt: Date; daysLeft: number; warn: boolean }
+export type CredentialExpiry = {
+  expiresAt: Date
+  /** Stockholm calendar days until the expiry date: 0 on the day itself (and after). */
+  daysLeft: number
+  warn: boolean
+  /** The expiry instant has passed. */
+  expired: boolean
+}
 
-/** Server-owned policy (never re-derived client-side): days left, rounded up, and whether to warn. */
+/**
+ * Server-owned policy (never re-derived client-side): Stockholm calendar days
+ * left, whether to warn, and whether the key has expired. Counting calendar
+ * days (not 24 h blocks) keeps "in 1 day" off the expiry day itself and makes
+ * reminders fall due at Stockholm midnight, so the UI and the emails agree.
+ */
 export function credentialExpiryOf(expiresAt: Date | null, now: Date): CredentialExpiry | null {
   if (!expiresAt) return null
-  const daysLeft = Math.max(0, Math.ceil((expiresAt.getTime() - now.getTime()) / DAY_MS))
-  return { expiresAt, daysLeft, warn: daysLeft <= CREDENTIAL_WARN_DAYS }
+  const daysLeft = Math.max(0, differenceInCalendarDays(expiresAt, now, { in: inStockholm }))
+  return {
+    expiresAt,
+    daysLeft,
+    warn: daysLeft <= CREDENTIAL_WARN_DAYS,
+    expired: expiresAt.getTime() <= now.getTime(),
+  }
 }
 
 /**

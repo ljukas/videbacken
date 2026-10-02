@@ -132,16 +132,18 @@ test('the card fetches the car status with its own labelled button', async () =>
   expect(onSyncLive).toHaveBeenCalledOnce()
 })
 
-test('shows until when the Škoda key is valid', async () => {
+test('shows until when the Škoda key is valid, as the server decided', async () => {
+  // The server's `expired` flag decides, not the browser clock: a date already
+  // past here still reads "expires" when the server said it hadn't.
   const { screen } = await renderWithProviders(
     <VehicleLogCard
       coverage={null}
       live={null}
-      keyExpiresAt={new Date('2099-01-15T12:00:00.500Z')}
+      keyExpiry={{ expiresAt: new Date('2020-01-15T12:00:00.500Z'), expired: false }}
       onImport={() => {}}
     />,
   )
-  await expect.element(screen.getByText(/Nyckeln går ut den 15 jan\. 2099/)).toBeVisible()
+  await expect.element(screen.getByText(/Nyckeln går ut den 15 jan\. 2020/)).toBeVisible()
 })
 
 test('no key expiry renders no expiry line', async () => {
@@ -156,7 +158,7 @@ test('a past key expiry says the key expired', async () => {
     <VehicleLogCard
       coverage={null}
       live={null}
-      keyExpiresAt={new Date('2020-01-15T12:00:00.500Z')}
+      keyExpiry={{ expiresAt: new Date('2020-01-15T12:00:00.500Z'), expired: true }}
       onImport={() => {}}
     />,
   )

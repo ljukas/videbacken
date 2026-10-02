@@ -392,7 +392,7 @@ function ChargingPage() {
           liveLoadError={vehicleLatest}
           onSyncLive={() => syncNow.syncSource('skoda')}
           syncingLive={syncNow.isPendingFor('skoda')}
-          keyExpiresAt={skodaHealth?.adminDetail?.credentialExpiry?.expiresAt ?? null}
+          keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
         />
       ) : null}
 

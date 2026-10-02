@@ -11,8 +11,9 @@ type Expiry = NonNullable<
 // Admin-only (the caller passes adminDetail, which only admins get): the Škoda
 // key expires about every six months (ADR-0022). The server decides when to
 // warn; once expired the health alert (auth_failed) takes over, so nothing here.
+// On the expiry day itself (0 calendar days left, not yet expired) it says today.
 export function CredentialExpiryAlert({ expiry }: { expiry: Expiry }) {
-  if (!expiry?.warn || expiry.daysLeft <= 0) return null
+  if (!expiry?.warn || expiry.expired) return null
   // Same split as SyncHealthAlert: only the urgent state interrupts (role=alert).
   const urgent = expiry.daysLeft <= 7
   return (
@@ -20,10 +21,12 @@ export function CredentialExpiryAlert({ expiry }: { expiry: Expiry }) {
       <KeyRoundIcon />
       <AlertTitle>{m.charging_skoda_key_expiring_title()}</AlertTitle>
       <AlertDescription>
-        {m.charging_skoda_key_expiring_body({
-          date: formatDate(expiry.expiresAt),
-          days: expiry.daysLeft,
-        })}
+        {expiry.daysLeft === 0
+          ? m.charging_skoda_key_expiring_body_today({ date: formatDate(expiry.expiresAt) })
+          : m.charging_skoda_key_expiring_body({
+              date: formatDate(expiry.expiresAt),
+              days: expiry.daysLeft,
+            })}
       </AlertDescription>
     </Alert>
   )
