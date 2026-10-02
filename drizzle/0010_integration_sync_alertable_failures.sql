@@ -1,0 +1,2 @@
+ALTER TABLE "integration_sync" ADD COLUMN "alertable_failures" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD CONSTRAINT "integration_sync_alertable_failures_nonneg_check" CHECK ("integration_sync"."alertable_failures" >= 0);

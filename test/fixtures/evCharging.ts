@@ -1,5 +1,11 @@
 import { db } from '~/lib/db'
-import { evChargeInterval, evCharger, evChargeSession, vehicleChargeRecord } from '~/lib/db/schema'
+import {
+  evChargeInterval,
+  evCharger,
+  evChargeSession,
+  vehicleChargeRecord,
+  vehicleStateSnapshot,
+} from '~/lib/db/schema'
 
 export async function insertCharger(id = 'charger-1') {
   await db
@@ -57,4 +63,15 @@ export async function insertVehicleRecord(
     })
     .returning({ id: vehicleChargeRecord.id })
   return row.id
+}
+
+export async function insertSnapshot(
+  overrides: Partial<typeof vehicleStateSnapshot.$inferInsert> = {},
+): Promise<void> {
+  await db.insert(vehicleStateSnapshot).values({
+    polledAt: new Date('2026-10-02T10:00:00Z'),
+    plugState: 'CONNECTED',
+    atHome: true,
+    ...overrides,
+  })
 }

@@ -64,6 +64,20 @@
       "when": 1790850894183,
       "tag": "0008_vehicle_default_check",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790950252561,
+      "tag": "0009_vehicle_state_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790953310976,
+      "tag": "0010_integration_sync_alertable_failures",
+      "breakpoints": true
     }
   ]
 }

@@ -36,15 +36,19 @@ type Result = {
 const OK: Result = { outcome: 'ok', code: null, upserted: 96 }
 
 // `syncNow` is called once per source; script each source's result.
-function respond(results: { zaptec?: Result | Error; elpris?: Result | Error }) {
-  syncFn.mockImplementation(async ({ source }: { source: 'zaptec' | 'elpris' }) => {
+function respond(results: {
+  zaptec?: Result | Error
+  elpris?: Result | Error
+  skoda?: Result | Error
+}) {
+  syncFn.mockImplementation(async ({ source }: { source: 'zaptec' | 'elpris' | 'skoda' }) => {
     const r = results[source] ?? OK
     if (r instanceof Error) throw r
     return r
   })
 }
 
-function Harness({ only }: { only?: 'zaptec' | 'elpris' }) {
+function Harness({ only }: { only?: 'zaptec' | 'elpris' | 'skoda' }) {
   const { syncAll, syncSource, isPending } = useSyncNow()
   return <SyncNowButton onSync={only ? () => syncSource(only) : syncAll} pending={isPending} />
 }
@@ -160,4 +164,32 @@ test('a full sync keeps a skipped price run silent', async () => {
 test('the button is disabled while a sync is pending', async () => {
   const { screen } = await renderWithProviders(<SyncNowButton onSync={() => {}} pending />)
   await expect.element(screen.getByRole('button', { name: m.charging_sync_now() })).toBeDisabled()
+})
+
+test('retrying the car alone runs only skoda, confirms success and leaves the heading pending state alone', async () => {
+  let release: (r: Result) => void = () => {}
+  syncFn.mockImplementation(
+    () =>
+      new Promise<Result>((resolve) => {
+        release = resolve
+      }),
+  )
+  function CarHarness() {
+    const { syncSource, isPending, isPendingFor } = useSyncNow()
+    return (
+      <>
+        <button type="button" onClick={() => syncSource('skoda')}>
+          car
+        </button>
+        <output data-testid="state">{`${isPending}/${isPendingFor('skoda')}`}</output>
+      </>
+    )
+  }
+  const { screen } = await renderWithProviders(<CarHarness />)
+  await screen.getByRole('button', { name: 'car' }).click()
+  await vi.waitFor(() => expect(syncFn.mock.calls.map((c) => c[0])).toEqual([{ source: 'skoda' }]))
+  await expect.element(screen.getByTestId('state')).toHaveTextContent('false/true')
+  release(OK)
+  await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_skoda_ok()))
+  await expect.element(screen.getByTestId('state')).toHaveTextContent('false/false')
 })

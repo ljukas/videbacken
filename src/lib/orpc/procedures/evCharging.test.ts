@@ -334,6 +334,32 @@ test('syncNow with source elpris runs only the price sync', async () => {
   expect(zaptec.state).toBe('never_synced')
 })
 
+test('syncNow with source skoda runs only the car poll (not configured under VITEST)', async () => {
+  await signIn('admin')
+  const result = await call(
+    evChargingRouter.syncNow,
+    { source: 'skoda' },
+    { context: baseContext() },
+  )
+  expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
+  const zaptec = await integrationSyncService.getHealth('zaptec', {
+    now: new Date(),
+    includeAdminDetail: false,
+  })
+  expect(zaptec.state).toBe('never_synced')
+})
+
+test('vehicleStateLatest is admin-only and null before any poll', async () => {
+  await signIn('user')
+  await expect(
+    call(evChargingRouter.vehicleStateLatest, undefined, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  await signIn('admin')
+  expect(
+    await call(evChargingRouter.vehicleStateLatest, undefined, { context: baseContext() }),
+  ).toBeNull()
+})
+
 test('syncStatus and recentRuns take a source', async () => {
   await signIn('admin')
   await call(evChargingRouter.syncNow, { source: 'elpris' }, { context: baseContext() })
@@ -363,7 +389,7 @@ test('syncStatus and recentRuns take a source', async () => {
 test('syncStatus rejects an unknown source', async () => {
   await signIn('user')
   await expect(
-    call(evChargingRouter.syncStatus, { source: 'skoda' as never }, { context: baseContext() }),
+    call(evChargingRouter.syncStatus, { source: 'nonsense' as never }, { context: baseContext() }),
   ).rejects.toThrow()
 })
 

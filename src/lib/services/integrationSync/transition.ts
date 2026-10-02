@@ -44,22 +44,26 @@ export type HealthSnapshot = {
   failingSince: Date | null
   alertedAt: Date | null
   consecutiveFailures: number
+  alertableFailures: number
   errorCode: IntegrationErrorCode | null
   lastErrorMessage: string | null
 }
 
-// Alert transitions: an alert opens on the first alertable failure of a
-// streak (`started_failing`) and closes on the next success (`recovered`), so
-// every `recovered` pairs with a `started_failing`. `not_configured` (e.g.
-// missing credentials) never opens an alert, but it doesn't close one either —
-// `auth_failed` → `not_configured` → ok still sends `recovered`, and
-// `not_configured` → `auth_failed` sends `started_failing`. A code change
-// between alertable codes is the same outage and never re-alerts.
+// Alert transitions: an alert opens on the `alertAfterFailures`-th consecutive
+// alertable failure of a streak (the first, by default; `started_failing`). A
+// `not_configured` run (e.g. missing credentials) is not alertable: it resets
+// that count, never opens an alert and never closes one — `auth_failed` →
+// `not_configured` → ok still sends `recovered`, and `not_configured` →
+// `auth_failed` sends `started_failing` (at once at threshold 1; at N it takes N
+// alertable failures). The alert closes on the next success (`recovered`), so
+// every `recovered` pairs with a `started_failing`. A code change between
+// alertable codes is the same outage and never re-alerts.
 export function nextRow(
   prev: HealthSnapshot,
   outcome: SyncOutcome,
   now: Date,
   startedAt: Date,
+  alertAfterFailures = 1,
 ): { row: HealthSnapshot; transition: HealthTransition } {
   const wasFailing = prev.consecutiveFailures > 0
   const alertOpen = prev.alertedAt !== null
@@ -72,13 +76,18 @@ export function nextRow(
         failingSince: null,
         alertedAt: null,
         consecutiveFailures: 0,
+        alertableFailures: 0,
         errorCode: null,
         lastErrorMessage: null,
       },
       transition: alertOpen ? 'recovered' : 'none',
     }
   }
-  const opensAlert = !alertOpen && outcome.code !== 'not_configured'
+  // Only alertable failures count: a `not_configured` run (every deployment
+  // starts there) resets the count instead of using up the threshold.
+  const alertableFailures = outcome.code === 'not_configured' ? 0 : prev.alertableFailures + 1
+  const opensAlert =
+    !alertOpen && outcome.code !== 'not_configured' && alertableFailures >= alertAfterFailures
   return {
     row: {
       lastAttemptAt: now,
@@ -87,6 +96,7 @@ export function nextRow(
       failingSince: wasFailing ? prev.failingSince : now,
       alertedAt: opensAlert ? now : prev.alertedAt,
       consecutiveFailures: prev.consecutiveFailures + 1,
+      alertableFailures,
       errorCode: outcome.code,
       lastErrorMessage: sanitizeErrorMessage(outcome.message),
     },

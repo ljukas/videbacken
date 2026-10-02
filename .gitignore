@@ -31,3 +31,6 @@ yarn.lock
 
 # Personal exports (e.g. the MySkoda CSV) — never commit
 /data/private/
+
+# Local agent workflow scratch (briefs, reviews) — never commit
+/.superpowers/

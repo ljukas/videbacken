@@ -279,3 +279,62 @@ test('getLastSuccessStartedAt returns the start of the last successful run', asy
   })
   expect(await getLastSuccessStartedAt('zaptec')).toEqual(T0)
 })
+
+// The per-source alert threshold is wired through `ALERT_AFTER_FAILURES`.
+async function skodaAttempt(outcome: SyncOutcome, i: number) {
+  const now = at(i * 15 * 60 * 1000)
+  const lease = await beginAttempt('skoda', { now })
+  if (!lease.acquired) throw new Error('expected to acquire the lease')
+  const { transition } = await recordOutcome('skoda', outcome, {
+    attemptId: lease.attemptId,
+    trigger: 'cron',
+    startedAt: now,
+    now,
+  })
+  const [row] = await db.select().from(integrationSync).where(eq(integrationSync.source, 'skoda'))
+  return { transition, row }
+}
+
+test('skoda alerts on the third consecutive failure, then recovers', async () => {
+  const first = await skodaAttempt(failed, 0)
+  expect([first.transition, first.row.alertableFailures, first.row.alertedAt]).toEqual([
+    'none',
+    1,
+    null,
+  ])
+  const second = await skodaAttempt(failed, 1)
+  expect([second.transition, second.row.alertableFailures, second.row.alertedAt]).toEqual([
+    'none',
+    2,
+    null,
+  ])
+  const third = await skodaAttempt(failed, 2)
+  expect(third.transition).toBe('started_failing')
+  expect(third.row.consecutiveFailures).toBe(3)
+  expect(third.row.alertableFailures).toBe(3)
+  expect(third.row.alertedAt).toEqual(at(2 * 15 * 60 * 1000))
+  const recovered = await skodaAttempt(ok, 3)
+  expect(recovered.transition).toBe('recovered')
+  expect(recovered.row.alertableFailures).toBe(0)
+})
+
+test('skoda: a not_configured prefix does not use up the threshold', async () => {
+  const notConfigured: SyncOutcome = { ...failed, code: 'not_configured' }
+  const outcomes = [notConfigured, notConfigured, failed, failed, failed]
+  const results = []
+  for (const [i, outcome] of outcomes.entries()) results.push(await skodaAttempt(outcome, i))
+  expect(results.map((r) => r.transition)).toEqual([
+    'none',
+    'none',
+    'none',
+    'none',
+    'started_failing',
+  ])
+  expect(results.map((r) => r.row.alertableFailures)).toEqual([0, 0, 1, 2, 3])
+  expect(results.map((r) => r.row.consecutiveFailures)).toEqual([1, 2, 3, 4, 5])
+})
+
+test('skoda: one failure then success is silent', async () => {
+  expect((await skodaAttempt(failed, 0)).transition).toBe('none')
+  expect((await skodaAttempt(ok, 1)).transition).toBe('none')
+})

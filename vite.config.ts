@@ -126,8 +126,11 @@ export default defineConfig({
               //   12:30 UTC = 13:30 CET / 14:30 CEST, plus a late retry at
               //   15:30 UTC (src/lib/spotPrice/elprisSyncCron.ts). Two entries
               //   may share a path.
+              // - Škoda car state every 15 min, offset to :07/:22/:37/:52 so it doesn't collide with
+              //   Zaptec's hourly cron (an admin sync can still overlap; src/lib/vehicleState/skodaSyncCron.ts).
               crons: [
                 { path: '/api/cron/zaptec-sync', schedule: '0 * * * *' },
+                { path: '/api/cron/skoda-sync', schedule: '7,22,37,52 * * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 12 * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 15 * * *' },
                 // Not a pulled integration: the grid-tariff watcher (ADR-0019's

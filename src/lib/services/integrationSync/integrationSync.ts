@@ -10,7 +10,7 @@ import type {
 } from '~/lib/integrationHealth'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
-import { LEASE_DURATION_MS, RUN_RETENTION_MS } from './policy'
+import { ALERT_AFTER_FAILURES, LEASE_DURATION_MS, RUN_RETENTION_MS } from './policy'
 import { sanitizeErrorMessage } from './sanitize'
 import { deriveState, type HealthSnapshot, nextRow, type SyncOutcome } from './transition'
 
@@ -52,6 +52,7 @@ function toSnapshot(row: SyncRow): HealthSnapshot {
     failingSince: row.failingSince,
     alertedAt: row.alertedAt,
     consecutiveFailures: row.consecutiveFailures,
+    alertableFailures: row.alertableFailures,
     errorCode: row.errorCode as IntegrationErrorCode | null,
     lastErrorMessage: row.lastErrorMessage,
   }
@@ -145,7 +146,13 @@ export async function recordOutcome(
       return { transition: 'none' as const, row: prev, recorded: false }
     }
 
-    const { row, transition } = nextRow(toSnapshot(prev), outcome, now, startedAt)
+    const { row, transition } = nextRow(
+      toSnapshot(prev),
+      outcome,
+      now,
+      startedAt,
+      ALERT_AFTER_FAILURES[source],
+    )
     const [updated] = await tx
       .update(integrationSync)
       .set({

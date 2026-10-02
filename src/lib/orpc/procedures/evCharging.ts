@@ -20,10 +20,15 @@ import * as evChargingService from '~/lib/services/evCharging'
 import { EvChargingDomainError, type EvChargingDomainErrorCode } from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import * as vehicleChargeService from '~/lib/services/vehicleCharge'
+import * as vehicleStateService from '~/lib/services/vehicleState'
 import { runElprisSync } from '~/lib/spotPrice/sync'
+import { runSkodaSync } from '~/lib/vehicleState/sync'
 
-/** The sources the charging page tracks: sessions (Zaptec) and spot prices (elpris). */
-const chargingSource = z.enum(['zaptec', 'elpris'])
+/**
+ * The sources the charging page tracks: sessions (Zaptec), spot prices
+ * (elpris) and the car's live state (Škoda).
+ */
+const chargingSource = z.enum(['zaptec', 'elpris', 'skoda'])
 /** `{ source }`, defaulting to Zaptec so existing callers keep their meaning. */
 const sourceInput = z.object({ source: chargingSource.default('zaptec') }).optional()
 const yearInput = z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional()
@@ -245,6 +250,9 @@ export const evChargingRouter = {
 
   vehicleRecordCoverage: adminProcedure.handler(() => vehicleChargeService.coverage()),
 
+  // Admin card: when the Škoda poll last heard from the car (ADR-0022). Times only.
+  vehicleStateLatest: adminProcedure.handler(() => vehicleStateService.latestSnapshot()),
+
   recentRuns: adminProcedure
     .input(
       z.object({
@@ -262,6 +270,16 @@ export const evChargingRouter = {
   // its own source. A run never throws for a failed/skipped outcome (those
   // are recorded in health); only a genuine bug propagates.
   syncNow: adminProcedure.input(sourceInput).handler(async ({ input, context }) => {
+    if (input?.source === 'skoda') {
+      const run = await runSkodaSync({ trigger: 'admin', deps: { log: context.log } })
+      if (context.timings) {
+        context.timings.skodaSyncMs = run.durationMs
+        context.timings.skodaFetchMs = run.fetchMs
+        context.timings.skodaSnapshotMs = run.snapshotMs
+        context.timings.skodaReattributeMs = run.reattributeMs
+      }
+      return { outcome: run.outcome, code: run.code, upserted: run.stored ? 1 : 0 }
+    }
     if ((input?.source ?? 'zaptec') === 'elpris') {
       const run = await runElprisSync({ trigger: 'admin', deps: { log: context.log } })
       if (context.timings) {

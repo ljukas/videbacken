@@ -183,7 +183,9 @@ Two tables, not one:
   view: `lastAttemptAt`, `lastSuccessAt`, `lastSuccessStartedAt` (the fetch watermark: how far every
   session has been imported — the run's start, or the end of the last finished window), `failingSince`,
   `alertedAt` (when this streak's `started_failing` alert went out; null while no alert is open),
-  `consecutiveFailures`, `errorCode`, `lastErrorMessage` (admin-only, ≤ 500 chars; for a failed
+  `consecutiveFailures`, `alertableFailures` (the streak's consecutive *alertable* failures —
+  `not_configured` excluded and resets it; the alert threshold counts these), `errorCode`,
+  `lastErrorMessage` (admin-only, ≤ 500 chars; for a failed
   database query it's the Postgres error, never drizzle's own message, which is the SQL plus its bound
   params — session emails and names; for a data exception, SQLSTATE class 22, only the code, since its
   message quotes the offending value; sanitized before write — control chars
@@ -191,7 +193,10 @@ Two tables, not one:
   never logs credentials, so this guards against a future bug, not today's expected path), plus the
   lease fields below. Cross-column CHECKs keep it internally consistent: `consecutiveFailures = 0`
   iff `errorCode IS NULL` iff `failingSince IS NULL`; `alertedAt` only while `errorCode` is set;
-  `runningSince IS NULL` iff `leaseUntil IS NULL` iff `leaseToken IS NULL`.
+  `runningSince IS NULL` iff `leaseUntil IS NULL` iff `leaseToken IS NULL`; `consecutiveFailures`
+  and `alertableFailures` both `>= 0`. `alertableFailures <= consecutiveFailures` holds too, but
+  `nextRow` enforces it, not a CHECK: code from before the column (an instant rollback) zeroes
+  `consecutive_failures` on success and leaves `alertable_failures` alone.
 - **`integration_sync_run`** — append-only, one row per attempt (`id`, `source`, `trigger`,
   `startedAt`/`finishedAt`/`durationMs`, `outcome`, `errorCode`, `errorMessage`, `since`, `pages`,
   `sessionsSeen`, `upserted`, `voided`, `timings` jsonb), indexed on `(source, startedAt desc)` for
@@ -297,13 +302,17 @@ for an unexpected `error` outcome. One line per run — not one per page, not on
 client — keeps "how did last night's sync go" a single log search away, the same reasoning ADR-0007
 applies to its one `queue message` line per delivery.
 
-The **admin alert email** fires only on `HealthTransition` — `started_failing` (the first alertable
-failure of a streak) or `recovered` (the first success after an alerted streak) — never on every
-failed run and never for `not_configured` (an environment that was never set up isn't a regression
-to page an admin about; a mid-streak error-code change, e.g. `auth_failed` → `unreachable`, also does
-not re-alert — it's the same streak). Whether the streak alerted is its own column, `alertedAt`, not
-derived from the current code: `not_configured` neither opens nor closes an alert, so
-`not_configured` → `auth_failed` (credentials added, but wrong) opens one, and `auth_failed` →
+The **admin alert email** fires only on `HealthTransition` — `started_failing` or `recovered` (the
+first success after an alerted streak) — never on every failed run. An alert opens on the
+`ALERT_AFTER_FAILURES[source]`-th consecutive *alertable* failure of a streak (`policy.ts`: 1 for
+Zaptec and elpris, so their first failure alerts; 3 for Škoda, whose 15-minute poll rides out a
+transient blip — see [ADR-0022](./0022-live-vehicle-state-attribution.md)). `not_configured` is not
+alertable (an environment that was never set up isn't a regression to page an admin about): it resets
+the count, never opens an alert and never closes one. A mid-streak change between alertable codes,
+e.g. `auth_failed` → `unreachable`, does not re-alert — it's the same streak — and counts toward the
+threshold. Whether the streak alerted is its own column, `alertedAt`, not derived from the current
+code: `not_configured` → `auth_failed` (credentials added, but wrong) opens one once
+`auth_failed` reaches the threshold (at once for a threshold of 1), and `auth_failed` →
 `not_configured` → ok still closes it with `recovered`. Every `recovered` pairs with a
 `started_failing`. This is the one place a sync failure reaches a human outside the logs, and it earns
 that reach precisely by being rare: an hourly cron with a real outage would otherwise send 24
@@ -488,6 +497,17 @@ What still holds:
 - **Cron status codes** as above: 200 for every checked outcome, 500 only for an unexpected throw.
 - **The facility ID never leaves the process.** Only `GET /tariffcatalogue/all` is fetched (never `lookup/{mpid}`),
   the match runs locally with `BigInt` (18 digits exceed `Number`), and the ID is never logged, returned, or queued.
+
+---
+
+## Amendment (2026-10-02): a per-source alert threshold
+
+The car's state poll ([ADR-0022](./0022-live-vehicle-state-attribution.md)) runs every 15 minutes, so
+alerting on its first failure would page an admin for every transient blip. `ALERT_AFTER_FAILURES`
+(`src/lib/services/integrationSync/policy.ts`) sets the threshold per source — Zaptec 1, elpris 1,
+Škoda 3 — and `integration_sync.alertable_failures` counts the streak's consecutive alertable
+failures (`not_configured` resets it). Zaptec and elpris behave exactly as before. The rule itself is
+in "One `integration sync run` log line, alert on transitions only" above.
 
 ---
 

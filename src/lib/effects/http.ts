@@ -1,4 +1,4 @@
-// HTTP for the pulled-integration clients (Zaptec, elpris): ADR-0019's
+// HTTP for the pulled-integration clients (Zaptec, elpris, Škoda): ADR-0019's
 // timeout + retry policy, owned by ky.
 import ky, { isHTTPError, isNetworkError, isTimeoutError } from 'ky'
 
@@ -11,6 +11,8 @@ export type RequestPolicy = {
   timeoutMs: number
   /** Statuses to retry; empty disables retries, network failures and timeouts included. */
   retryStatuses: ReadonlySet<number>
+  /** Max retries (default 2; backoff reuses the last entry beyond 2); 0 when `retryStatuses` is empty. */
+  retryLimit?: number
   /** The caller's signal. Its abort is final — never retried. */
   signal?: AbortSignal
   stats: { requests: number; retries: number }
@@ -39,13 +41,13 @@ export async function fetchWithRetry(
       // A retryable status must throw for ky to retry it; any other is returned.
       throwHttpErrors: (status) => p.retryStatuses.has(status),
       retry: {
-        limit: p.retryStatuses.size > 0 ? 2 : 0,
+        limit: p.retryStatuses.size > 0 ? (p.retryLimit ?? 2) : 0,
         // `post` only for the Zaptec login, the one POST.
         methods: ['get', 'post'],
         statusCodes: [...p.retryStatuses],
         afterStatusCodes: [...p.retryStatuses],
         maxRetryAfter: 10_000,
-        delay: (n) => BACKOFF_MS[n - 1],
+        delay: (n) => BACKOFF_MS[Math.min(n, BACKOFF_MS.length) - 1],
         jitter: (ms) => ms * (0.8 + 0.4 * Math.random()),
         retryOnTimeout: true,
         // ky decides statuses and timeouts (a caller abort then ends its abortable
