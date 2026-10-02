@@ -1,6 +1,6 @@
 # ADR 0021 — Charging-Session Vehicle Attribution
 
-- **Status**: Accepted
+- **Status**: Accepted — extended by [ADR-0022](./0022-live-vehicle-state-attribution.md)
 - **Date**: 2026-10-01
 - **Deciders**: Lukas
 - **Decision in one line**: Each charge session carries its own `vehicle` (`ours` | `other`) and `vehicle_source`
@@ -66,7 +66,7 @@ figures agree too loosely to use, and the planned peak-power hint fails because 
 - `services/evCharging/attribution.ts` reads `vehicle_charge_record` (owned by `services/vehicleCharge`) for the
   single `UPDATE … FROM` re-match: a deliberate read-only exception to ADR-0002 table ownership, since one
   statement can't span two services. A CHECK (`ev_charge_session_vehicle_default_check`) keeps `default` rows 'ours'.
-- Sessions after the export are "ours · antaget" until tagged — a forgotten guest silently inflates our cost. The
+- Sessions after the export are "ours · antaget" until tagged — until ADR-0022's live poll decides them (sessions ≥ 40 min) — a forgotten guest silently inflates our cost. The
   session page shows the source so it's visible.
 - An admin tag on a session that Zaptec later voids/replaces does not carry over to the replacement.
 - Coverage is derived from the stored log; importing a later export extends it automatically.

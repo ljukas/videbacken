@@ -175,7 +175,7 @@ Accepted residuals (an admin tag fixes them):
 - **PR 1** — Översikt `SyncHealthAlert` for `skoda` (**admin-only**, like elpris: a household member can't act on
   the car feed) with real copy (replaces the Zaptec-copy stubs), e.g.
   `auth_failed` → "Škoda-nyckeln fungerar inte längre (har den gått ut?). En admin behöver skapa en ny."; admin card
-  "Bilens laddlogg" → **"Bilens data"**: CSV coverage (as today) + "Senaste kontakt med bilen 11:08" + **Hämta bilens status** (its own
+  "Bilens laddlogg" → **"Bilens data"**: CSV coverage (as today) + "Senaste kontakt med bilen: 11:08" + **Hämta bilens status** (its own
   label, distinct from the heading's "Synka nu"); plus a Škoda run-history card.
 - **PR 2** — "Vem laddade?" copy for `skoda_live`: "Vår bil · enligt bilen" / "Gäst · enligt bilen".
 - **PR 3** — admin-only warning `Alert` on Översikt from 30 days before expiry, only while the source is healthy
@@ -199,7 +199,7 @@ Accepted residuals (an admin tag fixes them):
 | We unplug at home, hand the cable to a guest | ≈25 min of stale `CONNECTED` is outvoted by the rest of the session → guest (a guest session under ≈1 h may still read as ours) |
 | Our car drives off still reporting `CONNECTED` | `IN_MOTION` / outside the geofence → not here |
 | Car plugged in elsewhere, position known | connected but `at_home = false` → guest |
-| Home point unset | geofence off, plug state alone, warn |
+| Home point unset | geofence off; plug state and whether the car is moving decide; warned once per instance |
 | Export coverage | the exported log keeps deciding inside it |
 | Duplicate cron delivery | lease → second run skipped |
 

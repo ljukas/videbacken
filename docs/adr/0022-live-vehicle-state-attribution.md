@@ -81,5 +81,11 @@ drove 4 km; only its position (`IN_MOTION`, then parked elsewhere) told the trut
 - ≈96 polls/day write ≈96 snapshots (≈35 000/year, kept for Phase 6) and ≈96 `integration_sync_run` rows (pruned at
   90 days). The run history's session-named columns mean "a poll" for Škoda (`sessionsSeen`/`upserted` = 1 per stored
   poll).
+- Accepted residual: two concurrent multi-row writers (the re-match UPDATE and a Zaptec `importSessions` page
+  transaction, or two re-matches during a first-deploy backfill colliding with an admin sync) can deadlock in
+  theory. Postgres aborts one side (40P01); that run only warns or fails and recovers on the next. Steady state
+  changes 0-1 rows and the crons (:00 vs :07/:22/:37/:52) don't overlap.
+- Roll forward only once `skoda_live` rows exist: PR 1 code can't label them, so rolling back leaves rows it can't
+  display.
 - The 20 requests/h per VIN are shared by the cron (4/h), admin "Hämta bilens status", and any local testing with the
   same key; the client retries at most once.
