@@ -72,8 +72,9 @@ export async function claimCredentialReminder(
       .for('update')
     const expiry = credentialExpiryOf(row?.expiresAt ?? null, now)
     if (!expiry || !row) return null
-    const due = [...CREDENTIAL_REMINDER_DAYS].reverse().find((d) => expiry.daysLeft <= d)
-    if (due === undefined) return null
+    const eligible = CREDENTIAL_REMINDER_DAYS.filter((d) => expiry.daysLeft <= d)
+    if (eligible.length === 0) return null
+    const due = Math.min(...eligible) as CredentialReminderDays
     const [claimed] = await tx
       .update(integrationSync)
       .set({ credentialReminderDays: due })

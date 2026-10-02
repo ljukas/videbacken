@@ -31,6 +31,6 @@ export const EXPIRING_CREDENTIAL_SOURCES = ['skoda'] as const
 export type ExpiringCredentialSource = (typeof EXPIRING_CREDENTIAL_SOURCES)[number]
 /** Admins see a warning from this many days before expiry (while the source is healthy). */
 export const CREDENTIAL_WARN_DAYS = 30
-/** Reminder emails, largest first; each sent once per expiry date. Changing or reordering this changes the rendered DB CHECK: run `bun run db:generate`. */
+/** Reminder emails, largest first; each sent once per expiry date. Order does not matter to the logic, but changing or reordering this changes the rendered DB CHECK text: run `bun run db:generate`. */
 export const CREDENTIAL_REMINDER_DAYS = [30, 7] as const
 export type CredentialReminderDays = (typeof CREDENTIAL_REMINDER_DAYS)[number]
