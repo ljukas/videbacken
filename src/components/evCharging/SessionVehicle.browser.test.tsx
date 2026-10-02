@@ -106,3 +106,14 @@ test('while saving the select shows the chosen value, not the stale stored one',
   await expect.element(trigger).toHaveTextContent(m.charging_vehicle_other())
   await expect.element(trigger).not.toHaveTextContent(m.charging_vehicle_auto())
 })
+
+test('a live-state attribution says it came from the car', async () => {
+  const { screen } = await renderWithProviders(
+    <SessionVehicle sessionId={ID} vehicle="other" vehicleSource="skoda_live" isAdmin={false} />,
+  )
+  await expect
+    .element(
+      screen.getByText(`${m.charging_vehicle_other()} · ${m.charging_vehicle_source_skoda_live()}`),
+    )
+    .toBeVisible()
+})

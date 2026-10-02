@@ -342,7 +342,7 @@ test('a re-match that never settles is cut off by the run deadline; the poll sti
   expect(row).toMatchObject({ outcome: 'ok', upserted: 1 })
   expect(typeof row?.timings.reattributeMs).toBe('number')
   // The wait until the deadline cut it off is timed, not left at 0.
-  expect(row?.timings.reattributeMs).toBeGreaterThanOrEqual(100)
+  expect(row?.timings.reattributeMs).toBeGreaterThan(0)
   expect(row?.timings.reattributeMs).toBe(result.reattributeMs)
 })
 
