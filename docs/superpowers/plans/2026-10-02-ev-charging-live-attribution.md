@@ -1859,7 +1859,7 @@ generated `drizzle/0010_vehicle_source_skoda_live.sql`.
 - [ ] **Step 2:** `bun run db:generate --name=vehicle_source_skoda_live && bun run db:migrate`. Expected SQL: DROP +
   ADD `ev_charge_session_vehicle_source_check` with the four values, nothing else (stop if anything more appears).
 - [ ] **Step 3:** so the tree compiles, add `skoda_live: m.charging_vehicle_source_skoda_live` to `SOURCE_LABEL` in
-  `SessionVehicle.tsx` and the message sv `"enligt bilen"` / en `"according to the car"`.
+  `SessionVehicle.tsx` and the message sv `"enligt bilens status"` / en `"according to the car's status"`.
 - [ ] **Step 4:** `bun run typecheck && bunx vitest run src/lib/services/evCharging test/rls.test.ts` → PASS.
 - [ ] **Step 5: Commit** `feat(charging): add the live Škoda vehicle source`
 
@@ -2279,7 +2279,7 @@ test('a live-state attribution says it came from the car', async () => {
 - [ ] 0010 approved by migration-guard + schema-design before the first push (then frozen).
 - [ ] Branch review (`code-reviewer`, `test-completeness`, migration reviewers). Pre-PR gate. Live: with real polls
   stored locally from PR 1's runs, insert a session over a sampled window (or run a Zaptec sync) and confirm the
-  session page shows "· enligt bilen".
+  session page shows "· enligt bilens status".
 - [ ] Open PR `feat(charging): attribute new sessions from the car's live state`, base `feat/skoda-state-poll`; note
   the roll-forward-only point.
 

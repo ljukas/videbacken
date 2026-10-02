@@ -71,7 +71,7 @@ drove 4 km; only its position (`IN_MOTION`, then parked elsewhere) told the trut
 
 ## Consequences
 
-- A fourth `vehicle_source` value; the session page says "enligt bilen".
+- A fourth `vehicle_source` value; the session page says "enligt bilens status".
 - Attribution quality depends on the car reporting state changes promptly (observed: plug-in, pause, resume, and
   position). A short guest session right after we unplug at home (under ≈1 h) can still be outvoted into "ours" by
   the stale `CONNECTED`; an admin tag fixes it.
