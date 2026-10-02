@@ -220,7 +220,7 @@ Design (supersedes details below): [phase5 design](./2026-10-01-ev-charging-phas
 1. Zaptec password grant deprecation (no date) — login flow may need replacing.
 2. ~~`energyDetails` semantics~~ — settled: per-interval, hourly (see probe results).
 3. ~~Zaptec history depth~~ — settled: full history since installation (2026-01-27).
-4. Škoda public API key expiry — needs an "API key expires in N days" warning for admins.
+4. ~~Škoda public API key expiry~~ — addressed by ADR-0022 (in-app warning + email reminders).
 5. 15-min external scheduler (GitHub Actions `schedule`) is best-effort and can lag
    several minutes; acceptable for session matching.
 6. Secrets: Zaptec password + Škoda API key live only in Vercel env vars.
