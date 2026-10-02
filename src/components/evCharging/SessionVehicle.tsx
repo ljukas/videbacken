@@ -16,7 +16,8 @@ const VEHICLE_LABEL: Record<Vehicle, () => string> = {
   ours: m.charging_vehicle_ours,
   other: m.charging_vehicle_other,
 }
-const SOURCE_LABEL: Record<VehicleSource, () => string> = {
+// Partial by index: an old tab or a newer server can send a source this build lacks.
+const SOURCE_LABEL: Partial<Record<string, () => string>> = {
   default: m.charging_vehicle_source_default,
   skoda: m.charging_vehicle_source_skoda,
   skoda_live: m.charging_vehicle_source_skoda_live,
@@ -51,7 +52,10 @@ export function SessionVehicle({
   const stored = vehicleSource === 'admin' ? vehicle : AUTO
   // Until the refetch lands the stored props are stale: show what was just chosen.
   const shown = save.isPending && save.variables ? (save.variables.vehicle ?? AUTO) : stored
-  const summary = `${VEHICLE_LABEL[vehicle]()} · ${SOURCE_LABEL[vehicleSource]()}`
+  const sourceLabel = SOURCE_LABEL[vehicleSource]?.()
+  const summary = sourceLabel
+    ? `${VEHICLE_LABEL[vehicle]()} · ${sourceLabel}`
+    : VEHICLE_LABEL[vehicle]()
   return (
     <div aria-busy={save.isPending} className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
       <span id={labelId} className="text-muted-foreground">
