@@ -1,12 +1,14 @@
 import { asc, desc, eq } from 'drizzle-orm'
 import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { integrationSyncRun, user, vehicleStateSnapshot } from '~/lib/db/schema'
+import { evChargeSession, integrationSyncRun, user, vehicleStateSnapshot } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { type SkodaClient, SkodaError, type SkodaReading } from '~/lib/effects/skoda'
 import { createServerLogger } from '~/lib/logger/server'
+import * as evChargingService from '~/lib/services/evCharging'
 import { getHealth } from '~/lib/services/integrationSync'
 import * as vehicleStateService from '~/lib/services/vehicleState'
+import { insertSession, insertSnapshot } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { runSkodaSync } from './sync'
 
@@ -286,4 +288,33 @@ test('the run line carries counters but never the position or presence', async (
   expect(typeof line?.snapshotMs).toBe('number')
   for (const leak of ['59.3293', 'atHome', 'plugState', 'CONNECTED', 'PARKED'])
     expect(raw()).not.toContain(leak)
+})
+
+test('a poll re-derives attribution for sessions already imported', async () => {
+  const id = await insertSession({
+    startAt: new Date('2026-05-04T06:00:00Z'),
+    endAt: new Date('2026-05-04T08:30:00Z'),
+  })
+  for (
+    let t = Date.parse('2026-05-04T05:45:00Z');
+    t <= Date.parse('2026-05-04T08:45:00Z');
+    t += 900_000
+  ) {
+    await insertSnapshot({ polledAt: new Date(t), plugState: 'DISCONNECTED' })
+  }
+  const result = await run(fakeSkoda(async () => reading()))
+  expect(result.reattributeChanged).toBe(1)
+  const [row] = await db.select().from(evChargeSession).where(eq(evChargeSession.id, id))
+  expect(row).toMatchObject({ vehicle: 'other', vehicleSource: 'skoda_live' })
+})
+
+test('a failed re-match is a warning and the poll still counts', async () => {
+  vi.spyOn(evChargingService, 'reattributeSessions').mockRejectedValueOnce(new Error('db hiccup'))
+  const { log, entries } = capturingLogger()
+  const result = await run(
+    fakeSkoda(async () => reading()),
+    { log },
+  )
+  expect(result).toMatchObject({ outcome: 'ok', stored: true, reattributeChanged: 0 })
+  expect(entries().some((e) => e.msg === 'skoda sync: vehicle re-match failed')).toBe(true)
 })

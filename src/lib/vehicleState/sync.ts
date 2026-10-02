@@ -3,6 +3,7 @@ import type { SyncTrigger } from '~/lib/integrationHealth'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
+import * as evChargingService from '~/lib/services/evCharging'
 import * as vehicleStateService from '~/lib/services/vehicleState'
 import { atHome, parseHomePoint } from './geofence'
 
@@ -115,6 +116,25 @@ export async function runSkodaSync(opts: {
       })
       run.snapshotMs = Math.round(performance.now() - started)
       run.stored = true
+      // A fresh poll can decide sessions the last Zaptec sync already imported.
+      // Health tracks the poll, not attribution: a failure here only warns.
+      const rematchStart = performance.now()
+      try {
+        if (signal.aborted) {
+          log.warn('skoda sync: vehicle re-match skipped, run deadline reached')
+        } else {
+          const result = await withDeadline(
+            evChargingService.reattributeSessions(),
+            signal,
+            () => new Error('vehicle re-match did not finish within the sync deadline'),
+          )
+          run.reattributeChanged = result.changed
+        }
+      } catch (error) {
+        log.warn('skoda sync: vehicle re-match failed', { error })
+      } finally {
+        run.reattributeMs = Math.round(performance.now() - rematchStart)
+      }
     },
     // Run-history columns are session-named: for Škoda, sessionsSeen/upserted
     // = 1 when a poll was read/stored (documented in ADR-0022).

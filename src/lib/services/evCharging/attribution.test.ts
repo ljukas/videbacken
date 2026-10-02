@@ -3,7 +3,7 @@ import { Client } from 'pg'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeSession } from '~/lib/db/schema'
-import { insertSession, insertVehicleRecord } from '~test/fixtures/evCharging'
+import { insertSession, insertSnapshot, insertVehicleRecord } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { reattributeSessions, setSessionVehicle } from './attribution'
 import { EvChargingDomainError } from './errors'
@@ -327,4 +327,186 @@ test('an admin tag committed while the re-match waits on the row survives', asyn
   }
   expect(blocked, 're-match never blocked on the admin row lock').toBe(true)
   expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'admin' })
+})
+
+// Live rule (ADR-0022): polls every `stepMin` between `from` and `to` (inclusive).
+async function pollEvery(
+  from: string,
+  to: string,
+  fields: { plugState?: string | null; atHome?: boolean | null } = {},
+  stepMin = 15,
+) {
+  for (let t = at(from).getTime(); t <= at(to).getTime(); t += stepMin * 60_000) {
+    await insertSnapshot({ polledAt: new Date(t), plugState: 'CONNECTED', atHome: true, ...fields })
+  }
+}
+const liveSession = (
+  start: string,
+  end: string,
+  extra: Partial<Parameters<typeof insertSession>[0]> = {},
+) => insertSession({ startAt: at(start), endAt: at(end), ...extra })
+
+test('live: plugged in at home throughout → ours, skoda_live', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z')
+  expect(await reattributeSessions()).toEqual({ ours: 1, other: 0, changed: 1 })
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'skoda_live' })
+})
+
+test('live: unplugged throughout → guest', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z', { plugState: 'DISCONNECTED' })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+})
+
+test('live: connected but parked away (or moving) → guest', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z', { atHome: false })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+})
+
+test('live: connected with an unknown position → plug state alone → ours', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z', { atHome: null })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'skoda_live' })
+})
+
+test('live: stale CONNECTED at the start of a long guest session is outvoted → guest', async () => {
+  const id = await liveSession('2026-10-02T12:00:00Z', '2026-10-02T15:00:00Z')
+  // The session ends at 12:00; the car keeps claiming CONNECTED for ≈27 min more (as in the probe).
+  await pollEvery('2026-10-02T12:00:00Z', '2026-10-02T12:30:00Z')
+  await pollEvery('2026-10-02T12:45:00Z', '2026-10-02T15:00:00Z', { plugState: 'DISCONNECTED' })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+})
+
+test('live: the 10-min margin decides — with it ours, without it it would be guest', async () => {
+  // Session 09:00–09:50, window 09:10–09:40. Intervals: D 08:58–09:12, C 09:12–09:30,
+  // D 09:30–09:45, D 09:45–10:05. With the margin: here 18, away 12 → ours.
+  // Without it (09:00–09:50): here 18, away 32 → guest.
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T09:50:00Z')
+  await insertSnapshot({ polledAt: at('2026-10-02T08:58:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:12:00Z') })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:30:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:45:00Z'), plugState: 'DISCONNECTED' })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'skoda_live' })
+})
+
+test('live: a session under 40 minutes is never decided', async () => {
+  // 35 min → a 15-min window; dense DISCONNECTED polls would otherwise decide guest.
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T09:35:00Z')
+  await pollEvery('2026-10-02T08:47:00Z', '2026-10-02T09:47:00Z', { plugState: 'DISCONNECTED' }, 5)
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ source: 'default' })
+})
+
+test('live: known time under half the window leaves the session unchanged', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T13:00:00Z')
+  // Window 09:10–12:50 (220 min); two polls know 35 min (09:15–09:30, 09:30–09:50).
+  await pollEvery('2026-10-02T09:15:00Z', '2026-10-02T09:30:00Z', { plugState: 'DISCONNECTED' })
+  expect(await reattributeSessions()).toEqual({ ours: 0, other: 0, changed: 0 })
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'default' })
+})
+
+test('live: a long gap between polls is not bridged', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await insertSnapshot({ polledAt: at('2026-10-02T09:10:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-02T11:30:00Z'), plugState: 'DISCONNECTED' })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ source: 'default' })
+})
+
+test("live: an unknown poll ends the previous poll's interval", async () => {
+  // Window 09:10–10:50 (100 min). C 09:00, ? 09:15, C 09:30, ? 09:45, C 10:00, ? 10:15–10:45:
+  // known here = 5 + 15 + 15 = 35 < 50 → unchanged. Dropping unknowns before lead() would count 50.
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T11:00:00Z')
+  const polls = [
+    ['09:00', 'CONNECTED'],
+    ['09:15', null],
+    ['09:30', 'CONNECTED'],
+    ['09:45', null],
+    ['10:00', 'CONNECTED'],
+    ['10:15', null],
+    ['10:30', null],
+    ['10:45', null],
+  ] as const
+  for (const [time, plugState] of polls) {
+    await insertSnapshot({ polledAt: at(`2026-10-02T${time}:00Z`), plugState, atHome: null })
+  }
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ source: 'default' })
+})
+
+test('live: polls with no plug state are unknown, not evidence', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z', { plugState: null, atHome: true })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ source: 'default' })
+})
+
+test('live: polls far outside the window do not change the result', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z')
+  await pollEvery('2026-10-01T00:00:00Z', '2026-10-02T08:00:00Z', { plugState: 'DISCONNECTED' }, 60)
+  await pollEvery('2026-10-02T13:00:00Z', '2026-10-03T00:00:00Z', { plugState: 'DISCONNECTED' }, 60)
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'skoda_live' })
+})
+
+test('live: a session with an unreliable clock is left alone', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z', {
+    reliableClock: false,
+  })
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z', { plugState: 'DISCONNECTED' })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ source: 'default' })
+})
+
+test('live: a tie goes to ours', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T10:20:00Z')
+  // Window 09:10–10:10: 30 min here, 30 min not here.
+  await insertSnapshot({ polledAt: at('2026-10-02T09:10:00Z') })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:25:00Z') })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:40:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:55:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-02T10:10:00Z'), plugState: 'DISCONNECTED' })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'skoda_live' })
+})
+
+test('live: the exported log keeps deciding inside its coverage; admin tags stay', async () => {
+  await seedCoverage() // 2026-02-01 → 2026-03-31
+  const logged = await liveSession('2026-02-10T10:00:00Z', '2026-02-10T12:00:00Z')
+  await pollEvery('2026-02-10T09:45:00Z', '2026-02-10T12:15:00Z') // would say ours
+  const tagged = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await setSessionVehicle(tagged, 'other')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z')
+  await reattributeSessions()
+  expect(await attribution(logged)).toMatchObject({ vehicle: 'other', source: 'skoda' })
+  expect(await attribution(tagged)).toMatchObject({ vehicle: 'other', source: 'admin' })
+})
+
+test('live: a second pass changes nothing; sessionId narrows the live branch too', async () => {
+  const a = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  const b = await liveSession('2026-10-03T09:00:00Z', '2026-10-03T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z')
+  await pollEvery('2026-10-03T08:45:00Z', '2026-10-03T12:15:00Z', { plugState: 'DISCONNECTED' })
+  expect(await reattributeSessions({ sessionId: a })).toEqual({ ours: 1, other: 0, changed: 1 })
+  expect(await attribution(b)).toMatchObject({ source: 'default' })
+  await reattributeSessions()
+  expect(await reattributeSessions()).toEqual({ ours: 1, other: 1, changed: 0 })
+})
+
+test('live: setSessionVehicle(null) re-derives from the live state', async () => {
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z', { plugState: 'DISCONNECTED' })
+  await setSessionVehicle(id, 'ours')
+  expect(await setSessionVehicle(id, null)).toEqual({
+    vehicle: 'other',
+    vehicleSource: 'skoda_live',
+  })
 })
