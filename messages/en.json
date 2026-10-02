@@ -699,5 +699,6 @@
       }
     }
   ],
-  "charging_vehicle_key_valid_until": "The key is valid until {date}"
+  "charging_vehicle_key_expires": "The key expires on {date}",
+  "charging_vehicle_key_expired": "The key expired on {date}"
 }

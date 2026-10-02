@@ -137,9 +137,28 @@ test('shows until when the Škoda key is valid', async () => {
     <VehicleLogCard
       coverage={null}
       live={null}
-      keyExpiresAt={new Date('2027-01-15T12:00:00.500Z')}
+      keyExpiresAt={new Date('2099-01-15T12:00:00.500Z')}
       onImport={() => {}}
     />,
   )
-  await expect.element(screen.getByText(/Nyckeln gäller till 15 jan\. 2027/)).toBeVisible()
+  await expect.element(screen.getByText(/Nyckeln går ut den 15 jan\. 2099/)).toBeVisible()
+})
+
+test('no key expiry renders no expiry line', async () => {
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard coverage={null} live={null} onImport={() => {}} />,
+  )
+  expect(screen.getByText(/Nyckeln/).elements()).toHaveLength(0)
+})
+
+test('a past key expiry says the key expired', async () => {
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard
+      coverage={null}
+      live={null}
+      keyExpiresAt={new Date('2020-01-15T12:00:00.500Z')}
+      onImport={() => {}}
+    />,
+  )
+  await expect.element(screen.getByText(/Nyckeln gick ut den 15 jan\. 2020/)).toBeVisible()
 })

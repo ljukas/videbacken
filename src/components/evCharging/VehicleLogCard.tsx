@@ -98,7 +98,9 @@ export function VehicleLogCard({
         ) : null}
         {keyExpiresAt ? (
           <p className="text-muted-foreground">
-            {m.charging_vehicle_key_valid_until({ date: formatDate(keyExpiresAt) })}
+            {keyExpiresAt.getTime() <= Date.now()
+              ? m.charging_vehicle_key_expired({ date: formatDate(keyExpiresAt) })
+              : m.charging_vehicle_key_expires({ date: formatDate(keyExpiresAt) })}
           </p>
         ) : null}
       </CardContent>

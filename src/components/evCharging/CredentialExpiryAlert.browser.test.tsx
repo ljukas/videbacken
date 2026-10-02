@@ -13,6 +13,30 @@ test('warns with the date and days left', async () => {
   await expect.element(screen.getByText(/om 12 dagar/)).toBeVisible()
 })
 
+test('uses the singular for one day left', async () => {
+  const { screen } = await renderWithProviders(
+    <CredentialExpiryAlert expiry={{ expiresAt, daysLeft: 1, warn: true }} />,
+  )
+  await expect.element(screen.getByText(/om 1 dag\)/)).toBeVisible()
+})
+
+test('interrupts (role=alert, destructive) from 7 days, stays polite at 8', async () => {
+  const urgent = await renderWithProviders(
+    <CredentialExpiryAlert expiry={{ expiresAt, daysLeft: 7, warn: true }} />,
+  )
+  const alert = urgent.screen.getByRole('alert')
+  await expect.element(alert).toBeVisible()
+  expect(alert.element().className).toContain('text-destructive')
+  expect(urgent.screen.getByRole('status').elements()).toHaveLength(0)
+  await urgent.screen.unmount()
+
+  const calm = await renderWithProviders(
+    <CredentialExpiryAlert expiry={{ expiresAt, daysLeft: 8, warn: true }} />,
+  )
+  await expect.element(calm.screen.getByRole('status')).toBeVisible()
+  expect(calm.screen.getByRole('alert').elements()).toHaveLength(0)
+})
+
 test('renders nothing before the warning window, after expiry, or without an expiry', async () => {
   for (const expiry of [
     { expiresAt, daysLeft: 40, warn: false },

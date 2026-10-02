@@ -13,8 +13,10 @@ type Expiry = NonNullable<
 // warn; once expired the health alert (auth_failed) takes over, so nothing here.
 export function CredentialExpiryAlert({ expiry }: { expiry: Expiry }) {
   if (!expiry?.warn || expiry.daysLeft <= 0) return null
+  // Same split as SyncHealthAlert: only the urgent state interrupts (role=alert).
+  const urgent = expiry.daysLeft <= 7
   return (
-    <Alert role="status" variant={expiry.daysLeft <= 7 ? 'destructive' : 'default'}>
+    <Alert role={urgent ? 'alert' : 'status'} variant={urgent ? 'destructive' : 'default'}>
       <KeyRoundIcon />
       <AlertTitle>{m.charging_skoda_key_expiring_title()}</AlertTitle>
       <AlertDescription>

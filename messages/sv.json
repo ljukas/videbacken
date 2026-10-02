@@ -699,5 +699,6 @@
       }
     }
   ],
-  "charging_vehicle_key_valid_until": "Nyckeln gäller till {date}"
+  "charging_vehicle_key_expires": "Nyckeln går ut den {date}",
+  "charging_vehicle_key_expired": "Nyckeln gick ut den {date}"
 }
