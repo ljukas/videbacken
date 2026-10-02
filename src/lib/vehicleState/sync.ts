@@ -129,10 +129,14 @@ export async function runSkodaSync(opts: {
       // fails the poll.
       const reminderStart = performance.now()
       try {
-        if (!keyExpiresAt) log.warn('skoda sync: key expiry header missing')
+        if (!keyExpiresAt) log.warn('skoda sync: key expiry header missing or unparseable')
         await integrationSyncService.recordCredentialExpiry(SOURCE, keyExpiresAt)
-        const claim = await integrationSyncService.claimCredentialReminder(SOURCE, now())
-        if (claim) await sendReminder(claim, log)
+        if (signal.aborted) {
+          log.warn('skoda sync: key reminder skipped, run deadline reached')
+        } else {
+          const claim = await integrationSyncService.claimCredentialReminder(SOURCE, now())
+          if (claim) await sendReminder(claim, signal, log)
+        }
       } catch (error) {
         log.warn('skoda sync: key reminder failed', { error })
       } finally {
@@ -199,30 +203,58 @@ export async function runSkodaSync(opts: {
   })
 }
 
-async function sendReminder(claim: CredentialReminderClaim, log: Logger): Promise<void> {
+async function sendReminder(
+  claim: CredentialReminderClaim,
+  signal: AbortSignal,
+  log: Logger,
+): Promise<void> {
   let sent = 0
+  let firstError: unknown
   try {
     const admins = await userService.listActiveAdmins()
     const results = await Promise.allSettled(
       admins.map((admin) =>
-        queue.publish('email_credential_expiry', {
-          to: admin.email,
-          source: SOURCE,
-          expiresAt: claim.expiresAt.toISOString(),
-          days: claim.days,
-          locale: baseLocale,
-        }),
+        // A publish has no timeout of its own; a hung one counts as failed so the
+        // claim is released and the poll still records. An abandoned publish that
+        // lands later may duplicate an email (at-least-once).
+        withDeadline(
+          queue.publish('email_credential_expiry', {
+            to: admin.email,
+            source: SOURCE,
+            expiresAt: claim.expiresAt.toISOString(),
+            days: claim.days,
+            locale: baseLocale,
+          }),
+          signal,
+          () => new Error('reminder publish timed out'),
+        ),
       ),
     )
     sent = results.filter((r) => r.status === 'fulfilled').length
     const failed = results.length - sent
-    if (failed > 0)
-      log.warn('skoda sync: key reminder partly failed', { days: claim.days, sent, failed })
+    firstError = results.find((r) => r.status === 'rejected')?.reason
+    if (failed > 0 && sent > 0)
+      log.warn('skoda sync: key reminder partly failed', {
+        days: claim.days,
+        sent,
+        failed,
+        error: firstError,
+      })
     else if (sent > 0) log.info('skoda sync: key reminder sent', { days: claim.days, admins: sent })
   } finally {
     if (sent === 0) {
-      await integrationSyncService.releaseCredentialReminder(SOURCE, claim)
-      log.warn('skoda sync: key reminder not sent, will retry', { days: claim.days })
+      log.warn('skoda sync: key reminder not sent, will retry', {
+        days: claim.days,
+        error: firstError,
+      })
+      try {
+        await integrationSyncService.releaseCredentialReminder(SOURCE, claim)
+      } catch (releaseError) {
+        log.warn('skoda sync: key reminder release failed', {
+          days: claim.days,
+          error: releaseError,
+        })
+      }
     }
   }
 }
