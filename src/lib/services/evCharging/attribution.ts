@@ -132,7 +132,7 @@ export async function reattributeSessions(
 
 /**
  * An admin's call on who charged. `null` ("Automatiskt") drops the tag back to
- * 'default' and lets the car's log decide again. Unknown, non-uuid or
+ * 'default' and lets the car's exported log or its live state decide again. Unknown, non-uuid or
  * uncounted ids are EV_SESSION_NOT_FOUND, like the session page.
  */
 export async function setSessionVehicle(

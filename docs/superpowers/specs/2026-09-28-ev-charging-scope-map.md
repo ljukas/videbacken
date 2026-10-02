@@ -93,7 +93,9 @@ Ordered cheapest → most automated. Each step stands on its own.
    named guest), editable in a dialog on `/charging` (ADR-0013). A handful of
    sessions per month makes this realistic, and it is the ground truth the
    automation below can be checked against.
-4. **Built 2026-10 (ADR-0022)** — the majority rule replaced "any snapshot inside the window" below. **Automatic via Škoda snapshots.** Poll the public API every ~15 min (4 req/h,
+4. **Built 2026-10 (ADR-0022)** — the majority rule replaced "any snapshot inside the window" below; the GPS
+   geofence replaced `isVehicleInSavedLocation`, and a Vercel cron (`7,22,37,52 * * * *`) replaced the external
+   scheduler. **Automatic via Škoda snapshots.** Poll the public API every ~15 min (4 req/h,
    well under 20/h) and store snapshots. A session is **ours** if a snapshot inside
    its window shows `chargeType=AC` + `state=CHARGING` (or plug connected) +
    `isVehicleInSavedLocation=true`, ideally with power ≈ Zaptec power. Otherwise

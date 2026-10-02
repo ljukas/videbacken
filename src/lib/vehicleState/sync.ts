@@ -116,7 +116,10 @@ export async function runSkodaSync(opts: {
       })
       run.snapshotMs = Math.round(performance.now() - started)
       run.stored = true
-      // A fresh poll can decide sessions the last Zaptec sync already imported.
+      // Recovery path. In steady state the Zaptec sync that imports a finished
+      // session already re-matches it (every poll in its window exists by then);
+      // this catches a Zaptec re-match that failed or hit its deadline, and the
+      // first-deploy backfill. Don't remove either.
       // Health tracks the poll, not attribution: a failure here only warns.
       const rematchStart = performance.now()
       try {
