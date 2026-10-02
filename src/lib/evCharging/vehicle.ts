@@ -8,8 +8,8 @@ export type Vehicle = (typeof VEHICLES)[number]
 /** What a charging view shows: our car, guests, or every counted session. */
 export const VEHICLE_SCOPES = ['ours', 'other', 'all'] as const
 export type VehicleScope = (typeof VEHICLE_SCOPES)[number]
-/** Why a session has its vehicle: nobody decided (counts as ours), the car's log, or an admin. */
-export const VEHICLE_SOURCES = ['default', 'skoda', 'admin'] as const
+/** Why a session has its vehicle: nobody decided (counts as ours), the car's exported log, the car's live state (ADR-0022), or an admin. */
+export const VEHICLE_SOURCES = ['default', 'skoda', 'skoda_live', 'admin'] as const
 export type VehicleSource = (typeof VEHICLE_SOURCES)[number]
 export const VEHICLE_RECORD_SOURCES = ['skoda_export'] as const
 export type VehicleRecordSource = (typeof VEHICLE_RECORD_SOURCES)[number]

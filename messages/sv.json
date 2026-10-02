@@ -595,6 +595,7 @@
   "charging_vehicle_other": "Gäst",
   "charging_vehicle_source_default": "antaget",
   "charging_vehicle_source_skoda": "enligt bilens laddlogg",
+  "charging_vehicle_source_skoda_live": "enligt bilen",
   "charging_vehicle_source_admin": "satt av admin",
   "charging_vehicle_auto": "Automatiskt",
   "charging_vehicle_saved": "Sparat",

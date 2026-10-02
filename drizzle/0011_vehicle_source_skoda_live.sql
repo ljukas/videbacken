@@ -1,0 +1,2 @@
+ALTER TABLE "ev_charge_session" DROP CONSTRAINT "ev_charge_session_vehicle_source_check";--> statement-breakpoint
+ALTER TABLE "ev_charge_session" ADD CONSTRAINT "ev_charge_session_vehicle_source_check" CHECK ("ev_charge_session"."vehicle_source" IN ('default', 'skoda', 'skoda_live', 'admin'));

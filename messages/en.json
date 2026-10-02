@@ -595,6 +595,7 @@
   "charging_vehicle_other": "Guest",
   "charging_vehicle_source_default": "assumed",
   "charging_vehicle_source_skoda": "according to the car's log",
+  "charging_vehicle_source_skoda_live": "according to the car",
   "charging_vehicle_source_admin": "set by an admin",
   "charging_vehicle_auto": "Automatic",
   "charging_vehicle_saved": "Saved",

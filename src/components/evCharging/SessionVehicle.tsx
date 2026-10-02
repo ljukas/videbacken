@@ -19,6 +19,7 @@ const VEHICLE_LABEL: Record<Vehicle, () => string> = {
 const SOURCE_LABEL: Record<VehicleSource, () => string> = {
   default: m.charging_vehicle_source_default,
   skoda: m.charging_vehicle_source_skoda,
+  skoda_live: m.charging_vehicle_source_skoda_live,
   admin: m.charging_vehicle_source_admin,
 }
 // The select's value for "no admin tag": the automatic rule decides.
