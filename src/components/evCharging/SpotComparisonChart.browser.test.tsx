@@ -77,6 +77,31 @@ test('the month average is drawn only for months where the scope has a priced se
   expect(screen.container.querySelectorAll('.recharts-line-dot')).toHaveLength(1)
 })
 
+test('the month-average dots are solid, not dashed like the line', async () => {
+  const priced = (mo: number, avg: number) =>
+    month(mo, { sessions: 1, included: 1, paidSpotOre: 50, avgSpotOre: avg })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <SpotComparisonChart
+        months={Array.from({ length: 12 }, (_, i) =>
+          i === 7 ? priced(8, 83) : i === 8 ? priced(9, 109) : month(i + 1),
+        )}
+      />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-line-dot')).toHaveLength(2),
+  )
+  // The line itself stays dashed…
+  expect(
+    screen.container.querySelector('.recharts-line-curve')?.getAttribute('stroke-dasharray'),
+  ).toBe('5 4')
+  // …but a dot inheriting the dash pattern renders as a broken ring.
+  for (const dot of screen.container.querySelectorAll('.recharts-line-dot')) {
+    expect(dot.getAttribute('stroke-dasharray') ?? 'none').toMatch(/^(none|0)$/)
+  }
+})
+
 test('a near-zero paid price still draws a visible bar', async () => {
   const { screen } = await renderWithProviders(
     <div style={{ width: 720 }}>
