@@ -336,12 +336,21 @@ test('syncNow with source elpris runs only the price sync', async () => {
 
 test('syncNow with source skoda runs only the car poll (not configured under VITEST)', async () => {
   await signIn('admin')
+  const timings: Record<string, number> = {}
   const result = await call(
     evChargingRouter.syncNow,
     { source: 'skoda' },
-    { context: baseContext() },
+    { context: { ...baseContext(), timings } },
   )
   expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
+  for (const key of [
+    'skodaSyncMs',
+    'skodaFetchMs',
+    'skodaSnapshotMs',
+    'skodaReattributeMs',
+    'skodaReminderMs',
+  ])
+    expect(typeof timings[key]).toBe('number')
   const zaptec = await integrationSyncService.getHealth('zaptec', {
     now: new Date(),
     includeAdminDetail: false,
