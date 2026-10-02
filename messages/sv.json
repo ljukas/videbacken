@@ -211,7 +211,7 @@
   "dashboard_empty_description": "Det här är din startpunkt — sidor du lägger till visas här.",
   "dashboard_empty_title": "Inget här än",
   "dashboard_welcome_heading": "Välkommen, {name}",
-  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det märks nya laddningar inte längre automatiskt som vår bil eller gäst. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys), byt SKODA_API_KEY i Vercel (Production) och deploya om — eller be den som sköter Vercel-projektet.",
+  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det räknas nya laddningar som vår bil, även om en gäst laddade. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys), byt SKODA_API_KEY i Vercel (Production) och deploya om — eller be den som sköter Vercel-projektet. Verifiera med Hämta bilens status på Översikt.",
   "email_credential_expiry_button": "Visa laddningsöversikt",
   "email_credential_expiry_fallback": "Om knappen inte fungerar, kopiera och klistra in följande länk i din webbläsare:",
   "email_credential_expiry_footer": "Det här är ett automatiskt meddelande från Videbacken.",

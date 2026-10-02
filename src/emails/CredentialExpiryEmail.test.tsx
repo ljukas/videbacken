@@ -87,3 +87,28 @@ test('the date and the Vercel Production environment are in html and text, both 
     }
   }
 })
+
+test('says what an expired key does and how to verify the new one, in html and text', async () => {
+  const sentences = {
+    sv: [
+      'Efter det räknas nya laddningar som vår bil, även om en gäst laddade.',
+      'Verifiera med Hämta bilens status på Översikt.',
+    ],
+    en: [
+      'After that, new charging sessions count as our car, even if a guest charged.',
+      "Verify with Fetch the car's status on the overview page.",
+    ],
+  } as const
+  for (const locale of ['sv', 'en'] as const) {
+    const { html, text } = await renderCredentialExpiry({
+      source: 'skoda',
+      expiresAt: EXPIRES,
+      days: 30,
+      locale,
+    })
+    // React escapes the apostrophe in the html body.
+    for (const out of [html.replaceAll('&#x27;', "'"), text]) {
+      for (const sentence of sentences[locale]) expect(out).toContain(sentence)
+    }
+  }
+})

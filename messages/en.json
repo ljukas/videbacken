@@ -211,7 +211,7 @@
   "dashboard_empty_description": "This is your starting point — pages you add will show up here.",
   "dashboard_empty_title": "Nothing here yet",
   "dashboard_welcome_heading": "Welcome, {name}",
-  "email_credential_expiry_body": "The API key Videbacken uses to read the car's status expires on {date}. After that, new sessions are no longer marked as our car or a guest automatically. Create a new key in the MyŠkoda app (https://go.skoda.eu/api-keys), replace SKODA_API_KEY in Vercel (Production) and redeploy — or ask whoever manages the Vercel project.",
+  "email_credential_expiry_body": "The API key Videbacken uses to read the car's status expires on {date}. After that, new charging sessions count as our car, even if a guest charged. Create a new key in the MyŠkoda app (https://go.skoda.eu/api-keys), replace SKODA_API_KEY in Vercel (Production) and redeploy — or ask whoever manages the Vercel project. Verify with Fetch the car's status on the overview page.",
   "email_credential_expiry_button": "View charging overview",
   "email_credential_expiry_fallback": "If the button doesn't work, copy and paste the following link into your browser:",
   "email_credential_expiry_footer": "This is an automated message from Videbacken.",
