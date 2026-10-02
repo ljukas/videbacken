@@ -85,7 +85,9 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
           stroke="var(--color-avg)"
           strokeWidth={2}
           strokeDasharray="5 4"
-          dot={{ r: 3 }}
+          // Recharts spreads the line's props onto its dots, so without a
+          // solid override each dot is drawn as a dashed (broken) ring.
+          dot={{ r: 3, strokeDasharray: 'none' }}
           connectNulls={false}
           isAnimationActive={false}
         />
