@@ -237,7 +237,7 @@ Re-open this decision if any of the following land:
 - `src/emails/BrandEmailLayout.tsx` — shared layout every template renders through
 - `src/emails/MagicLinkEmail.tsx` — magic-link template + `renderMagicLink` (adapted from Studio, MIT)
 - `src/emails/MagicLinkEmail.test.tsx` — render-output assertions
-- `src/emails/InviteUserEmail.tsx`, `src/emails/IntegrationSyncAlertEmail.tsx` — later templates (+ `.test.tsx`)
+- `src/emails/InviteUserEmail.tsx`, `src/emails/IntegrationSyncAlertEmail.tsx`, `src/emails/GridTariffAvailableEmail.tsx`, `src/emails/CredentialExpiryEmail.tsx` — later templates (+ `.test.tsx`)
 - `compose.yaml` — `mail` service (`axllent/mailpit:latest`)
 - `package.json` — `mail:up` / `mail:down` / `email:dev` scripts; `mail` added to `dev:up`
 - `.env.example` — `SMTP_HOST`, `SMTP_PORT`, `EMAIL_FROM`, `RESEND_API_KEY`, optional `EMAIL_ADAPTER`

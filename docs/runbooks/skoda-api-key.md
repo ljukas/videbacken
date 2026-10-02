@@ -15,4 +15,4 @@ a warning on /charging from 30 days before, and get emails at 30 and 7 days.
 ## Symptoms
 - "Škoda: Fungerar inte", auth_failed → the key expired or was revoked: renew. (Emails after 3 failed polls.)
 - forbidden → the key doesn't cover the VIN, or `SKODA_VIN` is wrong.
-- rate_limited → over 20 requests/h for the VIN (the poll uses 4 requests/h (8 at worst, with gateway retries); local testing with the same key counts): wait an hour.
+- rate_limited → over 20 requests/h for the VIN: wait an hour. The poll uses 4 requests/h, 8 at worst with gateway retries, and local testing with the same key counts too.
