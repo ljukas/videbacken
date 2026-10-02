@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { renderCredentialExpiry } from '~/emails/CredentialExpiryEmail'
 import { renderGridTariffAvailable } from '~/emails/GridTariffAvailableEmail'
 import { renderIntegrationSyncAlert } from '~/emails/IntegrationSyncAlertEmail'
 import { renderInviteUser } from '~/emails/InviteUserEmail'
@@ -54,5 +55,18 @@ export const resend: EmailEffects = {
     const result = await getClient().emails.send({ from, to, subject, html, text })
     if (result.error) throw new Error(`Resend send failed: ${result.error.message}`)
     logger.info('grid tariff available sent (resend)', { to, messageId: result.data?.id })
+  },
+  async sendCredentialExpiry({ to, source, expiresAt, days, locale }) {
+    const { subject, html, text } = await renderCredentialExpiry({
+      source,
+      expiresAt,
+      days,
+      locale,
+    })
+    const from = process.env.EMAIL_FROM
+    if (!from) throw new Error('EMAIL_FROM is required when RESEND_API_KEY is set')
+    const result = await getClient().emails.send({ from, to, subject, html, text })
+    if (result.error) throw new Error(`Resend send failed: ${result.error.message}`)
+    logger.info('credential expiry sent (resend)', { to, source, days, messageId: result.data?.id })
   },
 }

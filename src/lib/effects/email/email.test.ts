@@ -67,3 +67,15 @@ test('sendGridTariffAvailable resolves without throwing, with or without a compa
     ).resolves.toBeUndefined()
   }
 })
+
+test('sendCredentialExpiry resolves without throwing', async () => {
+  await expect(
+    email.sendCredentialExpiry({
+      to: 'gus@test.videbacken.local',
+      source: 'skoda',
+      expiresAt: '2027-01-15T12:00:00.500Z',
+      days: 30,
+      locale: 'sv',
+    }),
+  ).resolves.toBeUndefined()
+})

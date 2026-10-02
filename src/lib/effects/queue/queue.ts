@@ -1,4 +1,9 @@
-import type { IntegrationErrorCode, IntegrationSource } from '~/lib/integrationHealth'
+import type {
+  CredentialReminderDays,
+  ExpiringCredentialSource,
+  IntegrationErrorCode,
+  IntegrationSource,
+} from '~/lib/integrationHealth'
 import type { Locale } from '~/paraglide/runtime'
 import { lazy } from '../lazy'
 
@@ -19,6 +24,7 @@ export type QueueTopic =
   | 'heic_transcode'
   | 'email_integration_sync_alert'
   | 'email_grid_tariff_available'
+  | 'email_credential_expiry'
 
 /**
  * Per-topic payload shape. The blurhash payload carries a `kind` discriminant
@@ -62,6 +68,16 @@ export type QueuePayloadMap = {
   email_grid_tariff_available: {
     to: string
     companyName: string | null
+    locale: Locale
+  }
+  // Expiring-credential reminder (tier-3): published by the Škoda sync at the
+  // 30/7-day thresholds, one per admin; a redelivery can repeat a send —
+  // acceptable for an admin reminder.
+  email_credential_expiry: {
+    to: string
+    source: ExpiringCredentialSource
+    expiresAt: string // ISO
+    days: CredentialReminderDays
     locale: Locale
   }
 }

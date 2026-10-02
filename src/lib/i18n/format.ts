@@ -33,8 +33,13 @@ export function formatDate(date: Date): string {
   return formatter.format(date)
 }
 
+/** The date-fns locale for an explicit app locale — for code outside a request (emails). */
+export function dateFnsLocaleFor(locale: Locale): DateFnsLocale {
+  return locale === 'sv' ? sv : enGB
+}
+
 export function getDateFnsLocale(): DateFnsLocale {
-  return getLocale() === 'sv' ? sv : enGB
+  return dateFnsLocaleFor(getLocale())
 }
 
 // Short, suffix-less distance from now in the active locale — e.g. "6 dagar" /

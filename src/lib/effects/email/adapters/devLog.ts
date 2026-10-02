@@ -20,4 +20,7 @@ export const devLog: EmailEffects = {
   async sendGridTariffAvailable({ to, companyName }) {
     logger.info('grid tariff available (devLog)', { to, companyName })
   },
+  async sendCredentialExpiry({ to, source, expiresAt, days }) {
+    logger.info('credential expiry (devLog)', { to, source, expiresAt, days })
+  },
 }

@@ -94,6 +94,7 @@ export type QueueTopic =
   | 'heic_transcode'
   | 'email_integration_sync_alert'
   | 'email_grid_tariff_available'
+  | 'email_credential_expiry'
 
 export type QueuePayloadMap = {
   blurhash: { fileId: string; kind: 'avatar'; userId: string }
@@ -101,6 +102,7 @@ export type QueuePayloadMap = {
   heic_transcode: { fileId: string; kind: 'avatar'; userId: string }
   email_integration_sync_alert: { to: string; source: IntegrationSource; /* … */ } // ADR-0019
   email_grid_tariff_available: { to: string; companyName: string | null; locale: Locale } // ADR-0019 (watcher)
+  email_credential_expiry: { to: string; source: ExpiringCredentialSource; expiresAt: string; days: 30 | 7; locale: Locale } // ADR-0022
 }
 
 export interface QueueEffects {
@@ -185,6 +187,7 @@ nitro({
         { topic: 'heic_transcode' },
         { topic: 'email_integration_sync_alert' },
         { topic: 'email_grid_tariff_available' },
+        { topic: 'email_credential_expiry' },
       ],
     },
   },
@@ -325,6 +328,7 @@ After this ADR's pattern lands or is touched:
 - `src/lib/queue/handlers/heicTranscode.ts` — shared consumer handler (`heic_transcode` topic). Producer is `confirmAvatarUpload` (`src/lib/orpc/procedures/image.ts`).
 - `src/lib/queue/handlers/emailIntegrationSyncAlert.ts` — shared consumer handler (`email_integration_sync_alert` topic; ADR-0019). Producer is `runPulledSync` (`src/lib/integrations/runPulledSync.ts`).
 - `src/lib/queue/handlers/emailGridTariffAvailable.ts` — shared consumer handler (`email_grid_tariff_available` topic; ADR-0019's watcher amendment). Producer is the monthly catalogue check (`src/lib/gridTariff/catalogueCheck.ts`).
+- `src/lib/queue/handlers/emailCredentialExpiry.ts` — shared consumer handler (`email_credential_expiry` topic; ADR-0022). Producer is the Škoda sync's key-expiry reminder (30/7 days before expiry, one message per admin).
 - `src/lib/queue/handlers/emailUserInvited.ts` — shared consumer handler (`email_user_invited` topic; ADR-0017). Producer is the `invite` / `resendInvite` oRPC procedures (`src/lib/orpc/procedures/user.ts`).
 - `src/lib/queue/dispatch.ts` / `src/lib/queue/index.ts` — the dispatcher (handler contract, outcome log line, delivery cap) and the handler table both consumers use.
 - `server/plugins/queueConsumer.ts` — Vercel Queues consumer (Nitro `vercel:queue` hook).

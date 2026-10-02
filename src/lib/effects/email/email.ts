@@ -1,4 +1,9 @@
-import type { IntegrationErrorCode, IntegrationSource } from '~/lib/integrationHealth'
+import type {
+  CredentialReminderDays,
+  ExpiringCredentialSource,
+  IntegrationErrorCode,
+  IntegrationSource,
+} from '~/lib/integrationHealth'
 import type { Locale } from '~/paraglide/runtime'
 import { lazy } from '../lazy'
 
@@ -52,6 +57,15 @@ export interface EmailEffects {
     companyName: string | null
     locale: Locale
   }): Promise<void>
+  // Expiring-credential reminder (tier-3): `email_credential_expiry` queue topic,
+  // one message per admin at the 30- and 7-day thresholds (ADR-0022).
+  sendCredentialExpiry(input: {
+    to: string
+    source: ExpiringCredentialSource
+    expiresAt: string
+    days: CredentialReminderDays
+    locale: Locale
+  }): Promise<void>
 }
 
 const getAdapter = lazy(async (): Promise<EmailEffects> => {
@@ -87,5 +101,9 @@ export const email: EmailEffects = {
   async sendGridTariffAvailable(input) {
     const adapter = await getAdapter()
     return adapter.sendGridTariffAvailable(input)
+  },
+  async sendCredentialExpiry(input) {
+    const adapter = await getAdapter()
+    return adapter.sendCredentialExpiry(input)
   },
 }

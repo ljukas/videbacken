@@ -33,6 +33,7 @@ function setup(blurhash: (ctx: { log: { info(msg: string): void } }) => Promise<
     heic_transcode: { handle: async () => {} },
     email_integration_sync_alert: { handle: async () => {} },
     email_grid_tariff_available: { handle: async () => {} },
+    email_credential_expiry: { handle: async () => {} },
   }
   let t = 0
   const dispatch = createQueueDispatcher(table, {
