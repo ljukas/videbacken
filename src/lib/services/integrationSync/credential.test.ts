@@ -58,9 +58,11 @@ test('credentialExpiryOf: the expiry day itself is 0 days left until the instant
 })
 
 test('credentialExpiryOf counts calendar days across the DST change', () => {
-  // Sweden springs forward on 2027-03-28: 47 hours, but two calendar days.
+  // Sweden springs forward on 2027-03-28. 23:59 CET on the 27th to 00:30 CEST on
+  // the 29th is two calendar days; a fixed +01:00 offset, UTC days or 24 h
+  // blocks all give 1.
   expect(
-    credentialExpiryOf(new Date('2027-03-29T10:00:00Z'), new Date('2027-03-27T10:00:00Z')),
+    credentialExpiryOf(new Date('2027-03-28T22:30:00Z'), new Date('2027-03-27T22:59:00Z')),
   ).toMatchObject({ daysLeft: 2 })
 })
 
