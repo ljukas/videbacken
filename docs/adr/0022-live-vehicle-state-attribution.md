@@ -44,7 +44,8 @@ drove 4 km; only its position (`IN_MOTION`, then parked elsewhere) told the trut
 5. **Snapshots carry SoC and odometer** for Phase 6; never GPS, address or plate.
 6. **Key expiry is tracked generically** on `integration_sync` (`credential_expires_at`,
    `credential_reminder_days`), with an admin warning from 30 days and emails at 30 and 7 days; a reminder nobody
-   received is released and retried.
+   received is released and retried. Partial delivery is final: a threshold is claimed once and delivery is
+   at-least-once, so admins whose publish failed don't get that threshold's email (the warn records it).
 7. **Alerts wait for a streak**: a per-source `ALERT_AFTER_FAILURES` (Škoda 3) so a single 503/429 at a 15-min
    cadence doesn't email every admin. The cron runs at :07/:22/:37/:52, off Zaptec's hourly :00, so the two re-matches
    don't run concurrently.
