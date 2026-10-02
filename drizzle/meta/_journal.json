@@ -85,6 +85,13 @@
       "when": 1790954596448,
       "tag": "0011_vehicle_source_skoda_live",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790957018571,
+      "tag": "0012_integration_sync_credential_expiry",
+      "breakpoints": true
     }
   ]
 }

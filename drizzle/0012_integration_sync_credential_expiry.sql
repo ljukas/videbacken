@@ -1,0 +1,4 @@
+ALTER TABLE "integration_sync" ADD COLUMN "credential_expires_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD COLUMN "credential_reminder_days" smallint;--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD CONSTRAINT "integration_sync_credential_reminder_days_check" CHECK ("integration_sync"."credential_reminder_days" IS NULL OR "integration_sync"."credential_reminder_days" IN (30, 7));--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD CONSTRAINT "integration_sync_credential_reminder_expiry_check" CHECK ("integration_sync"."credential_reminder_days" IS NULL OR "integration_sync"."credential_expires_at" IS NOT NULL);

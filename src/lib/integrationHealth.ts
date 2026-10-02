@@ -25,3 +25,12 @@ export type SyncRunOutcome = (typeof SYNC_RUN_OUTCOMES)[number]
 
 export type HealthTransition = 'none' | 'started_failing' | 'recovered'
 export type HealthState = 'never_synced' | 'not_configured' | 'ok' | 'stale' | 'failing'
+
+/** Sources whose credential expires and is renewed by hand (ADR-0022). */
+export const EXPIRING_CREDENTIAL_SOURCES = ['skoda'] as const
+export type ExpiringCredentialSource = (typeof EXPIRING_CREDENTIAL_SOURCES)[number]
+/** Admins see a warning from this many days before expiry (while the source is healthy). */
+export const CREDENTIAL_WARN_DAYS = 30
+/** Reminder emails, largest first; each sent once per expiry date. */
+export const CREDENTIAL_REMINDER_DAYS = [30, 7] as const
+export type CredentialReminderDays = (typeof CREDENTIAL_REMINDER_DAYS)[number]
