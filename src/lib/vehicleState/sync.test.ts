@@ -317,4 +317,58 @@ test('a failed re-match is a warning and the poll still counts', async () => {
   )
   expect(result).toMatchObject({ outcome: 'ok', stored: true, reattributeChanged: 0 })
   expect(entries().some((e) => e.msg === 'skoda sync: vehicle re-match failed')).toBe(true)
+  const [row] = await runRows()
+  expect(row).toMatchObject({ outcome: 'ok', upserted: 1 })
+  expect(typeof row?.timings.reattributeMs).toBe('number')
+})
+
+test('a re-match that never settles is cut off by the run deadline; the poll still counts', async () => {
+  vi.spyOn(evChargingService, 'reattributeSessions').mockReturnValueOnce(new Promise(() => {}))
+  const { log, entries } = capturingLogger()
+  const started = performance.now()
+  const result = await runSkodaSync({
+    trigger: 'cron',
+    now: () => NOW,
+    deadlineMs: 300,
+    deps: { skoda: fakeSkoda(async () => reading()), homePoint: HOME, log },
+  })
+  expect(performance.now() - started).toBeLessThan(5_000)
+  expect(result).toMatchObject({ outcome: 'ok', stored: true, reattributeChanged: 0 })
+  expect(entries().find((e) => e.msg === 'skoda sync: vehicle re-match failed')).toMatchObject({
+    level: 40,
+  })
+  expect(await snapshots()).toHaveLength(1)
+  const [row] = await runRows()
+  expect(row).toMatchObject({ outcome: 'ok', upserted: 1 })
+  expect(typeof row?.timings.reattributeMs).toBe('number')
+  // The wait until the deadline cut it off is timed, not left at 0.
+  expect(row?.timings.reattributeMs).toBeGreaterThanOrEqual(100)
+  expect(row?.timings.reattributeMs).toBe(result.reattributeMs)
+})
+
+test('the re-match is skipped when the snapshot write outlasted the run deadline', async () => {
+  // recordSnapshot is not raced against the deadline: a slow insert still
+  // lands and the poll counts (outcome ok), but the re-match is not started.
+  const recordSnapshot = vehicleStateService.recordSnapshot
+  vi.spyOn(vehicleStateService, 'recordSnapshot').mockImplementationOnce(async (input) => {
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    return recordSnapshot(input)
+  })
+  const rematch = vi.spyOn(evChargingService, 'reattributeSessions')
+  const { log, entries } = capturingLogger()
+  const result = await runSkodaSync({
+    trigger: 'cron',
+    now: () => NOW,
+    deadlineMs: 300,
+    deps: { skoda: fakeSkoda(async () => reading()), homePoint: HOME, log },
+  })
+  expect(rematch).not.toHaveBeenCalled()
+  expect(result).toMatchObject({ outcome: 'ok', stored: true, reattributeChanged: 0 })
+  expect(
+    entries().find((e) => e.msg === 'skoda sync: vehicle re-match skipped, run deadline reached'),
+  ).toMatchObject({ level: 40 })
+  expect(await snapshots()).toHaveLength(1)
+  const [row] = await runRows()
+  expect(row).toMatchObject({ outcome: 'ok', upserted: 1 })
+  expect(typeof row?.timings.reattributeMs).toBe('number')
 })

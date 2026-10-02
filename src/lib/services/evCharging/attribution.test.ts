@@ -510,3 +510,88 @@ test('live: setSessionVehicle(null) re-derives from the live state', async () =>
     vehicleSource: 'skoda_live',
   })
 })
+
+test('live: a 40-min session is decided, a 39-min one is not', async () => {
+  const forty = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T09:40:00Z')
+  const thirtyNine = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T09:39:00Z')
+  await pollEvery('2026-10-02T08:50:00Z', '2026-10-02T09:50:00Z', { plugState: 'DISCONNECTED' }, 5)
+  await reattributeSessions()
+  expect(await attribution(forty)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+  expect(await attribution(thirtyNine)).toMatchObject({ vehicle: 'ours', source: 'default' })
+})
+
+test('live: a poll holds for at most 20 min, with or without a successor', async () => {
+  // Window 09:10–10:32 (82 min, half 41). 09:15 is followed 30 min later, so
+  // the cap ends it at 09:35; 09:45 has no successor (lead() falls back to
+  // +20 min) and ends at 10:05. Known 40 < 41 → unchanged; a 21-min cap → 41.
+  const capped = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T10:42:00Z')
+  await insertSnapshot({ polledAt: at('2026-10-02T09:15:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:45:00Z'), plugState: 'DISCONNECTED' })
+  // Window 09:10–09:50 (40 min, half 20): one trailing poll holds the full
+  // 20 min and decides; a shorter cap or fallback would leave it unchanged.
+  const full = await liveSession('2026-10-03T09:00:00Z', '2026-10-03T10:00:00Z')
+  await insertSnapshot({ polledAt: at('2026-10-03T09:10:00Z'), plugState: 'DISCONNECTED' })
+  await reattributeSessions()
+  expect(await attribution(capped)).toMatchObject({ vehicle: 'ours', source: 'default' })
+  expect(await attribution(full)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+})
+
+test('live: exactly half the window known decides; a minute less does not', async () => {
+  // Window 09:10–10:10 (60 min, half 30). Two not-here polls, then an unknown
+  // one ending the second: 15 + 15 = 30 known vs 15 + 14 = 29.
+  const half = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T10:20:00Z')
+  await insertSnapshot({ polledAt: at('2026-10-02T09:10:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:25:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:40:00Z'), plugState: null, atHome: null })
+  const short = await liveSession('2026-10-03T09:00:00Z', '2026-10-03T10:20:00Z')
+  await insertSnapshot({ polledAt: at('2026-10-03T09:10:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-03T09:25:00Z'), plugState: 'DISCONNECTED' })
+  await insertSnapshot({ polledAt: at('2026-10-03T09:39:00Z'), plugState: null, atHome: null })
+  await reattributeSessions()
+  expect(await attribution(half)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+  expect(await attribution(short)).toMatchObject({ vehicle: 'ours', source: 'default' })
+})
+
+test('live: the export decides from its first start to its last end inclusive, live outside', async () => {
+  await seedCoverage() // from 2026-02-01T00:00 (first start) to 2026-03-31T01:00 (last end)
+  // Around the start the polls say guest, so the log (ours: it overlaps the
+  // first record) and the live state disagree.
+  const before = await liveSession('2026-01-31T23:00:00Z', '2026-02-01T00:30:00Z')
+  const atStart = await liveSession('2026-02-01T00:00:00Z', '2026-02-01T01:30:00Z')
+  await pollEvery('2026-01-31T22:45:00Z', '2026-02-01T01:45:00Z', { plugState: 'DISCONNECTED' })
+  // Around the end the polls say ours; the log says other (no record overlaps).
+  const atEnd = await liveSession('2026-03-31T01:00:00Z', '2026-03-31T02:30:00Z')
+  const after = await liveSession('2026-03-31T01:01:00Z', '2026-03-31T02:31:00Z')
+  await pollEvery('2026-03-31T00:45:00Z', '2026-03-31T02:45:00Z')
+  await reattributeSessions()
+  expect(await attribution(before)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+  expect(await attribution(atStart)).toMatchObject({ vehicle: 'ours', source: 'skoda' })
+  expect(await attribution(atEnd)).toMatchObject({ vehicle: 'other', source: 'skoda' })
+  expect(await attribution(after)).toMatchObject({ vehicle: 'ours', source: 'skoda_live' })
+})
+
+test('live: a poll up to 20 min before the window still reaches into it', async () => {
+  // Window 09:10–09:30 (20 min, half 10). Here 08:55–09:15 overlaps 5 min,
+  // not here 09:25–09:45 overlaps 5: known 10, a tie → ours.
+  const id = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T09:40:00Z')
+  await insertSnapshot({ polledAt: at('2026-10-02T08:55:00Z') })
+  await insertSnapshot({ polledAt: at('2026-10-02T09:25:00Z'), plugState: 'DISCONNECTED' })
+  await reattributeSessions()
+  expect(await attribution(id)).toMatchObject({ vehicle: 'ours', source: 'skoda_live' })
+})
+
+test('live: away with no plug state, or unplugged with no position, is not here', async () => {
+  const away = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z')
+  await pollEvery('2026-10-02T08:45:00Z', '2026-10-02T12:15:00Z', {
+    plugState: null,
+    atHome: false,
+  })
+  const unplugged = await liveSession('2026-10-03T09:00:00Z', '2026-10-03T12:00:00Z')
+  await pollEvery('2026-10-03T08:45:00Z', '2026-10-03T12:15:00Z', {
+    plugState: 'DISCONNECTED',
+    atHome: null,
+  })
+  await reattributeSessions()
+  expect(await attribution(away)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+  expect(await attribution(unplugged)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+})
