@@ -1,6 +1,6 @@
 import { tz } from '@date-fns/tz'
 import { differenceInCalendarDays } from 'date-fns'
-import { and, eq, gt, isNull, ne, or } from 'drizzle-orm'
+import { and, eq, gt, gte, isNull, lte, or } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { integrationSync } from '~/lib/db/schema'
 import {
@@ -39,16 +39,23 @@ export function credentialExpiryOf(expiresAt: Date | null, now: Date): Credentia
   }
 }
 
+/** A reported expiry closer than this to the stored one is drift, not a renewal. */
+const EXPIRY_DRIFT_MS = 86_400_000
+
 /**
- * Stores the expiry a successful call reported. A changed date (a renewed key)
- * resets the reminder state; null (header missing) keeps what is stored — the
- * caller warns. Expects the source's row to exist (the sync's lease made it).
+ * Stores the expiry a successful call reported. A date that moved by a day or
+ * more (a renewed key moves it by months) replaces the stored one and resets
+ * the reminder state; a move under 24 h is drift and keeps both the stored
+ * date and the reminders sent. Null (header missing) keeps what is stored —
+ * the caller warns. Expects the source's row to exist (the sync's lease made it).
  */
 export async function recordCredentialExpiry(
   source: IntegrationSource,
   expiresAt: Date | null,
 ): Promise<void> {
   if (!expiresAt) return
+  const lower = new Date(expiresAt.getTime() - EXPIRY_DRIFT_MS)
+  const upper = new Date(expiresAt.getTime() + EXPIRY_DRIFT_MS)
   await db
     .update(integrationSync)
     .set({ credentialExpiresAt: expiresAt, credentialReminderDays: null })
@@ -57,7 +64,8 @@ export async function recordCredentialExpiry(
         eq(integrationSync.source, source),
         or(
           isNull(integrationSync.credentialExpiresAt),
-          ne(integrationSync.credentialExpiresAt, expiresAt),
+          lte(integrationSync.credentialExpiresAt, lower),
+          gte(integrationSync.credentialExpiresAt, upper),
         ),
       ),
     )

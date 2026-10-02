@@ -44,6 +44,11 @@ const SOURCE = 'skoda'
  * which is no longer than the 5-min lease (ADR-0019), so a slow run still records.
  */
 const RUN_DEADLINE_MS = 60_000
+/**
+ * Bound on each reminder publish. A publish has no timeout of its own; without
+ * this a hung queue would wait out the whole run deadline and skip the re-match.
+ */
+const REMINDER_PUBLISH_TIMEOUT_MS = 5_000
 
 // Warn once per instance, not every 15 min; the run line carries `geofence`.
 let warnedNoHomePoint = false
@@ -214,9 +219,10 @@ async function sendReminder(
     const admins = await userService.listActiveAdmins()
     const results = await Promise.allSettled(
       admins.map((admin) =>
-        // A publish has no timeout of its own; a hung one counts as failed so the
-        // claim is released and the poll still records. An abandoned publish that
-        // lands later may duplicate an email (at-least-once).
+        // Each publish is bounded on its own (and by the run deadline); a hung
+        // one counts as failed so the claim is released and the re-match still
+        // runs. An abandoned publish that lands later may duplicate an email
+        // (at-least-once).
         withDeadline(
           queue.publish('email_credential_expiry', {
             to: admin.email,
@@ -225,7 +231,7 @@ async function sendReminder(
             days: claim.days,
             locale: baseLocale,
           }),
-          signal,
+          AbortSignal.any([signal, AbortSignal.timeout(REMINDER_PUBLISH_TIMEOUT_MS)]),
           () => new Error('reminder publish timed out'),
         ),
       ),
@@ -243,16 +249,19 @@ async function sendReminder(
     else if (sent > 0) log.info('skoda sync: key reminder sent', { days: claim.days, admins: sent })
   } finally {
     if (sent === 0) {
-      log.warn('skoda sync: key reminder not sent, will retry', {
-        days: claim.days,
-        error: firstError,
-      })
+      // 'will retry' only once the claim is actually released; a failed
+      // release leaves it claimed, so the next poll won't retry.
       try {
         await integrationSyncService.releaseCredentialReminder(SOURCE, claim)
+        log.warn('skoda sync: key reminder not sent, will retry', {
+          days: claim.days,
+          error: firstError,
+        })
       } catch (releaseError) {
         log.warn('skoda sync: key reminder release failed', {
           days: claim.days,
           error: releaseError,
+          sendError: firstError,
         })
       }
     }

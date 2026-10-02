@@ -243,3 +243,20 @@ test('a reminder falls due at Stockholm midnight, not a full 24 h multiple befor
     days: 30,
   })
 })
+
+test('an expiry drift under a day is ignored; a renewal months later resets', async () => {
+  await seed()
+  await recordCredentialExpiry('skoda', EXPIRES)
+  await claimCredentialReminder('skoda', daysBefore(30))
+  await recordCredentialExpiry('skoda', new Date(EXPIRES.getTime() + 1000))
+  // The stored date and the sent 30-day reminder are both kept.
+  expect(await claimCredentialReminder('skoda', daysBefore(29))).toBeNull()
+  const [row] = await db.select().from(integrationSync).where(eq(integrationSync.source, 'skoda'))
+  expect(row?.credentialExpiresAt).toEqual(EXPIRES)
+  expect(row?.credentialReminderDays).toBe(30)
+  const renewed = new Date(EXPIRES.getTime() + 60 * 86_400_000)
+  await recordCredentialExpiry('skoda', renewed)
+  expect(
+    await claimCredentialReminder('skoda', new Date(renewed.getTime() - 30 * 86_400_000)),
+  ).toMatchObject({ days: 30, previous: null, expiresAt: renewed })
+})

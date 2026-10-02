@@ -440,23 +440,39 @@ test('a missing expiry header keeps the stored date and warns', async () => {
   expect(health.adminDetail?.credentialExpiry?.expiresAt).toEqual(EXPIRES)
 })
 
-test('a hung publish does not hold the poll: ok, stored, claim released, next run sends', async () => {
+test('a hung publish is cut off by its own bound: ok, claim released, re-match still runs, next run sends', async () => {
   await seedAdmin()
   publish.mockReturnValueOnce(new Promise(() => {}))
+  // Shrink only the per-publish bound (5 s) so the test needn't wait it out;
+  // the run keeps its default 60 s deadline, so only the bound can end the wait.
+  const timeout = AbortSignal.timeout.bind(AbortSignal)
+  const bound = vi
+    .spyOn(AbortSignal, 'timeout')
+    .mockImplementation((ms) => timeout(ms === 5_000 ? 20 : ms))
+  const rematch = vi.spyOn(evChargingService, 'reattributeSessions')
   const { log, entries } = capturingLogger()
+  const started = performance.now()
   const result = await runSkodaSync({
     trigger: 'cron',
     now: () => before(7),
-    deadlineMs: 300,
     deps: { skoda: withExpiry(), homePoint: HOME, log },
   })
+  expect(performance.now() - started).toBeLessThan(5_000)
+  expect(bound).toHaveBeenCalledWith(5_000)
   expect(result).toMatchObject({ outcome: 'ok', stored: true })
   expect(typeof result.reminderMs).toBe('number')
   expect(entries().some((e) => e.msg === 'skoda sync: key reminder not sent, will retry')).toBe(
     true,
   )
+  expect(rematch).toHaveBeenCalledOnce()
+  expect(
+    entries().some((e) => e.msg === 'skoda sync: vehicle re-match skipped, run deadline reached'),
+  ).toBe(false)
   await run(withExpiry(), { now: before(6) })
+  expect(reminders()).toHaveLength(2)
   expect(reminders().at(-1)?.[1]).toMatchObject({ days: 7 })
+  await run(withExpiry(), { now: before(5) })
+  expect(reminders()).toHaveLength(2) // sent once: nothing re-sent
 })
 
 test('partial delivery is final: warns with counts, no retry, no second send', async () => {
@@ -500,8 +516,9 @@ test('a failing release is a warning; the poll still records', async () => {
   const { log, entries } = capturingLogger()
   const result = await run(withExpiry(), { now: before(7), log })
   expect(result).toMatchObject({ outcome: 'ok', stored: true })
+  // 'will retry' only when the release worked: a stuck claim won't be retried.
   expect(entries().some((e) => e.msg === 'skoda sync: key reminder not sent, will retry')).toBe(
-    true,
+    false,
   )
   expect(entries().some((e) => e.msg === 'skoda sync: key reminder release failed')).toBe(true)
   expect(await snapshots()).toHaveLength(1)
