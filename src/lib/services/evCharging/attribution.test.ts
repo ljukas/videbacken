@@ -595,3 +595,14 @@ test('live: away with no plug state, or unplugged with no position, is not here'
   expect(await attribution(away)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
   expect(await attribution(unplugged)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
 })
+
+test('live: a decided row keeps its answer when the polls are gone or thin', async () => {
+  const decided = { vehicle: 'other', vehicleSource: 'skoda_live' } as const
+  const noPolls = await liveSession('2026-10-02T09:00:00Z', '2026-10-02T12:00:00Z', decided)
+  const thin = await liveSession('2026-10-03T09:00:00Z', '2026-10-03T12:00:00Z', decided)
+  // Plugged in at home, but only over the first third of the session: undecidable.
+  await pollEvery('2026-10-03T09:00:00Z', '2026-10-03T10:00:00Z')
+  expect(await reattributeSessions()).toEqual({ ours: 0, other: 0, changed: 0 })
+  expect(await attribution(noPolls)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+  expect(await attribution(thin)).toMatchObject({ vehicle: 'other', source: 'skoda_live' })
+})
