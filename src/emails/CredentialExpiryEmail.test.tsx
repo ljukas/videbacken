@@ -51,3 +51,39 @@ test('says how to renew, in html and text, both locales', async () => {
     }
   }
 })
+
+test('the 7-day reminder has its own subject in English too', async () => {
+  const { subject } = await renderCredentialExpiry({
+    source: 'skoda',
+    expiresAt: EXPIRES,
+    days: 7,
+    locale: 'en',
+  })
+  expect(subject).toBe('Final reminder: the Škoda key expires on 15 January 2027')
+})
+
+test('a summer (CEST) expiry late on the 30th is 1 July in Stockholm', async () => {
+  const expiresAt = '2027-06-30T22:30:00Z'
+  const [sv, en] = await Promise.all([
+    renderCredentialExpiry({ source: 'skoda', expiresAt, days: 30, locale: 'sv' }),
+    renderCredentialExpiry({ source: 'skoda', expiresAt, days: 30, locale: 'en' }),
+  ])
+  expect(sv.subject).toBe('Škoda-nyckeln går ut den 1 juli 2027')
+  expect(en.subject).toBe('The Škoda key expires on 1 July 2027')
+})
+
+test('the date and the Vercel Production environment are in html and text, both locales', async () => {
+  const dates = { sv: '15 januari 2027', en: '15 January 2027' } as const
+  for (const locale of ['sv', 'en'] as const) {
+    const { html, text } = await renderCredentialExpiry({
+      source: 'skoda',
+      expiresAt: EXPIRES,
+      days: 30,
+      locale,
+    })
+    for (const out of [html, text]) {
+      expect(out).toContain(dates[locale])
+      expect(out).toContain('Production')
+    }
+  }
+})

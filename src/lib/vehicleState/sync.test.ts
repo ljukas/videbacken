@@ -400,6 +400,19 @@ test('stores the key expiry and emails every admin once at 30 days, again at 7',
   expect(health.adminDetail?.credentialExpiry).toMatchObject({ daysLeft: 7, warn: true })
 })
 
+test('with two active admins each gets exactly one reminder', async () => {
+  await seedAdmin()
+  await db.insert(user).values({ name: 'B', email: 'b@example.com', role: 'admin' })
+  await run(withExpiry(), { now: before(30) })
+  await run(withExpiry(), { now: before(29) })
+  expect(reminders()).toHaveLength(2)
+  expect(
+    reminders()
+      .map(([, payload]) => (payload as { to: string }).to)
+      .sort(),
+  ).toEqual(['a@example.com', 'b@example.com'])
+})
+
 test('no reminder with plenty of time left', async () => {
   await seedAdmin()
   await run(withExpiry(), { now: before(180) })
@@ -415,7 +428,10 @@ test('a reminder nobody could be sent is retried on the next poll', async () => 
     true,
   )
   await run(withExpiry(), { now: before(6) })
+  expect(reminders()).toHaveLength(2)
   expect(reminders().at(-1)?.[1]).toMatchObject({ days: 7 })
+  await run(withExpiry(), { now: before(5) })
+  expect(reminders()).toHaveLength(2) // sent once: nothing re-sent
 })
 
 test('with no active admins the reminder is not used up', async () => {
