@@ -1,4 +1,7 @@
+import { eq } from 'drizzle-orm'
 import { expect, test } from 'vitest'
+import { db } from '~/lib/db'
+import { integrationSync } from '~/lib/db/schema'
 import { setupDatabase } from '~test/setup'
 import {
   claimCredentialReminder,
@@ -13,6 +16,11 @@ setupDatabase()
 const EXPIRES = new Date('2027-01-15T12:00:00.500Z')
 const daysBefore = (d: number) => new Date(EXPIRES.getTime() - d * 86_400_000)
 const seed = () => beginAttempt('skoda', { now: daysBefore(200) }) // creates the row
+
+test('credentialExpiryOf rounds fractional days up', () => {
+  expect(credentialExpiryOf(EXPIRES, daysBefore(10.2))).toMatchObject({ daysLeft: 11 })
+  expect(credentialExpiryOf(EXPIRES, daysBefore(30.4))).toMatchObject({ daysLeft: 31, warn: false })
+})
 
 test('credentialExpiryOf: days left rounded up, warning from 30 days', () => {
   expect(credentialExpiryOf(null, daysBefore(10))).toBeNull()
@@ -58,14 +66,16 @@ test('first seen at 5 days left claims only the 7-day reminder', async () => {
   expect(await claimCredentialReminder('skoda', daysBefore(4))).toBeNull()
 })
 
-test('two concurrent claims claim once', async () => {
+test('two concurrent claims claim once (pins the conditional guard; the test pool serializes them)', async () => {
   await seed()
   await recordCredentialExpiry('skoda', EXPIRES)
   const claims = await Promise.all([
     claimCredentialReminder('skoda', daysBefore(29)),
     claimCredentialReminder('skoda', daysBefore(29)),
   ])
-  expect(claims.filter((c) => c !== null)).toHaveLength(1)
+  const won = claims.filter((c) => c !== null)
+  expect(won).toHaveLength(1)
+  expect(won[0]?.previous).toBeNull()
 })
 
 test('a released claim is claimed again on the next poll', async () => {
@@ -111,4 +121,82 @@ test('a null expiry (header missing) keeps the stored one; only admins see it', 
 test('a source without a credential expiry reports null', async () => {
   const health = await getHealth('zaptec', { now: daysBefore(10), includeAdminDetail: true })
   expect(health.adminDetail?.credentialExpiry).toBeNull()
+})
+
+test('releasing the 7-day claim restores 30 as the stored state', async () => {
+  await seed()
+  await recordCredentialExpiry('skoda', EXPIRES)
+  await claimCredentialReminder('skoda', daysBefore(30))
+  const claim = await claimCredentialReminder('skoda', daysBefore(7))
+  if (!claim) throw new Error('expected a claim')
+  await releaseCredentialReminder('skoda', claim)
+  expect(await claimCredentialReminder('skoda', daysBefore(20))).toBeNull()
+  expect(await claimCredentialReminder('skoda', daysBefore(6))).toEqual({
+    days: 7,
+    previous: 30,
+    expiresAt: EXPIRES,
+  })
+})
+
+test('releasing a stale claim is a no-op when a different claim is stored', async () => {
+  await seed()
+  await recordCredentialExpiry('skoda', EXPIRES)
+  const stale = await claimCredentialReminder('skoda', daysBefore(30))
+  if (!stale) throw new Error('expected a claim')
+  await claimCredentialReminder('skoda', daysBefore(7))
+  await releaseCredentialReminder('skoda', stale)
+  expect(await claimCredentialReminder('skoda', daysBefore(1))).toBeNull()
+})
+
+test('releasing an old-expiry claim after a renewal leaves the renewed state alone', async () => {
+  await seed()
+  await recordCredentialExpiry('skoda', EXPIRES)
+  const old = await claimCredentialReminder('skoda', daysBefore(30))
+  if (!old) throw new Error('expected a claim')
+  const renewed = new Date('2027-07-14T10:00:00Z')
+  await recordCredentialExpiry('skoda', renewed)
+  const at = new Date(renewed.getTime() - 30 * 86_400_000)
+  expect(await claimCredentialReminder('skoda', at)).toMatchObject({ days: 30 })
+  await releaseCredentialReminder('skoda', old)
+  expect(await claimCredentialReminder('skoda', at)).toBeNull()
+})
+
+test('no row, or no recorded expiry, claims nothing and never throws', async () => {
+  expect(await claimCredentialReminder('skoda', daysBefore(5))).toBeNull()
+  await recordCredentialExpiry('skoda', EXPIRES)
+  const health = await getHealth('skoda', { now: daysBefore(10), includeAdminDetail: true })
+  expect(health.adminDetail?.credentialExpiry).toBeNull()
+  await seed()
+  expect(await claimCredentialReminder('skoda', daysBefore(5))).toBeNull()
+})
+
+test('credential state is scoped to its source', async () => {
+  await seed()
+  await beginAttempt('zaptec', { now: daysBefore(200) })
+  await recordCredentialExpiry('skoda', EXPIRES)
+  const claim = await claimCredentialReminder('skoda', daysBefore(7))
+  if (!claim) throw new Error('expected a claim')
+  await releaseCredentialReminder('skoda', claim)
+  await claimCredentialReminder('skoda', daysBefore(7))
+  const rows = await db.select().from(integrationSync).where(eq(integrationSync.source, 'zaptec'))
+  expect(rows[0]?.credentialExpiresAt).toBeNull()
+  expect(rows[0]?.credentialReminderDays).toBeNull()
+})
+
+test('an expired key claims the 7-day reminder once', async () => {
+  await seed()
+  await recordCredentialExpiry('skoda', EXPIRES)
+  expect(await claimCredentialReminder('skoda', daysBefore(-1))).toMatchObject({ days: 7 })
+  expect(await claimCredentialReminder('skoda', daysBefore(-2))).toBeNull()
+})
+
+test('a renewal to an earlier date after the 7-day reminder resets and allows a new claim', async () => {
+  await seed()
+  await recordCredentialExpiry('skoda', EXPIRES)
+  await claimCredentialReminder('skoda', daysBefore(7))
+  const earlier = daysBefore(10)
+  await recordCredentialExpiry('skoda', earlier)
+  expect(
+    await claimCredentialReminder('skoda', new Date(earlier.getTime() - 5 * 86_400_000)),
+  ).toMatchObject({ days: 7, previous: null, expiresAt: earlier })
 })
