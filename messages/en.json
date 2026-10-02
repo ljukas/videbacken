@@ -601,7 +601,7 @@
   "charging_vehicle_saved": "Saved",
   "charging_vehicle_save_error": "Couldn't save who charged",
   "charging_vehicle_log_title": "Car data",
-  "charging_vehicle_log_description": "Used to tell which sessions are our car.",
+  "charging_vehicle_log_description": "The car's charging log and its latest status decide which sessions are our car.",
   "charging_vehicle_log_coverage": [
     {
       "declarations": [

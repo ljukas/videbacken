@@ -601,7 +601,7 @@
   "charging_vehicle_saved": "Sparat",
   "charging_vehicle_save_error": "Kunde inte spara vem som laddade",
   "charging_vehicle_log_title": "Bilens data",
-  "charging_vehicle_log_description": "Används för att avgöra vilka laddningar som är vår bil.",
+  "charging_vehicle_log_description": "Bilens laddlogg och bilens senaste status avgör vilka laddningar som är vår bil.",
   "charging_vehicle_log_coverage": [
     {
       "declarations": [
