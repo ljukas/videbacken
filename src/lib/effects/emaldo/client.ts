@@ -129,7 +129,11 @@ export function createEmaldoClient(deps: {
     // ErrorMessage is never read: it can echo the account.
     const envelope = parseEnvelope(op, body)
     if (envelope.Status === STATUS_SESSION_EXPIRED) return { expired: true }
-    if (envelope.Status !== STATUS_OK) throw refused(op, envelope.Status)
+    if (envelope.Status !== STATUS_OK) {
+      // A re-paired battery gets a new device id: rediscover on the next call (the token stays).
+      if (op === 'stats') device = null
+      throw refused(op, envelope.Status)
+    }
     // No Result at all (`''`, absent, null) is an empty object: the schemas decide what that means
     // (a home without a device is `[]`; login and stats fail on a path). Anything else must decode.
     const raw = envelope.Result
@@ -335,7 +339,7 @@ function refused(op: EmaldoOp, status: number): EmaldoError {
     })
   }
   return new EmaldoError('unexpected_response', op, undefined, {
-    message: `Emaldo ${op} was refused (Status ${status})`,
+    message: `Emaldo ${op} was refused (Status ${status}); the app id/secret may have rotated`,
   })
 }
 

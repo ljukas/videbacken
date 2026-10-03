@@ -377,7 +377,22 @@ describe('failures', () => {
     const { client } = server({ [STATS.battery]: () => statusReply(status) })
     const err = await caught(client.fetchDay(-1))
     expect(err).toMatchObject({ code: 'unexpected_response', op: 'stats' })
+    expect(err.message).toContain(`Status ${status}`)
+    expect(err.message).toContain('app id/secret may have rotated')
     leaksNothing(err)
+  })
+
+  test('a stats refusal drops the device: the next call rediscovers, keeping the token', async () => {
+    const { f, client } = server({
+      [STATS.battery]: (_req, call) =>
+        call === 0 ? statusReply(-1) : okReply(seriesDay('battery', '2026-06-10')),
+    })
+    await caught(client.fetchDay(-1))
+    expect(f.callsTo(HOMES)).toHaveLength(1)
+    await expect(client.fetchDay(-1)).resolves.toMatchObject({ droppedBuckets: 0 })
+    expect(f.callsTo(HOMES)).toHaveLength(2)
+    expect(f.callsTo(DEVICES)).toHaveLength(4)
+    expect(f.callsTo(LOGIN)).toHaveLength(1)
   })
 
   test('no home with a battery is unexpected_response from discover', async () => {
