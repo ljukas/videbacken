@@ -17,6 +17,16 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
+## Owner prerequisites
+
+- **Before step 1 starts:** this roadmap, the spec, ADR-0023 and the five plans are merged to `main`.
+- **Before checkpoint 1:** `.env.local` has all four `EMALDO_*` vars. `EMALDO_APP_ID` and `EMALDO_APP_SECRET` come
+  from `const.py` in `github.com/wertigpar/ha-emaldo`. Never commit them.
+- **Before step 2 merges:** the same four vars are set in Vercel **Production** (sensitive). User and password are
+  already there; the app id and secret are not.
+- **For the step-3 history re-derive on prod:** the Supabase pooler connection string, pasted by the owner into the
+  script's shell for that one run. Prod credentials can't be pulled, and `vercel env pull` must never be used for this.
+
 ## How a session runs a step
 
 1. Read this roadmap, the spec and ADR-0023. Find the first step whose status isn't `checkpoint passed`.
