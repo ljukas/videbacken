@@ -219,7 +219,9 @@ export function createEmaldoClient(deps: {
    * many callers saw it expire. A caller's signal only stops its own wait;
    * the shared login runs on under its own timeouts.
    */
-  function session(stats: EmaldoCallStats, signal?: AbortSignal, expired?: string) {
+  function session(stats: EmaldoCallStats, op: EmaldoOp, signal?: AbortSignal, expired?: string) {
+    // An aborted caller must not start (or join) a login.
+    if (signal?.aborted) return Promise.reject(abortError(op, signal))
     if (token !== null && device !== null && token !== expired) {
       return Promise.resolve({ token, device })
     }
@@ -232,7 +234,7 @@ export function createEmaldoClient(deps: {
       shared.catch(() => {})
       pending = shared
     }
-    return signal ? abortable(pending, signal) : pending
+    return signal ? abortable(pending, signal, op) : pending
   }
 
   /** An authenticated stats call with one re-login on Status -12. */
@@ -241,7 +243,7 @@ export function createEmaldoClient(deps: {
     body: (d: Device) => Record<string, unknown>,
     o: { signal?: AbortSignal; stats: EmaldoCallStats },
   ): Promise<unknown> {
-    let s = await session(o.stats, o.signal)
+    let s = await session(o.stats, 'stats', o.signal)
     let reply = await post(
       'stats',
       path,
@@ -250,7 +252,7 @@ export function createEmaldoClient(deps: {
       o.stats,
     )
     if (reply.expired) {
-      s = await session(o.stats, o.signal, s.token)
+      s = await session(o.stats, 'stats', o.signal, s.token)
       reply = await post('stats', path, { json: body(s.device), token: s.token }, o.signal, o.stats)
       if (reply.expired) {
         throw new EmaldoError('auth_failed', 'stats', undefined, {
@@ -273,24 +275,29 @@ export function createEmaldoClient(deps: {
         })
       }
       const callStats = o.stats ?? newCallStats()
+      // The first failing series stops its siblings: no more requests, no re-login.
+      const cancel = new AbortController()
+      const signal = AbortSignal.any(o.signal ? [o.signal, cancel.signal] : [cancel.signal])
       const series = await Promise.all(
         SERIES_NAMES.map(async (name): Promise<[SeriesName, SeriesDay]> => {
-          const { path, extra } = SERIES_REQUEST[name]
-          const result = await stats(
-            path,
-            (d) => ({ home_id: d.homeId, id: d.deviceId, model: d.model, offset, ...extra }),
-            { signal: o.signal, stats: callStats },
-          )
-          return [name, parseSeries(name, result)]
+          try {
+            const { path, extra } = SERIES_REQUEST[name]
+            const result = await stats(
+              path,
+              (d) => ({ home_id: d.homeId, id: d.deviceId, model: d.model, offset, ...extra }),
+              { signal, stats: callStats },
+            )
+            return [name, parseSeries(name, result)]
+          } catch (err) {
+            cancel.abort()
+            throw err
+          }
         }),
       )
       return buildDay(offset, Object.fromEntries(series) as Record<SeriesName, SeriesDay>)
     },
   }
 }
-
-/** Internal: discovery saw -12 on a token it did not just issue. */
-class StaleSession extends Error {}
 
 function statusError(op: EmaldoOp, status: number): EmaldoError {
   if (status === 429) return new EmaldoError('rate_limited', op, status)
@@ -310,16 +317,22 @@ function refused(op: EmaldoOp, status: number): EmaldoError {
   })
 }
 
+/** The caller's abort, as the error of the op that was waiting. */
+function abortError(op: EmaldoOp, signal: AbortSignal): EmaldoError {
+  return new EmaldoError('unreachable', op, undefined, {
+    cause: networkCause(signal.reason),
+    message: `Emaldo ${op} was cut off`,
+  })
+}
+
+/** Internal: discovery saw -12 on a token it did not just issue. */
+class StaleSession extends Error {}
+
 /** Races `p` against the caller's `signal`; an abort rejects with `unreachable`. */
-function abortable<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
-  const abortError = () =>
-    new EmaldoError('unreachable', 'login', undefined, {
-      cause: networkCause(signal.reason),
-      message: 'Emaldo login wait was cut off',
-    })
-  if (signal.aborted) return Promise.reject(abortError())
+function abortable<T>(p: Promise<T>, signal: AbortSignal, op: EmaldoOp): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortError(op, signal))
   return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(abortError())
+    const onAbort = () => reject(abortError(op, signal))
     signal.addEventListener('abort', onAbort, { once: true })
     p.then(
       (value) => {

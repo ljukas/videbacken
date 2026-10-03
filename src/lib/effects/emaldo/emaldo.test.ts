@@ -92,6 +92,9 @@ function server(overrides: Partial<Record<string, FakeRoute>> = {}) {
   return { f, client, state }
 }
 
+const tick = async (n: number) => {
+  for (let i = 0; i < n; i++) await Promise.resolve()
+}
 const caught = (p: Promise<unknown>) =>
   p.then(
     () => {
@@ -415,5 +418,42 @@ describe('failures', () => {
       code: 'unreachable',
     })
     expect(pre.f.calls).toHaveLength(0)
+  })
+})
+
+describe('cancellation', () => {
+  test('an abort during the -12 round starts no re-login', async () => {
+    const ctl = new AbortController()
+    const { f, client } = server({
+      [STATS.grid]: async () => {
+        // A few microtasks on: the reply is out, the client has not reacted yet (any N in 1..20 works).
+        void tick(10).then(() => ctl.abort())
+        return statusReply(-12)
+      },
+    })
+    const err = await caught(client.fetchDay(-1, { signal: ctl.signal }))
+    expect(err).toMatchObject({ code: 'unreachable' })
+    expect(f.callsTo(LOGIN)).toHaveLength(1)
+    leaksNothing(err)
+  })
+
+  test('the first failing series cancels its siblings', async () => {
+    let held = false
+    const { f, client } = server({
+      [STATS.grid]: () => new Response(null, { status: 404 }),
+      [STATS.usage]: (req) =>
+        new Promise<Response>((_res, rej) =>
+          req.signal.addEventListener('abort', () => {
+            held = req.signal.aborted
+            rej(req.signal.reason)
+          }),
+        ),
+    })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'stats', status: 404 })
+    leaksNothing(err)
+    expect(held).toBe(true)
+    expect(f.callsTo(LOGIN)).toHaveLength(1)
+    for (const n of SERIES_NAMES) expect(f.callsTo(STATS[n])).toHaveLength(1)
   })
 })
