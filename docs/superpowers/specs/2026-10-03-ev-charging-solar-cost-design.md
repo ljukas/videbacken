@@ -94,10 +94,18 @@ The integration source list gains `emaldo` (CHECK constraints on `integration_sy
   and discovery inside the client.
   - `not_configured` adapter when any of the four env vars is missing.
   - Error mapping: login refused or `-12` after re-login → `auth_failed`; network, 5xx or timeout → `unreachable`;
-    undecodable or unparseable response, or an unknown negative `Status` → `unexpected_response`, with an
-    admin-only message hinting at a rotated app secret.
+    HTTP 429 → `rate_limited`; undecodable or unparseable response, or an unknown negative `Status` →
+    `unexpected_response`, with an admin-only message hinting at a rotated app secret; any `EMALDO_*` unset →
+    `not_configured`.
+  - A refused login blocks new logins for 5 minutes (ADR-0019, as Zaptec): calls that need a login reject with the
+    same `auth_failed`, sending nothing. Network, timeout, 5xx and 429 on login don't block; the sync layer backs off.
+  - A `Status 1` with an empty, missing or null `Result` reads as `{}`, so the schemas decide (login fails on
+    `token`, a home without a device is `[]`, stats fails on a path).
   - zod parses every payload.
-  - RC4 is hand-rolled (≈15 lines; OpenSSL 3 disables it in Node). Snappy uses the `snappyjs` package (step 1: MIT, no dependencies, ≈2.4 M weekly downloads, raw format with a `maxLength` guard; last release 2022, acceptable for a frozen format). It doesn't reject every non-Snappy input, so a result counts only once it parses as JSON, Snappy first, then plain. `start_time` is capped at 2100, so a garbage day start fails closed.
+  - RC4 is hand-rolled (≈15 lines; OpenSSL 3 disables it in Node). Snappy uses the `snappyjs` package (step 1: MIT, no
+    dependencies, ≈2.4 M weekly downloads, raw format with a `maxLength` guard; last release 2022, acceptable for a
+    frozen format). It doesn't reject every non-Snappy input, so a result counts only once it parses as JSON, Snappy
+    first, then plain. `start_time` is capped at 2100, so a garbage day start fails closed.
 - **`src/lib/houseEnergy/sync.ts`** through `runPulledSync`:
   - Each run fetches yesterday and today (dropping today's newest bucket) and replaces those days.
   - **Backfill**: while the watermark is older than yesterday, a run also walks forward from the watermark, at most

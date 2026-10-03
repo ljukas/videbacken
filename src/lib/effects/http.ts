@@ -42,7 +42,7 @@ export async function fetchWithRetry(
       throwHttpErrors: (status) => p.retryStatuses.has(status),
       retry: {
         limit: p.retryStatuses.size > 0 ? (p.retryLimit ?? 2) : 0,
-        // `post`: the Zaptec login and every Emaldo call — all reads, safe to resend.
+        // `post`: the Zaptec login and every Emaldo call — reads, or a login (resending only replaces the token we keep).
         methods: ['get', 'post'],
         statusCodes: [...p.retryStatuses],
         afterStatusCodes: [...p.retryStatuses],
