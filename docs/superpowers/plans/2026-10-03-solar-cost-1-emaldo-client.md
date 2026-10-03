@@ -62,8 +62,8 @@ are fixed; steps 2–5 build on them.
    matches Zaptec/Škoda and the shared vocabulary.
 4. A call whose `signal` is **already aborted** fails `unreachable` before any request (no login is started).
 5. Extra private files: `fixtures.ts` (synthetic data + response sealing), `wire.test.ts`, `parse.test.ts`.
-6. **CLAUDE.md** gets the Emaldo env-var bullet and the `effects/` code-map entry in this step (the env vars land in
-   `.env.example` now). Step 2 only adds the `houseEnergy/` line and the cron.
+6. **CLAUDE.md** gets the Emaldo env-var bullet and the `effects/` code-map entry in this step (the env vars are already
+   in `.env.example`, added with the design docs in #67). Step 2 only adds the `houseEnergy/` line and the cron.
 
 ## Global Constraints
 
@@ -1840,7 +1840,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Modify: `src/lib/effects/emaldo/emaldo.ts` (prepend the `lazy` import; append selector + facade)
 - Create: `src/lib/effects/emaldo/adapters/notConfigured.ts`, `src/lib/effects/emaldo/index.ts`
 - Modify: `src/lib/effects/index.ts` (register), `src/lib/effects/emaldo/emaldo.test.ts` (selection tests)
-- Modify: `.env.example` (append), `src/lib/effects/http.ts` (comments lines 1 and 45),
+- Verify: `.env.example` (EMALDO_* already present). Modify: `src/lib/effects/http.ts` (comments lines 1 and 45),
   `src/lib/effects/testing/fakeFetch.ts` (comment line 2)
 - Modify (docs commit): `CLAUDE.md` (lines 25, 65, env-var list after line 197), the spec's "What the API does" and
   "Sync" bullets
@@ -2000,24 +2000,9 @@ export { emaldo } from './emaldo'
  * Hand-written `fetch` stand-in for integration client tests (Zaptec, elpris, Škoda, Emaldo).
 ```
 
-`.env.example` — append after `SKODA_HOME_COORDINATES=`:
-```bash
-
-# Emaldo home battery cloud (ADR-0023): the house's 5-minute grid / solar /
-# battery / load flows, for solar-aware charging cost. Unofficial API (protocol
-# from github.com/wertigpar/ha-emaldo, MIT). Use a DEDICATED Emaldo account
-# shared to the home: a login ends that account's other sessions (the phone app
-# included). APP_ID / APP_SECRET are the Emaldo Android app's own values (see
-# DEFAULT_APP_ID / DEFAULT_APP_SECRET in ha-emaldo's const.py); a new app
-# release can rotate them, and the sync then fails with a hint saying so. Any
-# blank = every call fails `not_configured`. Read by nothing until the readings
-# sync ships (roadmap step 2). Vercel Production only, never Preview (its login
-# would end Production's session). Never commit real values.
-EMALDO_USER=
-EMALDO_PASSWORD=
-EMALDO_APP_ID=
-EMALDO_APP_SECRET=
-```
+`.env.example` already has the four blank `EMALDO_*` vars and their comment block (added with the design docs, #67).
+Check it is still there and still accurate (`grep -n "^EMALDO_" .env.example` → 4 lines); edit the comment only if
+this step changed something it describes.
 
 - [ ] **Step 4: Run, expect PASS**
 
@@ -2030,7 +2015,7 @@ package imported by name) without warnings about missing exports.
 - [ ] **Step 5: Commit (code)**
 
 ```bash
-git add src/lib/effects/ .env.example
+git add src/lib/effects/
 git commit -m "feat(charging): wire the Emaldo effect and its env vars
 
 Fails closed as not_configured unless all four EMALDO_* are set; nothing
@@ -2135,7 +2120,7 @@ Step 1 of the solar-aware charging cost ([ADR-0023](docs/adr/0023-solar-aware-ch
 - RC4 hand-rolled: Node's OpenSSL 3 refuses `createCipheriv('rc4', …)` ("digital envelope routines::unsupported").
 - Snappy via `snappyjs` (MIT, no deps, ≈2.4 M weekly downloads, raw format + `maxLength`; last release 2022, fine
   for a frozen format). It doesn't reject all non-Snappy input, so a result counts only once it parses as JSON.
-- `.env.example`: `EMALDO_USER`, `EMALDO_PASSWORD`, `EMALDO_APP_ID`, `EMALDO_APP_SECRET` (blank).
+- `.env.example` already lists `EMALDO_USER`, `EMALDO_PASSWORD`, `EMALDO_APP_ID`, `EMALDO_APP_SECRET` (blank; added in #67).
 
 ## Verification
 
