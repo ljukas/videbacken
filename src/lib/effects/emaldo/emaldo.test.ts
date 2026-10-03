@@ -229,6 +229,22 @@ describe('session expiry (Status -12)', () => {
     leaksNothing(err)
   })
 
+  test('a stale token kept by a failed discovery: -12 in discovery logs in once more', async () => {
+    let homes = 0
+    const { f, client, state } = server({
+      [HOMES]: async (req) => {
+        if (homes++ < 2) throw new TypeError('fetch failed') // first call: both attempts fail
+        const { token } = await openRequest(req)
+        if (token?.split('_')[0] === TEST_TOKEN) return statusReply(-12) // the old session ended
+        return okReply({ list_homes: [{ home_id: HOME_ID }] })
+      },
+    })
+    state.accept = TEST_TOKEN_2
+    expect(await caught(client.fetchDay(-1))).toMatchObject({ code: 'unreachable', op: 'discover' })
+    await expect(client.fetchDay(-1)).resolves.toMatchObject({ droppedBuckets: 0 })
+    expect(f.callsTo(LOGIN)).toHaveLength(2)
+  })
+
   test('-12 during discovery on a fresh token is auth_failed', async () => {
     const { client } = server({ [HOMES]: () => statusReply(-12) })
     expect(await caught(client.fetchDay(-1))).toMatchObject({ code: 'auth_failed', op: 'discover' })

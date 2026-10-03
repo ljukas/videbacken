@@ -136,9 +136,14 @@ export function createEmaldoClient(deps: {
     return { expired: false, result: decoded.value }
   }
 
-  /** A reply on a token that is seconds old: -12 here means the login itself is not accepted. */
-  function fresh(op: EmaldoOp, reply: Reply): unknown {
+  /**
+   * A reply during discovery. On a token this establish just issued, -12 means
+   * the login itself is not accepted; on a cached one it means the session
+   * ended since a failed discovery, so the caller logs in again.
+   */
+  function fresh(op: EmaldoOp, reply: Reply, justIssued: boolean): unknown {
     if (reply.expired) {
+      if (!justIssued) throw new StaleSession()
       throw new EmaldoError('auth_failed', op, undefined, {
         message: `Emaldo ${op} was refused right after a fresh login`,
       })
@@ -160,11 +165,16 @@ export function createEmaldoClient(deps: {
   }
 
   /** The first home that has a battery — never just the first home. */
-  async function discover(current: string, stats: EmaldoCallStats): Promise<Device> {
+  async function discover(
+    current: string,
+    stats: EmaldoCallStats,
+    justIssued: boolean,
+  ): Promise<Device> {
     const homes = parseHomeIds(
       fresh(
         'discover',
         await post('discover', '/home/list-homes/', { token: current }, undefined, stats),
+        justIssued,
       ),
     )
     for (const homeId of homes.slice(0, MAX_HOMES_CHECKED)) {
@@ -173,6 +183,7 @@ export function createEmaldoClient(deps: {
         fresh(
           'discover',
           await post('discover', '/bmt/list-bmt/', { json, token: current }, undefined, stats),
+          justIssued,
         ),
       )
       if (found) return { homeId, ...found }
@@ -183,8 +194,22 @@ export function createEmaldoClient(deps: {
   }
 
   async function establish(stats: EmaldoCallStats): Promise<Session> {
-    token ??= await logIn(stats)
-    device ??= await discover(token, stats)
+    let justIssued = false
+    if (token === null) {
+      token = await logIn(stats)
+      justIssued = true
+    }
+    if (device === null) {
+      try {
+        device = await discover(token, stats, justIssued)
+      } catch (err) {
+        if (!(err instanceof StaleSession)) throw err
+        // The token outlived its session while discovery was failing: one fresh login.
+        token = null
+        token = await logIn(stats)
+        device = await discover(token, stats, true)
+      }
+    }
     return { token, device }
   }
 
@@ -263,6 +288,9 @@ export function createEmaldoClient(deps: {
     },
   }
 }
+
+/** Internal: discovery saw -12 on a token it did not just issue. */
+class StaleSession extends Error {}
 
 function statusError(op: EmaldoOp, status: number): EmaldoError {
   if (status === 429) return new EmaldoError('rate_limited', op, status)
