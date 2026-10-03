@@ -50,6 +50,9 @@ const SECRETS = [
   TEST_APP_SECRET,
   HOME_ID,
   DEVICE_ID,
+  TEST_TOKEN_2,
+  EMPTY_HOME_ID,
+  MODEL,
 ]
 
 /**
@@ -102,8 +105,12 @@ const caught = (p: Promise<unknown>) =>
     },
     (e: unknown) => e as EmaldoError,
   )
+const describeCause = (cause: unknown) =>
+  cause instanceof Error
+    ? `${cause.name} ${cause.message} ${String((cause as { code?: unknown }).code)}`
+    : JSON.stringify(cause ?? null)
 const leaksNothing = (err: EmaldoError) => {
-  const text = `${err.message} ${JSON.stringify(err.cause ?? null)}`
+  const text = `${err.message} ${describeCause(err.cause)} ${JSON.stringify(err.cause ?? null)} ${String(err.stack ?? '')}`
   for (const s of SECRETS) expect(text).not.toContain(s)
 }
 
@@ -250,7 +257,9 @@ describe('session expiry (Status -12)', () => {
 
   test('-12 during discovery on a fresh token is auth_failed', async () => {
     const { client } = server({ [HOMES]: () => statusReply(-12) })
-    expect(await caught(client.fetchDay(-1))).toMatchObject({ code: 'auth_failed', op: 'discover' })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'auth_failed', op: 'discover' })
+    leaksNothing(err)
   })
 })
 
@@ -322,22 +331,21 @@ describe('failures', () => {
     const { client } = server({
       [HOMES]: () => jsonResponse({ Status: 1, Result: { list_homes: [] } }),
     })
-    expect(await caught(client.fetchDay(-1))).toMatchObject({
-      code: 'unexpected_response',
-      op: 'discover',
-    })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'discover' })
+    leaksNothing(err)
   })
 
   test('a body that is not JSON, or has no integer Status, is unexpected_response', async () => {
     const html = server({ [STATS.grid]: () => new Response('<html>', { status: 200 }) })
-    expect(await caught(html.client.fetchDay(-1))).toMatchObject({
-      code: 'unexpected_response',
-      op: 'stats',
-    })
+    const htmlErr = await caught(html.client.fetchDay(-1))
+    expect(htmlErr).toMatchObject({ code: 'unexpected_response', op: 'stats' })
+    leaksNothing(htmlErr)
     const shape = server({ [STATS.grid]: () => jsonResponse({ status: 1 }) })
     const err = await caught(shape.client.fetchDay(-1))
     expect(err).toMatchObject({ code: 'unexpected_response' })
     expect(err.message).toContain('at: Status')
+    leaksNothing(err)
   })
 
   test('a day that fails the schema is unexpected_response naming the path only', async () => {
@@ -347,6 +355,7 @@ describe('failures', () => {
     const err = await caught(client.fetchDay(-1))
     expect(err).toMatchObject({ code: 'unexpected_response', op: 'stats' })
     expect(err.message).toContain('at: timezone')
+    leaksNothing(err)
   })
 
   test.each([
@@ -355,8 +364,10 @@ describe('failures', () => {
     [429, 'rate_limited', 1],
   ] as const)('HTTP %i → %s, %i call', async (status, code, calls) => {
     const { f, client } = server({ [LOGIN]: () => new Response('x', { status }) })
-    expect(await caught(client.fetchDay(-1))).toMatchObject({ code, op: 'login', status })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code, op: 'login', status })
     expect(f.callsTo(LOGIN)).toHaveLength(calls)
+    leaksNothing(err)
   })
 
   test.each([502, 503, 504])('%i is retried once, then unreachable', async (status) => {
@@ -369,8 +380,10 @@ describe('failures', () => {
     expect(stats.retries).toBe(1)
 
     const down = server({ [STATS.grid]: () => new Response(null, { status }) })
-    expect(await caught(down.client.fetchDay(-1))).toMatchObject({ code: 'unreachable', status })
+    const downErr = await caught(down.client.fetchDay(-1))
+    expect(downErr).toMatchObject({ code: 'unreachable', status })
     expect(down.f.callsTo(STATS.grid)).toHaveLength(2)
+    leaksNothing(downErr)
   })
 
   test('network failures and timeouts are unreachable, retried once, and echo nothing', async () => {
@@ -397,6 +410,7 @@ describe('failures', () => {
     expect(hangErr).toMatchObject({ code: 'unreachable' })
     expect(hangErr.cause).toEqual({ name: 'TimeoutError' })
     expect(hang.f.callsTo(STATS.grid)).toHaveLength(2)
+    leaksNothing(hangErr)
   })
 
   test('a caller abort is final: unreachable, nothing retried; a pre-aborted call sends nothing', async () => {
@@ -408,20 +422,51 @@ describe('failures', () => {
           ctl.abort()
         }),
     })
-    expect(await caught(client.fetchDay(-1, { signal: ctl.signal }))).toMatchObject({
-      code: 'unreachable',
-    })
+    const abortErr = await caught(client.fetchDay(-1, { signal: ctl.signal }))
+    expect(abortErr).toMatchObject({ code: 'unreachable' })
     expect(f.callsTo(STATS.grid)).toHaveLength(1)
+    leaksNothing(abortErr)
 
     const pre = server()
-    expect(await caught(pre.client.fetchDay(-1, { signal: AbortSignal.abort() }))).toMatchObject({
-      code: 'unreachable',
-    })
+    const preErr = await caught(pre.client.fetchDay(-1, { signal: AbortSignal.abort() }))
+    expect(preErr).toMatchObject({ code: 'unreachable' })
     expect(pre.f.calls).toHaveLength(0)
+    leaksNothing(preErr)
   })
 })
 
-describe('cancellation', () => {
+describe('login waits and cancellation', () => {
+  test('a caller that aborts while waiting on a shared login leaves that login running', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    // Promises, not timers: with fake timers jumping ahead, an idle wait would time the login out.
+    let started!: () => void
+    const loginSeen = new Promise<void>((r) => {
+      started = r
+    })
+    const { f, client, state } = server({
+      [LOGIN]: async () => {
+        started()
+        await gate
+        return okReply({ token: TEST_TOKEN, user_id: 'u-1' })
+      },
+    })
+    state.accept = TEST_TOKEN
+    const first = client.fetchDay(-1)
+    await loginSeen
+    const ctl = new AbortController()
+    const second = caught(client.fetchDay(-2, { signal: ctl.signal }))
+    ctl.abort()
+    const err = await second
+    expect(err).toMatchObject({ code: 'unreachable', op: 'stats' })
+    leaksNothing(err)
+    release()
+    await expect(first).resolves.toMatchObject({ droppedBuckets: 0 })
+    expect(f.callsTo(LOGIN)).toHaveLength(1)
+  })
+
   test('an abort during the -12 round starts no re-login', async () => {
     const ctl = new AbortController()
     const { f, client } = server({
@@ -455,5 +500,111 @@ describe('cancellation', () => {
     expect(held).toBe(true)
     expect(f.callsTo(LOGIN)).toHaveLength(1)
     for (const n of SERIES_NAMES) expect(f.callsTo(STATS[n])).toHaveLength(1)
+  })
+})
+
+describe('shared re-login', () => {
+  /** Login 1 → TEST_TOKEN, login 2 → `second`; the server accepts whatever `accept.value` is. */
+  function relogin(second: (n: number) => Response | Promise<Response>) {
+    const accept = { value: TEST_TOKEN as string }
+    const refused: SeriesName[] = []
+    let logins = 0
+    const stats = Object.fromEntries(
+      SERIES_NAMES.map((n): [string, FakeRoute] => [
+        STATS[n],
+        async (req) => {
+          const { token } = await openRequest(req)
+          if (token?.split('_')[0] !== accept.value) {
+            refused.push(n)
+            return statusReply(-12)
+          }
+          return okReply(seriesDay(n, '2026-06-10'))
+        },
+      ]),
+    )
+    const s = server({
+      [LOGIN]: () => (logins++ === 0 ? okReply({ token: TEST_TOKEN }) : second(logins)),
+      ...stats,
+    })
+    return { ...s, accept, refused }
+  }
+
+  test('a refused re-login fails the call as auth_failed (login) and is not cached', async () => {
+    let refuse = true
+    const { f, client, accept } = relogin(() =>
+      refuse ? statusReply(-3) : okReply({ token: TEST_TOKEN_2 }),
+    )
+    await client.fetchDay(-1)
+    accept.value = 'gone' // the session ended; the re-login is refused
+    const err = await caught(client.fetchDay(-2))
+    expect(err).toMatchObject({ code: 'auth_failed', op: 'login' })
+    leaksNothing(err)
+    expect(f.callsTo(LOGIN)).toHaveLength(2)
+    // Nothing is stuck: once the cloud accepts logins again, the next call logs in anew.
+    refuse = false
+    accept.value = TEST_TOKEN_2
+    await expect(client.fetchDay(-3)).resolves.toMatchObject({ droppedBuckets: 0 })
+    expect(f.callsTo(LOGIN)).toHaveLength(3)
+  })
+
+  test('all four -12s arrive before the one shared re-login, which they all wait on', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    let started!: () => void
+    const loginSeen = new Promise<void>((r) => {
+      started = r
+    })
+    let seen = -1
+    const ctx: { refused: SeriesName[] } = { refused: [] }
+    const { f, client, accept, refused } = relogin(async () => {
+      seen = ctx.refused.length
+      started()
+      await gate
+      return okReply({ token: TEST_TOKEN_2 })
+    })
+    ctx.refused = refused
+    await client.fetchDay(-1)
+    accept.value = TEST_TOKEN_2
+    const day = client.fetchDay(-2)
+    await loginSeen
+    expect(seen).toBe(4)
+    release()
+    await expect(day).resolves.toMatchObject({ droppedBuckets: 0 })
+    expect(f.callsTo(LOGIN)).toHaveLength(2)
+  })
+})
+
+describe('more failures', () => {
+  test('HTTP 429 on a stats route is rate_limited', async () => {
+    const { client } = server({ [STATS.grid]: () => new Response('x', { status: 429 }) })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'rate_limited', op: 'stats', status: 429 })
+    leaksNothing(err)
+  })
+
+  test('-12 on list-bmt on a fresh token is auth_failed (discover)', async () => {
+    const { client } = server({ [DEVICES]: () => statusReply(-12) })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'auth_failed', op: 'discover' })
+    leaksNothing(err)
+  })
+
+  test('a login Result without a token is unexpected_response', async () => {
+    const { client } = server({ [LOGIN]: () => okReply({ user_id: 'u-1' }) })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'login' })
+    leaksNothing(err)
+  })
+
+  test('an undecodable stats Result hints that the app secret rotated', async () => {
+    const { client } = server({
+      [STATS.grid]: () => okReply(seriesDay('grid', '2026-06-10'), { secret: 'rotated' }),
+    })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'stats' })
+    expect(err.message).toContain('app id/secret may have rotated')
+    leaksNothing(err)
   })
 })
