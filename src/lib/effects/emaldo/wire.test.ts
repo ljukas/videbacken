@@ -90,7 +90,7 @@ describe('decodeResult', () => {
     expect(decodeResult(KEY, toHex(rc4(KEY, bytes('<html>'))))).toEqual({ ok: false })
   })
 
-  test('a Snappy header claiming more than MAX_DECODED_BYTES is refused, not allocated', () => {
+  test('a truncated Snappy header claiming more than MAX_DECODED_BYTES is not ok', () => {
     // varint length MAX_DECODED_BYTES + 1, then nothing.
     let n = MAX_DECODED_BYTES + 1
     const header: number[] = []
@@ -100,5 +100,17 @@ describe('decodeResult', () => {
     }
     header.push(n)
     expect(decodeResult(KEY, toHex(rc4(KEY, new Uint8Array(header))))).toEqual({ ok: false })
+  })
+
+  // Valid JSON padded with trailing whitespace, so only the size guard can refuse it.
+  const padded = (decodedBytes: number) =>
+    toHex(rc4(KEY, compress(bytes(`{}${' '.repeat(decodedBytes - 2)}`))))
+
+  test('a valid payload decompressing to more than MAX_DECODED_BYTES is refused', () => {
+    expect(decodeResult(KEY, padded(MAX_DECODED_BYTES + 1))).toEqual({ ok: false })
+  })
+
+  test('a payload decompressing to exactly MAX_DECODED_BYTES is read', () => {
+    expect(decodeResult(KEY, padded(MAX_DECODED_BYTES))).toEqual({ ok: true, value: {} })
   })
 })
