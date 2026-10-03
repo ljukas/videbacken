@@ -175,9 +175,9 @@ Accepted residuals (an admin tag fixes them):
 - **PR 1** — Översikt `SyncHealthAlert` for `skoda` (**admin-only**, like elpris: a household member can't act on
   the car feed) with real copy (replaces the Zaptec-copy stubs), e.g.
   `auth_failed` → "Škoda-nyckeln fungerar inte längre (har den gått ut?). En admin behöver skapa en ny."; admin card
-  "Bilens laddlogg" → **"Bilens data"**: CSV coverage (as today) + "Senaste kontakt med bilen 11:08" + **Hämta bilens status** (its own
+  "Bilens laddlogg" → **"Bilens data"**: CSV coverage (as today) + "Senaste kontakt med bilen: 11:08" + **Hämta bilens status** (its own
   label, distinct from the heading's "Synka nu"); plus a Škoda run-history card.
-- **PR 2** — "Vem laddade?" copy for `skoda_live`: "Vår bil · enligt bilen" / "Gäst · enligt bilen".
+- **PR 2** — "Vem laddade?" copy for `skoda_live`: "Vår bil · enligt bilens status" / "Gäst · enligt bilens status".
 - **PR 3** — admin-only warning `Alert` on Översikt from 30 days before expiry, only while the source is healthy
   (after expiry the `auth_failed` alert takes over); destructive styling from 7 days: "Škoda-nyckeln går ut 15 januari 2027
   (om 12 dagar). Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om."; the card shows "Nyckeln
@@ -199,7 +199,7 @@ Accepted residuals (an admin tag fixes them):
 | We unplug at home, hand the cable to a guest | ≈25 min of stale `CONNECTED` is outvoted by the rest of the session → guest (a guest session under ≈1 h may still read as ours) |
 | Our car drives off still reporting `CONNECTED` | `IN_MOTION` / outside the geofence → not here |
 | Car plugged in elsewhere, position known | connected but `at_home = false` → guest |
-| Home point unset | geofence off, plug state alone, warn |
+| Home point unset | geofence off; plug state and whether the car is moving decide; warned once per instance |
 | Export coverage | the exported log keeps deciding inside it |
 | Duplicate cron delivery | lease → second run skipped |
 
@@ -229,7 +229,7 @@ only** (Preview has its own database, but would share the VIN's 20 requests/h).
 
 `vehicle_state_snapshot` is a household presence history (plugged in / moving / parked away, every 15 min). Rules:
 raw rows are never returned to the client except the admin card's latest `{ polledAt, capturedAt }`; the UI shows
-per-session results only ("Vår bil / Gäst · enligt bilen" — acceptable because every user belongs to the household);
+per-session results only ("Vår bil / Gäst · enligt bilens status" — acceptable because every user belongs to the household);
 RLS stays on with no policies (Supabase's anon/authenticated roles can't read it); no presence in logs; GPS,
 address and plate are never stored. Retention: every poll is kept for now (re-matching old sessions and Phase 6
 need it); Phase 6 sets a retention rule once it knows what it needs (owner ruling 2026-10-02).

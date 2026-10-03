@@ -584,7 +584,7 @@
   "charging_vehicle_note_ours": "Visar bara vår bil",
   "charging_vehicle_note_other": "Visar bara gäster",
   "charging_vehicle_empty_other_title": "Inga gästladdningar {year}",
-  "charging_vehicle_empty_other_description": "Gästladdningar visas här när bilens laddlogg eller en admin har markerat dem.",
+  "charging_vehicle_empty_other_description": "Gästladdningar visas här när bilen eller en admin har markerat dem.",
   "charging_vehicle_chart_empty_other": "Inga gästladdningar under {year}.",
   "charging_overview_error_title": "Laddningsöversikten kunde inte hämtas",
   "charging_sessions_error_title": "Laddsessionerna kunde inte hämtas",
@@ -595,12 +595,13 @@
   "charging_vehicle_other": "Gäst",
   "charging_vehicle_source_default": "antaget",
   "charging_vehicle_source_skoda": "enligt bilens laddlogg",
+  "charging_vehicle_source_skoda_live": "enligt bilens status",
   "charging_vehicle_source_admin": "satt av admin",
   "charging_vehicle_auto": "Automatiskt",
   "charging_vehicle_saved": "Sparat",
   "charging_vehicle_save_error": "Kunde inte spara vem som laddade",
   "charging_vehicle_log_title": "Bilens data",
-  "charging_vehicle_log_description": "Används för att avgöra vilka laddningar som är vår bil.",
+  "charging_vehicle_log_description": "Bilens laddlogg och statusen bilen rapporterar under laddningen avgör vilka laddningar som är vår bil.",
   "charging_vehicle_log_coverage": [
     {
       "declarations": [

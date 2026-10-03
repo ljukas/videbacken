@@ -226,7 +226,8 @@ export const evChargingRouter = {
   // Deliberately NOT one transaction: if the re-match fails the records stay
   // stored, and re-importing is the recovery (the re-match runs regardless of
   // `inserted`); the next Zaptec sync re-derives attribution anyway.
-  // `ours`/`other` count every session the rule decided, not just changed ones.
+  // `ours`/`other` count every session any rule decided — including the live
+  // branch (ADR-0022) — not just the import's, and not just changed ones.
   importVehicleRecords: adminProcedure
     .input(z.object({ rows: z.array(vehicleRecordInput).min(1).max(MAX_IMPORT_ROWS) }))
     .handler(async ({ input, context }) => {

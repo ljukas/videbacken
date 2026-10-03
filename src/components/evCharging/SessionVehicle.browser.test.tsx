@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
+import type { VehicleSource } from '~/lib/evCharging/vehicle'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { SessionVehicle } from './SessionVehicle'
@@ -105,4 +106,27 @@ test('while saving the select shows the chosen value, not the stale stored one',
   await vi.waitFor(() => expect(setVehicleFn).toHaveBeenCalled())
   await expect.element(trigger).toHaveTextContent(m.charging_vehicle_other())
   await expect.element(trigger).not.toHaveTextContent(m.charging_vehicle_auto())
+})
+
+test('a live-state attribution says it came from the car', async () => {
+  const { screen } = await renderWithProviders(
+    <SessionVehicle sessionId={ID} vehicle="other" vehicleSource="skoda_live" isAdmin={false} />,
+  )
+  await expect
+    .element(
+      screen.getByText(`${m.charging_vehicle_other()} · ${m.charging_vehicle_source_skoda_live()}`),
+    )
+    .toBeVisible()
+})
+
+test('a source this build does not know shows just the vehicle', async () => {
+  const { screen } = await renderWithProviders(
+    <SessionVehicle
+      sessionId={ID}
+      vehicle="ours"
+      vehicleSource={'future_source' as unknown as VehicleSource}
+      isAdmin={false}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_ours(), { exact: true })).toBeVisible()
 })

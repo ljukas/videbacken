@@ -1,11 +1,11 @@
 # ADR 0021 — Charging-Session Vehicle Attribution
 
-- **Status**: Accepted
+- **Status**: Accepted — extended by [ADR-0022](./0022-live-vehicle-state-attribution.md)
 - **Date**: 2026-10-01
 - **Deciders**: Lukas
 - **Decision in one line**: Each charge session carries its own `vehicle` (`ours` | `other`) and `vehicle_source`
-  (`default` | `skoda` | `admin`); sessions are ours by default, a stored copy of the car's own charging log
-  re-derives attribution after every import and sync, and an admin tag always wins.
+  (`default` | `skoda` | `admin`, + `skoda_live`, ADR-0022); sessions are ours by default, a stored copy of the car's
+  own charging log re-derives attribution after every import and sync, and an admin tag always wins.
 
 **Spec**: [EV charging Phase 5 design](../superpowers/specs/2026-10-01-ev-charging-phase5-design.md).
 **Research**: [scope map](../superpowers/specs/2026-09-28-ev-charging-scope-map.md) ("Attributing sessions").
@@ -27,7 +27,7 @@ figures agree too loosely to use, and the planned peak-power hint fails because 
 ## Decision
 
 1. **Attribution is a property of the session row.** `ev_charge_session.vehicle` (`ours` | `other`, default
-   `ours`) and `vehicle_source` (`default` | `skoda` | `admin`, default `default`), both text + CHECK. The Zaptec
+   `ours`) and `vehicle_source` (`default` | `skoda` | `admin`, + `skoda_live`, ADR-0022; default `default`), both text + CHECK. The Zaptec
    sync's upsert sets only Zaptec-owned columns, so it can never clobber them.
 2. **Ours by default.** A session nothing has decided counts as ours. Guests are rare and the owner is present for
    them, so flagging the exception is less work than tagging every session — and stays correct after the Škoda log
@@ -54,7 +54,8 @@ figures agree too loosely to use, and the planned peak-power hint fails because 
 - **Unknown until tagged.** Always correct, but every new session needs a click. Rejected by the owner.
 - **Poll the official Škoda Public API now.** Automatic going forward, but adds a pulled source, an expiring API key
   and an external 15-min scheduler. Deferred (scope-map step 4); it would write `vehicle_charge_record` rows with a
-  new `source`, and the same re-match would use them.
+  new `source`, and the same re-match would use them — built differently in ADR-0022 (per-poll snapshots, not
+  records).
 - **Upload the CSV file to storage and parse server-side.** Violates ADR-0006 for no gain, and sends personal data
   (an address) to the server.
 
@@ -66,7 +67,7 @@ figures agree too loosely to use, and the planned peak-power hint fails because 
 - `services/evCharging/attribution.ts` reads `vehicle_charge_record` (owned by `services/vehicleCharge`) for the
   single `UPDATE … FROM` re-match: a deliberate read-only exception to ADR-0002 table ownership, since one
   statement can't span two services. A CHECK (`ev_charge_session_vehicle_default_check`) keeps `default` rows 'ours'.
-- Sessions after the export are "ours · antaget" until tagged — a forgotten guest silently inflates our cost. The
-  session page shows the source so it's visible.
+- Sessions after the export are "ours · antaget" until tagged or until ADR-0022's live poll decides them; a forgotten
+  guest the poll can't decide still inflates our cost. The session page shows the source so it's visible.
 - An admin tag on a session that Zaptec later voids/replaces does not carry over to the replacement.
 - Coverage is derived from the stored log; importing a later export extends it automatically.
