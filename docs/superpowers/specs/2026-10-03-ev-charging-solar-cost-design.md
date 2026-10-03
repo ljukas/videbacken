@@ -45,6 +45,7 @@ Local probe notes and a working TS client: `data/private/emaldo/` (git-excluded;
   order:"asc"}` → devices `{id, model}`. **Pick the home that has a device**, never the first.
 - **Day stats** `{home_id, id, model, offset}`, offset 0 = today (Stockholm), −1 = yesterday, positive → empty:
   - `/bmt/stats/grid/day/` (+ `get_real: true, query_interval: 5`): `[min, import, emergency_import, export, …]`
+    - Live rows carry 13 (grid), 6 (mppt), 4 (usage) and 6 (battery) columns; unused columns are ignored. Grid import = import + emergency_import.
   - `/bmt/stats/mppt-v2/day/`: `[min, str1, str2, str3, third_party, state]`
   - `/bmt/stats/load/usage-v2/day/`: `[min, ?, load, ?]` (load includes the charger)
   - `/bmt/stats/battery-v2/day/`: `[min, discharge, charge_solar(mppt), charge_grid, charge_ac, state]`
@@ -96,8 +97,7 @@ The integration source list gains `emaldo` (CHECK constraints on `integration_sy
     undecodable or unparseable response, or an unknown negative `Status` → `unexpected_response`, with an
     admin-only message hinting at a rotated app secret.
   - zod parses every payload.
-  - RC4 is hand-rolled (≈15 lines; OpenSSL 3 disables it in Node). Snappy uses the `snappyjs` package if maintained
-    (checked in step 1), otherwise a ≈50-line raw decoder, with the reason in the PR.
+  - RC4 is hand-rolled (≈15 lines; OpenSSL 3 disables it in Node). Snappy uses the `snappyjs` package (step 1: MIT, no dependencies, ≈2.4 M weekly downloads, raw format with a `maxLength` guard; last release 2022, acceptable for a frozen format). It doesn't reject every non-Snappy input, so a result counts only once it parses as JSON, Snappy first, then plain. `start_time` is capped at 2100, so a garbage day start fails closed.
 - **`src/lib/houseEnergy/sync.ts`** through `runPulledSync`:
   - Each run fetches yesterday and today (dropping today's newest bucket) and replaces those days.
   - **Backfill**: while the watermark is older than yesterday, a run also walks forward from the watermark, at most
