@@ -139,6 +139,36 @@ describe('adapter selection', () => {
   })
 })
 
+describe('the singleton with all four variables set', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  })
+
+  test('maps each variable to the right option and forwards the call options', async () => {
+    const { f } = server()
+    vi.resetModules()
+    vi.stubEnv('EMALDO_USER', TEST_USER)
+    vi.stubEnv('EMALDO_PASSWORD', TEST_PASSWORD)
+    vi.stubEnv('EMALDO_APP_ID', TEST_APP_ID)
+    vi.stubEnv('EMALDO_APP_SECRET', TEST_APP_SECRET)
+    vi.stubEnv('VITEST', '')
+    vi.stubGlobal('fetch', f.fetch)
+    const fresh = await import('./emaldo')
+    const stats = newCallStats()
+    const day = await fresh.emaldo.fetchDay(-2, { stats })
+    expect(day.buckets).toHaveLength(288)
+    const [login] = f.callsTo(LOGIN)
+    expect(new URL(login.url).pathname.endsWith(TEST_APP_ID)).toBe(true)
+    const fields = await openRequest(login)
+    expect(fields.json).toContain(`"email":"${TEST_USER}","password":"${TEST_PASSWORD}"`)
+    const { json } = await openRequest(f.callsTo(STATS.grid)[0])
+    expect(json).toContain('"offset":-2')
+    expect(stats.logins).toBe(1)
+  })
+})
+
 describe('wire format', () => {
   test('login: api host, app id in the path, okhttp headers, encrypted body with gmtime, no token', async () => {
     const { f, client } = server()
@@ -602,6 +632,13 @@ describe('shared re-login', () => {
 })
 
 describe('more failures', () => {
+  test('HTTP 429 on list-homes is rate_limited (discover)', async () => {
+    const { client } = server({ [HOMES]: () => new Response('x', { status: 429 }) })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'rate_limited', op: 'discover', status: 429 })
+    leaksNothing(err)
+  })
+
   test('HTTP 429 on a stats route is rate_limited', async () => {
     const { client } = server({ [STATS.grid]: () => new Response('x', { status: 429 }) })
     const err = await caught(client.fetchDay(-1))
