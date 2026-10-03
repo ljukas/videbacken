@@ -33,6 +33,8 @@ const STATUS_OK = 1
 const STATUS_SESSION_EXPIRED = -12
 /** Homes checked for a battery during discovery. */
 const MAX_HOMES_CHECKED = 10
+/** A refused login blocks new login attempts this long (ADR-0019): a wrong password must not hammer the account. */
+const AUTH_FAILURE_TTL_MS = 5 * 60_000
 
 const SERIES_REQUEST: Record<SeriesName, { path: string; extra: Record<string, unknown> }> = {
   grid: { path: '/bmt/stats/grid/day/', extra: { get_real: true, query_interval: 5 } },
@@ -62,6 +64,8 @@ export function createEmaldoClient(deps: {
   let token: string | null = null
   let device: Device | null = null
   let pending: Promise<Session> | null = null
+  /** Set when a login was refused; new logins are rejected with `error` until `until`. */
+  let loginBlock: { error: EmaldoError; until: number } | null = null
 
   /** One encrypted POST. Returns the decoded Result, or `expired` on Status -12. */
   async function post(
@@ -159,16 +163,27 @@ export function createEmaldoClient(deps: {
   }
 
   async function logIn(stats: EmaldoCallStats): Promise<string> {
+    if (loginBlock !== null && Date.now() < loginBlock.until) throw loginBlock.error
     stats.logins++
-    const reply = await post(
-      'login',
-      '/user/login/',
-      { json: { email: deps.user, password: deps.password } },
-      undefined,
-      stats,
-    )
-    if (reply.expired) throw refused('login', STATUS_SESSION_EXPIRED)
-    return parseLogin(reply.result)
+    try {
+      const reply = await post(
+        'login',
+        '/user/login/',
+        { json: { email: deps.user, password: deps.password } },
+        undefined,
+        stats,
+      )
+      if (reply.expired) throw refused('login', STATUS_SESSION_EXPIRED)
+      const value = parseLogin(reply.result)
+      loginBlock = null
+      return value
+    } catch (err) {
+      // Only a refusal blocks: network, timeout, 5xx and 429 are the sync layer's backoff.
+      if (err instanceof EmaldoError && err.code === 'auth_failed') {
+        loginBlock = { error: err, until: Date.now() + AUTH_FAILURE_TTL_MS }
+      }
+      throw err
+    }
   }
 
   /** The first home that has a battery — never just the first home. */

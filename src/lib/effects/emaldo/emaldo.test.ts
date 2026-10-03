@@ -330,15 +330,45 @@ describe('failures', () => {
     leaksNothing(err)
   })
 
-  test('a failed login is not cached: the next call logs in again', async () => {
+  test('a refused login blocks new logins for 5 minutes, without a request; success clears it', async () => {
     let call = 0
     const { f, client, state } = server({
-      [LOGIN]: () => (call++ === 0 ? statusReply(-3) : okReply({ token: TEST_TOKEN })),
+      [LOGIN]: () => (call++ % 2 === 0 ? statusReply(-3) : okReply({ token: TEST_TOKEN })),
+    })
+    state.accept = TEST_TOKEN
+    const first = await caught(client.fetchDay(-1))
+    expect(first).toMatchObject({ code: 'auth_failed', op: 'login' })
+    vi.advanceTimersByTime(5 * 60_000 - 1)
+    const blocked = await caught(client.fetchDay(-1))
+    expect(blocked).toMatchObject({ code: 'auth_failed', op: 'login' })
+    expect(blocked.message).toBe(first.message)
+    expect(f.callsTo(LOGIN)).toHaveLength(1) // the second call sent nothing
+    expect(f.calls).toHaveLength(1)
+    leaksNothing(blocked)
+    vi.advanceTimersByTime(1)
+    await expect(client.fetchDay(-1)).resolves.toMatchObject({ droppedBuckets: 0 })
+    expect(f.callsTo(LOGIN)).toHaveLength(2)
+    // The success cleared the block: when the session later ends, the re-login is sent (and refused).
+    state.accept = 'gone'
+    await expect(client.fetchDay(-2)).rejects.toMatchObject({ code: 'auth_failed', op: 'login' })
+    expect(f.callsTo(LOGIN)).toHaveLength(3)
+  })
+
+  test.each([
+    ['a network failure', () => Promise.reject(new TypeError('fetch failed'))],
+    ['an HTTP 500', () => new Response(null, { status: 500 })],
+    ['an HTTP 429', () => new Response('x', { status: 429 })],
+  ] as const)('%s on login does not block the next login', async (_name, fail) => {
+    let down = true
+    const { f, client, state } = server({
+      [LOGIN]: () => (down ? fail() : okReply({ token: TEST_TOKEN })),
     })
     state.accept = TEST_TOKEN
     await caught(client.fetchDay(-1))
+    const before = f.callsTo(LOGIN).length
+    down = false
     await expect(client.fetchDay(-1)).resolves.toMatchObject({ droppedBuckets: 0 })
-    expect(f.callsTo(LOGIN)).toHaveLength(2)
+    expect(f.callsTo(LOGIN)).toHaveLength(before + 1)
   })
 
   test.each([
@@ -618,7 +648,7 @@ describe('shared re-login', () => {
     return { ...s, accept, refused }
   }
 
-  test('a refused re-login fails the call as auth_failed (login) and is not cached', async () => {
+  test('a refused re-login fails the call as auth_failed (login); the block ends after 5 minutes', async () => {
     let refuse = true
     const { f, client, accept } = relogin(() =>
       refuse ? statusReply(-3) : okReply({ token: TEST_TOKEN_2 }),
@@ -632,6 +662,7 @@ describe('shared re-login', () => {
     // Nothing is stuck: once the cloud accepts logins again, the next call logs in anew.
     refuse = false
     accept.value = TEST_TOKEN_2
+    vi.advanceTimersByTime(5 * 60_000) // the refusal blocks logins for 5 minutes
     await expect(client.fetchDay(-3)).resolves.toMatchObject({ droppedBuckets: 0 })
     expect(f.callsTo(LOGIN)).toHaveLength(3)
   })
