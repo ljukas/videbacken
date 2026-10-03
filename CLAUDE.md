@@ -22,7 +22,7 @@ For *why* a pattern exists, follow the ADR link.
 - **Data layer:** oRPC + TanStack Query; SSR via an in-process router client. Domain rules in services (ADR-0002), effects isolated (ADR-0001).
 - **Auth:** Better Auth, Google OAuth + email magic-link, allowlist-gated — see [Authentication](#authentication--authorization-adr-0017).
 - **Sync:** polled, never pushed (ADR-0018 supersedes 0004 + 0011). No realtime, no presence.
-- **Effects** (`src/lib/effects/`, each prod / dev / test): email Resend / Mailpit-SMTP / devLog + React Email templates (ADR-0008); storage Vercel Blob / RustFS-S3 / devLog, public (avatars) + private stores, client-direct upload (ADR-0006); queue Vercel Queue / BullMQ+Redis / devLog (ADR-0007). Pulled integrations (Zaptec, elpris, Škoda) have **no** devLog adapter — they fail closed (ADR-0019).
+- **Effects** (`src/lib/effects/`, each prod / dev / test): email Resend / Mailpit-SMTP / devLog + React Email templates (ADR-0008); storage Vercel Blob / RustFS-S3 / devLog, public (avatars) + private stores, client-direct upload (ADR-0006); queue Vercel Queue / BullMQ+Redis / devLog (ADR-0007). Pulled integrations (Zaptec, elpris, Škoda, Emaldo) have **no** devLog adapter — they fail closed (ADR-0019).
 - **Logging:** pino → stdout (Vercel Runtime Logs); browser warn/error POSTs `/api/log` (ADR-0003).
 - **UI:** shadcn/ui (style `radix-nova`, base `slate`, **Radix primitives — not Base UI**) + Tailwind v4 (class sort on). Design language: self-hosted Cabinet Grotesk (headings) + Switzer (body), inset-sidebar shell + shared `PageContainer`, one `--brand` accent, reduced-motion-aware overlays (ADR-0015). Shared `Empty` component (ADR-0016); global Cmd+K palette on cmdk (ADR-0014).
 - **Forms:** `@tanstack/react-form` v1 `createFormHook` + bound shadcn `<Field>` (ADR-0005). Small CRUD → responsive overlay with URL dialog state; large forms → dedicated route (ADR-0013).
@@ -62,7 +62,7 @@ src/
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
     services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff, vehicleState — own all DB access + domain rules (ADR-0002)
-    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda (pulled, fail closed — ADR-0019), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
+    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
@@ -195,6 +195,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
   `STORAGE_ADAPTER=devLog` / `EMAIL_ADAPTER=devLog` force the no-op adapters (offline dev without docker).
 - `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (unset → fails closed as `not_configured`, ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data).
 - `SKODA_API_KEY`/`SKODA_VIN` (either unset → `not_configured`; Vercel Production only — Preview has its own DB but shares the VIN's 20/h quota) and `SKODA_HOME_COORDINATES` (never committed/logged; unset or invalid → geofence off: attribution falls back to plug state and whether the car is moving). Renewing the key: `docs/runbooks/skoda-api-key.md`.
+- `EMALDO_USER`/`EMALDO_PASSWORD`/`EMALDO_APP_ID`/`EMALDO_APP_SECRET` (any unset → `not_configured`; a dedicated Emaldo account — a login ends its other sessions; app id/secret come from the Emaldo Android app and can rotate; Vercel Production only, never Preview; ADR-0023).
 - `GRID_FACILITY_ID` (18-digit metering-point ID, prod only, never committed/logged; unset → the monthly catalogue check is skipped).
 - `CRON_SECRET` (Bearer token gating `/api/cron/*`); `SHELLY_WEBHOOK_TOKEN` (query-param token for `/api/webhooks/shelly`).
 
