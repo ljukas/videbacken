@@ -605,8 +605,9 @@ describe('login waits and cancellation', () => {
     const ctl = new AbortController()
     const { f, client } = server({
       [STATS.grid]: async () => {
-        // A few microtasks on: the reply is out, the client has not reacted yet (any N in 1..20 works).
-        void tick(10).then(() => ctl.abort())
+        // One microtask on: the reply is out, the client has not reacted yet. Without the early
+        // return in `session()` this fails for every N, so the smallest count is enough.
+        void tick(1).then(() => ctl.abort())
         return statusReply(-12)
       },
     })
