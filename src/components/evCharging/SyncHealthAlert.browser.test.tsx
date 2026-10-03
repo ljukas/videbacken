@@ -170,3 +170,39 @@ test('a stale elpris alert talks about prices', async () => {
   )
   await expect.element(screen.getByText(m.charging_health_stale_elpris())).toBeVisible()
 })
+
+test('Škoda has its own never-synced copy', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...base, source: 'skoda', state: 'never_synced' }}
+      isAdmin
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_health_never_synced_skoda())).toBeVisible()
+})
+
+test('Škoda has its own stale copy', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...base, source: 'skoda', state: 'stale' }}
+      isAdmin
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_health_stale_skoda())).toBeVisible()
+})
+
+test('an expired Škoda key says to create a new one', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...failing, source: 'skoda' }}
+      isAdmin
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect.element(screen.getByText(/Škoda-nyckeln fungerar inte längre/)).toBeVisible()
+})

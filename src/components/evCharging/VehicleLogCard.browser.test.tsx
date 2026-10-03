@@ -14,7 +14,7 @@ test('shows the count and the covered dates', async () => {
       onImport={() => {}}
     />,
   )
-  await expect.element(screen.getByText(/95 laddningar/)).toBeVisible()
+  await expect.element(screen.getByText(/Laddlogg: 95 laddningar/)).toBeVisible()
   await expect.element(screen.getByText(/10 okt\.? 2025/)).toBeVisible()
   await expect.element(screen.getByText(/29 sep\.? 2026/)).toBeVisible()
 })
@@ -54,4 +54,80 @@ test('a failed coverage read shows an error with retry, never "none imported"', 
   expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
   await screen.getByRole('button', { name: m.common_try_again() }).click()
   expect(refetch).toHaveBeenCalled()
+})
+
+test('shows the last contact with the car as a <time>', async () => {
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard
+      coverage={null}
+      live={{
+        polledAt: new Date('2026-05-04T09:08:13Z'),
+        capturedAt: new Date('2026-05-04T09:08:10Z'),
+      }}
+      onImport={() => {}}
+    />,
+  )
+  await expect
+    .element(screen.getByText(m.charging_vehicle_live_last_contact(), { exact: false }))
+    .toBeVisible()
+  await expect.element(screen.getByText(/11:08/)).toBeVisible()
+  expect(screen.container.querySelector('time')?.getAttribute('datetime')).toBe(
+    '2026-05-04T09:08:10.000Z',
+  )
+})
+
+test('says there has been no contact yet', async () => {
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard coverage={null} live={null} onImport={() => {}} />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_live_none())).toBeVisible()
+})
+
+test('a failed last-contact read shows its error, never "no contact yet"', async () => {
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard
+      coverage={null}
+      live={undefined}
+      liveLoadError={{
+        data: undefined,
+        isPlaceholderData: false,
+        errorUpdateCount: 1,
+        isFetching: false,
+        refetch: vi.fn(),
+      }}
+      onImport={() => {}}
+      onSyncLive={() => {}}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_live_error_title())).toBeVisible()
+  expect(screen.getByText(m.charging_vehicle_live_none()).elements()).toHaveLength(0)
+})
+
+test('an unknown last contact renders neither the row nor the button', async () => {
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard coverage={null} live={undefined} onImport={() => {}} onSyncLive={() => {}} />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_log_none())).toBeVisible()
+  expect(screen.getByText(m.charging_vehicle_live_none()).elements()).toHaveLength(0)
+  expect(
+    screen.getByText(m.charging_vehicle_live_last_contact(), { exact: false }).elements(),
+  ).toHaveLength(0)
+  expect(screen.getByRole('button', { name: m.charging_sync_skoda_now() }).elements()).toHaveLength(
+    0,
+  )
+})
+
+test('the card fetches the car status with its own labelled button', async () => {
+  const onSyncLive = vi.fn()
+  const { screen } = await renderWithProviders(
+    <VehicleLogCard
+      coverage={null}
+      live={null}
+      onImport={() => {}}
+      onSyncLive={onSyncLive}
+      syncingLive={false}
+    />,
+  )
+  await screen.getByRole('button', { name: m.charging_sync_skoda_now() }).click()
+  expect(onSyncLive).toHaveBeenCalledOnce()
 })

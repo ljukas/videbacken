@@ -22,7 +22,7 @@ For *why* a pattern exists, follow the ADR link.
 - **Data layer:** oRPC + TanStack Query; SSR via an in-process router client. Domain rules in services (ADR-0002), effects isolated (ADR-0001).
 - **Auth:** Better Auth, Google OAuth + email magic-link, allowlist-gated — see [Authentication](#authentication--authorization-adr-0017).
 - **Sync:** polled, never pushed (ADR-0018 supersedes 0004 + 0011). No realtime, no presence.
-- **Effects** (`src/lib/effects/`, each prod / dev / test): email Resend / Mailpit-SMTP / devLog + React Email templates (ADR-0008); storage Vercel Blob / RustFS-S3 / devLog, public (avatars) + private stores, client-direct upload (ADR-0006); queue Vercel Queue / BullMQ+Redis / devLog (ADR-0007). Pulled integrations (Zaptec, elpris) have **no** devLog adapter — they fail closed (ADR-0019).
+- **Effects** (`src/lib/effects/`, each prod / dev / test): email Resend / Mailpit-SMTP / devLog + React Email templates (ADR-0008); storage Vercel Blob / RustFS-S3 / devLog, public (avatars) + private stores, client-direct upload (ADR-0006); queue Vercel Queue / BullMQ+Redis / devLog (ADR-0007). Pulled integrations (Zaptec, elpris, Škoda) have **no** devLog adapter — they fail closed (ADR-0019).
 - **Logging:** pino → stdout (Vercel Runtime Logs); browser warn/error POSTs `/api/log` (ADR-0003).
 - **UI:** shadcn/ui (style `radix-nova`, base `slate`, **Radix primitives — not Base UI**) + Tailwind v4 (class sort on). Design language: self-hosted Cabinet Grotesk (headings) + Switzer (body), inset-sidebar shell + shared `PageContainer`, one `--brand` accent, reduced-motion-aware overlays (ADR-0015). Shared `Empty` component (ADR-0016); global Cmd+K palette on cmdk (ADR-0014).
 - **Forms:** `@tanstack/react-form` v1 `createFormHook` + bound shadcn `<Field>` (ADR-0005). Small CRUD → responsive overlay with URL dialog state; large forms → dedicated route (ADR-0013).
@@ -51,7 +51,7 @@ src/
     onboarding.tsx              full-screen 2-step wizard (name → avatar); guard while onboardedAt null
     signed-in.tsx               magic-link "continue here" confirmation
     api/{auth/$.ts, rpc/$.ts, log.ts}   Better Auth / oRPC catch-alls; browser log sink
-    api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
+    api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
     _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging, sensors
@@ -60,13 +60,14 @@ src/
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
-    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
-    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff — own all DB access + domain rules (ADR-0002)
-    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris (pulled, fail closed — ADR-0019), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
+    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
+    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff, vehicleState — own all DB access + domain rules (ADR-0002)
+    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda (pulled, fail closed — ADR-0019), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
     evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, `skodaExport.ts` client-safe MySkoda CSV parser (papaparse lazy-loaded), tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
+    vehicleState/               Škoda live-state poll: geofence (home point → boolean), sync + cron (ADR-0022)
     integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019)
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
@@ -135,6 +136,7 @@ drizzle/, compose.yaml, vite.config.ts (Nitro: plugins, region, crons, queue tri
 | External data integrations (fail-closed sync, health tracking, lease) | **0019** |
 | Spot prices & charging cost model (on-read, missing ≠ 0 kr, gridShare seam) | **0020** |
 | Charging-session vehicle attribution (ours by default, Škoda log re-match, admin wins) | **0021** |
+| Live vehicle-state attribution (Škoda poll, majority of known time, geofence) | **0022** |
 
 ---
 
@@ -191,6 +193,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 - Storage `BLOB_*` (prod) / `S3_*` (local RustFS); email `RESEND_API_KEY`+`EMAIL_FROM` (prod) / `SMTP_*` (local Mailpit); `REDIS_URL` (local queue); `LOG_LEVEL`.
   `STORAGE_ADAPTER=devLog` / `EMAIL_ADAPTER=devLog` force the no-op adapters (offline dev without docker).
 - `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (unset → fails closed as `not_configured`, ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data).
+- `SKODA_API_KEY`/`SKODA_VIN` (either unset → `not_configured`; Vercel Production only — Preview has its own DB but shares the VIN's 20/h quota) and `SKODA_HOME_COORDINATES` (never committed/logged; unset or invalid → geofence off: attribution falls back to plug state and whether the car is moving).
 - `GRID_FACILITY_ID` (18-digit metering-point ID, prod only, never committed/logged; unset → the monthly catalogue check is skipped).
 - `CRON_SECRET` (Bearer token gating `/api/cron/*`); `SHELLY_WEBHOOK_TOKEN` (query-param token for `/api/webhooks/shelly`).
 

@@ -34,6 +34,10 @@ function seedShell(qc: QueryClient) {
     orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } }).queryKey,
     health('elpris'),
   )
+  qc.setQueryData(
+    orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } }).queryKey,
+    health('skoda'),
+  )
 }
 
 async function renderPage(
@@ -130,6 +134,11 @@ function seedOverviewShell(qc: QueryClient, opts: { coverage?: boolean } = {}) {
     orpc.evCharging.recentRuns.queryOptions({ input: { source: 'elpris', limit: 20 } }).queryKey,
     [],
   )
+  qc.setQueryData(
+    orpc.evCharging.recentRuns.queryOptions({ input: { source: 'skoda', limit: 20 } }).queryKey,
+    [],
+  )
+  qc.setQueryData(orpc.evCharging.vehicleStateLatest.queryOptions().queryKey, null)
   if (opts.coverage !== false)
     qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
 }

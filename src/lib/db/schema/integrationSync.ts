@@ -31,6 +31,12 @@ export const integrationSync = pgTable(
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
     leaseToken: uuid('lease_token'),
     consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    // Consecutive alertable failures (not_configured excluded and resets it); the
+    // alert threshold counts these. Never more than `consecutiveFailures`, but
+    // that invariant is enforced by `nextRow`, not a DB CHECK: code from before
+    // this column (an instant rollback) zeroes `consecutive_failures` on success
+    // and leaves this column alone, which such a CHECK would reject.
+    alertableFailures: integer('alertable_failures').notNull().default(0),
     // `not_configured` is a code like the others: a failing row with that code
     // (e.g. missing credentials), not a distinct non-failing state.
     errorCode: text('error_code'),
@@ -49,6 +55,7 @@ export const integrationSync = pgTable(
       'integration_sync_consecutive_failures_nonneg_check',
       sql`${table.consecutiveFailures} >= 0`,
     ),
+    check('integration_sync_alertable_failures_nonneg_check', sql`${table.alertableFailures} >= 0`),
     check(
       'integration_sync_error_code_check',
       sql`${table.errorCode} IS NULL OR ${table.errorCode} IN (${sqlList(INTEGRATION_ERROR_CODES)})`,

@@ -8,7 +8,7 @@ import { orpc } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
-type SyncSource = 'zaptec' | 'elpris'
+type SyncSource = 'zaptec' | 'elpris' | 'skoda'
 type SyncResult = {
   outcome: 'ok' | 'skipped' | 'failed' | 'error'
   code: IntegrationErrorCode | null
@@ -97,6 +97,35 @@ export function useSyncNow() {
     }),
   )
 
+  // The car's live state: an explicit admin action, so confirm either way.
+  const car = useMutation(
+    orpc.evCharging.syncNow.mutationOptions({
+      onSuccess: (result) => {
+        switch (result.outcome) {
+          case 'ok':
+            toast.success(m.charging_sync_skoda_ok())
+            return
+          case 'skipped':
+            toast.info(m.charging_sync_skipped())
+            return
+          case 'failed':
+          case 'error':
+            toast.error(m.charging_sync_skoda_failed(), {
+              description: integrationErrorMessage(result.code ?? 'internal_error', {
+                source: 'skoda',
+              }),
+            })
+            return
+        }
+      },
+      onError: () =>
+        toast.error(m.charging_sync_skoda_failed(), {
+          description: integrationErrorMessage('internal_error', { source: 'skoda' }),
+        }),
+      onSettled: invalidate,
+    }),
+  )
+
   const pricesPending = prices.isPending || pricesRetry.isPending
   return {
     /** Both sources, in parallel. */
@@ -105,13 +134,28 @@ export function useSyncNow() {
       prices.mutate({ source: 'elpris' })
     },
     /** One source (an alert's retry). */
-    syncSource: (source: SyncSource) =>
-      source === 'elpris'
-        ? pricesRetry.mutate({ source: 'elpris' })
-        : sessions.mutate({ source: 'zaptec' }),
+    syncSource: (source: SyncSource) => {
+      switch (source) {
+        case 'elpris':
+          return pricesRetry.mutate({ source: 'elpris' })
+        case 'skoda':
+          return car.mutate({ source: 'skoda' })
+        case 'zaptec':
+          return sessions.mutate({ source: 'zaptec' })
+      }
+    },
+    // The heading button syncs Zaptec + elpris only, never the car.
     isPending: sessions.isPending || pricesPending,
-    isPendingFor: (source: SyncSource) =>
-      source === 'elpris' ? pricesPending : sessions.isPending,
+    isPendingFor: (source: SyncSource) => {
+      switch (source) {
+        case 'elpris':
+          return pricesPending
+        case 'skoda':
+          return car.isPending
+        case 'zaptec':
+          return sessions.isPending
+      }
+    },
   }
 }
 

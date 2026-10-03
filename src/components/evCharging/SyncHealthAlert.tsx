@@ -72,7 +72,8 @@ export function SyncHealthAlert({
 }
 
 // The state bodies that differ by source: sessions sync hourly and feed the
-// totals; prices sync daily and feed costs. Exhaustive — a new source is a
+// totals; prices sync daily and feed costs; the car's state polls every 15 min
+// and feeds attribution. Exhaustive — a new source is a
 // compile error until it gets its own copy.
 function neverSyncedCopy(source: Health['source']): string {
   switch (source) {
@@ -81,7 +82,7 @@ function neverSyncedCopy(source: Health['source']): string {
     case 'elpris':
       return m.charging_health_never_synced_elpris()
     case 'skoda':
-      return m.charging_health_never_synced()
+      return m.charging_health_never_synced_skoda()
   }
 }
 
@@ -92,7 +93,7 @@ function staleCopy(source: Health['source']): string {
     case 'elpris':
       return m.charging_health_stale_elpris()
     case 'skoda':
-      return m.charging_health_stale()
+      return m.charging_health_stale_skoda()
   }
 }
 

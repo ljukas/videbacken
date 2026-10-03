@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { STALE_AFTER_MS } from './policy'
+import { ALERT_AFTER_FAILURES, STALE_AFTER_MS } from './policy'
 import {
   deriveState,
   type HealthSnapshot,
@@ -22,7 +22,9 @@ const stats: RunStats = {
 }
 
 const ok: SyncOutcome = { ok: true, stats }
-function fail(code: 'auth_failed' | 'unreachable' | 'not_configured'): SyncOutcome {
+function fail(
+  code: 'auth_failed' | 'unreachable' | 'rate_limited' | 'not_configured',
+): SyncOutcome {
   return { ok: false, kind: 'failed', code, message: `boom ${code}`, stats }
 }
 
@@ -33,6 +35,7 @@ const never: HealthSnapshot = {
   failingSince: null,
   alertedAt: null,
   consecutiveFailures: 0,
+  alertableFailures: 0,
   errorCode: null,
   lastErrorMessage: null,
 }
@@ -49,6 +52,7 @@ function failing(code: 'auth_failed' | 'unreachable' | 'not_configured', n = 2):
     // The streak alerted iff it ran on an alertable code.
     alertedAt: code === 'not_configured' ? null : T0,
     consecutiveFailures: n,
+    alertableFailures: code === 'not_configured' ? 0 : n,
     errorCode: code,
     lastErrorMessage: 'earlier',
   }
@@ -109,6 +113,7 @@ describe('nextRow transitions', () => {
       failingSince: null,
       alertedAt: null,
       consecutiveFailures: 0,
+      alertableFailures: 0,
       errorCode: null,
       lastErrorMessage: null,
     })
@@ -199,7 +204,110 @@ describe('deriveState', () => {
     expect(deriveState('zaptec', row, now)).toBe(state)
   })
 
+  test('skoda goes stale after 1 h', () => {
+    const minutes = (m: number) => new Date(T0.getTime() + m * 60_000)
+    expect(STALE_AFTER_MS.skoda).toBe(60 * 60 * 1000)
+    expect(deriveState('skoda', healthy, minutes(59))).toBe('ok')
+    expect(deriveState('skoda', healthy, new Date(T0.getTime() + STALE_AFTER_MS.skoda))).toBe('ok')
+    expect(deriveState('skoda', healthy, new Date(T0.getTime() + STALE_AFTER_MS.skoda + 1))).toBe(
+      'stale',
+    )
+    expect(deriveState('skoda', healthy, minutes(61))).toBe('stale')
+  })
+
   test('zaptec goes stale after 3 h', () => {
     expect(STALE_AFTER_MS.zaptec).toBe(3 * 60 * 60 * 1000)
+  })
+})
+
+describe('alert threshold', () => {
+  function runAt3(steps: SyncOutcome[]) {
+    let prev = healthy
+    return steps.map((outcome) => {
+      const result = nextRow(prev, outcome, NOW, STARTED, 3)
+      prev = result.row
+      return result.transition
+    })
+  }
+
+  test('the threshold table is pinned', () => {
+    expect(ALERT_AFTER_FAILURES).toEqual({ zaptec: 1, elpris: 1, skoda: 3 })
+  })
+
+  test('two failures then success: no alert, streak cleared', () => {
+    const failed2 = nextRow(
+      nextRow(healthy, fail('unreachable'), NOW, STARTED, 3).row,
+      fail('unreachable'),
+      NOW,
+      STARTED,
+      3,
+    ).row
+    expect(failed2.alertedAt).toBeNull()
+    const result = nextRow(failed2, ok, NOW, STARTED, 3)
+    expect(result.transition).toBe('none')
+    expect(result.row.alertedAt).toBeNull()
+    expect(result.row.consecutiveFailures).toBe(0)
+  })
+
+  test('after the alert opens, a further failure stays silent', () => {
+    expect(runAt3(Array(4).fill(fail('unreachable')))).toEqual([
+      'none',
+      'none',
+      'started_failing',
+      'none',
+    ])
+  })
+
+  test('a not_configured prefix does not use up the threshold', () => {
+    const nc = fail('not_configured')
+    const u = fail('unreachable')
+    expect(runAt3([nc, nc, u, u])).toEqual(['none', 'none', 'none', 'none'])
+    expect(runAt3([nc, nc, u, u, u])).toEqual(['none', 'none', 'none', 'none', 'started_failing'])
+  })
+
+  test('a not_configured run in the middle restarts the count', () => {
+    const nc = fail('not_configured')
+    const u = fail('unreachable')
+    expect(runAt3([u, nc, u, u])).toEqual(['none', 'none', 'none', 'none'])
+    expect(runAt3([u, nc, u, u, u])).toEqual(['none', 'none', 'none', 'none', 'started_failing'])
+  })
+
+  test('three alertable failures in a row open the alert on the third', () => {
+    const u = fail('unreachable')
+    expect(runAt3([u, u, u])).toEqual(['none', 'none', 'started_failing'])
+  })
+
+  test('a success resets the alertable count', () => {
+    const one = nextRow(healthy, fail('unreachable'), NOW, STARTED, 3).row
+    expect(one.alertableFailures).toBe(1)
+    expect(nextRow(one, ok, NOW, STARTED, 3).row.alertableFailures).toBe(0)
+    const nc = nextRow(one, fail('not_configured'), NOW, STARTED, 3).row
+    expect(nc.alertableFailures).toBe(0)
+    expect(nc.consecutiveFailures).toBe(2)
+  })
+
+  test('with a threshold of 3, the alert opens on the third alertable failure in a row', () => {
+    const first = nextRow(healthy, fail('unreachable'), NOW, STARTED, 3)
+    expect(first.transition).toBe('none')
+    expect(first.row.alertedAt).toBeNull()
+    const second = nextRow(first.row, fail('rate_limited'), NOW, STARTED, 3)
+    expect(second.transition).toBe('none')
+    const third = nextRow(second.row, fail('unreachable'), NOW, STARTED, 3)
+    expect(third.transition).toBe('started_failing')
+    expect(third.row.alertedAt).toEqual(NOW)
+  })
+
+  test('a streak shorter than the threshold recovers silently', () => {
+    const failed = nextRow(healthy, fail('unreachable'), NOW, STARTED, 3).row
+    expect(nextRow(failed, ok, NOW, STARTED, 3).transition).toBe('none')
+  })
+
+  test('not_configured never alerts, whatever the threshold', () => {
+    let row = healthy
+    for (let i = 0; i < 5; i++) {
+      const next = nextRow(row, fail('not_configured'), NOW, STARTED, 3)
+      expect(next.transition).toBe('none')
+      row = next.row
+    }
   })
 })

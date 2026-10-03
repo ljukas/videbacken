@@ -1,5 +1,5 @@
 /**
- * Hand-written `fetch` stand-in for integration client tests (Zaptec, elpris).
+ * Hand-written `fetch` stand-in for integration client tests (Zaptec, elpris, Škoda).
  * Routes are keyed by `"<METHOD> <pathname>"` (query string ignored); each
  * handler receives the real `Request` plus its 0-based call index for that
  * route and returns a real `Response` (or throws, to simulate a network

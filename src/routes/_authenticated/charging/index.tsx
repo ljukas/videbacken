@@ -71,6 +71,12 @@ const vehicleCoverageQuery = orpc.evCharging.vehicleRecordCoverage.queryOptions(
 const pricesRunsQuery = orpc.evCharging.recentRuns.queryOptions({
   input: { source: 'elpris', limit: RECENT_RUNS },
 })
+// The car's live-state poll (Škoda), admin-only.
+const skodaHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } })
+const skodaRunsQuery = orpc.evCharging.recentRuns.queryOptions({
+  input: { source: 'skoda', limit: RECENT_RUNS },
+})
+const vehicleLatestQuery = orpc.evCharging.vehicleStateLatest.queryOptions()
 
 export const Route = createFileRoute('/_authenticated/charging/')({
   head: () => ({
@@ -117,6 +123,10 @@ export const Route = createFileRoute('/_authenticated/charging/')({
       user.role === 'admin' ? queryClient.ensureQueryData(pricesRunsQuery) : null,
       // Prefetched: a failed read shows in its card, it must not take the page down.
       user.role === 'admin' ? queryClient.prefetchQuery(vehicleCoverageQuery) : null,
+      // Prefetched too: a failed car read must not take the page down.
+      user.role === 'admin' ? queryClient.prefetchQuery(skodaHealthQuery) : null,
+      user.role === 'admin' ? queryClient.prefetchQuery(skodaRunsQuery) : null,
+      user.role === 'admin' ? queryClient.prefetchQuery(vehicleLatestQuery) : null,
     ])
   },
   component: ChargingPage,
@@ -224,6 +234,9 @@ function ChargingPage() {
   })
   const { data: pricesRuns } = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
   const vehicleCoverage = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
+  const { data: skodaHealth } = useQuery({ ...skodaHealthQuery, enabled: isAdmin })
+  const { data: skodaRuns } = useQuery({ ...skodaRunsQuery, enabled: isAdmin })
+  const vehicleLatest = useQuery({ ...vehicleLatestQuery, enabled: isAdmin })
 
   // "Visa fler" fetches the longer page first and only then switches to it, so
   // a failed fetch leaves the rows on screen (with a toast; the button stays
@@ -274,6 +287,15 @@ function ChargingPage() {
           isAdmin
           onRetry={() => syncNow.syncSource('elpris')}
           retrying={syncNow.isPendingFor('elpris')}
+        />
+      ) : null}
+      {/* Admin-only like prices: a household member can't act on the car feed. */}
+      {isAdmin && skodaHealth ? (
+        <SyncHealthAlert
+          health={skodaHealth}
+          isAdmin
+          onRetry={() => syncNow.syncSource('skoda')}
+          retrying={syncNow.isPendingFor('skoda')}
         />
       ) : null}
 
@@ -362,6 +384,10 @@ function ChargingPage() {
           coverage={vehicleCoverage.data}
           loadError={vehicleCoverage}
           onImport={() => open('vehicleImport')}
+          live={vehicleLatest.data}
+          liveLoadError={vehicleLatest}
+          onSyncLive={() => syncNow.syncSource('skoda')}
+          syncingLive={syncNow.isPendingFor('skoda')}
         />
       ) : null}
 
@@ -397,6 +423,7 @@ function ChargingPage() {
 
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
       {isAdmin && pricesRuns ? <RecentRunsCard source="elpris" runs={pricesRuns} /> : null}
+      {isAdmin && skodaRuns ? <RecentRunsCard source="skoda" runs={skodaRuns} /> : null}
 
       {isAdmin ? (
         <>

@@ -50,8 +50,10 @@
   "charging_health_failing_since": "Har inte fungerat sedan {time}.",
   "charging_health_never_synced": "Ingen laddningsdata har hämtats ännu. Den första synkningen körs inom en timme.",
   "charging_health_never_synced_elpris": "Inga elpriser har hämtats ännu. De hämtas varje eftermiddag, när morgondagens priser har publicerats.",
+  "charging_health_never_synced_skoda": "Bilens status har inte hämtats ännu. Den hämtas var 15:e minut.",
   "charging_health_stale": "Synkningen har inte lyckats på ett tag. Siffrorna kan vara inaktuella.",
   "charging_health_stale_elpris": "Elpriserna har inte kunnat hämtas på ett tag. Kostnader kan sakna de senaste dagarnas priser.",
+  "charging_health_stale_skoda": "Bilens status har inte kunnat hämtas på ett tag. Nya laddningar räknas som vår bil tills det fungerar igen.",
   "charging_health_title": "{source}: {state}",
   "charging_last_synced": "Senast synkad {time}",
   "charging_live_mode_charging": "Laddar",
@@ -115,6 +117,9 @@
     }
   ],
   "charging_sync_prices_failed": "Elpriserna kunde inte hämtas",
+  "charging_sync_skoda_now": "Hämta bilens status",
+  "charging_sync_skoda_ok": "Bilens status är uppdaterad",
+  "charging_sync_skoda_failed": "Bilens status kunde inte hämtas",
   "charging_sync_prices_ok": "Elpriserna är uppdaterade",
   "charging_sync_skipped": "En synkning pågår redan",
   "charging_tariff_actions_for": "Åtgärder för perioden från {date}",
@@ -242,6 +247,7 @@
   "form_user_placeholder": "Välj användare",
   "image_error_not_yours": "Profilbilden tillhör inte dig",
   "integration_health_error_auth_failed": "Inloggningen mot {source} fungerar inte längre. En admin behöver uppdatera inloggningsuppgifterna.",
+  "integration_health_error_auth_failed_skoda": "Škoda-nyckeln fungerar inte längre (har den gått ut?). En admin behöver skapa en ny i MyŠkoda-appen.",
   "integration_health_error_forbidden": "{source} nekar åtkomst. En admin behöver kontrollera behörigheterna.",
   "integration_health_error_internal_error": "Ett internt fel inträffade under synkningen. En admin behöver undersöka loggarna.",
   "integration_health_error_not_configured": "Anslutningen till {source} är inte konfigurerad i den här installationen.",
@@ -593,7 +599,7 @@
   "charging_vehicle_auto": "Automatiskt",
   "charging_vehicle_saved": "Sparat",
   "charging_vehicle_save_error": "Kunde inte spara vem som laddade",
-  "charging_vehicle_log_title": "Bilens laddlogg",
+  "charging_vehicle_log_title": "Bilens data",
   "charging_vehicle_log_description": "Används för att avgöra vilka laddningar som är vår bil.",
   "charging_vehicle_log_coverage": [
     {
@@ -606,13 +612,16 @@
       ],
       "selectors": ["countPlural"],
       "match": {
-        "countPlural=one": "{countFormatted} laddning, {from} – {to}",
-        "countPlural=other": "{countFormatted} laddningar, {from} – {to}"
+        "countPlural=one": "Laddlogg: {countFormatted} laddning, {from} – {to}",
+        "countPlural=other": "Laddlogg: {countFormatted} laddningar, {from} – {to}"
       }
     }
   ],
   "charging_vehicle_log_none": "Ingen laddlogg importerad",
-  "charging_vehicle_import_button": "Importera",
+  "charging_vehicle_live_last_contact": "Senaste kontakt med bilen:",
+  "charging_vehicle_live_none": "Ingen kontakt med bilen ännu",
+  "charging_vehicle_live_error_title": "Bilens senaste kontakt kunde inte hämtas",
+  "charging_vehicle_import_button": "Importera laddlogg",
   "charging_vehicle_import_title": "Importera bilens laddlogg",
   "charging_vehicle_import_description": "Välj CSV-exporten från MySkoda-appen. Filen läses i din webbläsare; platser sparas inte.",
   "charging_vehicle_import_file": "Fil",

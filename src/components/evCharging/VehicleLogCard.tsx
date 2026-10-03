@@ -8,9 +8,11 @@ import {
   CardHeader,
   CardTitle,
 } from '~/components/ui/card'
+import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { formatDate } from './format'
+import { formatDate, formatDateTime } from './format'
 import { LoadErrorAlert, type LoadErrorQuery, loadFailed } from './LoadErrorAlert'
+import { SyncNowButton } from './SyncNowButton'
 
 type Props = {
   /** What the imported log covers; null when nothing is imported, undefined while unknown. */
@@ -18,12 +20,28 @@ type Props = {
   /** The coverage read; when it failed there is no "none imported" claim (ADR-0016). */
   loadError?: LoadErrorQuery
   onImport: () => void
+  /** The Škoda poll's last contact; null when never, undefined while unknown. */
+  live?: RouterOutputs['evCharging']['vehicleStateLatest']
+  /** The last-contact read; when it failed there is no "no contact" claim (ADR-0016). */
+  liveLoadError?: LoadErrorQuery
+  onSyncLive?: () => void
+  syncingLive?: boolean
 }
 
-// Admin-only: the car's own charging log decides which Zaptec sessions are
-// "our car" (ADR-0021). Shows how much of it is loaded and opens the import.
-export function VehicleLogCard({ coverage, loadError, onImport }: Props) {
+// Admin-only: the car's own log decides which sessions are ours (ADR-0021);
+// the live poll's last contact shows here (ADR-0022). Shows how much of the
+// log is loaded and opens the import.
+export function VehicleLogCard({
+  coverage,
+  loadError,
+  onImport,
+  live,
+  liveLoadError,
+  onSyncLive,
+  syncingLive,
+}: Props) {
   const failed = loadError !== undefined && loadFailed(loadError)
+  const liveFailed = liveLoadError !== undefined && loadFailed(liveLoadError)
   return (
     <Card>
       <CardHeader>
@@ -38,7 +56,7 @@ export function VehicleLogCard({ coverage, loadError, onImport }: Props) {
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent className="text-sm">
+      <CardContent className="flex flex-col gap-2 text-sm">
         {failed && loadError ? (
           <LoadErrorAlert title={m.charging_vehicle_log_error_title()} query={loadError} />
         ) : coverage ? (
@@ -51,6 +69,29 @@ export function VehicleLogCard({ coverage, loadError, onImport }: Props) {
           </p>
         ) : coverage === null ? (
           <p className="text-muted-foreground">{m.charging_vehicle_log_none()}</p>
+        ) : null}
+        {liveFailed && liveLoadError ? (
+          <LoadErrorAlert title={m.charging_vehicle_live_error_title()} query={liveLoadError} />
+        ) : live !== undefined ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {live ? (
+              <p>
+                {m.charging_vehicle_live_last_contact()}{' '}
+                <time dateTime={(live.capturedAt ?? live.polledAt).toISOString()}>
+                  {formatDateTime(live.capturedAt ?? live.polledAt)}
+                </time>
+              </p>
+            ) : (
+              <p className="text-muted-foreground">{m.charging_vehicle_live_none()}</p>
+            )}
+            {onSyncLive ? (
+              <SyncNowButton
+                onSync={onSyncLive}
+                pending={syncingLive ?? false}
+                label={m.charging_sync_skoda_now()}
+              />
+            ) : null}
+          </div>
         ) : null}
       </CardContent>
     </Card>

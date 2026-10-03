@@ -1,0 +1,289 @@
+import { asc, desc, eq } from 'drizzle-orm'
+import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
+import { db } from '~/lib/db'
+import { integrationSyncRun, user, vehicleStateSnapshot } from '~/lib/db/schema'
+import { queue } from '~/lib/effects'
+import { type SkodaClient, SkodaError, type SkodaReading } from '~/lib/effects/skoda'
+import { createServerLogger } from '~/lib/logger/server'
+import { getHealth } from '~/lib/services/integrationSync'
+import * as vehicleStateService from '~/lib/services/vehicleState'
+import { setupDatabase } from '~test/setup'
+import { runSkodaSync } from './sync'
+
+setupDatabase()
+
+const NOW = new Date('2026-05-04T09:07:00Z')
+const HOME = { latitude: 59.3293, longitude: 18.0686 }
+
+const reading = (
+  overrides: Partial<SkodaReading['state']> = {},
+  keyExpiresAt: Date | null = new Date('2027-01-15T12:00:00Z'),
+): SkodaReading => ({
+  keyExpiresAt,
+  state: {
+    chargingCapturedAt: new Date('2026-05-04T08:57:51Z'),
+    chargingState: 'CHARGING',
+    chargeType: 'AC',
+    plugState: 'CONNECTED',
+    chargePowerKw: 3.5,
+    socPercent: 55,
+    odometerKm: 12345,
+    odometerCapturedAt: new Date('2026-05-04T08:55:01Z'),
+    parking: { state: 'PARKED', position: HOME },
+    missingParts: [],
+    invalidParts: [],
+    ...overrides,
+  },
+})
+const fakeSkoda = (impl: () => Promise<SkodaReading>, retries = 0): SkodaClient => ({
+  vehicleState: async (o) => {
+    if (o?.stats) {
+      o.stats.requests++
+      o.stats.fetchMs += 12
+      o.stats.retries += retries
+    }
+    return impl()
+  },
+})
+
+function capturingLogger() {
+  const lines: string[] = []
+  const log = createServerLogger({
+    write(chunk: string) {
+      lines.push(chunk)
+      return true
+    },
+  })
+  const entries = () =>
+    lines
+      .join('')
+      .split('\n')
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l) as Record<string, unknown> & { msg: string })
+  return { log, entries, raw: () => lines.join('') }
+}
+
+type RunOpts = {
+  homePoint?: typeof HOME | null
+  log?: ReturnType<typeof capturingLogger>['log']
+  now?: Date
+}
+const run = (client: SkodaClient, opts: RunOpts = {}) =>
+  runSkodaSync({
+    trigger: 'cron',
+    now: () => opts.now ?? NOW,
+    deps: {
+      skoda: client,
+      homePoint: 'homePoint' in opts ? (opts.homePoint ?? null) : HOME,
+      log: opts.log ?? capturingLogger().log,
+    },
+  })
+// Alerts and reminders go to active admins (same seeding as runPulledSync.test.ts).
+const seedAdmin = () => db.insert(user).values({ name: 'A', email: 'a@example.com', role: 'admin' })
+const runRows = () =>
+  db
+    .select()
+    .from(integrationSyncRun)
+    .where(eq(integrationSyncRun.source, 'skoda'))
+    .orderBy(desc(integrationSyncRun.startedAt))
+const snapshots = () =>
+  db.select().from(vehicleStateSnapshot).orderBy(asc(vehicleStateSnapshot.polledAt))
+
+let publish: MockInstance<typeof queue.publish>
+beforeEach(() => {
+  publish = vi.spyOn(queue, 'publish').mockResolvedValue(undefined)
+})
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+test('stores the poll with the geofence result and no coordinates', async () => {
+  const result = await run(fakeSkoda(async () => reading()))
+  expect(result).toMatchObject({ source: 'skoda', outcome: 'ok', stored: true, geofence: 'on' })
+  const [row] = await snapshots()
+  expect(row).toMatchObject({
+    polledAt: NOW,
+    capturedAt: new Date('2026-05-04T08:57:51Z'),
+    plugState: 'CONNECTED',
+    parkingState: 'PARKED',
+    atHome: true,
+    socPercent: 55,
+    odometerKm: 12345,
+  })
+  expect(JSON.stringify(row)).not.toContain('59.3293')
+  expect((await getHealth('skoda', { now: NOW, includeAdminDetail: false })).state).toBe('ok')
+})
+
+test('parked away is at_home false; no home point stores null and turns the geofence off', async () => {
+  const away = { latitude: HOME.latitude + 0.05, longitude: HOME.longitude }
+  await run(fakeSkoda(async () => reading({ parking: { state: 'PARKED', position: away } })))
+  const off = await run(
+    fakeSkoda(async () => reading()),
+    { homePoint: null, now: new Date(NOW.getTime() + 1000) },
+  )
+  expect(off.geofence).toBe('off')
+  expect((await snapshots()).map((r) => r.atHome)).toEqual([false, null])
+})
+
+test('the home point is read from SKODA_HOME_COORDINATES when not injected', async () => {
+  const withEnv = (value: string) => {
+    vi.stubEnv('SKODA_HOME_COORDINATES', value)
+    return runSkodaSync({
+      trigger: 'cron',
+      now: () => NOW,
+      deps: { skoda: fakeSkoda(async () => reading()), log: capturingLogger().log },
+    })
+  }
+  expect((await withEnv('59.3293,18.0686')).geofence).toBe('on')
+  expect((await withEnv('0x10,18')).geofence).toBe('off')
+  vi.unstubAllEnvs()
+})
+
+test('missing parts log only their count at info, invalid parts at warn, a clean poll neither', async () => {
+  const clean = capturingLogger()
+  await run(
+    fakeSkoda(async () => reading()),
+    { log: clean.log },
+  )
+  expect(clean.entries().filter((e) => e.msg.startsWith('skoda sync: parts'))).toHaveLength(0)
+
+  const { log, entries, raw } = capturingLogger()
+  const result = await run(
+    fakeSkoda(async () =>
+      reading({
+        chargingCapturedAt: null,
+        chargingState: null,
+        chargeType: null,
+        plugState: null,
+        chargePowerKw: null,
+        parking: null,
+        missingParts: ['CHARGING_UNAVAILABLE', 'ODOMETER_UNAVAILABLE'],
+        invalidParts: ['parkingPosition'],
+      }),
+    ),
+    { log, now: new Date(NOW.getTime() + 1000) },
+  )
+  expect(result).toMatchObject({ outcome: 'ok', stored: true, missingParts: 2, invalidParts: 1 })
+  expect((await snapshots()).at(-1)?.plugState).toBeNull()
+  const unavailable = entries().find((e) => e.msg === 'skoda sync: parts unavailable')
+  expect(unavailable).toMatchObject({ level: 30, missingParts: 2 })
+  for (const code of ['CHARGING_UNAVAILABLE', 'ODOMETER_UNAVAILABLE'])
+    expect(raw()).not.toContain(code)
+  const invalid = entries().find((e) => e.msg === 'skoda sync: parts invalid')
+  expect(invalid).toMatchObject({ level: 40, invalidParts: ['parkingPosition'] })
+})
+
+test('an ok poll records the run stats', async () => {
+  await run(fakeSkoda(async () => reading()))
+  const [row] = await runRows()
+  expect(row).toMatchObject({
+    outcome: 'ok',
+    sessionsSeen: 1,
+    upserted: 1,
+    voided: 0,
+    pages: 0,
+    since: null,
+  })
+  expect(row?.timings).toMatchObject({ fetchMs: 12, requests: 1, retries: 0 })
+  expect(typeof row?.timings.snapshotMs).toBe('number')
+  expect(typeof row?.timings.reattributeMs).toBe('number')
+})
+
+test('a client that never answers fails the run as unreachable at the deadline', async () => {
+  const hang = fakeSkoda(() => new Promise<SkodaReading>(() => {}))
+  const result = await runSkodaSync({
+    trigger: 'cron',
+    now: () => NOW,
+    deadlineMs: 20,
+    deps: { skoda: hang, homePoint: HOME, log: capturingLogger().log },
+  })
+  expect(result).toMatchObject({ outcome: 'failed', code: 'unreachable', stored: false })
+  expect(await snapshots()).toHaveLength(0)
+  expect((await runRows())[0]).toMatchObject({ outcome: 'failed', errorCode: 'unreachable' })
+})
+
+test('an unexpected error is recorded as internal_error and rethrown', async () => {
+  await expect(
+    run(
+      fakeSkoda(async () => {
+        throw new TypeError('boom')
+      }),
+    ),
+  ).rejects.toThrow('boom')
+  expect((await runRows())[0]).toMatchObject({ outcome: 'error', errorCode: 'internal_error' })
+  expect((await getHealth('skoda', { now: NOW, includeAdminDetail: false })).code).toBe(
+    'internal_error',
+  )
+  expect(await snapshots()).toHaveLength(0)
+})
+
+test('a snapshot write that fails rethrows and stores nothing', async () => {
+  vi.spyOn(vehicleStateService, 'recordSnapshot').mockRejectedValue(new Error('db down'))
+  await expect(run(fakeSkoda(async () => reading()))).rejects.toThrow('db down')
+  expect(await snapshots()).toHaveLength(0)
+  expect((await runRows())[0]).toMatchObject({ outcome: 'error', errorCode: 'internal_error' })
+})
+
+test('an expired key fails the run as auth_failed, stores nothing, and alerts on the third poll in a row', async () => {
+  await seedAdmin()
+  const expired = fakeSkoda(async () => {
+    throw new SkodaError('auth_failed', 'vehicle', 401)
+  })
+  for (let i = 0; i < 2; i++) {
+    expect(await run(expired, { now: new Date(NOW.getTime() + i * 900_000) })).toMatchObject({
+      outcome: 'failed',
+      code: 'auth_failed',
+      stored: false,
+    })
+  }
+  expect(publish).not.toHaveBeenCalled()
+  await run(expired, { now: new Date(NOW.getTime() + 2 * 900_000) })
+  expect(publish).toHaveBeenCalledTimes(1)
+  expect(publish).toHaveBeenCalledWith(
+    'email_integration_sync_alert',
+    expect.objectContaining({
+      source: 'skoda',
+      transition: 'started_failing',
+      code: 'auth_failed',
+    }),
+  )
+  expect(await snapshots()).toHaveLength(0)
+  expect((await runRows())[0]).toMatchObject({ outcome: 'failed', sessionsSeen: 0, upserted: 0 })
+})
+
+test('not configured fails closed without alerting', async () => {
+  await seedAdmin()
+  for (let i = 0; i < 3; i++) {
+    const result = await runSkodaSync({
+      trigger: 'cron',
+      now: () => new Date(NOW.getTime() + i * 900_000),
+      deps: { homePoint: HOME },
+    })
+    expect(result).toMatchObject({ outcome: 'failed', code: 'not_configured' })
+  }
+  expect(publish).not.toHaveBeenCalled()
+})
+
+test('the run line carries counters but never the position or presence', async () => {
+  const { log, entries, raw } = capturingLogger()
+  await run(
+    fakeSkoda(async () => reading()),
+    { log },
+  )
+  const line = entries().find((e) => e.msg === 'integration sync run')
+  expect(line).toMatchObject({
+    source: 'skoda',
+    outcome: 'ok',
+    stored: true,
+    geofence: 'on',
+    requests: 1,
+    retries: 0,
+    missingParts: 0,
+    invalidParts: 0,
+    reattributeChanged: 0,
+  })
+  expect(typeof line?.fetchMs).toBe('number')
+  expect(typeof line?.snapshotMs).toBe('number')
+  for (const leak of ['59.3293', 'atHome', 'plugState', 'CONNECTED', 'PARKED'])
+    expect(raw()).not.toContain(leak)
+})
