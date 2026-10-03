@@ -12,6 +12,8 @@
 **Plan**: [Phase 2 plan](../superpowers/plans/2026-09-29-ev-charging-phase2.md).
 **Research**: [scope map](../superpowers/specs/2026-09-28-ev-charging-scope-map.md) ("Phase 2", "Phase 2b").
 **Builds on**: [ADR-0019](./0019-external-data-integrations.md) (the elpris source is a pulled integration).
+**Extended by**: [ADR-0023](./0023-solar-aware-charging-cost.md) — the `gridShare` seam becomes a per-slot energy mix
+(grid / solar / battery) derived from Emaldo; the economy counterfactuals stay grid-only.
 
 ---
 
