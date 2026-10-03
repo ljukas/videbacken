@@ -1,6 +1,17 @@
 import { sql } from 'drizzle-orm'
-import { check, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import {
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  smallint,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core'
+import {
+  CREDENTIAL_REMINDER_DAYS,
   INTEGRATION_ERROR_CODES,
   INTEGRATION_SOURCES,
   SYNC_RUN_OUTCOMES,
@@ -41,6 +52,12 @@ export const integrationSync = pgTable(
     // (e.g. missing credentials), not a distinct non-failing state.
     errorCode: text('error_code'),
     lastErrorMessage: text('last_error_message'),
+    // Last expiry the source's credential reported (Škoda's X-API-Key-Expires-At);
+    // null for sources without one.
+    credentialExpiresAt: timestamp('credential_expires_at', { withTimezone: true }),
+    // The smallest reminder threshold already emailed for this expiry; reset to
+    // null whenever credential_expires_at changes (a renewed key).
+    credentialReminderDays: smallint('credential_reminder_days'),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => new Date())
@@ -87,6 +104,14 @@ export const integrationSync = pgTable(
     check(
       'integration_sync_lease_until_token_check',
       sql`(${table.leaseUntil} IS NULL) = (${table.leaseToken} IS NULL)`,
+    ),
+    check(
+      'integration_sync_credential_reminder_days_check',
+      sql`${table.credentialReminderDays} IS NULL OR ${table.credentialReminderDays} IN (${sql.raw(CREDENTIAL_REMINDER_DAYS.join(', '))})`,
+    ),
+    check(
+      'integration_sync_credential_reminder_expiry_check',
+      sql`${table.credentialReminderDays} IS NULL OR ${table.credentialExpiresAt} IS NOT NULL`,
     ),
   ],
 ).enableRLS()

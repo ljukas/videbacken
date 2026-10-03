@@ -77,7 +77,7 @@ src/
     i18n/, zodLocale.ts, theme.ts, browserSession.ts, devHost.ts (dev:host LAN URLs), utils.ts
   components/                   <entity>/ folders: account, command, evCharging, form, layout, login, onboarding, sensor, user; ui/ (shadcn);
                                 root: AppSidebar, ThemeProvider, ModeToggle, LocaleSwitcher, Logo, NotFound, DefaultCatchBoundary
-  emails/                       React Email: MagicLink, InviteUser, IntegrationSyncAlert (+ BrandEmailLayout); preview `bun run email:dev`
+  emails/                       React Email: MagicLink, InviteUser, IntegrationSyncAlert, GridTariffAvailable, CredentialExpiry (+ BrandEmailLayout); preview `bun run email:dev`
   styles/                       Tailwind v4 entry (+ the --brand token)
 test/                           setup.ts (setupDatabase: per-test schema, local-only guard), rls.test.ts, fixtures/, browser/
 drizzle/, compose.yaml, vite.config.ts (Nitro: plugins, region, crons, queue triggers), drizzle.config.ts, biome.json
@@ -193,7 +193,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 - Storage `BLOB_*` (prod) / `S3_*` (local RustFS); email `RESEND_API_KEY`+`EMAIL_FROM` (prod) / `SMTP_*` (local Mailpit); `REDIS_URL` (local queue); `LOG_LEVEL`.
   `STORAGE_ADAPTER=devLog` / `EMAIL_ADAPTER=devLog` force the no-op adapters (offline dev without docker).
 - `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (unset → fails closed as `not_configured`, ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data).
-- `SKODA_API_KEY`/`SKODA_VIN` (either unset → `not_configured`; Vercel Production only — Preview has its own DB but shares the VIN's 20/h quota) and `SKODA_HOME_COORDINATES` (never committed/logged; unset or invalid → geofence off: attribution falls back to plug state and whether the car is moving).
+- `SKODA_API_KEY`/`SKODA_VIN` (either unset → `not_configured`; Vercel Production only — Preview has its own DB but shares the VIN's 20/h quota) and `SKODA_HOME_COORDINATES` (never committed/logged; unset or invalid → geofence off: attribution falls back to plug state and whether the car is moving). Renewing the key: `docs/runbooks/skoda-api-key.md`.
 - `GRID_FACILITY_ID` (18-digit metering-point ID, prod only, never committed/logged; unset → the monthly catalogue check is skipped).
 - `CRON_SECRET` (Bearer token gating `/api/cron/*`); `SHELLY_WEBHOOK_TOKEN` (query-param token for `/api/webhooks/shelly`).
 

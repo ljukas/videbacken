@@ -241,7 +241,10 @@ test('a 2 KB message with a Bearer token is stored redacted and truncated', asyn
   }
 
   const admin = await getHealth('zaptec', { now: at(2000), includeAdminDetail: true })
-  expect(admin.adminDetail).toEqual({ lastErrorMessage: row.lastErrorMessage })
+  expect(admin.adminDetail).toEqual({
+    lastErrorMessage: row.lastErrorMessage,
+    credentialExpiry: null,
+  })
   const member = await getHealth('zaptec', { now: at(2000), includeAdminDetail: false })
   expect(member.adminDetail).toBeNull()
   expect(member.code).toBe('auth_failed')
@@ -257,7 +260,7 @@ test('getHealth for a source with no row is never_synced', async () => {
     failingSince: null,
     consecutiveFailures: 0,
     code: null,
-    adminDetail: { lastErrorMessage: null },
+    adminDetail: { lastErrorMessage: null, credentialExpiry: null },
   })
 })
 

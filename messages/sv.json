@@ -211,6 +211,13 @@
   "dashboard_empty_description": "Det här är din startpunkt — sidor du lägger till visas här.",
   "dashboard_empty_title": "Inget här än",
   "dashboard_welcome_heading": "Välkommen, {name}",
+  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det räknas nya laddningar som vår bil, även om en gäst laddade. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys), byt SKODA_API_KEY i Vercel (Production) och deploya om — eller be den som sköter Vercel-projektet. Verifiera med Hämta bilens status på Översikt.",
+  "email_credential_expiry_button": "Visa laddningsöversikt",
+  "email_credential_expiry_fallback": "Om knappen inte fungerar, kopiera och klistra in följande länk i din webbläsare:",
+  "email_credential_expiry_footer": "Det här är ett automatiskt meddelande från Videbacken.",
+  "email_credential_expiry_heading": "Škoda-nyckeln går ut den {date}",
+  "email_credential_expiry_heading_final": "Sista påminnelsen: Škoda-nyckeln går ut den {date}",
+  "email_credential_expiry_preview": "Skapa en ny nyckel före den {date}",
   "email_grid_tariff_body": "{company} publicerar nu sina nättariffer via Eltariff-API, och vår anläggning ingår i deras register. Elöverföringen kan därmed hämtas automatiskt i stället för att föras in för hand, men den hämtningen behöver byggas först. Du får det här meddelandet en gång i månaden tills den är på plats.",
   "email_grid_tariff_button": "Visa laddningsöversikt",
   "email_grid_tariff_company_unknown": "Vårt nätbolag",
@@ -675,5 +682,24 @@
   "charging_vehicle_import_done": "Vår bil: {ours} · Gäster: {other}",
   "charging_vehicle_import_error": "Importen misslyckades",
   "charging_vehicle_import_reading": "Läser filen …",
-  "charging_vehicle_log_error_title": "Bilens laddlogg kunde inte hämtas"
+  "charging_vehicle_log_error_title": "Bilens laddlogg kunde inte hämtas",
+  "charging_skoda_key_expiring_title": "Škoda-nyckeln går snart ut",
+  "charging_skoda_key_expiring_body": [
+    {
+      "declarations": [
+        "input date",
+        "input days",
+        "local daysPlural = days: plural",
+        "local daysFormatted = days: number"
+      ],
+      "selectors": ["daysPlural"],
+      "match": {
+        "daysPlural=one": "Den går ut {date} (om {daysFormatted} dag). Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om.",
+        "daysPlural=other": "Den går ut {date} (om {daysFormatted} dagar). Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om."
+      }
+    }
+  ],
+  "charging_skoda_key_expiring_body_today": "Den går ut i dag, {date}. Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om.",
+  "charging_vehicle_key_expires": "Nyckeln går ut den {date}",
+  "charging_vehicle_key_expired": "Nyckeln gick ut den {date}"
 }

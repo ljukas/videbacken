@@ -2,6 +2,7 @@ import { QUEUE_MAX_DELIVERIES } from '~/lib/effects/queue/queue'
 import { logger } from '~/lib/logger/server'
 import { createQueueDispatcher, type QueueHandlerTable } from './dispatch'
 import { blurhashHandler } from './handlers/blurhash'
+import { emailCredentialExpiryHandler } from './handlers/emailCredentialExpiry'
 import { emailGridTariffAvailableHandler } from './handlers/emailGridTariffAvailable'
 import { emailIntegrationSyncAlertHandler } from './handlers/emailIntegrationSyncAlert'
 import { emailUserInvitedHandler } from './handlers/emailUserInvited'
@@ -21,6 +22,7 @@ export const queueHandlers: QueueHandlerTable = {
   heic_transcode: heicTranscodeHandler,
   email_integration_sync_alert: emailIntegrationSyncAlertHandler,
   email_grid_tariff_available: emailGridTariffAvailableHandler,
+  email_credential_expiry: emailCredentialExpiryHandler,
 }
 
 /**

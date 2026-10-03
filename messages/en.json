@@ -211,6 +211,13 @@
   "dashboard_empty_description": "This is your starting point — pages you add will show up here.",
   "dashboard_empty_title": "Nothing here yet",
   "dashboard_welcome_heading": "Welcome, {name}",
+  "email_credential_expiry_body": "The API key Videbacken uses to read the car's status expires on {date}. After that, new charging sessions count as our car, even if a guest charged. Create a new key in the MyŠkoda app (https://go.skoda.eu/api-keys), replace SKODA_API_KEY in Vercel (Production) and redeploy — or ask whoever manages the Vercel project. Verify with Fetch the car's status on the overview page.",
+  "email_credential_expiry_button": "View charging overview",
+  "email_credential_expiry_fallback": "If the button doesn't work, copy and paste the following link into your browser:",
+  "email_credential_expiry_footer": "This is an automated message from Videbacken.",
+  "email_credential_expiry_heading": "The Škoda key expires on {date}",
+  "email_credential_expiry_heading_final": "Final reminder: the Škoda key expires on {date}",
+  "email_credential_expiry_preview": "Create a new key before {date}",
   "email_grid_tariff_body": "{company} now publishes its grid tariffs through the Eltariff API, and our facility is in its register. The grid transfer fee could therefore be fetched automatically instead of being entered by hand, but that import has to be built first. You'll get this message once a month until it is in place.",
   "email_grid_tariff_button": "View charging overview",
   "email_grid_tariff_company_unknown": "Our grid company",
@@ -675,5 +682,24 @@
   "charging_vehicle_import_done": "Our car: {ours} · Guests: {other}",
   "charging_vehicle_import_error": "The import failed",
   "charging_vehicle_import_reading": "Reading the file …",
-  "charging_vehicle_log_error_title": "The car's charging log couldn't be loaded"
+  "charging_vehicle_log_error_title": "The car's charging log couldn't be loaded",
+  "charging_skoda_key_expiring_title": "The Škoda key expires soon",
+  "charging_skoda_key_expiring_body": [
+    {
+      "declarations": [
+        "input date",
+        "input days",
+        "local daysPlural = days: plural",
+        "local daysFormatted = days: number"
+      ],
+      "selectors": ["daysPlural"],
+      "match": {
+        "daysPlural=one": "It expires on {date} (in {daysFormatted} day). Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy.",
+        "daysPlural=other": "It expires on {date} (in {daysFormatted} days). Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy."
+      }
+    }
+  ],
+  "charging_skoda_key_expiring_body_today": "It expires today, {date}. Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy.",
+  "charging_vehicle_key_expires": "The key expires on {date}",
+  "charging_vehicle_key_expired": "The key expired on {date}"
 }

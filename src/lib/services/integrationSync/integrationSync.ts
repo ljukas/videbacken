@@ -10,6 +10,7 @@ import type {
 } from '~/lib/integrationHealth'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
+import { type CredentialExpiry, credentialExpiryOf } from './credential'
 import { ALERT_AFTER_FAILURES, LEASE_DURATION_MS, RUN_RETENTION_MS } from './policy'
 import { sanitizeErrorMessage } from './sanitize'
 import { deriveState, type HealthSnapshot, nextRow, type SyncOutcome } from './transition'
@@ -25,7 +26,7 @@ export type IntegrationHealth = {
   failingSince: Date | null
   consecutiveFailures: number
   code: IntegrationErrorCode | null
-  adminDetail: { lastErrorMessage: string | null } | null
+  adminDetail: { lastErrorMessage: string | null; credentialExpiry: CredentialExpiry | null } | null
 }
 
 export type RunRow = {
@@ -75,7 +76,10 @@ function toHealth(
     consecutiveFailures: snapshot?.consecutiveFailures ?? 0,
     code: snapshot?.errorCode ?? null,
     adminDetail: includeAdminDetail
-      ? { lastErrorMessage: snapshot?.lastErrorMessage ?? null }
+      ? {
+          lastErrorMessage: snapshot?.lastErrorMessage ?? null,
+          credentialExpiry: credentialExpiryOf(row?.credentialExpiresAt ?? null, now),
+        }
       : null,
   }
 }

@@ -44,7 +44,16 @@ drove 4 km; only its position (`IN_MOTION`, then parked elsewhere) told the trut
 5. **Snapshots carry SoC and odometer** for Phase 6; never GPS, address or plate.
 6. **Key expiry is tracked generically** on `integration_sync` (`credential_expires_at`,
    `credential_reminder_days`), with an admin warning from 30 days and emails at 30 and 7 days; a reminder nobody
-   received is released and retried.
+   received is released and retried. Partial delivery is final: a threshold is claimed once and delivery is
+   at-least-once, so admins whose publish failed don't get that threshold's email (the warn records it).
+   Days left are Stockholm calendar days, so reminders fall due at Stockholm midnight and the expiry day itself
+   reads "today". Each publish is bounded at 5 s so a hung queue can't eat the run and skip the re-match.
+   Accepted residuals:
+   - A function that dies between the claim commit and the publish loses that threshold; a lost 30-day claim is
+     covered by the 7-day one.
+   - A header missing right after a renewal keeps the old date until it reappears, and every poll logs a warning.
+   - An expiry that drifts by under 24 h is ignored (the stored date and the reminders sent are kept); a renewal
+     moves it by months.
 7. **Alerts wait for a streak**: a per-source `ALERT_AFTER_FAILURES` (Škoda 3) so a single 503/429 at a 15-min
    cadence doesn't email every admin. The cron runs at :07/:22/:37/:52, off Zaptec's hourly :00, so the two re-matches
    don't run concurrently.

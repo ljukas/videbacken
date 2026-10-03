@@ -1,3 +1,4 @@
+export * from './credential'
 export * from './integrationSync'
 export * from './policy'
 export * from './sanitize'

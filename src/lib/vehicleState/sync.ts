@@ -1,10 +1,15 @@
+import { queue } from '~/lib/effects'
 import { type LatLon, newCallStats, type SkodaClient, SkodaError, skoda } from '~/lib/effects/skoda'
 import type { SyncTrigger } from '~/lib/integrationHealth'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import * as evChargingService from '~/lib/services/evCharging'
+import type { CredentialReminderClaim } from '~/lib/services/integrationSync'
+import * as integrationSyncService from '~/lib/services/integrationSync'
+import * as userService from '~/lib/services/user'
 import * as vehicleStateService from '~/lib/services/vehicleState'
+import { baseLocale } from '~/paraglide/runtime'
 import { atHome, parseHomePoint } from './geofence'
 
 /**
@@ -29,6 +34,7 @@ export type SkodaSyncRun = RunBase & {
   invalidParts: number
   reattributeMs: number
   reattributeChanged: number
+  reminderMs: number
 }
 
 const SOURCE = 'skoda'
@@ -38,6 +44,11 @@ const SOURCE = 'skoda'
  * which is no longer than the 5-min lease (ADR-0019), so a slow run still records.
  */
 const RUN_DEADLINE_MS = 60_000
+/**
+ * Bound on each reminder publish. A publish has no timeout of its own; without
+ * this a hung queue would wait out the whole run deadline and skip the re-match.
+ */
+const REMINDER_PUBLISH_TIMEOUT_MS = 5_000
 
 // Warn once per instance, not every 15 min; the run line carries `geofence`.
 let warnedNoHomePoint = false
@@ -73,9 +84,10 @@ export async function runSkodaSync(opts: {
       invalidParts: 0,
       reattributeMs: 0,
       reattributeChanged: 0,
+      reminderMs: 0,
     }),
     execute: async ({ run, signal, now, log }) => {
-      const { state } = await withDeadline(
+      const { state, keyExpiresAt } = await withDeadline(
         client.vehicleState({ signal, stats }),
         signal,
         () =>
@@ -116,6 +128,25 @@ export async function runSkodaSync(opts: {
       })
       run.snapshotMs = Math.round(performance.now() - started)
       run.stored = true
+      // Key expiry (ADR-0022): stored on every success; a reminder at 30 and at 7
+      // days is claimed atomically (no two runs claim it) and released again if
+      // nobody could be emailed, so the next poll retries. Best effort: never
+      // fails the poll.
+      const reminderStart = performance.now()
+      try {
+        if (!keyExpiresAt) log.warn('skoda sync: key expiry header missing or unparseable')
+        await integrationSyncService.recordCredentialExpiry(SOURCE, keyExpiresAt)
+        if (signal.aborted) {
+          log.warn('skoda sync: key reminder skipped, run deadline reached')
+        } else {
+          const claim = await integrationSyncService.claimCredentialReminder(SOURCE, now())
+          if (claim) await sendReminder(claim, signal, log)
+        }
+      } catch (error) {
+        log.warn('skoda sync: key reminder failed', { error })
+      } finally {
+        run.reminderMs = Math.round(performance.now() - reminderStart)
+      }
       // Recovery path. In steady state the Zaptec sync that imports a finished
       // session already re-matches it (every poll in its window exists by then);
       // this catches a Zaptec re-match that failed or hit its deadline, and the
@@ -151,6 +182,7 @@ export async function runSkodaSync(opts: {
         fetchMs: Math.round(stats.fetchMs),
         snapshotMs: run.snapshotMs,
         reattributeMs: run.reattributeMs,
+        reminderMs: run.reminderMs,
         requests: stats.requests,
         retries: stats.retries,
       },
@@ -171,6 +203,67 @@ export async function runSkodaSync(opts: {
       invalidParts: run.invalidParts,
       reattributeMs: run.reattributeMs,
       reattributeChanged: run.reattributeChanged,
+      reminderMs: run.reminderMs,
     }),
   })
+}
+
+async function sendReminder(
+  claim: CredentialReminderClaim,
+  signal: AbortSignal,
+  log: Logger,
+): Promise<void> {
+  let sent = 0
+  let firstError: unknown
+  try {
+    const admins = await userService.listActiveAdmins()
+    const results = await Promise.allSettled(
+      admins.map((admin) =>
+        // Each publish is bounded on its own (and by the run deadline); a hung
+        // one counts as failed so the claim is released and the re-match still
+        // runs. An abandoned publish that lands later may duplicate an email
+        // (at-least-once).
+        withDeadline(
+          queue.publish('email_credential_expiry', {
+            to: admin.email,
+            source: SOURCE,
+            expiresAt: claim.expiresAt.toISOString(),
+            days: claim.days,
+            locale: baseLocale,
+          }),
+          AbortSignal.any([signal, AbortSignal.timeout(REMINDER_PUBLISH_TIMEOUT_MS)]),
+          () => new Error('reminder publish timed out'),
+        ),
+      ),
+    )
+    sent = results.filter((r) => r.status === 'fulfilled').length
+    const failed = results.length - sent
+    firstError = results.find((r) => r.status === 'rejected')?.reason
+    if (failed > 0 && sent > 0)
+      log.warn('skoda sync: key reminder partly failed', {
+        days: claim.days,
+        sent,
+        failed,
+        error: firstError,
+      })
+    else if (sent > 0) log.info('skoda sync: key reminder sent', { days: claim.days, admins: sent })
+  } finally {
+    if (sent === 0) {
+      // 'will retry' only once the claim is actually released; a failed
+      // release leaves it claimed, so the next poll won't retry.
+      try {
+        await integrationSyncService.releaseCredentialReminder(SOURCE, claim)
+        log.warn('skoda sync: key reminder not sent, will retry', {
+          days: claim.days,
+          error: firstError,
+        })
+      } catch (releaseError) {
+        log.warn('skoda sync: key reminder release failed', {
+          days: claim.days,
+          error: releaseError,
+          sendError: firstError,
+        })
+      }
+    }
+  }
 }

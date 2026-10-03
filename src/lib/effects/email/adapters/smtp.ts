@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer'
+import { renderCredentialExpiry } from '~/emails/CredentialExpiryEmail'
 import { renderGridTariffAvailable } from '~/emails/GridTariffAvailableEmail'
 import { renderIntegrationSyncAlert } from '~/emails/IntegrationSyncAlertEmail'
 import { renderInviteUser } from '~/emails/InviteUserEmail'
@@ -66,5 +67,15 @@ export const smtp: EmailEffects = {
       text,
     })
     logger.info('grid tariff available sent (smtp)', { to })
+  },
+  async sendCredentialExpiry({ to, source, expiresAt, days, locale }) {
+    const { subject, html, text } = await renderCredentialExpiry({
+      source,
+      expiresAt,
+      days,
+      locale,
+    })
+    await getTransport().sendMail({ from: process.env.EMAIL_FROM, to, subject, html, text })
+    logger.info('credential expiry sent (smtp)', { to, source, days })
   },
 }

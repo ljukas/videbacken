@@ -152,6 +152,7 @@ export default defineConfig({
                 { topic: 'heic_transcode' },
                 { topic: 'email_integration_sync_alert' },
                 { topic: 'email_grid_tariff_available' },
+                { topic: 'email_credential_expiry' },
               ],
             },
           },

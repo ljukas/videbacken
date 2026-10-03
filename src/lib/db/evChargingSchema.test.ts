@@ -129,6 +129,28 @@ test('an integration_sync row with lease_until set but no lease_token is rejecte
   )
 })
 
+test('an integration_sync row with a credential_reminder_days outside the thresholds is rejected', async () => {
+  await expectConstraintViolation(
+    db.insert(integrationSync).values({
+      source: 'skoda',
+      credentialExpiresAt: new Date(Date.now() + 86_400_000),
+      credentialReminderDays: 14,
+    }),
+    'integration_sync_credential_reminder_days_check',
+  )
+})
+
+test('an integration_sync row with credential_reminder_days but no credential_expires_at is rejected', async () => {
+  await expectConstraintViolation(
+    db.insert(integrationSync).values({
+      source: 'skoda',
+      credentialExpiresAt: null,
+      credentialReminderDays: 30,
+    }),
+    'integration_sync_credential_reminder_expiry_check',
+  )
+})
+
 test("an integration_sync_run with outcome = 'ok' and an error_code is rejected", async () => {
   await expectConstraintViolation(
     db.insert(integrationSyncRun).values({
