@@ -1,5 +1,5 @@
-// HTTP for the pulled-integration clients (Zaptec, elpris, Škoda): ADR-0019's
-// timeout + retry policy, owned by ky.
+// HTTP for the pulled-integration clients (Zaptec, elpris, Škoda, Emaldo):
+// ADR-0019's timeout + retry policy, owned by ky.
 import ky, { isHTTPError, isNetworkError, isTimeoutError } from 'ky'
 
 /** Backoff per retry when there is no Retry-After, before ±20 % jitter. */
@@ -42,7 +42,7 @@ export async function fetchWithRetry(
       throwHttpErrors: (status) => p.retryStatuses.has(status),
       retry: {
         limit: p.retryStatuses.size > 0 ? (p.retryLimit ?? 2) : 0,
-        // `post` only for the Zaptec login, the one POST.
+        // `post`: the Zaptec login and every Emaldo call — all reads, safe to resend.
         methods: ['get', 'post'],
         statusCodes: [...p.retryStatuses],
         afterStatusCodes: [...p.retryStatuses],

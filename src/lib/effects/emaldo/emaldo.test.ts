@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { type FakeRoute, fakeFetch, jsonResponse } from '../testing/fakeFetch'
-import { createEmaldoClient } from './client'
-import { newCallStats } from './emaldo'
-import type { EmaldoError } from './errors'
+import {
+  createEmaldoClient,
+  type EmaldoError,
+  emaldo as emaldoSingleton,
+  newCallStats,
+  selectEmaldoAdapter,
+} from '.'
 import {
   DEVICE_ID,
   EMPTY_HOME_ID,
@@ -113,6 +117,27 @@ const leaksNothing = (err: EmaldoError) => {
   const text = `${err.message} ${describeCause(err.cause)} ${JSON.stringify(err.cause ?? null)} ${String(err.stack ?? '')}`
   for (const s of SECRETS) expect(text).not.toContain(s)
 }
+
+describe('adapter selection', () => {
+  const all = { EMALDO_USER: 'u', EMALDO_PASSWORD: 'p', EMALDO_APP_ID: 'i', EMALDO_APP_SECRET: 's' }
+
+  test('http only with all four variables, never under VITEST', () => {
+    expect(selectEmaldoAdapter(all)).toBe('http')
+    for (const key of Object.keys(all)) {
+      expect(selectEmaldoAdapter({ ...all, [key]: '' })).toBe('notConfigured')
+      expect(selectEmaldoAdapter({ ...all, [key]: undefined })).toBe('notConfigured')
+    }
+    expect(selectEmaldoAdapter({ ...all, VITEST: 'true' })).toBe('notConfigured')
+  })
+
+  test('the exported singleton fails closed as not_configured under VITEST', async () => {
+    await expect(emaldoSingleton.fetchDay(-1)).rejects.toMatchObject({
+      name: 'EmaldoError',
+      code: 'not_configured',
+      op: 'stats',
+    })
+  })
+})
 
 describe('wire format', () => {
   test('login: api host, app id in the path, okhttp headers, encrypted body with gmtime, no token', async () => {

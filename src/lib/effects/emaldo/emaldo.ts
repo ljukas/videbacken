@@ -1,3 +1,5 @@
+import { lazy } from '../lazy'
+
 /**
  * The house's 5-minute energy flows from the Emaldo cloud (ADR-0023). The
  * client never logs; callers pass a `stats` sink. Readings are a household
@@ -53,4 +55,41 @@ export interface CallOpts {
 export interface EmaldoClient {
   /** offset 0 = today (Stockholm; newest bucket dropped), -1 = yesterday, … ; offset > 0 throws RangeError. */
   fetchDay(offset: number, o?: CallOpts): Promise<EmaldoDay>
+}
+
+type Env = Record<string, string | undefined>
+
+/** `http` only when all four EMALDO_* variables are set — never under VITEST. */
+export function selectEmaldoAdapter(env: Env): 'notConfigured' | 'http' {
+  if (env.VITEST === 'true') return 'notConfigured'
+  return env.EMALDO_USER && env.EMALDO_PASSWORD && env.EMALDO_APP_ID && env.EMALDO_APP_SECRET
+    ? 'http'
+    : 'notConfigured'
+}
+
+const getAdapter = lazy(async (): Promise<EmaldoClient> => {
+  const { EMALDO_USER, EMALDO_PASSWORD, EMALDO_APP_ID, EMALDO_APP_SECRET } = process.env
+  if (
+    selectEmaldoAdapter(process.env) === 'http' &&
+    EMALDO_USER &&
+    EMALDO_PASSWORD &&
+    EMALDO_APP_ID &&
+    EMALDO_APP_SECRET
+  ) {
+    const { createEmaldoClient } = await import('./client')
+    return createEmaldoClient({
+      fetch: globalThis.fetch,
+      user: EMALDO_USER,
+      password: EMALDO_PASSWORD,
+      appId: EMALDO_APP_ID,
+      appSecret: EMALDO_APP_SECRET,
+    })
+  }
+  return (await import('./adapters/notConfigured')).notConfigured
+})
+
+export const emaldo: EmaldoClient = {
+  async fetchDay(offset, o) {
+    return (await getAdapter()).fetchDay(offset, o)
+  },
 }
