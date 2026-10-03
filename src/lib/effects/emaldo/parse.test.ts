@@ -174,6 +174,7 @@ describe('parseSeries', () => {
     ['timezone', { timezone: 'UTC' }],
     ['interval', { interval: 15 }],
     ['start_time', { start_time: '1781042400' }],
+    ['start_time', { start_time: 33e9 }],
     ['data', { data: null }],
     [
       'data.1.0',

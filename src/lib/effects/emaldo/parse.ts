@@ -13,6 +13,8 @@ const W_PER_KWH_BUCKET = (60 / BUCKET_MINUTES) * 1000
 /** A 25-h day has 300 rows; anything far beyond is not a day series. */
 const MAX_ROWS = 400
 const MAX_HOMES = 100
+/** 2100-01-01 UTC: a later start_time is not a plausible day and would overflow the date helpers. */
+const MAX_START_TIME = 4_102_444_800
 
 function unexpected(op: EmaldoOp, message: string): EmaldoError {
   return new EmaldoError('unexpected_response', op, undefined, { message })
@@ -79,7 +81,7 @@ const ROWS = {
 
 const dayOf = <T extends z.ZodType>(row: T) =>
   z.object({
-    start_time: z.int().positive(),
+    start_time: z.int().positive().max(MAX_START_TIME),
     timezone: z.literal(STOCKHOLM_TIME_ZONE),
     interval: z.literal(BUCKET_MINUTES),
     data: z.array(row).max(MAX_ROWS),
