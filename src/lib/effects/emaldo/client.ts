@@ -126,8 +126,15 @@ export function createEmaldoClient(deps: {
     const envelope = parseEnvelope(op, body)
     if (envelope.Status === STATUS_SESSION_EXPIRED) return { expired: true }
     if (envelope.Status !== STATUS_OK) throw refused(op, envelope.Status)
+    // No Result at all (`''`, absent, null) is an empty object: the schemas decide what that means
+    // (a home without a device is `[]`; login and stats fail on a path). Anything else must decode.
+    const raw = envelope.Result
     const decoded: Decoded =
-      typeof envelope.Result === 'string' ? decodeResult(secret, envelope.Result) : { ok: false }
+      raw === undefined || raw === null || raw === ''
+        ? { ok: true, value: {} }
+        : typeof raw === 'string'
+          ? decodeResult(secret, raw)
+          : { ok: false }
     if (!decoded.ok) {
       throw new EmaldoError('unexpected_response', op, undefined, {
         message: `Emaldo ${op} result could not be decoded; the app id/secret may have rotated`,

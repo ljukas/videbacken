@@ -391,6 +391,40 @@ describe('failures', () => {
     leaksNothing(err)
   })
 
+  test('an empty Result reads as an empty object: the home without a device is skipped', async () => {
+    const { f, client } = server({
+      [DEVICES]: async (req) => {
+        const { json } = await openRequest(req)
+        return json?.includes(HOME_ID)
+          ? okReply({ bmts: [{ id: DEVICE_ID, model: MODEL, name: 'Power Core' }] })
+          : jsonResponse({ Status: 1, Result: '' })
+      },
+    })
+    await expect(client.fetchDay(-1)).resolves.toMatchObject({ droppedBuckets: 0 })
+    expect(f.callsTo(DEVICES)).toHaveLength(2)
+  })
+
+  test.each([
+    ['empty', { Status: 1, Result: '' }],
+    ['missing', { Status: 1 }],
+    ['null', { Status: 1, Result: null }],
+  ])('a %s login Result fails on the token path, without the rotation hint', async (_n, reply) => {
+    const { client } = server({ [LOGIN]: () => jsonResponse(reply) })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'login' })
+    expect(err.message).toContain('token')
+    expect(err.message).not.toContain('rotated')
+    leaksNothing(err)
+  })
+
+  test('a missing stats Result is unexpected_response from stats', async () => {
+    const { client } = server({ [STATS.grid]: () => jsonResponse({ Status: 1 }) })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'stats' })
+    expect(err.message).not.toContain('rotated')
+    leaksNothing(err)
+  })
+
   test('a body that is not JSON, or has no integer Status, is unexpected_response', async () => {
     const html = server({ [STATS.grid]: () => new Response('<html>', { status: 200 }) })
     const htmlErr = await caught(html.client.fetchDay(-1))
