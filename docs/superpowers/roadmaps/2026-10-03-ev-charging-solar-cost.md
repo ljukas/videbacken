@@ -8,7 +8,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | PR open | — |
+| 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | checkpoint passed | 2026-10-03: 288/288 + 276/276 buckets, 0 mismatches (11 requests, 1 login) |
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | — | not started | — |
 | 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | — | not started | — |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | not started | — |
@@ -71,3 +71,5 @@ Each must pass, with the result recorded in the table, before the next step star
 - 2026-10-03: step 1 PR #68 opened. Reviews added a 5-min login block after a refused login (ADR-0019), a
   stale-session re-login, sibling-series cancellation, rediscovery after a stats refusal, and empty `Result` = `{}`.
   Step-2 notes are in #68's Risks section.
+- 2026-10-03: #68 merged. Checkpoint 1 passed locally against the live API: 2026-06-10 (288 buckets) and
+  2026-03-29 (spring-forward, 276) match the probe's raw files exactly. Step 2 may start.
