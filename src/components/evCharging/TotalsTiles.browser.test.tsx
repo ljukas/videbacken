@@ -1,10 +1,15 @@
 import { expect, test } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { type Cost, TotalsTiles } from './TotalsTiles'
 
+// No app.css in browser tests, so both layouts render: scope each assertion to one.
+type Page = Awaited<ReturnType<typeof renderWithProviders>>['screen']
+const grid = (page: Page) => page.getByTestId('totals-grid')
+
 test('renders this month / this year / all time with kWh and session counts', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles
       tiles={{
         thisMonth: { kwh: 42.25, sessions: 3 },
@@ -13,6 +18,7 @@ test('renders this month / this year / all time with kWh and session counts', as
       }}
     />,
   )
+  const screen = grid(page)
   await expect.element(screen.getByText(m.charging_tile_this_month())).toBeVisible()
   await expect.element(screen.getByText(m.charging_tile_this_year())).toBeVisible()
   await expect.element(screen.getByText(m.charging_tile_all_time())).toBeVisible()
@@ -26,15 +32,16 @@ test('renders this month / this year / all time with kWh and session counts', as
 
 test('zero totals render as 0,0 kWh and 0 sessions', async () => {
   const zero = { kwh: 0, sessions: 0 }
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles tiles={{ thisMonth: zero, thisYear: zero, allTime: zero }} />,
   )
+  const screen = grid(page)
   expect(screen.getByText('0,0 kWh').elements()).toHaveLength(3)
   expect(screen.getByText(m.charging_tile_sessions({ count: 0 })).elements()).toHaveLength(3)
 })
 
 test('session counts use the singular for one and group thousands', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles
       tiles={{
         thisMonth: { kwh: 2, sessions: 1 },
@@ -43,6 +50,7 @@ test('session counts use the singular for one and group thousands', async () => 
       }}
     />,
   )
+  const screen = grid(page)
   await expect.element(screen.getByText('1 session', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('2 sessioner', { exact: true })).toBeVisible()
   await expect.element(screen.getByText(/^12\s345 sessioner$/)).toBeVisible()
@@ -68,9 +76,10 @@ const priced: Cost = {
 const allTiles = (cost: Cost) => ({ thisMonth: cost, thisYear: cost, allTime: cost })
 
 test('with cost, energy and cost are twin readouts, the average in the footer', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(priced)} />,
   )
+  const screen = grid(page)
   expect(screen.getByText(m.charging_tile_energy(), { exact: true }).elements()).toHaveLength(3)
   expect(screen.getByText(m.charging_tile_cost(), { exact: true }).elements()).toHaveLength(3)
   expect(screen.getByText('100,0 kWh', { exact: true }).elements()).toHaveLength(3)
@@ -81,9 +90,10 @@ test('with cost, energy and cost are twin readouts, the average in the footer', 
 })
 
 test('the two readouts carry the same weight', async () => {
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(priced)} />,
   )
+  const screen = grid(page)
   const kwh = screen.getByText('100,0', { exact: true }).first().element()
   const kr = screen.getByText('159', { exact: true }).first().element()
   expect(kr.className).toBe(kwh.className)
@@ -91,9 +101,10 @@ test('the two readouts carry the same weight', async () => {
 
 test('a partly priced total is qualified "minst", with the missing share in the footer', async () => {
   const partial = { ...priced, fullKwh: 61, noPriceKwh: 39, complete: false }
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(partial)} />,
   )
+  const screen = grid(page)
   await expect.element(screen.getByText(/^minst 159 kr$/).first()).toBeVisible()
   await expect
     .element(screen.getByText(m.charging_cost_partial_hint({ share: '39 %' })).first())
@@ -104,9 +115,10 @@ test('a partly priced total is qualified "minst", with the missing share in the 
 
 test('a missing tariff counts as missing too, and a sliver never rounds to 0 %', async () => {
   const partial = { ...priced, fullKwh: 99.8, noTariffKwh: 0.2, complete: false }
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(partial)} />,
   )
+  const screen = grid(page)
   await expect
     .element(screen.getByText(m.charging_cost_partial_hint({ share: '< 1 %' })).first())
     .toBeVisible()
@@ -114,9 +126,10 @@ test('a missing tariff counts as missing too, and a sliver never rounds to 0 %',
 
 test('an over-count is incomplete but never "minst" or a negative amount', async () => {
   const over = { ...priced, fullKwh: 100.5, complete: false }
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(over)} />,
   )
+  const screen = grid(page)
   expect(screen.getByText(/^159 kr$/).elements()).toHaveLength(3)
   await expect
     .element(screen.getByText(m.charging_cost_partial_hint_generic()).first())
@@ -135,12 +148,13 @@ test('a tile with energy but no price shows "—" for cost with the reason, neve
     avgOre: null,
     complete: false,
   }
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles
       tiles={zeroTiles}
       cost={{ thisMonth: unpriced, thisYear: priced, allTime: priced }}
     />,
   )
+  const screen = grid(page)
   await expect.element(screen.getByText('—', { exact: true })).toBeVisible()
   await expect.element(screen.getByText(m.charging_cost_unknown(), { exact: true })).toBeVisible()
   await expect.element(screen.getByText(m.charging_cost_unknown_hint())).toBeVisible()
@@ -160,12 +174,13 @@ test('no energy is a true 0 kr, without a spot breakdown or footer', async () =>
     totalSek: 0,
     avgOre: null,
   }
-  const { screen } = await renderWithProviders(
+  const { screen: page } = await renderWithProviders(
     <TotalsTiles
       tiles={{ thisMonth: none, thisYear: zeroTiles.thisYear, allTime: zeroTiles.allTime }}
       cost={{ thisMonth: empty, thisYear: priced, allTime: priced }}
     />,
   )
+  const screen = grid(page)
   await expect.element(screen.getByText(/^0 kr$/)).toBeVisible()
   expect(screen.getByText(m.charging_cost_unknown(), { exact: false }).elements()).toHaveLength(0)
   expect(screen.getByText(/varav spotpris/).elements()).toHaveLength(2)
@@ -173,7 +188,64 @@ test('no energy is a true 0 kr, without a spot breakdown or footer', async () =>
 })
 
 test('without cost a tile is the energy readout alone', async () => {
-  const { screen } = await renderWithProviders(<TotalsTiles tiles={zeroTiles} />)
+  const { screen: page } = await renderWithProviders(<TotalsTiles tiles={zeroTiles} />)
+  const screen = grid(page)
   expect(screen.getByText(m.charging_tile_cost(), { exact: true }).elements()).toHaveLength(0)
   expect(screen.getByText('100,0 kWh', { exact: true }).elements()).toHaveLength(3)
+})
+
+// The narrow layout: one card, a segmented control picks the period.
+const periods = {
+  thisMonth: { kwh: 42.25, sessions: 3 },
+  thisYear: { kwh: 812.5, sessions: 51 },
+  allTime: { kwh: 2345.04, sessions: 180 },
+}
+
+test('the narrow card is a tab list of the three periods, this month first', async () => {
+  const { screen: page } = await renderWithProviders(<TotalsTiles tiles={periods} />)
+  const tabs = page.getByTestId('totals-tabs')
+  await expect
+    .element(tabs.getByRole('tablist', { name: m.charging_totals_heading() }))
+    .toBeVisible()
+  // The icons are decorative: each tab's name is its label alone.
+  expect(
+    tabs
+      .getByRole('tab')
+      .elements()
+      .map((el) => el.textContent),
+  ).toEqual([m.charging_tile_this_month(), m.charging_tile_this_year(), m.charging_tile_all_time()])
+  await expect
+    .element(tabs.getByRole('tab', { name: m.charging_tile_this_month() }))
+    .toHaveAttribute('aria-selected', 'true')
+  // Only the selected period's figures are in the card.
+  await expect.element(tabs.getByRole('tabpanel').getByText('42,3 kWh')).toBeVisible()
+  expect(tabs.getByText('812,5 kWh').elements()).toHaveLength(0)
+})
+
+test('picking a period swaps the card to its figures', async () => {
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={periods} cost={allTiles(priced)} />,
+  )
+  const tabs = page.getByTestId('totals-tabs')
+  await tabs.getByRole('tab', { name: m.charging_tile_this_year() }).click()
+  await expect
+    .element(tabs.getByRole('tab', { name: m.charging_tile_this_year() }))
+    .toHaveAttribute('aria-selected', 'true')
+  await expect.element(tabs.getByRole('tabpanel').getByText('812,5 kWh')).toBeVisible()
+  await expect.element(tabs.getByRole('tabpanel').getByText(/^159 kr$/)).toBeVisible()
+  expect(tabs.getByText('42,3 kWh').elements()).toHaveLength(0)
+
+  await tabs.getByRole('tab', { name: m.charging_tile_all_time() }).click()
+  await expect.element(tabs.getByRole('tabpanel').getByText(/^2\s345,0 kWh$/)).toBeVisible()
+})
+
+test('arrow keys move between periods', async () => {
+  const { screen: page } = await renderWithProviders(<TotalsTiles tiles={periods} />)
+  const tabs = page.getByTestId('totals-tabs')
+  await tabs.getByRole('tab', { name: m.charging_tile_this_month() }).click()
+  await userEvent.keyboard('{ArrowRight}')
+  await expect
+    .element(tabs.getByRole('tab', { name: m.charging_tile_this_year() }))
+    .toHaveAttribute('aria-selected', 'true')
+  await expect.element(tabs.getByRole('tabpanel').getByText('812,5 kWh')).toBeVisible()
 })

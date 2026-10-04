@@ -1,14 +1,32 @@
-import type { ReactNode } from 'react'
+import {
+  CalendarDaysIcon,
+  CalendarRangeIcon,
+  CircleAlertIcon,
+  CoinsIcon,
+  GaugeIcon,
+  InfinityIcon,
+  type LucideIcon,
+  ZapIcon,
+} from 'lucide-react'
+import { type ReactNode, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { formatKronor, formatOneDecimal, formatOrePrecise, formatSek, formatShare } from './format'
 
 type Tiles = RouterOutputs['evCharging']['overview']['tiles']
+type Period = keyof Tiles
 type Totals = Tiles['thisMonth']
 export type Cost = RouterOutputs['evCharging']['costOverview']['tiles']['thisMonth']
-type CostTiles = Record<keyof Tiles, Cost>
+type CostTiles = Record<Period, Cost>
+
+const PERIOD_ICON: Record<Period, LucideIcon> = {
+  thisMonth: CalendarDaysIcon,
+  thisYear: CalendarRangeIcon,
+  allTime: InfinityIcon,
+}
 
 // This month / this year / all time. "This month/year" are always the CURRENT
 // Stockholm month/year (the service computes them independently of the year
@@ -17,20 +35,57 @@ type CostTiles = Record<keyof Tiles, Cost>
 // something is priced); without it the tile is energy alone, and kWh never
 // waits for (or breaks on) prices.
 export function TotalsTiles({ tiles, cost }: { tiles: Tiles; cost?: CostTiles }) {
-  const items: { key: keyof Tiles; label: string; totals: Totals }[] = [
+  const [period, setPeriod] = useState<Period>('thisMonth')
+  const items: { key: Period; label: string; totals: Totals }[] = [
     { key: 'thisMonth', label: m.charging_tile_this_month(), totals: tiles.thisMonth },
     { key: 'thisYear', label: m.charging_tile_this_year(), totals: tiles.thisYear },
     { key: 'allTime', label: m.charging_tile_all_time(), totals: tiles.allTime },
   ]
   // A container query, not a viewport breakpoint: with the sidebar open the
   // content column at md–lg is too narrow for three "12 345,0 kWh" tiles.
+  // Both layouts render and CSS shows one, so SSR needs no width and nothing
+  // jumps on hydration; the hidden one (display: none) is out of the a11y tree.
   return (
     <div className="@container">
-      <div className="grid @3xl:grid-cols-3 grid-cols-1 gap-3">
+      {/* Narrow: one card, a segmented control in its title slot picks the period. */}
+      <Tabs
+        value={period}
+        onValueChange={(v) => {
+          const picked = items.find((item) => item.key === v)
+          if (picked) setPeriod(picked.key)
+        }}
+        className="@3xl:hidden"
+        data-testid="totals-tabs"
+      >
+        <Card>
+          <CardHeader className="pb-2">
+            <TabsList className="w-full" aria-label={m.charging_totals_heading()}>
+              {items.map(({ key, label }) => (
+                <TabsTrigger key={key} value={key}>
+                  <PeriodIcon period={key} />
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </CardHeader>
+          <CardContent>
+            {items.map(({ key, totals }) => (
+              <TabsContent key={key} value={key}>
+                <TileReadouts totals={totals} cost={cost?.[key]} />
+              </TabsContent>
+            ))}
+          </CardContent>
+        </Card>
+      </Tabs>
+      {/* Wide: the three periods side by side. */}
+      <div className="hidden @3xl:grid grid-cols-3 gap-3" data-testid="totals-grid">
         {items.map(({ key, label, totals }) => (
           <Card key={key}>
             <CardHeader className="pb-2">
-              <CardTitle className="text-muted-foreground text-sm">{label}</CardTitle>
+              <CardTitle className="flex items-center gap-1.5 text-muted-foreground text-sm">
+                <PeriodIcon period={key} />
+                {label}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <TileReadouts totals={totals} cost={cost?.[key]} />
@@ -40,6 +95,11 @@ export function TotalsTiles({ tiles, cost }: { tiles: Tiles; cost?: CostTiles })
       </div>
     </div>
   )
+}
+
+function PeriodIcon({ period }: { period: Period }) {
+  const Icon = PERIOD_ICON[period]
+  return <Icon aria-hidden className="size-3.5" />
 }
 
 // Two columns split by a hairline when the tile is wide enough, stacked when
@@ -53,6 +113,7 @@ export function TotalsTiles({ tiles, cost }: { tiles: Tiles; cost?: CostTiles })
 function TileReadouts({ totals, cost }: { totals: Totals; cost: Cost | undefined }) {
   const energy = (
     <Readout
+      icon={ZapIcon}
       label={m.charging_tile_energy()}
       value={formatOneDecimal(totals.kwh)}
       unit="kWh"
@@ -75,6 +136,7 @@ function TileReadouts({ totals, cost }: { totals: Totals; cost: Cost | undefined
         <div className="@[16rem]/tile:border-l @[16rem]/tile:pl-4">
           {unpriced ? (
             <Readout
+              icon={CoinsIcon}
               label={m.charging_tile_cost()}
               value="—"
               muted
@@ -82,6 +144,7 @@ function TileReadouts({ totals, cost }: { totals: Totals; cost: Cost | undefined
             />
           ) : (
             <Readout
+              icon={CoinsIcon}
               label={m.charging_tile_cost()}
               qualifier={short ? m.charging_cost_min_prefix() : undefined}
               value={formatKronor(cost.totalSek)}
@@ -95,7 +158,12 @@ function TileReadouts({ totals, cost }: { totals: Totals; cost: Cost | undefined
           )}
         </div>
       </div>
-      {footer ? <p className="border-t pt-3 text-muted-foreground text-xs">{footer}</p> : null}
+      {footer ? (
+        <p className="flex items-start gap-1.5 border-t pt-3 text-muted-foreground text-xs">
+          <footer.icon aria-hidden className="mt-px size-3.5 shrink-0" />
+          {footer.text}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -103,19 +171,26 @@ function TileReadouts({ totals, cost }: { totals: Totals; cost: Cost | undefined
 function tileFooter(
   cost: Cost,
   { unpriced, short, missingKwh }: { unpriced: boolean; short: boolean; missingKwh: number },
-): string | null {
-  if (unpriced) return m.charging_cost_unknown_hint()
+): { icon: LucideIcon; text: string } | null {
+  // A caveat (missing or partial price) gets the alert mark; the average a gauge.
+  const caveat = (text: string) => ({ icon: CircleAlertIcon, text })
+  if (unpriced) return caveat(m.charging_cost_unknown_hint())
   if (cost.kwh === 0) return null
-  if (short) return m.charging_cost_partial_hint({ share: formatShare(missingKwh / cost.gridKwh) })
-  if (!cost.complete) return m.charging_cost_partial_hint_generic()
+  if (short) {
+    return caveat(m.charging_cost_partial_hint({ share: formatShare(missingKwh / cost.gridKwh) }))
+  }
+  if (!cost.complete) return caveat(m.charging_cost_partial_hint_generic())
   // The average covers priced energy only, so it's shown beside a complete total only.
-  return cost.avgOre === null ? null : m.charging_cost_avg({ avg: formatOrePrecise(cost.avgOre) })
+  return cost.avgOre === null
+    ? null
+    : { icon: GaugeIcon, text: m.charging_cost_avg({ avg: formatOrePrecise(cost.avgOre) }) }
 }
 
 // One figure: a small label, the number large with its unit set small beside
 // it, and a detail line. The spaces between the parts are real text, so the
 // figure reads (and copies) as "1 659,8 kWh".
 function Readout({
+  icon: Icon,
   label,
   value,
   unit,
@@ -123,6 +198,7 @@ function Readout({
   detail,
   muted = false,
 }: {
+  icon: LucideIcon
   label: string
   value: string
   unit?: string
@@ -132,7 +208,10 @@ function Readout({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className="flex items-center gap-1 text-muted-foreground text-xs">
+        <Icon aria-hidden className="size-3.5 shrink-0" />
+        {label}
+      </span>
       <span className="flex flex-wrap items-baseline gap-x-1 tabular-nums">
         {qualifier ? (
           <>
