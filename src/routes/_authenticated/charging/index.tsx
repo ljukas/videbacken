@@ -22,10 +22,10 @@ import {
   MonthlyChart,
 } from '~/components/evCharging/MonthlyChart'
 import { PriceFootnote } from '~/components/evCharging/PriceFootnote'
-import { RecentRunsCard } from '~/components/evCharging/RecentRunsCard'
 import { SessionList } from '~/components/evCharging/SessionList'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { SyncSourcesPanel } from '~/components/evCharging/SyncSourcesPanel'
 import { TariffCard } from '~/components/evCharging/TariffCard'
 import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
@@ -37,6 +37,7 @@ import { PageContainer } from '~/components/layout/PageContainer'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
+import { INTEGRATION_SOURCES, type IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
@@ -45,12 +46,15 @@ import { seo } from '~/utils/seo'
 // `?year=` falls back to the current year instead of erroring the loader.
 const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
-  // Dialogs (ADR-0013): tariff new (optionally pre-filled), edit, delete; the car's log import.
+  // Dialogs (ADR-0013): tariff new (optionally pre-filled), edit, delete; the
+  // car's log import; one data source's sync history.
   dialog: z
-    .enum(['tariffNew', 'tariffEdit', 'tariffDelete', 'vehicleImport'])
+    .enum(['tariffNew', 'tariffEdit', 'tariffDelete', 'vehicleImport', 'syncRuns'])
     .optional()
     .catch(undefined),
   tariffId: z.string().optional().catch(undefined),
+  // The data source whose sync history is open (`dialog=syncRuns`).
+  source: z.enum(INTEGRATION_SOURCES).optional().catch(undefined),
   // Whose charging: a clean URL means our car.
   vehicle: vehicleScope.optional().catch(undefined),
 })
@@ -83,6 +87,10 @@ const emaldoRunsQuery = orpc.evCharging.recentRuns.queryOptions({
   input: { source: 'emaldo', limit: RECENT_RUNS },
 })
 const vehicleLatestQuery = orpc.evCharging.vehicleStateLatest.queryOptions()
+// Sync health polls every minute, every 5 s while a run is in flight (a run's
+// lease lasts at most 5 min), so "Synkar…" clears soon after the run ends.
+const healthPoll = (query: { state: { data?: { running: boolean } } }) =>
+  query.state.data?.running ? 5_000 : 60_000
 
 export const Route = createFileRoute('/_authenticated/charging/')({
   head: () => ({
@@ -121,12 +129,14 @@ export const Route = createFileRoute('/_authenticated/charging/')({
       queryClient.ensureQueryData(orpc.tariff.list.queryOptions()),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
       user.role === 'admin' ? queryClient.ensureQueryData(pricesHealthQuery) : null,
+      // Sync histories are diagnostics behind the Datakällor overlay: prefetched,
+      // so a failed read shows there (with a retry) and never takes the page down.
       user.role === 'admin'
-        ? queryClient.ensureQueryData(
+        ? queryClient.prefetchQuery(
             orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
           )
         : null,
-      user.role === 'admin' ? queryClient.ensureQueryData(pricesRunsQuery) : null,
+      user.role === 'admin' ? queryClient.prefetchQuery(pricesRunsQuery) : null,
       // Prefetched: a failed read shows in its card, it must not take the page down.
       user.role === 'admin' ? queryClient.prefetchQuery(vehicleCoverageQuery) : null,
       // Prefetched too: a failed car read must not take the page down.
@@ -153,18 +163,23 @@ function ChargingPage() {
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
+  const runsSource = Route.useSearch({ select: (s) => s.source })
   const { isOpen, open, close } = useUrlDialog<ChargingDialog, ChargingSearch>({
     current: dialog,
     navigate,
-    clearKeys: ['tariffId'],
+    clearKeys: ['tariffId', 'source'],
   })
   const { data: tariffs } = useSuspenseQuery(orpc.tariff.list.queryOptions())
   const selectedTariff = tariffs.find((t) => t.id === tariffId)
-  // A tariff dialog that can't show (a non-admin, or a tariffId that no longer
-  // exists) is cleared from the URL instead of lingering there.
+  // A dialog that can't show (a non-admin; a tariffId that no longer exists;
+  // a sync history without a valid source) is cleared from the URL instead of
+  // lingering there.
   const dialogUnavailable =
     dialog !== undefined &&
-    (!isAdmin || (dialog !== 'tariffNew' && dialog !== 'vehicleImport' && !selectedTariff))
+    (!isAdmin ||
+      (dialog === 'syncRuns'
+        ? runsSource === undefined
+        : dialog !== 'tariffNew' && dialog !== 'vehicleImport' && !selectedTariff))
   useEffect(() => {
     // `replace`, so Back doesn't return to the bad URL (and bounce again).
     if (dialogUnavailable) {
@@ -172,7 +187,7 @@ function ChargingPage() {
         to: '.',
         replace: true,
         resetScroll: false,
-        search: (prev) => ({ ...prev, dialog: undefined, tariffId: undefined }),
+        search: (prev) => ({ ...prev, dialog: undefined, tariffId: undefined, source: undefined }),
       })
     }
   }, [dialogUnavailable, navigate])
@@ -231,21 +246,36 @@ function ChargingPage() {
   )
   const { data: health } = useSuspenseQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
-    refetchInterval: 60_000,
+    // Members read only the alert: a plain minute. Admins also watch "Synkar…".
+    refetchInterval: isAdmin ? healthPoll : 60_000,
   })
-  // Daily data, admin-only (see the alert below): no polling beyond focus refetch.
-  const { data: pricesHealth } = useQuery({ ...pricesHealthQuery, enabled: isAdmin })
+  // Admin-only (see the alerts and the Datakällor panel below). Polled like
+  // Zaptec's, so a tile's "running" state (a cron run seen mid-flight) clears
+  // on its own instead of waiting for a focus refetch (ADR-0018: polled).
+  const { data: pricesHealth } = useQuery({
+    ...pricesHealthQuery,
+    enabled: isAdmin,
+    refetchInterval: healthPoll,
+  })
   const live = useLiveStatus()
-  const { data: runs } = useQuery({
+  const zaptecRuns = useQuery({
     ...orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
     enabled: isAdmin,
   })
-  const { data: pricesRuns } = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
+  const pricesRuns = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
   const vehicleCoverage = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
-  const { data: skodaHealth } = useQuery({ ...skodaHealthQuery, enabled: isAdmin })
-  const { data: skodaRuns } = useQuery({ ...skodaRunsQuery, enabled: isAdmin })
-  const { data: emaldoHealth } = useQuery({ ...emaldoHealthQuery, enabled: isAdmin })
-  const { data: emaldoRuns } = useQuery({ ...emaldoRunsQuery, enabled: isAdmin })
+  const { data: skodaHealth } = useQuery({
+    ...skodaHealthQuery,
+    enabled: isAdmin,
+    refetchInterval: healthPoll,
+  })
+  const skodaRuns = useQuery({ ...skodaRunsQuery, enabled: isAdmin })
+  const { data: emaldoHealth } = useQuery({
+    ...emaldoHealthQuery,
+    enabled: isAdmin,
+    refetchInterval: healthPoll,
+  })
+  const emaldoRuns = useQuery({ ...emaldoRunsQuery, enabled: isAdmin })
   const vehicleLatest = useQuery({ ...vehicleLatestQuery, enabled: isAdmin })
 
   // "Visa fler" fetches the longer page first and only then switches to it, so
@@ -287,7 +317,7 @@ function ChargingPage() {
         health={health}
         isAdmin={isAdmin}
         onRetry={() => syncNow.syncSource('zaptec')}
-        retrying={syncNow.isPendingFor('zaptec')}
+        retrying={syncNow.isPendingFor('zaptec') || health.running}
       />
       {/* Admin-only until prices are shown on the page: a household member
           can't see or act on the price feed, so its health is noise to them. */}
@@ -296,7 +326,7 @@ function ChargingPage() {
           health={pricesHealth}
           isAdmin
           onRetry={() => syncNow.syncSource('elpris')}
-          retrying={syncNow.isPendingFor('elpris')}
+          retrying={syncNow.isPendingFor('elpris') || pricesHealth.running}
         />
       ) : null}
       {/* Admin-only like prices: a household member can't act on the car feed. */}
@@ -305,7 +335,7 @@ function ChargingPage() {
           health={skodaHealth}
           isAdmin
           onRetry={() => syncNow.syncSource('skoda')}
-          retrying={syncNow.isPendingFor('skoda')}
+          retrying={syncNow.isPendingFor('skoda') || skodaHealth.running}
         />
       ) : null}
       {isAdmin && skodaHealth?.state === 'ok' ? (
@@ -435,21 +465,25 @@ function ChargingPage() {
         ) : null}
       </section>
 
-      {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
-      {isAdmin && pricesRuns ? <RecentRunsCard source="elpris" runs={pricesRuns} /> : null}
-      {isAdmin && skodaRuns ? <RecentRunsCard source="skoda" runs={skodaRuns} /> : null}
-      {/* Admin-only like the car feed, and beside its runs rather than at the
-          top: nothing on the page uses the house data yet (ADR-0023, step 4),
-          and it reads not_configured wherever EMALDO_* is unset. */}
-      {isAdmin && emaldoHealth ? (
-        <SyncHealthAlert
-          health={emaldoHealth}
-          isAdmin
-          onRetry={() => syncNow.syncSource('emaldo')}
-          retrying={syncNow.isPendingFor('emaldo')}
+      {/* Every data source's state, sync and history. Emaldo's state lives only
+          here, not as an alert up top: nothing on the page uses the house data
+          yet (ADR-0023, step 4), and it reads not_configured wherever EMALDO_*
+          is unset. */}
+      {isAdmin ? (
+        <SyncSourcesPanel
+          entries={[
+            { source: 'zaptec', health, runs: zaptecRuns },
+            { source: 'elpris', health: pricesHealth, runs: pricesRuns },
+            { source: 'skoda', health: skodaHealth, runs: skodaRuns },
+            { source: 'emaldo', health: emaldoHealth, runs: emaldoRuns },
+          ]}
+          onSync={syncNow.syncSource}
+          isPendingFor={syncNow.isPendingFor}
+          openSource={isOpen('syncRuns') ? runsSource : undefined}
+          onOpenHistory={(source: IntegrationSource) => open('syncRuns', { source })}
+          onCloseHistory={close}
         />
       ) : null}
-      {isAdmin && emaldoRuns ? <RecentRunsCard source="emaldo" runs={emaldoRuns} /> : null}
 
       {isAdmin ? (
         <>
