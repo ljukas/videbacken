@@ -11,7 +11,7 @@ backfill run can take ≈2 minutes, an elpris backfill tens of seconds. Show a *
 dagar") on the tile while a run is in flight, for every run (cron, a click in this tab, another tab, another admin).
 
 **Success:** during an Emaldo or elpris backfill, the tile shows a bar that advances every ≈5 s and disappears when the
-run ends; a crashed run never leaves a bar behind; no connection is held open to deliver it.
+run ends; a crashed run's leftover shows at most until its lease expires (≤ 5 min), a rollback's never; no connection is held open to deliver it.
 
 ## Scope
 
@@ -91,8 +91,8 @@ the CHECKs are the backstop.
   `tabular-nums`, that replaces the cadence line while a run reports — so the tile never changes height.
   - Accessibility: the bar's `aria-label` names the source (`m.charging_source_progress_label({ source })`, "Synkförlopp,
     Emaldo"); `aria-valuetext` = the caption, so a screen reader says days, not a percentage. The caption itself is
-    not a live region (a 5 s update would be noisy); the existing pending state already announces the run.
-  - Motion: the indicator's width transition gets `motion-reduce:transition-none`.
+    not a live region (a 5 s update would be noisy), and it is `aria-hidden` because the bar's `aria-valuetext` carries the same text; the existing pending state already announces the run.
+  - Motion: the indicator's *transform* transition gets `motion-reduce:transition-none`.
   - Responsive: full tile width; the tile is its own container (works at the 1/2/4-column breakpoints).
 - **Polling (`src/routes/_authenticated/charging/index.tsx`):** today `healthPoll` polls at 5 s only once the server
   says `running` — after a click the next poll can be up to 60 s away. Each admin health query's `refetchInterval`
