@@ -116,6 +116,8 @@
   "charging_source_role_zaptec": "Laddsessioner",
   "charging_source_state_unknown": "Okänd status",
   "charging_source_syncing": "Synkar…",
+  "charging_source_progress": "{done} av {total} dagar",
+  "charging_source_progress_label": "Synkförlopp, {source}",
   "charging_sources_description": "Tjänsterna som sidans data hämtas från. Bara admins ser den här delen.",
   "charging_sources_heading": "Datakällor",
   "charging_sources_summary": "{ok} av {total} fungerar",

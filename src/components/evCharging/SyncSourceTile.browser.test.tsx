@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vitest'
-import { integrationErrorMessage, integrationHealthTitle } from '~/lib/integrationHealthMessage'
+import {
+  integrationErrorMessage,
+  integrationHealthTitle,
+  integrationSourceName,
+} from '~/lib/integrationHealthMessage'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
@@ -164,4 +168,42 @@ test('an unread health still renders a usable tile', async () => {
   await expect.element(screen.getByRole('heading', { name: 'Škoda' })).toBeVisible()
   await expect.element(screen.getByText(m.charging_source_state_unknown())).toBeVisible()
   await expect.element(screen.getByRole('button', syncButton('Škoda'))).toBeEnabled()
+})
+
+const emaldoRunning: Health = {
+  ...ok,
+  source: 'emaldo',
+  running: true,
+  progress: { done: 12, total: 30 },
+}
+const progressBar = (screen: Awaited<ReturnType<typeof renderWithProviders>>['screen']) =>
+  screen.getByRole('progressbar', {
+    name: m.charging_source_progress_label({ source: integrationSourceName('emaldo') }),
+  })
+
+test('a run in flight (e.g. the cron’s) shows its progress as a bar and in days', async () => {
+  // syncing: false — this tab didn't start it; the server's progress alone shows it.
+  const { screen } = await renderWithProviders(tile(emaldoRunning))
+  const bar = progressBar(screen)
+  // In the document, not "visible": no app CSS here, so the h-1 bar has no height.
+  await expect.element(bar).toBeInTheDocument()
+  await expect.element(bar).toHaveAttribute('aria-valuenow', '40')
+  await expect
+    .element(bar)
+    .toHaveAttribute('aria-valuetext', m.charging_source_progress({ done: 12, total: 30 }))
+  await expect
+    .element(screen.getByText(m.charging_source_progress({ done: 12, total: 30 })))
+    .toBeVisible()
+})
+
+test('no bar before the run reports progress', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...emaldoRunning, progress: null }, { syncing: true }),
+  )
+  await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument()
+})
+
+test('no bar once the run is no longer in flight', async () => {
+  const { screen } = await renderWithProviders(tile({ ...emaldoRunning, running: false }))
+  await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument()
 })
