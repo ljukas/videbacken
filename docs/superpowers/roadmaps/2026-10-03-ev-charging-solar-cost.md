@@ -12,7 +12,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
 | 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | checkpoint passed | 2026-10-04: re-fetch 258/258 days in 9 runs, all `ok`; SoC on 73,955/73,955 buckets, 0 days with nulls; 4 probe days exact; energy sums unchanged |
 | 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | [#77](https://github.com/ljukas/videbacken/pull/77) | checkpoint passed | 2026-10-04: history rebuilt by the first cron derive (258 pool days, 98/98 counted sessions, mix kWh = session kWh); prod `C` 7.57 vs 7.58 in code; pool never above SoC; probe sessions within 1–6 pts of P |
-| 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | in progress | — |
+| 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | [#79](https://github.com/ljukas/videbacken/pull/79) | PR open | — |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
 | — | *Later phase:* solar-aware economy page (own brainstorm) | — | — | — | — |
 
@@ -167,3 +167,13 @@ Each must pass, with the result recorded in the table, before the next step star
     share is 96 % on prod vs 100 % in the local rehearsal: prod's pool carries 1.0 kWh of February solar into
     that night.
   - The owner accepted the numbers. Next: step 4 (cash cost uses the mix) in a new session.
+- 2026-10-04: step 4 PR [#79](https://github.com/ljukas/videbacken/pull/79) opened (cash cost). Task 0 found the
+  overview tiles had moved on since the plan (icon readouts, one footer line), so Task 6 was adapted. Reviews and the
+  owner changed a few things, recorded in the spec's "As built (step 4)" block:
+  - the tile line counts only energy that cost nothing ("N % egen solel", owner's call);
+  - the copy says "husets energidata", the app's established term;
+  - the session page's grid-only range marker reads "Denna laddning", not "Faktiskt", beside the cash hero;
+  - the source bar has its own colour tokens;
+  - the economy lead sits beside its controls and links the overview;
+  - an all-solar scope or year shows 0 kr, never "nothing priced".
+  Checked live on the local DB at 360 / 820 / 1600 px in both themes. Checkpoint 4 (prod, the owner's review) is next.
