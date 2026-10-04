@@ -8,7 +8,7 @@ import {
   type LucideIcon,
   ZapIcon,
 } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import type { RouterOutputs } from '~/lib/orpc/client'
@@ -35,7 +35,6 @@ const PERIOD_ICON: Record<Period, LucideIcon> = {
 // something is priced); without it the tile is energy alone, and kWh never
 // waits for (or breaks on) prices.
 export function TotalsTiles({ tiles, cost }: { tiles: Tiles; cost?: CostTiles }) {
-  const [period, setPeriod] = useState<Period>('thisMonth')
   const items: { key: Period; label: string; totals: Totals }[] = [
     { key: 'thisMonth', label: m.charging_tile_this_month(), totals: tiles.thisMonth },
     { key: 'thisYear', label: m.charging_tile_this_year(), totals: tiles.thisYear },
@@ -48,29 +47,32 @@ export function TotalsTiles({ tiles, cost }: { tiles: Tiles; cost?: CostTiles })
   return (
     <div className="@container">
       {/* Narrow: one card, a segmented control in its title slot picks the period. */}
-      <Tabs
-        value={period}
-        onValueChange={(v) => {
-          const picked = items.find((item) => item.key === v)
-          if (picked) setPeriod(picked.key)
-        }}
-        className="@3xl:hidden"
-        data-testid="totals-tabs"
-      >
+      {/* Not persisted: it opens on this month. */}
+      <Tabs defaultValue="thisMonth" className="@3xl:hidden" data-testid="totals-tabs">
         <Card>
           <CardHeader className="pb-2">
-            <TabsList className="w-full" aria-label={m.charging_totals_heading()}>
+            {/* h-10: a phone-sized touch target (the base is h-8, set via the same group variant). */}
+            <TabsList
+              className="w-full group-data-horizontal/tabs:h-10"
+              aria-label={m.charging_totals_heading()}
+            >
               {items.map(({ key, label }) => (
-                <TabsTrigger key={key} value={key}>
-                  <PeriodIcon period={key} />
-                  {label}
+                <TabsTrigger key={key} value={key} className="min-w-0">
+                  {/* Dropped on the narrowest phones, where "All time" would overflow. */}
+                  <PeriodIcon period={key} className="@max-xs:hidden" />
+                  <span className="truncate">{label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
           </CardHeader>
           <CardContent>
             {items.map(({ key, totals }) => (
-              <TabsContent key={key} value={key}>
+              <TabsContent
+                key={key}
+                value={key}
+                // Radix makes the panel focusable; show where focus went.
+                className="rounded-md focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
                 <TileReadouts totals={totals} cost={cost?.[key]} />
               </TabsContent>
             ))}
@@ -97,9 +99,9 @@ export function TotalsTiles({ tiles, cost }: { tiles: Tiles; cost?: CostTiles })
   )
 }
 
-function PeriodIcon({ period }: { period: Period }) {
+function PeriodIcon({ period, className }: { period: Period; className?: string }) {
   const Icon = PERIOD_ICON[period]
-  return <Icon aria-hidden className="size-3.5" />
+  return <Icon aria-hidden className={cn('size-3.5', className)} />
 }
 
 // Two columns split by a hairline when the tile is wide enough, stacked when
@@ -160,7 +162,7 @@ function TileReadouts({ totals, cost }: { totals: Totals; cost: Cost | undefined
       </div>
       {footer ? (
         <p className="flex items-start gap-1.5 border-t pt-3 text-muted-foreground text-xs">
-          <footer.icon aria-hidden className="mt-px size-3.5 shrink-0" />
+          <footer.icon aria-hidden className="mt-0.5 size-3 shrink-0" />
           {footer.text}
         </p>
       ) : null}
@@ -209,7 +211,7 @@ function Readout({
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <span className="flex items-center gap-1 text-muted-foreground text-xs">
-        <Icon aria-hidden className="size-3.5 shrink-0" />
+        <Icon aria-hidden className="size-3 shrink-0" />
         {label}
       </span>
       <span className="flex flex-wrap items-baseline gap-x-1 tabular-nums">
