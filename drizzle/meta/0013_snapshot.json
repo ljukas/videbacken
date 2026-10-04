@@ -1,5 +1,5 @@
 {
-  "id": "c0b7a3a5-5920-452d-8a41-40305196a7c4",
+  "id": "21ddc47e-aa91-493c-9025-881dbfbbec49",
   "prevId": "ad023271-d7ba-4153-bc64-53dfbb20c11b",
   "version": "7",
   "dialect": "postgresql",
@@ -1114,6 +1114,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "house_energy_reading_bucket_aligned_check": {
+          "name": "house_energy_reading_bucket_aligned_check",
+          "value": "date_bin('5 minutes', \"house_energy_reading\".\"bucket_start\", timestamptz '2000-01-01 00:00:00+00') = \"house_energy_reading\".\"bucket_start\""
+        },
         "house_energy_reading_grid_import_kwh_check": {
           "name": "house_energy_reading_grid_import_kwh_check",
           "value": "\"house_energy_reading\".\"grid_import_kwh\" >= 0 AND \"house_energy_reading\".\"grid_import_kwh\" < 10"

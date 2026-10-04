@@ -54,6 +54,20 @@ test.each([
   await expectConstraintViolation(db.insert(houseEnergyReading).values(row(absurd)), constraint)
 })
 
+test('a bucket must start on a 5-minute boundary', async () => {
+  for (const bucketStart of [
+    new Date('2026-04-01T10:02:00Z'),
+    new Date('2026-04-01T10:00:01Z'),
+    new Date('2026-04-01T10:00:00.001Z'),
+  ]) {
+    await expectConstraintViolation(
+      db.insert(houseEnergyReading).values(row({ bucketStart })),
+      'house_energy_reading_bucket_aligned_check',
+    )
+  }
+  await db.insert(houseEnergyReading).values(row({ bucketStart: new Date('2026-04-01T10:55:00Z') }))
+})
+
 test('zero is a valid reading', async () => {
   await db.insert(houseEnergyReading).values(row({ gridImportKwh: 0, solarKwh: 0, loadKwh: 0 }))
 })

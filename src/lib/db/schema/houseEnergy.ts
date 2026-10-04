@@ -43,6 +43,13 @@ export const houseEnergyReading = pgTable(
     batteryChargeAcKwh: doublePrecision('battery_charge_ac_kwh').notNull(),
   },
   (table) => [
+    // Every bucket starts on a 5-minute boundary (Stockholm's offsets are
+    // whole hours), so each lies inside exactly one quarter-hour price slot —
+    // the mix derivation relies on it. date_bin is immutable, unlike extract().
+    check(
+      'house_energy_reading_bucket_aligned_check',
+      sql`date_bin('5 minutes', ${table.bucketStart}, timestamptz '2000-01-01 00:00:00+00') = ${table.bucketStart}`,
+    ),
     kwhCheck('grid_import_kwh', table.gridImportKwh),
     kwhCheck('grid_export_kwh', table.gridExportKwh),
     kwhCheck('solar_kwh', table.solarKwh),

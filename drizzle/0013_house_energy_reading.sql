@@ -8,6 +8,7 @@ CREATE TABLE "house_energy_reading" (
 	"battery_charge_solar_kwh" double precision NOT NULL,
 	"battery_charge_grid_kwh" double precision NOT NULL,
 	"battery_charge_ac_kwh" double precision NOT NULL,
+	CONSTRAINT "house_energy_reading_bucket_aligned_check" CHECK (date_bin('5 minutes', "house_energy_reading"."bucket_start", timestamptz '2000-01-01 00:00:00+00') = "house_energy_reading"."bucket_start"),
 	CONSTRAINT "house_energy_reading_grid_import_kwh_check" CHECK ("house_energy_reading"."grid_import_kwh" >= 0 AND "house_energy_reading"."grid_import_kwh" < 10),
 	CONSTRAINT "house_energy_reading_grid_export_kwh_check" CHECK ("house_energy_reading"."grid_export_kwh" >= 0 AND "house_energy_reading"."grid_export_kwh" < 10),
 	CONSTRAINT "house_energy_reading_solar_kwh_check" CHECK ("house_energy_reading"."solar_kwh" >= 0 AND "house_energy_reading"."solar_kwh" < 10),
