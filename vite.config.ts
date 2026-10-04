@@ -130,6 +130,8 @@ export default defineConfig({
               //   Zaptec's hourly cron (an admin sync can still overlap; src/lib/vehicleState/skodaSyncCron.ts).
               // - Emaldo house energy hourly at :45 — after Zaptec's :00, clear of Škoda's
               //   :07/:22/:37/:52 (src/lib/houseEnergy/emaldoSyncCron.ts).
+              // Changing a cadence? Its admin-facing copy is `charging_source_cadence_*`
+              // (src/components/evCharging/syncSourceCopy.ts).
               crons: [
                 { path: '/api/cron/zaptec-sync', schedule: '0 * * * *' },
                 { path: '/api/cron/skoda-sync', schedule: '7,22,37,52 * * * *' },

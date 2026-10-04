@@ -292,3 +292,13 @@ two must be kept visually coherent.
 - **Overlay motion feels slow under heavy CRUD use** → step back toward 150 ms.
 - **A brand illustration system is wanted** → extend this ADR; ADR-0016 already defers empty-state
   illustrations here.
+
+## Amendment (2026-10-04): categorical source tones
+
+The Datakällor panel on `/charging` gives each integration (Zaptec, elprisetjustnu.se, Škoda, Emaldo)
+its own tone (`--source-*`, light + dark pairs in `src/styles/app.css`). These are **categorical
+identity colors, not accents**: they tint only a small icon square beside the source's name, never
+buttons, focus rings or surfaces, so `--brand` stays the one accent. The tones differ in lightness as
+well as hue (so they stay apart under red-green color blindness), and the icon and name always carry
+the identity, never the color alone. They are deliberately not `--chart-*`, whose dark palette
+changes hue (chart-1 is orange in light, blue in dark).

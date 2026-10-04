@@ -5,6 +5,7 @@ import {
   formatDuration,
   formatOre,
   formatOrePrecise,
+  formatRunTime,
   formatScore,
   formatSessionDay,
   formatSessionTimeRange,
@@ -25,6 +26,15 @@ function inLocale(locale: Locale) {
 afterEach(() => overwriteGetLocale(original))
 
 const at = (iso: string) => new Date(iso)
+
+describe('formatRunTime', () => {
+  test('a run start in Stockholm time, without the year', () => {
+    inLocale('sv')
+    expect(formatRunTime(at('2026-10-04T08:00:00Z'))).toBe('4 okt. 10:00') // CEST
+    expect(formatRunTime(at('2026-12-01T23:30:00Z'))).toBe('2 dec. 00:30') // CET, next day
+    expect(formatRunTime(at('2026-10-04T08:00:00Z'))).not.toMatch(/2026/)
+  })
+})
 
 describe('formatDay', () => {
   test('renders the calendar day itself, never shifted by a time zone', () => {
