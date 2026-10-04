@@ -46,8 +46,8 @@ export function TotalsTiles({ tiles, cost }: { tiles: Tiles; cost?: CostTiles })
   // jumps on hydration; the hidden one (display: none) is out of the a11y tree.
   return (
     <div className="@container">
-      {/* Narrow: one card, a segmented control in its title slot picks the period. */}
-      {/* Not persisted: it opens on this month. */}
+      {/* Narrow: one card, a segmented control in its title slot picks the period
+          (not persisted: it opens on this month). */}
       <Tabs defaultValue="thisMonth" className="@3xl:hidden" data-testid="totals-tabs">
         <Card>
           <CardHeader className="pb-2">
