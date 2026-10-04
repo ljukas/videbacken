@@ -41,6 +41,12 @@ export const houseEnergyReading = pgTable(
      * treats it as grid-origin (spec, "Sync").
      */
     batteryChargeAcKwh: doublePrecision('battery_charge_ac_kwh').notNull(),
+    /**
+     * The battery's state of charge, % (0–100), for the row's minute as
+     * Emaldo reports it; null when its SoC series lacked the minute. Step 3
+     * caps the battery pool at it (spec "Derivation" 3).
+     */
+    batterySocPct: doublePrecision('battery_soc_pct'),
   },
   (table) => [
     // Every bucket starts on a 5-minute boundary (Stockholm's offsets are
@@ -58,5 +64,10 @@ export const houseEnergyReading = pgTable(
     kwhCheck('battery_charge_solar_kwh', table.batteryChargeSolarKwh),
     kwhCheck('battery_charge_grid_kwh', table.batteryChargeGridKwh),
     kwhCheck('battery_charge_ac_kwh', table.batteryChargeAcKwh),
+    // NULL passes a CHECK: a missing SoC is allowed, a wrong one is not.
+    check(
+      'house_energy_reading_battery_soc_pct_check',
+      sql`${table.batterySocPct} >= 0 AND ${table.batterySocPct} <= 100`,
+    ),
   ],
 ).enableRLS()
