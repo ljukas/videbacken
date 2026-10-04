@@ -9,7 +9,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | checkpoint passed | 2026-10-03: 288/288 + 276/276 buckets, 0 mismatches (11 requests, 1 login) |
-| 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | PR open | — |
+| 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
 | 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | — | not started | — |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | not started | — |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
@@ -78,3 +78,19 @@ Each must pass, with the result recorded in the table, before the next step star
   the run after today and the backfill). Pre-check against the live API on the local DB: the whole backfill ran in 9
   runs, the daily balance was within ±2 % on the last 14 full days, and `battery_charge_ac` was 0 in every month.
   Checkpoint 2 still runs on prod after merge.
+- 2026-10-04: #70 merged. Checkpoint 2 passed on prod (read-only SELECTs; no rows recorded here):
+  - Backfill: 9 runs (4 admin, 5 cron), all `ok`, 1 login each. Readings span 2026-01-20 → today, every day present;
+    the watermark is the end of yesterday. Health `ok`. Vercel lists `/api/cron/emaldo-sync` at `45 * * * *`.
+  - Gaps: 8, from 50 min to 9.4 h, all in Emaldo's own data (no run dropped more than today's filling bucket from
+    a day it stored), identical across the series. The spring-forward day has its 276 buckets. Three counted sessions
+    overlap a gap (one by 90 min overnight, two inside the 9.4 h daytime hole): step 3's "gap inside a session →
+    uniform spread, no house data" path runs on real data.
+  - Balance (supply − use, without `charge_ac`): within ±2 % on 225 of 257 full days, median −0.42 %, monthly totals
+    within ±1.53 %. The 32 outliers are all but one summer days (May–Aug) with a small, consistently negative
+    error (≈0.5–1.5 kWh a day on low-load days); the one winter outlier is +4.3 % (2.9 kWh). A seasonal metering
+    bias, not bad data.
+  - `battery_charge_ac` is 0 in every bucket of every month: unused on this installation (spec, "Sync").
+  - **For step 3:** Σ discharge ÷ Σ charge over all readings is 0.853, but 0.566 for Jan–Feb and 0.924 from March.
+    In the cold months far less comes out of the battery than went in (standby or heating losses, not round trip).
+    Step 3's checkpoint expects η ≈ 0.85–0.95; the all-history measure only just meets it. Decide in step 3 whether
+    η is measured over all history (as the spec says) or the winter losses need their own handling.

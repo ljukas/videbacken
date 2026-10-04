@@ -52,10 +52,12 @@ Local probe notes and a working TS client: `data/private/emaldo/` (git-excluded;
   - Values are average W per 5 min; kWh = W × 5/60/1000. Response carries `start_time` (local midnight, epoch s).
 - **Timestamps**: bucket start = `start_time + min × 60`. `min` counts elapsed minutes, so DST days have 276 or 300
   buckets. Drop any row at or past the next day's `start_time`.
-- **Gaps**: rows can be missing (one 95-min hole, identical across all four series). Never assume 288.
+- **Gaps**: rows can be missing (one 95-min hole, identical across all four series). Never assume 288. The full
+  history (checkpoint 2) has 8 gaps from 50 min to 9.4 h, one of them across a whole sunny afternoon.
 - **Today** is partial and its newest bucket is still filling → drop the newest bucket of offset 0.
 - History reaches far past the charger's installation (2026-01-27); ≈1100 days back returns empty, not an error.
-- Daily energy balance (import + solar + discharge ≈ load + export + charge) holds within ≈1.4 %.
+- Daily energy balance (import + solar + discharge ≈ load + export + charge) holds within ≈1.4 %. Over the full
+  history (checkpoint 2): ±2 % on 225 of 257 days, with a small negative bias on low-load summer days.
 - No documented rate limit; the HA integration polls every 60 s. A token survived several minutes; TTL unknown.
 
 **Probe results on seven real sessions** (proportional grid share, uniform spread): sunny midday ≈45–49 %, summer
@@ -115,8 +117,10 @@ The integration source list gains `emaldo` (CHECK constraints on `integration_sy
 - **Cron** `/api/cron/emaldo-sync` at `45 * * * *`: after Zaptec's `:00`, clear of Škoda's `:07/:22/:37/:52`.
 - **Sync now** on `/charging` also runs Emaldo. The health alert lists Emaldo like the other sources, with
   sv/en messages per error code.
-- Step 2 records the semantics of `battery_charge_ac` from real data. Until then it's treated as **grid-origin**:
-  conservative, it never makes charging look cheaper than it was.
+- `battery_charge_ac` is **unused on this installation**: 0 in every bucket from 2026-01-20 to 2026-10-04
+  (checkpoint 2, prod). It stays stored and keeps the **grid-origin** treatment below, which is conservative (it
+  never makes charging look cheaper) and moot while the column is 0. If it ever turns non-zero, settle its meaning
+  from that data before trusting the mix.
 
 ## Derivation (roadmap step 3)
 
