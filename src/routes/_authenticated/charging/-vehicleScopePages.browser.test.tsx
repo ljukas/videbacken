@@ -162,7 +162,9 @@ test('Översikt, guests with nothing: guest copy, no sync button, even for an ad
     .element(screen.getByText(m.charging_vehicle_chart_empty_other({ year: 2026 })))
     .toBeVisible()
   // Only the heading's "Synka nu" remains; the empty state offers none.
-  expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(1)
+  expect(
+    screen.getByRole('button', { name: m.charging_sync_now(), exact: true }).elements(),
+  ).toHaveLength(1)
   expect(screen.getByText(m.charging_sessions_empty_description()).elements()).toHaveLength(0)
 })
 
@@ -172,7 +174,9 @@ test('Översikt, our car with nothing: the empty state still offers the admin a 
     seedOverview(qc, 'ours', [])
   })
   await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
-  expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(2)
+  expect(
+    screen.getByRole('button', { name: m.charging_sync_now(), exact: true }).elements(),
+  ).toHaveLength(2)
 })
 
 test('Översikt: the component reads the same query keys the loader fetched for the URL', async () => {
@@ -252,7 +256,9 @@ test('Översikt: a sessions read still pending shows no empty state or sync offe
     .toBeVisible()
   expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_sessions_empty_description()).elements()).toHaveLength(0)
-  expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(1)
+  expect(
+    screen.getByRole('button', { name: m.charging_sync_now(), exact: true }).elements(),
+  ).toHaveLength(1)
 })
 
 test('Översikt: a failed overview read shows the alert and the toggle; Vår bil gives a clean URL', async () => {
@@ -292,7 +298,9 @@ test('Översikt: a failed sessions read shows an error, never the empty list or 
   expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_sessions_empty_description()).elements()).toHaveLength(0)
   // Only the heading's "Synka nu" remains; the alert's button says "Försök igen".
-  expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(1)
+  expect(
+    screen.getByRole('button', { name: m.charging_sync_now(), exact: true }).elements(),
+  ).toHaveLength(1)
 })
 
 test('Översikt: an admin sees the car-log card, and ?dialog=vehicleImport opens the import', async () => {
@@ -362,4 +370,69 @@ test('patterns: switching scope clears the month', async () => {
     .toHaveAttribute('aria-checked', 'true')
   expect(router.state.location.search).toMatchObject({ year: 2025 })
   expect(router.state.location.search).not.toHaveProperty('month')
+})
+
+// --- Datakällor -------------------------------------------------------------
+
+const seedEmptyOverview = (qc: QueryClient) => {
+  seedOverviewShell(qc)
+  seedOverview(qc, 'ours', [])
+}
+const sourcesHeading = { name: m.charging_sources_heading(), level: 2 } as const
+const historyTitle = (source: string) => m.charging_source_dialog_title({ source })
+
+test('Översikt: admins get the Datakällor panel, household members do not', async () => {
+  const admin = await renderPage(Overview, '/charging', '', seedEmptyOverview)
+  await expect.element(admin.screen.getByRole('heading', sourcesHeading)).toBeVisible()
+  admin.screen.unmount()
+
+  const member = await renderPage(Overview, '/charging', '', seedEmptyOverview, 'user')
+  await expect.element(member.screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
+  expect(member.screen.getByRole('heading', sourcesHeading).elements()).toHaveLength(0)
+})
+
+test('Översikt: Historik opens that source in the URL, and closing clears it', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '', seedEmptyOverview)
+  await screen
+    .getByRole('button', {
+      name: m.charging_source_action_label({
+        action: m.charging_source_history(),
+        source: 'elprisetjustnu.se',
+      }),
+    })
+    .click()
+  await expect
+    .element(screen.getByRole('dialog', { name: historyTitle('elprisetjustnu.se') }))
+    .toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'syncRuns', source: 'elpris' })
+  await screen.getByRole('button', { name: 'Close' }).click()
+  await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
+  expect(router.state.location.search).not.toHaveProperty('source')
+})
+
+test('Översikt: a deep link opens that source’s history', async () => {
+  const { screen } = await renderPage(
+    Overview,
+    '/charging',
+    '?dialog=syncRuns&source=skoda',
+    seedEmptyOverview,
+  )
+  await expect.element(screen.getByRole('dialog', { name: historyTitle('Škoda') })).toBeVisible()
+})
+
+test.each([
+  ['no source', '?dialog=syncRuns', 'admin'],
+  ['an unknown source', '?dialog=syncRuns&source=tesla', 'admin'],
+  ['a household member', '?dialog=syncRuns&source=skoda', 'user'],
+] as const)('Översikt: a sync-history link with %s is cleaned from the URL', async (_case, search, role) => {
+  const { screen, router } = await renderPage(
+    Overview,
+    '/charging',
+    search,
+    seedEmptyOverview,
+    role,
+  )
+  await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
+  expect(router.state.location.search).not.toHaveProperty('source')
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
 })

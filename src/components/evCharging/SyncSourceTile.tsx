@@ -1,4 +1,5 @@
 import { HistoryIcon } from 'lucide-react'
+import type * as React from 'react'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card } from '~/components/ui/card'
@@ -69,12 +70,15 @@ export function SyncSourceTile({
   onSync,
   syncing,
   onOpenHistory,
+  historyRef,
 }: {
   source: IntegrationSource
   health: Health | undefined
   onSync: () => void
   syncing: boolean
   onOpenHistory: () => void
+  /** The "Historik" button, so the panel can return focus to it when the overlay closes. */
+  historyRef?: React.Ref<HTMLButtonElement>
 }) {
   const name = integrationSourceName(source)
   const message = health ? syncHealthMessage(health) : null
@@ -136,6 +140,7 @@ export function SyncSourceTile({
           />
         ) : null}
         <Button
+          ref={historyRef}
           variant="secondary"
           size="sm"
           onClick={onOpenHistory}
