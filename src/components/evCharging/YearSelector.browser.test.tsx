@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test, vi } from 'vitest'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
@@ -23,4 +24,11 @@ test('keeps a selected year without data selectable', async () => {
   await expect
     .element(screen.getByRole('combobox', { name: m.charging_year_label() }))
     .toHaveTextContent('2021')
+})
+
+test('the server render already shows the year, so it never pops in on hydration', () => {
+  const html = renderToStaticMarkup(
+    <YearSelector years={[2026, 2025]} value={2026} onChange={() => {}} />,
+  )
+  expect(html).toMatch(/data-slot="select-value"[^>]*>2026<\/span>/)
 })
