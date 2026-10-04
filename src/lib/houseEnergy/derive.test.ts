@@ -385,11 +385,11 @@ test('a queued day later than the requested one changes nothing; of several, the
   expect(await takeQueue()).toBeNull()
 })
 
-test('a requested day before the first reading starts from an empty pool on that day', async () => {
+test('a requested day before the first reading starts the day before that reading', async () => {
   await storeDay('2026-06-08', () => BASE)
-  expect((await derive('2026-06-05')).days).toBe(9) // 06-04 … 06-12
-  expect(await houseEnergyService.getPoolDay('2026-06-03')).toBeNull()
-  expect((await houseEnergyService.getPoolDay('2026-06-04'))?.state.storedKwh).toBe(0)
+  expect((await derive('2026-06-05')).days).toBe(6) // 06-07 … 06-12: nothing earlier has house data
+  expect(await houseEnergyService.getPoolDay('2026-06-06')).toBeNull()
+  expect((await houseEnergyService.getPoolDay('2026-06-07'))?.state.storedKwh).toBe(0)
 })
 
 test('a rebuild runs from the first reading: an early night charge reaches a later session', async () => {
@@ -492,7 +492,8 @@ function captureLog() {
 const WINDOW_INSIDE_SESSION = 'energy mix derive window starts inside a session'
 
 test('widening stops after MAX_WIDEN_STEPS and warns that the window starts inside a session', async () => {
-  await storeDay('2026-06-10', () => BASE)
+  await storeDay('2026-05-20', () => BASE) // the first reading: the window's floor is 05-19
+  await derive('2026-05-20') // checkpoints exist: the derive below resumes, no rebuild
   await midnightChain('2026-05-25', '2026-06-11')
   const { capture, messages } = captureLog()
   const result = await deriveFrom('2026-06-12', {
@@ -505,7 +506,8 @@ test('widening stops after MAX_WIDEN_STEPS and warns that the window starts insi
 })
 
 test('a chain exactly MAX_WIDEN_STEPS long widens fully, without a warning', async () => {
-  await storeDay('2026-06-10', () => BASE)
+  await storeDay('2026-05-20', () => BASE)
+  await derive('2026-05-20') // checkpoints exist: the derive below resumes, no rebuild
   await midnightChain('2026-06-01', '2026-06-11')
   const { capture, messages } = captureLog()
   const result = await deriveFrom('2026-06-12', {
@@ -522,4 +524,34 @@ test('a requested or queued day after today is clamped to today: a resume, not a
   expect(await derive('2026-06-20')).toMatchObject({ fromDay: '2026-06-11', days: 2 })
   await energyMixService.requestDerive('2026-06-20')
   expect(await derive('2026-06-12')).toMatchObject({ fromDay: '2026-06-11', days: 2 })
+})
+
+test('a session with a bogus start (epoch 0) neither throws nor drags the window back', async () => {
+  await storeDay('2026-06-10', () => BASE)
+  const good = await session('2026-06-10T10:00:00Z', '2026-06-10T11:00:00Z', 2)
+  // Zaptec's clock reset: starts at the epoch, ends in the window.
+  await session('1970-01-01T00:00:00Z', '2026-06-10T12:00:00Z', 5, { intervals: false })
+  await energyMixService.requestDerive('1970-01-01')
+  const { capture, messages } = captureLog()
+  const result = await deriveFrom('2026-06-10', {
+    log: capture,
+    now: () => new Date('2026-06-12T12:00:00Z'),
+  })
+  expect(result.fromDay).toBe('2026-06-09') // the floor: the day before the first reading
+  expect(total(await mixOf(good), 'kwh')).toBeCloseTo(2, 9)
+  expect(messages()).toContain('energy mix derive skipped glitched sessions')
+})
+
+test('a session whose slot would exceed the table bound is skipped, not fatal', async () => {
+  await storeDay('2026-06-10', () => BASE)
+  const good = await session('2026-06-10T10:00:00Z', '2026-06-10T11:00:00Z', 2)
+  // An estimated session with start = end puts everything in one slot.
+  const huge = await insertSession({
+    startAt: new Date('2026-06-10T12:00:00Z'),
+    endAt: new Date('2026-06-10T12:00:00Z'),
+    energyKwh: 1500,
+  })
+  await derive('2026-06-10')
+  expect(total(await mixOf(good), 'kwh')).toBeCloseTo(2, 9)
+  expect(await mixOf(huge)).toEqual([])
 })

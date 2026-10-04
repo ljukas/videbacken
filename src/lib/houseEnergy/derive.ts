@@ -42,6 +42,15 @@ export type DeriveResult = {
   deriveMs: number
 }
 
+/**
+ * A session longer than this is a glitch (a charger clock reset, a bogus
+ * start): spreading it would build millions of buckets. It is skipped and
+ * stays all-grid.
+ */
+const MAX_SESSION_MS = 31 * 24 * 3_600_000
+/** A mix slot this large would fail the table's CHECK and with it the whole derive. */
+const MAX_SLOT_KWH = 1000
+
 /** A queued request this old means derives keep failing: worth a warning. */
 const STALE_REQUEST_MIN = 180
 
@@ -49,6 +58,8 @@ type DeriveStats = {
   fromDay: string | null
   /** Widening hit MAX_WIDEN_STEPS with a session still starting before `fromDay`. */
   widenExhausted: boolean
+  /** Sessions too long or too large to derive (glitches); they keep no mix rows. */
+  skippedSessions: number
   /** Requests taken off the queue, and how long the oldest waited (wall clock). */
   queuedRequests: number
   queuedForMin: number | null
@@ -87,6 +98,13 @@ export async function deriveFrom(
       queuedForMin: stats.queuedForMin,
     })
   }
+  if (stats.skippedSessions > 0) {
+    // Counts only: which sessions is a query away (no mix rows, counted).
+    opts.log.warn('energy mix derive skipped glitched sessions', {
+      requestedDay: day,
+      skippedSessions: stats.skippedSessions,
+    })
+  }
   if (stats.widenExhausted) {
     // A chain of sessions spanning midnight longer than MAX_WIDEN_STEPS: the
     // earliest of them is derived without its first part (counts only).
@@ -122,6 +140,7 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
       ...queue,
       fromDay: null,
       widenExhausted: false,
+      skippedSessions: 0,
       days: 0,
       sessions: 0,
       rows: 0,
@@ -136,8 +155,14 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
   // before D's first reading existed, so its last bucket went uncapped (the
   // SoC cap needs the next reading). Re-deriving D−1 makes a resume equal a
   // full derive.
+  // Nothing before the first reading has house data, so no window starts
+  // earlier than the day before it: a session with a bogus start (epoch 0, a
+  // charger clock reset) can't drag the window back decades or into days the
+  // calendar helpers refuse.
+  const floorDay = addDays(stockholmDayOf(first.getTime()), -1)
   let { from: fromDay, exhausted: widenExhausted } = await widenToSessions(
-    addDays(requested, -1),
+    maxDay(addDays(requested, -1), floorDay),
+    floorDay,
     tx,
   )
   let start: PoolState = emptyPool()
@@ -154,6 +179,7 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
     // reading, empty pool.
     ;({ from: fromDay, exhausted: widenExhausted } = await widenToSessions(
       stockholmDayOf(first.getTime()),
+      floorDay,
       tx,
     ))
   }
@@ -179,7 +205,12 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
     spotAt: (ms) => slots.between(ms, ms + 1)[0]?.sekPerKwh ?? null,
     capacityKwh: BATTERY_CAPACITY_KWH,
   })
-  const rows = sessions.flatMap((s) => sessionRows(s, readings, house))
+  let skippedSessions = 0
+  const rows = sessions.flatMap((s) => {
+    const sessionMix = sessionRows(s, readings, house)
+    if (sessionMix === null) skippedSessions++
+    return sessionMix ?? []
+  })
   const t2 = performance.now()
 
   await energyMixService.replaceForSessions(
@@ -197,6 +228,7 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
     widenExhausted,
     days: days.length,
     sessions: sessions.length,
+    skippedSessions,
     rows: rows.length,
     readings: readings.length,
     readMs: Math.round(t1 - t0),
@@ -213,6 +245,7 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
  */
 async function widenToSessions(
   day: string,
+  floorDay: string,
   tx: DeriveTx,
 ): Promise<{ from: string; exhausted: boolean }> {
   let from = day
@@ -220,22 +253,38 @@ async function widenToSessions(
     const fromMs = stockholmDayBounds(from).startMs
     const earliest = await evChargingService.earliestCountedStartEndingAfter(new Date(fromMs), tx)
     if (!earliest || earliest.getTime() >= fromMs) return { from, exhausted: false }
+    // A session starting before the floor has no house data there anyway.
+    if (from <= floorDay) return { from, exhausted: false }
     if (step === MAX_WIDEN_STEPS) break
-    from = stockholmDayOf(earliest.getTime())
+    from = maxDay(stockholmDayOf(earliest.getTime()), floorDay)
   }
   return { from, exhausted: true }
 }
 
+const maxDay = (a: string, b: string) => (a > b ? a : b)
+
+/**
+ * The session's mix rows, or null for a glitched session (longer than
+ * MAX_SESSION_MS, or a slot the table would refuse): it gets no rows, stays
+ * all-grid, and never blocks the derive of the others.
+ */
 function sessionRows(
   s: SessionEnergy,
   readings: readonly HouseReading[],
   house: ReadonlyMap<number, BucketHouse>,
-): MixRow[] {
-  const startMs = s.startAt.getTime()
+): MixRow[] | null {
+  const startMs = Math.min(s.startAt.getTime(), ...s.stretches.map((x) => x.startMs))
   const endMs = Math.max(startMs, ...s.stretches.map((x) => x.endMs))
+  if (!(endMs - startMs <= MAX_SESSION_MS)) return null
   const window = between(readings, startMs - (BASELINE_BUCKETS + 1) * BUCKET_MS, endMs)
-  const car = shapeSession({ startMs, stretches: s.stretches, readings: window })
-  return deriveSessionMix(car, house).map((slot) => ({ ...slot, sessionId: s.sessionId }))
+  const car = shapeSession({
+    startMs: s.startAt.getTime(),
+    stretches: s.stretches,
+    readings: window,
+  })
+  const slots = deriveSessionMix(car, house)
+  if (slots.some((slot) => !(slot.kwh < MAX_SLOT_KWH))) return null
+  return slots.map((slot) => ({ ...slot, sessionId: s.sessionId }))
 }
 
 /** Readings with bucketStart in [fromMs, toMs); `readings` ascending (listReadings' order). */
