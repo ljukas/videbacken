@@ -10,6 +10,7 @@ import {
   getLastSuccessStartedAt,
   listRecentRuns,
   recordOutcome,
+  reportProgress,
 } from './integrationSync'
 import type { RunStats, SyncOutcome } from './transition'
 
@@ -255,6 +256,7 @@ test('getHealth for a source with no row is never_synced', async () => {
     source: 'elpris',
     state: 'never_synced',
     running: false,
+    progress: null,
     lastAttemptAt: null,
     lastSuccessAt: null,
     failingSince: null,
@@ -340,4 +342,63 @@ test('skoda: a not_configured prefix does not use up the threshold', async () =>
 test('skoda: one failure then success is silent', async () => {
   expect((await skodaAttempt(failed, 0)).transition).toBe('none')
   expect((await skodaAttempt(ok, 1)).transition).toBe('none')
+})
+
+test('reportProgress writes under the held lease and getHealth shows it while running', async () => {
+  const attemptId = await acquire(T0)
+  await reportProgress('zaptec', attemptId, { done: 12, total: 30 }, { now: at(1000) })
+  const health = await getHealth('zaptec', { now: at(2000), includeAdminDetail: false })
+  expect(health.running).toBe(true)
+  expect(health.progress).toEqual({ done: 12, total: 30 })
+})
+
+test('getHealth has no progress before the run reports any', async () => {
+  await acquire(T0)
+  expect(
+    (await getHealth('zaptec', { now: at(1000), includeAdminDetail: false })).progress,
+  ).toBeNull()
+})
+
+test('reportProgress with another attempt’s id writes nothing', async () => {
+  await acquire(T0)
+  await reportProgress('zaptec', crypto.randomUUID(), { done: 1, total: 2 }, { now: at(1000) })
+  const [row] = await db.select().from(integrationSync)
+  expect(row.progressDone).toBeNull()
+  expect(row.progressTotal).toBeNull()
+})
+
+test('recordOutcome clears progress, and a late write after it writes nothing', async () => {
+  const attemptId = await acquire(T0)
+  await reportProgress('zaptec', attemptId, { done: 1, total: 2 }, { now: at(1000) })
+  await recordOutcome('zaptec', ok, { attemptId, trigger: 'cron', startedAt: T0, now: at(2000) })
+  await reportProgress('zaptec', attemptId, { done: 2, total: 2 }, { now: at(3000) })
+  const [row] = await db.select().from(integrationSync)
+  expect(row.progressDone).toBeNull()
+  expect(row.progressTotal).toBeNull()
+})
+
+test('taking over an expired lease clears the dead run’s progress, and its late write is ignored', async () => {
+  const stale = await acquire(T0)
+  await reportProgress('zaptec', stale, { done: 5, total: 30 }, { now: at(1000) })
+  await acquire(at(6 * 60 * 1000))
+  await reportProgress('zaptec', stale, { done: 6, total: 30 }, { now: at(6 * 60 * 1000 + 1) })
+  const health = await getHealth('zaptec', {
+    now: at(6 * 60 * 1000 + 2),
+    includeAdminDetail: false,
+  })
+  expect(health.running).toBe(true)
+  expect(health.progress).toBeNull()
+})
+
+test('getHealth hides progress once the lease has expired', async () => {
+  const attemptId = await acquire(T0)
+  await reportProgress('zaptec', attemptId, { done: 5, total: 30 }, { now: at(1000) })
+  const health = await getHealth('zaptec', { now: at(6 * 60 * 1000), includeAdminDetail: false })
+  expect(health.running).toBe(false)
+  expect(health.progress).toBeNull()
+})
+
+test('getHealth hides leftover progress on a row without a lease (a rollback’s recordOutcome)', async () => {
+  await db.insert(integrationSync).values({ source: 'zaptec', progressDone: 3, progressTotal: 4 })
+  expect((await getHealth('zaptec', { now: T0, includeAdminDetail: false })).progress).toBeNull()
 })

@@ -11,6 +11,7 @@ const ok: Health = {
   source: 'zaptec',
   state: 'ok',
   running: false,
+  progress: null,
   lastAttemptAt: new Date('2026-10-04T08:00:00Z'),
   lastSuccessAt: new Date('2026-10-04T08:00:00Z'),
   failingSince: null,
