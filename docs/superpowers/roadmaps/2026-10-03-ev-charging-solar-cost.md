@@ -10,7 +10,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 |---|---|---|---|---|---|
 | 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | checkpoint passed | 2026-10-03: 288/288 + 276/276 buckets, 0 mismatches (11 requests, 1 login) |
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
-| 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | PR open | — |
+| 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | checkpoint passed | 2026-10-04: re-fetch 258/258 days in 9 runs, all `ok`; SoC on 73,955/73,955 buckets, 0 days with nulls; 4 probe days exact; energy sums unchanged |
 | 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | — | not started | — |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | not started | — |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
@@ -119,3 +119,16 @@ Each must pass, with the result recorded in the table, before the next step star
   code could undo the re-fetch. Live local re-fetch against the real API: all 258 days, SoC on every bucket, four probe
   days matching exactly. About ten back-to-back runs drew one `rate_limited` (handled); prod's hourly run was unaffected.
   Checkpoint 2b runs on prod after merge (merge outside xx:35–xx:55).
+- 2026-10-04: #74 merged and deployed at 18:22 CEST, clear of the `:45` window. Right after: 16 migrations applied, the
+  Emaldo watermark null, no lease, and the last run (17:45) from before the deploy, so no old-code run re-fetched
+  anything. Checkpoint 2b passed on prod the same evening (read-only SELECTs; no rows recorded here):
+  - Re-fetch: 9 admin "Synka" runs about a minute apart, all `ok`, 163 requests each, no rate limit; the last reported
+    0 backfill days left. The watermark is the end of yesterday, health `ok`.
+  - SoC on all 73,955 buckets of all 258 days since 2026-01-20; no day has a null; values span 1–100 %.
+  - The stored SoC of the four probe days (2026-01-21, 02-15, 06-10, 10-03) matches the raw `power-level` responses
+    exactly (md5 over every bucket), and six days (including the spring-forward day and the 9.4 h gap day) match the
+    local re-fetch exactly.
+  - Energy columns: the six days' sums per column equal an independent local re-fetch to 6 decimals. Prod's own
+    pre-re-fetch values were replaced, so this is the closest available "unchanged" check.
+  - Prod's SQL sessions print doubles with `extra_float_digits = 0`: compare numbers, not their text.
+  Next: step 3 in a new session, starting with its plan revision for the SoC cap (Log, 2026-10-04 above).
