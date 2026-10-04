@@ -110,8 +110,8 @@ export async function runElprisSync(opts: {
       requests: 0,
       retries: 0,
     }),
-    execute: ({ run, signal, now, log }) =>
-      fetchMissingDays(client, run, stats, { signal, now, sleep, log }),
+    execute: ({ run, signal, now, log, reportProgress }) =>
+      fetchMissingDays(client, run, stats, { signal, now, sleep, log, reportProgress }),
     toRunStats: (run) => ({
       since: run.since,
       // Zaptec-era column names: pages = day requests, sessionsSeen = slots parsed.
@@ -164,9 +164,15 @@ async function fetchMissingDays(
   client: ElprisClient,
   run: ElprisSyncRun,
   stats: ElprisCallStats,
-  ctx: { signal: AbortSignal; now: () => Date; sleep: (ms: number) => Promise<void>; log: Logger },
+  ctx: {
+    signal: AbortSignal
+    now: () => Date
+    sleep: (ms: number) => Promise<void>
+    log: Logger
+    reportProgress: (done: number, total: number) => Promise<void>
+  },
 ): Promise<void> {
-  const { signal, now, sleep, log } = ctx
+  const { signal, now, sleep, log, reportProgress } = ctx
   const today = stockholmDayOf(now().getTime())
   const yesterday = addDays(today, -1)
   const tomorrow = addDays(today, 1)
@@ -177,10 +183,8 @@ async function fetchMissingDays(
   run.days = planned.length
 
   const missingRecent: string[] = []
-  for (const [i, day] of planned.entries()) {
-    // Always at least one day per run, so a run can never make no progress.
-    if (i > 0 && now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS) break
-    if (i > 0 && planned.length > 5) await sleep(BACKFILL_PAUSE_MS)
+
+  async function fetchDay(day: string): Promise<void> {
     run.dayRequests++
     run.since = new Date(stockholmDayBounds(day).startMs)
     const recent = day >= yesterday
@@ -201,7 +205,7 @@ async function fetchMissingDays(
       }
       run.rejected++
       log.warn('elpris day rejected', { day, error })
-      continue
+      return
     }
     if (slots === null) {
       if (day > today) run.notPublished++
@@ -210,13 +214,22 @@ async function fetchMissingDays(
         run.gaps++
         log.warn('elpris day missing', { day })
       }
-      continue
+      return
     }
     const importStart = performance.now()
     const { written } = await replaceDay(SPOT_ZONE, day, slots)
     run.importMs += performance.now() - importStart
     run.daysFetched++
     run.upserted += written
+  }
+
+  for (const [i, day] of planned.entries()) {
+    // Always at least one day per run, so a run can never make no progress.
+    if (i > 0 && now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS) break
+    if (i > 0 && planned.length > 5) await sleep(BACKFILL_PAUSE_MS)
+    await fetchDay(day)
+    // Days handled, not days stored: a skipped day still moves the bar.
+    await reportProgress(i + 1, planned.length)
   }
 
   if (missingRecent.length > 0) {

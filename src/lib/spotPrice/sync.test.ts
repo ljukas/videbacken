@@ -4,6 +4,7 @@ import { evCharger, evChargeSession, spotPrice } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { type ElprisClient, ElprisError } from '~/lib/effects/elpris'
 import { createServerLogger } from '~/lib/logger/server'
+import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, listRecentRuns } from '~/lib/services/integrationSync'
 import { daysWithSlots } from '~/lib/services/spotPrice'
 import type { PriceSlot } from '~/lib/spotPrice/slots'
@@ -329,4 +330,23 @@ test('a held lease skips the run without calling elpris', async () => {
   const result = await run(client)
   expect(result.outcome).toBe('skipped')
   expect(requested).toEqual([])
+})
+
+test('reports progress over every planned day, skipped ones included', async () => {
+  // 09-20 … 09-29 planned (10 days): tomorrow is not published yet and 09-22 is a gap — both still count.
+  await insertSession(new Date('2026-09-20T10:00:00Z'))
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const { client } = fakeElpris({ missing: ['2026-09-22'] })
+  await runElprisSync({
+    trigger: 'cron',
+    now: () => {
+      clock += 1_001
+      return new Date(clock)
+    },
+    deps: { elpris: client, sleep: async () => {} },
+  })
+  expect(spy.mock.calls.map(([, , p]) => p)).toEqual(
+    Array.from({ length: 10 }, (_, i) => ({ done: i + 1, total: 10 })),
+  )
 })

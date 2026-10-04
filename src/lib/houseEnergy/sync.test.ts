@@ -12,6 +12,7 @@ import {
 } from '~/lib/effects/emaldo'
 import { createServerLogger } from '~/lib/logger/server'
 import { listReadings, replaceDay } from '~/lib/services/houseEnergy'
+import * as integrationSyncService from '~/lib/services/integrationSync'
 import {
   beginAttempt,
   getHealth,
@@ -279,6 +280,24 @@ test('a long backfill is capped at 30 days a run and continues from the watermar
   const done = fakeEmaldo()
   await run(done.client)
   expect(done.requested).toEqual([YESTERDAY, TODAY])
+})
+
+test('reports progress over yesterday, today and the backfill, in days', async () => {
+  // A session on 03-28 → the backfill starts 7 days earlier (03-21): 10 backfill days + 2.
+  await sessionOn('2026-03-28')
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const { client } = fakeEmaldo()
+  // Each now() 1 s later, so the throttle never drops a write.
+  await run(client, {
+    now: () => {
+      clock += 1_001
+      return new Date(clock)
+    },
+  })
+  expect(spy.mock.calls.map(([, , p]) => p)).toEqual(
+    Array.from({ length: 12 }, (_, i) => ({ done: i + 1, total: 12 })),
+  )
 })
 
 test('no new backfill day once the budget is used, and the watermark stays put', async () => {
