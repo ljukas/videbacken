@@ -344,6 +344,21 @@ test('getSessionEconomy on an estimated session (no intervals): no chart data, e
   expect(d.economy.excluded).toBe('no_hourly')
   expect(d.optimalSchedule).toBeNull()
   expect(d.rateKw).toBeNull()
+  // Its one stretch is still priced: the cash cost (no mix) equals the grid-only actual.
+  expect(d.cost).toMatchObject({ kwh: 10, noHouseDataKwh: 10, complete: true })
+  expect(d.cost.totalSek).toBeCloseTo(d.economy.actual.totalSek, 9)
+
+  // A stored mix over the estimated stretch prices it too.
+  await replaceForSessions(
+    [id],
+    ['08:00', '08:15', '08:30', '08:45', '09:00', '09:15', '09:30', '09:45'].map((hm) => ({
+      ...mixSlot(`2026-09-28T${hm}:00Z`, { gridKwh: 0.625, solarKwh: 0.625 }),
+      sessionId: id,
+    })),
+  )
+  const mixed = await getSessionEconomy({ sessionId: id })
+  expect(mixed.cost).toMatchObject({ kwh: 10, solarKwh: 5, noHouseDataKwh: 0 })
+  expect(mixed.economy).toEqual(d.economy)
 })
 
 test('economy overview follows the vehicle scope; the session detail carries the attribution', async () => {
