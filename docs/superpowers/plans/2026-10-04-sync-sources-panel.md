@@ -248,9 +248,8 @@ colors, not accents**: they tint only a small icon square, never buttons, focus 
 `charging_source_state_unknown` "Okänd status" / "Status unknown";
 `charging_source_never_synced` "Aldrig synkad" / "Never synced";
 `charging_source_syncing` "Synkar…" / "Syncing…";
-`charging_source_sync_label` "Synka {source} nu" / "Sync {source} now";
+`charging_source_action_label` "{action}, {source}" (both locales; the accessible name starts with the visible label, WCAG 2.5.3);
 `charging_source_history` "Historik" / "History";
-`charging_source_history_label` "Visa synkhistorik för {source}" / "Show sync history for {source}".
 
 - [ ] **Step 2: Write the failing test** — `SyncSourceTile.browser.test.tsx`
 
@@ -296,7 +295,7 @@ test('an ok source shows its name, role, state and last sync', async () => {
   await expect.element(screen.getByText(integrationHealthTitle('ok'))).toBeVisible()
   await expect.element(screen.getByText(/^Senast synkad/)).toBeVisible()
   await expect
-    .element(screen.getByRole('button', { name: m.charging_source_sync_label({ source: 'Zaptec' }) }))
+    .element(screen.getByRole('button', { name: m.charging_source_action_label({ action: m.charging_sync_now(), source: 'Zaptec' }) }))
     .toHaveTextContent(m.charging_sync_now())
 })
 
@@ -304,8 +303,8 @@ test('sync and history call their handlers', async () => {
   const onSync = vi.fn()
   const onOpenHistory = vi.fn()
   const { screen } = await renderWithProviders(tile(ok, { onSync, onOpenHistory }))
-  await screen.getByRole('button', { name: m.charging_source_sync_label({ source: 'Zaptec' }) }).click()
-  await screen.getByRole('button', { name: m.charging_source_history_label({ source: 'Zaptec' }) }).click()
+  await screen.getByRole('button', { name: m.charging_source_action_label({ action: m.charging_sync_now(), source: 'Zaptec' }) }).click()
+  await screen.getByRole('button', { name: m.charging_source_action_label({ action: m.charging_source_history(), source: 'Zaptec' }) }).click()
   expect(onSync).toHaveBeenCalledOnce()
   expect(onOpenHistory).toHaveBeenCalledOnce()
 })
@@ -335,7 +334,7 @@ test('not configured has no sync button and says why', async () => {
   await expect.element(screen.getByText(m.charging_source_never_synced())).toBeVisible()
   expect(screen.getByRole('button', { name: /^Synka/ }).elements()).toHaveLength(0)
   await expect
-    .element(screen.getByRole('button', { name: m.charging_source_history_label({ source: 'Emaldo' }) }))
+    .element(screen.getByRole('button', { name: m.charging_source_action_label({ action: m.charging_source_history(), source: 'Emaldo' }) }))
     .toBeVisible()
 })
 
@@ -348,7 +347,7 @@ test('failing offers a retry and shows the error copy', async () => {
     .element(screen.getByText(integrationErrorMessage('auth_failed', { source: 'skoda' })))
     .toBeVisible()
   await expect
-    .element(screen.getByRole('button', { name: m.charging_source_sync_label({ source: 'Škoda' }) }))
+    .element(screen.getByRole('button', { name: m.charging_source_action_label({ action: m.charging_sync_now(), source: 'Škoda' }) }))
     .toHaveTextContent(m.common_try_again())
 })
 
@@ -362,7 +361,7 @@ test('an unread health still renders a usable tile', async () => {
   await expect.element(screen.getByRole('heading', { name: 'Škoda' })).toBeVisible()
   await expect.element(screen.getByText(m.charging_source_state_unknown())).toBeVisible()
   await expect
-    .element(screen.getByRole('button', { name: m.charging_source_sync_label({ source: 'Škoda' }) }))
+    .element(screen.getByRole('button', { name: m.charging_source_action_label({ action: m.charging_sync_now(), source: 'Škoda' }) }))
     .toBeEnabled()
 })
 ```
@@ -494,7 +493,7 @@ export function SyncSourceTile({
           <SyncNowButton
             onSync={onSync}
             pending={pending}
-            aria-label={m.charging_source_sync_label({ source: name })}
+            aria-label={m.charging_source_action_label({ action: m.charging_sync_now(), source: name })}
             label={
               pending
                 ? m.charging_source_syncing()
@@ -508,7 +507,7 @@ export function SyncSourceTile({
           variant="secondary"
           size="sm"
           onClick={onOpenHistory}
-          aria-label={m.charging_source_history_label({ source: name })}
+          aria-label={m.charging_source_action_label({ action: m.charging_source_history(), source: name })}
         >
           <HistoryIcon />
           {m.charging_source_history()}
@@ -847,8 +846,8 @@ test('a tile routes sync and history to its own source', async () => {
   const onSync = vi.fn()
   const onOpenHistory = vi.fn()
   const { screen } = await renderWithProviders(panel({ onSync, onOpenHistory }))
-  await screen.getByRole('button', { name: m.charging_source_sync_label({ source: 'Škoda' }) }).click()
-  await screen.getByRole('button', { name: m.charging_source_history_label({ source: 'elprisetjustnu.se' }) }).click()
+  await screen.getByRole('button', { name: m.charging_source_action_label({ action: m.charging_sync_now(), source: 'Škoda' }) }).click()
+  await screen.getByRole('button', { name: m.charging_source_action_label({ action: m.charging_source_history(), source: 'elprisetjustnu.se' }) }).click()
   expect(onSync).toHaveBeenCalledWith('skoda')
   expect(onOpenHistory).toHaveBeenCalledWith('elpris')
 })

@@ -32,13 +32,14 @@ export function SyncHealthAlert({
     state: integrationHealthTitle(health.state),
   })
 
+  const message = syncHealthMessage(health)
   switch (health.state) {
     case 'ok':
       return null
     case 'never_synced':
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{neverSyncedCopy(health.source)}</div>
+          <div>{message}</div>
           {isAdmin ? <RetryRow onRetry={onRetry} retrying={retrying} /> : null}
         </HealthAlert>
       )
@@ -46,13 +47,13 @@ export function SyncHealthAlert({
       // Retrying can't fix missing credentials, so no retry here.
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{integrationErrorMessage('not_configured', { source: health.source })}</div>
+          <div>{message}</div>
         </HealthAlert>
       )
     case 'stale':
       return (
         <HealthAlert variant="default" title={title}>
-          <div>{staleCopy(health.source)}</div>
+          <div>{message}</div>
           {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
         </HealthAlert>
       )
@@ -60,7 +61,7 @@ export function SyncHealthAlert({
       return (
         <HealthAlert variant="destructive" title={title}>
           <div>
-            {integrationErrorMessage(health.code ?? 'internal_error', { source: health.source })}
+            {message}
             {health.failingSince ? (
               <> {m.charging_health_failing_since({ time: formatDateTime(health.failingSince) })}</>
             ) : null}
@@ -68,6 +69,27 @@ export function SyncHealthAlert({
           {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
         </HealthAlert>
       )
+  }
+}
+
+/**
+ * The body copy for a health state — shared by this alert and the Datakällor
+ * tile/overlay, so both always say the same thing. Null when there's nothing
+ * to say (`ok`). A failing body is the error code's message; callers add the
+ * "since" line themselves.
+ */
+export function syncHealthMessage(health: Health): string | null {
+  switch (health.state) {
+    case 'ok':
+      return null
+    case 'never_synced':
+      return neverSyncedCopy(health.source)
+    case 'not_configured':
+      return integrationErrorMessage('not_configured', { source: health.source })
+    case 'stale':
+      return staleCopy(health.source)
+    case 'failing':
+      return integrationErrorMessage(health.code ?? 'internal_error', { source: health.source })
   }
 }
 

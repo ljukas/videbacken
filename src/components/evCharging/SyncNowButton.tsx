@@ -217,14 +217,17 @@ export function SyncNowButton({
   pending,
   label = m.charging_sync_now(),
   variant = 'outline',
+  'aria-label': ariaLabel,
 }: {
   onSync: () => void
   pending: boolean
   label?: string
   variant?: 'outline' | 'default'
+  /** Names the button when several sit on one screen ("Synka Zaptec nu"). */
+  'aria-label'?: string
 }) {
   return (
-    <Button variant={variant} size="sm" onClick={onSync} disabled={pending}>
+    <Button variant={variant} size="sm" onClick={onSync} disabled={pending} aria-label={ariaLabel}>
       <RefreshCwIcon className={cn(pending && 'animate-spin motion-reduce:animate-none')} />
       {label}
     </Button>
