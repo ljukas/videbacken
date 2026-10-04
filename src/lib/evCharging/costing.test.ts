@@ -387,10 +387,14 @@ test('a mix that no longer matches the session falls back to all grid', async ()
   await storeMix(id, [mixSlot('2026-09-20T18:00:00Z', { solarKwh: 2 })])
   const [cost] = await getSessionCosts({ sessionIds: [id] })
   expect(cost).toMatchObject({ kwh: 3, solarKwh: 0, noHouseDataKwh: 3 })
+  expect(warn).toHaveBeenCalledTimes(1)
   expect(warn).toHaveBeenCalledWith(
     'cost: energy mix ignored, kWh differs from the session',
     expect.objectContaining({ sessionId: id }),
   )
+  const sep = (await getCostOverview({ now: NOW })).months[8]
+  expect(sep).toMatchObject({ kwh: 3, solarKwh: 0, noHouseDataKwh: 3 })
+  expect(warn).toHaveBeenCalledTimes(2) // once per pricing call
 })
 
 test('mix pieces count in the month of their own interval, like the kWh overview', async () => {
