@@ -42,6 +42,7 @@ const bucket = (bucketStart: Date, kwh = 0.05): HouseBucket => ({
   batteryChargeSolarKwh: 0,
   batteryChargeGridKwh: 0,
   batteryChargeAcKwh: 0,
+  batterySocPct: 50,
 })
 
 /** `n` buckets from the day's start, 5 min apart. */

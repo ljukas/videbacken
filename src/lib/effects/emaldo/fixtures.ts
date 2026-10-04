@@ -59,6 +59,8 @@ export function syntheticRow(name: SeriesName, m: number): number[] {
       return [m, 1, 60 * k, 2]
     case 'battery':
       return [m, 72, 84, 96, 108, 0]
+    case 'level': // SoC %, plus an unused trailing column
+      return [m, k % 101, 0]
   }
 }
 
