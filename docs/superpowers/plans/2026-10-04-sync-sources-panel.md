@@ -10,6 +10,8 @@
 
 **Spec:** bounded design approved in chat on 2026-10-04 (no spec file). Visual reference: the mockup canvas https://claude.ai/artifact/PJhrex32gnUbMakVEVEag4 (desktop 4 columns, tablet 2, mobile 1; Historik = centred dialog on desktop, bottom sheet on mobile).
 
+> **Amended during the per-task reviews** — where a snippet below differs from the code, the code (and its commit message) wins. Notably: the identity split into `SyncSourceMark.tsx` + `syncSourceCopy.ts`; the `--source-*` values were changed for colour-blind separation (see `src/styles/app.css`); buttons are named "{action}, {source}" (WCAG 2.5.3); badges and failed-run pills are the outline pill + dot (contrast); the grid goes four-across at `@4xl`, not `@3xl`; the overlay body scrolls under a pinned header.
+
 ## Global Constraints
 
 - Admin-only: the panel and the overlay render only for `user.role === 'admin'`; household members see nothing new.

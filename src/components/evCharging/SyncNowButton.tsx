@@ -15,7 +15,8 @@ type SyncResult = {
 }
 
 // The admin "sync now" mutations, shared by the heading button, each health
-// alert's "Försök igen" and the empty session list's CTA. `syncAll` fires the
+// alert's "Försök igen", each Datakällor tile's sync and the empty session
+// list's CTA. `syncAll` fires the
 // session, price and house-energy syncs in parallel, so the session toast isn't
 // held behind a long price or house backfill; a retry runs only its own source. A run never throws for
 // a failed/skipped outcome — those are ordinary — so each toast is chosen by
@@ -24,8 +25,8 @@ type SyncResult = {
 // call knows whether to announce: a full sync already toasts the session
 // result (a price success stays silent), an explicit price retry confirms it.
 // House energy, like prices, has two mutations: inside a full sync only a real
-// failure toasts (an unconfigured Emaldo stays quiet, its health alert already
-// says so); an explicit retry confirms either way.
+// failure toasts (an unconfigured Emaldo stays quiet, its Datakällor tile
+// already says so); an explicit retry confirms either way.
 // Every outcome can have changed health/runs/data, so the whole evCharging
 // cache is invalidated.
 export function useSyncNow() {
@@ -179,7 +180,7 @@ export function useSyncNow() {
       prices.mutate({ source: 'elpris' })
       house.mutate({ source: 'emaldo' })
     },
-    /** One source (an alert's retry). */
+    /** One source (an alert's retry, or a Datakällor tile's sync). */
     syncSource: (source: SyncSource) => {
       switch (source) {
         case 'elpris':
@@ -194,7 +195,7 @@ export function useSyncNow() {
     },
     // The heading button syncs everything but the car, but waits only on
     // sessions and prices: a house run can take minutes while the backfill
-    // runs, and its alert shows its own pending state. A second click while
+    // runs, and its Datakällor tile shows its own "Synkar…". A second click while
     // it runs is skipped by the integration lease.
     isPending: sessions.isPending || pricesPending,
     isPendingFor: (source: SyncSource) => {

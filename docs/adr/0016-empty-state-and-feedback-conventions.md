@@ -3,7 +3,7 @@
 - **Status**: Proposed
 - **Date**: 2026-06-17
 - **Deciders**: Lukas
-- **Decision in one line**: Every list/collection renders the shared `Empty` component with a consistent **icon (or, for a top-level area's primary zero-state, an illustration) + title + description**, plus **at most one primary CTA** that appears only when there is a single obvious next action and the viewer is permitted to take it (role-gated); filtered, sub-scope, and terminal empties (e.g. an empty sync-run history card under a page that already carries the action) stay CTA-less.
+- **Decision in one line**: Every list/collection renders the shared `Empty` component with a consistent **icon (or, for a top-level area's primary zero-state, an illustration) + title + description**, plus **at most one primary CTA** that appears only when there is a single obvious next action and the viewer is permitted to take it (role-gated); filtered, sub-scope, and terminal empties (e.g. an empty sync-run history opened from a tile that already carries the action) stay CTA-less.
 
 > **Amended 2026-09-29. Pruned to the current template.** References to features the template removed
 > (owners, documents/folders, the bin) were removed or replaced with current examples (charging sessions,
@@ -55,9 +55,10 @@ rather than restating them.
     admins); users see icon + title + description only.
   - Tariffs (empty) → **admins** see "New period" (`charging_tariff_new` → `open('tariffNew')`); users see an
     icon + title + a description saying an administrator adds them.
-- **No CTA on filtered / sub-scope / terminal empties.** The reference is a sub-scope card: `RecentRunsCard`
-  (an admin's empty sync-run history) sits inside `/charging`, whose page header already carries
-  `SyncNowButton`, so the card adds no CTA of its own — icon + title + description, nothing more. The
+- **No CTA on filtered / sub-scope / terminal empties.** The reference is a sub-scope view: `RecentRunsTable`
+  (an admin's empty sync-run history, in the Datakällor overlay on `/charging`) opens from a source tile
+  that already carries its own sync button, so the history adds no CTA of its own — icon + title +
+  description, nothing more. The
   template has no truly filtered or terminal empty today; the rule stands for when one arrives.
 - **Description copy** states what lands here / what to do, in one short sentence, localized in
   `messages/{sv,en}.json`. The `EmptyMedia` icon is decorative; the title carries the meaning.
@@ -65,7 +66,7 @@ rather than restating them.
 ### Picking an empty state — decision flow
 
 1. List has rows? → render the list. Otherwise continue.
-2. Is this a **filtered, sub-scope, or terminal** view (e.g. a sync-run history card whose page header already
+2. Is this a **filtered, sub-scope, or terminal** view (e.g. a source's sync-run history, whose tile already
    carries the action)? → `Empty` with
    icon + title + description, **no CTA**.
 3. Is this the **primary zero-state of a top-level area**? → `Empty`; an illustration (ADR-0015) is permitted.
@@ -111,7 +112,7 @@ No new component is introduced. The convention lives in this ADR and in how each
   `onSync?` prop (threaded from `charging.tsx`, admins only) and renders the admin-gated CTA.
 - `TariffCard` — renders `Empty` instead of the `Table` when there are no tariffs; the `admin` prop's `onNew`
   (`open('tariffNew')` in `charging.tsx`) adds the CTA.
-- `RecentRunsCard` — the reference sub-scope empty (no CTA; the `/charging` header carries `SyncNowButton`).
+- `RecentRunsTable` — the reference sub-scope empty (no CTA; its Datakällor tile carries the sync).
 - `src/routes/_authenticated/sensors.tsx` and `src/routes/_authenticated/index.tsx` — top-level zero-states
   (`brand-wash`), no CTA: there is no in-app next action.
 
@@ -139,7 +140,7 @@ appear in an empty state.
 - `src/components/evCharging/SessionList.tsx` — `Empty` + admin CTA in place of the table.
 - `src/components/evCharging/TariffCard.tsx` — `Empty` + admin CTA inside the card.
 - `src/routes/_authenticated/charging.tsx` — threads `onSync` / `admin.onNew` (admins only).
-- `src/components/evCharging/RecentRunsCard.tsx` — reference sub-scope empty (no CTA).
+- `src/components/evCharging/RecentRunsTable.tsx` — reference sub-scope empty (no CTA).
 - `messages/{sv,en}.json` — empty-state titles/descriptions and CTA labels.
 - `docs/adr/0015-visual-identity-and-design-language.md` — owns the brand token, logo mark, and illustration art
   direction this ADR defers to; `docs/adr/0013-form-presentation-and-dialog-architecture.md` — owns dialogs,

@@ -317,7 +317,7 @@ function ChargingPage() {
         health={health}
         isAdmin={isAdmin}
         onRetry={() => syncNow.syncSource('zaptec')}
-        retrying={syncNow.isPendingFor('zaptec')}
+        retrying={syncNow.isPendingFor('zaptec') || health.running}
       />
       {/* Admin-only until prices are shown on the page: a household member
           can't see or act on the price feed, so its health is noise to them. */}
@@ -326,7 +326,7 @@ function ChargingPage() {
           health={pricesHealth}
           isAdmin
           onRetry={() => syncNow.syncSource('elpris')}
-          retrying={syncNow.isPendingFor('elpris')}
+          retrying={syncNow.isPendingFor('elpris') || pricesHealth.running}
         />
       ) : null}
       {/* Admin-only like prices: a household member can't act on the car feed. */}
@@ -335,7 +335,7 @@ function ChargingPage() {
           health={skodaHealth}
           isAdmin
           onRetry={() => syncNow.syncSource('skoda')}
-          retrying={syncNow.isPendingFor('skoda')}
+          retrying={syncNow.isPendingFor('skoda') || skodaHealth.running}
         />
       ) : null}
       {isAdmin && skodaHealth?.state === 'ok' ? (

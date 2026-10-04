@@ -16,6 +16,7 @@ type Health = RouterOutputs['evCharging']['syncStatus']
 // timestamps client-side — the server owns the stale/failing policy). `ok`
 // renders nothing. Admins additionally see the raw (sanitized) last error and
 // a retry that re-runs only this alert's source (`useSyncNow().syncSource`).
+// Emaldo has no alert: its state lives only on its Datakällor tile.
 export function SyncHealthAlert({
   health,
   isAdmin,
