@@ -81,7 +81,7 @@ All additive; only step 3 calls the changed functions unless noted.
    The CHECKs: battery spots finite only (no ±1000 bound); mix `kwh > 0 AND kwh < 1000`; pool `stored_kwh < 1000` and
    finite spot sums (NaN and ±Infinity refused); slot alignment via `date_bin`.
 8. **From the Task 4–7 and script reviews (built):**
-   - A durable derive queue, `energy_mix_derive_request` (migration 0017). `deriveAfterSync` calls
+   - A durable derive queue, `energy_mix_derive_request`. `deriveAfterSync` calls
      `requestDerive(day)` before deriving, and a derive takes the whole queue with `DELETE … RETURNING`. So a failed
      derive is retried by the next one, and a request waiting over 3 h is warned about.
    - A derive starts **one day before** the requested day, so D−1's last bucket gets its SoC cap. It clamps a future
@@ -89,6 +89,10 @@ All additive; only step 3 calls the changed functions unless noted.
    - `pruneUncounted()` takes no window: it prunes every uncounted session.
    - The script refuses future `--from` and query-string target overrides, and prints the user (the Supabase
      project ref) with the target.
+9. **Merge with main (#76):** main took migration 0016 (`integration_sync` progress), so the three new tables
+   ship as one regenerated migration, `0017_energy_mix_and_battery_pool`. The stores queue a derive request in their
+   own transaction through the leaf `services/energyMix/deriveRequest.ts`; the derive clamps a requested day to the
+   floor (the day before the first reading) and skips sessions longer than a year or with a slot ≥ 1000 kWh.
 
 ## Global Constraints
 
