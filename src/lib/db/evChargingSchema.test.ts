@@ -129,6 +129,40 @@ test('an integration_sync row with lease_until set but no lease_token is rejecte
   )
 })
 
+test('an integration_sync row with progress_done but no progress_total is rejected', async () => {
+  await expectConstraintViolation(
+    db.insert(integrationSync).values({ source: 'emaldo', progressDone: 1, progressTotal: null }),
+    'integration_sync_progress_pair_check',
+  )
+})
+
+test('an integration_sync row with progress_total = 0 is rejected', async () => {
+  await expectConstraintViolation(
+    db.insert(integrationSync).values({ source: 'emaldo', progressDone: 0, progressTotal: 0 }),
+    'integration_sync_progress_range_check',
+  )
+})
+
+test('an integration_sync row with progress_done > progress_total is rejected', async () => {
+  await expectConstraintViolation(
+    db.insert(integrationSync).values({ source: 'emaldo', progressDone: 31, progressTotal: 30 }),
+    'integration_sync_progress_range_check',
+  )
+})
+
+test('an integration_sync row with a negative progress_done is rejected', async () => {
+  await expectConstraintViolation(
+    db.insert(integrationSync).values({ source: 'emaldo', progressDone: -1, progressTotal: 30 }),
+    'integration_sync_progress_range_check',
+  )
+})
+
+test('an integration_sync row with progress 0 of 30 and no lease is accepted', async () => {
+  // No CHECK ties progress to the lease: a rollback's recordOutcome clears the
+  // lease without clearing progress, and must not fail.
+  await db.insert(integrationSync).values({ source: 'emaldo', progressDone: 0, progressTotal: 30 })
+})
+
 test('an integration_sync row with a credential_reminder_days outside the thresholds is rejected', async () => {
   await expectConstraintViolation(
     db.insert(integrationSync).values({

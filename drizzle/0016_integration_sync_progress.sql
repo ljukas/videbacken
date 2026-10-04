@@ -1,0 +1,4 @@
+ALTER TABLE "integration_sync" ADD COLUMN "progress_done" integer;--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD COLUMN "progress_total" integer;--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD CONSTRAINT "integration_sync_progress_pair_check" CHECK (("integration_sync"."progress_done" IS NULL) = ("integration_sync"."progress_total" IS NULL));--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD CONSTRAINT "integration_sync_progress_range_check" CHECK ("integration_sync"."progress_total" IS NULL OR ("integration_sync"."progress_total" > 0 AND "integration_sync"."progress_done" BETWEEN 0 AND "integration_sync"."progress_total"));

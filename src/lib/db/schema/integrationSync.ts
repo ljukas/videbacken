@@ -58,6 +58,13 @@ export const integrationSync = pgTable(
     // The smallest reminder threshold already emailed for this expiry; reset to
     // null whenever credential_expires_at changes (a renewed key).
     credentialReminderDays: smallint('credential_reminder_days'),
+    // The in-flight run's progress ("12 of 30 days"), both null until it
+    // reports. Overwritten in place under the run's lease token, cleared when a
+    // lease is acquired and when the outcome is recorded. Read only while the
+    // lease is live, so a leftover (a crashed run, a rollback's recordOutcome)
+    // is never shown — which is why no CHECK ties it to `lease_token`.
+    progressDone: integer('progress_done'),
+    progressTotal: integer('progress_total'),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => new Date())
@@ -112,6 +119,14 @@ export const integrationSync = pgTable(
     check(
       'integration_sync_credential_reminder_expiry_check',
       sql`${table.credentialReminderDays} IS NULL OR ${table.credentialExpiresAt} IS NOT NULL`,
+    ),
+    check(
+      'integration_sync_progress_pair_check',
+      sql`(${table.progressDone} IS NULL) = (${table.progressTotal} IS NULL)`,
+    ),
+    check(
+      'integration_sync_progress_range_check',
+      sql`${table.progressTotal} IS NULL OR (${table.progressTotal} > 0 AND ${table.progressDone} BETWEEN 0 AND ${table.progressTotal})`,
     ),
   ],
 ).enableRLS()
