@@ -163,6 +163,11 @@ test('an integration_sync row with progress 0 of 30 and no lease is accepted', a
   await db.insert(integrationSync).values({ source: 'emaldo', progressDone: 0, progressTotal: 30 })
 })
 
+test('an integration_sync row with progress 30 of 30 is accepted', async () => {
+  // The final progress write of every run has done === total.
+  await db.insert(integrationSync).values({ source: 'emaldo', progressDone: 30, progressTotal: 30 })
+})
+
 test('an integration_sync row with a credential_reminder_days outside the thresholds is rejected', async () => {
   await expectConstraintViolation(
     db.insert(integrationSync).values({
