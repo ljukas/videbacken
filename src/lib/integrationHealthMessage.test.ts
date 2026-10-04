@@ -48,3 +48,32 @@ test('an elpris failure names elprisetjustnu.se, not Zaptec', () => {
   expect(message).toContain('elprisetjustnu.se')
   expect(message).not.toContain('Zaptec')
 })
+
+test('emaldo is a source with its own name', () => {
+  expect(INTEGRATION_SOURCES).toContain('emaldo')
+  expect(integrationSourceName('emaldo')).toBe('Emaldo')
+})
+
+test('an unexpected Emaldo answer hints that the app key may have changed', () => {
+  expect(
+    integrationErrorMessage('unexpected_response', { source: 'emaldo', locale: 'sv' }),
+  ).toContain('Emaldo-appens nyckel')
+  expect(
+    integrationErrorMessage('unexpected_response', { source: 'emaldo', locale: 'en' }),
+  ).toContain("Emaldo app's key")
+  // Other codes keep the shared, source-named copy.
+  expect(integrationErrorMessage('unreachable', { source: 'emaldo', locale: 'en' })).toContain(
+    'Emaldo',
+  )
+})
+
+// A rotated app id/secret can also surface as a refused login (the client maps
+// any refusal to auth_failed), so the hint names both the account and the app key.
+test('a refused Emaldo login names the credentials and the Emaldo app key', () => {
+  const sv = integrationErrorMessage('auth_failed', { source: 'emaldo', locale: 'sv' })
+  expect(sv).toContain('inloggningsuppgifter')
+  expect(sv).toContain('Emaldo-appens nyckel')
+  const en = integrationErrorMessage('auth_failed', { source: 'emaldo', locale: 'en' })
+  expect(en).toContain('credentials')
+  expect(en).toContain("Emaldo app's key")
+})

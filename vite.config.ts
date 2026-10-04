@@ -128,9 +128,12 @@ export default defineConfig({
               //   may share a path.
               // - Škoda car state every 15 min, offset to :07/:22/:37/:52 so it doesn't collide with
               //   Zaptec's hourly cron (an admin sync can still overlap; src/lib/vehicleState/skodaSyncCron.ts).
+              // - Emaldo house energy hourly at :45 — after Zaptec's :00, clear of Škoda's
+              //   :07/:22/:37/:52 (src/lib/houseEnergy/emaldoSyncCron.ts).
               crons: [
                 { path: '/api/cron/zaptec-sync', schedule: '0 * * * *' },
                 { path: '/api/cron/skoda-sync', schedule: '7,22,37,52 * * * *' },
+                { path: '/api/cron/emaldo-sync', schedule: '45 * * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 12 * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 15 * * *' },
                 // Not a pulled integration: the grid-tariff watcher (ADR-0019's

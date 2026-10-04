@@ -51,7 +51,7 @@ src/
     onboarding.tsx              full-screen 2-step wizard (name → avatar); guard while onboardedAt null
     signed-in.tsx               magic-link "continue here" confirmation
     api/{auth/$.ts, rpc/$.ts, log.ts}   Better Auth / oRPC catch-alls; browser log sink
-    api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
+    api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), emaldo-sync.ts hourly at :45, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
     _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging, sensors
@@ -60,14 +60,15 @@ src/
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
-    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
-    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff, vehicleState — own all DB access + domain rules (ADR-0002)
+    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
+    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff, vehicleState, houseEnergy — own all DB access + domain rules (ADR-0002)
     effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
     evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, `skodaExport.ts` client-safe MySkoda CSV parser (papaparse lazy-loaded), tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
     vehicleState/               Škoda live-state poll: geofence (home point → boolean), sync + cron (ADR-0022)
+    houseEnergy/                Emaldo house-energy readings sync (sync.ts: recent days + backfill, day watermark) + cron (ADR-0019, ADR-0023) — no index barrel
     integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019)
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
@@ -195,7 +196,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
   `STORAGE_ADAPTER=devLog` / `EMAIL_ADAPTER=devLog` force the no-op adapters (offline dev without docker).
 - `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (unset → fails closed as `not_configured`, ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data).
 - `SKODA_API_KEY`/`SKODA_VIN` (either unset → `not_configured`; Vercel Production only — Preview has its own DB but shares the VIN's 20/h quota) and `SKODA_HOME_COORDINATES` (never committed/logged; unset or invalid → geofence off: attribution falls back to plug state and whether the car is moving). Renewing the key: `docs/runbooks/skoda-api-key.md`.
-- `EMALDO_USER`/`EMALDO_PASSWORD`/`EMALDO_APP_ID`/`EMALDO_APP_SECRET` (any unset → `not_configured`; a dedicated Emaldo account — a login ends its other sessions; app id/secret come from the Emaldo Android app and can rotate; Vercel Production only, never Preview; ADR-0023).
+- `EMALDO_USER`/`EMALDO_PASSWORD`/`EMALDO_APP_ID`/`EMALDO_APP_SECRET` (any unset → `not_configured`; a dedicated Emaldo account — a login ends its other sessions; app id/secret come from the Emaldo Android app and can rotate; Vercel Production only, never Preview; ADR-0023); synced hourly at :45 by `/api/cron/emaldo-sync`.
 - `GRID_FACILITY_ID` (18-digit metering-point ID, prod only, never committed/logged; unset → the monthly catalogue check is skipped).
 - `CRON_SECRET` (Bearer token gating `/api/cron/*`); `SHELLY_WEBHOOK_TOKEN` (query-param token for `/api/webhooks/shelly`).
 

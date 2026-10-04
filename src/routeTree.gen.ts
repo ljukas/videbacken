@@ -26,6 +26,7 @@ import { Route as AuthenticatedChargingEconomyRouteImport } from './routes/_auth
 import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_authenticated/charging/patterns'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
+import { Route as ApiCronEmaldoSyncRouteImport } from './routes/api/cron/emaldo-sync'
 import { Route as ApiCronGridTariffCatalogueRouteImport } from './routes/api/cron/grid-tariff-catalogue'
 import { Route as ApiCronSkodaSyncRouteImport } from './routes/api/cron/skoda-sync'
 import { Route as ApiCronZaptecSyncRouteImport } from './routes/api/cron/zaptec-sync'
@@ -122,6 +123,11 @@ const ApiCronElprisSyncRoute = ApiCronElprisSyncRouteImport.update({
   path: '/api/cron/elpris-sync',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronEmaldoSyncRoute = ApiCronEmaldoSyncRouteImport.update({
+  id: '/api/cron/emaldo-sync',
+  path: '/api/cron/emaldo-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronGridTariffCatalogueRoute =
   ApiCronGridTariffCatalogueRouteImport.update({
     id: '/api/cron/grid-tariff-catalogue',
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
+  '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
   '/api/cron/skoda-sync': typeof ApiCronSkodaSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
@@ -193,6 +200,7 @@ export interface FileRoutesByTo {
   '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
+  '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
   '/api/cron/skoda-sync': typeof ApiCronSkodaSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/_authenticated/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
+  '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
   '/api/cron/skoda-sync': typeof ApiCronSkodaSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
@@ -245,6 +254,7 @@ export interface FileRouteTypes {
     | '/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
+    | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
     | '/api/cron/skoda-sync'
     | '/api/cron/zaptec-sync'
@@ -268,6 +278,7 @@ export interface FileRouteTypes {
     | '/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
+    | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
     | '/api/cron/skoda-sync'
     | '/api/cron/zaptec-sync'
@@ -293,6 +304,7 @@ export interface FileRouteTypes {
     | '/_authenticated/charging/patterns'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
+    | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
     | '/api/cron/skoda-sync'
     | '/api/cron/zaptec-sync'
@@ -311,6 +323,7 @@ export interface RootRouteChildren {
   ApiLogRoute: typeof ApiLogRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCronElprisSyncRoute: typeof ApiCronElprisSyncRoute
+  ApiCronEmaldoSyncRoute: typeof ApiCronEmaldoSyncRoute
   ApiCronGridTariffCatalogueRoute: typeof ApiCronGridTariffCatalogueRoute
   ApiCronSkodaSyncRoute: typeof ApiCronSkodaSyncRoute
   ApiCronZaptecSyncRoute: typeof ApiCronZaptecSyncRoute
@@ -439,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronElprisSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/emaldo-sync': {
+      id: '/api/cron/emaldo-sync'
+      path: '/api/cron/emaldo-sync'
+      fullPath: '/api/cron/emaldo-sync'
+      preLoaderRoute: typeof ApiCronEmaldoSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/grid-tariff-catalogue': {
       id: '/api/cron/grid-tariff-catalogue'
       path: '/api/cron/grid-tariff-catalogue'
@@ -534,6 +554,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLogRoute: ApiLogRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCronElprisSyncRoute: ApiCronElprisSyncRoute,
+  ApiCronEmaldoSyncRoute: ApiCronEmaldoSyncRoute,
   ApiCronGridTariffCatalogueRoute: ApiCronGridTariffCatalogueRoute,
   ApiCronSkodaSyncRoute: ApiCronSkodaSyncRoute,
   ApiCronZaptecSyncRoute: ApiCronZaptecSyncRoute,

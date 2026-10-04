@@ -92,6 +92,13 @@
       "when": 1790957018571,
       "tag": "0012_integration_sync_credential_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791094769804,
+      "tag": "0013_house_energy_reading",
+      "breakpoints": true
     }
   ]
 }

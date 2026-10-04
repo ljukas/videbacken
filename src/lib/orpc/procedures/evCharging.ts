@@ -14,6 +14,7 @@ import {
   vehicleRecordInput,
   vehicleScope,
 } from '~/lib/evCharging/vehicle'
+import { runEmaldoSync } from '~/lib/houseEnergy/sync'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import type { PatternTimings } from '~/lib/services/evCharging'
 import * as evChargingService from '~/lib/services/evCharging'
@@ -26,9 +27,9 @@ import { runSkodaSync } from '~/lib/vehicleState/sync'
 
 /**
  * The sources the charging page tracks: sessions (Zaptec), spot prices
- * (elpris) and the car's live state (Škoda).
+ * (elpris), the car's live state (Škoda) and the house's energy flows (Emaldo).
  */
-const chargingSource = z.enum(['zaptec', 'elpris', 'skoda'])
+const chargingSource = z.enum(['zaptec', 'elpris', 'skoda', 'emaldo'])
 /** `{ source }`, defaulting to Zaptec so existing callers keep their meaning. */
 const sourceInput = z.object({ source: chargingSource.default('zaptec') }).optional()
 const yearInput = z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional()
@@ -266,11 +267,23 @@ export const evChargingRouter = {
     ),
 
   // Manual sync trigger for one source (default Zaptec). The page's "Synka
-  // nu" fires one call per source in parallel, so the quick session sync
-  // isn't held behind a long price backfill, and each alert's retry runs only
+  // nu" fires one call per source (sessions, prices, house energy) in
+  // parallel, so the quick session sync isn't held behind a long price or
+  // house backfill, and each alert's retry runs only
   // its own source. A run never throws for a failed/skipped outcome (those
   // are recorded in health); only a genuine bug propagates.
   syncNow: adminProcedure.input(sourceInput).handler(async ({ input, context }) => {
+    if (input?.source === 'emaldo') {
+      const run = await runEmaldoSync({ trigger: 'admin', deps: { log: context.log } })
+      if (context.timings) {
+        context.timings.emaldoSyncMs = run.durationMs
+        // Summed request time over the four parallel series: busy time, not latency.
+        context.timings.emaldoFetchMs = run.fetchMs
+        context.timings.emaldoStoreMs = run.storeMs
+      }
+      // Counts only: readings never leave the server (ADR-0023).
+      return { outcome: run.outcome, code: run.code, upserted: run.bucketsStored }
+    }
     if (input?.source === 'skoda') {
       const run = await runSkodaSync({ trigger: 'admin', deps: { log: context.log } })
       if (context.timings) {

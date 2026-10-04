@@ -28,6 +28,8 @@ export function integrationSourceName(source: IntegrationSource): string {
       return m.integration_health_source_elpris()
     case 'skoda':
       return m.integration_health_source_skoda()
+    case 'emaldo':
+      return m.integration_health_source_emaldo()
   }
 }
 
@@ -44,10 +46,16 @@ export function integrationErrorMessage(
   const source = integrationSourceName(options.source)
   switch (code) {
     case 'auth_failed':
-      // An expired key is the expected Škoda failure; say what fixes it.
-      return options.source === 'skoda'
-        ? m.integration_health_error_auth_failed_skoda({}, opts)
-        : m.integration_health_error_auth_failed({ source }, opts)
+      // An expired key is the expected Škoda failure; say what fixes it. A
+      // refused Emaldo login can also mean the app's id/secret rotated (ADR-0023).
+      switch (options.source) {
+        case 'skoda':
+          return m.integration_health_error_auth_failed_skoda({}, opts)
+        case 'emaldo':
+          return m.integration_health_error_auth_failed_emaldo({}, opts)
+        default:
+          return m.integration_health_error_auth_failed({ source }, opts)
+      }
     case 'forbidden':
       return m.integration_health_error_forbidden({ source }, opts)
     case 'rate_limited':
@@ -55,7 +63,11 @@ export function integrationErrorMessage(
     case 'unreachable':
       return m.integration_health_error_unreachable({ source }, opts)
     case 'unexpected_response':
-      return m.integration_health_error_unexpected_response({ source }, opts)
+      // Emaldo's API is unofficial: an answer we can't decode usually means
+      // the app's id/secret rotated (ADR-0023); say what to look for.
+      return options.source === 'emaldo'
+        ? m.integration_health_error_unexpected_response_emaldo({}, opts)
+        : m.integration_health_error_unexpected_response({ source }, opts)
     case 'not_configured':
       return m.integration_health_error_not_configured({ source }, opts)
     case 'internal_error':

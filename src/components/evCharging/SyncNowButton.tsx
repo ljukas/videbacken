@@ -8,7 +8,7 @@ import { orpc } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
-type SyncSource = 'zaptec' | 'elpris' | 'skoda'
+type SyncSource = 'zaptec' | 'elpris' | 'skoda' | 'emaldo'
 type SyncResult = {
   outcome: 'ok' | 'skipped' | 'failed' | 'error'
   code: IntegrationErrorCode | null
@@ -16,13 +16,16 @@ type SyncResult = {
 
 // The admin "sync now" mutations, shared by the heading button, each health
 // alert's "Försök igen" and the empty session list's CTA. `syncAll` fires the
-// session and price syncs in parallel, so the quick session sync isn't held
-// behind a long price backfill; a retry runs only its own source. A run never
-// throws for a failed/skipped outcome — those are ordinary — so each toast is
-// chosen by `outcome`; `onError` covers only a transport/unexpected error,
+// session, price and house-energy syncs in parallel, so the session toast isn't
+// held behind a long price or house backfill; a retry runs only its own source. A run never throws for
+// a failed/skipped outcome — those are ordinary — so each toast is chosen by
+// `outcome`; `onError` covers only a transport/unexpected error,
 // attributed to the source that raised it. Prices have two mutations so each
 // call knows whether to announce: a full sync already toasts the session
 // result (a price success stays silent), an explicit price retry confirms it.
+// House energy, like prices, has two mutations: inside a full sync only a real
+// failure toasts (an unconfigured Emaldo stays quiet, its health alert already
+// says so); an explicit retry confirms either way.
 // Every outcome can have changed health/runs/data, so the whole evCharging
 // cache is invalidated.
 export function useSyncNow() {
@@ -97,6 +100,47 @@ export function useSyncNow() {
     }),
   )
 
+  const houseToast = (result: SyncResult, announce: boolean) => {
+    switch (result.outcome) {
+      case 'ok':
+        if (announce) toast.success(m.charging_sync_house_ok())
+        return
+      case 'skipped':
+        if (announce) toast.info(m.charging_sync_skipped())
+        return
+      case 'failed':
+      case 'error':
+        // Unconfigured is a setup state, not news on every full sync.
+        if (!announce && result.code === 'not_configured') return
+        toast.error(m.charging_sync_house_failed(), {
+          description: integrationErrorMessage(result.code ?? 'internal_error', {
+            source: 'emaldo',
+          }),
+        })
+        return
+    }
+  }
+  const houseError = () =>
+    toast.error(m.charging_sync_house_failed(), {
+      description: integrationErrorMessage('internal_error', { source: 'emaldo' }),
+    })
+  // Part of a full sync: only a failure is worth a toast.
+  const house = useMutation(
+    orpc.evCharging.syncNow.mutationOptions({
+      onSuccess: (result) => houseToast(result, false),
+      onError: houseError,
+      onSettled: invalidate,
+    }),
+  )
+  // An explicit retry: confirm the outcome either way.
+  const houseRetry = useMutation(
+    orpc.evCharging.syncNow.mutationOptions({
+      onSuccess: (result) => houseToast(result, true),
+      onError: houseError,
+      onSettled: invalidate,
+    }),
+  )
+
   // The car's live state: an explicit admin action, so confirm either way.
   const car = useMutation(
     orpc.evCharging.syncNow.mutationOptions({
@@ -127,11 +171,13 @@ export function useSyncNow() {
   )
 
   const pricesPending = prices.isPending || pricesRetry.isPending
+  const housePending = house.isPending || houseRetry.isPending
   return {
-    /** Both sources, in parallel. */
+    /** Sessions, prices and house energy, in parallel. */
     syncAll: () => {
       sessions.mutate({ source: 'zaptec' })
       prices.mutate({ source: 'elpris' })
+      house.mutate({ source: 'emaldo' })
     },
     /** One source (an alert's retry). */
     syncSource: (source: SyncSource) => {
@@ -140,11 +186,16 @@ export function useSyncNow() {
           return pricesRetry.mutate({ source: 'elpris' })
         case 'skoda':
           return car.mutate({ source: 'skoda' })
+        case 'emaldo':
+          return houseRetry.mutate({ source: 'emaldo' })
         case 'zaptec':
           return sessions.mutate({ source: 'zaptec' })
       }
     },
-    // The heading button syncs Zaptec + elpris only, never the car.
+    // The heading button syncs everything but the car, but waits only on
+    // sessions and prices: a house run can take minutes while the backfill
+    // runs, and its alert shows its own pending state. A second click while
+    // it runs is skipped by the integration lease.
     isPending: sessions.isPending || pricesPending,
     isPendingFor: (source: SyncSource) => {
       switch (source) {
@@ -152,6 +203,8 @@ export function useSyncNow() {
           return pricesPending
         case 'skoda':
           return car.isPending
+        case 'emaldo':
+          return housePending
         case 'zaptec':
           return sessions.isPending
       }

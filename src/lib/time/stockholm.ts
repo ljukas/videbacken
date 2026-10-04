@@ -6,7 +6,12 @@
 // epoch ms. DST-aware via @date-fns/tz — a Stockholm day is 23, 24 or 25 hours
 // long.
 import { TZDate, tz } from '@date-fns/tz'
-import { addDays as addCalendarDays, formatISO, startOfMonth } from 'date-fns'
+import {
+  addDays as addCalendarDays,
+  differenceInCalendarDays,
+  formatISO,
+  startOfMonth,
+} from 'date-fns'
 
 /** The IANA zone, for formatters that take one (Intl `timeZone`). */
 export const STOCKHOLM_TIME_ZONE = 'Europe/Stockholm'
@@ -66,6 +71,11 @@ export function stockholmYearMonth(ms: number): { year: number; month: number } 
 /** `day` shifted by `n` calendar days (calendar arithmetic; DST never shifts it). */
 export function addDays(day: string, n: number): string {
   return toDay(addCalendarDays(midnightOf(day), n))
+}
+
+/** Calendar days from `from` to `to` (negative when `to` is earlier); DST never shifts it. */
+export function daysBetween(from: string, to: string): number {
+  return differenceInCalendarDays(midnightOf(to), midnightOf(from), { in: inStockholm })
 }
 
 /** `[startMs, endMs)` of a Stockholm calendar day — 23, 24 or 25 h long. */

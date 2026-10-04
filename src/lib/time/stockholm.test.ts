@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   addDays,
+  daysBetween,
   isStockholmDay,
   stockholmDayBounds,
   stockholmDayOf,
@@ -242,5 +243,19 @@ describe('stockholmNightsOfDay', () => {
       expect(early?.startMs).toBe(stockholmDayBounds(day).startMs)
       expect(late?.endMs).toBe(stockholmDayBounds(day).endMs)
     }
+  })
+})
+
+describe('daysBetween', () => {
+  test('counts calendar days, negative backwards, unaffected by DST', () => {
+    expect(daysBetween('2026-04-01', '2026-04-01')).toBe(0)
+    expect(daysBetween('2026-04-01', '2026-03-31')).toBe(-1)
+    expect(daysBetween('2026-03-28', '2026-03-30')).toBe(2) // spans the 23 h day
+    expect(daysBetween('2026-10-24', '2026-10-26')).toBe(2) // spans the 25 h day
+    expect(daysBetween('2026-01-03', '2026-03-31')).toBe(87)
+  })
+
+  test('rejects a malformed day', () => {
+    expect(() => daysBetween('2026-02-30', '2026-03-01')).toThrow(RangeError)
   })
 })

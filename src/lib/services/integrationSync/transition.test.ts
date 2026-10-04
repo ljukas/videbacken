@@ -218,6 +218,16 @@ describe('deriveState', () => {
   test('zaptec goes stale after 3 h', () => {
     expect(STALE_AFTER_MS.zaptec).toBe(3 * 60 * 60 * 1000)
   })
+
+  test('emaldo goes stale after 3 h, like Zaptec', () => {
+    expect(STALE_AFTER_MS.emaldo).toBe(3 * 60 * 60 * 1000)
+    expect(deriveState('emaldo', healthy, new Date(T0.getTime() + STALE_AFTER_MS.emaldo))).toBe(
+      'ok',
+    )
+    expect(deriveState('emaldo', healthy, new Date(T0.getTime() + STALE_AFTER_MS.emaldo + 1))).toBe(
+      'stale',
+    )
+  })
 })
 
 describe('alert threshold', () => {
@@ -231,7 +241,7 @@ describe('alert threshold', () => {
   }
 
   test('the threshold table is pinned', () => {
-    expect(ALERT_AFTER_FAILURES).toEqual({ zaptec: 1, elpris: 1, skoda: 3 })
+    expect(ALERT_AFTER_FAILURES).toEqual({ zaptec: 1, elpris: 1, skoda: 3, emaldo: 1 })
   })
 
   test('two failures then success: no alert, streak cleared', () => {
