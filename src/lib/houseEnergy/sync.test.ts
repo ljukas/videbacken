@@ -549,6 +549,37 @@ test('the budget can end mid-backfill: the watermark is the end of the last stor
   expect(await getLastSuccessStartedAt('emaldo')).toEqual(startOf('2026-03-26'))
 })
 
+test('a budget stop leaves the last progress report below its total', async () => {
+  await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30: total 2 + 7 = 9
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const { client } = fakeEmaldo({}, () => {
+    clock += 35_000
+  })
+  await run(client, { now: () => new Date(clock) })
+  const reports = spy.mock.calls.map(([, , p]) => p)
+  expect(reports.every((p) => p.total === 9)).toBe(true)
+  expect(reports.some((p) => p.done === p.total)).toBe(false)
+  expect(reports.at(-1)).toEqual({ done: 4, total: 9 })
+})
+
+test('progress totals count the capped backfill, not the whole history', async () => {
+  await sessionOn('2026-01-10') // 57 + 30 days wanted; 30 planned: total 2 + 30
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const { client } = fakeEmaldo()
+  await run(client, {
+    now: () => {
+      clock += 1_001
+      return new Date(clock)
+    },
+  })
+  const reports = spy.mock.calls.map(([, , p]) => p)
+  expect(reports).toHaveLength(32)
+  expect(reports.every((p) => p.total === 32)).toBe(true)
+  expect(reports.at(-1)).toEqual({ done: 32, total: 32 })
+})
+
 test('a backfill day whose end is off (a DST slip) fails the run and stores nothing for it', async () => {
   await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30
   const dst = '2026-03-29'

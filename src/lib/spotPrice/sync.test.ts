@@ -350,3 +350,53 @@ test('reports progress over every planned day, skipped ones included', async () 
     Array.from({ length: 10 }, (_, i) => ({ done: i + 1, total: 10 })),
   )
 })
+
+test('a budget stop leaves the last progress report below its total', async () => {
+  await insertSession(new Date('2026-09-20T10:00:00Z')) // 10 planned days
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const good = fakeElpris()
+  const client: ElprisClient = {
+    async dayPrices(day, zone, o) {
+      clock += 50_000
+      return good.client.dayPrices(day, zone, o)
+    },
+  }
+  const result = await runElprisSync({
+    trigger: 'cron',
+    now: () => new Date(clock),
+    deps: { elpris: client, sleep: async () => {} },
+  })
+  const reports = spy.mock.calls.map(([, , p]) => p)
+  expect(result).toMatchObject({ outcome: 'ok', days: 10 })
+  expect(result.dayRequests).toBeLessThan(10)
+  expect(reports.at(-1)).toEqual({ done: result.dayRequests, total: 10 })
+  expect(reports.some((p) => p.done === p.total)).toBe(false)
+})
+
+test('a rejected day still moves the progress bar', async () => {
+  await insertSession(new Date('2026-09-20T10:00:00Z'))
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  const good = fakeElpris()
+  const client: ElprisClient = {
+    async dayPrices(day, zone, o) {
+      if (day === '2026-09-22') {
+        throw new ElprisError('unexpected_response', 'prices', undefined, { message: 'bad day' })
+      }
+      return good.client.dayPrices(day, zone, o)
+    },
+  }
+  let clock = NOW.getTime()
+  const result = await runElprisSync({
+    trigger: 'cron',
+    now: () => {
+      clock += 1_001
+      return new Date(clock)
+    },
+    deps: { elpris: client, sleep: async () => {}, log: capturingLogger().log },
+  })
+  expect(result).toMatchObject({ outcome: 'ok', rejected: 1 })
+  expect(spy.mock.calls.map(([, , p]) => p)).toEqual(
+    Array.from({ length: 10 }, (_, i) => ({ done: i + 1, total: 10 })),
+  )
+})
