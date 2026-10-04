@@ -41,7 +41,7 @@
 
 **Files:**
 - Modify: `src/lib/db/schema/integrationSync.ts` (columns after `credentialReminderDays`; CHECKs at the end of the `integration_sync` list)
-- Create (generated): `drizzle/0014_integration_sync_progress.sql` + `drizzle/meta/*`
+- Create (generated): `drizzle/0016_integration_sync_progress.sql` + `drizzle/meta/*`
 - Test: `src/lib/db/evChargingSchema.test.ts`
 
 **Interfaces:**
@@ -118,7 +118,7 @@ and at the end of the `integration_sync` CHECK list (after `integration_sync_cre
 - [ ] **Step 4: Generate and apply the migration**
 
 Run: `bun run db:generate --name=integration_sync_progress && bun run db:migrate`
-Expected: `drizzle/0014_integration_sync_progress.sql` with exactly two `ADD COLUMN "progress_done" integer` / `"progress_total" integer` and two `ADD CONSTRAINT … CHECK`; nothing else (no drops, no type changes). Read the file and confirm.
+Expected: `drizzle/0016_integration_sync_progress.sql` with exactly two `ADD COLUMN "progress_done" integer` / `"progress_total" integer` and two `ADD CONSTRAINT … CHECK`; nothing else (no drops, no type changes). Read the file and confirm.
 
 - [ ] **Step 5: Run to verify they pass**
 
