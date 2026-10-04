@@ -350,7 +350,9 @@ test('takeDeriveRequests returns the earliest queued day and empties the queue',
   await requestDerive('2026-06-10')
   await requestDerive('2026-06-08')
   await requestDerive('2026-06-12')
-  expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBe('2026-06-08')
+  const taken = await withDeriveLock((tx) => takeDeriveRequests(tx))
+  expect(taken).toMatchObject({ fromDay: '2026-06-08', count: 3 })
+  expect(taken?.oldestRequestedAt).toBeInstanceOf(Date)
   expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBeNull()
 })
 
@@ -361,7 +363,7 @@ test('a request committed while a derive runs survives it', async () => {
   try {
     const { rows } = await db.execute<{ schema: string }>(sql`select current_schema() as schema`)
     await withDeriveLock(async (tx) => {
-      expect(await takeDeriveRequests(tx)).toBe('2026-06-10')
+      expect((await takeDeriveRequests(tx))?.fromDay).toBe('2026-06-10')
       // Another sync's request, committed on its own connection.
       await other.query(
         `insert into "${rows[0].schema}".energy_mix_derive_request (from_day) values ('2026-06-01')`,
@@ -370,7 +372,7 @@ test('a request committed while a derive runs survives it', async () => {
   } finally {
     await other.end()
   }
-  expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBe('2026-06-01')
+  expect((await withDeriveLock((tx) => takeDeriveRequests(tx)))?.fromDay).toBe('2026-06-01')
 })
 
 test('a derive that fails leaves its requests queued', async () => {
@@ -381,7 +383,7 @@ test('a derive that fails leaves its requests queued', async () => {
       throw new Error('derive failed')
     }),
   ).rejects.toThrow('derive failed')
-  expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBe('2026-06-10')
+  expect((await withDeriveLock((tx) => takeDeriveRequests(tx)))?.fromDay).toBe('2026-06-10')
 })
 
 test('requestDerive refuses a malformed day', async () => {

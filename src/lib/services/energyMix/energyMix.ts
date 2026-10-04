@@ -115,6 +115,9 @@ export async function requestDerive(day: string, dbOrTx: DbOrTx = db): Promise<v
   await dbOrTx.insert(energyMixDeriveRequest).values({ fromDay: day })
 }
 
+/** What a derive took off the queue: the earliest day, how many, and the oldest request's time. */
+export type TakenDeriveRequests = { fromDay: string; count: number; oldestRequestedAt: Date }
+
 /**
  * Takes every queued request this transaction can see and returns the
  * earliest day among them (null when none): `DELETE … RETURNING` in the
@@ -122,9 +125,17 @@ export async function requestDerive(day: string, dbOrTx: DbOrTx = db): Promise<v
  * requests stay queued; a request committed after this statement isn't seen
  * and stays too. (A high-water id would lose a lower id that commits late.)
  */
-export async function takeDeriveRequests(tx: DeriveTx): Promise<string | null> {
-  const taken = await tx
-    .delete(energyMixDeriveRequest)
-    .returning({ fromDay: energyMixDeriveRequest.fromDay })
-  return taken.reduce<string | null>((a, r) => (a === null || r.fromDay < a ? r.fromDay : a), null)
+export async function takeDeriveRequests(tx: DeriveTx): Promise<TakenDeriveRequests | null> {
+  const taken = await tx.delete(energyMixDeriveRequest).returning({
+    fromDay: energyMixDeriveRequest.fromDay,
+    requestedAt: energyMixDeriveRequest.requestedAt,
+  })
+  const [first, ...rest] = taken
+  if (!first) return null
+  let { fromDay, requestedAt: oldestRequestedAt } = first
+  for (const r of rest) {
+    if (r.fromDay < fromDay) fromDay = r.fromDay
+    if (r.requestedAt < oldestRequestedAt) oldestRequestedAt = r.requestedAt
+  }
+  return { fromDay, count: taken.length, oldestRequestedAt }
 }

@@ -208,14 +208,14 @@ export const batteryPoolDay = pgTable(
 ).enableRLS()
 
 // Pending energy-mix derives (ADR-0023): each sync that stored a change adds
-// the day to derive from before it runs the derive. A derive consumes every
-// request up to the highest id it saw when it took the lock, deriving from
-// the earliest day among them, and deletes those rows in its transaction. A
-// derive that fails (lock wait, timeout, bug, frozen instance) leaves its
-// request behind, so the next derive covers it: no stored change is lost. A
-// request added while a derive runs has a higher id and survives it.
+// the day to derive from (after its data commits), then runs the derive. A
+// derive takes every request its transaction can see (DELETE … RETURNING) and
+// derives from the earliest day among them. A derive that fails (lock wait,
+// timeout, bug, frozen instance) rolls the delete back, so the next derive
+// covers it: no stored change is lost. A request committed while a derive
+// runs isn't seen by it and survives.
 export const energyMixDeriveRequest = pgTable('energy_mix_derive_request', {
-  // The PK serves both reads: min(from_day) / max(id), and `id <= $1`.
+  // Never read by id: the table is a few rows at most, taken whole.
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   fromDay: date('from_day', { mode: 'string' }).notNull(),
   requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
