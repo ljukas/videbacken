@@ -29,7 +29,7 @@
 2. **A source's runs read failed** → the overlay shows the shared `LoadErrorAlert` with a retry, never "Inga körningar ännu" (ADR-0016). Pinned in Task 3.
 3. **A bad deep link** (`?dialog=syncRuns` without `source`, an unknown `source`, or a non-admin) → the URL is cleaned with `replace`, nothing opens. Pinned in Task 4 (schema `.catch` + `dialogUnavailable`).
 4. **A sync already running server-side** (`health.running`) or pending client-side → the button is disabled and reads "Synkar…", so it can't be double-fired. Pinned in Task 2.
-5. **Four identical "Synka nu" buttons** → each has a source-specific accessible name ("Synka Zaptec nu"), so a screen-reader user can tell them apart. Pinned in Task 2.
+5. **Four identical "Synka nu" buttons** → each has a source-specific accessible name that starts with its visible label ("Synka nu, Zaptec", WCAG 2.5.3), so a screen-reader user can tell them apart. Pinned in Task 2.
 
 ---
 
@@ -971,6 +971,8 @@ export function SyncSourcesPanel({
      ```
      (`useSyncNow`'s `SyncSource` union equals `IntegrationSource`; if TS disagrees, type `syncSource`'s param as `IntegrationSource` in `SyncNowButton.tsx`.)
   8. `emaldoHealth`'s query stays (the tile reads it).
+  10. (From the Task 2 UI review) the tiles are a list: the grid is `<ul role="list">` (explicit role — Safari drops list semantics under `list-style: none`) with an `<li>` per tile, giving "list, 4 items"; the tile itself has no group role (its `h3` names it).
+  9. (From the Task 2 review) the elpris / Škoda / Emaldo health queries get a `refetchInterval` like Zaptec's, faster while a run is in flight, so a `running: true` snapshot (a cron run seen mid-flight) can't keep a tile's sync button disabled until the next focus: `refetchInterval: (q) => (q.state.data?.running ? 5_000 : 60_000)`. These are admin-only reads (ADR-0018 polling, no held connections).
 
 - [ ] **Step 6: Delete** `RecentRunsCard.tsx` + its test; remove the unused message keys (sv + en).
 

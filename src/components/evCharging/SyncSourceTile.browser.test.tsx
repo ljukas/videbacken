@@ -56,11 +56,6 @@ test('an ok source shows its name, role, state, last sync and cadence', async ()
     .toHaveTextContent(m.charging_sync_now())
 })
 
-test('the tile is a group named by its source', async () => {
-  const { screen } = await renderWithProviders(tile(ok))
-  await expect.element(screen.getByRole('group', { name: 'Zaptec' })).toBeVisible()
-})
-
 test('sync and history call their handlers', async () => {
   const onSync = vi.fn()
   const onOpenHistory = vi.fn()
@@ -71,11 +66,16 @@ test('sync and history call their handlers', async () => {
   expect(onOpenHistory).toHaveBeenCalledOnce()
 })
 
-test('a pending sync disables the button', async () => {
-  const { screen } = await renderWithProviders(tile(ok, { syncing: true }))
+test('a pending sync is soft-disabled: focusable, but a click does nothing', async () => {
+  const onSync = vi.fn()
+  const { screen } = await renderWithProviders(tile(ok, { syncing: true, onSync }))
   const button = screen.getByRole('button', syncButton('Zaptec', m.charging_source_syncing()))
-  await expect.element(button).toBeDisabled()
+  await expect.element(button).toHaveAttribute('aria-disabled', 'true')
+  // Not natively `disabled`, so keyboard focus can stay on it.
+  expect(button.element().hasAttribute('disabled')).toBe(false)
   await expect.element(button).toHaveTextContent(m.charging_source_syncing())
+  ;(button.element() as HTMLButtonElement).click()
+  expect(onSync).not.toHaveBeenCalled()
 })
 
 test('a sync already running on the server disables the button too', async () => {
@@ -84,7 +84,7 @@ test('a sync already running on the server disables the button too', async () =>
     'button',
     syncButton('elprisetjustnu.se', m.charging_source_syncing()),
   )
-  await expect.element(button).toBeDisabled()
+  await expect.element(button).toHaveAttribute('aria-disabled', 'true')
   await expect.element(button).toHaveTextContent(m.charging_source_syncing())
 })
 
@@ -98,7 +98,8 @@ test('not configured has no sync button and says why', async () => {
   await expect
     .element(screen.getByText(integrationErrorMessage('not_configured', { source: 'emaldo' })))
     .toBeVisible()
-  await expect.element(screen.getByText(m.charging_source_never_synced())).toBeVisible()
+  // The badge already says it; no "Aldrig synkad" echo.
+  expect(screen.getByText(m.charging_source_never_synced()).elements()).toHaveLength(0)
   // History is the only action left.
   expect(screen.getByRole('button').elements()).toHaveLength(1)
   await expect.element(screen.getByRole('button', historyButton('Emaldo'))).toBeVisible()
@@ -138,7 +139,23 @@ test('never synced shows its source-specific copy', async () => {
     tile({ ...ok, source: 'skoda', state: 'never_synced', lastSuccessAt: null }),
   )
   await expect.element(screen.getByText(m.charging_health_never_synced_skoda())).toBeVisible()
+  expect(screen.getByText(m.charging_source_never_synced()).elements()).toHaveLength(0)
+})
+
+test('failing before any success says it never synced', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, state: 'failing', code: 'unreachable', lastSuccessAt: null }),
+  )
   await expect.element(screen.getByText(m.charging_source_never_synced())).toBeVisible()
+})
+
+test('the failing explanation is never clamped', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, source: 'emaldo', state: 'failing', code: 'auth_failed' }),
+  )
+  const message = screen.getByText(integrationErrorMessage('auth_failed', { source: 'emaldo' }))
+  await expect.element(message).toBeVisible()
+  expect(message.element().className).not.toMatch(/line-clamp/)
 })
 
 test('an unread health still renders a usable tile', async () => {
