@@ -1,8 +1,9 @@
-import { and, asc, gt, inArray, not, sql } from 'drizzle-orm'
+import { asc, inArray, lte, max, min, not, sql } from 'drizzle-orm'
 import { type DbOrTx, type DbTransaction, db } from '~/lib/db'
-import { evChargeEnergyMix, evChargeSession } from '~/lib/db/schema'
+import { energyMixDeriveRequest, evChargeEnergyMix, evChargeSession } from '~/lib/db/schema'
 import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
 import { countedSessionFilter } from '~/lib/services/evCharging/counted'
+import { isStockholmDay } from '~/lib/time/stockholm'
 
 // The stored energy mix of charging sessions (ADR-0023): per session × 15-min
 // slot, kWh by origin. Written only by the derive; read by the cost model.
@@ -11,7 +12,7 @@ import { countedSessionFilter } from '~/lib/services/evCharging/counted'
 export type DeriveTx = DbTransaction
 export type MixRow = MixSlot & { sessionId: string }
 
-/** 12 bound parameters per row: keeps one INSERT far under Postgres's 65 535. */
+/** 11 bound parameters per row: keeps one INSERT far under Postgres's 65 535. */
 export const MIX_INSERT_BATCH = 2_000
 
 /**
@@ -23,6 +24,9 @@ export const MIX_INSERT_BATCH = 2_000
  * a lock wait fails after 20 s, a statement after 25 s (both under the pool's
  * 30 s query_timeout), and a session left idle inside the transaction (an
  * instance frozen after its response) is ended after 60 s, releasing the lock.
+ * A live derive is never idle that long: its compute between statements takes
+ * milliseconds. A derive that fails any of these leaves its request queued
+ * (`requestDerive`), so the next derive covers it.
  */
 export async function withDeriveLock<T>(fn: (tx: DeriveTx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
@@ -80,19 +84,56 @@ export async function listForSessions(
 }
 
 /**
- * Deletes the mix of sessions ending after `after` that are no longer counted
- * (voided, replaced, under the noise threshold): a derive rewrites counted
- * sessions only, so their old rows would otherwise linger. Returns how many
- * rows went.
+ * Deletes the mix of every session that is no longer counted (voided,
+ * replaced, under the noise threshold), whenever it ended: a derive rewrites
+ * counted sessions only, so their old rows would otherwise linger. Returns
+ * how many rows went.
  */
-export async function pruneUncounted(after: Date, dbOrTx: DbOrTx = db): Promise<number> {
+export async function pruneUncounted(dbOrTx: DbOrTx = db): Promise<number> {
   const uncounted = dbOrTx
     .select({ id: evChargeSession.id })
     .from(evChargeSession)
-    .where(and(gt(evChargeSession.endAt, after), not(countedSessionFilter())))
+    .where(not(countedSessionFilter()))
   const deleted = await dbOrTx
     .delete(evChargeEnergyMix)
     .where(inArray(evChargeEnergyMix.sessionId, uncounted))
     .returning({ sessionId: evChargeEnergyMix.sessionId })
   return deleted.length
+}
+
+function assertDay(day: string): void {
+  if (!isStockholmDay(day)) throw new RangeError(`Not a YYYY-MM-DD day: ${day}`)
+}
+
+/**
+ * Queues a derive from Stockholm `day` (ADR-0023). A sync calls it for what it
+ * stored, before running the derive, so the request outlives a derive that
+ * fails. Committed on its own, outside any derive's lock.
+ */
+export async function requestDerive(day: string, dbOrTx: DbOrTx = db): Promise<void> {
+  assertDay(day)
+  await dbOrTx.insert(energyMixDeriveRequest).values({ fromDay: day })
+}
+
+/** The queued derive requests as one: the earliest day, and the highest id seen. */
+export type PendingDerive = { fromDay: string; throughId: number }
+
+/** Reads the queue inside the derive's transaction; null when it is empty. */
+export async function pendingDerive(tx: DeriveTx): Promise<PendingDerive | null> {
+  const [row] = await tx
+    .select({
+      fromDay: min(energyMixDeriveRequest.fromDay),
+      throughId: max(energyMixDeriveRequest.id),
+    })
+    .from(energyMixDeriveRequest)
+  if (!row?.fromDay || row.throughId === null) return null
+  return { fromDay: row.fromDay, throughId: row.throughId }
+}
+
+/**
+ * Drops the requests a derive covered (ids up to `throughId`), in its
+ * transaction: a request queued meanwhile has a higher id and stays.
+ */
+export async function clearDeriveRequests(throughId: number, tx: DeriveTx): Promise<void> {
+  await tx.delete(energyMixDeriveRequest).where(lte(energyMixDeriveRequest.id, throughId))
 }
