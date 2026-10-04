@@ -70,6 +70,21 @@ All additive; only step 3 calls the changed functions unless noted.
 5. **A fifth pure module** `mix/houseTimeline.ts` (`runHouseTimeline`) runs the pool forward day by day, works out
    each bucket's SoC cap from its own and the next reading's SoC, and records each bucket's supply and battery
    outflow; `deriveSessionMix(buckets, house)` consumes its map.
+7. **From Task 1's schema review (built):** checkpoints also store `derive_version` (smallint, `DERIVE_VERSION` in
+   `derive.ts`, starting at 1). A derive resumes only when both `C` and the version match, so a fix to the derive
+   math rebuilds history at the next trigger, with no script. `getPoolDay` returns
+   `{ state, capacityKwh, deriveVersion }`; `replacePoolDaysFrom(day, rows, { capacityKwh, deriveVersion }, dbOrTx?)`.
+   The CHECKs: battery spots finite only (no ±1000 bound); mix `kwh > 0 AND kwh < 1000`; pool `stored_kwh < 1000` and
+   finite spot sums (NaN and ±Infinity refused); slot alignment via `date_bin`.
+8. **From the Task 4–7 and script reviews (built):**
+   - A durable derive queue, `energy_mix_derive_request` (migration 0017). `deriveAfterSync` calls
+     `requestDerive(day)` before deriving, and a derive takes the whole queue with `DELETE … RETURNING`. So a failed
+     derive is retried by the next one, and a request waiting over 3 h is warned about.
+   - A derive starts **one day before** the requested day, so D−1's last bucket gets its SoC cap. It clamps a future
+     day to today and returns the day it actually started from (`DeriveResult.fromDay`).
+   - `pruneUncounted()` takes no window: it prunes every uncounted session.
+   - The script refuses future `--from` and query-string target overrides, and prints the user (the Supabase
+     project ref) with the target.
 6. Step 4 note: Σ mix `kwh` of a session equals Σ of its **stretches** (`SessionEnergy.stretches`, i.e. its Zaptec
    intervals, or `energyKwh` for an `estimated` session), not necessarily `energyKwh`. Step 4's guard should compare
    against the stretches.

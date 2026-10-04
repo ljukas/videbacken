@@ -41,7 +41,8 @@ messages/                       i18n source: sv.json (source of truth) + en.json
 project.inlang/                 Paraglide/inlang config (baseLocale sv)
 server/plugins/                 Nitro plugins, registered in vite.config.ts (not auto-discovered):
                                 seedApprovedEmails.ts (first admin), queueConsumer.ts (Vercel Queues → lib/queue)
-scripts/                        patchBetterAuthSchema.mjs (auth:schema), devQueueWorker.ts (dev:worker), loadEnv.ts, LAN-IP helpers
+scripts/                        patchBetterAuthSchema.mjs (auth:schema), devQueueWorker.ts (dev:worker), loadEnv.ts, LAN-IP helpers,
+                                deriveEnergyMix.ts (one-off energy-mix re-derive; bun --no-env-file + explicit DATABASE_URL)
 src/
   router.tsx / routeTree.gen.ts createRouter (+ codegen — DO NOT hand-edit)
   server.ts                     custom entry; wraps each request in the Paraglide locale scope
@@ -61,14 +62,16 @@ src/
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
-    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff, vehicleState, houseEnergy — own all DB access + domain rules (ADR-0002)
+    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff, vehicleState, houseEnergy, energyMix — own all DB access + domain rules (ADR-0002)
     effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
     evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, `skodaExport.ts` client-safe MySkoda CSV parser (papaparse lazy-loaded), tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
     vehicleState/               Škoda live-state poll: geofence (home point → boolean), sync + cron (ADR-0022)
-    houseEnergy/                Emaldo house-energy readings sync (sync.ts: recent days + backfill, day watermark) + cron (ADR-0019, ADR-0023) — no index barrel
+    houseEnergy/                Emaldo house-energy readings sync (sync.ts: recent days + backfill, day watermark) + cron (ADR-0019, ADR-0023) — no index barrel;
+                                energy-mix derivation (ADR-0023): pure client-safe mix/ (supply, shape, pool + SoC cap, carMix, houseTimeline),
+                                derive.ts (deriveFrom: one locked transaction) + deriveAfterSync.ts (queue + best-effort derive after the Emaldo, Zaptec, elpris syncs)
     integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019)
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
@@ -206,6 +209,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 
 - **`vercel env pull` writes prod `DATABASE_URL` into `.env.local`**, which Vite + Drizzle prefer over `.env`.
   If you run it, delete the `DATABASE_URL*` lines from `.env.local` immediately — otherwise `bun run db:migrate` migrates **production**.
+  One-off scripts against prod (`scripts/deriveEnergyMix.ts`) run with `bun --no-env-file` and an inline `DATABASE_URL`, never from env files.
 - **Every Vercel deploy migrates its database:** the `vercel-build` script runs `drizzle-kit migrate` before the build.
   A merged migration hits prod on the next production deploy — it can't be "held back".
 - **Client code may only `import type` from services.** A value import pulls `db` → `postgres` → `Buffer` into the

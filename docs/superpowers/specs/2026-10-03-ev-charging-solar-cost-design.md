@@ -80,8 +80,8 @@ All tables `.enableRLS()`, timestamps `timestamptz`, server-only (no raw rows to
   `load_kwh`, `battery_discharge_kwh`, `battery_charge_solar_kwh`, `battery_charge_grid_kwh`,
   `battery_charge_ac_kwh`.
 - `battery_soc_pct` (step 2b): the battery's state of charge, 0–100, for the row's minute as Emaldo reports it;
-  null when the SoC series lacks that minute. Whether it is the bucket's start or end state is settled from data in
-  step 3.
+  null when the SoC series lacks that minute. It is the battery's state at the bucket's **middle** (settled in step
+  3: the change from one row to the next splits evenly between the two buckets' flows, in every month).
 - Written per Stockholm day: delete the day's range and insert, in one transaction (like `spot_price.replaceDay`).
 
 **`ev_charge_energy_mix`**: one row per charging session × 15-minute slot.
@@ -90,14 +90,23 @@ All tables `.enableRLS()`, timestamps `timestamptz`, server-only (no raw rows to
   `battery_solar_kwh`, `battery_unpriced_kwh`, `no_house_data_kwh`.
 - `battery_grid_spot_sek`, `battery_solar_spot_sek`: average spot (SEK/kWh ex VAT) of that battery energy; null
   when its kWh is 0.
-- CHECK: the parts sum to `kwh` (within 1e-9 × `kwh` + 1e-9).
+- CHECK: the parts sum to `kwh` (within 1e-9 × `kwh` + 1e-9); `0 < kwh < 1000`; `slot_start` on a UTC quarter-hour;
+  each battery spot set exactly when its kWh > 0, and finite. No value bound on the spots: losses raise them (step
+  3 found ≈ 1.8× the inflow spot in Jan–Feb, up to ≈ 5×), and one row over a bound would fail every later derive.
 
 **`battery_pool_day`**: the pool's state at the end of each Stockholm day.
 - `day` (date, PK), `stored_kwh`, `grid_kwh`, `grid_spot_sek_sum`, `solar_kwh`, `solar_spot_sek_sum`,
   `unpriced_kwh`.
 - A re-derive from day D starts from D−1's row, or an empty pool if there's none.
-- Each row stores the capacity constant it was computed with (step 3); a changed constant rebuilds from the first
-  reading.
+- `capacity_kwh` and `derive_version`: the `C` and the derive math's version the row was computed with. A
+  checkpoint with another `C` or version is never resumed from: the derive rebuilds from the first reading. So
+  changing `C`, or bumping `DERIVE_VERSION` with a fix to the math, rebuilds history at the next trigger.
+- `derived_at`; `stored_kwh < 1000` and finite spot sums (NaN and ±Infinity refused).
+
+**`energy_mix_derive_request`** (step 3): a durable queue of pending derives, `(id, from_day, requested_at)`. A
+sync adds its day (after its data commits), then runs the derive. A derive takes every request its transaction can
+see (`DELETE … RETURNING`) and derives from the earliest day among them. A derive that fails rolls the delete back,
+so the next one covers it.
 
 The integration source list gains `emaldo` (CHECK constraints on `integration_sync` / `integration_sync_run`).
 
@@ -163,13 +172,16 @@ orchestrates it through services.
    - An outflow removes energy proportionally from every part.
    - An outflow larger than the pool empties it, and the excess counts as grid-origin at the current slot's spot:
      conservative, absorbs drift.
-   - **SoC anchor** (decision 7): after each bucket, the pool is capped at `SoC / 100 × C`, using the SoC
-     reading that describes the bucket's **end** (that bucket's own row or the next one: whether a row's SoC is its
-     bucket's start or end state is settled from data in step 3). Above the cap, every part's kWh shrinks by the same factor and its spot sum stays, so
+   - **SoC anchor** (decision 7): after each bucket, the pool is capped at `SoC / 100 × C`, using the SoC at the
+     bucket's **end**: the mean of that bucket's row and the next one, as a row's SoC is mid-bucket. Without both
+     values, or when the next row isn't the very next bucket, the bucket isn't capped (the next one is). Above the
+     cap, every part's kWh shrinks by the same factor and its spot sum stays, so
      charging, standby and heating losses raise the average cost (and solar value) of what is left. Below the cap
      nothing changes: the pool never invents energy. A bucket without SoC is not capped.
-   - `C` = kWh the battery delivers per 100 % SoC: a constant in `pool.ts`, measured in step 3 over all history
-     (Σ discharge ÷ Σ SoC drop / 100 over buckets that only discharge), with its measurement date. Too large a `C`
+   - `C` = kWh the battery delivers per 100 % SoC: `BATTERY_CAPACITY_KWH` in `pool.ts`, **7.58**, measured
+     2026-10-04 over 2026-01-20 → 2026-10-04 (`measureBatteryCapacity`: Σ discharge ÷ Σ SoC drop / 100 over adjacent
+     pairs of discharge-only buckets, each pair counting the mean of its two discharges). By month ≈ 6.2 in Jan–Feb,
+     7.5–8.1 from March; one constant, and only 3 kWh of all history ever discharged beyond the pool. Too large a `C`
      keeps old energy slightly longer; too small empties the pool early (the excess rule then prices it as grid).
 4. **Car mix** (`carMix.ts`): per bucket, car kWh × the house fractions.
    - The battery part splits by the pool's composition into battery-grid (+ average spot), battery-solar
@@ -177,16 +189,41 @@ orchestrates it through services.
    - A bucket with no house data → `no_house_data_kwh`.
    - Buckets aggregate into 15-minute slots: kWh sums, battery spots kWh-weighted.
 5. **Re-derive from day D**:
+   - D is the earlier of the trigger's day and every queued request's day, clamped to today, then moved **one day
+     back**: D−1's checkpoint may have been written before D's first reading existed, so its last bucket went
+     uncapped. Re-deriving D−1 makes a resume equal a full derive.
    - Widen D back to the start day of any counted session overlapping D.
    - Load D−1's pool checkpoint, run forward to the last reading, rewrite checkpoints ≥ D and the mix rows of every
      session overlapping [D, end], in one transaction. `context.timings` / run stats record `deriveMs`.
-   - Triggers, each after its sync succeeds:
+   - Triggers, each after its sync stored something (even when the run then fails, see the amendments):
      - Emaldo: earliest replaced day.
      - Zaptec: earliest new or changed session's start day.
      - elpris: earliest day it filled that was missing before.
    - An admin "Re-derive all" is **not** built; a fix ships with a one-off script or migration-time call.
 6. **Read-time guard**: when a session's Σ mix `kwh` ≠ its interval energy (|Δ| > 1e-6 kWh), the reader ignores
    its mix (falls back to all-grid) and logs a warning. This catches a Zaptec change the re-derive hasn't reached.
+   Σ mix `kwh` equals Σ of the session's **stretches** (its Zaptec intervals, or `energyKwh` for an estimated
+   session), which is what step 4 compares against.
+
+**Amendments (step 3 build, 2026-10-04).**
+- Shaping: the baseline needs at least 3 of the 6 pre-session buckets. A zero-length stretch lands in its start
+  bucket. A bucket's cap is its load minus car energy an earlier interval already put there. Excess no headroom can
+  take spreads by overlap (the load is exceeded, the kWh kept).
+- Pool: within one bucket the inflow joins before the outflow leaves, then the SoC cap applies; below 1e-9 kWh the
+  pool resets to empty; a cap of 0 empties it.
+- Losses raise the cost of what is left, as decision 7 says: over the history, battery energy averaged ≈ 1.8× its
+  inflow spot in Jan–Feb (median; p95 2.5×) and 1.01–1.14× from March. Real winter economics: ≈ 55 % comes back out.
+- Each derive runs in one transaction holding a transaction-scoped advisory lock, reads included, so a concurrent
+  derive never writes older data over newer. Timeouts: lock wait 20 s, statement 25 s, idle 60 s.
+- Triggers fire on whatever a sync stored, **even if the run then fails**: a stored change is never detected as new
+  again. The day is queued durably first (`energy_mix_derive_request`), so a derive that fails is covered by the
+  next one, and a request waiting over 3 h is warned about. A derive is best effort, with a 30 s budget, and never
+  changes a run's outcome.
+- With no house readings at all, nothing is derived (sessions keep no mix rows and stay all-grid). Sessions before
+  the first reading never get mix rows.
+- `pruneUncounted` drops the mix of every session no longer counted, whenever it ended.
+- The first derive in prod finds no checkpoint and rebuilds all history (≈ 0.3 s locally on the full history). A
+  one-off re-derive script remains: `scripts/deriveEnergyMix.ts` (`bun --no-env-file`, explicit `DATABASE_URL`).
 
 ## Cost and display (roadmap steps 4–5)
 
