@@ -163,19 +163,27 @@ describe('buildDay', () => {
       if (name === 'level' && m === 15) r[1] = -1
       if (name === 'level' && m === 20) r[1] = 100.5
       if (name === 'level' && m === 25) r[1] = 37.5
+      if (name === 'level' && m === 30) r[1] = 100.0000001
+      if (name === 'level' && m === 35) r[1] = -0.0000001
+      if (name === 'level' && m === 40) r[1] = 100
+      if (name === 'level' && m === 45) r[1] = 0
       return r
     }
     const noLevelAt10 = dayMinutes('2026-06-10').filter((m) => m !== 10)
     const out = buildDay(-1, day('2026-06-10', { level: noLevelAt10 }, row))
     expect(out.buckets).toHaveLength(288)
     expect(out.droppedBuckets).toBe(0)
-    expect(out.buckets.slice(0, 6).map((b) => b.batterySocPct)).toEqual([
+    expect(out.buckets.slice(0, 10).map((b) => b.batterySocPct)).toEqual([
       1,
       2,
       null,
       null,
       null,
       37.5,
+      null,
+      null,
+      100,
+      0,
     ])
     expect(out.buckets[287]).toEqual(expected('2026-06-10', 1435))
   })
@@ -187,12 +195,22 @@ describe('buildDay', () => {
 
     const none = { grid: [], mppt: [], usage: [], battery: [] }
     expect(buildDay(-1, day('2026-06-10', none))).toMatchObject({ buckets: [], droppedBuckets: 0 })
+
+    // SoC minutes where the energy series have none: no bucket, and not counted as dropped.
+    const morning = dayMinutes('2026-06-10').filter((m) => m <= 100)
+    const energy = { grid: morning, mppt: morning, usage: morning, battery: morning }
+    const out2 = buildDay(-1, day('2026-06-10', energy))
+    expect(out2.buckets).toHaveLength(21)
+    expect(out2.droppedBuckets).toBe(0)
+    expect(out2.buckets.at(-1)).toEqual(expected('2026-06-10', 100))
   })
 
   test("today's cutoff ignores the SoC series", () => {
     const upTo = (last: number) => dayMinutes('2026-10-03').filter((m) => m <= last)
     const energy = { grid: upTo(430), mppt: upTo(430), usage: upTo(430), battery: upTo(430) }
-    expect(buildDay(0, day('2026-10-03', { ...energy, level: upTo(400) })).buckets).toHaveLength(86)
+    const lagging = buildDay(0, day('2026-10-03', { ...energy, level: upTo(400) }))
+    expect(lagging.buckets).toHaveLength(86)
+    expect(lagging.buckets.at(-1)?.batterySocPct).toBeNull() // 425: past the SoC series' end
     expect(buildDay(0, day('2026-10-03', { ...energy, level: upTo(500) })).buckets).toHaveLength(86)
   })
 
@@ -291,6 +309,18 @@ describe('parseSeries', () => {
       () => parseSeries(name, { ...seriesDay(name, '2026-06-10', []), data: [row] }),
       'stats',
       at,
+    )
+  })
+
+  test.each([
+    ['a string', '50'],
+    ['null', null],
+  ])('a SoC that is %s refuses the day at data.0.1', (_, value) => {
+    unexpected(
+      () => parseSeries('level', { ...seriesDay('level', '2026-06-10', []), data: [[0, value]] }),
+      'stats',
+      'data.0.1',
+      ['50'],
     )
   })
 

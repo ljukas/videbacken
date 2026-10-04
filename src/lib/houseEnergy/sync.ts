@@ -41,7 +41,7 @@ export type EmaldoSyncRun = RunBase & {
   /** Old days whose readings failed validation; skipped and warned. */
   rejectedDays: number
   /**
-   * Summed time of every request, the four parallel series included: busy
+   * Summed time of every request, the five parallel series included: busy
    * time, not wall-clock latency (that is `durationMs`).
    */
   fetchMs: number
@@ -63,7 +63,7 @@ const BACKFILL_LEAD_DAYS = 7
 const BACKFILL_DAYS_PER_RUN = 30
 /** No new backfill day starts once the run is this old; the next run continues. */
 const DAY_BUDGET_MS = 120_000
-/** Pause between backfill days: four requests each to an unofficial API. */
+/** Pause between backfill days: five requests each to an unofficial API. */
 const BACKFILL_PAUSE_MS = 1_000
 /**
  * Same 240 s budget as Zaptec and elpris: well under Vercel's 300 s limit, and

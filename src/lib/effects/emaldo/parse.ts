@@ -73,7 +73,9 @@ export function parseDevices(result: unknown): { deviceId: string; model: string
 // ---- day series -----------------------------------------------------------
 
 const minute = z.int().nonnegative().multipleOf(BUCKET_MINUTES)
-const w = z.number() // finite; a negative reading drops its bucket in `buildDay`
+// Finite. In `buildDay`, a negative energy reading drops its bucket; a SoC
+// outside 0–100 becomes null instead.
+const w = z.number()
 const rest = z.unknown() // columns we don't use may be anything
 const ROWS = {
   grid: z.tuple([minute, w, w, w], rest), // min, import, emergency import, export, …
