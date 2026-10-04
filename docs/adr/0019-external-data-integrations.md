@@ -518,6 +518,22 @@ healthy. See [ADR-0022](./0022-live-vehicle-state-attribution.md) and the
 
 ---
 
+## Amendment (2026-10-04): sync progress on the health row
+
+A running sync can report progress ("12 av 30 dagar") for its Datakällor tile. `runPulledSync` hands `execute` a
+`reportProgress(done, total)` that writes `integration_sync.progress_done` / `progress_total` **under the run's lease
+token** (a lost lease writes nothing), throttled to one write per second (the last always writes) and best effort (a
+failed write is a `warn`, never a failed run). `beginAttempt` and `recordOutcome` clear it; `getHealth` exposes it
+only while the lease is live, so a leftover is never shown — and no CHECK ties it to the lease, so a rollback's
+`recordOutcome` (which doesn't know the columns) can't fail. Emaldo and elpris report days; Zaptec and Škoda finish
+before a poll would see them and don't report.
+
+Why the database, not a push or another store: the tile already polls this row (ADR-0018), the run already writes it,
+and it works for cron runs and every viewer. Streaming the click's request serves only that tab; process memory
+doesn't survive Fluid instance routing; Runtime Cache/Redis add a second store that can disagree with the lease;
+Vercel Workflow was parked as a separate re-platforming decision. Design:
+[`2026-10-04-sync-progress-design.md`](../superpowers/specs/2026-10-04-sync-progress-design.md).
+
 ## Amendments to other ADRs
 
 Full rationale lives in each amended ADR itself (this repo's convention: one substantive copy, not

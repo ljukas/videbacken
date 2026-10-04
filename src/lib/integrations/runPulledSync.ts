@@ -14,6 +14,7 @@ import {
   type RunStats,
   recordOutcome,
   type SyncOutcome,
+  reportProgress as writeProgress,
 } from '~/lib/services/integrationSync'
 import * as userService from '~/lib/services/user'
 import { baseLocale } from '~/paraglide/runtime'
@@ -53,7 +54,18 @@ export type PulledSyncSpec<R extends RunBase> = {
    * part-way still reports what landed. An `IntegrationError` → `failed`;
    * anything else → `error` (recorded best effort, then rethrown).
    */
-  execute: (ctx: { run: R; signal: AbortSignal; now: () => Date; log: Logger }) => Promise<void>
+  execute: (ctx: {
+    run: R
+    signal: AbortSignal
+    now: () => Date
+    log: Logger
+    /**
+     * Best effort: the run's progress for its Datakällor tile, in the source's
+     * own unit. Throttled (`done === total` always writes); a failed write is
+     * logged and never fails the run.
+     */
+    reportProgress: (done: number, total: number) => Promise<void>
+  }) => Promise<void>
   /** The recorded run-history stats. Sees `run` before `finalize` has run. */
   toRunStats: (run: R) => RunStats
   /**
@@ -64,6 +76,9 @@ export type PulledSyncSpec<R extends RunBase> = {
   /** The source's own run-line fields, logged after — never instead of — the common ones. */
   logFields: (run: R) => Record<string, unknown>
 }
+
+/** At most one progress write per second per run; the UI polls every 5 s. */
+const PROGRESS_INTERVAL_MS = 1_000
 
 /**
  * The lifecycle every pulled integration's sync run shares (ADR-0019): lease →
@@ -86,6 +101,7 @@ export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>):
     durationMs: 0,
   })
   let thrown: unknown
+  let progressWrites = 0
   const deadline = new AbortController()
   const deadlineTimer = setTimeout(
     () => deadline.abort(new DOMException('sync deadline exceeded', 'TimeoutError')),
@@ -97,9 +113,26 @@ export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>):
     // Another run holds the lease (also absorbs duplicate cron deliveries).
     if (!attempt.acquired) return run
 
+    let lastProgressMs = Number.NEGATIVE_INFINITY
+    const reportProgress = async (done: number, total: number) => {
+      const t = Math.floor(total)
+      if (!(t > 0)) return
+      const d = Math.min(t, Math.max(0, Math.floor(done)))
+      const at = now()
+      if (d < t && at.getTime() - lastProgressMs < PROGRESS_INTERVAL_MS) return
+      lastProgressMs = at.getTime()
+      try {
+        await writeProgress(source, attempt.attemptId, { done: d, total: t }, { now: at })
+        // Counts write calls that didn't throw; a lost lease stores no row.
+        progressWrites++
+      } catch (error) {
+        log.warn('integration sync progress write failed', { source, error })
+      }
+    }
+
     let outcome: SyncOutcome
     try {
-      await spec.execute({ run, signal: deadline.signal, now, log })
+      await spec.execute({ run, signal: deadline.signal, now, log, reportProgress })
       run.outcome = 'ok'
       outcome = { ok: true, stats: spec.toRunStats(run), syncedUntil: run.syncedUntil }
     } catch (error) {
@@ -155,6 +188,7 @@ export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>):
       since: run.since,
       syncedUntil: run.syncedUntil,
       durationMs: run.durationMs,
+      progressWrites,
       ...spec.logFields(run),
     }
     if (run.outcome === 'error') log.error('integration sync run', { ...fields, error: thrown })
