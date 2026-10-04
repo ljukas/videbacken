@@ -7,7 +7,7 @@ import * as energyMixService from '~/lib/services/energyMix'
 import * as houseEnergyService from '~/lib/services/houseEnergy'
 import * as spotPriceService from '~/lib/services/spotPrice'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
-import { stockholmDayBounds } from '~/lib/time/stockholm'
+import { addDays, stockholmDayBounds } from '~/lib/time/stockholm'
 import { insertInterval, insertSession } from '~test/fixtures/evCharging'
 import { type Flows, syntheticDay } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
@@ -465,4 +465,61 @@ test("a resume re-derives the previous day, so a checkpoint written before the n
   expect(resumed?.state.storedKwh).toBeCloseTo(0.05 * BATTERY_CAPACITY_KWH, 9)
   await derive('2026-06-09', '2026-06-11T12:00:00Z')
   expect(await houseEnergyService.getPoolDay('2026-06-10')).toEqual(resumed)
+})
+
+/** 22:00 → 01:00 local (CEST) sessions starting on each day in [fromDay, throughDay]. */
+async function midnightChain(fromDay: string, throughDay: string) {
+  for (let day = fromDay; day <= throughDay; day = addDays(day, 1)) {
+    const start = stockholmDayBounds(day).startMs + 22 * 3_600_000
+    await session(new Date(start).toISOString(), new Date(start + 3 * 3_600_000).toISOString(), 3)
+  }
+}
+function captureLog() {
+  const lines: string[] = []
+  const capture = createServerLogger({
+    write(chunk: string) {
+      lines.push(chunk)
+      return true
+    },
+  })
+  const messages = () =>
+    lines
+      .flatMap((l) => l.split('\n'))
+      .filter(Boolean)
+      .map((l) => JSON.parse(l).msg as string)
+  return { capture, messages }
+}
+const WINDOW_INSIDE_SESSION = 'energy mix derive window starts inside a session'
+
+test('widening stops after MAX_WIDEN_STEPS and warns that the window starts inside a session', async () => {
+  await storeDay('2026-06-10', () => BASE)
+  await midnightChain('2026-05-25', '2026-06-11')
+  const { capture, messages } = captureLog()
+  const result = await deriveFrom('2026-06-12', {
+    log: capture,
+    now: () => new Date('2026-06-12T12:00:00Z'),
+  })
+  // From 06-11 (a day early), ten steps back: 06-01, with 05-31's session still spanning in.
+  expect(result.fromDay).toBe('2026-06-01')
+  expect(messages()).toContain(WINDOW_INSIDE_SESSION)
+})
+
+test('a chain exactly MAX_WIDEN_STEPS long widens fully, without a warning', async () => {
+  await storeDay('2026-06-10', () => BASE)
+  await midnightChain('2026-06-01', '2026-06-11')
+  const { capture, messages } = captureLog()
+  const result = await deriveFrom('2026-06-12', {
+    log: capture,
+    now: () => new Date('2026-06-12T12:00:00Z'),
+  })
+  expect(result.fromDay).toBe('2026-06-01')
+  expect(messages()).not.toContain(WINDOW_INSIDE_SESSION)
+})
+
+test('a requested or queued day after today is clamped to today: a resume, not a rebuild', async () => {
+  for (const day of ['2026-06-08', '2026-06-09', '2026-06-10']) await storeDay(day, () => BASE)
+  await derive('2026-06-08')
+  expect(await derive('2026-06-20')).toMatchObject({ fromDay: '2026-06-11', days: 2 })
+  await energyMixService.requestDerive('2026-06-20')
+  expect(await derive('2026-06-12')).toMatchObject({ fromDay: '2026-06-11', days: 2 })
 })
