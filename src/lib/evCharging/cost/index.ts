@@ -10,7 +10,7 @@ export {
   emptyTotals,
   isComplete,
   mergeTotals,
-  ownSupplyShare,
+  ownSolarShare,
   type PieceMix,
   priceIntervals,
   supplySplit,

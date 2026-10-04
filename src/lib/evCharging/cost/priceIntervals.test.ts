@@ -6,7 +6,7 @@ import {
   emptyTotals,
   isComplete,
   mergeTotals,
-  ownSupplyShare,
+  ownSolarShare,
   type PieceMix,
   priceIntervals,
   SlotIndex,
@@ -567,9 +567,28 @@ describe('priceIntervals with an energy mix: overlap, coverage and days', () => 
     expect(() => priceIntervals([{ ...p, kwh: p.kwh + 1e-3 }], day, [TARIFF])).toThrow(RangeError)
   })
 
-  test('the own-supply share never exceeds 1', () => {
-    expect(ownSupplyShare({ kwh: 1, solarKwh: 0.7, batteryKwh: 0.3000000001 })).toBe(1)
-    expect(ownSupplyShare({ kwh: 4, solarKwh: 0, batteryKwh: 1 })).toBeCloseTo(0.25)
+  test('the own-solar share is the energy that cost nothing: solar straight and via the battery', () => {
+    const t = priceIntervals(
+      [
+        piece(AT, {
+          gridKwh: 1,
+          solarKwh: 2,
+          batteryGridKwh: 3,
+          batteryGridSpotSek: 0.2,
+          batterySolarKwh: 4,
+          batterySolarSpotSek: 0.3,
+        }),
+      ],
+      day,
+      [TARIFF],
+    )
+    // Battery energy from the grid is bought: (2 + 4) of 10, not (2 + 7).
+    expect(ownSolarShare(t)).toBeCloseTo(0.6)
+  })
+
+  test('the own-solar share stays within 0…1', () => {
+    expect(ownSolarShare({ kwh: 1, gridKwh: -1e-12 })).toBe(1)
+    expect(ownSolarShare({ kwh: 1, gridKwh: 1.0000000001 })).toBe(0)
   })
 })
 
@@ -637,9 +656,9 @@ describe('emptyTotals and mergeTotals', () => {
 })
 
 describe('own supply', () => {
-  test('the share from own solar and the battery, null without energy', () => {
-    expect(ownSupplyShare({ kwh: 10, solarKwh: 3, batteryKwh: 1.4 })).toBeCloseTo(0.44)
-    expect(ownSupplyShare({ kwh: 0, solarKwh: 0, batteryKwh: 0 })).toBeNull()
+  test('the own-solar share, null without energy', () => {
+    expect(ownSolarShare({ kwh: 10, gridKwh: 5.6 })).toBeCloseTo(0.44)
+    expect(ownSolarShare({ kwh: 0, gridKwh: 0 })).toBeNull()
   })
 
   test('the bar split: grid is the rest (incl. energy without house data), never negative', () => {

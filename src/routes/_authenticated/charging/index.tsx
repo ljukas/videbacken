@@ -210,7 +210,12 @@ function ChargingPage() {
   // Cost is shown once anything at all is priced in the chosen scope (all-time,
   // so a year switch doesn't flicker the kr toggle away; a scope with nothing
   // priced, e.g. guests, shows the notice instead); until then one notice says why.
-  const showCost = tariffs.length > 0 && cost?.tiles.allTime.avgOre != null
+  // Energy that was all own solar bought nothing, so it is priced too: 0 kr (ADR-0023).
+  const allTimeCost = cost?.tiles.allTime
+  const showCost =
+    tariffs.length > 0 &&
+    allTimeCost != null &&
+    (allTimeCost.avgOre != null || (allTimeCost.kwh > 0 && allTimeCost.gridKwh === 0))
   const hasEnergy = (overview?.tiles.allTime.kwh ?? 0) > 0
   const costNotice: CostNoticeReason | null = !hasEnergy
     ? null

@@ -9,6 +9,7 @@ import {
   formatScore,
   formatSessionDay,
   formatSessionTimeRange,
+  formatShare,
   formatSignedSek,
   formatWeekdayDay,
   hourRangeLabel,
@@ -385,5 +386,15 @@ describe('formatOre / formatOrePrecise', () => {
   test('formatOrePrecise follows the locale', () => {
     inLocale('en')
     expect(formatOrePrecise(0.17)).toBe('0.17')
+  })
+})
+
+describe('formatShare', () => {
+  test('whole percent, never a rounded 0 % or 100 % for a share that is neither', () => {
+    expect(formatShare(0.39)).toMatch(/^39\s%$/)
+    expect(formatShare(0.004)).toMatch(/^< 1\s%$/)
+    expect(formatShare(0.996)).toMatch(/^> 99\s%$/)
+    expect(formatShare(1)).toMatch(/^100\s%$/)
+    expect(formatShare(0)).toMatch(/^0\s%$/)
   })
 })

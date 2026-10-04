@@ -283,14 +283,17 @@ export function formatScore(score: number | null): string {
 
 /**
  * A share (0…1) as a whole percent ("39 %"). A small but real share never
- * rounds to "0 %": it reads "< 1 %".
+ * rounds to "0 %" (it reads "< 1 %"), nor a share short of all to "100 %"
+ * (it reads "> 99 %").
  */
 export function formatShare(share: number): string {
   const percent = new Intl.NumberFormat(getIntlLocale(), {
     style: 'percent',
     maximumFractionDigits: 0,
   })
-  return share > 0 && share < 0.005 ? `< ${percent.format(0.01)}` : percent.format(share)
+  if (share > 0 && share < 0.005) return `< ${percent.format(0.01)}`
+  if (share >= 0.995 && share < 1) return `> ${percent.format(0.99)}`
+  return percent.format(share)
 }
 
 /** An average öre/kWh, whole öre (e.g. "159"). For axis ticks; labels use {@link formatOrePrecise}. */

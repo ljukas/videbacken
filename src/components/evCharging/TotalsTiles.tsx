@@ -5,13 +5,14 @@ import {
   CircleAlertIcon,
   GaugeIcon,
   InfinityIcon,
+  InfoIcon,
   type LucideIcon,
   ZapIcon,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import { ownSupplyShare } from '~/lib/evCharging/cost'
+import { ownSolarShare } from '~/lib/evCharging/cost'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
@@ -101,7 +102,7 @@ export function TotalsTiles({
                 {label}
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-1 flex-col">
               <TileReadouts totals={totals} cost={cost?.[key]} houseData={houseData} />
             </CardContent>
           </Card>
@@ -122,7 +123,8 @@ function PeriodIcon({ period, className }: { period: Period; className?: string 
 // much energy had no house data (so counts as bought from the grid).
 //
 // The cost is the cash cost (ADR-0023): own solar costs 0 kr, and the share
-// from solar and the battery sits under it. Missing data is said in words,
+// that cost nothing (own solar, straight or via the battery — not battery
+// energy bought from the grid) sits under it. Missing data is said in words,
 // never shown as 0 kr (a missing price or tariff is a state, ADR-0020): a
 // partly priced total is qualified "minst" with the share that lacks a price;
 // bought energy with no price at all reads "—". No energy, or energy that was
@@ -152,11 +154,12 @@ function TileReadouts({
   // total means an over-count (overlapping slots), so "minst" would be wrong.
   const missingKwh = cost.noPriceKwh + cost.noTariffKwh
   const short = !unpriced && !cost.complete && missingKwh > 0
-  const ownShare = ownSupplyShare(cost)
+  const solarShare = ownSolarShare(cost)
   const footer = tileFooter(cost, { unpriced, short, missingKwh, houseData })
 
   return (
-    <div className="@container/tile flex flex-col gap-3">
+    // flex-1 + the footer's mt-auto: footers line up across the three cards.
+    <div className="@container/tile flex flex-1 flex-col gap-3">
       <div className="grid @[16rem]/tile:grid-cols-2 gap-3 @[16rem]/tile:gap-0">
         <div className="@[16rem]/tile:pr-4">{energy}</div>
         <div className="@[16rem]/tile:border-l @[16rem]/tile:pl-4">
@@ -179,8 +182,10 @@ function TileReadouts({
                 cost.kwh === 0 ? undefined : (
                   <>
                     <span>{m.charging_cost_spot_share({ spot: formatSek(cost.spotSek) })}</span>
-                    {ownShare ? (
-                      <span>{m.charging_cost_own_share({ share: formatShare(ownShare) })}</span>
+                    {solarShare ? (
+                      <span>
+                        {m.charging_cost_own_solar_share({ share: formatShare(solarShare) })}
+                      </span>
                     ) : null}
                   </>
                 )
@@ -190,7 +195,7 @@ function TileReadouts({
         </div>
       </div>
       {footer.length > 0 ? (
-        <div className="flex flex-col gap-1.5 border-t pt-3 text-muted-foreground text-xs">
+        <div className="mt-auto flex flex-col gap-1.5 border-t pt-3 text-muted-foreground text-xs">
           {footer.map((line) => (
             <p key={line.text} className="flex items-start gap-1.5">
               <line.icon aria-hidden className="mt-0.5 size-3 shrink-0" />
@@ -214,7 +219,8 @@ function tileFooter(
     houseData,
   }: { unpriced: boolean; short: boolean; missingKwh: number; houseData: boolean },
 ): FooterLine[] {
-  // A caveat (missing or partial price, no house data) gets the alert mark; the average a gauge.
+  // A caveat (missing or partial price) gets the alert mark, the no-house-data
+  // assumption an info mark, the average a gauge.
   const caveat = (text: string) => ({ icon: CircleAlertIcon, text })
   const lines: FooterLine[] = []
   if (unpriced) lines.push(caveat(m.charging_cost_unknown_hint()))
@@ -235,11 +241,12 @@ function tileFooter(
   }
   // Said only once house data exists at all; before that the page's note covers it.
   if (houseData && cost.kwh > 0 && cost.noHouseDataKwh > 0) {
-    lines.push(
-      caveat(
-        m.charging_cost_no_house_data_hint({ share: formatShare(cost.noHouseDataKwh / cost.kwh) }),
-      ),
-    )
+    lines.push({
+      icon: InfoIcon,
+      text: m.charging_cost_no_house_data_hint({
+        share: formatShare(cost.noHouseDataKwh / cost.kwh),
+      }),
+    })
   }
   return lines
 }

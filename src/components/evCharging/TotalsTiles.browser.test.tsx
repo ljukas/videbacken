@@ -271,26 +271,39 @@ const mixed: Cost = {
   avgOre: 105,
 }
 
-test('a tile with own solar and battery says the share under the cash cost', async () => {
+test('a tile with own solar says the share that cost nothing under the cash cost', async () => {
   const { screen: page } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(mixed)} houseData />,
   )
   const screen = grid(page)
   expect(screen.getByText(/^105 kr$/).elements()).toHaveLength(3)
   expect(
-    screen.getByText(m.charging_cost_own_share({ share: formatShare(0.34) })).elements(),
+    screen.getByText(m.charging_cost_own_solar_share({ share: formatShare(0.34) })).elements(),
   ).toHaveLength(3)
 })
 
-test('no share line without own solar or battery', async () => {
+test('no share line without own solar', async () => {
   const { screen: page } = await renderWithProviders(
     <TotalsTiles tiles={zeroTiles} cost={allTiles(priced)} houseData />,
   )
   expect(
     grid(page)
-      .getByText(/från sol och batteri/)
+      .getByText(/egen solel/)
       .elements(),
   ).toHaveLength(0)
+})
+
+test('battery energy bought from the grid is not own solar', async () => {
+  // 30 kWh from the battery, 20 of it grid-charged: 10 + 10 of 100 kWh cost nothing.
+  const winter: Cost = { ...mixed, gridKwh: 80, fullKwh: 80, solarKwh: 10, batteryKwh: 30 }
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(winter)} houseData />,
+  )
+  expect(
+    grid(page)
+      .getByText(m.charging_cost_own_solar_share({ share: formatShare(0.2) }))
+      .elements(),
+  ).toHaveLength(3)
 })
 
 test('energy without house data is said in the footer, once house data exists at all', async () => {
@@ -327,7 +340,7 @@ test('an all-solar tile is a true 0 kr, never "price missing"', async () => {
   expect(screen.getByText(/^0 kr$/).elements()).toHaveLength(3)
   expect(screen.getByText(m.charging_cost_unknown()).elements()).toHaveLength(0)
   expect(
-    screen.getByText(m.charging_cost_own_share({ share: formatShare(1) })).elements(),
+    screen.getByText(m.charging_cost_own_solar_share({ share: formatShare(1) })).elements(),
   ).toHaveLength(3)
 })
 

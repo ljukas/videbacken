@@ -138,12 +138,16 @@ export function avgOre(t: CostTotals): number | null {
   return t.fullKwh > 0 ? (t.totalSek / (t.fullKwh + Math.max(0, t.kwh - t.gridKwh))) * 100 : null
 }
 
-type Supply = Pick<CostTotals, 'kwh' | 'solarKwh' | 'batteryKwh'>
-
-/** The share of the charged energy from own solar or the home battery; null without energy. */
-export function ownSupplyShare(t: Supply): number | null {
-  return t.kwh > 0 ? Math.min(1, (t.solarKwh + t.batteryKwh) / t.kwh) : null
+/**
+ * The share of the charged energy that cost nothing: own solar, straight or
+ * via the battery (`kwh − gridKwh`). Battery energy the battery took from the
+ * grid is bought, so it doesn't count. Null without energy.
+ */
+export function ownSolarShare(t: Pick<CostTotals, 'kwh' | 'gridKwh'>): number | null {
+  return t.kwh > 0 ? Math.min(1, Math.max(0, (t.kwh - t.gridKwh) / t.kwh)) : null
 }
+
+type Supply = Pick<CostTotals, 'kwh' | 'solarKwh' | 'batteryKwh'>
 
 /** kWh per source for the grid / solar / battery bar; grid includes energy without house data. */
 export function supplySplit(t: Supply): { gridKwh: number; solarKwh: number; batteryKwh: number } {
