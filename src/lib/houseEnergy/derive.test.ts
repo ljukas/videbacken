@@ -35,12 +35,17 @@ type KwhKey =
   | 'noHouseDataKwh'
 const total = (slots: MixSlot[], key: KwhKey) => slots.reduce((s, x) => s + x[key], 0)
 
+// Storing queues a derive request (ADR-0023); these helpers drop it, so each
+// test's derive window is what the test asks for.
+const clearQueue = () =>
+  energyMixService.withDeriveLock((tx) => energyMixService.takeDeriveRequests(tx))
 async function storeDay(day: string, flows: (ms: number) => Flows) {
   const { startMs, endMs } = stockholmDayBounds(day)
   await houseEnergyService.replaceDay(
     { dayStart: new Date(startMs), dayEnd: new Date(endMs) },
     syntheticDay(day, flows),
   )
+  await clearQueue()
 }
 async function storePrices(day: string, price: (ms: number) => number = () => 1) {
   await spotPriceService.replaceDay(
@@ -48,6 +53,7 @@ async function storePrices(day: string, price: (ms: number) => number = () => 1)
     day,
     daySlots(day, 15).map((s) => ({ ...s, sekPerKwh: price(s.startMs) })),
   )
+  await clearQueue()
 }
 async function mixOf(sessionId: string): Promise<MixSlot[]> {
   return (await energyMixService.listForSessions([sessionId])).get(sessionId) ?? []

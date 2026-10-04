@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { spotPrice } from '~/lib/db/schema'
+import { energyMixDeriveRequest, spotPrice } from '~/lib/db/schema'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
 import { setupDatabase } from '~test/setup'
@@ -225,4 +225,12 @@ test("listSlotsOverlapping reads inside a caller's transaction", async () => {
       { startMs: utc('2026-09-28T08:00Z'), endMs: utc('2026-09-28T08:15Z'), sekPerKwh: 1.5 },
     ])
   })
+})
+
+test('replacing a day queues an energy-mix derive from that day', async () => {
+  await replaceDay('SE3', '2026-09-28', daySlots('2026-09-28', 15))
+  const queued = await db
+    .select({ fromDay: energyMixDeriveRequest.fromDay })
+    .from(energyMixDeriveRequest)
+  expect(queued).toEqual([{ fromDay: '2026-09-28' }])
 })

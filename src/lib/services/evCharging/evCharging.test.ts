@@ -1,7 +1,12 @@
 import { eq, sql } from 'drizzle-orm'
 import { describe, expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
+import {
+  energyMixDeriveRequest,
+  evChargeInterval,
+  evCharger,
+  evChargeSession,
+} from '~/lib/db/schema'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
 import { expectConstraintViolation } from '~test/expectConstraintViolation'
 import { insertSession, insertVehicleRecord } from '~test/fixtures/evCharging'
@@ -506,5 +511,16 @@ describe('importSessions reports the earliest change for the energy-mix derive',
     await importSessions([withIntervals(), later()], ctx)
     const result = await importSessions([withIntervals(), later({ energyKwh: 7 })], ctx)
     expect(result.earliestChangedStartAt).toEqual(new Date('2026-01-12T10:00:00Z'))
+  })
+
+  test('a change queues an energy-mix derive from its start day; no change queues nothing', async () => {
+    const queued = async () =>
+      (
+        await db.select({ fromDay: energyMixDeriveRequest.fromDay }).from(energyMixDeriveRequest)
+      ).map((r) => r.fromDay)
+    await importSessions([withIntervals()], ctx)
+    expect(await queued()).toEqual(['2026-01-10'])
+    await importSessions([withIntervals()], ctx)
+    expect(await queued()).toEqual(['2026-01-10'])
   })
 })

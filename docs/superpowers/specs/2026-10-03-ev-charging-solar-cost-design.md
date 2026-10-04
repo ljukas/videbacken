@@ -216,9 +216,12 @@ orchestrates it through services.
 - Each derive runs in one transaction holding a transaction-scoped advisory lock, reads included, so a concurrent
   derive never writes older data over newer. Timeouts: lock wait 20 s, statement 25 s, idle 60 s.
 - Triggers fire on whatever a sync stored, **even if the run then fails**: a stored change is never detected as new
-  again. The day is queued durably first (`energy_mix_derive_request`), so a derive that fails is covered by the
+  again. The day is queued durably (`energy_mix_derive_request`) in the same transaction that stores the change
+  (Zaptec page import, spot day, readings day), and again before the run derives, so a derive that fails is covered by the
   next one, and a request waiting over 3 h is warned about. A derive is best effort, with a 30 s budget, and never
   changes a run's outcome.
+- No derive window starts before the day before the first reading. A session longer than 31 days, or with a slot of
+  1000 kWh or more, is a glitch: it gets no mix rows (all-grid) and a counts-only warning, never blocking the rest.
 - With no house readings at all, nothing is derived (sessions keep no mix rows and stay all-grid). Sessions before
   the first reading never get mix rows.
 - `pruneUncounted` drops the mix of every session no longer counted, whenever it ended.

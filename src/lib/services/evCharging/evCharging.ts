@@ -1,8 +1,14 @@
 import { inArray, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
-import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
+import {
+  energyMixDeriveRequest,
+  evChargeInterval,
+  evCharger,
+  evChargeSession,
+} from '~/lib/db/schema'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
 import { logger } from '~/lib/logger/server'
+import { stockholmDayOf } from '~/lib/time/stockholm'
 
 // Chargers: `id` is the Zaptec charger id itself, so this is a plain upsert by
 // primary key. Always overwrites name/installationId — this is how a
@@ -218,6 +224,13 @@ export async function importSessions(
               ),
             )
     earliestChangedStartAt = earliestChangedStart(validSessions, stored, storedIntervals)
+    if (earliestChangedStartAt) {
+      // Queued with the change itself (ADR-0023): if the run dies before its
+      // derive, the next derive still covers this page.
+      await tx
+        .insert(energyMixDeriveRequest)
+        .values({ fromDay: stockholmDayOf(earliestChangedStartAt.getTime()) })
+    }
 
     const sessionRows = await tx
       .insert(evChargeSession)
