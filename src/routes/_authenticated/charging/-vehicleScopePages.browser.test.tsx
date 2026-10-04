@@ -38,6 +38,10 @@ function seedShell(qc: QueryClient) {
     orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } }).queryKey,
     health('skoda'),
   )
+  qc.setQueryData(
+    orpc.evCharging.syncStatus.queryOptions({ input: { source: 'emaldo' } }).queryKey,
+    health('emaldo'),
+  )
 }
 
 async function renderPage(
@@ -136,6 +140,10 @@ function seedOverviewShell(qc: QueryClient, opts: { coverage?: boolean } = {}) {
   )
   qc.setQueryData(
     orpc.evCharging.recentRuns.queryOptions({ input: { source: 'skoda', limit: 20 } }).queryKey,
+    [],
+  )
+  qc.setQueryData(
+    orpc.evCharging.recentRuns.queryOptions({ input: { source: 'emaldo', limit: 20 } }).queryKey,
     [],
   )
   qc.setQueryData(orpc.evCharging.vehicleStateLatest.queryOptions().queryKey, null)

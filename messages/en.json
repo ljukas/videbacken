@@ -122,6 +122,8 @@
   "charging_sync_skoda_now": "Fetch the car's status",
   "charging_sync_skoda_ok": "The car's status is up to date",
   "charging_sync_skoda_failed": "The car's status couldn't be fetched",
+  "charging_sync_house_ok": "The house's energy data is up to date",
+  "charging_sync_house_failed": "The house's energy data couldn't be fetched",
   "charging_sync_prices_ok": "Electricity prices are up to date",
   "charging_sync_skipped": "A sync is already running",
   "charging_tariff_actions_for": "Actions for the period from {date}",

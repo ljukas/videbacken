@@ -77,6 +77,11 @@ const skodaHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { sour
 const skodaRunsQuery = orpc.evCharging.recentRuns.queryOptions({
   input: { source: 'skoda', limit: RECENT_RUNS },
 })
+// The house's energy flows (Emaldo), admin-only like the car feed.
+const emaldoHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'emaldo' } })
+const emaldoRunsQuery = orpc.evCharging.recentRuns.queryOptions({
+  input: { source: 'emaldo', limit: RECENT_RUNS },
+})
 const vehicleLatestQuery = orpc.evCharging.vehicleStateLatest.queryOptions()
 
 export const Route = createFileRoute('/_authenticated/charging/')({
@@ -127,6 +132,8 @@ export const Route = createFileRoute('/_authenticated/charging/')({
       // Prefetched too: a failed car read must not take the page down.
       user.role === 'admin' ? queryClient.prefetchQuery(skodaHealthQuery) : null,
       user.role === 'admin' ? queryClient.prefetchQuery(skodaRunsQuery) : null,
+      user.role === 'admin' ? queryClient.prefetchQuery(emaldoHealthQuery) : null,
+      user.role === 'admin' ? queryClient.prefetchQuery(emaldoRunsQuery) : null,
       user.role === 'admin' ? queryClient.prefetchQuery(vehicleLatestQuery) : null,
     ])
   },
@@ -237,6 +244,8 @@ function ChargingPage() {
   const vehicleCoverage = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
   const { data: skodaHealth } = useQuery({ ...skodaHealthQuery, enabled: isAdmin })
   const { data: skodaRuns } = useQuery({ ...skodaRunsQuery, enabled: isAdmin })
+  const { data: emaldoHealth } = useQuery({ ...emaldoHealthQuery, enabled: isAdmin })
+  const { data: emaldoRuns } = useQuery({ ...emaldoRunsQuery, enabled: isAdmin })
   const vehicleLatest = useQuery({ ...vehicleLatestQuery, enabled: isAdmin })
 
   // "Visa fler" fetches the longer page first and only then switches to it, so
@@ -301,6 +310,16 @@ function ChargingPage() {
       ) : null}
       {isAdmin && skodaHealth?.state === 'ok' ? (
         <CredentialExpiryAlert expiry={skodaHealth.adminDetail?.credentialExpiry ?? null} />
+      ) : null}
+      {/* Admin-only like the car feed: members can't act on it, and nothing on
+          the page uses the house data yet (ADR-0023, step 4). */}
+      {isAdmin && emaldoHealth ? (
+        <SyncHealthAlert
+          health={emaldoHealth}
+          isAdmin
+          onRetry={() => syncNow.syncSource('emaldo')}
+          retrying={syncNow.isPendingFor('emaldo')}
+        />
       ) : null}
 
       <LiveStatusTile live={live} />
@@ -429,6 +448,7 @@ function ChargingPage() {
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
       {isAdmin && pricesRuns ? <RecentRunsCard source="elpris" runs={pricesRuns} /> : null}
       {isAdmin && skodaRuns ? <RecentRunsCard source="skoda" runs={skodaRuns} /> : null}
+      {isAdmin && emaldoRuns ? <RecentRunsCard source="emaldo" runs={emaldoRuns} /> : null}
 
       {isAdmin ? (
         <>

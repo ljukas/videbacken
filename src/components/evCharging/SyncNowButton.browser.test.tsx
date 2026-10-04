@@ -34,21 +34,23 @@ type Result = {
   upserted: number
 }
 const OK: Result = { outcome: 'ok', code: null, upserted: 96 }
+type Source = 'zaptec' | 'elpris' | 'skoda' | 'emaldo'
 
 // `syncNow` is called once per source; script each source's result.
 function respond(results: {
   zaptec?: Result | Error
   elpris?: Result | Error
   skoda?: Result | Error
+  emaldo?: Result | Error
 }) {
-  syncFn.mockImplementation(async ({ source }: { source: 'zaptec' | 'elpris' | 'skoda' }) => {
+  syncFn.mockImplementation(async ({ source }: { source: Source }) => {
     const r = results[source] ?? OK
     if (r instanceof Error) throw r
     return r
   })
 }
 
-function Harness({ only }: { only?: 'zaptec' | 'elpris' | 'skoda' }) {
+function Harness({ only }: { only?: Source }) {
   const { syncAll, syncSource, isPending } = useSyncNow()
   return <SyncNowButton onSync={only ? () => syncSource(only) : syncAll} pending={isPending} />
 }
@@ -56,7 +58,7 @@ function Harness({ only }: { only?: 'zaptec' | 'elpris' | 'skoda' }) {
 const click = (screen: Awaited<ReturnType<typeof renderWithProviders>>['screen']) =>
   screen.getByRole('button', { name: m.charging_sync_now() }).click()
 
-test('sync all runs both sources, toasts the session result once and invalidates evCharging', async () => {
+test('sync all runs sessions, prices and house energy, toasts the session result once and invalidates evCharging', async () => {
   respond({ zaptec: { outcome: 'ok', code: null, upserted: 3 } })
   const queryClient = makeTestQueryClient()
   const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
@@ -67,8 +69,12 @@ test('sync all runs both sources, toasts the session result once and invalidates
   await vi.waitFor(() =>
     expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_ok({ count: 3 })),
   )
-  await vi.waitFor(() => expect(syncFn).toHaveBeenCalledTimes(2))
-  expect(syncFn.mock.calls.map((c) => c[0])).toEqual([{ source: 'zaptec' }, { source: 'elpris' }])
+  await vi.waitFor(() => expect(syncFn).toHaveBeenCalledTimes(3))
+  expect(syncFn.mock.calls.map((c) => c[0])).toEqual([
+    { source: 'zaptec' },
+    { source: 'elpris' },
+    { source: 'emaldo' },
+  ])
   await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['evCharging'] }))
   // A full sync doesn't stack a second green toast for prices.
   expect(toastMock.success).toHaveBeenCalledOnce()
@@ -156,7 +162,7 @@ test('a full sync keeps a skipped price run silent', async () => {
   })
   const { screen } = await renderWithProviders(<Harness />)
   await click(screen)
-  await vi.waitFor(() => expect(syncFn).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() => expect(syncFn).toHaveBeenCalledTimes(3))
   await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledOnce())
   expect(toastMock.info).not.toHaveBeenCalled()
 })
@@ -191,5 +197,77 @@ test('retrying the car alone runs only skoda, confirms success and leaves the he
   await expect.element(screen.getByTestId('state')).toHaveTextContent('false/true')
   release(OK)
   await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_skoda_ok()))
+  await expect.element(screen.getByTestId('state')).toHaveTextContent('false/false')
+})
+
+test('a failed house sync in a full sync gets its own error toast', async () => {
+  respond({
+    zaptec: { outcome: 'ok', code: null, upserted: 2 },
+    emaldo: { outcome: 'failed', code: 'unreachable', upserted: 0 },
+  })
+  const { screen } = await renderWithProviders(<Harness />)
+  await click(screen)
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_house_failed(), {
+      description: integrationErrorMessage('unreachable', { source: 'emaldo' }),
+    }),
+  )
+  expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_ok({ count: 2 }))
+})
+
+test('a full sync keeps an unconfigured Emaldo silent (its health alert says so)', async () => {
+  respond({
+    zaptec: { outcome: 'ok', code: null, upserted: 1 },
+    emaldo: { outcome: 'failed', code: 'not_configured', upserted: 0 },
+  })
+  const { screen } = await renderWithProviders(<Harness />)
+  await click(screen)
+  await vi.waitFor(() => expect(syncFn).toHaveBeenCalledTimes(3))
+  await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledOnce())
+  expect(toastMock.error).not.toHaveBeenCalled()
+})
+
+test('retrying Emaldo alone runs only emaldo and confirms success', async () => {
+  respond({})
+  const { screen } = await renderWithProviders(<Harness only="emaldo" />)
+  await click(screen)
+  await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_house_ok()))
+  expect(syncFn.mock.calls.map((c) => c[0])).toEqual([{ source: 'emaldo' }])
+})
+
+test('an explicit Emaldo retry does report not_configured', async () => {
+  respond({ emaldo: { outcome: 'failed', code: 'not_configured', upserted: 0 } })
+  const { screen } = await renderWithProviders(<Harness only="emaldo" />)
+  await click(screen)
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_house_failed(), {
+      description: integrationErrorMessage('not_configured', { source: 'emaldo' }),
+    }),
+  )
+})
+
+test('an Emaldo sync keeps the heading pending until it settles', async () => {
+  let release: (r: Result) => void = () => {}
+  syncFn.mockImplementation(
+    () =>
+      new Promise<Result>((resolve) => {
+        release = resolve
+      }),
+  )
+  function HouseHarness() {
+    const { syncSource, isPending, isPendingFor } = useSyncNow()
+    return (
+      <>
+        <button type="button" onClick={() => syncSource('emaldo')}>
+          house
+        </button>
+        <output data-testid="state">{`${isPending}/${isPendingFor('emaldo')}`}</output>
+      </>
+    )
+  }
+  const { screen } = await renderWithProviders(<HouseHarness />)
+  await screen.getByRole('button', { name: 'house' }).click()
+  await expect.element(screen.getByTestId('state')).toHaveTextContent('true/true')
+  release(OK)
   await expect.element(screen.getByTestId('state')).toHaveTextContent('false/false')
 })

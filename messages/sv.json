@@ -122,6 +122,8 @@
   "charging_sync_skoda_now": "Hämta bilens status",
   "charging_sync_skoda_ok": "Bilens status är uppdaterad",
   "charging_sync_skoda_failed": "Bilens status kunde inte hämtas",
+  "charging_sync_house_ok": "Husets energidata är uppdaterad",
+  "charging_sync_house_failed": "Husets energidata kunde inte hämtas",
   "charging_sync_prices_ok": "Elpriserna är uppdaterade",
   "charging_sync_skipped": "En synkning pågår redan",
   "charging_tariff_actions_for": "Åtgärder för perioden från {date}",
