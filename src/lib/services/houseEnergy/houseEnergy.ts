@@ -1,6 +1,6 @@
 import { millisecondsInHour, millisecondsInMinute } from 'date-fns/constants'
 import { and, asc, gte, lt, min } from 'drizzle-orm'
-import { db } from '~/lib/db'
+import { type DbOrTx, db } from '~/lib/db'
 import { HOUSE_BUCKET_KWH_MAX, houseEnergyReading } from '~/lib/db/schema'
 import { HouseEnergyDomainError } from './errors'
 
@@ -162,8 +162,11 @@ async function insertDay(day: { dayStart: Date; dayEnd: Date }, buckets: readonl
 }
 
 /** The readings in `[from, to)`, oldest first — a primary-key range scan. */
-export async function listReadings(range: { from: Date; to: Date }): Promise<HouseReading[]> {
-  return db
+export async function listReadings(
+  range: { from: Date; to: Date },
+  dbOrTx: DbOrTx = db,
+): Promise<HouseReading[]> {
+  return dbOrTx
     .select(readingColumns)
     .from(houseEnergyReading)
     .where(
@@ -176,8 +179,8 @@ export async function listReadings(range: { from: Date; to: Date }): Promise<Hou
 }
 
 /** The earliest stored bucket's start, or null with none. */
-export async function firstReadingAt(): Promise<Date | null> {
-  const [row] = await db
+export async function firstReadingAt(dbOrTx: DbOrTx = db): Promise<Date | null> {
+  const [row] = await dbOrTx
     .select({ first: min(houseEnergyReading.bucketStart) })
     .from(houseEnergyReading)
   return row?.first ?? null
