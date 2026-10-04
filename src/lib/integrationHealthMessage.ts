@@ -46,10 +46,16 @@ export function integrationErrorMessage(
   const source = integrationSourceName(options.source)
   switch (code) {
     case 'auth_failed':
-      // An expired key is the expected Škoda failure; say what fixes it.
-      return options.source === 'skoda'
-        ? m.integration_health_error_auth_failed_skoda({}, opts)
-        : m.integration_health_error_auth_failed({ source }, opts)
+      // An expired key is the expected Škoda failure; say what fixes it. A
+      // refused Emaldo login can also mean the app's id/secret rotated (ADR-0023).
+      switch (options.source) {
+        case 'skoda':
+          return m.integration_health_error_auth_failed_skoda({}, opts)
+        case 'emaldo':
+          return m.integration_health_error_auth_failed_emaldo({}, opts)
+        default:
+          return m.integration_health_error_auth_failed({ source }, opts)
+      }
     case 'forbidden':
       return m.integration_health_error_forbidden({ source }, opts)
     case 'rate_limited':
