@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm'
+import { readFileSync } from 'node:fs'
+import { eq, sql } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun, user } from '~/lib/db/schema'
@@ -16,6 +17,7 @@ import {
   getHealth,
   getLastSuccessStartedAt,
   listRecentRuns,
+  recordOutcome,
 } from '~/lib/services/integrationSync'
 import { addDays, stockholmDayBounds } from '~/lib/time/stockholm'
 import { insertSession } from '~test/fixtures/evCharging'
@@ -55,6 +57,12 @@ function syntheticDay(day: string, n = 3, kwh?: number): EmaldoDay {
     buckets: Array.from({ length: n }, (_, i) => bucket(new Date(startMs + i * 300_000), kwh)),
     droppedBuckets: day === TODAY ? 1 : 0,
   }
+}
+
+/** A synthetic day whose buckets all lack SoC. */
+function withoutSoc(day: string): EmaldoDay {
+  const d = syntheticDay(day)
+  return { ...d, buckets: d.buckets.map((b) => ({ ...b, batterySocPct: null })) }
 }
 
 // In-memory Emaldo: offset → day relative to TODAY, each day scriptable.
@@ -299,7 +307,12 @@ test('an empty backfill day keeps its stored readings and still counts as done',
 
   const result = await run(client)
 
-  expect(result).toMatchObject({ outcome: 'ok', emptyDays: 1, syncedUntil: startOf(TODAY) })
+  expect(result).toMatchObject({
+    outcome: 'ok',
+    emptyDays: 1,
+    bucketsWithoutSoc: 0,
+    syncedUntil: startOf(TODAY),
+  })
   expect(await countOn(empty)).toBe(4)
 })
 
@@ -415,6 +428,22 @@ test('a failure part-way through the backfill keeps the stored days as the water
   const next = fakeEmaldo()
   await run(next.client)
   expect(next.requested.slice(2)).toEqual(['2026-03-27', '2026-03-28', '2026-03-29', '2026-03-30'])
+})
+
+test('a failed run still reports SoC gaps for the days that landed', async () => {
+  await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30
+  const { client } = fakeEmaldo({
+    [YESTERDAY]: withoutSoc,
+    [TODAY]: withoutSoc,
+    '2026-03-24': withoutSoc,
+    '2026-03-27': () => {
+      throw new EmaldoError('unreachable', 'stats', 503)
+    },
+  })
+  const result = await run(client)
+  expect(result).toMatchObject({ outcome: 'failed', bucketsWithoutSoc: 9 }) // 3 stored days × 3
+  const [row] = await db.select().from(integrationSyncRun)
+  expect(row.timings).toMatchObject({ bucketsWithoutSoc: 9 })
 })
 
 test('a call that outlives the deadline fails as unreachable', async () => {
@@ -603,6 +632,8 @@ test('stored SoC lands with the readings, and buckets without it are counted', a
   const { client } = fakeEmaldo({ [YESTERDAY]: withGap, [TODAY]: withGap })
   const result = await run(client)
   expect(result.bucketsWithoutSoc).toBe(2)
+  const [row] = await db.select().from(integrationSyncRun)
+  expect(row.timings).toMatchObject({ bucketsWithoutSoc: 2 })
   const stored = await listReadings({ from: startOf(YESTERDAY), to: endOf(YESTERDAY) })
   expect(stored.map((r) => r.batterySocPct)).toEqual([12.5, null, 50])
 })
@@ -619,18 +650,64 @@ test('buckets without SoC on a rejected day are not counted', async () => {
   expect(result.bucketsWithoutSoc).toBe(0)
 })
 
-test('a cleared watermark re-fetches the history (migration 0015)', async () => {
-  await sessionOn('2026-03-28')
-  await run(fakeEmaldo().client) // backfills from 2026-03-21
-  expect(await getLastSuccessStartedAt('emaldo')).toEqual(endOf(YESTERDAY))
-  // What migration 0015 does on prod.
-  await db
-    .update(integrationSync)
-    .set({ lastSuccessStartedAt: null, runningSince: null, leaseUntil: null, leaseToken: null })
+/** Migration 0015, run as written: the test can't drift from what prod runs. */
+const resetForSoc = () =>
+  db.execute(
+    sql.raw(
+      readFileSync(
+        new URL('../../../drizzle/0015_emaldo_refetch_battery_soc.sql', import.meta.url),
+        'utf8',
+      ),
+    ),
+  )
+
+test('migration 0015 makes the next run re-fetch the history and fill SoC', async () => {
+  await sessionOn('2026-03-28') // backfill from 2026-03-21
+  const old = { from: startOf('2026-03-21'), to: endOf('2026-03-21') }
+  const first = await run(fakeEmaldo({ '2026-03-21': withoutSoc }).client)
+  expect(first.bucketsWithoutSoc).toBe(3)
+  expect((await listReadings(old)).map((r) => r.batterySocPct)).toEqual([null, null, null])
+  const [before] = await db
+    .select()
+    .from(integrationSync)
     .where(eq(integrationSync.source, 'emaldo'))
-  const { client, requested } = fakeEmaldo()
-  const result = await run(client)
-  expect(result.outcome).toBe('ok')
-  expect(requested).toContain('2026-03-21')
+
+  await resetForSoc()
+
+  const [after] = await db
+    .select()
+    .from(integrationSync)
+    .where(eq(integrationSync.source, 'emaldo'))
+  expect(after.lastSuccessStartedAt).toBeNull()
+  expect(after.lastSuccessAt).toEqual(before.lastSuccessAt) // health is untouched
+  const second = await run(fakeEmaldo().client) // synthetic days carry SoC 50
+  expect(second).toMatchObject({
+    outcome: 'ok',
+    bucketsWithoutSoc: 0,
+    earliestReplacedDay: '2026-03-21',
+  })
+  expect((await listReadings(old)).map((r) => r.batterySocPct)).toEqual([50, 50, 50])
   expect(await getLastSuccessStartedAt('emaldo')).toEqual(endOf(YESTERDAY))
+})
+
+test('a run in flight when migration 0015 commits cannot write the watermark back', async () => {
+  await run(fakeEmaldo().client) // a stored watermark
+  const startedAt = new Date(NOW.getTime() - 60_000)
+  const inFlight = await beginAttempt('emaldo', { now: startedAt })
+  if (!inFlight.acquired) throw new Error('expected the lease')
+
+  await resetForSoc()
+
+  await recordOutcome(
+    'emaldo',
+    {
+      ok: true,
+      stats: { since: null, pages: 0, sessionsSeen: 0, upserted: 0, voided: 0, timings: {} },
+      syncedUntil: endOf(YESTERDAY),
+    },
+    { attemptId: inFlight.attemptId, trigger: 'cron', startedAt, now: NOW },
+  )
+  expect(await getLastSuccessStartedAt('emaldo')).toBeNull()
+  // The lease is free: the next run proceeds.
+  expect((await run(fakeEmaldo().client)).outcome).toBe('ok')
 })
