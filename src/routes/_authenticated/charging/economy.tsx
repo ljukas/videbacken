@@ -5,6 +5,7 @@ import { useCallback, useId } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
+import { EconomyGridOnlyLead } from '~/components/evCharging/EconomyGridOnlyLead'
 import { EconomyMonthlyChart } from '~/components/evCharging/EconomyMonthlyChart'
 import { EconomySessionTable } from '~/components/evCharging/EconomySessionTable'
 import { EconomyTiles } from '~/components/evCharging/EconomyTiles'
@@ -130,6 +131,7 @@ function EconomyPage() {
               className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}
               aria-busy={stale}
             >
+              <EconomyGridOnlyLead />
               <EconomyTiles tiles={economy.tiles} />
               <section aria-labelledby={sekHeadingId}>
                 <Card>
