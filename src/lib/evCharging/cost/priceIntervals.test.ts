@@ -432,6 +432,147 @@ describe('priceIntervals with an energy mix (ADR-0023)', () => {
   })
 })
 
+describe('priceIntervals with an energy mix: overlap, coverage and days', () => {
+  // 2026-09-28 CEST: 08:00Z = slot 40 (4.0 SEK/kWh ex VAT), 08:15Z = slot 41 (4.1).
+  const slots = daySlots('2026-09-28', 15, (i) => i / 10)
+  const day = new SlotIndex(slots)
+  const AT = '2026-09-28T08:00Z'
+  const NEWER_FEES_SEK = ((FEES_ORE + 100) / 100) * 1.25
+  const tomorrowsTariff: TariffPeriod = {
+    ...TARIFF,
+    validFrom: '2026-09-29',
+    gridTransferOre: 135.6,
+  }
+
+  /** A mixed piece over [start, end), its kWh the sum of the parts. */
+  function span(startIso: string, endIso: string, parts: Partial<PieceMix>): EnergyInterval {
+    const p = piece(startIso, parts)
+    return { ...p, endMs: utc(endIso) }
+  }
+
+  test('a piece over two slots values its solar by each slot’s overlap', () => {
+    const t = priceIntervals([span(AT, '2026-09-28T08:30Z', { solarKwh: 4 })], day, [TARIFF])
+    expect(t.solarValueSek).toBeCloseTo(2 * 4.0 + 2 * 4.1)
+    expect(t.solarPricedKwh).toBeCloseTo(4)
+    expect(t.solarUnpricedKwh).toBe(0)
+  })
+
+  test('half a piece without a slot: half its grid unpriced, half its solar unvalued, the battery still priced', () => {
+    const firstQuarter = new SlotIndex(slots.filter((s) => s.startMs === utc(AT)))
+    const t = priceIntervals(
+      [
+        span(AT, '2026-09-28T08:30Z', {
+          gridKwh: 2,
+          solarKwh: 2,
+          batteryGridKwh: 1,
+          batteryGridSpotSek: 0.3,
+        }),
+      ],
+      firstQuarter,
+      [TARIFF],
+    )
+    expect(t.noPriceKwh).toBeCloseTo(1)
+    expect(t.fullKwh).toBeCloseTo(2) // 1 grid + 1 battery
+    expect(t.spotSek).toBeCloseTo((1 * 4.0 + 1 * 0.3) * 1.25)
+    expect(t.solarPricedKwh).toBeCloseTo(1)
+    expect(t.solarUnpricedKwh).toBeCloseTo(1)
+    expect(t.solarValueSek).toBeCloseTo(4.0)
+  })
+
+  test('battery-from-grid fees follow the Stockholm day the piece starts, without any slot', () => {
+    const battery = { batteryGridKwh: 1, batteryGridSpotSek: 0.3 }
+    const tariffs = [TARIFF, tomorrowsTariff]
+    // Local 23:45–00:00 on the 28th: the 28th's fees, though it ends on the 29th.
+    const late = priceIntervals(
+      [span('2026-09-28T21:45Z', '2026-09-28T22:00Z', battery)],
+      new SlotIndex([]),
+      tariffs,
+    )
+    expect(late.feesSek).toBeCloseTo(FEES_SEK)
+    // Local 00:15 on the 29th (still the 28th in UTC): the 29th's fees.
+    const early = priceIntervals([piece('2026-09-28T22:15Z', battery)], new SlotIndex([]), tariffs)
+    expect(early.feesSek).toBeCloseTo(NEWER_FEES_SEK)
+    expect(early).toMatchObject({ fullKwh: 1, noPriceKwh: 0 })
+  })
+
+  test('the average divides cash by priced plus own solar energy, not by all of it', () => {
+    const unpriced = priceIntervals(
+      [piece(AT, { gridKwh: 1, solarKwh: 2, batteryUnpricedKwh: 1 })],
+      day,
+      [TARIFF],
+    )
+    expect(unpriced).toMatchObject({ kwh: 4, gridKwh: 2, noPriceKwh: 1 })
+    expect(avgOre(unpriced)).toBeCloseTo((unpriced.totalSek / 3) * 100)
+    const batterySolar = priceIntervals(
+      [piece(AT, { gridKwh: 1, batterySolarKwh: 1, batterySolarSpotSek: 0.5 })],
+      day,
+      [TARIFF],
+    )
+    expect(avgOre(batterySolar)).toBeCloseTo((batterySolar.totalSek / 2) * 100)
+  })
+
+  test('a zero-length mixed piece leaves grid unpriced and solar unvalued; its battery is still priced', () => {
+    const at = utc(AT)
+    const t = priceIntervals(
+      [
+        {
+          startMs: at,
+          endMs: at,
+          kwh: 3,
+          gridShare: 1,
+          mix: { ...NO_MIX, gridKwh: 1, solarKwh: 1, batteryGridKwh: 1, batteryGridSpotSek: 0.3 },
+        },
+      ],
+      day,
+      [TARIFF],
+    )
+    expect(t).toMatchObject({
+      noPriceKwh: 1,
+      solarUnpricedKwh: 1,
+      solarPricedKwh: 0,
+      solarValueSek: 0,
+    })
+    expect(t.fullKwh).toBeCloseTo(1)
+  })
+
+  test('without a tariff every bought part is no-tariff energy', () => {
+    const t = priceIntervals(
+      [piece(AT, { gridKwh: 1, noHouseDataKwh: 1, batteryGridKwh: 1, batteryGridSpotSek: 0.3 })],
+      day,
+      [],
+    )
+    expect(t).toMatchObject({ gridKwh: 3, noTariffKwh: 3, fullKwh: 0, noPriceKwh: 0, totalSek: 0 })
+  })
+
+  test('negative stored battery spots are real prices', () => {
+    const t = priceIntervals(
+      [
+        piece(AT, {
+          batteryGridKwh: 1,
+          batteryGridSpotSek: -0.1,
+          batterySolarKwh: 1,
+          batterySolarSpotSek: -0.1,
+        }),
+      ],
+      day,
+      [TARIFF],
+    )
+    expect(t.spotSek).toBeCloseTo(-0.1 * 1.25)
+    expect(t.solarValueSek).toBeCloseTo(-0.1)
+  })
+
+  test('parts within float rounding of the kWh are accepted; a real mismatch is not', () => {
+    const p = piece(AT, { gridKwh: 1, solarKwh: 1 })
+    expect(() => priceIntervals([{ ...p, kwh: p.kwh + 1e-9 }], day, [TARIFF])).not.toThrow()
+    expect(() => priceIntervals([{ ...p, kwh: p.kwh + 1e-3 }], day, [TARIFF])).toThrow(RangeError)
+  })
+
+  test('the own-supply share never exceeds 1', () => {
+    expect(ownSupplyShare({ kwh: 1, solarKwh: 0.7, batteryKwh: 0.3000000001 })).toBe(1)
+    expect(ownSupplyShare({ kwh: 4, solarKwh: 0, batteryKwh: 1 })).toBeCloseTo(0.25)
+  })
+})
+
 describe('emptyTotals and mergeTotals', () => {
   test('empty totals are all zero', () => {
     expect(emptyTotals()).toEqual({
