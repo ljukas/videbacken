@@ -865,3 +865,46 @@ test('importVehicleRecords rejects an extra key and an out-of-range timestamp', 
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   }
 })
+
+test('syncNow with source emaldo runs only the house sync (not configured under VITEST)', async () => {
+  await signIn('admin')
+  const timings: Record<string, number> = {}
+  const result = await call(
+    evChargingRouter.syncNow,
+    { source: 'emaldo' },
+    { context: { ...baseContext(), timings } },
+  )
+  expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
+  for (const key of ['emaldoSyncMs', 'emaldoFetchMs', 'emaldoStoreMs'])
+    expect(typeof timings[key]).toBe('number')
+  const zaptec = await integrationSyncService.getHealth('zaptec', {
+    now: new Date(),
+    includeAdminDetail: false,
+  })
+  expect(zaptec.state).toBe('never_synced')
+})
+
+test('syncNow with source emaldo is forbidden for a non-admin user', async () => {
+  await signIn('user')
+  await expect(
+    call(evChargingRouter.syncNow, { source: 'emaldo' }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+})
+
+test('syncStatus and recentRuns take emaldo', async () => {
+  await signIn('admin')
+  await call(evChargingRouter.syncNow, { source: 'emaldo' }, { context: baseContext() })
+  const health = await call(
+    evChargingRouter.syncStatus,
+    { source: 'emaldo' },
+    { context: baseContext() },
+  )
+  expect(health).toMatchObject({ source: 'emaldo', state: 'not_configured' })
+  const runs = await call(
+    evChargingRouter.recentRuns,
+    { source: 'emaldo' },
+    { context: baseContext() },
+  )
+  expect(runs).toHaveLength(1)
+  expect(runs[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
+})
