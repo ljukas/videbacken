@@ -522,7 +522,8 @@ healthy. See [ADR-0022](./0022-live-vehicle-state-attribution.md) and the
 
 A running sync can report progress ("12 av 30 dagar") for its Datakällor tile. `runPulledSync` hands `execute` a
 `reportProgress(done, total)` that writes `integration_sync.progress_done` / `progress_total` **under the run's lease
-token** (a lost lease writes nothing), throttled to one write per second (the last always writes) and best effort (a
+token while the lease is unexpired** (an expired, taken-over or recorded lease writes nothing), throttled to one write
+per second (`done = total` always writes) and best effort (a
 failed write is a `warn`, never a failed run). `beginAttempt` and `recordOutcome` clear it; `getHealth` exposes it
 only while the lease is live, so a leftover is never shown — and no CHECK ties it to the lease, so a rollback's
 `recordOutcome` (which doesn't know the columns) can't fail. Emaldo and elpris report days; Zaptec and Škoda finish

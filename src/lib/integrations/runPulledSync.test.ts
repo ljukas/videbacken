@@ -1,6 +1,7 @@
+import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { user } from '~/lib/db/schema'
+import { integrationSync, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { IntegrationError } from '~/lib/effects/integrationError'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
@@ -345,35 +346,59 @@ test('reportProgress writes under the run’s lease and the outcome clears it', 
     )
   })
   expect(seen).toEqual([{ done: 1, total: 3 }])
-  expect((await getHealth('elpris', { now: T0, includeAdminDetail: false })).progress).toBeNull()
+  const [row] = await db.select().from(integrationSync).where(eq(integrationSync.source, 'elpris'))
+  expect(row.progressDone).toBeNull()
+  expect(row.progressTotal).toBeNull()
 })
 
 test('reportProgress normalizes: no write for total ≤ 0, done clamped to [0, total]', async () => {
   const spy = vi.spyOn(integrationSyncService, 'reportProgress')
   await run(async ({ reportProgress }) => {
     await reportProgress(0, 0)
+    await reportProgress(Number.NaN, 4)
+    await reportProgress(1, Number.POSITIVE_INFINITY)
     await reportProgress(-2, 4)
     await reportProgress(9, 4)
+    await reportProgress(1.9, 4.7)
   })
   expect(progressCalls(spy)).toEqual([
     { done: 0, total: 4 },
     { done: 4, total: 4 },
+    { done: 1, total: 4 },
   ])
 })
 
 test('reportProgress throttles to one write per second, but always writes done = total', async () => {
   const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  const cap = capturingLogger()
   await run(
     async ({ reportProgress }) => {
       for (let done = 1; done <= 5; done++) await reportProgress(done, 5)
     },
-    { now: stepClock(400) },
+    { now: stepClock(400), log: cap.log },
   )
-  // The clock steps 400 ms per now() call; a write needs ≥ 1 000 ms since the last.
-  const calls = progressCalls(spy)
-  expect(calls[0]).toEqual({ done: 1, total: 5 })
-  expect(calls.at(-1)).toEqual({ done: 5, total: 5 })
-  expect(calls.length).toBeLessThan(5)
+  // The clock steps 400 ms per now() call (startedAt is the first); a write needs ≥ 1 000 ms since the last.
+  expect(progressCalls(spy)).toEqual([
+    { done: 1, total: 5 },
+    { done: 4, total: 5 },
+    { done: 5, total: 5 },
+  ])
+  expect(cap.runLines()[0]).toMatchObject({ progressWrites: 3 })
+})
+
+test('a write exactly one interval after the last is not throttled', async () => {
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  await run(
+    async ({ reportProgress }) => {
+      for (let done = 1; done <= 3; done++) await reportProgress(done, 5)
+    },
+    { now: stepClock(1000) },
+  )
+  expect(progressCalls(spy)).toEqual([
+    { done: 1, total: 5 },
+    { done: 2, total: 5 },
+    { done: 3, total: 5 },
+  ])
 })
 
 test('a failing progress write is logged and never fails the run', async () => {

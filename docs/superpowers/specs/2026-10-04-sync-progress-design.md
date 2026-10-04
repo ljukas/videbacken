@@ -54,7 +54,7 @@ Transient state, overwritten in place; no history. `integration_sync_run` is unc
   lease must not inherit the dead run's bar).
 - `recordOutcome` — the update that clears the lease also clears progress.
 - **New** `reportProgress(source, attemptId, { done, total }, { now })`: one `UPDATE … SET progress_done,
-  progress_total WHERE source = $1 AND lease_token = $attemptId`. A lost lease (expired, taken over, or already
+  progress_total WHERE source = $1 AND lease_token = $attemptId AND lease_until > now`. A lost lease (expired, taken over, or already
   recorded) matches no row and writes nothing — a late write can never re-set a finished run's progress or touch a
   newer run's. Returns nothing.
 - `IntegrationHealth` gains `progress: { done: number; total: number } | null` — set only when `running` is true and

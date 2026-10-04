@@ -115,6 +115,7 @@ export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>):
 
     let lastProgressMs = Number.NEGATIVE_INFINITY
     const reportProgress = async (done: number, total: number) => {
+      if (!Number.isFinite(done) || !Number.isFinite(total)) return
       const t = Math.floor(total)
       if (!(t > 0)) return
       const d = Math.min(t, Math.max(0, Math.floor(done)))
