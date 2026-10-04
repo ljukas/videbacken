@@ -132,6 +132,7 @@ export async function runElprisSync(opts: {
         // a stored day is never "missing" again, so it would not re-trigger.
         run.deriveMs = await deriveAfterSync({
           source: 'elpris',
+          signal,
           fromDay: run.deriveFromDay,
           log,
           derive: opts.deps?.deriveFrom,
@@ -246,7 +247,10 @@ async function fetchMissingDays(
     run.importMs += performance.now() - importStart
     run.daysFetched++
     run.upserted += written
-    if (run.deriveFromDay === null || day < run.deriveFromDay) run.deriveFromDay = day
+    // Tomorrow's prices change no derived day (nothing after today has readings).
+    if (day <= today && (run.deriveFromDay === null || day < run.deriveFromDay)) {
+      run.deriveFromDay = day
+    }
   }
 
   if (missingRecent.length > 0) {

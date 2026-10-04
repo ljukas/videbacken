@@ -222,6 +222,8 @@ orchestrates it through services.
 - With no house readings at all, nothing is derived (sessions keep no mix rows and stay all-grid). Sessions before
   the first reading never get mix rows.
 - `pruneUncounted` drops the mix of every session no longer counted, whenever it ended.
+- Emaldo replaces yesterday and today on every run, so it derives from yesterday hourly: not change detection, but
+  idempotent. elpris storing only tomorrow's prices triggers nothing. A run past its deadline only queues its day.
 - The first derive in prod finds no checkpoint and rebuilds all history (≈ 0.3 s locally on the full history). A
   one-off re-derive script remains: `scripts/deriveEnergyMix.ts` (`bun --no-env-file`, explicit `DATABASE_URL`).
 

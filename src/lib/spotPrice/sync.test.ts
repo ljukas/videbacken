@@ -370,3 +370,37 @@ test('a failed derive never fails the elpris run', async () => {
   expect(result.outcome).toBe('ok')
   expect(typeof result.deriveMs).toBe('number')
 })
+
+test("a run storing only tomorrow's prices does not derive", async () => {
+  await run(fakeElpris({ publishedThrough: TODAY }).client, { deriveFrom: deriveSpy() })
+  const derive = deriveSpy()
+  const result = await run(fakeElpris({ publishedThrough: TOMORROW }).client, {
+    deriveFrom: derive,
+  })
+  expect(result.daysFetched).toBe(1)
+  expect(result.deriveFromDay).toBeNull()
+  expect(derive).not.toHaveBeenCalled()
+})
+
+test('a failing derive is warned about with the source elpris', async () => {
+  const lines: string[] = []
+  const log = createServerLogger({
+    write(chunk: string) {
+      lines.push(chunk)
+      return true
+    },
+  })
+  await run(fakeElpris({ publishedThrough: TOMORROW }).client, {
+    log,
+    deriveFrom: async () => {
+      throw new Error('derive bug')
+    },
+  })
+  const entries = lines
+    .flatMap((l) => l.split('\n'))
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
+  expect(entries.find((e) => e.msg === 'energy mix derive failed')).toMatchObject({
+    source: 'elpris',
+  })
+})

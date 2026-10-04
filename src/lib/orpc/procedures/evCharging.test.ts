@@ -409,6 +409,7 @@ test('syncNow records zaptec timing sub-timings when context.timings is present'
   expect(timings.zaptecSyncMs).toBeGreaterThanOrEqual(0)
   expect(timings.zaptecFetchMs).toBeGreaterThanOrEqual(0)
   expect(timings.zaptecImportMs).toBeGreaterThanOrEqual(0)
+  expect(typeof timings.zaptecDeriveMs).toBe('number')
 
   const priceTimings: Record<string, number> = {}
   await call(
@@ -418,6 +419,8 @@ test('syncNow records zaptec timing sub-timings when context.timings is present'
   )
   expect(priceTimings.elprisSyncMs).toBeGreaterThanOrEqual(0)
   expect(priceTimings.elprisFetchMs).toBeGreaterThanOrEqual(0)
+  expect(typeof priceTimings.elprisImportMs).toBe('number')
+  expect(typeof priceTimings.elprisDeriveMs).toBe('number')
 })
 
 test('patterns and timeline reject an unauthenticated caller', async () => {
@@ -875,7 +878,7 @@ test('syncNow with source emaldo runs only the house sync (not configured under 
     { context: { ...baseContext(), timings } },
   )
   expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
-  for (const key of ['emaldoSyncMs', 'emaldoFetchMs', 'emaldoStoreMs'])
+  for (const key of ['emaldoSyncMs', 'emaldoFetchMs', 'emaldoStoreMs', 'emaldoDeriveMs'])
     expect(typeof timings[key]).toBe('number')
   const zaptec = await integrationSyncService.getHealth('zaptec', {
     now: new Date(),

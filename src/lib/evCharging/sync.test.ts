@@ -968,3 +968,62 @@ test('the run row records an integer deriveMs timing', async () => {
   const [row] = await db.select({ timings: integrationSyncRun.timings }).from(integrationSyncRun)
   expect(Number.isInteger(row.timings.deriveMs)).toBe(true)
 })
+
+test('a moved start derives from the earlier of the old and new start, either way', async () => {
+  const derive = deriveSpy()
+  const end = new Date(T1.getTime() - DAY) // starts 2026-09-19T08:00Z
+  const { client, state } = fakeZaptec([session('s1', end)])
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  state.sessions = [session('s1', end, { startAt: new Date('2026-09-17T08:00:00Z') })]
+  const earlier = await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + HOUR),
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(earlier.deriveFromDay).toBe('2026-09-17')
+  state.sessions = [session('s1', end)]
+  const later = await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + 2 * HOUR),
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(later.deriveFromDay).toBe('2026-09-17')
+})
+
+test('a run that fails before storing anything does not derive', async () => {
+  const derive = deriveSpy()
+  const { client, state } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  state.failOnPage = 1
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(run.outcome).toBe('failed')
+  expect(run).toMatchObject({
+    deriveFromDay: null,
+    deriveMs: 0,
+    reattributeMs: 0,
+    reattributeChanged: 0,
+  })
+  expect(derive).not.toHaveBeenCalled()
+})
+
+test('a failed vehicle re-match still derives', async () => {
+  vi.spyOn(evChargingService, 'reattributeSessions').mockRejectedValueOnce(
+    new Error('re-match bug'),
+  )
+  const derive = deriveSpy()
+  const { client } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(run.outcome).toBe('ok')
+  expect(derive).toHaveBeenCalledTimes(1)
+})

@@ -120,3 +120,25 @@ test('no day: nothing is queued', async () => {
   })
   expect(queue).not.toHaveBeenCalled()
 })
+
+test('past the run deadline the day is only queued, not derived', async () => {
+  const queue = vi.fn(async (_day: string) => {})
+  const derive = vi.fn<typeof deriveFrom>()
+  const { log, warn } = fakeLog()
+  const deadline = new AbortController()
+  deadline.abort()
+  await deriveAfterSync({
+    source: 'zaptec',
+    fromDay: '2026-09-28',
+    log,
+    derive,
+    request: queue,
+    signal: deadline.signal,
+  })
+  expect(queue).toHaveBeenCalledWith('2026-09-28')
+  expect(derive).not.toHaveBeenCalled()
+  expect(warn).toHaveBeenCalledWith('energy mix derive deferred: run deadline reached', {
+    source: 'zaptec',
+    fromDay: '2026-09-28',
+  })
+})

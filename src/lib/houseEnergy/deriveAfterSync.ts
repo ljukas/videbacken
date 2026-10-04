@@ -30,6 +30,12 @@ export async function deriveAfterSync(a: {
   /** Queues the day (tests). */
   request?: (day: string) => Promise<void>
   budgetMs?: number
+  /**
+   * The run's deadline signal. Once it has fired, the day is only queued: the
+   * run is near its lease and the 300 s function limit, and the next derive
+   * covers the queue.
+   */
+  signal?: AbortSignal
 }): Promise<number> {
   if (a.fromDay === null) return 0
   const started = performance.now()
@@ -38,6 +44,13 @@ export async function deriveAfterSync(a: {
   } catch (error) {
     // The derive below still runs; only a later retry of this day is lost.
     a.log.warn('energy mix derive request failed', { source: a.source, fromDay: a.fromDay, error })
+  }
+  if (a.signal?.aborted) {
+    a.log.warn('energy mix derive deferred: run deadline reached', {
+      source: a.source,
+      fromDay: a.fromDay,
+    })
+    return Math.round(performance.now() - started)
   }
   try {
     await withDeadline(

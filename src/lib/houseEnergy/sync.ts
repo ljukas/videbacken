@@ -164,6 +164,7 @@ export async function runEmaldoSync(opts: {
         // earliest replaced day on — also when the run then fails part-way.
         run.deriveMs = await deriveAfterSync({
           source: SOURCE,
+          signal,
           fromDay: run.earliestReplacedDay,
           log,
           derive: opts.deps?.deriveFrom,

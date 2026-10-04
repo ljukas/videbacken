@@ -130,6 +130,7 @@ export async function runZaptecSync(opts: {
         // change is never detected as changed again. Best effort, own budget.
         run.deriveMs = await deriveAfterSync({
           source: SOURCE,
+          signal,
           fromDay: run.deriveFromDay,
           log,
           derive: opts.deps?.deriveFrom,

@@ -3,6 +3,7 @@ import { queue } from '~/lib/effects'
 import { type EmaldoClient, EmaldoError } from '~/lib/effects/emaldo'
 import { createServerLogger } from '~/lib/logger/server'
 import { addDays, stockholmDayBounds } from '~/lib/time/stockholm'
+import { insertSession } from '~test/fixtures/evCharging'
 import { syntheticDay } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
 import type { deriveFrom } from './derive'
@@ -83,4 +84,52 @@ test('a failed derive never fails the Emaldo run', async () => {
     throw new Error('derive bug')
   })
   expect((await run(fakeEmaldo(), derive)).outcome).toBe('ok')
+})
+
+test('derives from the exact earliest day replaced: yesterday on a plain run', async () => {
+  const derive = deriveSpy()
+  await run(fakeEmaldo(), derive)
+  expect(derive).toHaveBeenCalledTimes(1)
+  expect(derive).toHaveBeenCalledWith('2026-09-27', { log })
+})
+
+test('a backfill derives from its oldest stored day', async () => {
+  // A session on 09-20 starts the backfill 7 days earlier, on 09-13.
+  await insertSession({
+    startAt: new Date('2026-09-20T10:00:00Z'),
+    endAt: new Date('2026-09-20T12:00:00Z'),
+  })
+  const derive = deriveSpy()
+  await run(fakeEmaldo(), derive)
+  expect(derive).toHaveBeenCalledWith('2026-09-13', { log })
+})
+
+test('a failing derive is warned about with the source, and a failed run keeps its code', async () => {
+  const lines: string[] = []
+  const capture = createServerLogger({
+    write(chunk: string) {
+      lines.push(chunk)
+      return true
+    },
+  })
+  const result = await runEmaldoSync({
+    trigger: 'cron',
+    now: () => NOW,
+    deps: {
+      emaldo: fakeEmaldo({ failOnCall: 2 }),
+      log: capture,
+      sleep: async () => {},
+      deriveFrom: async () => {
+        throw new Error('derive bug')
+      },
+    },
+  })
+  expect(result).toMatchObject({ outcome: 'failed', code: 'unreachable' })
+  const entries = lines
+    .flatMap((l) => l.split('\n'))
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
+  expect(entries.find((e) => e.msg === 'energy mix derive failed')).toMatchObject({
+    source: 'emaldo',
+  })
 })
