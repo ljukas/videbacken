@@ -6,8 +6,11 @@ import {
   emptyTotals,
   isComplete,
   mergeTotals,
+  ownSupplyShare,
+  type PieceMix,
   priceIntervals,
   SlotIndex,
+  supplySplit,
   type TariffPeriod,
   tariffAt,
   unitPrice,
@@ -218,23 +221,6 @@ describe('tariffAt', () => {
   })
 })
 
-describe('mergeTotals', () => {
-  test('sums every field', () => {
-    const a = { ...emptyTotals(), kwh: 1, gridKwh: 1, fullKwh: 1, spotSek: 2, totalSek: 3 }
-    const b = { ...emptyTotals(), kwh: 2, gridKwh: 2, noPriceKwh: 2, feesSek: 1, totalSek: 1 }
-    expect(mergeTotals(a, b)).toEqual({
-      kwh: 3,
-      gridKwh: 3,
-      fullKwh: 1,
-      noPriceKwh: 2,
-      noTariffKwh: 0,
-      spotSek: 2,
-      feesSek: 1,
-      totalSek: 4,
-    })
-  })
-})
-
 describe('unitPrice', () => {
   test('is the slot’s spot and the tariff’s fees per kWh, both incl VAT', () => {
     const u = unitPrice(0.8, TARIFF)
@@ -244,5 +230,283 @@ describe('unitPrice', () => {
 
   test('keeps a negative spot price negative', () => {
     expect(unitPrice(-0.2, TARIFF).spotSek).toBeCloseTo(-0.25)
+  })
+})
+
+const FEES_SEK = (FEES_ORE / 100) * 1.25 // per kWh incl VAT
+const QUARTER = 15 * MIN
+const NO_MIX: PieceMix = {
+  gridKwh: 0,
+  solarKwh: 0,
+  batteryGridKwh: 0,
+  batteryGridSpotSek: null,
+  batterySolarKwh: 0,
+  batterySolarSpotSek: null,
+  batteryUnpricedKwh: 0,
+  noHouseDataKwh: 0,
+}
+
+/** A 15-min piece with a mix; its kWh is the sum of the parts (synthetic, never real readings). */
+function piece(startIso: string, parts: Partial<PieceMix>): EnergyInterval {
+  const mix = { ...NO_MIX, ...parts }
+  const kwh =
+    mix.gridKwh +
+    mix.solarKwh +
+    mix.batteryGridKwh +
+    mix.batterySolarKwh +
+    mix.batteryUnpricedKwh +
+    mix.noHouseDataKwh
+  const startMs = utc(startIso)
+  return { startMs, endMs: startMs + QUARTER, kwh, gridShare: 1, mix }
+}
+
+// mulberry32: exact 32-bit integer steps, so the sequence is stable.
+function mulberry32(start: number) {
+  let seed = start
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let x = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x
+    return ((x ^ (x >>> 14)) >>> 0) / 2 ** 32
+  }
+}
+
+describe('priceIntervals with an energy mix (ADR-0023)', () => {
+  // 2026-09-28 CEST: 08:00Z = local 10:00 = slot 40, 4.0 SEK/kWh ex VAT.
+  const day = new SlotIndex(daySlots('2026-09-28', 15, (i) => i / 10))
+  const AT = '2026-09-28T08:00Z'
+
+  test('grid and no-house-data energy are priced at the slot exactly like all-grid energy', () => {
+    const t = priceIntervals([piece(AT, { gridKwh: 1, noHouseDataKwh: 0.5 })], day, [TARIFF])
+    const plain = priceIntervals([iv(AT, '2026-09-28T08:15Z', 1.5)], day, [TARIFF])
+    expect(t).toMatchObject({
+      kwh: 1.5,
+      gridKwh: 1.5,
+      noHouseDataKwh: 0.5,
+      solarKwh: 0,
+      batteryKwh: 0,
+    })
+    expect(t.spotSek).toBeCloseTo(1.5 * 4.0 * 1.25)
+    expect(t.feesSek).toBeCloseTo(1.5 * FEES_SEK)
+    expect(t.totalSek).toBeCloseTo(plain.totalSek, 9)
+    expect(isComplete(t)).toBe(true)
+  })
+
+  test('own solar costs 0 kr and is valued at the slot spot, ex VAT and fees', () => {
+    const t = priceIntervals([piece(AT, { gridKwh: 1, solarKwh: 3 })], day, [TARIFF])
+    expect(t).toMatchObject({
+      kwh: 4,
+      gridKwh: 1,
+      solarKwh: 3,
+      solarPricedKwh: 3,
+      solarUnpricedKwh: 0,
+    })
+    expect(t.fullKwh).toBeCloseTo(1)
+    expect(t.totalSek).toBeCloseTo(4.0 * 1.25 + FEES_SEK)
+    expect(t.solarValueSek).toBeCloseTo(3 * 4.0)
+    expect(isComplete(t)).toBe(true)
+    // The average is the cash cost per charged kWh, own solar included at 0 kr.
+    expect(avgOre(t)).toBeCloseTo((t.totalSek / 4) * 100)
+  })
+
+  test('battery energy from the grid is priced at its stored spot plus the fees of the day it is used', () => {
+    const newer: TariffPeriod = { ...TARIFF, validFrom: '2026-09-28', gridTransferOre: 135.6 }
+    const t = priceIntervals([piece(AT, { batteryGridKwh: 2, batteryGridSpotSek: 0.3 })], day, [
+      TARIFF,
+      newer,
+    ])
+    expect(t).toMatchObject({ kwh: 2, gridKwh: 2, batteryKwh: 2, solarKwh: 0 })
+    expect(t.spotSek).toBeCloseTo(2 * 0.3 * 1.25) // the stored spot, not the slot's 4.0
+    expect(t.feesSek).toBeCloseTo(2 * ((FEES_ORE + 100) / 100) * 1.25) // the use day's fees
+    expect(isComplete(t)).toBe(true)
+  })
+
+  test('battery energy from solar costs 0 kr and is valued at its stored spot', () => {
+    const t = priceIntervals([piece(AT, { batterySolarKwh: 1, batterySolarSpotSek: 0.7 })], day, [
+      TARIFF,
+    ])
+    expect(t).toMatchObject({
+      kwh: 1,
+      gridKwh: 0,
+      batteryKwh: 1,
+      solarKwh: 0,
+      totalSek: 0,
+      solarPricedKwh: 1,
+      solarUnpricedKwh: 0,
+    })
+    expect(t.solarValueSek).toBeCloseTo(0.7)
+    expect(isComplete(t)).toBe(true)
+    expect(avgOre(t)).toBeNull()
+  })
+
+  test('battery energy of unknown price is no-price energy, so the total is a minimum', () => {
+    const t = priceIntervals([piece(AT, { gridKwh: 1, batteryUnpricedKwh: 0.5 })], day, [TARIFF])
+    expect(t).toMatchObject({ gridKwh: 1.5, batteryKwh: 0.5, noPriceKwh: 0.5 })
+    expect(isComplete(t)).toBe(false)
+  })
+
+  test('a missing slot price leaves grid unpriced and solar unvalued; stored battery spots still apply', () => {
+    const t = priceIntervals(
+      [
+        piece(AT, {
+          gridKwh: 1,
+          solarKwh: 1,
+          batteryGridKwh: 1,
+          batteryGridSpotSek: 0.5,
+          batterySolarKwh: 1,
+          batterySolarSpotSek: 0.2,
+        }),
+      ],
+      new SlotIndex([]),
+      [TARIFF],
+    )
+    expect(t.noPriceKwh).toBeCloseTo(1)
+    expect(t.fullKwh).toBeCloseTo(1)
+    expect(t.spotSek).toBeCloseTo(0.5 * 1.25)
+    expect(t.solarUnpricedKwh).toBeCloseTo(1)
+    expect(t.solarPricedKwh).toBeCloseTo(1)
+    expect(t.solarValueSek).toBeCloseTo(0.2)
+    expect(isComplete(t)).toBe(false)
+  })
+
+  test('a battery part with kWh but no stored spot is never priced or valued at 0', () => {
+    const t = priceIntervals([piece(AT, { batteryGridKwh: 1, batterySolarKwh: 1 })], day, [TARIFF])
+    expect(t).toMatchObject({ noPriceKwh: 1, solarUnpricedKwh: 1, solarPricedKwh: 0, totalSek: 0 })
+    expect(isComplete(t)).toBe(false)
+  })
+
+  test('no tariff on the day of use leaves battery-from-grid as no-tariff', () => {
+    const t = priceIntervals([piece(AT, { batteryGridKwh: 1, batteryGridSpotSek: 0.3 })], day, [
+      { ...TARIFF, validFrom: '2026-10-01' },
+    ])
+    expect(t).toMatchObject({ noTariffKwh: 1, fullKwh: 0, totalSek: 0 })
+  })
+
+  test('a negative slot spot makes own solar worth less than nothing (export would have cost)', () => {
+    const negative = new SlotIndex(daySlots('2026-09-28', 15, () => -0.2))
+    const t = priceIntervals([piece(AT, { solarKwh: 2 })], negative, [TARIFF])
+    expect(t.solarValueSek).toBeCloseTo(-0.4)
+    expect(t.totalSek).toBe(0)
+  })
+
+  test('conserves kWh: priced + missing = bought, and bought + own solar = all', () => {
+    const rand = mulberry32(7)
+    const slots = new SlotIndex([
+      ...daySlots('2026-09-28', 15, (i) => i / 20).filter((_, i) => i < 50 || i > 60),
+      ...daySlots('2026-09-29', 15, () => 0.8),
+    ])
+    const base = utc('2026-09-27T22:00Z')
+    let batterySolar = 0
+    let solarOrigin = 0
+    const pieces = Array.from({ length: 150 }, () => {
+      const parts = {
+        gridKwh: rand(),
+        solarKwh: rand(),
+        batteryGridKwh: rand(),
+        batteryGridSpotSek: rand(),
+        batterySolarKwh: rand(),
+        batterySolarSpotSek: rand() < 0.1 ? null : rand(),
+        batteryUnpricedKwh: rand() / 10,
+        noHouseDataKwh: rand() / 5,
+      }
+      batterySolar += parts.batterySolarKwh
+      solarOrigin += parts.solarKwh + parts.batterySolarKwh
+      const p = piece(new Date(base).toISOString(), parts)
+      const offset = Math.floor(rand() * 46 * 4) * QUARTER
+      return { ...p, startMs: p.startMs + offset, endMs: p.endMs + offset }
+    })
+    const t = priceIntervals(pieces, slots, [{ ...TARIFF, validFrom: '2026-09-29' }])
+    expect(t.fullKwh + t.noPriceKwh + t.noTariffKwh).toBeCloseTo(t.gridKwh, 9)
+    expect(t.gridKwh + t.solarKwh + batterySolar).toBeCloseTo(t.kwh, 9)
+    expect(t.solarPricedKwh + t.solarUnpricedKwh).toBeCloseTo(solarOrigin, 9)
+  })
+
+  test.each([
+    ['a mix with gridShare below 1', { ...piece(AT, { gridKwh: 1 }), gridShare: 0.5 }],
+    ['a negative mix part', piece(AT, { gridKwh: 2, solarKwh: -1 })],
+    ['parts that do not sum to the kWh', { ...piece(AT, { gridKwh: 1 }), kwh: 1.1 }],
+    ['a NaN stored spot', piece(AT, { batteryGridKwh: 1, batteryGridSpotSek: Number.NaN })],
+    ['an infinite part', piece(AT, { solarKwh: Number.POSITIVE_INFINITY })],
+  ])('rejects %s', (_, bad) => {
+    expect(() => priceIntervals([bad], day, [TARIFF])).toThrow(RangeError)
+  })
+})
+
+describe('emptyTotals and mergeTotals', () => {
+  test('empty totals are all zero', () => {
+    expect(emptyTotals()).toEqual({
+      kwh: 0,
+      gridKwh: 0,
+      fullKwh: 0,
+      noPriceKwh: 0,
+      noTariffKwh: 0,
+      spotSek: 0,
+      feesSek: 0,
+      totalSek: 0,
+      solarKwh: 0,
+      batteryKwh: 0,
+      noHouseDataKwh: 0,
+      solarValueSek: 0,
+      solarPricedKwh: 0,
+      solarUnpricedKwh: 0,
+    })
+  })
+
+  test('sums every field', () => {
+    const a = {
+      ...emptyTotals(),
+      kwh: 1,
+      gridKwh: 1,
+      fullKwh: 1,
+      spotSek: 2,
+      totalSek: 3,
+      solarKwh: 1,
+      solarValueSek: 0.5,
+      solarPricedKwh: 1,
+    }
+    const b = {
+      ...emptyTotals(),
+      kwh: 2,
+      gridKwh: 2,
+      noPriceKwh: 2,
+      feesSek: 1,
+      totalSek: 1,
+      batteryKwh: 2,
+      noHouseDataKwh: 1,
+      solarValueSek: 0.25,
+      solarUnpricedKwh: 2,
+    }
+    expect(mergeTotals(a, b)).toEqual({
+      kwh: 3,
+      gridKwh: 3,
+      fullKwh: 1,
+      noPriceKwh: 2,
+      noTariffKwh: 0,
+      spotSek: 2,
+      feesSek: 1,
+      totalSek: 4,
+      solarKwh: 1,
+      batteryKwh: 2,
+      noHouseDataKwh: 1,
+      solarValueSek: 0.75,
+      solarPricedKwh: 1,
+      solarUnpricedKwh: 2,
+    })
+  })
+})
+
+describe('own supply', () => {
+  test('the share from own solar and the battery, null without energy', () => {
+    expect(ownSupplyShare({ kwh: 10, solarKwh: 3, batteryKwh: 1.4 })).toBeCloseTo(0.44)
+    expect(ownSupplyShare({ kwh: 0, solarKwh: 0, batteryKwh: 0 })).toBeNull()
+  })
+
+  test('the bar split: grid is the rest (incl. energy without house data), never negative', () => {
+    expect(supplySplit({ kwh: 10, solarKwh: 3, batteryKwh: 1 })).toEqual({
+      gridKwh: 6,
+      solarKwh: 3,
+      batteryKwh: 1,
+    })
+    expect(supplySplit({ kwh: 1, solarKwh: 0.7, batteryKwh: 0.3000000001 }).gridKwh).toBe(0)
   })
 })
