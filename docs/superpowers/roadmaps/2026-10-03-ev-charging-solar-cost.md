@@ -10,6 +10,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 |---|---|---|---|---|---|
 | 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | checkpoint passed | 2026-10-03: 288/288 + 276/276 buckets, 0 mismatches (11 requests, 1 login) |
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
+| 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | — | in progress | — |
 | 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | — | not started | — |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | not started | — |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
@@ -52,8 +53,14 @@ Each must pass, with the result recorded in the table, before the next step star
    - Emaldo health is `ok`, and Vercel's Cron Jobs list shows `/api/cron/emaldo-sync`.
    - A read-only SELECT on prod shows the daily energy balance within ≈2 % for a handful of real days.
    - `battery_charge_ac`'s meaning is settled from real data, recorded in the spec.
+2b. **After step 2b (prod).**
+   - The re-fetch is done: the watermark is back at the end of yesterday, with every run `ok`.
+   - A read-only SELECT shows `battery_soc_pct` on ≥ 99 % of the buckets of every day since the first reading, and
+     two probe days (`data/private/emaldo/data/*.level.json`) match their stored SoC exactly.
+   - The energy columns of a handful of days are unchanged from before the re-fetch (daily sums).
 3. **After step 3 (prod).**
-   - `η` is set from the measured history and looks plausible (≈0.85–0.95).
+   - `C` is set from the measured history and looks plausible (≈7–9 kWh per 100 %), and the pool stays at or under
+     the measured SoC.
    - A read-only SELECT of the derived mix for the seven probe sessions (`data/private/emaldo/PROBE-NOTES.md`)
      lands near the probe's proportional column. Shaped sessions may be a few points higher, and nights with
      grid-charged battery show battery-grid kWh.
@@ -94,3 +101,9 @@ Each must pass, with the result recorded in the table, before the next step star
     In the cold months far less comes out of the battery than went in (standby or heating losses, not round trip).
     Step 3's checkpoint expects η ≈ 0.85–0.95; the all-history measure only just meets it. Decide in step 3 whether
     η is measured over all history (as the spec says) or the winter losses need their own handling.
+- 2026-10-04: #72 merged. Before step 3, checkpoint 2's winter η (0.57 vs 0.92 from March) showed the planned pool
+  would drift: one η and no upper bound left ≈109 kWh of phantom winter-grid energy in the pool by March, draining
+  ≈10–25 kWh a month. A probe found Emaldo's SoC series (`power-level/day`, 5-min integer %, history back to January).
+  Owner decision: anchor the pool to SoC. New **step 2b** syncs SoC; spec decision 7 and ADR-0023's amendment
+  record it. **Step 3's plan predates this**: its Task 0 must replace `ROUND_TRIP_EFFICIENCY` / the η checkpoint
+  with the capacity `C` and the SoC cap (spec "Derivation" 3) before building.

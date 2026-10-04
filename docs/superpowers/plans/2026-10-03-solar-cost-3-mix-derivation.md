@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **⚠ Amended 2026-10-04 (step 2b), revise before building.** The battery pool no longer uses a round-trip
+> efficiency. Inflows enter at full kWh, and after each bucket with a known `battery_soc_pct` the pool is capped at
+> `SoC / 100 × C`, keeping spot sums (spec "Derivation" 3, decision 7; ADR-0023 amendment). In Task 0, replace
+> `ROUND_TRIP_EFFICIENCY`, `measureRoundTripEfficiency` and the η checkpoint column with the capacity `C`
+> (measured: Σ discharge ÷ Σ SoC drop / 100 over discharge-only buckets), settle from data whether a row's SoC is
+> its bucket's start or end state, and rewrite the affected pool, service, derive and script tasks.
+
 **Goal:** For every counted charging session, derive and store (money-free) how each 15-minute slot was supplied:
 grid, solar, battery-from-grid (with the average spot it was bought at), battery-from-solar (with the average spot it
 would have sold for), battery-unpriced, and no-house-data. Re-derive automatically after the Emaldo, Zaptec and elpris

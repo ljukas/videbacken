@@ -25,7 +25,8 @@ worth** (the export income given up).
 | 3 | **Proportional split**: the car gets the same supply mix as the whole house in each 5-minute step. |
 | 4 | **Derive at sync, price on read**: the sync stores a money-free mix; kronor stay on read (ADR-0020). |
 | 5 | **Economy page stays grid-only** for now and is labelled so; solar-aware economy is a later phase. |
-| 6 | Built as five PRs, one per session, steered by the roadmap. |
+| 6 | Built as five PRs, one per session, steered by the roadmap (plus step 2b, added 2026-10-04). |
+| 7 | **The pool follows the battery's state of charge** (2026-10-04, after checkpoint 2): inflows enter at their full kWh, and after each bucket the pool is trimmed to the measured SoC, keeping its cost. A single round-trip efficiency is gone: losses vary by season (≈0.57 in Jan–Feb, ≈0.92–0.99 from March), and an unbounded pool kept ≈100 kWh of phantom winter-grid energy into the summer. |
 
 ## What the API does (live probe, 2026-10-03)
 
@@ -55,6 +56,11 @@ Local probe notes and a working TS client: `data/private/emaldo/` (git-excluded;
 - **Gaps**: rows can be missing (one 95-min hole, identical across all four series). Never assume 288. The full
   history (checkpoint 2) has 8 gaps from 50 min to 9.4 h, one of them across a whole sunny afternoon.
 - **Today** is partial and its newest bucket is still filling → drop the newest bucket of offset 0.
+- **State of charge** (probe 2026-10-04): `/bmt/stats/battery/power-level/day/` (same body as the others, no extra
+  fields) answers the same day shape, rows `[minute, percent]`: integer SoC % every 5 minutes, back to at least
+  2026-01-21 (≈80 ms a call). The battery's own `state` column is a mode flag (15/17), not SoC. Fitting ΔSoC
+  against the flows on four days: ≈11 % per kWh, so ≈8.5–9 kWh delivered per 100 % in summer and ≈7 kWh in winter,
+  with winter charging losing ≈25–35 %. `b-sensor` returns no capacity.
 - History reaches far past the charger's installation (2026-01-27); ≈1100 days back returns empty, not an error.
 - Daily energy balance (import + solar + discharge ≈ load + export + charge) holds within ≈1.4 %. Over the full
   history (checkpoint 2): ±2 % on 225 of 257 days, with a small negative bias on low-load summer days.
@@ -73,6 +79,9 @@ All tables `.enableRLS()`, timestamps `timestamptz`, server-only (no raw rows to
 - kWh, each `>= 0`: `grid_import_kwh`, `grid_export_kwh`, `solar_kwh` (sum of all mppt strings + third party),
   `load_kwh`, `battery_discharge_kwh`, `battery_charge_solar_kwh`, `battery_charge_grid_kwh`,
   `battery_charge_ac_kwh`.
+- `battery_soc_pct` (step 2b): the battery's state of charge, 0–100, for the row's minute as Emaldo reports it;
+  null when the SoC series lacks that minute. Whether it is the bucket's start or end state is settled from data in
+  step 3.
 - Written per Stockholm day: delete the day's range and insert, in one transaction (like `spot_price.replaceDay`).
 
 **`ev_charge_energy_mix`**: one row per charging session × 15-minute slot.
@@ -87,6 +96,8 @@ All tables `.enableRLS()`, timestamps `timestamptz`, server-only (no raw rows to
 - `day` (date, PK), `stored_kwh`, `grid_kwh`, `grid_spot_sek_sum`, `solar_kwh`, `solar_spot_sek_sum`,
   `unpriced_kwh`.
 - A re-derive from day D starts from D−1's row, or an empty pool if there's none.
+- Each row stores the capacity constant it was computed with (step 3); a changed constant rebuilds from the first
+  reading.
 
 The integration source list gains `emaldo` (CHECK constraints on `integration_sync` / `integration_sync_run`).
 
@@ -117,6 +128,9 @@ The integration source list gains `emaldo` (CHECK constraints on `integration_sy
 - **Cron** `/api/cron/emaldo-sync` at `45 * * * *`: after Zaptec's `:00`, clear of Škoda's `:07/:22/:37/:52`.
 - **Sync now** on `/charging` also runs Emaldo. The health alert lists Emaldo like the other sources, with
   sv/en messages per error code.
+- **SoC** (step 2b) is a fifth series fetched with the other four. It never gates a bucket: a minute missing from it,
+  or a value outside 0–100, stores null. Step 2b's migration clears the Emaldo watermark once, so the next runs
+  re-fetch the whole history (≈9 hourly runs) and fill `battery_soc_pct`.
 - `battery_charge_ac` is **unused on this installation**: 0 in every bucket from 2026-01-20 to 2026-10-04
   (checkpoint 2, prod). It stays stored and keeps the **grid-origin** treatment below, which is conservative (it
   never makes charging look cheaper) and moot while the column is 0. If it ever turns non-zero, settle its meaning
@@ -142,13 +156,19 @@ orchestrates it through services.
      counted as house supply.
    - Normalise the three to fractions of their sum. A bucket with zero load or zero sum has no house data.
 3. **Battery pool** (`pool.ts`), run forward bucket by bucket.
-   - Inflows enter at `η` × kWh. `η` is the measured round-trip efficiency, a constant in `pool.ts` set in step 3
-     from the backfilled history (Σ discharge ÷ Σ charge over all data), with its measurement date.
+   - Inflows enter at their full kWh: no efficiency factor.
    - Grid inflows (`charge_grid` + `charge_ac`) carry their slot's spot. Solar inflows carry their slot's spot as
      value. An inflow in a slot with no spot price joins `unpriced_kwh`.
    - An outflow removes energy proportionally from every part.
    - An outflow larger than the pool empties it, and the excess counts as grid-origin at the current slot's spot:
      conservative, absorbs drift.
+   - **SoC anchor** (decision 7): after each bucket with a known SoC, the pool is capped at
+     `SoC / 100 × C`. Above the cap, every part's kWh shrinks by the same factor and its spot sum stays, so
+     charging, standby and heating losses raise the average cost (and solar value) of what is left. Below the cap
+     nothing changes: the pool never invents energy. A bucket without SoC is not capped.
+   - `C` = kWh the battery delivers per 100 % SoC: a constant in `pool.ts`, measured in step 3 over all history
+     (Σ discharge ÷ Σ SoC drop / 100 over buckets that only discharge), with its measurement date. Too large a `C`
+     keeps old energy slightly longer; too small empties the pool early (the excess rule then prices it as grid).
 4. **Car mix** (`carMix.ts`): per bucket, car kWh × the house fractions.
    - The battery part splits by the pool's composition into battery-grid (+ average spot), battery-solar
      (+ average spot) and battery-unpriced.
