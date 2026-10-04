@@ -216,3 +216,27 @@ test('the kr view keeps a tiny real month visible, and invents no stub for a rea
   expect(Math.min(...barHeights(screen.container, 0))).toBeGreaterThanOrEqual(2)
   expect(barHeights(screen.container, 1)).toHaveLength(1)
 })
+
+test('a month charged only from own solar is 0 kr, not "Pris saknas"', async () => {
+  const solarJune = costMonths.map((c) =>
+    c.month === 6
+      ? {
+          ...c,
+          gridKwh: 0,
+          fullKwh: 0,
+          solarKwh: c.kwh,
+          spotSek: 0,
+          feesSek: 0,
+          totalSek: 0,
+          avgOre: null,
+        }
+      : c,
+  )
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: solarJune }} metric="sek" />
+    </div>,
+  )
+  await expect.element(screen.getByText(m.charging_chart_series_spot()).first()).toBeVisible()
+  expect(screen.getByText(m.charging_chart_no_price()).elements()).toHaveLength(0)
+})

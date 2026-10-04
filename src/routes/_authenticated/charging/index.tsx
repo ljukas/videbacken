@@ -354,7 +354,11 @@ function ChargingPage() {
               aria-busy={overviewStale}
               className={overviewStale ? 'opacity-60 transition-opacity' : 'transition-opacity'}
             >
-              <TotalsTiles tiles={overview.tiles} cost={showCost ? cost?.tiles : undefined} />
+              <TotalsTiles
+                tiles={overview.tiles}
+                cost={showCost ? cost?.tiles : undefined}
+                houseData={cost?.houseDataFrom != null}
+              />
             </div>
           </section>
 
@@ -394,7 +398,9 @@ function ChargingPage() {
               </div>
             )}
           </section>
-          {showCost ? <PriceFootnote /> : null}
+          {showCost ? (
+            <PriceFootnote coverage={{ houseDataFrom: cost?.houseDataFrom ?? null }} />
+          ) : null}
         </>
       ) : (
         <>

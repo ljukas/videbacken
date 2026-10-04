@@ -107,7 +107,8 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
       color: 'color-mix(in oklab, var(--muted-foreground) 45%, transparent)',
     },
   } satisfies ChartConfig
-  const unpriced = (c: CostMonth) => c.kwh > 0 && c.fullKwh === 0
+  // Bought energy with no price; a month of all own solar is a true 0 kr (ADR-0023).
+  const unpriced = (c: CostMonth) => c.gridKwh > 0 && c.fullKwh === 0
   // A year with nothing priced has no kronor scale to draw stubs against —
   // they'd be invisible under a 0–4 kr axis and read as 0 kr. Say so instead.
   if (!months.some((c) => c.fullKwh > 0)) {
@@ -129,8 +130,8 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
       fees: unpriced(c) ? null : c.feesSek,
       unpriced: unpriced(c) ? stub : null,
       totalSek: c.totalSek,
-      // Partly priced, as the tiles say it: "minst …" plus the missing share.
-      missingShare: c.fullKwh > 0 && !c.complete && missingKwh > 0 ? missingKwh / c.gridKwh : null,
+      // Partly priced, as the tiles say it: "minst …" plus the missing share of the charging.
+      missingShare: c.fullKwh > 0 && !c.complete && missingKwh > 0 ? missingKwh / c.kwh : null,
     }
   })
   const hasUnpriced = months.some(unpriced)

@@ -259,3 +259,14 @@ test('a guest session carries the Gäst badge; our own does not', async () => {
   await expect.element(screen.getByText(m.charging_vehicle_guest_badge())).toBeVisible()
   expect(screen.getByText(m.charging_vehicle_guest_badge()).elements()).toHaveLength(1)
 })
+
+test('a session partly charged from own solar shows its cash cost', async () => {
+  const { screen } = await renderWithCost({
+    ...priced,
+    gridKwh: 10.26,
+    fullKwh: 10.26,
+    solarKwh: 4,
+    totalSek: 16.3,
+  })
+  await expect.element(screen.getByText(/^16,30\s?kr$/)).toBeVisible()
+})
