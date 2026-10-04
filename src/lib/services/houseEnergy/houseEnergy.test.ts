@@ -1,4 +1,6 @@
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
+import { db } from '~/lib/db'
+import { HOUSE_BUCKET_KWH_MAX } from '~/lib/db/schema'
 import { stockholmDayBounds } from '~/lib/time/stockholm'
 import { setupDatabase } from '~test/setup'
 import { HouseEnergyDomainError } from './errors'
@@ -6,7 +8,21 @@ import { firstReadingAt, type HouseReading, listReadings, replaceDay } from './h
 
 setupDatabase()
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 const FIVE_MIN = 300_000
+const KWH_FIELDS = [
+  'gridImportKwh',
+  'gridExportKwh',
+  'solarKwh',
+  'loadKwh',
+  'batteryDischargeKwh',
+  'batteryChargeSolarKwh',
+  'batteryChargeGridKwh',
+  'batteryChargeAcKwh',
+] as const
 
 const dayOf = (day: string) => {
   const { startMs, endMs } = stockholmDayBounds(day)
@@ -139,4 +155,81 @@ test('firstReadingAt is null before any reading, then the earliest bucket', asyn
   const early = new Date(dayOf('2026-03-30').dayStart.getTime() + 7 * FIVE_MIN)
   await replaceDay(dayOf('2026-03-30'), [reading(early)])
   expect(await firstReadingAt()).toEqual(early)
+})
+
+test.each(KWH_FIELDS)('a negative or at-the-bound %s is a domain error', async (field) => {
+  const d = dayOf('2026-04-01')
+  for (const value of [-0.001, HOUSE_BUCKET_KWH_MAX]) {
+    await expect(replaceDay(d, [{ ...reading(d.dayStart), [field]: value }])).rejects.toMatchObject(
+      {
+        name: 'HouseEnergyDomainError',
+        code: 'INVALID_READINGS',
+        message: expect.stringContaining(field),
+      },
+    )
+  }
+  // Just under the bound is stored.
+  expect(await replaceDay(d, [{ ...reading(d.dayStart), [field]: 9.999 }])).toBe(1)
+})
+
+test('an error quotes at most five problems and counts the rest', async () => {
+  const d = dayOf('2026-04-01')
+  const buckets = Array.from({ length: 7 }, (_, i) => ({
+    ...reading(new Date(d.dayStart.getTime() + i * FIVE_MIN)),
+    loadKwh: -1,
+  }))
+  const error = (await replaceDay(d, buckets).catch((e: unknown) => e)) as Error
+  expect(error.message.split('; ')).toHaveLength(5)
+  expect(error.message).toMatch(/ \(\+2 more\)$/)
+})
+
+test('a failing insert rolls the delete back: the stored day survives', async () => {
+  const d = dayOf('2026-04-01')
+  await replaceDay(d, fullDay('2026-04-01'))
+  const transaction = db.transaction.bind(db)
+  vi.spyOn(db, 'transaction').mockImplementationOnce(((run: (tx: unknown) => Promise<unknown>) =>
+    transaction(async (tx) =>
+      run(
+        new Proxy(tx, {
+          get(target, prop) {
+            if (prop === 'insert') {
+              return () => {
+                throw new Error('insert failed')
+              }
+            }
+            const value = Reflect.get(target, prop)
+            return typeof value === 'function' ? value.bind(target) : value
+          },
+        }),
+      ),
+    )) as never)
+
+  await expect(replaceDay(d, fullDay('2026-04-01'))).rejects.toThrow()
+  expect(await listReadings({ from: d.dayStart, to: d.dayEnd })).toHaveLength(288)
+})
+
+// drizzle's query error carries every bound parameter (the day's readings) in
+// its message and `.params`, and pg's detail quotes the failing row.
+test('a database failure is rethrown without any reading in it', async () => {
+  const pg = Object.assign(new Error('duplicate key; Failing row contains (0.123456)'), {
+    code: '23505',
+    constraint: 'house_energy_reading_pkey',
+    detail: 'Failing row contains (0.123456)',
+  })
+  const drizzle = Object.assign(new Error('Failed query: insert …\nparams: 0.123456'), {
+    params: [0.123456],
+    cause: pg,
+  })
+  vi.spyOn(db, 'transaction').mockRejectedValueOnce(drizzle)
+  const d = dayOf('2026-04-01')
+
+  const error = (await replaceDay(d, [reading(d.dayStart, 0.123456)]).catch(
+    (e: unknown) => e,
+  )) as Error
+
+  expect(error).toBeInstanceOf(Error)
+  expect(error.message).toContain('23505')
+  expect(error.message).toContain('house_energy_reading_pkey')
+  expect(error.cause).toBeUndefined()
+  expect(`${error.message} ${error.stack} ${JSON.stringify(error)}`).not.toContain('0.123456')
 })

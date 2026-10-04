@@ -97,6 +97,36 @@ export async function replaceDay(
       `${problems.slice(0, MAX_PROBLEMS).join('; ')}${more}`,
     )
   }
+  await writeDay(day, buckets)
+  return buckets.length
+}
+
+// The delete + insert, in one transaction. A database failure (a dropped
+// connection, a lost race on the primary key) is rethrown without its cause:
+// drizzle's error quotes every bound parameter — the day's readings — and pg's
+// detail quotes the failing row; the sync would log either (ADR-0023).
+async function writeDay(day: { dayStart: Date; dayEnd: Date }, buckets: readonly HouseReading[]) {
+  try {
+    await insertDay(day, buckets)
+  } catch (error) {
+    throw new Error(`Storing house energy readings failed${pgSummary(error)}`)
+  }
+}
+
+/** " (Postgres <code>, <constraint>)" from the pg error under drizzle's wrapper, or "". */
+function pgSummary(error: unknown): string {
+  for (let e: unknown = error, depth = 0; e && depth < 3; depth++) {
+    const pg = e as { code?: unknown; constraint?: unknown; cause?: unknown }
+    if (typeof pg.code === 'string') {
+      const constraint = typeof pg.constraint === 'string' ? `, ${pg.constraint}` : ''
+      return ` (Postgres ${pg.code}${constraint})`
+    }
+    e = pg.cause
+  }
+  return ''
+}
+
+async function insertDay(day: { dayStart: Date; dayEnd: Date }, buckets: readonly HouseReading[]) {
   await db.transaction(async (tx) => {
     await tx
       .delete(houseEnergyReading)
@@ -121,7 +151,6 @@ export async function replaceDay(
       })),
     )
   })
-  return buckets.length
 }
 
 /** The readings in `[from, to)`, oldest first — a primary-key range scan. */
