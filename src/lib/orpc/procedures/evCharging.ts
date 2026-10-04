@@ -267,8 +267,9 @@ export const evChargingRouter = {
     ),
 
   // Manual sync trigger for one source (default Zaptec). The page's "Synka
-  // nu" fires one call per source in parallel, so the quick session sync
-  // isn't held behind a long price backfill, and each alert's retry runs only
+  // nu" fires one call per source (sessions, prices, house energy) in
+  // parallel, so the quick session sync isn't held behind a long price or
+  // house backfill, and each alert's retry runs only
   // its own source. A run never throws for a failed/skipped outcome (those
   // are recorded in health); only a genuine bug propagates.
   syncNow: adminProcedure.input(sourceInput).handler(async ({ input, context }) => {

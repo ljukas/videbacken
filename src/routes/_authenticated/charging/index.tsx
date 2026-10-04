@@ -311,16 +311,6 @@ function ChargingPage() {
       {isAdmin && skodaHealth?.state === 'ok' ? (
         <CredentialExpiryAlert expiry={skodaHealth.adminDetail?.credentialExpiry ?? null} />
       ) : null}
-      {/* Admin-only like the car feed: members can't act on it, and nothing on
-          the page uses the house data yet (ADR-0023, step 4). */}
-      {isAdmin && emaldoHealth ? (
-        <SyncHealthAlert
-          health={emaldoHealth}
-          isAdmin
-          onRetry={() => syncNow.syncSource('emaldo')}
-          retrying={syncNow.isPendingFor('emaldo')}
-        />
-      ) : null}
 
       <LiveStatusTile live={live} />
 
@@ -448,6 +438,17 @@ function ChargingPage() {
       {isAdmin && runs ? <RecentRunsCard source="zaptec" runs={runs} /> : null}
       {isAdmin && pricesRuns ? <RecentRunsCard source="elpris" runs={pricesRuns} /> : null}
       {isAdmin && skodaRuns ? <RecentRunsCard source="skoda" runs={skodaRuns} /> : null}
+      {/* Admin-only like the car feed, and beside its runs rather than at the
+          top: nothing on the page uses the house data yet (ADR-0023, step 4),
+          and it reads not_configured wherever EMALDO_* is unset. */}
+      {isAdmin && emaldoHealth ? (
+        <SyncHealthAlert
+          health={emaldoHealth}
+          isAdmin
+          onRetry={() => syncNow.syncSource('emaldo')}
+          retrying={syncNow.isPendingFor('emaldo')}
+        />
+      ) : null}
       {isAdmin && emaldoRuns ? <RecentRunsCard source="emaldo" runs={emaldoRuns} /> : null}
 
       {isAdmin ? (

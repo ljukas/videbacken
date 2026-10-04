@@ -246,28 +246,31 @@ test('an explicit Emaldo retry does report not_configured', async () => {
   )
 })
 
-test('an Emaldo sync keeps the heading pending until it settles', async () => {
-  let release: (r: Result) => void = () => {}
-  syncFn.mockImplementation(
-    () =>
-      new Promise<Result>((resolve) => {
-        release = resolve
-      }),
+// A house run can take minutes while the backfill runs; the heading must not
+// stay disabled behind it. Its own alert shows the pending state.
+test('a slow house sync leaves the heading free once sessions and prices settle', async () => {
+  let releaseHouse: (r: Result) => void = () => {}
+  syncFn.mockImplementation(({ source }: { source: Source }) =>
+    source === 'emaldo'
+      ? new Promise<Result>((resolve) => {
+          releaseHouse = resolve
+        })
+      : Promise.resolve(OK),
   )
   function HouseHarness() {
-    const { syncSource, isPending, isPendingFor } = useSyncNow()
+    const { syncAll, isPending, isPendingFor } = useSyncNow()
     return (
       <>
-        <button type="button" onClick={() => syncSource('emaldo')}>
-          house
+        <button type="button" onClick={syncAll}>
+          all
         </button>
         <output data-testid="state">{`${isPending}/${isPendingFor('emaldo')}`}</output>
       </>
     )
   }
   const { screen } = await renderWithProviders(<HouseHarness />)
-  await screen.getByRole('button', { name: 'house' }).click()
-  await expect.element(screen.getByTestId('state')).toHaveTextContent('true/true')
-  release(OK)
+  await screen.getByRole('button', { name: 'all' }).click()
+  await expect.element(screen.getByTestId('state')).toHaveTextContent('false/true')
+  releaseHouse(OK)
   await expect.element(screen.getByTestId('state')).toHaveTextContent('false/false')
 })

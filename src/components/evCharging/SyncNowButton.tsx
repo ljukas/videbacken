@@ -16,11 +16,10 @@ type SyncResult = {
 
 // The admin "sync now" mutations, shared by the heading button, each health
 // alert's "Försök igen" and the empty session list's CTA. `syncAll` fires the
-// session, price and house-energy syncs in parallel, so the quick session sync
-// isn't held behind a long price or house backfill; a retry runs only its own
-// source. A run never
-// throws for a failed/skipped outcome — those are ordinary — so each toast is
-// chosen by `outcome`; `onError` covers only a transport/unexpected error,
+// session, price and house-energy syncs in parallel, so the session toast isn't
+// held behind a long price or house backfill; a retry runs only its own source. A run never throws for
+// a failed/skipped outcome — those are ordinary — so each toast is chosen by
+// `outcome`; `onError` covers only a transport/unexpected error,
 // attributed to the source that raised it. Prices have two mutations so each
 // call knows whether to announce: a full sync already toasts the session
 // result (a price success stays silent), an explicit price retry confirms it.
@@ -193,8 +192,11 @@ export function useSyncNow() {
           return sessions.mutate({ source: 'zaptec' })
       }
     },
-    // The heading button syncs everything but the car.
-    isPending: sessions.isPending || pricesPending || housePending,
+    // The heading button syncs everything but the car, but waits only on
+    // sessions and prices: a house run can take minutes while the backfill
+    // runs, and its alert shows its own pending state. A second click while
+    // it runs is skipped by the integration lease.
+    isPending: sessions.isPending || pricesPending,
     isPendingFor: (source: SyncSource) => {
       switch (source) {
         case 'elpris':
