@@ -8,13 +8,12 @@ import { expectConstraintViolation } from '~test/expectConstraintViolation'
 import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import {
-  clearDeriveRequests,
   listForSessions,
   MIX_INSERT_BATCH,
-  pendingDerive,
   pruneUncounted,
   replaceForSessions,
   requestDerive,
+  takeDeriveRequests,
   withDeriveLock,
 } from './energyMix'
 
@@ -346,32 +345,43 @@ test('battery spots: refused without kWh or when infinite; negative and float-no
   expect((await listForSessions([a])).get(a)).toHaveLength(2)
 })
 
-test('derive requests: the earliest day and highest id; a request queued after the read survives the clear', async () => {
-  expect(await withDeriveLock((tx) => pendingDerive(tx))).toBeNull()
+test('takeDeriveRequests returns the earliest queued day and empties the queue', async () => {
+  expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBeNull()
   await requestDerive('2026-06-10')
   await requestDerive('2026-06-08')
   await requestDerive('2026-06-12')
-  await withDeriveLock(async (tx) => {
-    const pending = await pendingDerive(tx)
-    expect(pending?.fromDay).toBe('2026-06-08')
-    // Queued while this derive runs (its own commit in real life).
-    await requestDerive('2026-06-01', tx)
-    if (pending) await clearDeriveRequests(pending.throughId, tx)
-  })
-  const left = await withDeriveLock((tx) => pendingDerive(tx))
-  expect(left?.fromDay).toBe('2026-06-01')
+  expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBe('2026-06-08')
+  expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBeNull()
+})
+
+test('a request committed while a derive runs survives it', async () => {
+  await requestDerive('2026-06-10')
+  const other = new Client({ connectionString: process.env.DATABASE_URL })
+  await other.connect()
+  try {
+    const { rows } = await db.execute<{ schema: string }>(sql`select current_schema() as schema`)
+    await withDeriveLock(async (tx) => {
+      expect(await takeDeriveRequests(tx)).toBe('2026-06-10')
+      // Another sync's request, committed on its own connection.
+      await other.query(
+        `insert into "${rows[0].schema}".energy_mix_derive_request (from_day) values ('2026-06-01')`,
+      )
+    })
+  } finally {
+    await other.end()
+  }
+  expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBe('2026-06-01')
 })
 
 test('a derive that fails leaves its requests queued', async () => {
   await requestDerive('2026-06-10')
   await expect(
     withDeriveLock(async (tx) => {
-      const pending = await pendingDerive(tx)
-      if (pending) await clearDeriveRequests(pending.throughId, tx)
+      await takeDeriveRequests(tx)
       throw new Error('derive failed')
     }),
   ).rejects.toThrow('derive failed')
-  expect((await withDeriveLock((tx) => pendingDerive(tx)))?.fromDay).toBe('2026-06-10')
+  expect(await withDeriveLock((tx) => takeDeriveRequests(tx))).toBe('2026-06-10')
 })
 
 test('requestDerive refuses a malformed day', async () => {

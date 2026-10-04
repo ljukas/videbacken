@@ -1,4 +1,4 @@
-import { asc, inArray, lte, max, min, not, sql } from 'drizzle-orm'
+import { asc, inArray, not, sql } from 'drizzle-orm'
 import { type DbOrTx, type DbTransaction, db } from '~/lib/db'
 import { energyMixDeriveRequest, evChargeEnergyMix, evChargeSession } from '~/lib/db/schema'
 import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
@@ -115,25 +115,16 @@ export async function requestDerive(day: string, dbOrTx: DbOrTx = db): Promise<v
   await dbOrTx.insert(energyMixDeriveRequest).values({ fromDay: day })
 }
 
-/** The queued derive requests as one: the earliest day, and the highest id seen. */
-export type PendingDerive = { fromDay: string; throughId: number }
-
-/** Reads the queue inside the derive's transaction; null when it is empty. */
-export async function pendingDerive(tx: DeriveTx): Promise<PendingDerive | null> {
-  const [row] = await tx
-    .select({
-      fromDay: min(energyMixDeriveRequest.fromDay),
-      throughId: max(energyMixDeriveRequest.id),
-    })
-    .from(energyMixDeriveRequest)
-  if (!row?.fromDay || row.throughId === null) return null
-  return { fromDay: row.fromDay, throughId: row.throughId }
-}
-
 /**
- * Drops the requests a derive covered (ids up to `throughId`), in its
- * transaction: a request queued meanwhile has a higher id and stays.
+ * Takes every queued request this transaction can see and returns the
+ * earliest day among them (null when none): `DELETE … RETURNING` in the
+ * derive's transaction. A failed derive rolls the delete back, so its
+ * requests stay queued; a request committed after this statement isn't seen
+ * and stays too. (A high-water id would lose a lower id that commits late.)
  */
-export async function clearDeriveRequests(throughId: number, tx: DeriveTx): Promise<void> {
-  await tx.delete(energyMixDeriveRequest).where(lte(energyMixDeriveRequest.id, throughId))
+export async function takeDeriveRequests(tx: DeriveTx): Promise<string | null> {
+  const taken = await tx
+    .delete(energyMixDeriveRequest)
+    .returning({ fromDay: energyMixDeriveRequest.fromDay })
+  return taken.reduce<string | null>((a, r) => (a === null || r.fromDay < a ? r.fromDay : a), null)
 }
