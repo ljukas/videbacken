@@ -1,5 +1,5 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm'
-import { db } from '~/lib/db'
+import { type DbOrTx, db } from '~/lib/db'
 import { spotPrice } from '~/lib/db/schema'
 import { type DailySpot, type PriceSlot, validateDaySlots } from '~/lib/spotPrice/slots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
@@ -54,13 +54,14 @@ export async function replaceDay(
 export async function listSlotsOverlapping(
   zone: PriceZone,
   ranges: readonly { startMs: number; endMs: number }[],
+  dbOrTx: DbOrTx = db,
 ): Promise<PriceSlot[]> {
   if (ranges.length === 0) return []
   const pgArray = (ms: number[]) => `{${ms.map((m) => new Date(m).toISOString()).join(',')}}`
   const starts = pgArray(ranges.map((r) => r.startMs))
   const ends = pgArray(ranges.map((r) => r.endMs))
   // Raw `execute` returns timestamptz as strings (drizzle's node-postgres parsers).
-  const { rows } = await db.execute<{
+  const { rows } = await dbOrTx.execute<{
     slot_start: string
     slot_end: string
     sek_per_kwh: number

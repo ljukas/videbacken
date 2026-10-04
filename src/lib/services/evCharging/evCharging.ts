@@ -48,7 +48,65 @@ export async function findLiveCharger(): Promise<{ id: string } | null> {
 
 const INTERVAL_INSERT_BATCH = 5_000
 
-export type ImportSessionsResult = { upserted: number; voided: number; skipped: number }
+export type ImportSessionsResult = {
+  upserted: number
+  voided: number
+  skipped: number
+  /**
+   * Earliest start (old or new) of a session this page added, or changed in a
+   * way the energy mix depends on (times, energy, intervals, void/replaced);
+   * null when it changed none. The Zaptec sync re-derives from its day (ADR-0023).
+   */
+  earliestChangedStartAt: Date | null
+}
+
+type StoredSession = {
+  id: string
+  zaptecSessionId: string
+  startAt: Date
+  endAt: Date
+  energyKwh: number
+  voided: boolean
+  replacedByZaptecSessionId: string | null
+}
+type StoredInterval = { sessionId: string; startAt: Date; endAt: Date; energyKwh: number }
+
+const intervalKey = (iv: { startAt: Date; endAt: Date; energyKwh: number }) =>
+  `${iv.startAt.getTime()}/${iv.endAt.getTime()}/${iv.energyKwh}`
+
+function earliestChangedStart(
+  incoming: readonly ZaptecSession[],
+  stored: readonly StoredSession[],
+  storedIntervals: readonly StoredInterval[],
+): Date | null {
+  const byZaptecId = new Map(stored.map((s) => [s.zaptecSessionId, s]))
+  const intervalsBySession = Map.groupBy(storedIntervals, (iv) => iv.sessionId)
+  let earliest: number | null = null
+  const consider = (ms: number) => {
+    if (earliest === null || ms < earliest) earliest = ms
+  }
+  for (const s of incoming) {
+    const old = byZaptecId.get(s.id)
+    if (!old) {
+      consider(s.startAt.getTime())
+      continue
+    }
+    const oldIntervals = (intervalsBySession.get(old.id) ?? []).map(intervalKey).sort().join()
+    const newIntervals = s.intervals.map(intervalKey).sort().join()
+    const changed =
+      old.startAt.getTime() !== s.startAt.getTime() ||
+      old.endAt.getTime() !== s.endAt.getTime() ||
+      old.energyKwh !== s.energyKwh ||
+      old.voided !== s.voided ||
+      old.replacedByZaptecSessionId !== s.replacedBySessionId ||
+      oldIntervals !== newIntervals
+    if (changed) {
+      consider(old.startAt.getTime())
+      consider(s.startAt.getTime())
+    }
+  }
+  return earliest === null ? null : new Date(earliest)
+}
 
 // A session/interval must satisfy the table CHECKs before it ever reaches the
 // DB. Checked in JS (not just relying on the CHECK constraints) so one bad
@@ -109,11 +167,12 @@ export async function importSessions(
     }
   }
   if (validSessions.length === 0) {
-    return { upserted: 0, voided: 0, skipped }
+    return { upserted: 0, voided: 0, skipped, earliestChangedStartAt: null }
   }
 
   const voided = validSessions.filter((s) => s.voided).length
   const now = new Date()
+  let earliestChangedStartAt: Date | null = null
 
   await db.transaction(async (tx) => {
     const chargerIds = [...new Set(validSessions.map((s) => s.chargerId))]
@@ -121,6 +180,44 @@ export async function importSessions(
       .insert(evCharger)
       .values(chargerIds.map((id) => ({ id, name: id, installationId: ctx.installationId })))
       .onConflictDoNothing({ target: evCharger.id })
+
+    // What the page changes, compared before the upsert overwrites it: the
+    // energy-mix derive starts from the earliest changed session (ADR-0023).
+    const stored = await tx
+      .select({
+        id: evChargeSession.id,
+        zaptecSessionId: evChargeSession.zaptecSessionId,
+        startAt: evChargeSession.startAt,
+        endAt: evChargeSession.endAt,
+        energyKwh: evChargeSession.energyKwh,
+        voided: evChargeSession.voided,
+        replacedByZaptecSessionId: evChargeSession.replacedByZaptecSessionId,
+      })
+      .from(evChargeSession)
+      .where(
+        inArray(
+          evChargeSession.zaptecSessionId,
+          validSessions.map((s) => s.id),
+        ),
+      )
+    const storedIntervals =
+      stored.length === 0
+        ? []
+        : await tx
+            .select({
+              sessionId: evChargeInterval.sessionId,
+              startAt: evChargeInterval.startAt,
+              endAt: evChargeInterval.endAt,
+              energyKwh: evChargeInterval.energyKwh,
+            })
+            .from(evChargeInterval)
+            .where(
+              inArray(
+                evChargeInterval.sessionId,
+                stored.map((s) => s.id),
+              ),
+            )
+    earliestChangedStartAt = earliestChangedStart(validSessions, stored, storedIntervals)
 
     const sessionRows = await tx
       .insert(evChargeSession)
@@ -171,5 +268,5 @@ export async function importSessions(
     }
   })
 
-  return { upserted: validSessions.length, voided, skipped }
+  return { upserted: validSessions.length, voided, skipped, earliestChangedStartAt }
 }

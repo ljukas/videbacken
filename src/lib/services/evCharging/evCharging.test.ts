@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm'
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
@@ -81,7 +81,7 @@ test('importSessions imports a valid session with its intervals', async () => {
     ],
     { installationId: 'install-1' },
   )
-  expect(result).toEqual({ upserted: 1, voided: 0, skipped: 0 })
+  expect(result).toMatchObject({ upserted: 1, voided: 0, skipped: 0 })
 
   const [row] = await db
     .select()
@@ -100,7 +100,7 @@ test('importSessions is idempotent on re-import', async () => {
   const ctx = { installationId: 'install-1' }
   await importSessions([session({ energyKwh: 5 })], ctx)
   const second = await importSessions([session({ energyKwh: 5 })], ctx)
-  expect(second).toEqual({ upserted: 1, voided: 0, skipped: 0 })
+  expect(second).toMatchObject({ upserted: 1, voided: 0, skipped: 0 })
 
   const rows = await db
     .select()
@@ -113,7 +113,7 @@ test('importSessions updates a session in place when its void flag flips', async
   const ctx = { installationId: 'install-1' }
   await importSessions([session({ voided: false })], ctx)
   const result = await importSessions([session({ voided: true })], ctx)
-  expect(result).toEqual({ upserted: 1, voided: 1, skipped: 0 })
+  expect(result).toMatchObject({ upserted: 1, voided: 1, skipped: 0 })
 
   const rows = await db
     .select()
@@ -175,7 +175,7 @@ test('importSessions creates a stub charger for an unknown charger id and import
   const result = await importSessions([session({ chargerId: 'unknown-charger' })], {
     installationId: 'install-9',
   })
-  expect(result).toEqual({ upserted: 1, voided: 0, skipped: 0 })
+  expect(result).toMatchObject({ upserted: 1, voided: 0, skipped: 0 })
 
   const [charger] = await db.select().from(evCharger).where(eq(evCharger.id, 'unknown-charger'))
   expect(charger).toMatchObject({
@@ -205,7 +205,7 @@ test('importSessions skips an invalid session (end before start) without throwin
     ],
     ctx,
   )
-  expect(result).toEqual({ upserted: 2, voided: 0, skipped: 1 })
+  expect(result).toMatchObject({ upserted: 2, voided: 0, skipped: 1 })
 
   const rows = await db.select().from(evChargeSession)
   expect(rows.map((r) => r.zaptecSessionId).sort()).toEqual(['zap-a', 'zap-b'])
@@ -221,7 +221,7 @@ test('importSessions skips an invalid session (negative energy) without throwing
     ],
     ctx,
   )
-  expect(result).toEqual({ upserted: 2, voided: 0, skipped: 1 })
+  expect(result).toMatchObject({ upserted: 2, voided: 0, skipped: 1 })
 })
 
 test('importSessions with all-invalid sessions returns skipped only, no throw', async () => {
@@ -229,7 +229,7 @@ test('importSessions with all-invalid sessions returns skipped only, no throw', 
     [session({ id: 'zap-a', energyKwh: -1 }), session({ id: 'zap-b', energyKwh: -2 })],
     { installationId: 'install-1' },
   )
-  expect(result).toEqual({ upserted: 0, voided: 0, skipped: 2 })
+  expect(result).toMatchObject({ upserted: 0, voided: 0, skipped: 2 })
   expect(await db.select().from(evChargeSession)).toHaveLength(0)
 })
 
@@ -248,7 +248,7 @@ test('importSessions skips a session with an invalid interval (end before start)
     ],
     { installationId: 'install-1' },
   )
-  expect(result).toEqual({ upserted: 0, voided: 0, skipped: 1 })
+  expect(result).toMatchObject({ upserted: 0, voided: 0, skipped: 1 })
 })
 
 test('findLiveCharger picks the charger with the newest session over stubs and old chargers', async () => {
@@ -304,7 +304,7 @@ test('importSessions inserts more intervals than one statement can bind', async 
     ],
     { installationId: 'install-1' },
   )
-  expect(result).toEqual({ upserted: 1, voided: 0, skipped: 0 })
+  expect(result).toMatchObject({ upserted: 1, voided: 0, skipped: 0 })
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(evChargeInterval)
   expect(count).toBe(20_000)
 })
@@ -365,4 +365,78 @@ test('vehicle_charge_record enforces its checks and (source, source_session_id) 
     insertVehicleRecord({ source: 'myskoda_api' }),
     'vehicle_charge_record_source_check',
   )
+})
+
+describe('importSessions reports the earliest change for the energy-mix derive', () => {
+  const ctx = { installationId: 'install-1' }
+  const iv = (from: string, to: string, kwh: number) => ({
+    startAt: new Date(from),
+    endAt: new Date(to),
+    energyKwh: kwh,
+  })
+  const withIntervals = (over: Partial<ZaptecSession> = {}) =>
+    session({
+      intervals: [
+        iv('2026-01-10T10:00:00Z', '2026-01-10T11:00:00Z', 2),
+        iv('2026-01-10T11:00:00Z', '2026-01-10T12:00:00Z', 3),
+      ],
+      ...over,
+    })
+
+  test('a new session is a change from its start', async () => {
+    const result = await importSessions([withIntervals()], ctx)
+    expect(result.earliestChangedStartAt).toEqual(new Date('2026-01-10T10:00:00Z'))
+  })
+
+  test('re-importing an identical page changes nothing', async () => {
+    await importSessions([withIntervals()], ctx)
+    const again = await importSessions([withIntervals()], ctx)
+    expect(again.earliestChangedStartAt).toBeNull()
+  })
+
+  test.each<[string, Partial<ZaptecSession>]>([
+    ['energy', { energyKwh: 6 }],
+    ['end', { endAt: new Date('2026-01-10T12:30:00Z') }],
+    ['void flag', { voided: true }],
+    ['replacement', { replacedBySessionId: 'zap-2' }],
+    ['intervals', { intervals: [iv('2026-01-10T10:00:00Z', '2026-01-10T12:00:00Z', 5)] }],
+  ])('a changed %s is a change from the start', async (_, over) => {
+    await importSessions([withIntervals()], ctx)
+    const result = await importSessions([withIntervals(over)], ctx)
+    expect(result.earliestChangedStartAt).toEqual(new Date('2026-01-10T10:00:00Z'))
+  })
+
+  test('a moved start counts from the earlier of the old and new start', async () => {
+    await importSessions([withIntervals()], ctx)
+    const later = await importSessions(
+      [withIntervals({ startAt: new Date('2026-01-10T10:30:00Z') })],
+      ctx,
+    )
+    expect(later.earliestChangedStartAt).toEqual(new Date('2026-01-10T10:00:00Z'))
+    const earlier = await importSessions(
+      [withIntervals({ startAt: new Date('2026-01-10T09:00:00Z') })],
+      ctx,
+    )
+    expect(earlier.earliestChangedStartAt).toEqual(new Date('2026-01-10T09:00:00Z'))
+  })
+
+  test('the earliest change on the page wins; skipped sessions are not changes', async () => {
+    const result = await importSessions(
+      [
+        session({
+          id: 'zap-a',
+          startAt: new Date('2026-01-12T10:00:00Z'),
+          endAt: new Date('2026-01-12T11:00:00Z'),
+        }),
+        session({
+          id: 'zap-b',
+          startAt: new Date('2026-01-11T10:00:00Z'),
+          endAt: new Date('2026-01-11T11:00:00Z'),
+        }),
+        session({ id: 'zap-bad', startAt: new Date('2026-01-01T10:00:00Z'), energyKwh: -1 }),
+      ],
+      ctx,
+    )
+    expect(result.earliestChangedStartAt).toEqual(new Date('2026-01-11T10:00:00Z'))
+  })
 })

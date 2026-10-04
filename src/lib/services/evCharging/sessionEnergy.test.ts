@@ -3,7 +3,12 @@ import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
 import { setupDatabase } from '~test/setup'
 import { EvChargingDomainError } from './errors'
-import { earliestCountedStartAt, getSessionEnergy, listSessionEnergy } from './sessionEnergy'
+import {
+  earliestCountedStartAt,
+  earliestCountedStartEndingAfter,
+  getSessionEnergy,
+  listSessionEnergy,
+} from './sessionEnergy'
 
 setupDatabase()
 
@@ -177,4 +182,34 @@ test('listSessionEnergy scopes { all: true } by vehicle; id lookups and the earl
   expect(await getSessionEnergy(guest)).toMatchObject({ vehicle: 'other', vehicleSource: 'admin' })
   expect(await getSessionEnergy(ours)).toMatchObject({ vehicle: 'ours', vehicleSource: 'default' })
   expect(await earliestCountedStartAt()).toEqual(new Date('2026-09-01T20:00:00Z'))
+})
+
+test('endsAfter lists the counted sessions ending after an instant', async () => {
+  await insertSession({ startAt: new Date('2026-09-01T20:00:00Z') }) // ends 22:00
+  await insertSession({ startAt: new Date('2026-09-01T22:00:00Z') }) // ends exactly at midnight
+  const spanning = await insertSession({ startAt: new Date('2026-09-01T23:00:00Z') })
+  const after = await insertSession({ startAt: new Date('2026-09-02T10:00:00Z') })
+  await insertSession({ startAt: new Date('2026-09-02T12:00:00Z'), voided: true })
+  const list = await listSessionEnergy({ endsAfter: new Date('2026-09-02T00:00:00Z') })
+  expect(list.map((s) => s.sessionId)).toEqual([spanning, after])
+  expect(list[0]).toMatchObject({
+    estimated: true,
+    stretches: [
+      {
+        startMs: Date.parse('2026-09-01T23:00:00Z'),
+        endMs: Date.parse('2026-09-02T01:00:00Z'),
+        kwh: 10,
+      },
+    ],
+  })
+})
+
+test('earliestCountedStartEndingAfter: the earliest counted start among sessions ending after an instant', async () => {
+  const midnight = new Date('2026-09-02T00:00:00Z')
+  expect(await earliestCountedStartEndingAfter(midnight)).toBeNull()
+  await insertSession({ startAt: new Date('2026-09-01T20:00:00Z') }) // ends before
+  await insertSession({ startAt: new Date('2026-09-01T22:30:00Z'), voided: true }) // spans, voided
+  await insertSession({ startAt: new Date('2026-09-01T23:00:00Z') }) // spans
+  await insertSession({ startAt: new Date('2026-09-02T08:00:00Z') })
+  expect(await earliestCountedStartEndingAfter(midnight)).toEqual(new Date('2026-09-01T23:00:00Z'))
 })
