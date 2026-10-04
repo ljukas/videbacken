@@ -344,7 +344,7 @@ test('reports progress over every planned day, skipped ones included', async () 
       clock += 1_001
       return new Date(clock)
     },
-    deps: { elpris: client, sleep: async () => {} },
+    deps: { elpris: client, sleep: async () => {}, log: capturingLogger().log },
   })
   expect(spy.mock.calls.map(([, , p]) => p)).toEqual(
     Array.from({ length: 10 }, (_, i) => ({ done: i + 1, total: 10 })),
@@ -365,12 +365,14 @@ test('a budget stop leaves the last progress report below its total', async () =
   const result = await runElprisSync({
     trigger: 'cron',
     now: () => new Date(clock),
-    deps: { elpris: client, sleep: async () => {} },
+    deps: { elpris: client, sleep: async () => {}, log: capturingLogger().log },
   })
   const reports = spy.mock.calls.map(([, , p]) => p)
   expect(result).toMatchObject({ outcome: 'ok', days: 10 })
-  expect(result.dayRequests).toBeLessThan(10)
-  expect(reports.at(-1)).toEqual({ done: result.dayRequests, total: 10 })
+  // 50 s per fetch against the 120 s budget: the check runs before each day, so
+  // days 1-3 run (0, 50, 100 s elapsed) and the stop comes at 150 s.
+  expect(result.dayRequests).toBe(3)
+  expect(reports.at(-1)).toEqual({ done: 3, total: 10 })
   expect(reports.some((p) => p.done === p.total)).toBe(false)
 })
 

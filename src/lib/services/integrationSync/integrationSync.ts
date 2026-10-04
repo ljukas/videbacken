@@ -276,9 +276,9 @@ export async function listRecentRuns(
 
 // The running attempt's progress, overwritten in place. Matched on the lease
 // token and an unexpired lease, so a lost lease (expired, taken over, or
-// already recorded) writes nothing: a late write can never touch a newer run's progress or re-set a
-// finished one. Values come from runPulledSync, which normalizes them; the
-// CHECKs are the backstop.
+// already recorded) writes nothing: a late write can never touch a newer run's
+// progress or re-set a finished one. Values come from runPulledSync, which
+// normalizes them; the CHECKs are the backstop.
 export async function reportProgress(
   source: IntegrationSource,
   attemptId: string,

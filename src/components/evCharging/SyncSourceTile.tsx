@@ -146,11 +146,20 @@ export function SyncSourceTile({
             {lastSync}
           </p>
         ) : null}
-        {/* While a run reports, the caption takes the cadence line's place, so the tile never changes height. */}
+        {/* Both lines share one grid cell, so the tile is as tall as the taller of the two and
+            swapping the cadence for the caption while a run reports never shifts the layout. */}
         {progressText ? (
-          <p aria-hidden="true" className="text-muted-foreground text-xs tabular-nums">
-            {progressText}
-          </p>
+          <div className="grid">
+            <p
+              aria-hidden="true"
+              className="text-muted-foreground text-xs tabular-nums [grid-area:1/1]"
+            >
+              {progressText}
+            </p>
+            <p className="invisible text-muted-foreground text-xs [grid-area:1/1]">
+              {syncSourceCadence(source)}
+            </p>
+          </div>
         ) : (
           <p className="text-muted-foreground text-xs">{syncSourceCadence(source)}</p>
         )}

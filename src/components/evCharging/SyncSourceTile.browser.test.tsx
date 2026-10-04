@@ -208,10 +208,11 @@ test('no bar once the run is no longer in flight', async () => {
   await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument()
 })
 
-test('while progress shows, the caption takes the cadence line’s place', async () => {
+test('while progress shows, the cadence stays in the layout but invisible', async () => {
   const cadence = m.charging_source_cadence_emaldo()
   const { screen } = await renderWithProviders(tile(emaldoRunning))
-  await expect.element(screen.getByText(cadence)).not.toBeInTheDocument()
+  // Tailwind's `invisible` keeps its height (no layout shift); no app CSS loads here, so pin the class.
+  await expect.element(screen.getByText(cadence)).toHaveClass('invisible')
 })
 
 test('the cadence line shows when there is no progress', async () => {
