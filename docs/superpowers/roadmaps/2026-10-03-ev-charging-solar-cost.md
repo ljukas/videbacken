@@ -55,8 +55,11 @@ Each must pass, with the result recorded in the table, before the next step star
    - `battery_charge_ac`'s meaning is settled from real data, recorded in the spec.
 2b. **After step 2b (prod).**
    - The re-fetch is done: the watermark is back at the end of yesterday, with every run `ok`.
-   - A read-only SELECT shows `battery_soc_pct` on ≥ 99 % of the buckets of every day since the first reading, and
-     two probe days (`data/private/emaldo/data/*.level.json`) match their stored SoC exactly.
+   - A read-only SELECT shows `battery_soc_pct` on ≥ 99 % of the buckets of every day since the first reading
+     (`SELECT count(*) FILTER (WHERE battery_soc_pct IS NULL), count(*) FROM house_energy_reading`, then per day if
+     nulls cluster), and two probe days (`data/private/emaldo/data/*.level.json`) match their stored SoC exactly.
+   - Whole days without SoC mean an old-code run re-fetched them during the deploy (or a rollback did). The remedy is
+     a new migration with 0015's UPDATE; 0015 itself never runs again.
    - The energy columns of a handful of days are unchanged from before the re-fetch (daily sums).
 3. **After step 3 (prod).**
    - `C` is set from the measured history and looks plausible (≈7–9 kWh per 100 %), and the pool stays at or under

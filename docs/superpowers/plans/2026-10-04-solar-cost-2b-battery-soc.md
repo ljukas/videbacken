@@ -138,7 +138,11 @@ test('battery SoC is optional and must be 0–100', async () => {
 -- One-off (solar-cost step 2b): clear the Emaldo day watermark so the hourly
 -- sync re-fetches the whole history and fills house_energy_reading.battery_soc_pct.
 -- Health reads last_success_at, which this leaves alone. No row (Emaldo never ran) → no-op.
-UPDATE "integration_sync" SET "last_success_started_at" = NULL WHERE "source" = 'emaldo';
+-- The lease goes too (all three columns: CHECKs tie them together): a run in
+-- flight while this commits loses its lease, and its outcome is discarded.
+UPDATE "integration_sync"
+SET "last_success_started_at" = NULL, "running_since" = NULL, "lease_until" = NULL, "lease_token" = NULL
+WHERE "source" = 'emaldo';
 ```
 
 - [ ] **Step 6:** `bun run db:migrate && bunx vitest run src/lib/db/houseEnergySchema.test.ts test/rls.test.ts` → PASS.
@@ -368,8 +372,9 @@ test('a cleared watermark re-fetches the history and fills SoC', async () => {
 
 - [ ] Roadmap row 2b: PR link, status `PR open`; log line. Commit `docs(charging): mark solar-cost step 2b as PR open`.
 - [ ] Push; PR from `.github/PULL_REQUEST_TEMPLATE.md`. **Title:** `feat(charging): sync the home battery's state of
-  charge`. **Risks:** merge outside xx:35–xx:55; the re-fetch takes ≈9 hourly runs; step 3's plan must be revised
-  for the SoC pool first. Body ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+  charge`. **Risks:** merge outside xx:35–xx:55, and don't press "Synka nu" or roll back during the deploy (an
+  old-code run re-fetches days without SoC; remedy: a new migration with 0015's UPDATE); the re-fetch takes ≈9 hourly
+  runs; step 3's plan must be revised for the SoC pool first. Body ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
 
 ### Task 8: STOP — checkpoint 2b (for the owner / the next session)
 

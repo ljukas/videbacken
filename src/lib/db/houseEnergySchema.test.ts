@@ -93,7 +93,8 @@ test('battery SoC is optional and must be 0–100', async () => {
       .insert(houseEnergyReading)
       .values(row({ bucketStart: new Date(Date.UTC(2026, 3, 1, 11, i * 5)), batterySocPct }))
   }
-  for (const batterySocPct of [-0.001, 100.001]) {
+  // NaN sorts above every number in Postgres, so `<= 100` rejects it.
+  for (const batterySocPct of [-0.001, 100.001, Number.NaN]) {
     await expectConstraintViolation(
       db
         .insert(houseEnergyReading)
