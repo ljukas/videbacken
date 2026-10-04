@@ -117,15 +117,15 @@
     {
       "idx": 16,
       "version": "7",
-      "when": 1791134438203,
-      "tag": "0016_energy_mix_and_battery_pool",
+      "when": 1791133503017,
+      "tag": "0016_integration_sync_progress",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "7",
-      "when": 1791134995346,
-      "tag": "0017_energy_mix_derive_request",
+      "when": 1791137332394,
+      "tag": "0017_energy_mix_and_battery_pool",
       "breakpoints": true
     }
   ]

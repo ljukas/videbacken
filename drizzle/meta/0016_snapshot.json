@@ -1,5 +1,5 @@
 {
-  "id": "750716f8-a045-4023-bb9b-ab50913dc1b3",
+  "id": "8374a688-c54f-410e-9da0-878ed74db0a9",
   "prevId": "4772f7b5-6167-4133-9ae0-eb535f64bf16",
   "version": "7",
   "dialect": "postgresql",
@@ -1049,223 +1049,6 @@
       },
       "isRLSEnabled": true
     },
-    "public.battery_pool_day": {
-      "name": "battery_pool_day",
-      "schema": "",
-      "columns": {
-        "day": {
-          "name": "day",
-          "type": "date",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "stored_kwh": {
-          "name": "stored_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "grid_kwh": {
-          "name": "grid_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "grid_spot_sek_sum": {
-          "name": "grid_spot_sek_sum",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "solar_kwh": {
-          "name": "solar_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "solar_spot_sek_sum": {
-          "name": "solar_spot_sek_sum",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unpriced_kwh": {
-          "name": "unpriced_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "capacity_kwh": {
-          "name": "capacity_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "derive_version": {
-          "name": "derive_version",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "derived_at": {
-          "name": "derived_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "battery_pool_day_kwh_nonneg_check": {
-          "name": "battery_pool_day_kwh_nonneg_check",
-          "value": "\"battery_pool_day\".\"stored_kwh\" >= 0 AND \"battery_pool_day\".\"stored_kwh\" < 1000 AND \"battery_pool_day\".\"grid_kwh\" >= 0 AND \"battery_pool_day\".\"solar_kwh\" >= 0\n        AND \"battery_pool_day\".\"unpriced_kwh\" >= 0"
-        },
-        "battery_pool_day_stored_sum_check": {
-          "name": "battery_pool_day_stored_sum_check",
-          "value": "abs(\"battery_pool_day\".\"stored_kwh\" - (\"battery_pool_day\".\"grid_kwh\" + \"battery_pool_day\".\"solar_kwh\" + \"battery_pool_day\".\"unpriced_kwh\"))\n        <= 1e-9 * \"battery_pool_day\".\"stored_kwh\" + 1e-9"
-        },
-        "battery_pool_day_spot_sums_finite_check": {
-          "name": "battery_pool_day_spot_sums_finite_check",
-          "value": "\"battery_pool_day\".\"grid_spot_sek_sum\" > '-Infinity' AND \"battery_pool_day\".\"grid_spot_sek_sum\" < 'Infinity'\n        AND \"battery_pool_day\".\"solar_spot_sek_sum\" > '-Infinity' AND \"battery_pool_day\".\"solar_spot_sek_sum\" < 'Infinity'"
-        },
-        "battery_pool_day_derive_version_check": {
-          "name": "battery_pool_day_derive_version_check",
-          "value": "\"battery_pool_day\".\"derive_version\" >= 1"
-        },
-        "battery_pool_day_capacity_kwh_check": {
-          "name": "battery_pool_day_capacity_kwh_check",
-          "value": "\"battery_pool_day\".\"capacity_kwh\" > 0 AND \"battery_pool_day\".\"capacity_kwh\" < 100"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.ev_charge_energy_mix": {
-      "name": "ev_charge_energy_mix",
-      "schema": "",
-      "columns": {
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slot_start": {
-          "name": "slot_start",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kwh": {
-          "name": "kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "grid_kwh": {
-          "name": "grid_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "solar_kwh": {
-          "name": "solar_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "battery_grid_kwh": {
-          "name": "battery_grid_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "battery_grid_spot_sek": {
-          "name": "battery_grid_spot_sek",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "battery_solar_kwh": {
-          "name": "battery_solar_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "battery_solar_spot_sek": {
-          "name": "battery_solar_spot_sek",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "battery_unpriced_kwh": {
-          "name": "battery_unpriced_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "no_house_data_kwh": {
-          "name": "no_house_data_kwh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "ev_charge_energy_mix_session_id_ev_charge_session_id_fk": {
-          "name": "ev_charge_energy_mix_session_id_ev_charge_session_id_fk",
-          "tableFrom": "ev_charge_energy_mix",
-          "tableTo": "ev_charge_session",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "ev_charge_energy_mix_pk": {
-          "name": "ev_charge_energy_mix_pk",
-          "columns": [
-            "session_id",
-            "slot_start"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ev_charge_energy_mix_slot_start_check": {
-          "name": "ev_charge_energy_mix_slot_start_check",
-          "value": "date_bin('15 minutes', \"ev_charge_energy_mix\".\"slot_start\", timestamptz '2000-01-01 00:00:00+00') = \"ev_charge_energy_mix\".\"slot_start\""
-        },
-        "ev_charge_energy_mix_kwh_nonneg_check": {
-          "name": "ev_charge_energy_mix_kwh_nonneg_check",
-          "value": "\"ev_charge_energy_mix\".\"kwh\" > 0 AND \"ev_charge_energy_mix\".\"kwh\" < 1000 AND \"ev_charge_energy_mix\".\"grid_kwh\" >= 0 AND \"ev_charge_energy_mix\".\"solar_kwh\" >= 0\n        AND \"ev_charge_energy_mix\".\"battery_grid_kwh\" >= 0 AND \"ev_charge_energy_mix\".\"battery_solar_kwh\" >= 0\n        AND \"ev_charge_energy_mix\".\"battery_unpriced_kwh\" >= 0 AND \"ev_charge_energy_mix\".\"no_house_data_kwh\" >= 0"
-        },
-        "ev_charge_energy_mix_parts_sum_check": {
-          "name": "ev_charge_energy_mix_parts_sum_check",
-          "value": "abs(\"ev_charge_energy_mix\".\"kwh\" - (\"ev_charge_energy_mix\".\"grid_kwh\" + \"ev_charge_energy_mix\".\"solar_kwh\" + \"ev_charge_energy_mix\".\"battery_grid_kwh\"\n        + \"ev_charge_energy_mix\".\"battery_solar_kwh\" + \"ev_charge_energy_mix\".\"battery_unpriced_kwh\" + \"ev_charge_energy_mix\".\"no_house_data_kwh\"))\n        <= 1e-9 * \"ev_charge_energy_mix\".\"kwh\" + 1e-9"
-        },
-        "ev_charge_energy_mix_battery_grid_spot_check": {
-          "name": "ev_charge_energy_mix_battery_grid_spot_check",
-          "value": "(\"ev_charge_energy_mix\".\"battery_grid_kwh\" > 0) = (\"ev_charge_energy_mix\".\"battery_grid_spot_sek\" IS NOT NULL)\n        AND (\"ev_charge_energy_mix\".\"battery_grid_spot_sek\" IS NULL\n          OR (\"ev_charge_energy_mix\".\"battery_grid_spot_sek\" > '-Infinity' AND \"ev_charge_energy_mix\".\"battery_grid_spot_sek\" < 'Infinity'))"
-        },
-        "ev_charge_energy_mix_battery_solar_spot_check": {
-          "name": "ev_charge_energy_mix_battery_solar_spot_check",
-          "value": "(\"ev_charge_energy_mix\".\"battery_solar_kwh\" > 0) = (\"ev_charge_energy_mix\".\"battery_solar_spot_sek\" IS NOT NULL)\n        AND (\"ev_charge_energy_mix\".\"battery_solar_spot_sek\" IS NULL\n          OR (\"ev_charge_energy_mix\".\"battery_solar_spot_sek\" > '-Infinity' AND \"ev_charge_energy_mix\".\"battery_solar_spot_sek\" < 'Infinity'))"
-        }
-      },
-      "isRLSEnabled": true
-    },
     "public.house_energy_reading": {
       "name": "house_energy_reading",
       "schema": "",
@@ -1476,6 +1259,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "progress_done": {
+          "name": "progress_done",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "progress_total": {
+          "name": "progress_total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -1541,6 +1336,14 @@
         "integration_sync_credential_reminder_expiry_check": {
           "name": "integration_sync_credential_reminder_expiry_check",
           "value": "\"integration_sync\".\"credential_reminder_days\" IS NULL OR \"integration_sync\".\"credential_expires_at\" IS NOT NULL"
+        },
+        "integration_sync_progress_pair_check": {
+          "name": "integration_sync_progress_pair_check",
+          "value": "(\"integration_sync\".\"progress_done\" IS NULL) = (\"integration_sync\".\"progress_total\" IS NULL)"
+        },
+        "integration_sync_progress_range_check": {
+          "name": "integration_sync_progress_range_check",
+          "value": "\"integration_sync\".\"progress_total\" IS NULL OR (\"integration_sync\".\"progress_total\" > 0 AND \"integration_sync\".\"progress_done\" BETWEEN 0 AND \"integration_sync\".\"progress_total\")"
         }
       },
       "isRLSEnabled": true

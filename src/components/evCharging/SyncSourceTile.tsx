@@ -4,6 +4,7 @@ import { Fragment } from 'react'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card } from '~/components/ui/card'
+import { Progress } from '~/components/ui/progress'
 import type { IntegrationSource } from '~/lib/integrationHealth'
 import { integrationHealthTitle, integrationSourceName } from '~/lib/integrationHealthMessage'
 import type { RouterOutputs } from '~/lib/orpc/client'
@@ -108,8 +109,22 @@ export function SyncSourceTile({
     : health?.state === 'failing'
       ? m.common_try_again()
       : m.charging_sync_now()
+  // Only a run in flight; the server sends progress only while its lease is live.
+  const progress = pending ? (health?.progress ?? null) : null
+  const progressText = progress ? m.charging_source_progress(progress) : null
   return (
-    <Card className="@container h-full min-w-0 px-5 py-5">
+    <Card className="@container relative h-full min-w-0 px-5 py-5">
+      {progress && progressText ? (
+        // A top-edge strip (the Card clips it): the tile never changes height.
+        // aria-valuetext says the days; the caption below is aria-hidden and
+        // not a live region (a 5 s poll would be noisy).
+        <Progress
+          value={Math.round((progress.done / progress.total) * 100)}
+          aria-label={m.charging_source_progress_label({ source: name })}
+          getValueLabel={() => progressText}
+          className="absolute inset-x-0 top-0 h-1 rounded-none bg-primary/15"
+        />
+      ) : null}
       <div className="flex @[11rem]:flex-row flex-col @[11rem]:items-start gap-3">
         <SyncSourceMark source={source} />
         <div className="flex min-w-0 flex-col">
@@ -131,7 +146,23 @@ export function SyncSourceTile({
             {lastSync}
           </p>
         ) : null}
-        <p className="text-muted-foreground text-xs">{syncSourceCadence(source)}</p>
+        {/* Both lines share one grid cell, so the tile is as tall as the taller of the two and
+            swapping the cadence for the caption while a run reports never shifts the layout. */}
+        {progressText ? (
+          <div className="grid">
+            <p
+              aria-hidden="true"
+              className="text-muted-foreground text-xs tabular-nums [grid-area:1/1]"
+            >
+              {progressText}
+            </p>
+            <p className="invisible text-muted-foreground text-xs [grid-area:1/1]">
+              {syncSourceCadence(source)}
+            </p>
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-xs">{syncSourceCadence(source)}</p>
+        )}
         {/* In full, never clamped: the tail is the next step ("…skapa en ny i MyŠkoda-appen"). */}
         {message ? (
           <p

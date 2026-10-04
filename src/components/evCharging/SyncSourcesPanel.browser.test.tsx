@@ -12,6 +12,7 @@ const health = (source: IntegrationSource, state: Health['state']): Health => ({
   source,
   state,
   running: false,
+  progress: null,
   lastAttemptAt: null,
   lastSuccessAt: null,
   failingSince: null,

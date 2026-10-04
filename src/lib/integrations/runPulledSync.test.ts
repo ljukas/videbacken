@@ -1,6 +1,7 @@
+import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { user } from '~/lib/db/schema'
+import { integrationSync, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { IntegrationError } from '~/lib/effects/integrationError'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
@@ -55,8 +56,16 @@ const WARN = 40
 const ERROR = 50
 
 function run(
-  execute: (ctx: { run: FakeRun; signal: AbortSignal }) => Promise<void>,
-  opts: { log?: ReturnType<typeof capturingLogger>['log']; deadlineMs?: number } = {},
+  execute: (ctx: {
+    run: FakeRun
+    signal: AbortSignal
+    reportProgress: (done: number, total: number) => Promise<void>
+  }) => Promise<void>,
+  opts: {
+    log?: ReturnType<typeof capturingLogger>['log']
+    deadlineMs?: number
+    now?: () => Date
+  } = {},
 ) {
   let clock = T0.getTime()
   const now = () => {
@@ -66,7 +75,7 @@ function run(
   return runPulledSync<FakeRun>({
     source: 'elpris',
     trigger: 'cron',
-    now,
+    now: opts.now ?? now,
     deadlineMs: opts.deadlineMs ?? 60_000,
     log: opts.log ?? capturingLogger().log,
     init: (base) => ({ ...base, items: 0, finalized: false }),
@@ -315,4 +324,107 @@ test('a failed outcome write on an error run is only warned; the original bug is
       expect.objectContaining({ level: ERROR, msg: 'integration sync run', outcome: 'error' }),
     ]),
   )
+})
+
+const stepClock = (stepMs: number) => {
+  let clock = T0.getTime()
+  return () => {
+    clock += stepMs
+    return new Date(clock)
+  }
+}
+const progressCalls = (spy: MockInstance<typeof integrationSyncService.reportProgress>) =>
+  spy.mock.calls.map(([, , p]) => p)
+
+test('reportProgress writes under the run’s lease and the outcome clears it', async () => {
+  const seen: unknown[] = []
+  await run(async ({ reportProgress }) => {
+    await reportProgress(1, 3)
+    seen.push(
+      (await getHealth('elpris', { now: new Date(T0.getTime() + 5000), includeAdminDetail: false }))
+        .progress,
+    )
+  })
+  expect(seen).toEqual([{ done: 1, total: 3 }])
+  const [row] = await db.select().from(integrationSync).where(eq(integrationSync.source, 'elpris'))
+  expect(row.progressDone).toBeNull()
+  expect(row.progressTotal).toBeNull()
+})
+
+test('reportProgress normalizes: no write for total ≤ 0, done clamped to [0, total]', async () => {
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  await run(async ({ reportProgress }) => {
+    await reportProgress(0, 0)
+    await reportProgress(Number.NaN, 4)
+    await reportProgress(1, Number.POSITIVE_INFINITY)
+    await reportProgress(-2, 4)
+    await reportProgress(9, 4)
+    await reportProgress(1.9, 4.7)
+  })
+  expect(progressCalls(spy)).toEqual([
+    { done: 0, total: 4 },
+    { done: 4, total: 4 },
+    { done: 1, total: 4 },
+  ])
+})
+
+test('reportProgress throttles to one write per second, but always writes done = total', async () => {
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  const cap = capturingLogger()
+  await run(
+    async ({ reportProgress }) => {
+      for (let done = 1; done <= 5; done++) await reportProgress(done, 5)
+    },
+    { now: stepClock(400), log: cap.log },
+  )
+  // The clock steps 400 ms per now() call (startedAt is the first); a write needs ≥ 1 000 ms since the last.
+  expect(progressCalls(spy)).toEqual([
+    { done: 1, total: 5 },
+    { done: 4, total: 5 },
+    { done: 5, total: 5 },
+  ])
+  expect(cap.runLines()[0]).toMatchObject({ progressWrites: 3 })
+})
+
+test('a write exactly one interval after the last is not throttled', async () => {
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  await run(
+    async ({ reportProgress }) => {
+      for (let done = 1; done <= 3; done++) await reportProgress(done, 5)
+    },
+    { now: stepClock(1000) },
+  )
+  expect(progressCalls(spy)).toEqual([
+    { done: 1, total: 5 },
+    { done: 2, total: 5 },
+    { done: 3, total: 5 },
+  ])
+})
+
+test('a failing progress write is logged and never fails the run', async () => {
+  vi.spyOn(integrationSyncService, 'reportProgress').mockRejectedValue(new Error('db blip'))
+  const cap = capturingLogger()
+  const result = await run(
+    async ({ run: r, reportProgress }) => {
+      await reportProgress(1, 2)
+      r.items = 1
+    },
+    { log: cap.log },
+  )
+  expect(result.outcome).toBe('ok')
+  const warn = cap.entries().find((e) => e.msg === 'integration sync progress write failed')
+  expect(warn).toMatchObject({ level: WARN, source: 'elpris' })
+  expect(cap.runLines()[0]).toMatchObject({ outcome: 'ok', progressWrites: 0 })
+})
+
+test('the run line counts progress writes', async () => {
+  const cap = capturingLogger()
+  await run(
+    async ({ reportProgress }) => {
+      await reportProgress(1, 2)
+      await reportProgress(2, 2)
+    },
+    { log: cap.log },
+  )
+  expect(cap.runLines()[0]).toMatchObject({ progressWrites: 2 })
 })

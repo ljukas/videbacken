@@ -5,6 +5,7 @@ import { queue } from '~/lib/effects'
 import { type ElprisClient, ElprisError } from '~/lib/effects/elpris'
 import type { deriveFrom } from '~/lib/houseEnergy/derive'
 import { createServerLogger } from '~/lib/logger/server'
+import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, listRecentRuns } from '~/lib/services/integrationSync'
 import { daysWithSlots } from '~/lib/services/spotPrice'
 import type { PriceSlot } from '~/lib/spotPrice/slots'
@@ -403,4 +404,75 @@ test('a failing derive is warned about with the source elpris', async () => {
   expect(entries.find((e) => e.msg === 'energy mix derive failed')).toMatchObject({
     source: 'elpris',
   })
+})
+
+test('reports progress over every planned day, skipped ones included', async () => {
+  // 09-20 … 09-29 planned (10 days): tomorrow is not published yet and 09-22 is a gap — both still count.
+  await insertSession(new Date('2026-09-20T10:00:00Z'))
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const { client } = fakeElpris({ missing: ['2026-09-22'] })
+  await runElprisSync({
+    trigger: 'cron',
+    now: () => {
+      clock += 1_001
+      return new Date(clock)
+    },
+    deps: { elpris: client, sleep: async () => {}, log: capturingLogger().log },
+  })
+  expect(spy.mock.calls.map(([, , p]) => p)).toEqual(
+    Array.from({ length: 10 }, (_, i) => ({ done: i + 1, total: 10 })),
+  )
+})
+
+test('a budget stop leaves the last progress report below its total', async () => {
+  await insertSession(new Date('2026-09-20T10:00:00Z')) // 10 planned days
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const good = fakeElpris()
+  const client: ElprisClient = {
+    async dayPrices(day, zone, o) {
+      clock += 50_000
+      return good.client.dayPrices(day, zone, o)
+    },
+  }
+  const result = await runElprisSync({
+    trigger: 'cron',
+    now: () => new Date(clock),
+    deps: { elpris: client, sleep: async () => {}, log: capturingLogger().log },
+  })
+  const reports = spy.mock.calls.map(([, , p]) => p)
+  expect(result).toMatchObject({ outcome: 'ok', days: 10 })
+  // 50 s per fetch against the 120 s budget: the check runs before each day, so
+  // days 1-3 run (0, 50, 100 s elapsed) and the stop comes at 150 s.
+  expect(result.dayRequests).toBe(3)
+  expect(reports.at(-1)).toEqual({ done: 3, total: 10 })
+  expect(reports.some((p) => p.done === p.total)).toBe(false)
+})
+
+test('a rejected day still moves the progress bar', async () => {
+  await insertSession(new Date('2026-09-20T10:00:00Z'))
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  const good = fakeElpris()
+  const client: ElprisClient = {
+    async dayPrices(day, zone, o) {
+      if (day === '2026-09-22') {
+        throw new ElprisError('unexpected_response', 'prices', undefined, { message: 'bad day' })
+      }
+      return good.client.dayPrices(day, zone, o)
+    },
+  }
+  let clock = NOW.getTime()
+  const result = await runElprisSync({
+    trigger: 'cron',
+    now: () => {
+      clock += 1_001
+      return new Date(clock)
+    },
+    deps: { elpris: client, sleep: async () => {}, log: capturingLogger().log },
+  })
+  expect(result).toMatchObject({ outcome: 'ok', rejected: 1 })
+  expect(spy.mock.calls.map(([, , p]) => p)).toEqual(
+    Array.from({ length: 10 }, (_, i) => ({ done: i + 1, total: 10 })),
+  )
 })

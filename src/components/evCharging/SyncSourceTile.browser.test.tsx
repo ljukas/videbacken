@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vitest'
-import { integrationErrorMessage, integrationHealthTitle } from '~/lib/integrationHealthMessage'
+import {
+  integrationErrorMessage,
+  integrationHealthTitle,
+  integrationSourceName,
+} from '~/lib/integrationHealthMessage'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
@@ -11,6 +15,7 @@ const ok: Health = {
   source: 'zaptec',
   state: 'ok',
   running: false,
+  progress: null,
   lastAttemptAt: new Date('2026-10-04T08:00:00Z'),
   lastSuccessAt: new Date('2026-10-04T08:00:00Z'),
   failingSince: null,
@@ -163,4 +168,61 @@ test('an unread health still renders a usable tile', async () => {
   await expect.element(screen.getByRole('heading', { name: 'Škoda' })).toBeVisible()
   await expect.element(screen.getByText(m.charging_source_state_unknown())).toBeVisible()
   await expect.element(screen.getByRole('button', syncButton('Škoda'))).toBeEnabled()
+})
+
+const emaldoRunning: Health = {
+  ...ok,
+  source: 'emaldo',
+  running: true,
+  progress: { done: 12, total: 30 },
+}
+const progressBar = (screen: Awaited<ReturnType<typeof renderWithProviders>>['screen']) =>
+  screen.getByRole('progressbar', {
+    name: m.charging_source_progress_label({ source: integrationSourceName('emaldo') }),
+  })
+
+test('a run in flight (e.g. the cron’s) shows its progress as a bar and in days', async () => {
+  // syncing: false — this tab didn't start it; the server's progress alone shows it.
+  const { screen } = await renderWithProviders(tile(emaldoRunning))
+  const bar = progressBar(screen)
+  // In the document, not "visible": no app CSS here, so the h-1 bar has no height.
+  await expect.element(bar).toBeInTheDocument()
+  await expect.element(bar).toHaveAttribute('aria-valuenow', '40')
+  await expect
+    .element(bar)
+    .toHaveAttribute('aria-valuetext', m.charging_source_progress({ done: 12, total: 30 }))
+  await expect
+    .element(screen.getByText(m.charging_source_progress({ done: 12, total: 30 })))
+    .toBeVisible()
+})
+
+test('no bar before the run reports progress', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...emaldoRunning, progress: null }, { syncing: true }),
+  )
+  await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument()
+})
+
+test('no bar once the run is no longer in flight', async () => {
+  const { screen } = await renderWithProviders(tile({ ...emaldoRunning, running: false }))
+  await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument()
+})
+
+test('while progress shows, the cadence stays in the layout but invisible', async () => {
+  const cadence = m.charging_source_cadence_emaldo()
+  const { screen } = await renderWithProviders(tile(emaldoRunning))
+  // Tailwind's `invisible` keeps its height (no layout shift); no app CSS loads here, so pin the class.
+  await expect.element(screen.getByText(cadence)).toHaveClass('invisible')
+})
+
+test('the cadence line shows when there is no progress', async () => {
+  const { screen } = await renderWithProviders(tile({ ...emaldoRunning, progress: null }))
+  await expect.element(screen.getByText(m.charging_source_cadence_emaldo())).toBeVisible()
+})
+
+test('the caption is singular for one day', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...emaldoRunning, progress: { done: 1, total: 1 } }),
+  )
+  await expect.element(screen.getByText('1 av 1 dag', { exact: true })).toBeVisible()
 })

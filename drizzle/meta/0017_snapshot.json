@@ -1,6 +1,6 @@
 {
-  "id": "942a0c57-db47-48fc-a770-40cb07c28863",
-  "prevId": "750716f8-a045-4023-bb9b-ab50913dc1b3",
+  "id": "eba5cc18-b739-4fd0-8146-3938138d39fd",
+  "prevId": "8374a688-c54f-410e-9da0-878ed74db0a9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1519,6 +1519,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "progress_done": {
+          "name": "progress_done",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "progress_total": {
+          "name": "progress_total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -1584,6 +1596,14 @@
         "integration_sync_credential_reminder_expiry_check": {
           "name": "integration_sync_credential_reminder_expiry_check",
           "value": "\"integration_sync\".\"credential_reminder_days\" IS NULL OR \"integration_sync\".\"credential_expires_at\" IS NOT NULL"
+        },
+        "integration_sync_progress_pair_check": {
+          "name": "integration_sync_progress_pair_check",
+          "value": "(\"integration_sync\".\"progress_done\" IS NULL) = (\"integration_sync\".\"progress_total\" IS NULL)"
+        },
+        "integration_sync_progress_range_check": {
+          "name": "integration_sync_progress_range_check",
+          "value": "\"integration_sync\".\"progress_total\" IS NULL OR (\"integration_sync\".\"progress_total\" > 0 AND \"integration_sync\".\"progress_done\" BETWEEN 0 AND \"integration_sync\".\"progress_total\")"
         }
       },
       "isRLSEnabled": true
