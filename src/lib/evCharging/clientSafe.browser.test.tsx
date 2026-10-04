@@ -72,3 +72,16 @@ test('the MySkoda export parser is importable and runs client-side', async () =>
     publicCount: 1,
   })
 })
+
+test('the energy-mix derivation math is importable client-side', async () => {
+  const supply = await import('~/lib/houseEnergy/mix/supply')
+  const shape = await import('~/lib/houseEnergy/mix/shape')
+  const pool = await import('~/lib/houseEnergy/mix/pool')
+  const carMix = await import('~/lib/houseEnergy/mix/carMix')
+  const timeline = await import('~/lib/houseEnergy/mix/houseTimeline')
+  expect(typeof supply.houseSupply).toBe('function')
+  expect(typeof shape.shapeSession).toBe('function')
+  expect(pool.emptyPool().storedKwh).toBe(0)
+  expect(typeof carMix.deriveSessionMix).toBe('function')
+  expect(typeof timeline.runHouseTimeline).toBe('function')
+})
