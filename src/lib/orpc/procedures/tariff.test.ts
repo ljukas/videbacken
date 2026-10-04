@@ -147,10 +147,13 @@ test('costOverview and sessionCosts are readable by users and record cost sub-ti
     { context: { ...baseContext(), timings } },
   )
   expect(overview.months).toHaveLength(12)
+  expect(overview.houseDataFrom).toBeNull()
   expect(timings).toMatchObject({
     costEnergyMs: expect.any(Number),
     costSlotsMs: expect.any(Number),
     costTariffMs: expect.any(Number),
+    costMixMs: expect.any(Number),
+    costHouseFromMs: expect.any(Number),
     costComputeMs: expect.any(Number),
   })
   expect(

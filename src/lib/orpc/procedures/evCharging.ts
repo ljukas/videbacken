@@ -72,7 +72,9 @@ export const evChargingRouter = {
 
   // Cost per month/tile (spot + tariff), kept apart from `overview` so a price
   // or tariff problem degrades only the cost figures, never the kWh ones.
-  // Several queries + the pure cost math → sub-timings (timing rule).
+  // Several queries + the pure cost math → sub-timings (timing rule). Prices
+  // each session's stored solar/battery mix (ADR-0023): `costMixMs`,
+  // `costHouseFromMs`.
   costOverview: protectedProcedure
     .input(z.object({ year: yearInput, vehicle: vehicleInput }))
     .handler(async ({ input, context }) => {
@@ -136,6 +138,8 @@ export const evChargingRouter = {
 
   // One session's economy + chart data (/charging/sessions/$sessionId). An
   // unknown or uncounted id is a typed 404 the page turns into "not found".
+  // Carries the cash `cost` (the hero) beside the grid-only `economy`;
+  // `economyMixMs`.
   session: protectedProcedure
     .errors(evChargingErrors)
     .input(z.object({ sessionId: z.uuid() }))
