@@ -172,6 +172,26 @@ test('a year with nothing priced says so in the kr view instead of drawing 0 kr'
   expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(0)
 })
 
+test('a year charged only from own solar draws its 0 kr, never "nothing priced"', async () => {
+  const solar = costMonths.map((c) => ({
+    ...c,
+    gridKwh: 0,
+    fullKwh: 0,
+    solarKwh: c.kwh,
+    spotSek: 0,
+    feesSek: 0,
+    totalSek: 0,
+    avgOre: null,
+  }))
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2023, months: solar }} metric="sek" />
+    </div>,
+  )
+  await expect.element(screen.getByText(m.charging_chart_series_spot()).first()).toBeVisible()
+  expect(screen.getByText(m.charging_chart_cost_empty({ year: 2023 })).elements()).toHaveLength(0)
+})
+
 const barHeights = (container: Element, bar = 0) =>
   [
     ...container
