@@ -85,7 +85,8 @@ export function windowPieces(
 /**
  * `kwh` delivered at most at `rateKw`, filling `pieces` in the kind's order;
  * a partly used piece is filled from its start. Returned in time order, all
- * grid-bought (`gridShare` 1, the same seam as the actual cost).
+ * grid-bought (`gridShare` 1): the counterfactuals compare spot timing as if
+ * every kWh were bought (ADR-0023 decision 8).
  */
 export function schedule(
   kind: ScheduleKind,

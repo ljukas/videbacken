@@ -1,10 +1,12 @@
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
+import { replaceForSessions } from '~/lib/services/energyMix'
 import { EvChargingDomainError } from '~/lib/services/evCharging'
 import { replaceDay } from '~/lib/services/spotPrice'
 import * as tariffService from '~/lib/services/tariff'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
+import { mixSlot } from '~test/fixtures/energyMix'
 import { setupDatabase } from '~test/setup'
 import { getEconomyOverview, getSessionEconomy } from './chargingEconomy'
 import { getSessionCosts } from './costing'
@@ -249,6 +251,7 @@ test('getSessionEconomy fills its timings sink', async () => {
     energyMs: expect.any(Number),
     tariffMs: expect.any(Number),
     slotsMs: expect.any(Number),
+    mixMs: expect.any(Number),
     computeMs: expect.any(Number),
   })
 })
@@ -375,4 +378,38 @@ test('economy overview follows the vehicle scope; the session detail carries the
 
   const detail = await getSessionEconomy({ sessionId: guest })
   expect(detail.session).toMatchObject({ vehicle: 'other', vehicleSource: 'admin' })
+})
+
+test('getSessionEconomy carries the cash cost with the mix; the economy stays grid-only', async () => {
+  await seedPrices() // local 10:xx (08:00Z–09:00Z) at 3 SEK
+  const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 4, [
+    ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 4],
+  ])
+  await replaceForSessions(
+    [id],
+    ['08:00', '08:15', '08:30', '08:45'].map((hm) => ({
+      ...mixSlot(`2026-09-28T${hm}:00Z`, { gridKwh: 0.5, solarKwh: 0.5 }),
+      sessionId: id,
+    })),
+  )
+  const d = await getSessionEconomy({ sessionId: id })
+  expect(d.cost).toMatchObject({ kwh: 4, solarKwh: 2, complete: true })
+  expect(d.cost.totalSek).toBeCloseTo(2 * unit(3))
+  expect(d.cost.solarValueSek).toBeCloseTo(2 * 3)
+  // Price timing still treats every kWh as bought.
+  expect(d.economy.actual.totalSek).toBeCloseTo(4 * unit(3))
+  expect(d.economy.actual.solarKwh).toBe(0)
+  // The hero and the session list agree.
+  const [listed] = await getSessionCosts({ sessionIds: [id] })
+  expect(listed.totalSek).toBeCloseTo(d.cost.totalSek, 9)
+})
+
+test('without a mix the cash cost equals the grid-only actual', async () => {
+  await seedPrices()
+  const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 4, [
+    ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 4],
+  ])
+  const d = await getSessionEconomy({ sessionId: id })
+  expect(d.cost.totalSek).toBeCloseTo(d.economy.actual.totalSek, 9)
+  expect(d.cost.noHouseDataKwh).toBeCloseTo(4)
 })

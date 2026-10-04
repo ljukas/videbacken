@@ -61,7 +61,9 @@ export function analyzeSession(
   /** The kW cap every counterfactual schedule charged at (`rateCapKw`); null when excluded. */
   rateKw: number | null
 } {
-  // gridShare 1: keep in sync with `toIntervals` in ../costInputs.ts (Emaldo seam).
+  // Grid-only on purpose (ADR-0023 decision 8, spec "Cost and display"): price
+  // timing as if every kWh were bought. The cash cost with the solar/battery mix
+  // is costInputs.toIntervals → costing; a solar-aware economy is a later phase.
   const actual = priceIntervals(
     session.stretches.map((s) => ({ ...s, gridShare: 1 })),
     slots,
