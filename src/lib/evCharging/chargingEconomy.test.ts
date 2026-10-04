@@ -413,3 +413,56 @@ test('without a mix the cash cost equals the grid-only actual', async () => {
   expect(d.cost.totalSek).toBeCloseTo(d.economy.actual.totalSek, 9)
   expect(d.cost.noHouseDataKwh).toBeCloseTo(4)
 })
+
+test('a stored mix changes only the cash cost: the timing, schedule and economy overview stay grid-only', async () => {
+  await seedPrices()
+  const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 4, [
+    ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 4],
+  ])
+  const other = await session('2026-09-28T12:00:00Z', '2026-09-28T14:00:00Z', 4, [
+    ['2026-09-28T12:00:00Z', '2026-09-28T13:00:00Z', 4],
+  ])
+  const before = await getSessionEconomy({ sessionId: id })
+  const overviewBefore = await getEconomyOverview({ year: 2026, now: NOW })
+
+  await replaceForSessions(
+    [id],
+    ['08:00', '08:15', '08:30', '08:45'].map((hm) => ({
+      ...mixSlot(`2026-09-28T${hm}:00Z`, {
+        solarKwh: 0.75,
+        batteryGridKwh: 0.25,
+        batteryGridSpotSek: 0.1,
+      }),
+      sessionId: id,
+    })),
+  )
+  const after = await getSessionEconomy({ sessionId: id })
+  expect(after.cost).toMatchObject({ solarKwh: 3, batteryKwh: 1 })
+  expect(after.cost.totalSek).toBeLessThan(before.cost.totalSek)
+  expect(after.economy).toEqual(before.economy)
+  expect(after.optimalSchedule).toEqual(before.optimalSchedule)
+  expect(await getEconomyOverview({ year: 2026, now: NOW })).toEqual(overviewBefore)
+
+  // The other session's detail never picks up this one's mix.
+  const plain = await getSessionEconomy({ sessionId: other })
+  expect(plain.cost).toMatchObject({ solarKwh: 0, batteryKwh: 0, noHouseDataKwh: 4 })
+})
+
+test('the hero and the session list agree when a mix slot starts before the first interval', async () => {
+  await seedPrices()
+  const id = await session('2026-09-28T08:10:00Z', '2026-09-28T09:30:00Z', 4, [
+    ['2026-09-28T08:10:00Z', '2026-09-28T09:10:00Z', 4],
+  ])
+  await replaceForSessions(
+    [id],
+    ['08:00', '08:15', '08:30', '08:45', '09:00'].map((hm) => ({
+      ...mixSlot(`2026-09-28T${hm}:00Z`, { gridKwh: 0.4, solarKwh: 0.4 }),
+      sessionId: id,
+    })),
+  )
+  const d = await getSessionEconomy({ sessionId: id })
+  const [listed] = await getSessionCosts({ sessionIds: [id] })
+  expect(d.cost).toMatchObject({ kwh: 4, solarKwh: 2, complete: true })
+  const { sessionId: _, estimated: __, ...listedCost } = listed
+  expect(listedCost).toEqual(d.cost)
+})

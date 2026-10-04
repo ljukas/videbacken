@@ -168,7 +168,8 @@ export async function getSessionEconomy(input: {
   ])
   const session = toEconomySession(energy)
   const window = economyWindow(session)
-  // The window ± 1 h covers every mix slot: one starts at most 15 min before the first stretch.
+  // The window ± 1 h (CONTEXT_MS, keep it ≥ one 15-min mix slot) covers every
+  // mix slot: one starts at most 15 min before the first stretch.
   const [slots, mixes] = await Promise.all([
     timed(t, 'slotsMs', () =>
       listSlotsOverlapping(SPOT_ZONE, [
