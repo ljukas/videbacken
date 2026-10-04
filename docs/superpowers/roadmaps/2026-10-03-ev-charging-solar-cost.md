@@ -11,7 +11,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 | 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | checkpoint passed | 2026-10-03: 288/288 + 276/276 buckets, 0 mismatches (11 requests, 1 login) |
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
 | 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | checkpoint passed | 2026-10-04: re-fetch 258/258 days in 9 runs, all `ok`; SoC on 73,955/73,955 buckets, 0 days with nulls; 4 probe days exact; energy sums unchanged |
-| 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | [#77](https://github.com/ljukas/videbacken/pull/77) | PR open | — |
+| 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | [#77](https://github.com/ljukas/videbacken/pull/77) | checkpoint passed | 2026-10-04: history rebuilt by the first cron derive (258 pool days, 98/98 counted sessions, mix kWh = session kWh); prod `C` 7.57 vs 7.58 in code; pool never above SoC; probe sessions within 1–6 pts of P |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | not started | — |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
 | — | *Later phase:* solar-aware economy page (own brainstorm) | — | — | — | — |
@@ -149,3 +149,21 @@ Each must pass, with the result recorded in the table, before the next step star
   Local rehearsal: a full-history derive takes ≈ 0.3 s; five of the seven probe sessions land within 0–6 points of
   the proportional column (shaped ones higher), 03-17 is 98 vs 94, and 02-15 is 73 % direct grid but 100 % grid-origin
   (the battery charged from the grid while feeding the car). The three tables ship as migration 0017 (main took 0016).
+- 2026-10-04: #77 merged at 20:13 CEST; its production deployment was created at 20:37. Checkpoint 3 passed on prod
+  the same evening (read-only SELECTs and the runtime log; no readings recorded here):
+  - Derive: the first derive ran inside the 20:45 Emaldo cron run, found no checkpoint and rebuilt from the first
+    reading in 1.5 s (`deriveMs` 1545; 73,980 readings, 98 sessions, 1,747 mix rows, 0 skipped). The 21:00 Zaptec run
+    re-derived 9 days in 0.2 s. No `energy mix derive failed` warning; the request queue is empty. The fallback
+    script wasn't needed.
+  - Coverage: 258 pool days, 2026-01-20 → today, one capacity (7.58). All 98 counted sessions since the first
+    reading have mix rows, no uncounted session has any, and Σ mix kWh = Σ session kWh (1688.2). The 89 sessions
+    without rows are all under the 0.5 kWh noise threshold (mostly the installation day's flapping, 2026-01-27).
+  - `C` on prod: 7.57 kWh per 100 % over 35,408 discharge-only bucket pairs, 0.01 from the code's 7.58, so no
+    capacity PR. The cap query returns no rows: the pool never ends a day above the measured SoC.
+  - Probe sessions, derived direct-grid share vs the probe's P (grid-origin share in brackets): 02-15 73 vs 88 (96),
+    03-17 98 vs 94 (99), 03-29 53 vs 49 (53), 06-10 44 vs 45 (45), 06-12 71 vs 65 (76; the probe's shaped figure was
+    71), 07-15 60 vs 60 (61), 09-06 60 vs 57 (60). Grid-charged battery shows on the nights: 02-15 5.8 kWh, 06-12
+    1.3 kWh. 03-17's 0.4 kWh without house data is the probe's known 95-minute Emaldo gap. 02-15's grid-origin
+    share is 96 % on prod vs 100 % in the local rehearsal: prod's pool carries 1.0 kWh of February solar into
+    that night.
+  - The owner accepted the numbers. Next: step 4 (cash cost uses the mix) in a new session.
