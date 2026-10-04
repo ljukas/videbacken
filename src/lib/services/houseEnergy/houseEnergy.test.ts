@@ -243,7 +243,18 @@ test('SoC round-trips exactly, null included', async () => {
     batterySocPct,
   }))
   await replaceDay(d, rows)
-  expect((await all()).map((r) => r.batterySocPct)).toEqual([null, 0, 37.5, 100])
+  const stored = await listReadings({ from: d.dayStart, to: d.dayEnd })
+  expect(stored.map((r) => r.batterySocPct)).toEqual([null, 0, 37.5, 100])
+})
+
+test('a bad SoC and a bad kWh in one bucket are both reported', async () => {
+  const d = dayOf('2026-04-01')
+  const err = (await replaceDay(d, [
+    { ...reading(d.dayStart), loadKwh: -1, batterySocPct: 101 },
+  ]).catch((e) => e)) as Error
+  expect(err.message).toContain('bucket 0: loadKwh')
+  expect(err.message).toContain('bucket 0: batterySocPct')
+  expect(err.message.split('; ')).toHaveLength(2)
 })
 
 test.each([
@@ -251,6 +262,7 @@ test.each([
   100.001,
   Number.NaN,
   Number.POSITIVE_INFINITY,
+  Number.NEGATIVE_INFINITY,
 ])('a SoC of %s is a domain error naming the bucket and field only, keeping the stored day', async (batterySocPct) => {
   const d = dayOf('2026-04-01')
   await replaceDay(d, [reading(d.dayStart)])
