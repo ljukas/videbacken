@@ -12,6 +12,7 @@ import {
 } from '~/lib/effects/emaldo'
 import { createServerLogger } from '~/lib/logger/server'
 import { listReadings, replaceDay } from '~/lib/services/houseEnergy'
+import * as integrationSyncService from '~/lib/services/integrationSync'
 import {
   beginAttempt,
   getHealth,
@@ -281,6 +282,24 @@ test('a long backfill is capped at 30 days a run and continues from the watermar
   expect(done.requested).toEqual([YESTERDAY, TODAY])
 })
 
+test('reports progress over yesterday, today and the backfill, in days', async () => {
+  // A session on 03-28 → the backfill starts 7 days earlier (03-21): 10 backfill days + 2.
+  await sessionOn('2026-03-28')
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const { client } = fakeEmaldo()
+  // Each now() 1 s later, so the throttle never drops a write.
+  await run(client, {
+    now: () => {
+      clock += 1_001
+      return new Date(clock)
+    },
+  })
+  expect(spy.mock.calls.map(([, , p]) => p)).toEqual(
+    Array.from({ length: 12 }, (_, i) => ({ done: i + 1, total: 12 })),
+  )
+})
+
 test('no new backfill day once the budget is used, and the watermark stays put', async () => {
   await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30
   let clock = NOW.getTime()
@@ -528,6 +547,37 @@ test('the budget can end mid-backfill: the watermark is the end of the last stor
   expect(requested).toEqual([YESTERDAY, TODAY, '2026-03-24', '2026-03-25'])
   expect(result).toMatchObject({ outcome: 'ok', backfillDaysLeft: 5 })
   expect(await getLastSuccessStartedAt('emaldo')).toEqual(startOf('2026-03-26'))
+})
+
+test('a budget stop leaves the last progress report below its total', async () => {
+  await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30: total 2 + 7 = 9
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const { client } = fakeEmaldo({}, () => {
+    clock += 35_000
+  })
+  await run(client, { now: () => new Date(clock) })
+  const reports = spy.mock.calls.map(([, , p]) => p)
+  expect(reports.every((p) => p.total === 9)).toBe(true)
+  expect(reports.some((p) => p.done === p.total)).toBe(false)
+  expect(reports.at(-1)).toEqual({ done: 4, total: 9 })
+})
+
+test('progress totals count the capped backfill, not the whole history', async () => {
+  await sessionOn('2026-01-10') // 57 + 30 days wanted; 30 planned: total 2 + 30
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  let clock = NOW.getTime()
+  const { client } = fakeEmaldo()
+  await run(client, {
+    now: () => {
+      clock += 1_001
+      return new Date(clock)
+    },
+  })
+  const reports = spy.mock.calls.map(([, , p]) => p)
+  expect(reports).toHaveLength(32)
+  expect(reports.every((p) => p.total === 32)).toBe(true)
+  expect(reports.at(-1)).toEqual({ done: 32, total: 32 })
 })
 
 test('a backfill day whose end is off (a DST slip) fails the run and stores nothing for it', async () => {

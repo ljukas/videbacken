@@ -518,6 +518,25 @@ healthy. See [ADR-0022](./0022-live-vehicle-state-attribution.md) and the
 
 ---
 
+## Amendment (2026-10-04): sync progress on the health row
+
+A running sync can report progress ("12 av 30 dagar") for its Datakällor tile. `runPulledSync` hands `execute` a
+`reportProgress(done, total)` that writes `integration_sync.progress_done` / `progress_total` **under the run's lease
+token while the lease is unexpired** (an expired, taken-over or recorded lease writes nothing), throttled to one
+write per second (`done = total` always writes) and best effort (a failed write is a `warn`, never a failed run).
+`beginAttempt` and `recordOutcome` clear it; `getHealth` exposes it only while the lease is live. So a crashed run's
+leftover is shown at most until its lease expires (≤ 5 min, like the "Synkar…" spinner), and a rollback's leftover
+is never shown — no CHECK ties the columns to the lease, so a rollback's `recordOutcome` (which doesn't know them)
+can't fail. Emaldo and elpris report days; Zaptec and Škoda finish before a poll would see them and don't report.
+
+Why the database, not a push or another store: the tile already polls this row (ADR-0018), the run already writes it,
+and it works for cron runs and every viewer. Streaming the click's request serves only that tab; process memory
+doesn't survive Fluid instance routing; Runtime Cache/Redis add a second store that can disagree with the lease;
+Vercel Workflow was parked as a separate re-platforming decision. Design:
+[`2026-10-04-sync-progress-design.md`](../superpowers/specs/2026-10-04-sync-progress-design.md).
+
+---
+
 ## Amendments to other ADRs
 
 Full rationale lives in each amended ADR itself (this repo's convention: one substantive copy, not
@@ -542,9 +561,9 @@ a duplicate here) — these are pointers, not summaries to read instead of them.
 - `src/lib/effects/zaptec/` — the fail-closed client: `notConfigured` / http / `fake` adapter
   selection, injected `fetch`, zod parsing, retry/timeout policy, login + live-state failure caches, `stats` reporting.
 - `src/lib/services/integrationSync/` — `beginAttempt` (lease acquire), `recordOutcome` (transition +
-  snapshot + history, `FOR UPDATE`), `getHealth`, `listRecentRuns`.
+  snapshot + history, `FOR UPDATE`), `reportProgress` (lease-guarded progress write), `getHealth`, `listRecentRuns`.
 - `src/lib/db/schema/integrationSync.ts` — `integration_sync` (snapshot + lease) and
-  `integration_sync_run` (append-only history) tables and their CHECK constraints.
+  `integration_sync_run` (append-only history) tables and their CHECK constraints (incl. the progress CHECKs).
 - `src/lib/db/schema/evCharging.ts` — `ev_charger` / `ev_charge_session` / `ev_charge_interval`; the
   `double precision` energy columns and their CHECKs the importer re-validates in JS before writing.
 - `src/lib/effects/elpris/` — the keyless spot-price client (DST-safe slot parsing, unit cross-check);

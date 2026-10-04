@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun } from '~/lib/db/schema'
 import type {
@@ -17,10 +17,15 @@ import { deriveState, type HealthSnapshot, nextRow, type SyncOutcome } from './t
 
 export type { RunStats, SyncOutcome } from './transition'
 
+/** A running sync's progress, in the source's own unit (days, for Emaldo and elpris). */
+export type SyncProgress = { done: number; total: number }
+
 export type IntegrationHealth = {
   source: IntegrationSource
   state: HealthState
   running: boolean
+  /** Set only while `running` and the run has reported; null otherwise. */
+  progress: SyncProgress | null
   lastAttemptAt: Date | null
   lastSuccessAt: Date | null
   failingSince: Date | null
@@ -66,10 +71,16 @@ function toHealth(
   includeAdminDetail: boolean,
 ): IntegrationHealth {
   const snapshot = row ? toSnapshot(row) : null
+  const running = row?.leaseUntil != null && row.leaseUntil.getTime() > now.getTime()
   return {
     source,
     state: deriveState(source, snapshot, now),
-    running: row?.leaseUntil != null && row.leaseUntil.getTime() > now.getTime(),
+    running,
+    // Only a live lease's progress: a crashed run's or a rollback's leftover is never shown.
+    progress:
+      running && row?.progressDone != null && row.progressTotal != null
+        ? { done: row.progressDone, total: row.progressTotal }
+        : null,
     lastAttemptAt: snapshot?.lastAttemptAt ?? null,
     lastSuccessAt: snapshot?.lastSuccessAt ?? null,
     failingSince: snapshot?.failingSince ?? null,
@@ -99,6 +110,8 @@ export async function beginAttempt(
       runningSince: now,
       leaseUntil: new Date(now.getTime() + LEASE_DURATION_MS),
       leaseToken: sql`gen_random_uuid()`,
+      progressDone: null,
+      progressTotal: null,
       updatedAt: now,
     })
     .where(
@@ -164,6 +177,8 @@ export async function recordOutcome(
         runningSince: null,
         leaseUntil: null,
         leaseToken: null,
+        progressDone: null,
+        progressTotal: null,
         updatedAt: now,
       })
       .where(eq(integrationSync.source, source))
@@ -257,4 +272,27 @@ export async function listRecentRuns(
     outcome: r.outcome as RunRow['outcome'],
     errorCode: r.errorCode as IntegrationErrorCode | null,
   }))
+}
+
+// The running attempt's progress, overwritten in place. Matched on the lease
+// token and an unexpired lease, so a lost lease (expired, taken over, or
+// already recorded) writes nothing: a late write can never touch a newer run's
+// progress or re-set a finished one. Values come from runPulledSync, which
+// normalizes them; the CHECKs are the backstop.
+export async function reportProgress(
+  source: IntegrationSource,
+  attemptId: string,
+  { done, total }: SyncProgress,
+  { now }: { now: Date },
+): Promise<void> {
+  await db
+    .update(integrationSync)
+    .set({ progressDone: done, progressTotal: total, updatedAt: now })
+    .where(
+      and(
+        eq(integrationSync.source, source),
+        eq(integrationSync.leaseToken, attemptId),
+        gt(integrationSync.leaseUntil, now),
+      ),
+    )
 }

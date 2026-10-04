@@ -13,6 +13,7 @@ import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { CredentialExpiryAlert } from '~/components/evCharging/CredentialExpiryAlert'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
+import { healthPoll } from '~/components/evCharging/healthPoll'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
@@ -87,11 +88,6 @@ const emaldoRunsQuery = orpc.evCharging.recentRuns.queryOptions({
   input: { source: 'emaldo', limit: RECENT_RUNS },
 })
 const vehicleLatestQuery = orpc.evCharging.vehicleStateLatest.queryOptions()
-// Sync health polls every minute, every 5 s while a run is in flight (a run's
-// lease lasts at most 5 min), so "Synkar…" clears soon after the run ends.
-const healthPoll = (query: { state: { data?: { running: boolean } } }) =>
-  query.state.data?.running ? 5_000 : 60_000
-
 export const Route = createFileRoute('/_authenticated/charging/')({
   head: () => ({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
@@ -247,7 +243,7 @@ function ChargingPage() {
   const { data: health } = useSuspenseQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
     // Members read only the alert: a plain minute. Admins also watch "Synkar…".
-    refetchInterval: isAdmin ? healthPoll : 60_000,
+    refetchInterval: isAdmin ? healthPoll(syncNow.isPendingFor('zaptec')) : 60_000,
   })
   // Admin-only (see the alerts and the Datakällor panel below). Polled like
   // Zaptec's, so a tile's "running" state (a cron run seen mid-flight) clears
@@ -255,7 +251,7 @@ function ChargingPage() {
   const { data: pricesHealth } = useQuery({
     ...pricesHealthQuery,
     enabled: isAdmin,
-    refetchInterval: healthPoll,
+    refetchInterval: healthPoll(syncNow.isPendingFor('elpris')),
   })
   const live = useLiveStatus()
   const zaptecRuns = useQuery({
@@ -267,13 +263,13 @@ function ChargingPage() {
   const { data: skodaHealth } = useQuery({
     ...skodaHealthQuery,
     enabled: isAdmin,
-    refetchInterval: healthPoll,
+    refetchInterval: healthPoll(syncNow.isPendingFor('skoda')),
   })
   const skodaRuns = useQuery({ ...skodaRunsQuery, enabled: isAdmin })
   const { data: emaldoHealth } = useQuery({
     ...emaldoHealthQuery,
     enabled: isAdmin,
-    refetchInterval: healthPoll,
+    refetchInterval: healthPoll(syncNow.isPendingFor('emaldo')),
   })
   const emaldoRuns = useQuery({ ...emaldoRunsQuery, enabled: isAdmin })
   const vehicleLatest = useQuery({ ...vehicleLatestQuery, enabled: isAdmin })

@@ -146,8 +146,8 @@ export async function runEmaldoSync(opts: {
       backfillDaysLeft: 0,
       earliestReplacedDay: null,
     }),
-    execute: ({ run, signal, now, log }) =>
-      syncDays(client, run, stats, { signal, now, sleep, log }),
+    execute: ({ run, signal, now, log, reportProgress }) =>
+      syncDays(client, run, stats, { signal, now, sleep, log, reportProgress }),
     toRunStats: (run) => ({
       since: run.since,
       // Zaptec-era column names: pages = days fetched, sessionsSeen/upserted = readings stored.
@@ -199,6 +199,7 @@ type Ctx = {
   now: () => Date
   sleep: (ms: number) => Promise<void>
   log: Logger
+  reportProgress: (done: number, total: number) => Promise<void>
 }
 
 const startOf = (day: string) => new Date(stockholmDayBounds(day).startMs)
@@ -226,22 +227,29 @@ async function syncDays(
   run.backfillDaysLeft = plan.backfill.length + plan.backfillLeft
   run.since = startOf(plan.backfill[0] ?? plan.yesterday)
   const sync = (day: string) => syncDay(client, run, stats, ctx, { day, today })
+  // Progress in days for the Datakällor tile: yesterday, today, then the backfill.
+  const total = 2 + plan.backfill.length
+  let done = 0
+  const step = () => ctx.reportProgress(++done, total)
 
   // Only yesterday must land: it is the day the watermark waits on. Today is
   // still filling (and is yesterday tomorrow); an old day without usable
   // readings is skipped so it can't wedge the backfill.
   const yesterday = await sync(plan.yesterday)
+  await step()
   // The watermark floor: the plan's start is never before the stored
   // watermark, and every day before it is stored or before the lead. Set only
   // once Emaldo has answered, so a run that never got an answer (not
   // configured, auth) plants no watermark.
   run.syncedUntil = startOf(plan.start)
   await sync(plan.today)
+  await step()
 
   for (const [i, day] of plan.backfill.entries()) {
     if (now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS) break
     if (i > 0) await sleep(BACKFILL_PAUSE_MS)
     await sync(day)
+    await step()
     run.backfillDaysLeft--
     run.syncedUntil = endOf(day)
   }

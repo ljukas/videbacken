@@ -37,6 +37,7 @@ const health: Health = {
   source: 'zaptec',
   state: 'ok',
   running: false,
+  progress: null,
   lastAttemptAt: new Date('2026-09-28T08:00:00Z'),
   lastSuccessAt: new Date('2026-09-28T08:00:00Z'),
   failingSince: null,
