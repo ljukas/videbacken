@@ -1,8 +1,8 @@
 import {
+  BanknoteIcon,
   CalendarDaysIcon,
   CalendarRangeIcon,
   CircleAlertIcon,
-  CoinsIcon,
   GaugeIcon,
   InfinityIcon,
   type LucideIcon,
@@ -51,13 +51,15 @@ export function TotalsTiles({ tiles, cost }: { tiles: Tiles; cost?: CostTiles })
       <Tabs defaultValue="thisMonth" className="@3xl:hidden" data-testid="totals-tabs">
         <Card>
           <CardHeader className="pb-2">
-            {/* h-10: a phone-sized touch target (the base is h-8, set via the same group variant). */}
+            {/* h-10: a phone-sized touch target (the base is h-8, set via the same group
+                variant). Triggers size to content, not equal thirds, so "Denna månad"
+                fits; a label truncates only when even that doesn't. */}
             <TabsList
               className="w-full group-data-horizontal/tabs:h-10"
               aria-label={m.charging_totals_heading()}
             >
               {items.map(({ key, label }) => (
-                <TabsTrigger key={key} value={key} className="min-w-0">
+                <TabsTrigger key={key} value={key} className="min-w-0 flex-auto">
                   {/* Dropped on the narrowest phones, where "All time" would overflow. */}
                   <PeriodIcon period={key} className="@max-xs:hidden" />
                   <span className="truncate">{label}</span>
@@ -138,7 +140,7 @@ function TileReadouts({ totals, cost }: { totals: Totals; cost: Cost | undefined
         <div className="@[16rem]/tile:border-l @[16rem]/tile:pl-4">
           {unpriced ? (
             <Readout
-              icon={CoinsIcon}
+              icon={BanknoteIcon}
               label={m.charging_tile_cost()}
               value="—"
               muted
@@ -146,7 +148,7 @@ function TileReadouts({ totals, cost }: { totals: Totals; cost: Cost | undefined
             />
           ) : (
             <Readout
-              icon={CoinsIcon}
+              icon={BanknoteIcon}
               label={m.charging_tile_cost()}
               qualifier={short ? m.charging_cost_min_prefix() : undefined}
               value={formatKronor(cost.totalSek)}
