@@ -1,6 +1,7 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm'
 import { type DbOrTx, db } from '~/lib/db'
-import { energyMixDeriveRequest, spotPrice } from '~/lib/db/schema'
+import { spotPrice } from '~/lib/db/schema'
+import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
 import { type DailySpot, type PriceSlot, validateDaySlots } from '~/lib/spotPrice/slots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
 import { stockholmDayBounds } from '~/lib/time/stockholm'
@@ -43,7 +44,7 @@ export async function replaceDay(
     )
     // Queued with the prices (ADR-0023): if the run dies before its derive,
     // the next derive still re-prices the battery from this day.
-    await tx.insert(energyMixDeriveRequest).values({ fromDay: day })
+    await requestDerive(day, tx)
   })
   return { written: slots.length }
 }

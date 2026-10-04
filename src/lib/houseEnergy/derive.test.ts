@@ -561,3 +561,11 @@ test('a session whose slot would exceed the table bound is skipped, not fatal', 
   expect(total(await mixOf(good), 'kwh')).toBeCloseTo(2, 9)
   expect(await mixOf(huge)).toEqual([])
 })
+
+test('a queued day before 1970 (a clock glitch) is clamped to the floor, never fatal', async () => {
+  await storeDay('2026-06-10', () => BASE)
+  await db.insert(energyMixDeriveRequest).values({ fromDay: '0001-01-01' })
+  const result = await derive('2026-06-10')
+  expect(result.fromDay).toBe('2026-06-09') // the day before the first reading
+  expect(await takeQueue()).toBeNull()
+})

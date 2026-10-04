@@ -220,7 +220,7 @@ orchestrates it through services.
   (Zaptec page import, spot day, readings day), and again before the run derives, so a derive that fails is covered by the
   next one, and a request waiting over 3 h is warned about. A derive is best effort, with a 30 s budget, and never
   changes a run's outcome.
-- No derive window starts before the day before the first reading. A session longer than 31 days, or with a slot of
+- No derive window starts before the day before the first reading. A session longer than a year, or with a slot of
   1000 kWh or more, is a glitch: it gets no mix rows (all-grid) and a counts-only warning, never blocking the rest.
 - With no house readings at all, nothing is derived (sessions keep no mix rows and stay all-grid). Sessions before
   the first reading never get mix rows.

@@ -43,11 +43,11 @@ export type DeriveResult = {
 }
 
 /**
- * A session longer than this is a glitch (a charger clock reset, a bogus
+ * A session longer than a year is a glitch (a charger clock reset, a bogus
  * start): spreading it would build millions of buckets. It is skipped and
- * stays all-grid.
+ * stays all-grid. (A year is ≈ 105k buckets, still cheap.)
  */
-const MAX_SESSION_MS = 31 * 24 * 3_600_000
+const MAX_SESSION_MS = 366 * 24 * 3_600_000
 /** A mix slot this large would fail the table's CHECK and with it the whole derive. */
 const MAX_SLOT_KWH = 1000
 
@@ -124,9 +124,6 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
   const today = stockholmDayOf(now.getTime())
   const queued = await energyMixService.takeDeriveRequests(tx)
   const earliest = queued !== null && queued.fromDay < day ? queued.fromDay : day
-  // Nothing after today has readings to derive; a later day (tomorrow's
-  // prices, a typo) would otherwise find no checkpoint and rebuild history.
-  const requested = earliest > today ? today : earliest
   const queue = {
     queuedRequests: queued?.count ?? 0,
     queuedForMin:
@@ -156,10 +153,13 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
   // SoC cap needs the next reading). Re-deriving D−1 makes a resume equal a
   // full derive.
   // Nothing before the first reading has house data, so no window starts
-  // earlier than the day before it: a session with a bogus start (epoch 0, a
-  // charger clock reset) can't drag the window back decades or into days the
-  // calendar helpers refuse.
+  // earlier than the day before it: a session or queued day with a bogus
+  // start (epoch 0, a charger clock reset) can't drag the window back decades
+  // or into days the calendar helpers refuse. Nothing after today has
+  // readings either: a later day (tomorrow's prices, a typo) would otherwise
+  // find no checkpoint and rebuild history.
   const floorDay = addDays(stockholmDayOf(first.getTime()), -1)
+  const requested = maxDay(earliest > today ? today : earliest, floorDay)
   let { from: fromDay, exhausted: widenExhausted } = await widenToSessions(
     maxDay(addDays(requested, -1), floorDay),
     floorDay,

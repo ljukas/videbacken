@@ -7,12 +7,12 @@ import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
 import { expectConstraintViolation } from '~test/expectConstraintViolation'
 import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
+import { requestDerive } from './deriveRequest'
 import {
   listForSessions,
   MIX_INSERT_BATCH,
   pruneUncounted,
   replaceForSessions,
-  requestDerive,
   takeDeriveRequests,
   withDeriveLock,
 } from './energyMix'
@@ -388,4 +388,8 @@ test('a derive that fails leaves its requests queued', async () => {
 
 test('requestDerive refuses a malformed day', async () => {
   await expect(requestDerive('2026-6-10')).rejects.toThrow(RangeError)
+})
+
+test('requestDerive refuses a day the derive math cannot handle', async () => {
+  await expect(requestDerive('0001-01-01')).rejects.toThrow(RangeError)
 })

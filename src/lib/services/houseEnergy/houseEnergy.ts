@@ -1,7 +1,8 @@
 import { millisecondsInHour, millisecondsInMinute } from 'date-fns/constants'
 import { and, asc, gte, lt, min } from 'drizzle-orm'
 import { type DbOrTx, db } from '~/lib/db'
-import { energyMixDeriveRequest, HOUSE_BUCKET_KWH_MAX, houseEnergyReading } from '~/lib/db/schema'
+import { HOUSE_BUCKET_KWH_MAX, houseEnergyReading } from '~/lib/db/schema'
+import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
 import { stockholmDayOf } from '~/lib/time/stockholm'
 import { HouseEnergyDomainError } from './errors'
 
@@ -146,9 +147,7 @@ async function insertDay(day: { dayStart: Date; dayEnd: Date }, buckets: readonl
       )
     // Queued with the readings (ADR-0023): if the run dies before its derive,
     // the next derive still covers this day.
-    await tx
-      .insert(energyMixDeriveRequest)
-      .values({ fromDay: stockholmDayOf(day.dayStart.getTime()) })
+    await requestDerive(stockholmDayOf(day.dayStart.getTime()), tx)
     if (buckets.length === 0) return
     await tx.insert(houseEnergyReading).values(
       buckets.map((b) => ({

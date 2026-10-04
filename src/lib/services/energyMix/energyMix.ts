@@ -3,7 +3,6 @@ import { type DbOrTx, type DbTransaction, db } from '~/lib/db'
 import { energyMixDeriveRequest, evChargeEnergyMix, evChargeSession } from '~/lib/db/schema'
 import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
 import { countedSessionFilter } from '~/lib/services/evCharging'
-import { isStockholmDay } from '~/lib/time/stockholm'
 
 // The stored energy mix of charging sessions (ADR-0023): per session × 15-min
 // slot, kWh by origin. Written only by the derive; read by the cost model.
@@ -99,20 +98,6 @@ export async function pruneUncounted(dbOrTx: DbOrTx = db): Promise<number> {
     .where(inArray(evChargeEnergyMix.sessionId, uncounted))
     .returning({ sessionId: evChargeEnergyMix.sessionId })
   return deleted.length
-}
-
-function assertDay(day: string): void {
-  if (!isStockholmDay(day)) throw new RangeError(`Not a YYYY-MM-DD day: ${day}`)
-}
-
-/**
- * Queues a derive from Stockholm `day` (ADR-0023). A sync calls it for what it
- * stored, before running the derive, so the request outlives a derive that
- * fails. Committed on its own, outside any derive's lock.
- */
-export async function requestDerive(day: string, dbOrTx: DbOrTx = db): Promise<void> {
-  assertDay(day)
-  await dbOrTx.insert(energyMixDeriveRequest).values({ fromDay: day })
 }
 
 /** What a derive took off the queue: the earliest day, how many, and the oldest request's time. */

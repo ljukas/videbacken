@@ -523,4 +523,11 @@ describe('importSessions reports the earliest change for the energy-mix derive',
     await importSessions([withIntervals()], ctx)
     expect(await queued()).toEqual(['2026-01-10'])
   })
+
+  test('a session starting before 1970 (a charger clock reset) imports, without queuing its day', async () => {
+    const glitch = session({ id: 'zap-glitch', startAt: new Date('0001-01-01T00:00:00Z') })
+    const result = await importSessions([glitch], ctx)
+    expect(result.upserted).toBe(1)
+    expect(await db.select().from(energyMixDeriveRequest)).toEqual([])
+  })
 })
