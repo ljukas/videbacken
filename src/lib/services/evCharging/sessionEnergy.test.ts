@@ -213,3 +213,72 @@ test('earliestCountedStartEndingAfter: the earliest counted start among sessions
   await insertSession({ startAt: new Date('2026-09-02T08:00:00Z') })
   expect(await earliestCountedStartEndingAfter(midnight)).toEqual(new Date('2026-09-01T23:00:00Z'))
 })
+
+test('endsAfter and earliestCountedStartEndingAfter leave out replaced and noise sessions', async () => {
+  const midnight = new Date('2026-09-02T00:00:00Z')
+  // Both span midnight and start before the counted one.
+  await insertSession({
+    startAt: new Date('2026-09-01T22:30:00Z'),
+    replacedByZaptecSessionId: 'zap-x',
+  })
+  await insertSession({ startAt: new Date('2026-09-01T22:40:00Z'), energyKwh: 0.1 })
+  await insertSession({ startAt: new Date('2026-09-01T22:00:00Z') }) // ends exactly at midnight
+  const counted = await insertSession({ startAt: new Date('2026-09-01T23:00:00Z') })
+  expect((await listSessionEnergy({ endsAfter: midnight })).map((x) => x.sessionId)).toEqual([
+    counted,
+  ])
+  expect(await earliestCountedStartEndingAfter(midnight)).toEqual(new Date('2026-09-01T23:00:00Z'))
+})
+
+test('endsAfter reads intervals of the matching sessions only', async () => {
+  const before = await insertSession({ startAt: new Date('2026-09-01T10:00:00Z') })
+  const after = await insertSession({ startAt: new Date('2026-09-02T10:00:00Z') })
+  const iv = (sessionId: string, from: string, to: string) => ({
+    sessionId,
+    startAt: new Date(from),
+    endAt: new Date(to),
+    energyKwh: 5,
+  })
+  await db
+    .insert(evChargeInterval)
+    .values([
+      iv(before, '2026-09-01T10:00:00Z', '2026-09-01T12:00:00Z'),
+      iv(after, '2026-09-02T10:00:00Z', '2026-09-02T11:00:00Z'),
+      iv(after, '2026-09-02T11:00:00Z', '2026-09-02T12:00:00Z'),
+    ])
+  const [only, ...rest] = await listSessionEnergy({ endsAfter: new Date('2026-09-02T00:00:00Z') })
+  expect(rest).toEqual([])
+  expect(only).toMatchObject({ sessionId: after, estimated: false })
+  expect(only.stretches).toHaveLength(2)
+})
+
+test("listSessionEnergy and earliestCountedStartEndingAfter read inside a caller's transaction", async () => {
+  // The test pool has one connection: using `db` instead of `tx` would hang.
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(evCharger)
+      .values({ id: 'charger-tx', name: 'Charger', installationId: 'install-1' })
+    const [row] = await tx
+      .insert(evChargeSession)
+      .values({
+        zaptecSessionId: 'zap-tx',
+        chargerId: 'charger-tx',
+        startAt: new Date('2026-09-01T23:00:00Z'),
+        endAt: new Date('2026-09-02T01:00:00Z'),
+        energyKwh: 4,
+      })
+      .returning({ id: evChargeSession.id })
+    await tx.insert(evChargeInterval).values({
+      sessionId: row.id,
+      startAt: new Date('2026-09-01T23:00:00Z'),
+      endAt: new Date('2026-09-02T01:00:00Z'),
+      energyKwh: 4,
+    })
+    const midnight = new Date('2026-09-02T00:00:00Z')
+    const [listed] = await listSessionEnergy({ endsAfter: midnight }, tx)
+    expect(listed).toMatchObject({ sessionId: row.id, estimated: false })
+    expect(await earliestCountedStartEndingAfter(midnight, tx)).toEqual(
+      new Date('2026-09-01T23:00:00Z'),
+    )
+  })
+})

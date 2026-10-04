@@ -230,6 +230,7 @@ test('importSessions with all-invalid sessions returns skipped only, no throw', 
     { installationId: 'install-1' },
   )
   expect(result).toMatchObject({ upserted: 0, voided: 0, skipped: 2 })
+  expect(result.earliestChangedStartAt).toBeNull()
   expect(await db.select().from(evChargeSession)).toHaveLength(0)
 })
 
@@ -249,6 +250,7 @@ test('importSessions skips a session with an invalid interval (end before start)
     { installationId: 'install-1' },
   )
   expect(result).toMatchObject({ upserted: 0, voided: 0, skipped: 1 })
+  expect(result.earliestChangedStartAt).toBeNull()
 })
 
 test('findLiveCharger picks the charger with the newest session over stubs and old chargers', async () => {
@@ -438,5 +440,71 @@ describe('importSessions reports the earliest change for the energy-mix derive',
       ctx,
     )
     expect(result.earliestChangedStartAt).toEqual(new Date('2026-01-11T10:00:00Z'))
+  })
+
+  test('re-importing the same intervals in another order changes nothing', async () => {
+    await importSessions([withIntervals()], ctx)
+    const reordered = withIntervals()
+    reordered.intervals.reverse()
+    expect((await importSessions([reordered], ctx)).earliestChangedStartAt).toBeNull()
+  })
+
+  test('a session without intervals, re-imported unchanged, changes nothing', async () => {
+    const plain = session({ id: 'zap-plain', startAt: new Date('2026-01-11T10:00:00Z') })
+    await importSessions([withIntervals(), plain], ctx)
+    expect((await importSessions([withIntervals(), plain], ctx)).earliestChangedStartAt).toBeNull()
+  })
+
+  test.each<[string, ZaptecSession['intervals']]>([
+    [
+      'energy',
+      [
+        iv('2026-01-10T10:00:00Z', '2026-01-10T11:00:00Z', 2.5),
+        iv('2026-01-10T11:00:00Z', '2026-01-10T12:00:00Z', 3),
+      ],
+    ],
+    [
+      'time',
+      [
+        iv('2026-01-10T10:00:00Z', '2026-01-10T10:30:00Z', 2),
+        iv('2026-01-10T10:30:00Z', '2026-01-10T12:00:00Z', 3),
+      ],
+    ],
+    [
+      'count',
+      [
+        iv('2026-01-10T10:00:00Z', '2026-01-10T11:00:00Z', 2),
+        iv('2026-01-10T11:00:00Z', '2026-01-10T11:30:00Z', 1),
+        iv('2026-01-10T11:30:00Z', '2026-01-10T12:00:00Z', 2),
+      ],
+    ],
+    ['removal', []],
+  ])('an interval change in %s is a change', async (_, intervals) => {
+    await importSessions([withIntervals()], ctx)
+    const result = await importSessions([withIntervals({ intervals })], ctx)
+    expect(result.earliestChangedStartAt).toEqual(new Date('2026-01-10T10:00:00Z'))
+  })
+
+  test.each<[string, Partial<ZaptecSession>, Partial<ZaptecSession>]>([
+    ['un-voided', { voided: true }, { voided: false }],
+    ['no longer replaced', { replacedBySessionId: 'zap-2' }, { replacedBySessionId: null }],
+    ['replaced by another', { replacedBySessionId: 'zap-2' }, { replacedBySessionId: 'zap-3' }],
+  ])('a session %s is a change', async (_, before, after) => {
+    await importSessions([withIntervals(before)], ctx)
+    const result = await importSessions([withIntervals(after)], ctx)
+    expect(result.earliestChangedStartAt).toEqual(new Date('2026-01-10T10:00:00Z'))
+  })
+
+  test('unchanged sessions on the page never pull the change earlier', async () => {
+    const later = (over: Partial<ZaptecSession> = {}) =>
+      session({
+        id: 'zap-later',
+        startAt: new Date('2026-01-12T10:00:00Z'),
+        endAt: new Date('2026-01-12T11:00:00Z'),
+        ...over,
+      })
+    await importSessions([withIntervals(), later()], ctx)
+    const result = await importSessions([withIntervals(), later({ energyKwh: 7 })], ctx)
+    expect(result.earliestChangedStartAt).toEqual(new Date('2026-01-12T10:00:00Z'))
   })
 })
