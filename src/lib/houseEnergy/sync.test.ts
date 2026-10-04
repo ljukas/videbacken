@@ -353,9 +353,24 @@ test('an old day with invalid readings is skipped and warned; the backfill goes 
   expect(cap.raw()).not.toContain('-0.5')
 })
 
-test('invalid readings for yesterday fail the run', async () => {
-  const { client } = fakeEmaldo({ [YESTERDAY]: (d) => syntheticDay(d, 3, -0.5) })
-  expect(await run(client)).toMatchObject({ outcome: 'failed', code: 'unexpected_response' })
+// Like an empty yesterday: today and the backfill still land, then it fails.
+test('invalid readings for yesterday fail the run after today and the backfill', async () => {
+  await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30
+  const { client, requested } = fakeEmaldo({ [YESTERDAY]: (d) => syntheticDay(d, 3, -0.5) })
+
+  const result = await run(client)
+
+  expect(result).toMatchObject({
+    outcome: 'failed',
+    code: 'unexpected_response',
+    rejectedDays: 1,
+  })
+  expect(requested).toHaveLength(9)
+  expect(await countOn(TODAY)).toBe(3)
+  expect(await countOn('2026-03-30')).toBe(3)
+  expect(await countOn(YESTERDAY)).toBe(0)
+  // Held at the start of yesterday, so the next run retries it.
+  expect(await getLastSuccessStartedAt('emaldo')).toEqual(startOf(YESTERDAY))
 })
 
 test('a remote failure is failed with its code and alerts admins on the first failure', async () => {

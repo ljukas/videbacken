@@ -220,50 +220,64 @@ async function syncDays(
   })
   run.backfillDaysLeft = plan.backfill.length + plan.backfillLeft
   run.since = startOf(plan.backfill[0] ?? plan.yesterday)
-  const sync = (day: string, strict: boolean) =>
-    syncDay(client, run, stats, ctx, { day, today, strict })
+  const sync = (day: string) => syncDay(client, run, stats, ctx, { day, today })
 
-  // Only yesterday is strict: it is the day the watermark waits on. Today is
-  // still filling (and is yesterday, strictly, tomorrow); an old day must not
-  // wedge the backfill.
-  const yesterdayStored = await sync(plan.yesterday, true)
+  // Only yesterday must land: it is the day the watermark waits on. Today is
+  // still filling (and is yesterday tomorrow); an old day without usable
+  // readings is skipped so it can't wedge the backfill.
+  const yesterday = await sync(plan.yesterday)
   // The watermark floor: the plan's start is never before the stored
   // watermark, and every day before it is stored or before the lead. Set only
   // once Emaldo has answered, so a run that never got an answer (not
   // configured, auth) plants no watermark.
   run.syncedUntil = startOf(plan.start)
-  await sync(plan.today, false)
+  await sync(plan.today)
 
   for (const [i, day] of plan.backfill.entries()) {
     if (now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS) break
     if (i > 0) await sleep(BACKFILL_PAUSE_MS)
-    await sync(day, false)
+    await sync(day)
     run.backfillDaysLeft--
     run.syncedUntil = endOf(day)
   }
   // Caught up, and yesterday is complete: the watermark moves past it.
-  if (run.backfillDaysLeft === 0 && yesterdayStored) {
+  if (run.backfillDaysLeft === 0 && yesterday.stored) {
     const end = endOf(plan.yesterday)
     if (run.syncedUntil === null || end > run.syncedUntil) run.syncedUntil = end
   }
-  // After the backfill, so its progress still lands. An old empty day is
-  // normal (before the battery existed); an empty yesterday means data is
-  // missing. Next day, yesterday becomes a backfill day and is retried.
-  if (!yesterdayStored) {
-    throw new EmaldoError('unexpected_response', 'stats', undefined, {
-      message: `Emaldo returned no readings for ${plan.yesterday}`,
-    })
+  // After today and the backfill, so their progress still lands. An old empty
+  // day is normal (before the battery existed); an empty or invalid yesterday
+  // means data is missing. The watermark holds at its start, and the next run
+  // retries it. Bad data from Emaldo is Emaldo's failure (`failed`, not `error`).
+  if (!yesterday.stored) {
+    const { invalid } = yesterday
+    throw new EmaldoError(
+      'unexpected_response',
+      'stats',
+      undefined,
+      invalid
+        ? {
+            cause: invalid,
+            // The domain message names bucket indexes and fields, never values.
+            message: `Emaldo readings for ${plan.yesterday} failed validation: ${invalid.message}`,
+          }
+        : { message: `Emaldo returned no readings for ${plan.yesterday}` },
+    )
   }
 }
 
-// Fetches and stores one Stockholm day; true when readings were written.
+type DayResult = { stored: true } | { stored: false; invalid: HouseEnergyDomainError | null }
+
+// Fetches and stores one Stockholm day. An empty answer, or readings that fail
+// validation, store nothing and keep what's stored; the caller decides whether
+// that fails the run.
 async function syncDay(
   client: EmaldoClient,
   run: EmaldoSyncRun,
   stats: EmaldoCallStats,
   ctx: Ctx,
-  a: { day: string; today: string; strict: boolean },
-): Promise<boolean> {
+  a: { day: string; today: string },
+): Promise<DayResult> {
   const { signal, log } = ctx
   const offset = daysBetween(a.today, a.day)
   const fetched = await withDeadline(
@@ -288,7 +302,7 @@ async function syncDay(
   // An empty answer never deletes what's stored.
   if (fetched.buckets.length === 0) {
     run.emptyDays++
-    return false
+    return { stored: false, invalid: null }
   }
   const started = performance.now()
   try {
@@ -298,24 +312,15 @@ async function syncDay(
     )
   } catch (error) {
     if (!(error instanceof HouseEnergyDomainError)) throw error
-    // Bad data from Emaldo is Emaldo's failure (`failed`, not `error`). One bad
-    // old day (or today) must not wedge the backfill (as in the elpris sync); a
-    // bad yesterday fails the run so health shows it.
-    if (a.strict) {
-      throw new EmaldoError('unexpected_response', 'stats', undefined, {
-        cause: error,
-        message: `Emaldo readings for ${a.day} failed validation: ${error.message}`,
-      })
-    }
     run.rejectedDays++
     // The domain message names bucket indexes and fields, never values.
     log.warn('emaldo day rejected', { day: a.day, error })
-    return false
+    return { stored: false, invalid: error }
   } finally {
     run.storeMs += performance.now() - started
   }
   if (run.earliestReplacedDay === null || a.day < run.earliestReplacedDay) {
     run.earliestReplacedDay = a.day
   }
-  return true
+  return { stored: true }
 }
