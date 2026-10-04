@@ -1,6 +1,7 @@
+import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { integrationSyncRun, user } from '~/lib/db/schema'
+import { integrationSync, integrationSyncRun, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import {
   type EmaldoClient,
@@ -456,6 +457,7 @@ test('one run row and one run line, with counts only — never readings', async 
     bucketsStored: 6,
     earliestReplacedDay: YESTERDAY,
     requests: 8,
+    bucketsWithoutSoc: 0,
   })
   expect(cap.raw()).not.toContain('0.123456')
 })
@@ -587,5 +589,48 @@ test('the run row records since and every counter', async () => {
     emptyDays: 0,
     rejectedDays: 0,
     backfillDaysLeft: 0,
+    bucketsWithoutSoc: 0,
   })
+})
+
+test('stored SoC lands with the readings, and buckets without it are counted', async () => {
+  const withGap = (d: string): EmaldoDay => {
+    const day = syntheticDay(d, 3)
+    day.buckets[0] = { ...day.buckets[0], batterySocPct: 12.5 }
+    day.buckets[1] = { ...day.buckets[1], batterySocPct: null }
+    return day
+  }
+  const { client } = fakeEmaldo({ [YESTERDAY]: withGap, [TODAY]: withGap })
+  const result = await run(client)
+  expect(result.bucketsWithoutSoc).toBe(2)
+  const stored = await listReadings({ from: startOf(YESTERDAY), to: endOf(YESTERDAY) })
+  expect(stored.map((r) => r.batterySocPct)).toEqual([12.5, null, 50])
+})
+
+test('buckets without SoC on a rejected day are not counted', async () => {
+  await sessionOn('2026-03-28')
+  const bad = (d: string): EmaldoDay => {
+    const day = syntheticDay(d, 2)
+    day.buckets[0] = { ...day.buckets[0], loadKwh: -1, batterySocPct: null }
+    return day
+  }
+  const result = await run(fakeEmaldo({ '2026-03-22': bad }).client)
+  expect(result.rejectedDays).toBe(1)
+  expect(result.bucketsWithoutSoc).toBe(0)
+})
+
+test('a cleared watermark re-fetches the history (migration 0015)', async () => {
+  await sessionOn('2026-03-28')
+  await run(fakeEmaldo().client) // backfills from 2026-03-21
+  expect(await getLastSuccessStartedAt('emaldo')).toEqual(endOf(YESTERDAY))
+  // What migration 0015 does on prod.
+  await db
+    .update(integrationSync)
+    .set({ lastSuccessStartedAt: null, runningSince: null, leaseUntil: null, leaseToken: null })
+    .where(eq(integrationSync.source, 'emaldo'))
+  const { client, requested } = fakeEmaldo()
+  const result = await run(client)
+  expect(result.outcome).toBe('ok')
+  expect(requested).toContain('2026-03-21')
+  expect(await getLastSuccessStartedAt('emaldo')).toEqual(endOf(YESTERDAY))
 })

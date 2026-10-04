@@ -36,6 +36,8 @@ export type EmaldoSyncRun = RunBase & {
   bucketsStored: number
   /** Buckets the client dropped: partial series, outside the day, today's filling one. */
   droppedBuckets: number
+  /** Stored buckets without a battery SoC (missing or out of range in Emaldo's series). */
+  bucketsWithoutSoc: number
   /** Answered days without readings; what's stored is kept. */
   emptyDays: number
   /** Old days whose readings failed validation; skipped and warned. */
@@ -133,6 +135,7 @@ export async function runEmaldoSync(opts: {
       daysFetched: 0,
       bucketsStored: 0,
       droppedBuckets: 0,
+      bucketsWithoutSoc: 0,
       emptyDays: 0,
       rejectedDays: 0,
       fetchMs: 0,
@@ -160,6 +163,7 @@ export async function runEmaldoSync(opts: {
         logins: stats.logins,
         daysFetched: run.daysFetched,
         droppedBuckets: run.droppedBuckets,
+        bucketsWithoutSoc: run.bucketsWithoutSoc,
         emptyDays: run.emptyDays,
         rejectedDays: run.rejectedDays,
         backfillDaysLeft: run.backfillDaysLeft,
@@ -181,6 +185,7 @@ export async function runEmaldoSync(opts: {
       daysFetched: run.daysFetched,
       bucketsStored: run.bucketsStored,
       droppedBuckets: run.droppedBuckets,
+      bucketsWithoutSoc: run.bucketsWithoutSoc,
       emptyDays: run.emptyDays,
       rejectedDays: run.rejectedDays,
       backfillDaysLeft: run.backfillDaysLeft,
@@ -319,6 +324,7 @@ async function syncDay(
   } finally {
     run.storeMs += performance.now() - started
   }
+  run.bucketsWithoutSoc += fetched.buckets.filter((b) => b.batterySocPct === null).length
   if (run.earliestReplacedDay === null || a.day < run.earliestReplacedDay) {
     run.earliestReplacedDay = a.day
   }
