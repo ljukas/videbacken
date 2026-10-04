@@ -182,3 +182,101 @@ test('fromDay after throughDay and no readings: no checkpoints', () => {
   expect(r.days).toEqual([])
   expect(r.house.size).toBe(0)
 })
+
+const startPool = {
+  storedKwh: 1,
+  gridKwh: 1,
+  gridSpotSekSum: 0.5,
+  solarKwh: 0,
+  solarSpotSekSum: 0,
+  unpricedKwh: 0,
+}
+
+test('readings after throughDay extend the run to their day', () => {
+  const t = Date.UTC(2026, 5, 11, 10)
+  const { days, house } = runHouseTimeline({
+    readings: [reading(t, { batteryChargeGridKwh: 1, gridImportKwh: 1 })],
+    fromDay: '2026-06-10',
+    throughDay: '2026-06-10',
+    start: emptyPool(),
+    spotAt: () => 1,
+    capacityKwh: C,
+  })
+  expect(days.map((d) => d.day)).toEqual(['2026-06-10', '2026-06-11'])
+  expect(house.has(t)).toBe(true)
+})
+
+test('the run starts from the given pool', () => {
+  const t = Date.UTC(2026, 5, 10, 19)
+  const empty = runHouseTimeline({
+    readings: [],
+    fromDay: '2026-06-10',
+    throughDay: '2026-06-10',
+    start: startPool,
+    spotAt: () => 1,
+    capacityKwh: C,
+  })
+  expect(empty.days[0].state).toEqual(startPool)
+  const { house } = runHouseTimeline({
+    readings: [reading(t, { batteryDischargeKwh: 0.4, loadKwh: 0.4 })],
+    fromDay: '2026-06-10',
+    throughDay: '2026-06-10',
+    start: startPool,
+    spotAt: () => 9,
+    capacityKwh: C,
+  })
+  expect(house.get(t)?.batteryOut.gridKwh).toBeCloseTo(0.4, 12)
+  expect(house.get(t)?.batteryOut.gridSpotSekSum).toBeCloseTo(0.2, 12)
+})
+
+test('readings out of order are stepped in time order', () => {
+  const t0 = Date.UTC(2026, 5, 10, 10)
+  const readings = [10, 12, 14]
+    .map((soc, i) =>
+      reading(t0 + i * 300_000, { batteryChargeGridKwh: 1, gridImportKwh: 1, batterySocPct: soc }),
+    )
+    .reverse()
+  const { days } = runHouseTimeline({
+    readings,
+    fromDay: '2026-06-10',
+    throughDay: '2026-06-10',
+    start: emptyPool(),
+    spotAt: () => 1,
+    capacityKwh: 10,
+  })
+  expect(days[0].state.gridKwh).toBeCloseTo(2.3, 12)
+})
+
+test("the next day's first bucket belongs to the next day's checkpoint", () => {
+  const next = stockholmDayBounds('2026-06-10').endMs
+  const { days } = runHouseTimeline({
+    readings: [
+      reading(next - 300_000, { batteryChargeGridKwh: 1, gridImportKwh: 1, batterySocPct: 4 }),
+      reading(next, { batteryChargeGridKwh: 1, gridImportKwh: 1, batterySocPct: 6 }),
+    ],
+    fromDay: '2026-06-10',
+    throughDay: '2026-06-11',
+    start: emptyPool(),
+    spotAt: () => 1,
+    capacityKwh: 10,
+  })
+  expect(days[0].state.gridKwh).toBeCloseTo(0.5, 12)
+  expect(days[1].state.gridKwh).toBeCloseTo(1.5, 12)
+})
+
+test('without a spot price, inflow is unpriced and drift is recorded as unpriced', () => {
+  const t = Date.UTC(2026, 5, 10, 10)
+  const { days, house } = runHouseTimeline({
+    readings: [
+      reading(t, { batteryChargeGridKwh: 1, gridImportKwh: 1 }),
+      reading(t + 300_000, { batteryDischargeKwh: 1.5, loadKwh: 1.5 }),
+    ],
+    fromDay: '2026-06-10',
+    throughDay: '2026-06-10',
+    start: emptyPool(),
+    spotAt: () => null,
+    capacityKwh: C,
+  })
+  expect(house.get(t + 300_000)?.batteryOut.unpricedKwh).toBeCloseTo(1.5, 12)
+  expect(days[0].state).toEqual(emptyPool())
+})

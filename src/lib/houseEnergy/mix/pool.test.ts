@@ -179,3 +179,22 @@ test('a long random run keeps every part non-negative, stored equal to their sum
     s = next
   }
 })
+
+test('a discharge takes unpriced energy in proportion too', () => {
+  const s = pool({ gridKwh: 1, gridSpotSekSum: 1, unpricedKwh: 1 })
+  const { next, out } = stepPool(s, reading(T, { batteryDischargeKwh: 1 }), 1, null)
+  expectOut(out, { gridKwh: 0.5, gridSpotSekSum: 0.5, unpricedKwh: 0.5 })
+  expectPool(next, { gridKwh: 0.5, gridSpotSekSum: 0.5, unpricedKwh: 0.5 })
+})
+
+test("drift without a spot price is unpriced, after the pool's own energy", () => {
+  const s = pool({ solarKwh: 1, solarSpotSekSum: 0.4 })
+  const { next, out } = stepPool(s, reading(T, { batteryDischargeKwh: 1.5 }), null, null)
+  expectOut(out, { solarKwh: 1, solarSpotSekSum: 0.4, unpricedKwh: 0.5 })
+  expect(next).toEqual(emptyPool())
+})
+
+test('a negative cap (bad SoC data) empties the pool', () => {
+  const s = pool({ gridKwh: 1, gridSpotSekSum: 0.5 })
+  expect(stepPool(s, reading(T), 1, -1).next).toEqual(emptyPool())
+})

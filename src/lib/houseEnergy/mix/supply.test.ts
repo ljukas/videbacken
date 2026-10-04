@@ -83,3 +83,23 @@ test('zero load, or nothing supplying the house, is no house data', () => {
   expect(houseSupply(reading(T, { gridImportKwh: 0.1 }))).toBeNull()
   expect(houseSupply(reading(T, { loadKwh: 0.5 }))).toBeNull()
 })
+
+test('export beyond solar larger than the discharge leaves no battery supply', () => {
+  const r = reading(T, {
+    gridExportKwh: 0.5,
+    batteryDischargeKwh: 0.2,
+    gridImportKwh: 0.4,
+    loadKwh: 0.4,
+  })
+  expectFractions(houseSupply(r), { grid: 1, solar: 0, battery: 0 })
+})
+
+test('more solar charging than solar production never makes solar supply negative', () => {
+  const r = reading(T, {
+    solarKwh: 0.3,
+    batteryChargeSolarKwh: 0.5,
+    gridImportKwh: 0.4,
+    loadKwh: 0.4,
+  })
+  expectFractions(houseSupply(r), { grid: 1, solar: 0, battery: 0 })
+})

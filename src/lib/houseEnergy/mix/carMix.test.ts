@@ -168,3 +168,89 @@ test("the parts always sum to the slot's kWh", () => {
     expect(slot.batterySolarSpotSek === null).toBe(!(slot.batterySolarKwh > 0))
   }
 })
+
+test('a battery share with nothing recorded leaving the battery is battery-unpriced', () => {
+  const house = new Map<number, BucketHouse>([
+    [T0, { supply: { grid: 0, solar: 0, battery: 1 }, batteryOut: out() }],
+  ])
+  const [slot] = deriveSessionMix([{ bucketStart: T0, kwh: 0.5 }], house)
+  expect(slot).toMatchObject({
+    kwh: 0.5,
+    gridKwh: 0,
+    solarKwh: 0,
+    batteryGridKwh: 0,
+    batteryGridSpotSek: null,
+    batterySolarKwh: 0,
+    batterySolarSpotSek: null,
+    batteryUnpricedKwh: 0.5,
+  })
+})
+
+test('grid, solar and unpriced battery energy in one bucket split by what left', () => {
+  const house = new Map<number, BucketHouse>([
+    [
+      T0,
+      {
+        supply: { grid: 0, solar: 0, battery: 1 },
+        batteryOut: out({
+          gridKwh: 1,
+          gridSpotSekSum: 1,
+          solarKwh: 2,
+          solarSpotSekSum: 1,
+          unpricedKwh: 1,
+        }),
+      },
+    ],
+  ])
+  const [slot] = deriveSessionMix([{ bucketStart: T0, kwh: 0.8 }], house)
+  expect(slot.batteryGridKwh).toBeCloseTo(0.2, 12)
+  expect(slot.batteryGridSpotSek).toBeCloseTo(1, 12)
+  expect(slot.batterySolarKwh).toBeCloseTo(0.4, 12)
+  expect(slot.batterySolarSpotSek).toBeCloseTo(0.5, 12)
+  expect(slot.batteryUnpricedKwh).toBeCloseTo(0.2, 12)
+})
+
+test('battery solar spots are kWh-weighted across a slot too', () => {
+  const solar = (spot: number): BucketHouse => ({
+    supply: { grid: 0, solar: 0, battery: 1 },
+    batteryOut: out({ solarKwh: 1, solarSpotSekSum: spot }),
+  })
+  const house = new Map<number, BucketHouse>([
+    [T0, solar(0.2)],
+    [T0 + BUCKET_MS, solar(0.6)],
+  ])
+  const [slot] = deriveSessionMix(
+    [
+      { bucketStart: T0, kwh: 1 },
+      { bucketStart: T0 + BUCKET_MS, kwh: 3 },
+    ],
+    house,
+  )
+  expect(slot.batterySolarSpotSek).toBeCloseTo((0.2 + 3 * 0.6) / 4, 12)
+})
+
+test('a slot mixes buckets with and without house data', () => {
+  const house = new Map<number, BucketHouse>([
+    [T0, { supply: { grid: 1, solar: 0, battery: 0 }, batteryOut: out() }],
+  ])
+  const [slot] = deriveSessionMix(
+    [
+      { bucketStart: T0, kwh: 1 },
+      { bucketStart: T0 + BUCKET_MS, kwh: 2 },
+    ],
+    house,
+  )
+  expect(slot).toMatchObject({ kwh: 3, gridKwh: 1, noHouseDataKwh: 2 })
+})
+
+test('buckets out of order still give ascending slots; negative kWh adds none', () => {
+  const mix = deriveSessionMix(
+    [
+      { bucketStart: T0 + 3 * BUCKET_MS, kwh: 1 },
+      { bucketStart: T0 + 6 * BUCKET_MS, kwh: -1 },
+      { bucketStart: T0, kwh: 1 },
+    ],
+    new Map(),
+  )
+  expect(mix.map((s) => s.slotStart.getTime())).toEqual([T0, T0 + 3 * BUCKET_MS])
+})
