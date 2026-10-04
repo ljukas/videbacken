@@ -113,7 +113,18 @@ export function SyncSourceTile({
   const progress = pending ? (health?.progress ?? null) : null
   const progressText = progress ? m.charging_source_progress(progress) : null
   return (
-    <Card className="@container h-full min-w-0 px-5 py-5">
+    <Card className="@container relative h-full min-w-0 px-5 py-5">
+      {progress && progressText ? (
+        // A top-edge strip (the Card clips it): the tile never changes height.
+        // aria-valuetext says the days; the caption below is aria-hidden and
+        // not a live region (a 5 s poll would be noisy).
+        <Progress
+          value={Math.round((progress.done / progress.total) * 100)}
+          aria-label={m.charging_source_progress_label({ source: name })}
+          getValueLabel={() => progressText}
+          className="absolute inset-x-0 top-0 h-1 rounded-none bg-primary/15"
+        />
+      ) : null}
       <div className="flex @[11rem]:flex-row flex-col @[11rem]:items-start gap-3">
         <SyncSourceMark source={source} />
         <div className="flex min-w-0 flex-col">
@@ -135,7 +146,14 @@ export function SyncSourceTile({
             {lastSync}
           </p>
         ) : null}
-        <p className="text-muted-foreground text-xs">{syncSourceCadence(source)}</p>
+        {/* While a run reports, the caption takes the cadence line's place, so the tile never changes height. */}
+        {progressText ? (
+          <p aria-hidden="true" className="text-muted-foreground text-xs tabular-nums">
+            {progressText}
+          </p>
+        ) : (
+          <p className="text-muted-foreground text-xs">{syncSourceCadence(source)}</p>
+        )}
         {/* In full, never clamped: the tail is the next step ("…skapa en ny i MyŠkoda-appen"). */}
         {message ? (
           <p
@@ -148,20 +166,6 @@ export function SyncSourceTile({
           </p>
         ) : null}
       </div>
-      {progress && progressText ? (
-        <div className="flex flex-col gap-1.5">
-          <Progress
-            value={(progress.done / progress.total) * 100}
-            aria-label={m.charging_source_progress_label({ source: name })}
-            getValueLabel={() => progressText}
-          />
-          {/* The bar's aria-valuetext already says it; not re-read, and not a
-              live region (a 5 s poll would be noisy). */}
-          <p aria-hidden="true" className="text-muted-foreground text-xs tabular-nums">
-            {progressText}
-          </p>
-        </div>
-      ) : null}
       {/* Even full-width buttons: stacked in a narrow tile, side by side from
           13rem; 44px tall on touch input, whatever the viewport. */}
       <div className="mt-auto grid @[13rem]:grid-cols-2 grid-cols-1 gap-2 [&>button:only-child]:col-span-full pointer-coarse:[&>button]:h-11 [&>button]:w-full">

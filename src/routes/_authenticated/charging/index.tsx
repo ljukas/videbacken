@@ -13,6 +13,7 @@ import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { CredentialExpiryAlert } from '~/components/evCharging/CredentialExpiryAlert'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
+import { healthPoll } from '~/components/evCharging/healthPoll'
 import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
@@ -87,13 +88,6 @@ const emaldoRunsQuery = orpc.evCharging.recentRuns.queryOptions({
   input: { source: 'emaldo', limit: RECENT_RUNS },
 })
 const vehicleLatestQuery = orpc.evCharging.vehicleStateLatest.queryOptions()
-// Sync health polls every minute; every 5 s while a run is in flight — seen by
-// the server (`running`, a cron run included) or started from this tab and not
-// seen yet — so "Synkar…" and the progress bar follow the run and clear soon
-// after it ends (a run's lease lasts at most 5 min).
-const healthPoll = (pending: boolean) => (query: { state: { data?: { running: boolean } } }) =>
-  pending || query.state.data?.running ? 5_000 : 60_000
-
 export const Route = createFileRoute('/_authenticated/charging/')({
   head: () => ({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),

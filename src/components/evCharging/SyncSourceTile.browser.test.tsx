@@ -207,3 +207,21 @@ test('no bar once the run is no longer in flight', async () => {
   const { screen } = await renderWithProviders(tile({ ...emaldoRunning, running: false }))
   await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument()
 })
+
+test('while progress shows, the caption takes the cadence line’s place', async () => {
+  const cadence = m.charging_source_cadence_emaldo()
+  const { screen } = await renderWithProviders(tile(emaldoRunning))
+  await expect.element(screen.getByText(cadence)).not.toBeInTheDocument()
+})
+
+test('the cadence line shows when there is no progress', async () => {
+  const { screen } = await renderWithProviders(tile({ ...emaldoRunning, progress: null }))
+  await expect.element(screen.getByText(m.charging_source_cadence_emaldo())).toBeVisible()
+})
+
+test('the caption is singular for one day', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...emaldoRunning, progress: { done: 1, total: 1 } }),
+  )
+  await expect.element(screen.getByText('1 av 1 dag', { exact: true })).toBeVisible()
+})

@@ -116,7 +116,16 @@
   "charging_source_role_zaptec": "Charging sessions",
   "charging_source_state_unknown": "Status unknown",
   "charging_source_syncing": "Syncing…",
-  "charging_source_progress": "{done} of {total} days",
+  "charging_source_progress": [
+    {
+      "declarations": ["input done", "input total", "local totalPlural = total: plural"],
+      "selectors": ["totalPlural"],
+      "match": {
+        "totalPlural=one": "{done} of {total} day",
+        "totalPlural=other": "{done} of {total} days"
+      }
+    }
+  ],
   "charging_source_progress_label": "Sync progress, {source}",
   "charging_sources_description": "The services this page's data comes from. Only admins see this section.",
   "charging_sources_heading": "Data sources",

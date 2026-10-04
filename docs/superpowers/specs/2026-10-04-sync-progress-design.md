@@ -86,9 +86,10 @@ the CHECKs are the backstop.
 ### UI
 
 - **`SyncSourceTile`:** while `pending` and `health.progress` is set, render shadcn `Progress` (already installed,
-  Radix) between the status lines and the buttons, with a visible caption `m.charging_source_progress({ done, total
-  })` ("12 av 30 dagar" / "12 of 30 days"), `tabular-nums`.
-  - Accessibility: the bar's `aria-label` names the source (`m.charging_source_progress_label({ source })`, "Synkar
+  Radix) as a top-edge strip (absolutely positioned; the Card clips it), with a visible caption
+  `m.charging_source_progress({ done, total })` ("12 av 30 dagar" / "12 of 30 days"; singular "1 av 1 dag"),
+  `tabular-nums`, that replaces the cadence line while a run reports — so the tile never changes height.
+  - Accessibility: the bar's `aria-label` names the source (`m.charging_source_progress_label({ source })`, "Synkförlopp,
     Emaldo"); `aria-valuetext` = the caption, so a screen reader says days, not a percentage. The caption itself is
     not a live region (a 5 s update would be noisy); the existing pending state already announces the run.
   - Motion: the indicator's width transition gets `motion-reduce:transition-none`.
