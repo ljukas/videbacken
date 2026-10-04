@@ -10,7 +10,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 |---|---|---|---|---|---|
 | 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | checkpoint passed | 2026-10-03: 288/288 + 276/276 buckets, 0 mismatches (11 requests, 1 login) |
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
-| 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | — | in progress | — |
+| 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | PR open | — |
 | 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | — | not started | — |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | not started | — |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
@@ -114,3 +114,8 @@ Each must pass, with the result recorded in the table, before the next step star
   Owner decision: anchor the pool to SoC. New **step 2b** syncs SoC; spec decision 7 and ADR-0023's amendment
   record it. **Step 3's plan predates this**: its Task 0 must replace `ROUND_TRIP_EFFICIENCY` / the η checkpoint
   with the capacity `C` and the SoC cap (spec "Derivation" 3) before building.
+- 2026-10-04: step 2b PR #74 opened. Reviews made migration 0015 rotate a held lease token (a run in flight can't
+  write the watermark back, and no second run overlaps it), pinned SoC bounds and types, and spelled out every way old
+  code could undo the re-fetch. Live local re-fetch against the real API: all 258 days, SoC on every bucket, four probe
+  days matching exactly. About ten back-to-back runs drew one `rate_limited` (handled); prod's hourly run was unaffected.
+  Checkpoint 2b runs on prod after merge (merge outside xx:35–xx:55).
