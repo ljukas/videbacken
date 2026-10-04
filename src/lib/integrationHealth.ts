@@ -1,9 +1,11 @@
-// Shared vocabulary for third-party integration sync health (Zaptec today; elpris
-// and Skoda are placeholders for later phases). Dependency-free and client-safe —
+// Shared vocabulary for third-party integration sync health (Zaptec sessions,
+// elpris spot prices, the Škoda car state and the Emaldo house energy flows).
+// Dependency-free and client-safe —
 // no `db`/`postgres` import here — so the client can import these unions for
 // status badges without dragging the db layer (and its `Buffer` usage) into the
 // browser bundle. See `src/lib/sensor/range.ts` for the same pattern.
-export const INTEGRATION_SOURCES = ['zaptec', 'elpris', 'skoda'] as const
+// Adding a source changes the rendered DB CHECK text: run `bun run db:generate`.
+export const INTEGRATION_SOURCES = ['zaptec', 'elpris', 'skoda', 'emaldo'] as const
 export type IntegrationSource = (typeof INTEGRATION_SOURCES)[number]
 
 export const INTEGRATION_ERROR_CODES = [

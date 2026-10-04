@@ -48,3 +48,21 @@ test('an elpris failure names elprisetjustnu.se, not Zaptec', () => {
   expect(message).toContain('elprisetjustnu.se')
   expect(message).not.toContain('Zaptec')
 })
+
+test('emaldo is a source with its own name', () => {
+  expect(INTEGRATION_SOURCES).toContain('emaldo')
+  expect(integrationSourceName('emaldo')).toBe('Emaldo')
+})
+
+test('an unexpected Emaldo answer hints that the app key may have changed', () => {
+  expect(
+    integrationErrorMessage('unexpected_response', { source: 'emaldo', locale: 'sv' }),
+  ).toContain('nyckel')
+  expect(
+    integrationErrorMessage('unexpected_response', { source: 'emaldo', locale: 'en' }),
+  ).toContain('key')
+  // Other codes keep the shared, source-named copy.
+  expect(integrationErrorMessage('unreachable', { source: 'emaldo', locale: 'en' })).toContain(
+    'Emaldo',
+  )
+})
