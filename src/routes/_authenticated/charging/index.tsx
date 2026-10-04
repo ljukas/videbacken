@@ -365,7 +365,7 @@ function ChargingPage() {
           <section className="@container flex flex-col gap-2">
             {/* Wide: title left, controls grouped right. Narrow: the title on its
                 own line and the controls spread edge to edge beneath it. */}
-            <div className="flex @2xl:flex-row flex-col @2xl:items-center justify-between gap-2">
+            <div className="flex @2xl:flex-row flex-col @2xl:items-center @2xl:justify-between gap-2">
               <h2 className="font-medium text-sm">
                 {showingCost ? m.charging_chart_title_cost() : m.charging_chart_title()}
               </h2>

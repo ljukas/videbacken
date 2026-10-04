@@ -23,8 +23,10 @@ export function YearSelector({
   const options = years.includes(value) ? years : [...years, value].sort((a, b) => b - a)
   return (
     <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
-      <SelectTrigger size="sm" className="w-auto min-w-24" aria-label={m.charging_year_label()}>
-        <SelectValue />
+      <SelectTrigger size="sm" className="w-auto" aria-label={m.charging_year_label()}>
+        {/* Rendered explicitly so SSR already shows the year (Radix fills it in only
+            after hydration) and the trigger keeps one width. */}
+        <SelectValue>{value}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         {options.map((year) => (
