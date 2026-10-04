@@ -1,6 +1,6 @@
-import { and, asc, inArray, min, sql } from 'drizzle-orm'
+import { and, asc, gt, inArray, min, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { db } from '~/lib/db'
+import { type DbOrTx, db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
 import type { Vehicle, VehicleScope, VehicleSource } from '~/lib/evCharging/vehicle'
 import { countedSessionFilter } from './counted'
@@ -26,19 +26,34 @@ export type SessionEnergy = {
   vehicleSource: VehicleSource
 }
 
+type SessionEnergyFilter =
+  | { all: true; vehicle?: VehicleScope }
+  | { sessionIds: readonly string[] }
+  /** Counted sessions ending after the instant (the energy-mix derive's window, ADR-0023). */
+  | { endsAfter: Date }
+
+function sessionFilterOf(filter: SessionEnergyFilter) {
+  if ('sessionIds' in filter) {
+    return and(countedSessionFilter(), inArray(evChargeSession.id, [...filter.sessionIds]))
+  }
+  if ('endsAfter' in filter) {
+    return and(countedSessionFilter(), gt(evChargeSession.endAt, filter.endsAfter))
+  }
+  return countedSessionFilter({ vehicle: filter.vehicle })
+}
+
 /**
  * Counted sessions with their energy stretches, oldest first. Two queries
- * (sessions, then their intervals) regardless of how many sessions.
+ * (sessions, then their intervals) regardless of how many sessions; inside
+ * the caller's transaction when given one.
  */
 export async function listSessionEnergy(
-  filter: { all: true; vehicle?: VehicleScope } | { sessionIds: readonly string[] },
+  filter: SessionEnergyFilter,
+  dbOrTx: DbOrTx = db,
 ): Promise<SessionEnergy[]> {
   if ('sessionIds' in filter && filter.sessionIds.length === 0) return []
-  const sessionFilter =
-    'sessionIds' in filter
-      ? and(countedSessionFilter(), inArray(evChargeSession.id, [...filter.sessionIds]))
-      : countedSessionFilter({ vehicle: filter.vehicle })
-  const sessions = await db
+  const sessionFilter = sessionFilterOf(filter)
+  const sessions = await dbOrTx
     .select({
       id: evChargeSession.id,
       startAt: evChargeSession.startAt,
@@ -52,7 +67,7 @@ export async function listSessionEnergy(
     .orderBy(asc(evChargeSession.startAt), asc(evChargeSession.id))
   if (sessions.length === 0) return []
 
-  const intervals = await db
+  const intervals = await dbOrTx
     .select({
       sessionId: evChargeInterval.sessionId,
       startAt: evChargeInterval.startAt,
@@ -65,7 +80,7 @@ export async function listSessionEnergy(
     .where(
       inArray(
         evChargeInterval.sessionId,
-        db.select({ id: evChargeSession.id }).from(evChargeSession).where(sessionFilter),
+        dbOrTx.select({ id: evChargeSession.id }).from(evChargeSession).where(sessionFilter),
       ),
     )
     .orderBy(asc(evChargeInterval.startAt))
@@ -113,5 +128,21 @@ export async function earliestCountedStartAt(): Promise<Date | null> {
     .select({ first: min(evChargeSession.startAt) })
     .from(evChargeSession)
     .where(countedSessionFilter())
+  return row?.first ?? null
+}
+
+/**
+ * Start of the earliest counted session ending after `after`, or null. The
+ * energy-mix derive widens its start day back with it, so a session spanning
+ * midnight is always derived whole (ADR-0023).
+ */
+export async function earliestCountedStartEndingAfter(
+  after: Date,
+  dbOrTx: DbOrTx = db,
+): Promise<Date | null> {
+  const [row] = await dbOrTx
+    .select({ first: min(evChargeSession.startAt) })
+    .from(evChargeSession)
+    .where(and(countedSessionFilter(), gt(evChargeSession.endAt, after)))
   return row?.first ?? null
 }

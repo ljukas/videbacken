@@ -3,6 +3,7 @@ import { db } from '~/lib/db'
 import { evCharger, evChargeSession, spotPrice } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { type ElprisClient, ElprisError } from '~/lib/effects/elpris'
+import type { deriveFrom } from '~/lib/houseEnergy/derive'
 import { createServerLogger } from '~/lib/logger/server'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, listRecentRuns } from '~/lib/services/integrationSync'
@@ -330,6 +331,79 @@ test('a held lease skips the run without calling elpris', async () => {
   const result = await run(client)
   expect(result.outcome).toBe('skipped')
   expect(requested).toEqual([])
+})
+
+const deriveSpy = () =>
+  vi.fn<typeof deriveFrom>(async () => ({ fromDay: null, days: 1, sessions: 0, deriveMs: 1 }))
+
+test('newly filled days re-derive the energy mix from the earliest of them', async () => {
+  const derive = deriveSpy()
+  const { client } = fakeElpris({ publishedThrough: TOMORROW })
+  const result = await run(client, { deriveFrom: derive })
+  expect(result.deriveFromDay).toBe(TODAY)
+  expect(derive).toHaveBeenCalledWith(TODAY, expect.anything())
+})
+
+test('a run that fills nothing does not re-derive', async () => {
+  const { client } = fakeElpris({ publishedThrough: TOMORROW })
+  await run(client, { deriveFrom: deriveSpy() })
+  const derive = deriveSpy()
+  const second = await run(client, { deriveFrom: derive })
+  expect(second.deriveFromDay).toBeNull()
+  expect(derive).not.toHaveBeenCalled()
+})
+
+test('days stored before the run fails are still derived', async () => {
+  await insertSession(new Date('2026-09-25T10:00:00Z'))
+  const derive = deriveSpy()
+  const { client } = fakeElpris({ missing: ['2026-09-27'] }) // yesterday missing → the run fails
+  const result = await run(client, { deriveFrom: derive })
+  expect(result.outcome).toBe('failed')
+  expect(derive).toHaveBeenCalledWith('2026-09-25', expect.anything())
+})
+
+test('a failed derive never fails the elpris run', async () => {
+  const derive = vi.fn<typeof deriveFrom>(async () => {
+    throw new Error('derive bug')
+  })
+  const { client } = fakeElpris({ publishedThrough: TOMORROW })
+  const result = await run(client, { deriveFrom: derive })
+  expect(result.outcome).toBe('ok')
+  expect(typeof result.deriveMs).toBe('number')
+})
+
+test("a run storing only tomorrow's prices does not derive", async () => {
+  await run(fakeElpris({ publishedThrough: TODAY }).client, { deriveFrom: deriveSpy() })
+  const derive = deriveSpy()
+  const result = await run(fakeElpris({ publishedThrough: TOMORROW }).client, {
+    deriveFrom: derive,
+  })
+  expect(result.daysFetched).toBe(1)
+  expect(result.deriveFromDay).toBeNull()
+  expect(derive).not.toHaveBeenCalled()
+})
+
+test('a failing derive is warned about with the source elpris', async () => {
+  const lines: string[] = []
+  const log = createServerLogger({
+    write(chunk: string) {
+      lines.push(chunk)
+      return true
+    },
+  })
+  await run(fakeElpris({ publishedThrough: TOMORROW }).client, {
+    log,
+    deriveFrom: async () => {
+      throw new Error('derive bug')
+    },
+  })
+  const entries = lines
+    .flatMap((l) => l.split('\n'))
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
+  expect(entries.find((e) => e.msg === 'energy mix derive failed')).toMatchObject({
+    source: 'elpris',
+  })
 })
 
 test('reports progress over every planned day, skipped ones included', async () => {

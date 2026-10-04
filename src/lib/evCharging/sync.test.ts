@@ -4,6 +4,7 @@ import { evChargeInterval, evChargeSession, integrationSyncRun, user } from '~/l
 import { queue } from '~/lib/effects'
 import { type CallOpts, type ZaptecClient, ZaptecError } from '~/lib/effects/zaptec'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
+import type { deriveFrom } from '~/lib/houseEnergy/derive'
 import { createServerLogger, logger } from '~/lib/logger/server'
 import * as evChargingService from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
@@ -860,4 +861,169 @@ test('default client in tests is notConfigured → failed / not_configured, no a
   expect(publish).not.toHaveBeenCalled()
   expect(runLines()).toHaveLength(1)
   expect(await sessionRows()).toEqual([])
+})
+
+const deriveSpy = () =>
+  vi.fn<typeof deriveFrom>(async () => ({ fromDay: null, days: 1, sessions: 1, deriveMs: 1 }))
+
+test("new sessions re-derive the energy mix from the earliest one's start day", async () => {
+  const derive = deriveSpy()
+  const { client } = fakeZaptec([
+    session('s1', new Date('2026-09-18T12:00:00Z')),
+    // Starts 2026-09-14T23:00Z = 2026-09-15 01:00 local.
+    session('s2', new Date('2026-09-15T01:00:00Z')),
+  ])
+  const { log, runLines } = capturingLogger()
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, log, deriveFrom: derive },
+  })
+  expect(run.outcome).toBe('ok')
+  expect(run.deriveFromDay).toBe('2026-09-15')
+  expect(derive).toHaveBeenCalledTimes(1)
+  expect(derive).toHaveBeenCalledWith('2026-09-15', { log })
+  expect(runLines()[0]).toMatchObject({ deriveFromDay: '2026-09-15', deriveMs: expect.any(Number) })
+})
+
+test('an unchanged re-import does not re-derive', async () => {
+  const derive = deriveSpy()
+  const { client } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  const second = await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + HOUR),
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(second.deriveFromDay).toBeNull()
+  expect(second.deriveMs).toBe(0)
+  expect(derive).toHaveBeenCalledTimes(1)
+})
+
+test('a changed session re-derives from its start day', async () => {
+  const derive = deriveSpy()
+  const end = new Date(T1.getTime() - DAY)
+  const { client, state } = fakeZaptec([session('s1', end)])
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  state.sessions = [session('s1', end, { energyKwh: 5 })]
+  const second = await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + HOUR),
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(second.deriveFromDay).toBe('2026-09-19')
+  expect(derive).toHaveBeenLastCalledWith('2026-09-19', expect.anything())
+})
+
+test('sessions imported before a failure are still derived, and the run still fails', async () => {
+  const derive = deriveSpy()
+  const { client, state } = fakeZaptec([
+    session('s1', new Date('2026-09-10T12:00:00Z')),
+    session('s2', new Date('2026-09-11T12:00:00Z')),
+    session('s3', new Date('2026-09-12T12:00:00Z')),
+  ])
+  state.failOnPage = 2
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(run.outcome).toBe('failed')
+  expect(derive).toHaveBeenCalledWith('2026-09-10', expect.anything())
+})
+
+test('a failed derive is a warning and the run stays ok', async () => {
+  const derive = vi.fn<typeof deriveFrom>(async () => {
+    throw new Error('derive bug')
+  })
+  const { client } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  const { log, entries } = capturingLogger()
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, log, deriveFrom: derive },
+  })
+  expect(run.outcome).toBe('ok')
+  expect(entries().find((e) => e.msg === 'energy mix derive failed')).toMatchObject({
+    level: WARN,
+    source: 'zaptec',
+  })
+})
+
+test('the run row records an integer deriveMs timing', async () => {
+  const { client } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: deriveSpy() },
+  })
+  const [row] = await db.select({ timings: integrationSyncRun.timings }).from(integrationSyncRun)
+  expect(Number.isInteger(row.timings.deriveMs)).toBe(true)
+})
+
+test('a moved start derives from the earlier of the old and new start, either way', async () => {
+  const derive = deriveSpy()
+  const end = new Date(T1.getTime() - DAY) // starts 2026-09-19T08:00Z
+  const { client, state } = fakeZaptec([session('s1', end)])
+  await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  state.sessions = [session('s1', end, { startAt: new Date('2026-09-17T08:00:00Z') })]
+  const earlier = await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + HOUR),
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(earlier.deriveFromDay).toBe('2026-09-17')
+  state.sessions = [session('s1', end)]
+  const later = await runZaptecSync({
+    trigger: 'cron',
+    now: () => new Date(T1.getTime() + 2 * HOUR),
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(later.deriveFromDay).toBe('2026-09-17')
+})
+
+test('a run that fails before storing anything does not derive', async () => {
+  const derive = deriveSpy()
+  const { client, state } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  state.failOnPage = 1
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(run.outcome).toBe('failed')
+  expect(run).toMatchObject({
+    deriveFromDay: null,
+    deriveMs: 0,
+    reattributeMs: 0,
+    reattributeChanged: 0,
+  })
+  expect(derive).not.toHaveBeenCalled()
+})
+
+test('a failed vehicle re-match still derives', async () => {
+  vi.spyOn(evChargingService, 'reattributeSessions').mockRejectedValueOnce(
+    new Error('re-match bug'),
+  )
+  const derive = deriveSpy()
+  const { client } = fakeZaptec([session('s1', new Date(T1.getTime() - DAY))])
+  const run = await runZaptecSync({
+    trigger: 'cron',
+    now: () => T1,
+    deps: { zaptec: client, deriveFrom: derive },
+  })
+  expect(run.outcome).toBe('ok')
+  expect(derive).toHaveBeenCalledTimes(1)
 })

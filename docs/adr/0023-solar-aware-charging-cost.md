@@ -97,3 +97,9 @@ are seasonal and that an unbounded pool drifts far past the battery's size (Alte
 efficiency"). The pool now takes inflows at full kWh and is capped at `SoC / 100 × C` after each bucket, `C` being
 the kWh the battery delivers per 100 % SoC, measured from history. The SoC series is synced as roadmap step 2b, before
 the derivation (step 3) is built.
+
+Step 3 (2026-10-04) settled the rest from the full history: a row's SoC is the battery's state at its bucket's middle,
+so the cap uses the mean of two rows, and `C` = 7.58 kWh per 100 %. Losses raising the cost of what is left make
+winter battery energy ≈ 1.8× its purchase spot. Checkpoints also carry a derive version, so a fix to the math rebuilds
+history by itself, and pending derives are queued durably, so a derive that fails is retried by the next one
+(spec "Derivation", amendments).

@@ -7,12 +7,15 @@ import {
   type ZaptecOp,
   zaptec,
 } from '~/lib/effects/zaptec'
+import type { deriveFrom } from '~/lib/houseEnergy/derive'
+import { deriveAfterSync } from '~/lib/houseEnergy/deriveAfterSync'
 import type { SyncTrigger } from '~/lib/integrationHealth'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import * as evChargingService from '~/lib/services/evCharging'
 import { getLastSuccessStartedAt, type RunStats } from '~/lib/services/integrationSync'
+import { stockholmDayOf } from '~/lib/time/stockholm'
 
 /**
  * The Zaptec sync run — the domain orchestrator both the hourly cron route and
@@ -44,6 +47,14 @@ export type SyncRun = RunBase & {
   reattributeMs: number
   /** Sessions whose attribution the post-import re-match changed; 0 when skipped or failed. */
   reattributeChanged: number
+  /**
+   * Stockholm day of the earliest session start this run added or changed
+   * (old or new start), across every page: where the energy-mix re-derive
+   * starts (ADR-0023); null if none.
+   */
+  deriveFromDay: string | null
+  /** Time spent queuing and re-deriving the energy mix; 0 when nothing changed. */
+  deriveMs: number
 }
 
 const SOURCE = 'zaptec'
@@ -81,7 +92,7 @@ export async function runZaptecSync(opts: {
   now?: () => Date
   /** Overrides the 240 s Zaptec deadline (tests). */
   deadlineMs?: number
-  deps?: { zaptec?: ZaptecClient; log?: Logger }
+  deps?: { zaptec?: ZaptecClient; log?: Logger; deriveFrom?: typeof deriveFrom }
 }): Promise<SyncRun> {
   const client = opts.deps?.zaptec ?? zaptec
   const stats = newCallStats()
@@ -106,30 +117,24 @@ export async function runZaptecSync(opts: {
       skipped: 0,
       reattributeMs: 0,
       reattributeChanged: 0,
+      deriveFromDay: null,
+      deriveMs: 0,
     }),
     execute: async ({ run, signal, now, log }) => {
-      await fetchAndImport(client, run, stats, signal, now)
-      // Attribution follows the import (ADR-0021). Health tracks Zaptec, not
-      // attribution, so a failure here is a warning, never a failed run.
-      const started = performance.now()
       try {
-        if (signal.aborted) {
-          log.warn('zaptec sync: vehicle re-match skipped, run deadline reached')
-        } else {
-          // Raced against the run deadline so a stalled re-match cannot hold the
-          // run past its lease. withDeadline doesn't cancel the SQL (idempotent,
-          // row-guarded; the next sync re-derives). A plain Error: it is only warned.
-          const result = await withDeadline(
-            evChargingService.reattributeSessions(),
-            signal,
-            () => new Error('vehicle re-match did not finish within the sync deadline'),
-          )
-          run.reattributeChanged = result.changed
-        }
-      } catch (error) {
-        log.warn('zaptec sync: vehicle re-match failed', { error })
+        await fetchAndImport(client, run, stats, signal, now)
+        await reattribute(run, signal, log)
       } finally {
-        run.reattributeMs = Math.round(performance.now() - started)
+        // ADR-0023: re-derive the energy mix from the earliest session this run
+        // added or changed — also when the import failed part-way: a stored
+        // change is never detected as changed again. Best effort, own budget.
+        run.deriveMs = await deriveAfterSync({
+          source: SOURCE,
+          signal,
+          fromDay: run.deriveFromDay,
+          log,
+          derive: opts.deps?.deriveFrom,
+        })
       }
     },
     toRunStats: (run) => runStats(run, stats),
@@ -151,8 +156,35 @@ export async function runZaptecSync(opts: {
       skipped: run.skipped,
       reattributeMs: run.reattributeMs,
       reattributeChanged: run.reattributeChanged,
+      deriveFromDay: run.deriveFromDay,
+      deriveMs: run.deriveMs,
     }),
   })
+}
+
+// Attribution follows the import (ADR-0021). Health tracks Zaptec, not
+// attribution, so a failure here is a warning, never a failed run.
+async function reattribute(run: SyncRun, signal: AbortSignal, log: Logger): Promise<void> {
+  const started = performance.now()
+  try {
+    if (signal.aborted) {
+      log.warn('zaptec sync: vehicle re-match skipped, run deadline reached')
+    } else {
+      // Raced against the run deadline so a stalled re-match cannot hold the
+      // run past its lease. withDeadline doesn't cancel the SQL (idempotent,
+      // row-guarded; the next sync re-derives). A plain Error: it is only warned.
+      const result = await withDeadline(
+        evChargingService.reattributeSessions(),
+        signal,
+        () => new Error('vehicle re-match did not finish within the sync deadline'),
+      )
+      run.reattributeChanged = result.changed
+    }
+  } catch (error) {
+    log.warn('zaptec sync: vehicle re-match failed', { error })
+  } finally {
+    run.reattributeMs = Math.round(performance.now() - started)
+  }
 }
 
 // Chargers, then sessions window by window (oldest first) and installation by
@@ -237,6 +269,10 @@ async function importWindow(
       run.upserted += result.upserted
       run.voided += result.voided
       run.skipped += result.skipped
+      if (result.earliestChangedStartAt) {
+        const day = stockholmDayOf(result.earliestChangedStartAt.getTime())
+        if (run.deriveFromDay === null || day < run.deriveFromDay) run.deriveFromDay = day
+      }
     }
   } finally {
     // Not awaited: a generator stuck past the deadline would never settle.
@@ -265,6 +301,7 @@ function runStats(run: SyncRun, stats: ZaptecCallStats): RunStats {
       fetchMs: Math.round(stats.fetchMs),
       importMs: Math.round(run.importMs),
       reattributeMs: run.reattributeMs,
+      deriveMs: run.deriveMs,
       requests: stats.requests,
       retries: stats.retries,
     },

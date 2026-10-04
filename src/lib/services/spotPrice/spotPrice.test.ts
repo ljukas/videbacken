@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { spotPrice } from '~/lib/db/schema'
+import { energyMixDeriveRequest, spotPrice } from '~/lib/db/schema'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
 import { setupDatabase } from '~test/setup'
@@ -205,4 +205,32 @@ test('dailyAverageSpot counts a 23-hour spring DST day as 23 hours', async () =>
   const [d] = await dailyAverageSpot('SE3', '2026-03-29', '2026-03-29')
   expect(d.coveredMs).toBe(23 * 3_600_000)
   expect(d.avgSekPerKwh).toBeCloseTo(11) // mean of 0 … 22
+})
+
+test("listSlotsOverlapping reads inside a caller's transaction", async () => {
+  // The test pool has one connection: using `db` instead of `tx` here would hang.
+  await db.transaction(async (tx) => {
+    await tx.insert(spotPrice).values({
+      zone: 'SE3',
+      slotStart: new Date('2026-09-28T08:00:00Z'),
+      slotEnd: new Date('2026-09-28T08:15:00Z'),
+      sekPerKwh: 1.5,
+    })
+    const slots = await listSlotsOverlapping(
+      'SE3',
+      [{ startMs: utc('2026-09-28T08:00Z'), endMs: utc('2026-09-28T08:15Z') }],
+      tx,
+    )
+    expect(slots).toEqual([
+      { startMs: utc('2026-09-28T08:00Z'), endMs: utc('2026-09-28T08:15Z'), sekPerKwh: 1.5 },
+    ])
+  })
+})
+
+test('replacing a day queues an energy-mix derive from that day', async () => {
+  await replaceDay('SE3', '2026-09-28', daySlots('2026-09-28', 15))
+  const queued = await db
+    .select({ fromDay: energyMixDeriveRequest.fromDay })
+    .from(energyMixDeriveRequest)
+  expect(queued).toEqual([{ fromDay: '2026-09-28' }])
 })

@@ -45,6 +45,11 @@ pool.on('error', (error) => logger.warn('idle postgres client error', { error })
 
 export const db = drizzle({ client: pool, schema, casing: 'snake_case' })
 
+/** A transaction handle, as `db.transaction`'s callback receives it. */
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+/** `db` or an open transaction: lets a caller compose service calls into one transaction. */
+export type DbOrTx = typeof db | DbTransaction
+
 // Test-only handle. Undefined in production. `test/setup.ts` uses this to
 // create per-test schemas on the same single connection the app's `db` uses,
 // and calls `.end()` on teardown.

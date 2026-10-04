@@ -2,12 +2,30 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **⚠ Amended 2026-10-04 (step 2b), revise before building.** The battery pool no longer uses a round-trip
-> efficiency. Inflows enter at full kWh, and after each bucket with a known `battery_soc_pct` the pool is capped at
-> `SoC / 100 × C`, keeping spot sums (spec "Derivation" 3, decision 7; ADR-0023 amendment). In Task 0, replace
-> `ROUND_TRIP_EFFICIENCY`, `measureRoundTripEfficiency` and the η checkpoint column with the capacity `C`
-> (measured: Σ discharge ÷ Σ SoC drop / 100 over discharge-only buckets), settle from data whether a row's SoC is
-> its bucket's start or end state, and rewrite the affected pool, service, derive and script tasks.
+> **Revised 2026-10-04 (Task 0, after step 2b).** The battery pool has no round-trip efficiency any more. Inflows
+> enter at full kWh, and after each bucket the pool is capped at its end-of-bucket SoC × `C`, keeping the spot sums
+> (spec "Derivation" 3, decision 7; ADR-0023 amendment). Measured on the local copy of the full history
+> (2026-01-20 → 2026-10-04, 73,945 buckets, SoC on all of them; prod's data matched it exactly at checkpoint 2b):
+> - **A row's SoC is the battery's state at the bucket's middle**, neither start nor end. Regressing
+>   `soc[i+1] − soc[i]` on bucket i's and bucket i+1's net battery flow gives weights of 0.45–0.54 each, in every
+>   month. The charge-onset and charge-stop buckets agree: the SoC moves about half a bucket's worth in each of them.
+>   So the state at bucket i's **end** is the mean of `soc[i]` and `soc[i+1]`. The cap uses that mean when both are
+>   known and the next row is exactly 5 minutes later; otherwise the bucket isn't capped.
+> - **`C` = 7.58 kWh per 100 %**: Σ discharge ÷ Σ SoC drop / 100 over 35,385 adjacent pairs of discharge-only
+>   buckets, each pair counting the mean of its two discharges (the SoC change spans half of each). By month:
+>   ≈ 6.2 in Jan–Feb, 7.5–8.1 from March. One constant, as the spec says. Too large in winter keeps a little old energy
+>   longer, but the pool stays bounded. Prototyped over the whole history, only 3.0 kWh in all ever discharged
+>   beyond the pool (the drift rule).
+> - **Losses raise the cost of what's left, as agreed.** In the prototype (flat spot), the pool's average cost was
+>   1.8× its inflow spot in Jan–Feb (median; p95 2.5×, max 5.4×) and 1.01–1.14× from March. Real winter economics:
+>   only ≈ 55 % comes back out. So a battery spot average isn't a market price, and the mix table's battery-spot CHECK
+>   checks only that the spot is finite (superseded by deviation 7; first drafted as ±1000). The ±100 of
+>   `spot_price` could fail a whole derive.
+> - The checkpoint stores `capacity_kwh` in place of `eta`. A checkpoint computed with another `C` is never resumed
+>   from, so changing `C` rebuilds history at the next derive.
+> - The **first** derive in prod rebuilds all history on its own: there is no checkpoint yet and earlier readings
+>   exist (Task 7). The script (Task 9) is a fallback, so the owner's pooler-URI prerequisite is no longer needed for
+>   checkpoint 3.
 
 **Goal:** For every counted charging session, derive and store (money-free) how each 15-minute slot was supplied:
 grid, solar, battery-from-grid (with the average spot it was bought at), battery-from-solar (with the average spot it
@@ -39,22 +57,42 @@ All additive; only step 3 calls the changed functions unless noted.
    `listSessionEnergy(filter, dbOrTx?)` (which also gains a `{ endsAfter: Date }` filter);
    `replaceForSessions(sessionIds, rows, dbOrTx?)`. Existing callers are unchanged. `src/lib/db/index.ts` exports
    `DbTransaction` / `DbOrTx` types.
-2. **Pool checkpoints carry their η.** `battery_pool_day` gains `eta` and `derived_at`;
-   `getPoolDay(day, dbOrTx?)` returns `{ state: PoolState; eta: number } | null` (not bare `PoolState`), and
-   `replacePoolDaysFrom(day, rows, eta, dbOrTx?)` takes the η the rows were computed with. A derive never resumes
-   from a checkpoint with another η; it rebuilds from the first reading. So the checkpoint's η change (roadmap 3)
-   re-derives history at the next trigger on its own.
+2. **Pool checkpoints carry their capacity** (and, since Task 1's review, a derive version: see 7). `battery_pool_day` gains `capacity_kwh` and `derived_at`;
+   `getPoolDay(day, dbOrTx?)` returns `{ state: PoolState; capacityKwh: number } | null` (not bare `PoolState`), and
+   `replacePoolDaysFrom(day, rows, capacityKwh, dbOrTx?)` takes the `C` the rows were computed with. A derive never
+   resumes from a checkpoint with another `C`; it rebuilds from the first reading. So a change of
+   `BATTERY_CAPACITY_KWH` re-derives history at the next trigger on its own.
 3. **Run types gain fields:** Zaptec `SyncRun` and `ElprisSyncRun` gain `deriveFromDay: string | null` and
    `deriveMs: number`; `EmaldoSyncRun` gains `deriveMs: number`. `ImportSessionsResult` gains
    `earliestChangedStartAt: Date | null`. Each sync's `deps` gains `deriveFrom?: typeof deriveFrom` (tests).
 4. **Triggers fire on whatever a sync stored, even when the run then fails** (the spec said "after its sync
    succeeds"): a stored change is never detected as new again, so skipping it would lose it for good. Recorded as a
    spec amendment in Task 10.
-5. **A fifth pure module** `mix/houseTimeline.ts` (`runHouseTimeline`) runs the pool forward day by day and records
-   each bucket's supply and battery outflow; `deriveSessionMix(buckets, house)` consumes its map.
+5. **A fifth pure module** `mix/houseTimeline.ts` (`runHouseTimeline`) runs the pool forward day by day, works out
+   each bucket's SoC cap from its own and the next reading's SoC, and records each bucket's supply and battery
+   outflow; `deriveSessionMix(buckets, house)` consumes its map.
 6. Step 4 note: Σ mix `kwh` of a session equals Σ of its **stretches** (`SessionEnergy.stretches`, i.e. its Zaptec
    intervals, or `energyKwh` for an `estimated` session), not necessarily `energyKwh`. Step 4's guard should compare
    against the stretches.
+7. **From Task 1's schema review (built):** checkpoints also store `derive_version` (smallint, `DERIVE_VERSION` in
+   `derive.ts`, starting at 1). A derive resumes only when both `C` and the version match, so a fix to the derive
+   math rebuilds history at the next trigger, with no script. `getPoolDay` returns
+   `{ state, capacityKwh, deriveVersion }`; `replacePoolDaysFrom(day, rows, { capacityKwh, deriveVersion }, dbOrTx?)`.
+   The CHECKs: battery spots finite only (no ±1000 bound); mix `kwh > 0 AND kwh < 1000`; pool `stored_kwh < 1000` and
+   finite spot sums (NaN and ±Infinity refused); slot alignment via `date_bin`.
+8. **From the Task 4–7 and script reviews (built):**
+   - A durable derive queue, `energy_mix_derive_request`. `deriveAfterSync` calls
+     `requestDerive(day)` before deriving, and a derive takes the whole queue with `DELETE … RETURNING`. So a failed
+     derive is retried by the next one, and a request waiting over 3 h is warned about.
+   - A derive starts **one day before** the requested day, so D−1's last bucket gets its SoC cap. It clamps a future
+     day to today and returns the day it actually started from (`DeriveResult.fromDay`).
+   - `pruneUncounted()` takes no window: it prunes every uncounted session.
+   - The script refuses future `--from` and query-string target overrides, and prints the user (the Supabase
+     project ref) with the target.
+9. **Merge with main (#76):** main took migration 0016 (`integration_sync` progress), so the three new tables
+   ship as one regenerated migration, `0017_energy_mix_and_battery_pool`. The stores queue a derive request in their
+   own transaction through the leaf `services/energyMix/deriveRequest.ts`; the derive clamps a requested day to the
+   floor (the day before the first reading) and skips sessions longer than a year or with a slot ≥ 1000 kWh.
 
 ## Global Constraints
 
@@ -71,8 +109,8 @@ All additive; only step 3 calls the changed functions unless noted.
 - Logging via `~/lib/logger` (`log` passed in, or `logger` from `~/lib/logger/server`). Never `console.*` outside
   `scripts/`.
 - Constants: `BUCKET_MS` = 5 min; `SLOT_MS` = 15 min (UTC quarter-hours); `BASELINE_BUCKETS` = 6 (the 30 min before
-  the session start, median); `MIN_BASELINE_BUCKETS` = 3; `ROUND_TRIP_EFFICIENCY` = **0.9 provisional** (replaced at
-  checkpoint 3); `EMPTY_KWH` = 1e-9; parts-sum tolerance `1e-9 × kwh + 1e-9`; `MIX_INSERT_BATCH` = 2 000;
+  the session start, median); `MIN_BASELINE_BUCKETS` = 3; `BATTERY_CAPACITY_KWH` = **7.58** (kWh per 100 % SoC,
+  measured 2026-10-04; see the header note; checkpoint 3 re-measures it on prod); `EMPTY_KWH` = 1e-9; parts-sum tolerance `1e-9 × kwh + 1e-9`; `MIX_INSERT_BATCH` = 2 000;
   `MAX_WIDEN_STEPS` = 10; `DERIVE_BUDGET_MS` = 30 000; derive transaction: `lock_timeout` 20 s, `statement_timeout`
   25 s, `idle_in_transaction_session_timeout` 60 s (a frozen Vercel instance can't hold the lock).
 - `battery_charge_ac` counts as **grid origin** (spec, "Sync"). Step 2's checkpoint records its real meaning in the
@@ -94,14 +132,16 @@ All additive; only step 3 calls the changed functions unless noted.
    breaks. Tests: Task 2 ("capped at the house load", "an earlier interval's energy … counts against its load",
    "zero-length", "every interval's kWh stays exact"), Task 3 ("parts always sum"), Task 7 (Σ assertions).
 2. **The re-derive window.** A session spanning midnight widens the start day. Resuming from a checkpoint must equal
-   a full derive. A missing checkpoint, or one with another η, rebuilds from the first reading. Sessions ending
+   a full derive. A missing checkpoint, or one with another `C`, rebuilds from the first reading. Sessions ending
    before the window keep their rows, and voided sessions lose theirs. Task 7.
 3. **Triggers never lose a change, and never invent one.** Pages imported before a Zaptec failure are still derived;
    an unchanged re-import doesn't derive; a moved start derives from the earlier of the old and new start; elpris and
    Emaldo days stored before a failure are still derived; a derive failure never fails the run. Tasks 6, 7 and 8.
 4. **Battery pool edge cases**: empty pool, discharge beyond the pool (drift), inflow without a spot price, a
-   grid-charged battery, charge and discharge in the same bucket, float dust. Task 3 and Task 7 ("grid",
-   "without a spot price").
+   grid-charged battery, charge and discharge in the same bucket, float dust. The SoC cap: trims every part by one
+   factor and keeps the spot sums; never raises a pool below it; a cap of 0 empties the pool; no cap without both
+   SoC values or across a gap; uses the mean of this and the next reading (mid-bucket SoC). Task 3 and Task 7
+   ("grid", "without a spot price", "measured SoC").
 5. **DST and gaps.** Days have 276 or 300 buckets. Days without readings carry the pool state forward through today.
    A gap inside a session means a uniform spread and no house data. Task 2 ("spring-forward"), Task 3
    ("276 buckets", "300 buckets", "carry"), Task 7 ("after the last reading").
@@ -124,7 +164,7 @@ bun run db:up && bun run db:migrate
 Copy `.env` only. Never copy `.env.local`: after a `vercel env pull` it holds production's `DATABASE_URL`.
 
 - [ ] **Step 2: Previous steps merged and checkpoints passed.** In
-  `docs/superpowers/roadmaps/2026-10-03-ev-charging-solar-cost.md`, rows 1 and 2 must read `checkpoint passed` and
+  `docs/superpowers/roadmaps/2026-10-03-ev-charging-solar-cost.md`, rows 1, 2 and 2b must read `checkpoint passed` and
   row 2's result must record the settled meaning of `battery_charge_ac`. Read the spec's "Sync (roadmap step 2)"
   bullet on `battery_charge_ac`: if it is no longer "grid-origin" (e.g. it is AC-coupled solar), stop and amend
   `supply.ts` / `pool.ts` in this plan first.
@@ -197,7 +237,8 @@ actually run**:
 
 The reviewer should confirm that the two PKs serve all of the above, with no secondary index needed. It should also
 check that every valid derive output satisfies the CHECKs: parts within float tolerance, the spot present exactly
-when its kWh > 0, negative spots allowed, slot alignment.
+when its kWh > 0, negative spots allowed, battery spots above `spot_price`'s range allowed (losses raise them; see
+the header note), slot alignment.
 
 - [ ] **Step 1: Append the tables** to `src/lib/db/schema/houseEnergy.ts`. Ensure the file imports `sql` from
   `drizzle-orm`; `check, date, doublePrecision, pgTable, primaryKey, timestamp, uuid` from `drizzle-orm/pg-core`; and
@@ -256,28 +297,33 @@ export const evChargeEnergyMix = pgTable(
         + ${table.batterySolarKwh} + ${table.batteryUnpricedKwh} + ${table.noHouseDataKwh}))
         <= 1e-9 * ${table.kwh} + 1e-9`,
     ),
-    // A spot exactly when there is energy to price; within spot_price's bounds
-    // (negative spots are real).
+    // (As first drafted; built finite-only, no value bound: deviation 7.)
+    // A spot exactly when there is energy to price. Only a sanity bound on its
+    // value, far wider than spot_price's ±100: battery losses raise the
+    // average cost of what is left in the pool (spec decision 7; the history
+    // shows ≈ 1.8× in winter, up to ≈ 5×), so this is no market price. Negative
+    // spots are real.
     check(
       'ev_charge_energy_mix_battery_grid_spot_check',
       sql`(${table.batteryGridKwh} > 0) = (${table.batteryGridSpotSek} IS NOT NULL)
         AND (${table.batteryGridSpotSek} IS NULL
-          OR (${table.batteryGridSpotSek} > -100 AND ${table.batteryGridSpotSek} < 100))`,
+          OR (${table.batteryGridSpotSek} > -1000 AND ${table.batteryGridSpotSek} < 1000))`,
     ),
     check(
       'ev_charge_energy_mix_battery_solar_spot_check',
       sql`(${table.batterySolarKwh} > 0) = (${table.batterySolarSpotSek} IS NOT NULL)
         AND (${table.batterySolarSpotSek} IS NULL
-          OR (${table.batterySolarSpotSek} > -100 AND ${table.batterySolarSpotSek} < 100))`,
+          OR (${table.batterySolarSpotSek} > -1000 AND ${table.batterySolarSpotSek} < 1000))`,
     ),
   ],
 ).enableRLS()
 
 // The battery cost pool's state at the end of each Stockholm day: the derive's
-// checkpoint (ADR-0023). A re-derive from day D resumes from D−1's row. `eta`
-// is the round-trip efficiency the state was computed with: a checkpoint with
-// another η is never resumed from (the derive rebuilds from the first reading),
-// so changing η re-derives history by itself. Spot sums may be negative.
+// checkpoint (ADR-0023). A re-derive from day D resumes from D−1's row.
+// `capacity_kwh` is the C (kWh per 100 % SoC) the state was computed with: a
+// checkpoint with another C is never resumed from (the derive rebuilds from
+// the first reading), so changing C re-derives history by itself. Spot sums
+// may be negative.
 export const batteryPoolDay = pgTable(
   'battery_pool_day',
   {
@@ -289,7 +335,7 @@ export const batteryPoolDay = pgTable(
     solarKwh: doublePrecision('solar_kwh').notNull(),
     solarSpotSekSum: doublePrecision('solar_spot_sek_sum').notNull(),
     unpricedKwh: doublePrecision('unpriced_kwh').notNull(),
-    eta: doublePrecision('eta').notNull(),
+    capacityKwh: doublePrecision('capacity_kwh').notNull(),
     /** When the derive wrote this checkpoint (shows whether a re-derive reached it). */
     derivedAt: timestamp('derived_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -304,7 +350,10 @@ export const batteryPoolDay = pgTable(
       sql`abs(${table.storedKwh} - (${table.gridKwh} + ${table.solarKwh} + ${table.unpricedKwh}))
         <= 1e-9 * ${table.storedKwh} + 1e-9`,
     ),
-    check('battery_pool_day_eta_check', sql`${table.eta} > 0 AND ${table.eta} <= 1`),
+    check(
+      'battery_pool_day_capacity_kwh_check',
+      sql`${table.capacityKwh} > 0 AND ${table.capacityKwh} < 100`,
+    ),
   ],
 ).enableRLS()
 ```
@@ -359,7 +408,7 @@ const BUCKET_MS = 5 * 60_000
 
 export type Flows = Partial<Omit<HouseReading, 'bucketStart'>>
 
-/** One reading; every flow not given is 0. */
+/** One reading; every flow not given is 0, the SoC null (so the pool isn't capped). */
 export function reading(bucketStart: Date | number, flows: Flows = {}): HouseReading {
   return {
     bucketStart: new Date(bucketStart),
@@ -371,6 +420,7 @@ export function reading(bucketStart: Date | number, flows: Flows = {}): HouseRea
     batteryChargeSolarKwh: 0,
     batteryChargeGridKwh: 0,
     batteryChargeAcKwh: 0,
+    batterySocPct: null,
     ...flows,
   }
 }
@@ -818,11 +868,12 @@ function clampToLoad(kwh: number[], cap: readonly number[], share: readonly numb
   `stockholmDayOf` from `~/lib/time/stockholm`.
 - Produces (contract names exactly):
   ```ts
-  export const ROUND_TRIP_EFFICIENCY: number
+  export const BATTERY_CAPACITY_KWH: number
   export type PoolState = { storedKwh; gridKwh; gridSpotSekSum; solarKwh; solarSpotSekSum; unpricedKwh: number }
   export type BatteryOut = { gridKwh; gridSpotSekSum; solarKwh; solarSpotSekSum; unpricedKwh: number }
   export const emptyPool: () => PoolState
-  export function stepPool(s: PoolState, r: HouseReading, spotSekPerKwh: number | null, eta: number): { next: PoolState; out: BatteryOut }
+  export function stepPool(s: PoolState, r: HouseReading, spotSekPerKwh: number | null, capKwh: number | null): { next: PoolState; out: BatteryOut }
+  export function endOfBucketSocPct(r: HouseReading, next: HouseReading | undefined): number | null
   export const SLOT_MS: number
   export type MixSlot = { slotStart: Date; kwh; gridKwh; solarKwh; batteryGridKwh: number; batteryGridSpotSek: number | null;
     batterySolarKwh: number; batterySolarSpotSek: number | null; batteryUnpricedKwh; noHouseDataKwh: number }
@@ -830,7 +881,7 @@ function clampToLoad(kwh: number[], cap: readonly number[], share: readonly numb
   export function deriveSessionMix(buckets: readonly CarBucket[], house: ReadonlyMap<number, BucketHouse>): MixSlot[]
   export type PoolDay = { day: string; state: PoolState }
   export function runHouseTimeline(input: { readings: readonly HouseReading[]; fromDay: string; throughDay: string;
-    start: PoolState; spotAt: (bucketStartMs: number) => number | null; eta: number }):
+    start: PoolState; spotAt: (bucketStartMs: number) => number | null; capacityKwh: number }):
     { days: PoolDay[]; house: Map<number, BucketHouse> }
   ```
 
@@ -842,7 +893,14 @@ function clampToLoad(kwh: number[], cap: readonly number[], share: readonly numb
 // src/lib/houseEnergy/mix/pool.test.ts
 import { expect, test } from 'vitest'
 import { reading } from '~test/fixtures/houseEnergy'
-import { type BatteryOut, emptyPool, type PoolState, ROUND_TRIP_EFFICIENCY, stepPool } from './pool'
+import {
+  BATTERY_CAPACITY_KWH,
+  type BatteryOut,
+  emptyPool,
+  endOfBucketSocPct,
+  type PoolState,
+  stepPool,
+} from './pool'
 
 const T = Date.UTC(2026, 1, 15, 1)
 
@@ -871,75 +929,113 @@ function expectPool(actual: PoolState, expected: Partial<PoolState>) {
   }
 }
 
-test('ROUND_TRIP_EFFICIENCY is a plausible efficiency', () => {
-  expect(ROUND_TRIP_EFFICIENCY).toBeGreaterThan(0.7)
-  expect(ROUND_TRIP_EFFICIENCY).toBeLessThanOrEqual(1)
+test('BATTERY_CAPACITY_KWH is a plausible kWh per 100 % SoC', () => {
+  expect(BATTERY_CAPACITY_KWH).toBeGreaterThan(5)
+  expect(BATTERY_CAPACITY_KWH).toBeLessThan(12)
 })
 
-test('grid charging (charge_grid and charge_ac) enters at η × kWh at the slot spot', () => {
+test('grid charging (charge_grid and charge_ac) enters at its full kWh at the slot spot', () => {
   const r = reading(T, { batteryChargeGridKwh: 1, batteryChargeAcKwh: 0.5 })
-  const { next, out } = stepPool(emptyPool(), r, 0.2, 0.9)
-  expectPool(next, { gridKwh: 1.35, gridSpotSekSum: 0.27 })
+  const { next, out } = stepPool(emptyPool(), r, 0.2, null)
+  expectPool(next, { gridKwh: 1.5, gridSpotSekSum: 0.3 })
   expectOut(out, {})
 })
 
 test('solar charging carries its slot spot as value', () => {
-  const { next } = stepPool(emptyPool(), reading(T, { batteryChargeSolarKwh: 1 }), 0.6, 0.9)
-  expectPool(next, { solarKwh: 0.9, solarSpotSekSum: 0.54 })
+  const { next } = stepPool(emptyPool(), reading(T, { batteryChargeSolarKwh: 1 }), 0.6, null)
+  expectPool(next, { solarKwh: 1, solarSpotSekSum: 0.6 })
 })
 
 test('charging in a slot without a spot price is unpriced', () => {
   const r = reading(T, { batteryChargeGridKwh: 1, batteryChargeSolarKwh: 1 })
-  expectPool(stepPool(emptyPool(), r, null, 0.9).next, { unpricedKwh: 1.8 })
+  expectPool(stepPool(emptyPool(), r, null, null).next, { unpricedKwh: 2 })
 })
 
 test('a discharge takes every part in proportion and keeps each average spot', () => {
   const s = pool({ gridKwh: 2, gridSpotSekSum: 2, solarKwh: 2, solarSpotSekSum: 1 })
-  const { next, out } = stepPool(s, reading(T, { batteryDischargeKwh: 1 }), 5, 0.9)
+  const { next, out } = stepPool(s, reading(T, { batteryDischargeKwh: 1 }), 5, null)
   expectOut(out, { gridKwh: 0.5, gridSpotSekSum: 0.5, solarKwh: 0.5, solarSpotSekSum: 0.25 })
   expectPool(next, { gridKwh: 1.5, gridSpotSekSum: 1.5, solarKwh: 1.5, solarSpotSekSum: 0.75 })
 })
 
 test('a discharge beyond the pool empties it; the excess is grid at the current spot (drift)', () => {
   const s = pool({ solarKwh: 1, solarSpotSekSum: 0.4 })
-  const { next, out } = stepPool(s, reading(T, { batteryDischargeKwh: 1.5 }), 2, 0.9)
+  const { next, out } = stepPool(s, reading(T, { batteryDischargeKwh: 1.5 }), 2, null)
   expectOut(out, { solarKwh: 1, solarSpotSekSum: 0.4, gridKwh: 0.5, gridSpotSekSum: 1 })
   expect(next).toEqual(emptyPool())
 })
 
 test("an empty pool's discharge without a spot price is unpriced", () => {
-  const { next, out } = stepPool(emptyPool(), reading(T, { batteryDischargeKwh: 0.3 }), null, 0.9)
+  const { next, out } = stepPool(emptyPool(), reading(T, { batteryDischargeKwh: 0.3 }), null, null)
   expectOut(out, { unpricedKwh: 0.3 })
   expect(next).toEqual(emptyPool())
 })
 
 test('charge and discharge in one bucket: the inflow joins before the outflow leaves', () => {
   const r = reading(T, { batteryChargeGridKwh: 1, batteryDischargeKwh: 0.45 })
-  const { next, out } = stepPool(emptyPool(), r, 1, 0.9)
+  const { next, out } = stepPool(emptyPool(), r, 1, null)
   expectOut(out, { gridKwh: 0.45, gridSpotSekSum: 0.45 })
-  expectPool(next, { gridKwh: 0.45, gridSpotSekSum: 0.45 })
+  expectPool(next, { gridKwh: 0.55, gridSpotSekSum: 0.55 })
 })
 
 test('float dust left after a discharge resets the pool to empty', () => {
   const s = pool({ gridKwh: 1, gridSpotSekSum: 1 })
-  const { next } = stepPool(s, reading(T, { batteryDischargeKwh: 1 - 1e-13 }), 1, 0.9)
+  const { next } = stepPool(s, reading(T, { batteryDischargeKwh: 1 - 1e-13 }), 1, null)
   expect(next).toEqual(emptyPool())
 })
 
-test('the efficiency argument is the one applied', () => {
-  const r = reading(T, { batteryChargeGridKwh: 1 })
-  expect(stepPool(emptyPool(), r, 1, 1).next.gridKwh).toBeCloseTo(1, 12)
-  expect(stepPool(emptyPool(), r, 1, 0.8).next.gridKwh).toBeCloseTo(0.8, 12)
+test('above the cap every part shrinks by one factor and keeps its spot sum (losses raise the cost)', () => {
+  const s = pool({ gridKwh: 3, gridSpotSekSum: 1.5, solarKwh: 1, solarSpotSekSum: 0.8, unpricedKwh: 1 })
+  const { next, out } = stepPool(s, reading(T), 1, 2.5)
+  expectOut(out, {})
+  expectPool(next, {
+    gridKwh: 1.5,
+    gridSpotSekSum: 1.5,
+    solarKwh: 0.5,
+    solarSpotSekSum: 0.8,
+    unpricedKwh: 0.5,
+  })
+})
+
+test("the cap applies after the bucket's inflow and outflow", () => {
+  // 2 in, 0.5 out → 1.5 stored, capped at 1.2; the 2 SEK paid stay, less the 0.5 that left.
+  const r = reading(T, { batteryChargeGridKwh: 2, batteryDischargeKwh: 0.5 })
+  const { next, out } = stepPool(emptyPool(), r, 1, 1.2)
+  expectOut(out, { gridKwh: 0.5, gridSpotSekSum: 0.5 })
+  expectPool(next, { gridKwh: 1.2, gridSpotSekSum: 1.5 })
+})
+
+test('below the cap nothing changes: the pool never invents energy', () => {
+  const s = pool({ gridKwh: 1, gridSpotSekSum: 0.5 })
+  expect(stepPool(s, reading(T), 1, 5).next).toEqual(s)
+})
+
+test('a cap of 0 empties the pool', () => {
+  const s = pool({ gridKwh: 1, gridSpotSekSum: 0.5 })
+  expect(stepPool(s, reading(T), 1, 0).next).toEqual(emptyPool())
+})
+
+test("the end-of-bucket SoC is the mean of this and the next reading's (Emaldo's SoC is mid-bucket)", () => {
+  const r = reading(T, { batterySocPct: 40 })
+  expect(endOfBucketSocPct(r, reading(T + 300_000, { batterySocPct: 45 }))).toBe(42.5)
+})
+
+test('no end-of-bucket SoC without both values or across a gap', () => {
+  const r = reading(T, { batterySocPct: 40 })
+  expect(endOfBucketSocPct(r, undefined)).toBeNull()
+  expect(endOfBucketSocPct(r, reading(T + 300_000))).toBeNull()
+  expect(endOfBucketSocPct(reading(T), reading(T + 300_000, { batterySocPct: 45 }))).toBeNull()
+  expect(endOfBucketSocPct(r, reading(T + 600_000, { batterySocPct: 45 }))).toBeNull()
 })
 
 test('stepPool never mutates its input', () => {
   const s = pool({ gridKwh: 2, gridSpotSekSum: 2 })
   const copy = structuredClone(s)
-  stepPool(s, reading(T, { batteryDischargeKwh: 1, batteryChargeSolarKwh: 1 }), 1, 0.9)
+  stepPool(s, reading(T, { batteryDischargeKwh: 1, batteryChargeSolarKwh: 1 }), 1, 0.5)
   expect(s).toEqual(copy)
 })
 
-test('a long random run keeps every part non-negative and stored equal to their sum', () => {
+test('a long random run keeps every part non-negative, stored equal to their sum and under the cap', () => {
   let seed = 11
   const rand = () => {
     seed = (seed * 48271) % 2147483647
@@ -952,11 +1048,13 @@ test('a long random run keeps every part non-negative and stored equal to their 
       batteryChargeSolarKwh: rand() < 0.3 ? rand() * 0.4 : 0,
       batteryDischargeKwh: rand() < 0.4 ? rand() * 0.5 : 0,
     })
-    const { next, out } = stepPool(s, r, rand() < 0.1 ? null : rand() * 3 - 0.5, 0.9)
+    const cap = rand() < 0.2 ? null : rand() * 8
+    const { next, out } = stepPool(s, r, rand() < 0.1 ? null : rand() * 3 - 0.5, cap)
     for (const v of [next.gridKwh, next.solarKwh, next.unpricedKwh, out.gridKwh, out.solarKwh, out.unpricedKwh]) {
       expect(v).toBeGreaterThanOrEqual(0)
     }
     expect(next.storedKwh).toBeCloseTo(next.gridKwh + next.solarKwh + next.unpricedKwh, 9)
+    if (cap !== null) expect(next.storedKwh).toBeLessThanOrEqual(cap + 1e-12)
     expect(out.gridKwh + out.solarKwh + out.unpricedKwh).toBeCloseTo(r.batteryDischargeKwh, 9)
     s = next
   }
@@ -1133,9 +1231,11 @@ import { expect, test } from 'vitest'
 import { stockholmDayBounds } from '~/lib/time/stockholm'
 import { reading, syntheticDay } from '~test/fixtures/houseEnergy'
 import { runHouseTimeline } from './houseTimeline'
-import { emptyPool } from './pool'
+import { BATTERY_CAPACITY_KWH, emptyPool } from './pool'
 
+// No SoC in these readings unless a test sets one, so the pool isn't capped.
 const charging = () => ({ batteryChargeGridKwh: 0.01, gridImportKwh: 0.01 })
+const C = BATTERY_CAPACITY_KWH
 
 test('a spring-forward day steps 276 buckets into one checkpoint', () => {
   const readings = syntheticDay('2026-03-29', charging)
@@ -1146,10 +1246,10 @@ test('a spring-forward day steps 276 buckets into one checkpoint', () => {
     throughDay: '2026-03-29',
     start: emptyPool(),
     spotAt: () => 1,
-    eta: 0.9,
+    capacityKwh: C,
   })
   expect(days.map((d) => d.day)).toEqual(['2026-03-29'])
-  expect(days[0].state.gridKwh).toBeCloseTo(276 * 0.01 * 0.9, 9)
+  expect(days[0].state.gridKwh).toBeCloseTo(276 * 0.01, 9)
   expect(house.size).toBe(276)
 })
 
@@ -1162,10 +1262,10 @@ test('a fall-back day steps 300 buckets into one checkpoint', () => {
     throughDay: '2026-10-25',
     start: emptyPool(),
     spotAt: () => 1,
-    eta: 0.9,
+    capacityKwh: C,
   })
   expect(days).toHaveLength(1)
-  expect(days[0].state.gridKwh).toBeCloseTo(300 * 0.01 * 0.9, 9)
+  expect(days[0].state.gridKwh).toBeCloseTo(300 * 0.01, 9)
 })
 
 test('days without readings carry the state forward, through throughDay', () => {
@@ -1176,7 +1276,7 @@ test('days without readings carry the state forward, through throughDay', () => 
     throughDay: '2026-06-12',
     start: emptyPool(),
     spotAt: () => 1,
-    eta: 1,
+    capacityKwh: C,
   })
   expect(days.map((d) => d.day)).toEqual([
     '2026-06-08',
@@ -1198,7 +1298,7 @@ test('readings before fromDay are not stepped (they only feed the shaping baseli
     throughDay: '2026-06-10',
     start: emptyPool(),
     spotAt: () => 1,
-    eta: 1,
+    capacityKwh: C,
   })
   expect(days[0].state).toEqual(emptyPool())
   expect(house.has(stockholmDayBounds('2026-06-09').startMs)).toBe(false)
@@ -1217,10 +1317,65 @@ test("each bucket's inflow carries its own slot's spot", () => {
     throughDay: '2026-06-10',
     start: emptyPool(),
     spotAt: (ms) => (ms === t0 ? 1 : 3),
-    eta: 1,
+    capacityKwh: C,
   })
   expect(days[0].state.gridKwh).toBeCloseTo(2, 12)
   expect(days[0].state.gridSpotSekSum).toBeCloseTo(4, 12)
+})
+
+test("after each bucket the pool is capped at its end-of-bucket SoC × capacity, keeping its cost", () => {
+  // Capacity 10 kWh; SoC 10 → 12 → 14 %: the end-of-bucket caps are 1.1 and
+  // 1.3 kWh; the last bucket has no next reading, so it isn't capped.
+  const t0 = Date.UTC(2026, 5, 10, 10)
+  const readings = [10, 12, 14].map((soc, i) =>
+    reading(t0 + i * 300_000, { batteryChargeGridKwh: 1, gridImportKwh: 1, batterySocPct: soc }),
+  )
+  const { days } = runHouseTimeline({
+    readings,
+    fromDay: '2026-06-10',
+    throughDay: '2026-06-10',
+    start: emptyPool(),
+    spotAt: () => 1,
+    capacityKwh: 10,
+  })
+  // 1 (under 1.1) → 2 capped to 1.3 → 2.3 uncapped; all 3 SEK paid stay.
+  expect(days[0].state.gridKwh).toBeCloseTo(2.3, 12)
+  expect(days[0].state.gridSpotSekSum).toBeCloseTo(3, 12)
+})
+
+test('the bucket before a gap is not capped', () => {
+  const t0 = Date.UTC(2026, 5, 10, 10)
+  const readings = [
+    reading(t0, { batteryChargeGridKwh: 1, gridImportKwh: 1, batterySocPct: 10 }),
+    reading(t0 + 600_000, { batterySocPct: 10 }),
+  ]
+  const { days } = runHouseTimeline({
+    readings,
+    fromDay: '2026-06-10',
+    throughDay: '2026-06-10',
+    start: emptyPool(),
+    spotAt: () => 1,
+    capacityKwh: 1,
+  })
+  expect(days[0].state.gridKwh).toBeCloseTo(1, 12)
+})
+
+test('the cap of a day\'s last bucket uses the next day\'s first reading', () => {
+  const day = '2026-06-10'
+  const next = stockholmDayBounds(day).endMs
+  const readings = [
+    reading(next - 300_000, { batteryChargeGridKwh: 1, gridImportKwh: 1, batterySocPct: 4 }),
+    reading(next, { batterySocPct: 6 }),
+  ]
+  const { days } = runHouseTimeline({
+    readings,
+    fromDay: day,
+    throughDay: '2026-06-11',
+    start: emptyPool(),
+    spotAt: () => 1,
+    capacityKwh: 10,
+  })
+  expect(days[0].state.gridKwh).toBeCloseTo(0.5, 12)
 })
 
 test("records each bucket's house supply and what left the battery", () => {
@@ -1231,7 +1386,7 @@ test("records each bucket's house supply and what left the battery", () => {
     throughDay: '2026-06-10',
     start: emptyPool(),
     spotAt: () => 2,
-    eta: 1,
+    capacityKwh: C,
   })
   const bucket = house.get(t)
   expect(bucket?.supply?.grid).toBeCloseTo(0.5, 12)
@@ -1248,7 +1403,7 @@ test('fromDay after throughDay and no readings: no checkpoints', () => {
     throughDay: '2026-06-10',
     start: emptyPool(),
     spotAt: () => 1,
-    eta: 0.9,
+    capacityKwh: C,
   })
   expect(r.days).toEqual([])
   expect(r.house.size).toBe(0)
@@ -1260,20 +1415,23 @@ test('fromDay after throughDay and no readings: no checkpoints', () => {
 - [ ] **Step 5: Implement `pool.ts`**
 
 ```ts
-// Client-safe, pure (ADR-0023 decision 5, spec "Derivation" 3). The battery as
-// an average-cost pool, run forward bucket by bucket: inflows enter at η × kWh
-// carrying their slot's spot (grid: what was paid; solar: what export would
-// have paid), and an outflow takes every part in proportion.
+// Client-safe, pure (ADR-0023 decision 5 and its 2026-10-04 amendment, spec
+// "Derivation" 3). The battery as an average-cost pool, run forward bucket by
+// bucket: inflows enter at their full kWh carrying their slot's spot (grid:
+// what was paid; solar: what export would have paid), an outflow takes every
+// part in proportion, and after the bucket the pool is capped at what the
+// battery's measured state of charge says it holds.
 import type { HouseReading } from '~/lib/services/houseEnergy'
+import { BUCKET_MS } from './shape'
 
 /**
- * The battery's round-trip efficiency, Σ discharge ÷ Σ charge over the stored
- * history (spec "Derivation" 3). PROVISIONAL (2026-10-03): not measured yet.
- * Roadmap checkpoint 3 measures it on prod and replaces this value, stating the
- * measurement and its date here. Every checkpoint stores the η it was computed
- * with, so changing this re-derives history at the next derive.
+ * C: the kWh the battery delivers per 100 % SoC (spec "Derivation" 3).
+ * Measured 2026-10-04 over 2026-01-20 → 2026-10-04: Σ discharge ÷ Σ SoC drop
+ * / 100 over adjacent pairs of discharge-only buckets (≈ 6.2 in Jan–Feb,
+ * 7.5–8.1 from March). Every checkpoint stores the C it was computed with, so
+ * changing this re-derives history at the next derive.
  */
-export const ROUND_TRIP_EFFICIENCY = 0.9
+export const BATTERY_CAPACITY_KWH = 7.58
 
 /** Below this the pool counts as empty (float dust after many proportional removals). */
 const EMPTY_KWH = 1e-9
@@ -1311,20 +1469,36 @@ export const emptyPool = (): PoolState => ({
 })
 
 /**
+ * The battery's SoC (%) at the end of bucket `r`. Emaldo's SoC describes the
+ * middle of its bucket (measured 2026-10-04: the change from one row to the
+ * next splits evenly between the two buckets' flows), so the end is the mean
+ * of this row's and the next one's. Null, so no cap, without both values or
+ * when `next` isn't the very next bucket (a gap).
+ */
+export function endOfBucketSocPct(r: HouseReading, next: HouseReading | undefined): number | null {
+  if (!next || next.bucketStart.getTime() - r.bucketStart.getTime() !== BUCKET_MS) return null
+  if (r.batterySocPct === null || next.batterySocPct === null) return null
+  return (r.batterySocPct + next.batterySocPct) / 2
+}
+
+/**
  * One 5-minute bucket. The inflow joins before the outflow leaves (a bucket
  * that both charges and discharges sends some of its own inflow on). An
  * outflow beyond the pool empties it and counts the excess as grid energy at
- * this bucket's spot — conservative, and it absorbs measurement drift.
- * `charge_ac` is grid-origin (spec "Sync").
+ * this bucket's spot: conservative, and it absorbs measurement drift. Then,
+ * with a `capKwh` (end-of-bucket SoC × C), a pool above it shrinks every part
+ * by one factor and keeps its spot sums: charging, standby and heating losses
+ * raise the average cost (and solar value) of what is left. Below the cap
+ * nothing changes. `charge_ac` is grid-origin (spec "Sync").
  */
 export function stepPool(
   s: PoolState,
   r: HouseReading,
   spotSekPerKwh: number | null,
-  eta: number,
+  capKwh: number | null,
 ): { next: PoolState; out: BatteryOut } {
-  const gridIn = (r.batteryChargeGridKwh + r.batteryChargeAcKwh) * eta
-  const solarIn = r.batteryChargeSolarKwh * eta
+  const gridIn = r.batteryChargeGridKwh + r.batteryChargeAcKwh
+  const solarIn = r.batteryChargeSolarKwh
   let { gridKwh, gridSpotSekSum, solarKwh, solarSpotSekSum, unpricedKwh } = s
   if (spotSekPerKwh === null) {
     unpricedKwh += gridIn + solarIn
@@ -1360,6 +1534,13 @@ export function stepPool(
     }
   }
 
+  const stored = gridKwh + solarKwh + unpricedKwh
+  if (capKwh !== null && stored > capKwh) {
+    const k = Math.max(0, capKwh) / stored
+    gridKwh *= k
+    solarKwh *= k
+    unpricedKwh *= k
+  }
   const storedKwh = gridKwh + solarKwh + unpricedKwh
   if (storedKwh < EMPTY_KWH) return { next: emptyPool(), out }
   return {
@@ -1488,13 +1669,16 @@ export function deriveSessionMix(
 ```ts
 // Client-safe, pure (ADR-0023). Runs the battery pool forward over the house
 // readings from `fromDay`, one Stockholm day at a time (23, 24 or 25 h), and
-// records what the car mix needs per bucket. A checkpoint is written for every
-// day through `throughDay` (normally today) even without readings: the state
-// carries over, so a later derive from any day up to today finds D−1's row.
+// records what the car mix needs per bucket. Each bucket is capped at its
+// end-of-bucket SoC × `capacityKwh` (the next reading's SoC is needed for it,
+// so the readings are stepped as one ascending list across days). A
+// checkpoint is written for every day through `throughDay` (normally today)
+// even without readings: the state carries over, so a later derive from any
+// day up to today finds D−1's row.
 import type { HouseReading } from '~/lib/services/houseEnergy'
 import { addDays, stockholmDayBounds, stockholmDayOf } from '~/lib/time/stockholm'
 import type { BucketHouse } from './carMix'
-import { type PoolState, stepPool } from './pool'
+import { endOfBucketSocPct, type PoolState, stepPool } from './pool'
 import { houseSupply } from './supply'
 
 export type PoolDay = { day: string; state: PoolState }
@@ -1506,7 +1690,8 @@ export function runHouseTimeline(input: {
   start: PoolState
   /** The spot (SEK/kWh ex VAT) of the slot containing the bucket, or null. */
   spotAt: (bucketStartMs: number) => number | null
-  eta: number
+  /** C: kWh the battery delivers per 100 % SoC. */
+  capacityKwh: number
 }): { days: PoolDay[]; house: Map<number, BucketHouse> } {
   const fromMs = stockholmDayBounds(input.fromDay).startMs
   const stepped = input.readings
@@ -1526,7 +1711,9 @@ export function runHouseTimeline(input: {
     for (; i < stepped.length && stepped[i].bucketStart.getTime() < endMs; i++) {
       const r = stepped[i]
       const t = r.bucketStart.getTime()
-      const { next, out } = stepPool(state, r, input.spotAt(t), input.eta)
+      const soc = endOfBucketSocPct(r, stepped[i + 1])
+      const capKwh = soc === null ? null : (soc / 100) * input.capacityKwh
+      const { next, out } = stepPool(state, r, input.spotAt(t), capKwh)
       state = next
       house.set(t, { supply: houseSupply(r), batteryOut: out })
     }
@@ -1576,11 +1763,11 @@ test('the energy-mix derivation math is importable client-side', async () => {
   // ~/lib/services/houseEnergy
   export async function listReadings(range: { from: Date; to: Date }, dbOrTx?: DbOrTx): Promise<HouseReading[]>
   export async function firstReadingAt(dbOrTx?: DbOrTx): Promise<Date | null>
-  export type PoolCheckpoint = { state: PoolState; eta: number }
+  export type PoolCheckpoint = { state: PoolState; capacityKwh: number }
   export async function getPoolDay(day: string, dbOrTx?: DbOrTx): Promise<PoolCheckpoint | null>
-  export async function replacePoolDaysFrom(day: string, rows: readonly { day: string; state: PoolState }[], eta: number, dbOrTx?: DbOrTx): Promise<void>
-  export type RoundTripEfficiency = { eta: number; chargedKwh: number; dischargedKwh: number; from: Date; to: Date }
-  export async function measureRoundTripEfficiency(dbOrTx?: DbOrTx): Promise<RoundTripEfficiency | null>
+  export async function replacePoolDaysFrom(day: string, rows: readonly { day: string; state: PoolState }[], capacityKwh: number, dbOrTx?: DbOrTx): Promise<void>
+  export type BatteryCapacity = { capacityKwh: number; dischargedKwh: number; socDropPct: number; pairs: number; from: Date; to: Date }
+  export async function measureBatteryCapacity(dbOrTx?: DbOrTx): Promise<BatteryCapacity | null>
   ```
 
 **Reviewers:** A = `code-reviewer`; B = `test-completeness`.
@@ -1597,11 +1784,12 @@ import { stockholmDayBounds } from '~/lib/time/stockholm'
 import { expectConstraintViolation } from '~test/expectConstraintViolation'
 import { reading, syntheticDay } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
-import { getPoolDay, measureRoundTripEfficiency, replacePoolDaysFrom } from './batteryPool'
+import { getPoolDay, measureBatteryCapacity, replacePoolDaysFrom } from './batteryPool'
 import { firstReadingAt, listReadings, replaceDay } from './houseEnergy'
 
 setupDatabase()
 
+const C = 7.5
 const state = (gridKwh: number, solarKwh = 0): PoolState => ({
   storedKwh: gridKwh + solarKwh,
   gridKwh,
@@ -1614,20 +1802,24 @@ const storedDays = async () =>
   (await db.select({ day: batteryPoolDay.day }).from(batteryPoolDay).orderBy(batteryPoolDay.day)).map(
     (r) => r.day,
   )
+async function storeDay(day: string, flows: Parameters<typeof syntheticDay>[1]) {
+  const { startMs, endMs } = stockholmDayBounds(day)
+  await replaceDay({ dayStart: new Date(startMs), dayEnd: new Date(endMs) }, syntheticDay(day, flows))
+}
 
-test('getPoolDay is null without a checkpoint and round-trips one with its η', async () => {
+test('getPoolDay is null without a checkpoint and round-trips one with its capacity', async () => {
   expect(await getPoolDay('2026-06-10')).toBeNull()
-  await replacePoolDaysFrom('2026-06-10', [{ day: '2026-06-10', state: state(2, 1) }], 0.9)
-  expect(await getPoolDay('2026-06-10')).toEqual({ state: state(2, 1), eta: 0.9 })
+  await replacePoolDaysFrom('2026-06-10', [{ day: '2026-06-10', state: state(2, 1) }], C)
+  expect(await getPoolDay('2026-06-10')).toEqual({ state: state(2, 1), capacityKwh: C })
 })
 
 test('replacePoolDaysFrom rewrites the days from `day` on and keeps earlier ones', async () => {
   await replacePoolDaysFrom(
     '2026-06-08',
     ['2026-06-08', '2026-06-09', '2026-06-10'].map((day) => ({ day, state: state(1) })),
-    0.9,
+    C,
   )
-  await replacePoolDaysFrom('2026-06-09', [{ day: '2026-06-09', state: state(5) }], 0.9)
+  await replacePoolDaysFrom('2026-06-09', [{ day: '2026-06-09', state: state(5) }], C)
   expect(await storedDays()).toEqual(['2026-06-08', '2026-06-09'])
   expect((await getPoolDay('2026-06-09'))?.state).toEqual(state(5))
   expect((await getPoolDay('2026-06-08'))?.state).toEqual(state(1))
@@ -1637,58 +1829,66 @@ test('an empty list clears every checkpoint from `day` on', async () => {
   await replacePoolDaysFrom(
     '2026-06-08',
     ['2026-06-08', '2026-06-09'].map((day) => ({ day, state: state(1) })),
-    0.9,
+    C,
   )
-  await replacePoolDaysFrom('2026-06-09', [], 0.9)
+  await replacePoolDaysFrom('2026-06-09', [], C)
   expect(await storedDays()).toEqual(['2026-06-08'])
 })
 
 test('a row before `day` or a malformed day is refused before anything changes', async () => {
-  await replacePoolDaysFrom('2026-06-08', [{ day: '2026-06-08', state: state(1) }], 0.9)
+  await replacePoolDaysFrom('2026-06-08', [{ day: '2026-06-08', state: state(1) }], C)
   await expect(
-    replacePoolDaysFrom('2026-06-09', [{ day: '2026-06-08', state: state(2) }], 0.9),
+    replacePoolDaysFrom('2026-06-09', [{ day: '2026-06-08', state: state(2) }], C),
   ).rejects.toThrow(RangeError)
-  await expect(replacePoolDaysFrom('2026-6-9', [], 0.9)).rejects.toThrow(RangeError)
+  await expect(replacePoolDaysFrom('2026-6-9', [], C)).rejects.toThrow(RangeError)
   await expect(getPoolDay('yesterday')).rejects.toThrow(RangeError)
   expect(await storedDays()).toEqual(['2026-06-08'])
 })
 
-test("the table refuses a stored total that isn't the parts' sum, and an η outside (0, 1]", async () => {
+test("the table refuses a stored total that isn't the parts' sum, and a capacity outside (0, 100)", async () => {
   await expectConstraintViolation(
-    db.insert(batteryPoolDay).values({ day: '2026-06-10', ...state(1), storedKwh: 2, eta: 0.9 }),
+    db.insert(batteryPoolDay).values({ day: '2026-06-10', ...state(1), storedKwh: 2, capacityKwh: C }),
     'battery_pool_day_stored_sum_check',
   )
   await expectConstraintViolation(
-    db.insert(batteryPoolDay).values({ day: '2026-06-11', ...state(1), eta: 1.2 }),
-    'battery_pool_day_eta_check',
+    db.insert(batteryPoolDay).values({ day: '2026-06-11', ...state(1), capacityKwh: 0 }),
+    'battery_pool_day_capacity_kwh_check',
   )
 })
 
-test('measureRoundTripEfficiency is Σ discharge ÷ Σ charge over all readings', async () => {
-  expect(await measureRoundTripEfficiency()).toBeNull()
-  const day = '2026-06-10'
-  const { startMs, endMs } = stockholmDayBounds(day)
+test('measureBatteryCapacity: kWh delivered per 100 % SoC over discharge-only pairs', async () => {
+  expect(await measureBatteryCapacity()).toBeNull()
+  // 2026-06-10: 100 buckets charging (not measured), then 0.04 kWh out per
+  // bucket while the SoC falls 0.5 % per bucket → 8 kWh per 100 %. Bucket 150
+  // also charges, so the two pairs touching it are left out.
+  await storeDay('2026-06-10', (_, i) => {
+    if (i < 100) return { batteryChargeSolarKwh: 0.1, solarKwh: 0.1, batterySocPct: i * 0.9 }
+    const discharging = { batteryDischargeKwh: 0.04, loadKwh: 0.04, batterySocPct: 100 - (i - 100) * 0.5 }
+    return i === 150 ? { ...discharging, batteryChargeGridKwh: 0.5, gridImportKwh: 0.5 } : discharging
+  })
+  const measured = await measureBatteryCapacity()
+  expect(measured?.capacityKwh).toBeCloseTo(8, 9)
+  // Buckets 100–287: 187 adjacent pairs, minus the two touching bucket 150.
+  expect(measured?.pairs).toBe(185)
+  const { startMs } = stockholmDayBounds('2026-06-10')
+  expect(measured?.from).toEqual(new Date(startMs + 100 * 300_000))
+  expect(measured?.to).toEqual(new Date(startMs + 287 * 300_000))
+})
+
+test('measureBatteryCapacity ignores pairs across a gap or without a SoC', async () => {
+  const discharging = (soc: number | null) => (_: number, i: number) => ({
+    batteryDischargeKwh: 0.04,
+    loadKwh: 0.04,
+    batterySocPct: soc === null ? null : soc - i * 0.25,
+  })
+  // Every other bucket missing: no two adjacent readings.
+  const { startMs, endMs } = stockholmDayBounds('2026-06-10')
   await replaceDay(
     { dayStart: new Date(startMs), dayEnd: new Date(endMs) },
-    syntheticDay(day, (_, i) =>
-      i < 100
-        ? {
-            batteryChargeSolarKwh: 0.05,
-            batteryChargeGridKwh: 0.03,
-            batteryChargeAcKwh: 0.02,
-            solarKwh: 0.05,
-            gridImportKwh: 0.05,
-          }
-        : { batteryDischargeKwh: 0.05, loadKwh: 0.05 },
-    ),
+    syntheticDay('2026-06-10', discharging(100)).filter((_, i) => i % 2 === 0),
   )
-  const measured = await measureRoundTripEfficiency()
-  // 100 × 0.1 charged; 188 × 0.05 discharged.
-  expect(measured?.chargedKwh).toBeCloseTo(10, 9)
-  expect(measured?.dischargedKwh).toBeCloseTo(9.4, 9)
-  expect(measured?.eta).toBeCloseTo(0.94, 9)
-  expect(measured?.from).toEqual(new Date(startMs))
-  expect(measured?.to).toEqual(new Date(endMs - 5 * 60_000))
+  await storeDay('2026-06-11', discharging(null))
+  expect(await measureBatteryCapacity()).toBeNull()
 })
 
 test("listReadings and firstReadingAt read inside a caller's transaction", async () => {
@@ -1726,14 +1926,14 @@ only. Nothing else in the file changes.
 
 ```ts
 // src/lib/services/houseEnergy/batteryPool.ts
-import { eq, gte, max, min, sql } from 'drizzle-orm'
+import { eq, gte, sql } from 'drizzle-orm'
 import { type DbOrTx, db } from '~/lib/db'
-import { batteryPoolDay, houseEnergyReading } from '~/lib/db/schema'
+import { batteryPoolDay } from '~/lib/db/schema'
 import type { PoolState } from '~/lib/houseEnergy/mix/pool'
 import { isStockholmDay } from '~/lib/time/stockholm'
 
-/** A day-end pool state and the round-trip efficiency it was computed with. */
-export type PoolCheckpoint = { state: PoolState; eta: number }
+/** A day-end pool state and the capacity C (kWh per 100 % SoC) it was computed with. */
+export type PoolCheckpoint = { state: PoolState; capacityKwh: number }
 
 /** 9 bound parameters per row: far under Postgres's 65 535 per statement. */
 const POOL_INSERT_BATCH = 5_000
@@ -1753,25 +1953,25 @@ export async function getPoolDay(day: string, dbOrTx: DbOrTx = db): Promise<Pool
       solarKwh: batteryPoolDay.solarKwh,
       solarSpotSekSum: batteryPoolDay.solarSpotSekSum,
       unpricedKwh: batteryPoolDay.unpricedKwh,
-      eta: batteryPoolDay.eta,
+      capacityKwh: batteryPoolDay.capacityKwh,
     })
     .from(batteryPoolDay)
     .where(eq(batteryPoolDay.day, day))
   if (!row) return null
-  const { eta, ...state } = row
-  return { state, eta }
+  const { capacityKwh, ...state } = row
+  return { state, capacityKwh }
 }
 
 /**
  * Replaces every checkpoint from `day` on with `rows` (all on or after `day`),
- * computed with round-trip efficiency `eta`: delete + insert, atomically (its
- * own transaction, or the caller's). A row before `day` or a malformed day is a
+ * computed with capacity `capacityKwh`: delete + insert, atomically (its own
+ * transaction, or the caller's). A row before `day` or a malformed day is a
  * programming error: RangeError, nothing written.
  */
 export async function replacePoolDaysFrom(
   day: string,
   rows: readonly { day: string; state: PoolState }[],
-  eta: number,
+  capacityKwh: number,
   dbOrTx: DbOrTx = db,
 ): Promise<void> {
   assertDay(day)
@@ -1787,7 +1987,7 @@ export async function replacePoolDaysFrom(
     solarKwh: r.state.solarKwh,
     solarSpotSekSum: r.state.solarSpotSekSum,
     unpricedKwh: r.state.unpricedKwh,
-    eta,
+    capacityKwh,
   }))
   const write = async (tx: DbOrTx) => {
     await tx.delete(batteryPoolDay).where(gte(batteryPoolDay.day, day))
@@ -1799,41 +1999,65 @@ export async function replacePoolDaysFrom(
   else await write(dbOrTx)
 }
 
-export type RoundTripEfficiency = {
-  eta: number
-  chargedKwh: number
+export type BatteryCapacity = {
+  /** kWh delivered per 100 % SoC. */
+  capacityKwh: number
   dischargedKwh: number
+  socDropPct: number
+  pairs: number
   from: Date
   to: Date
 }
 
 /**
- * Σ discharge ÷ Σ charge (solar + grid + ac) over every stored reading — the
- * measured round-trip efficiency (spec "Derivation" 3). Null with no charging.
- * Ignores the state-of-charge difference between the first and last reading,
- * which is negligible over months.
+ * C, measured from every stored reading (spec "Derivation" 3): Σ discharge ÷
+ * Σ SoC drop / 100 over adjacent pairs of buckets (5 min apart, both with a
+ * SoC) that only discharge. A row's SoC is its bucket's mid-point, so the SoC
+ * change between two rows spans half of each bucket: a pair counts the mean
+ * of its two discharges. Null without such pairs or without a net drop.
+ * `from`/`to`: the first pair's first bucket and the last pair's second.
  */
-export async function measureRoundTripEfficiency(
-  dbOrTx: DbOrTx = db,
-): Promise<RoundTripEfficiency | null> {
-  const r = houseEnergyReading
-  const [row] = await dbOrTx
-    .select({
-      charged: sql<number>`coalesce(sum(${r.batteryChargeSolarKwh} + ${r.batteryChargeGridKwh} + ${r.batteryChargeAcKwh}), 0)`.mapWith(
-        Number,
-      ),
-      discharged: sql<number>`coalesce(sum(${r.batteryDischargeKwh}), 0)`.mapWith(Number),
-      from: min(r.bucketStart),
-      to: max(r.bucketStart),
-    })
-    .from(r)
-  if (!row?.from || !row.to || !(row.charged > 0)) return null
+export async function measureBatteryCapacity(dbOrTx: DbOrTx = db): Promise<BatteryCapacity | null> {
+  const result = await dbOrTx.execute<{
+    discharged: number | null
+    soc_drop: number | null
+    pairs: number
+    first: Date | string | null
+    last: Date | string | null
+  }>(sql`
+    WITH x AS (
+      SELECT bucket_start,
+        battery_charge_solar_kwh + battery_charge_grid_kwh + battery_charge_ac_kwh AS charged,
+        battery_discharge_kwh AS discharged,
+        battery_soc_pct AS soc,
+        lead(bucket_start) OVER w AS next_start,
+        lead(battery_charge_solar_kwh + battery_charge_grid_kwh + battery_charge_ac_kwh) OVER w AS next_charged,
+        lead(battery_discharge_kwh) OVER w AS next_discharged,
+        lead(battery_soc_pct) OVER w AS next_soc
+      FROM house_energy_reading
+      WINDOW w AS (ORDER BY bucket_start)
+    )
+    SELECT sum((discharged + next_discharged) / 2)::float8 AS discharged,
+           sum(soc - next_soc)::float8 AS soc_drop,
+           count(*)::int AS pairs,
+           min(bucket_start) AS first,
+           max(next_start) AS last
+    FROM x
+    WHERE next_start = bucket_start + interval '5 minutes'
+      AND charged = 0 AND next_charged = 0
+      AND discharged > 0 AND next_discharged > 0
+      AND soc IS NOT NULL AND next_soc IS NOT NULL
+  `)
+  const row = result.rows[0]
+  if (!row || row.pairs === 0 || row.discharged === null || row.soc_drop === null) return null
+  if (!(row.soc_drop > 0) || row.first === null || row.last === null) return null
   return {
-    eta: row.discharged / row.charged,
-    chargedKwh: row.charged,
+    capacityKwh: row.discharged / (row.soc_drop / 100),
     dischargedKwh: row.discharged,
-    from: row.from,
-    to: row.to,
+    socDropPct: row.soc_drop,
+    pairs: row.pairs,
+    from: new Date(row.first),
+    to: new Date(row.last),
   }
 }
 ```
@@ -2502,7 +2726,7 @@ import { type Flows, syntheticDay } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
 import { deriveFrom } from './derive'
 import type { MixSlot } from './mix/carMix'
-import { ROUND_TRIP_EFFICIENCY } from './mix/pool'
+import { BATTERY_CAPACITY_KWH } from './mix/pool'
 
 setupDatabase()
 
@@ -2595,9 +2819,10 @@ test('battery energy charged from the grid at night carries the night spot', asy
   expect(total(slots, 'gridKwh')).toBeCloseTo(3, 9)
   expect(total(slots, 'batteryGridKwh')).toBeCloseTo(3, 9)
   for (const s of slots) expect(s.batteryGridSpotSek).toBeCloseTo(0.2, 9)
-  const left = 6 * ROUND_TRIP_EFFICIENCY - 3.6
+  // No SoC in these readings, so no cap: 6 kWh in, 3.6 out.
+  const left = 6 - 3.6
   const checkpoint = await houseEnergyService.getPoolDay('2026-02-15')
-  expect(checkpoint?.eta).toBe(ROUND_TRIP_EFFICIENCY)
+  expect(checkpoint?.capacityKwh).toBe(BATTERY_CAPACITY_KWH)
   expect(checkpoint?.state.gridKwh).toBeCloseTo(left, 9)
   expect(checkpoint?.state.gridSpotSekSum).toBeCloseTo(left * 0.2, 9)
 })
@@ -2610,6 +2835,20 @@ test('battery energy stored without a spot price is battery-unpriced', async () 
   expect(total(slots, 'batteryUnpricedKwh')).toBeCloseTo(3, 9)
   expect(total(slots, 'batteryGridKwh')).toBe(0)
   expect(total(slots, 'gridKwh')).toBeCloseTo(3, 9)
+})
+
+test('the pool follows the measured SoC: losses leave less energy at a higher cost', async () => {
+  // The same night charge (6 kWh at 0.2 SEK), but the battery reports 10 %
+  // all day: the pool is capped at 10 % of C and keeps the 1.2 SEK paid.
+  await storeDay('2026-02-15', (ms) => ({
+    ...(ms < NIGHT_CHARGE_END ? NIGHT_CHARGE : BASE),
+    batterySocPct: 10,
+  }))
+  await storePrices('2026-02-15', (ms) => (ms < NIGHT_CHARGE_END ? 0.2 : 1))
+  await derive('2026-02-15', '2026-02-15T22:00:00Z')
+  const checkpoint = await houseEnergyService.getPoolDay('2026-02-15')
+  expect(checkpoint?.state.gridKwh).toBeCloseTo(0.1 * BATTERY_CAPACITY_KWH, 9)
+  expect(checkpoint?.state.gridSpotSekSum).toBeCloseTo(1.2, 9)
 })
 
 test("resuming from the previous day's checkpoint gives the same mix as deriving both days", async () => {
@@ -2651,7 +2890,7 @@ test('without a checkpoint for the day before, it rebuilds from the first readin
   expect(await houseEnergyService.getPoolDay('2026-06-08')).not.toBeNull()
 })
 
-test('a checkpoint computed with another η is not resumed from', async () => {
+test('a checkpoint computed with another capacity is not resumed from', async () => {
   await storeDay('2026-06-09', () => BASE)
   await storeDay('2026-06-10', () => BASE)
   await houseEnergyService.replacePoolDaysFrom(
@@ -2662,11 +2901,11 @@ test('a checkpoint computed with another η is not resumed from', async () => {
         state: { storedKwh: 5, gridKwh: 5, gridSpotSekSum: 5, solarKwh: 0, solarSpotSekSum: 0, unpricedKwh: 0 },
       },
     ],
-    ROUND_TRIP_EFFICIENCY / 2,
+    BATTERY_CAPACITY_KWH / 2,
   )
   await derive('2026-06-10')
   const rebuilt = await houseEnergyService.getPoolDay('2026-06-09')
-  expect(rebuilt?.eta).toBe(ROUND_TRIP_EFFICIENCY)
+  expect(rebuilt?.capacityKwh).toBe(BATTERY_CAPACITY_KWH)
   expect(rebuilt?.state.storedKwh).toBe(0)
 })
 
@@ -2796,7 +3035,7 @@ import { SPOT_ZONE } from '~/lib/spotPrice/zones'
 import { addDays, isStockholmDay, stockholmDayBounds, stockholmDayOf } from '~/lib/time/stockholm'
 import { type BucketHouse, deriveSessionMix } from './mix/carMix'
 import { runHouseTimeline } from './mix/houseTimeline'
-import { emptyPool, type PoolState, ROUND_TRIP_EFFICIENCY } from './mix/pool'
+import { BATTERY_CAPACITY_KWH, emptyPool, type PoolState } from './mix/pool'
 import { BASELINE_BUCKETS, BUCKET_MS, shapeSession } from './mix/shape'
 
 /** Bound on widening the start back across chained sessions that span midnight. */
@@ -2847,11 +3086,11 @@ async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<Deriv
   let fromDay = await widenToSessions(day, tx)
   let start: PoolState = emptyPool()
   const checkpoint = await houseEnergyService.getPoolDay(addDays(fromDay, -1), tx)
-  if (checkpoint && checkpoint.eta === ROUND_TRIP_EFFICIENCY) {
+  if (checkpoint && checkpoint.capacityKwh === BATTERY_CAPACITY_KWH) {
     start = checkpoint.state
   } else if (first.getTime() < stockholmDayBounds(fromDay).startMs) {
     // History exists before `fromDay` but no usable checkpoint (none yet, or
-    // computed with another η): rebuild from the first reading, empty pool.
+    // computed with another C): rebuild from the first reading, empty pool.
     fromDay = await widenToSessions(stockholmDayOf(first.getTime()), tx)
   }
 
@@ -2875,7 +3114,7 @@ async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<Deriv
     throughDay: today,
     start,
     spotAt: (ms) => slots.between(ms, ms + 1)[0]?.sekPerKwh ?? null,
-    eta: ROUND_TRIP_EFFICIENCY,
+    capacityKwh: BATTERY_CAPACITY_KWH,
   })
   const rows = sessions.flatMap((s) => sessionRows(s, readings, house))
   const t2 = performance.now()
@@ -2886,7 +3125,7 @@ async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<Deriv
     tx,
   )
   await energyMixService.pruneUncounted(new Date(fromMs), tx)
-  await houseEnergyService.replacePoolDaysFrom(fromDay, days, ROUND_TRIP_EFFICIENCY, tx)
+  await houseEnergyService.replacePoolDaysFrom(fromDay, days, BATTERY_CAPACITY_KWH, tx)
   const t3 = performance.now()
 
   return {
@@ -3389,7 +3628,7 @@ If Task 0 step 4 found `earliestReplacedDay` set only at the end, move that assi
 **Files:**
 - Create: `scripts/deriveEnergyMix.ts`
 
-**Interfaces:** Consumes `deriveFrom`, `ROUND_TRIP_EFFICIENCY`, `firstReadingAt`, `measureRoundTripEfficiency`.
+**Interfaces:** Consumes `deriveFrom`, `BATTERY_CAPACITY_KWH`, `firstReadingAt`, `measureBatteryCapacity`.
 
 **Reviewers:** A = `code-reviewer`; B = `migration-guard` (it audits the `vercel env pull` / prod-`DATABASE_URL`
 hazard this script must not fall into).
@@ -3409,7 +3648,7 @@ hazard this script must not fall into).
 // --no-env-file stops Bun auto-loading .env/.env.local, and `vercel env pull`
 // leaves production's DATABASE_URL in .env.local (CLAUDE.md → Gotchas).
 // Without --yes it only prints the target, the first reading and the measured
-// round-trip efficiency; it writes nothing.
+// battery capacity C; it writes nothing.
 import { parseArgs } from 'node:util'
 
 const { values } = parseArgs({
@@ -3425,7 +3664,7 @@ console.log(`Target database: ${target.hostname}:${target.port || '5432'}${targe
 
 // Imported only now: ~/lib/db reads DATABASE_URL when it loads.
 const { deriveFrom } = await import('~/lib/houseEnergy/derive')
-const { ROUND_TRIP_EFFICIENCY } = await import('~/lib/houseEnergy/mix/pool')
+const { BATTERY_CAPACITY_KWH } = await import('~/lib/houseEnergy/mix/pool')
 const { logger } = await import('~/lib/logger/server')
 const houseEnergyService = await import('~/lib/services/houseEnergy')
 const { isStockholmDay, stockholmDayOf } = await import('~/lib/time/stockholm')
@@ -3436,11 +3675,11 @@ if (!first) {
   process.exit(0)
 }
 console.log(`First reading: ${first.toISOString()} (Stockholm day ${stockholmDayOf(first.getTime())})`)
-const measured = await houseEnergyService.measureRoundTripEfficiency()
+const measured = await houseEnergyService.measureBatteryCapacity()
 if (measured) {
   console.log(
-    `Measured round-trip efficiency: ${measured.eta.toFixed(3)} ` +
-      `(${measured.from.toISOString()} → ${measured.to.toISOString()}); code uses ${ROUND_TRIP_EFFICIENCY}`,
+    `Measured battery capacity: ${measured.capacityKwh.toFixed(2)} kWh per 100 % SoC over ${measured.pairs} pairs ` +
+      `(${measured.from.toISOString()} → ${measured.to.toISOString()}); code uses ${BATTERY_CAPACITY_KWH}`,
   )
 }
 
@@ -3468,7 +3707,15 @@ bun --no-env-file scripts/deriveEnergyMix.ts; echo "exit $?"
 ```
 
 Expected: the first prints `Target database: localhost:14620/videbacken` and then either "No house readings stored"
-or the measured η and "Dry run…". The second prints the "Set DATABASE_URL" error and `exit 1`.
+or the measured capacity and "Dry run…". The second prints the "Set DATABASE_URL" error and `exit 1`.
+
+- [ ] **Step 2b: Local full rebuild, timed.** The local dev DB holds the whole real history (step 2b's live
+  re-fetch), so this is the prod-sized first derive. Run it with `--yes` against the **local** URL above and note
+  the printed `ms`, plus the `energy mix derived` log line's `readMs`/`computeMs`/`writeMs`. It must finish well
+  inside `DERIVE_BUDGET_MS` (30 s) and the 25 s `statement_timeout`, because prod's first triggered derive rebuilds
+  all history the same way. If it doesn't, stop and fix it before the PR. Then run the probe comparison from Task 14
+  step 4 against the local DB (local spot prices start 2026-06-03, so earlier sessions show battery-unpriced energy)
+  and put only the aggregate verdict in the PR, never the numbers per session.
 
 - [ ] **Step 3:** `bun run typecheck && bun run check:ci` → PASS.
 - [ ] **Step 4: Commit** `feat(charging): add a one-off energy mix re-derive script`
@@ -3490,11 +3737,18 @@ rule has a test that names it).
 - Shaping: the baseline needs at least 3 of the 6 pre-session buckets. A zero-length stretch lands in its start
   bucket. A bucket's cap is its load minus car energy an earlier interval already put there. Excess no headroom can
   take spreads by overlap (the load is exceeded, the kWh kept).
-- Pool: within one bucket the inflow joins before the outflow leaves; below 1e-9 kWh the pool resets to empty.
-- `battery_pool_day` stores the η each checkpoint was computed with (and `derived_at`). A derive never resumes from a
-  checkpoint with another η, nor without a checkpoint while earlier readings exist: it rebuilds from the first
-  reading. So changing η re-derives history at the next trigger. Checkpoints are written through today, carrying the
-  state over days without readings.
+- Pool: within one bucket the inflow joins before the outflow leaves, then the SoC cap applies; below 1e-9 kWh the
+  pool resets to empty.
+- SoC alignment (settled from the full history, 2026-10-04): a row's SoC is the battery's state at its bucket's
+  **middle**. The cap after bucket i uses the mean of row i's and row i+1's SoC, only when both exist and row i+1 is
+  the very next bucket. `C` = 7.58 kWh per 100 % (all history; ≈ 6.2 in Jan–Feb, 7.5–8.1 from March).
+- Losses raise the cost of what is left: on the history, battery energy's average cost is ≈ 1.8× its inflow spot in
+  Jan–Feb (median) and ≈ 1.01–1.14× from March. So a mix row's battery spot isn't a market price, and its CHECK is
+  finite-only (no value bound; deviation 7).
+- `battery_pool_day` stores the `C` each checkpoint was computed with (`capacity_kwh`, and `derived_at`). A derive
+  never resumes from a checkpoint with another `C`, nor without a checkpoint while earlier readings exist: it
+  rebuilds from the first reading. So the first derive in prod, and any change of `C`, rebuilds history at the next
+  trigger. Checkpoints are written through today, carrying the state over days without readings.
 - Each derive runs in one transaction holding a transaction-scoped advisory lock, reads included, so a concurrent
   derive never writes older data over newer.
 - Triggers fire on whatever a sync stored, **even if the run then fails**: a stored change is never detected as new
@@ -3504,7 +3758,7 @@ rule has a test that names it).
 - A one-off full re-derive: `scripts/deriveEnergyMix.ts` (`bun --no-env-file`, explicit `DATABASE_URL`).
 ```
 
-In "Data model" → `battery_pool_day`, add `eta`, `derived_at` to the column list; in `ev_charge_energy_mix` add
+In "Data model" → `battery_pool_day`, replace "Each row stores the capacity constant…" with "`capacity_kwh` (the `C` the row was computed with) and `derived_at`"; in `house_energy_reading`, replace "Whether it is the bucket's start or end state is settled from data in step 3" with "It is the state at the bucket's middle (settled in step 3)"; in "Derivation" 3 (SoC anchor), replace "that bucket's own row or the next one: whether … settled from data in step 3" with "the mean of that bucket's row and the next one, as the SoC is mid-bucket" and give `C`'s measured value; in `ev_charge_energy_mix` add
 "CHECK: `slot_start` on a UTC quarter-hour; each battery spot set exactly when its kWh > 0".
 
 - [ ] **Step 2: CLAUDE.md** (code map):
@@ -3517,8 +3771,9 @@ In "Data model" → `battery_pool_day`, add `eta`, `derived_at` to the column li
     `bun --no-env-file` and an inline `DATABASE_URL`, never from env files."
   - If the ADR index has no 0023 row (step 1/2 may have added it), add
     `| Solar-aware charging cost (Emaldo readings, energy mix, battery pool) | **0023** |`.
-- [ ] **Step 3: Roadmap Log**: `- 2026-10-xx: step 3 built; derivation amendments recorded in the spec (η stored per
-  checkpoint, triggers on partial runs, locked derive).`
+- [ ] **Step 3: Roadmap Log**: `- 2026-10-xx: step 3 built; derivation amendments recorded in the spec (SoC is
+  mid-bucket, C = 7.58 stored per checkpoint, triggers on partial runs, locked derive).` Under "Owner prerequisites",
+  mark the pooler-URI item as optional: the first derive in prod rebuilds history on its own.
 - [ ] **Step 4: Commit** `docs(charging): record the energy mix derivation details`
 
 ---
@@ -3570,9 +3825,10 @@ bun -e 'const sv=Object.keys(await Bun.file("messages/sv.json").json()),en=Objec
   - **What changed:** two tables (mix, pool checkpoints), pure mix modules, `deriveFrom` under an advisory xact lock,
     triggers after the three syncs, a one-off script. Nothing user-visible.
   - **Verification:** the gate outputs.
-  - **Risks / follow-ups:** η is provisional (0.9) until checkpoint 3. Historical sessions get mix rows only after the
-    script runs (or the η change triggers a rebuild). Triggers now fire on partial runs. Step 4 must compare Σ mix
-    with Σ stretches.
+  - **Risks / follow-ups:** `C` (7.58) is measured on the local copy of the history; checkpoint 3 re-measures it
+    on prod. Winter battery energy costs ≈ 1.8× its purchase spot (losses, decision 7): step 4 shows that in
+    kronor. The first derive in prod rebuilds all history (no checkpoint yet) within the 30 s budget, timed locally
+    in Task 9. Triggers now fire on partial runs. Step 4 must compare Σ mix with Σ stretches.
   - End with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
 - [ ] **Step 3:** Wait for `CI Success` and the PR-title check; fix anything red. Squash-merge only when the owner
   says so; afterwards set the row to `merged`.
@@ -3585,19 +3841,24 @@ Do **not** start step 4. Stop after the PR is open (or merged). The roadmap's ch
 merged and deployed. Record its result in the roadmap (a small `docs(charging): …` PR, or step 4's PR if the owner
 says so). The checkpoint:
 
-1. **The derive runs in prod.** After the deploy and the next hourly Emaldo run (`:45`), read-only SQL (Supabase
-   MCP `execute_sql` or the SQL editor):
+1. **The derive ran in prod and rebuilt history.** After the deploy and the next hourly Emaldo run (`:45`), the first
+   derive finds no checkpoint and rebuilds from the first reading. Read-only SQL (Supabase MCP `execute_sql` or the
+   SQL editor):
 
    ```sql
    SELECT count(*) AS pool_days, min(day) AS first_day, max(day) AS last_day,
-          min(derived_at) AS oldest_write, array_agg(DISTINCT eta) AS etas
+          min(derived_at) AS oldest_write, array_agg(DISTINCT capacity_kwh) AS capacities
    FROM battery_pool_day;
    SELECT count(DISTINCT session_id) AS sessions_with_mix FROM ev_charge_energy_mix;
    ```
 
-2. **Backfill history once** with the script (step 2's Emaldo backfill finished before this code existed, so older
-   sessions have no mix rows yet). Use the Supabase **transaction pooler** URI from the Supabase dashboard
-   (Connect → Transaction pooler). Paste it into the hidden prompt; never into a file, never via `vercel env pull`:
+   Expected: pool days from the first reading's day through today, one capacity (7.58), and every counted session
+   since the first reading has mix rows. Check the Vercel runtime log's `energy mix derived` line for its `deriveMs`
+   (no `energy mix derive failed` warning).
+
+2. **Fallback only: the script.** If the derive failed or `sessions_with_mix` falls short, re-run it once with
+   `scripts/deriveEnergyMix.ts` using the Supabase **transaction pooler** URI (Supabase dashboard → Connect →
+   Transaction pooler), pasted into the hidden prompt, never into a file, never via `vercel env pull`:
 
    ```bash
    read -rs DATABASE_URL && DATABASE_URL="$DATABASE_URL" bun --no-env-file scripts/deriveEnergyMix.ts
@@ -3606,23 +3867,45 @@ says so). The checkpoint:
 
    The first (dry) run prints the target host. Check that it's the prod pooler before running `--yes`.
 
-3. **Measure η** (the script's dry run prints it too):
+3. **`C` and the cap on prod.** Re-measure `C` (the script's dry run prints the same number):
 
    ```sql
-   SELECT round((sum(battery_discharge_kwh)
-            / nullif(sum(battery_charge_solar_kwh + battery_charge_grid_kwh + battery_charge_ac_kwh), 0))::numeric, 3) AS eta,
-          round(sum(battery_discharge_kwh)::numeric, 1) AS discharged_kwh,
-          round(sum(battery_charge_solar_kwh + battery_charge_grid_kwh + battery_charge_ac_kwh)::numeric, 1) AS charged_kwh,
-          min(bucket_start) AS first_bucket, max(bucket_start) AS last_bucket, count(*) AS buckets
-   FROM house_energy_reading;
+   WITH x AS (
+     SELECT bucket_start,
+       battery_charge_solar_kwh + battery_charge_grid_kwh + battery_charge_ac_kwh AS charged,
+       battery_discharge_kwh AS discharged, battery_soc_pct AS soc,
+       lead(bucket_start) OVER w AS next_start,
+       lead(battery_charge_solar_kwh + battery_charge_grid_kwh + battery_charge_ac_kwh) OVER w AS next_charged,
+       lead(battery_discharge_kwh) OVER w AS next_discharged,
+       lead(battery_soc_pct) OVER w AS next_soc
+     FROM house_energy_reading WINDOW w AS (ORDER BY bucket_start))
+   SELECT round((sum((discharged + next_discharged) / 2) / (sum(soc - next_soc) / 100))::numeric, 2) AS c_kwh,
+          count(*) AS pairs
+   FROM x
+   WHERE next_start = bucket_start + interval '5 minutes' AND charged = 0 AND next_charged = 0
+     AND discharged > 0 AND next_discharged > 0 AND soc IS NOT NULL AND next_soc IS NOT NULL;
    ```
 
-   Plausible is ≈ 0.85–0.95. Outside that range, stop and discuss with the owner (`battery_charge_ac` semantics,
-   state-of-charge drift, gaps). If plausible: a small PR `fix(charging): set the measured battery round-trip
-   efficiency`. It sets `ROUND_TRIP_EFFICIENCY` in `src/lib/houseEnergy/mix/pool.ts` to the measured value (3
-   decimals) and rewrites its comment to "measured <date> over <first>–<last>". After it deploys, the next derive
-   rebuilds all history (every checkpoint's η differs), or re-run step 2's `--yes` command. Confirm with
-   `SELECT array_agg(DISTINCT eta) FROM battery_pool_day;`: only the new value.
+   Expected ≈ 7.58 (plausible 7–9). If it differs by more than ≈ 0.1, a small PR
+   `fix(charging): set the battery capacity measured on prod` sets `BATTERY_CAPACITY_KWH` and its comment; after it
+   deploys, the next derive rebuilds all history by itself (every checkpoint's `capacity_kwh` differs). Then the
+   pool stays at or under the measured SoC at each day's end (half a bucket's tolerance, since the last bucket's
+   cap uses the next day's first SoC):
+
+   ```sql
+   SELECT p.day, round(p.stored_kwh::numeric, 2) AS pool_kwh,
+          round((p.capacity_kwh * r.battery_soc_pct / 100)::numeric, 2) AS soc_kwh
+   FROM battery_pool_day p
+   CROSS JOIN LATERAL (
+     SELECT battery_soc_pct FROM house_energy_reading
+     WHERE bucket_start < ((p.day + 1)::timestamp AT TIME ZONE 'Europe/Stockholm')
+     ORDER BY bucket_start DESC LIMIT 1
+   ) r
+   WHERE p.stored_kwh > p.capacity_kwh * r.battery_soc_pct / 100 + 0.3
+   ORDER BY p.day;
+   ```
+
+   Expected: no rows.
 
 4. **Compare with the probe.** Fill the `VALUES` list with the start ("Session (local)") of each of the seven sessions
    in `/Users/lukas/prog/videbacken/data/private/emaldo/PROBE-NOTES.md` (local file, not in git; year 2026). Never
@@ -3661,5 +3944,5 @@ says so). The checkpoint:
    `no_house_data_kwh` > 0, or a session with 0 slots, means the readings or the derive missed it: investigate before
    passing.
 
-5. **The owner agrees the numbers match reality.** Record in the roadmap: η value + date, the seven `grid_pct` values
+5. **The owner agrees the numbers match reality.** Record in the roadmap: the prod `C` + date, the cap check, the seven `grid_pct` values
    next to P, and status `checkpoint passed`.

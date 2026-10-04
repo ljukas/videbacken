@@ -11,7 +11,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 | 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | checkpoint passed | 2026-10-03: 288/288 + 276/276 buckets, 0 mismatches (11 requests, 1 login) |
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
 | 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | checkpoint passed | 2026-10-04: re-fetch 258/258 days in 9 runs, all `ok`; SoC on 73,955/73,955 buckets, 0 days with nulls; 4 probe days exact; energy sums unchanged |
-| 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | — | not started | — |
+| 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | [#77](https://github.com/ljukas/videbacken/pull/77) | PR open | — |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | not started | — |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
 | — | *Later phase:* solar-aware economy page (own brainstorm) | — | — | — | — |
@@ -24,8 +24,9 @@ Status values: `not started` → `in progress` → `PR open` → `merged` → `c
 - ✅ **Before checkpoint 1** (done 2026-10-03): `.env.local` has all four `EMALDO_*` vars. `EMALDO_APP_ID` and `EMALDO_APP_SECRET` come
   from `const.py` in `github.com/wertigpar/ha-emaldo`. Never commit them.
 - ✅ **Before step 2 merges** (done 2026-10-03): the same four vars are set in Vercel **Production** (sensitive).
-- **For the step-3 history re-derive on prod:** the Supabase pooler connection string, pasted by the owner into the
-  script's shell for that one run. Prod credentials can't be pulled, and `vercel env pull` must never be used for this.
+- *Optional* (since the step-3 build): **for a manual step-3 re-derive on prod**, the Supabase pooler connection
+  string, pasted by the owner into the script's shell for that one run. The first derive in prod rebuilds all history
+  on its own, so this is only a fallback. Prod credentials can't be pulled, and `vercel env pull` must never be used.
 
 ## How a session runs a step
 
@@ -66,8 +67,11 @@ Each must pass, with the result recorded in the table, before the next step star
      fix forward fast. The remedy is a new migration with 0015's UPDATE; 0015 itself never runs again.
    - The energy columns of a handful of days are unchanged from before the re-fetch (daily sums).
 3. **After step 3 (prod).**
-   - `C` is set from the measured history and looks plausible (≈7–9 kWh per 100 %), and the pool stays at or under
-     the measured SoC.
+   - The first derive after the deploy rebuilt all history: pool days from the first reading through today, one
+     `capacity_kwh` (7.58) and `derive_version` (1), every counted session since the first reading has mix rows, and
+     the `energy mix derived` log line shows no warning (plan Task 14 has the SQL).
+   - `C` re-measured on prod is ≈ 7.58 (plausible 7–9 kWh per 100 %), and the pool stays at or under the measured
+     SoC at each day's end.
    - A read-only SELECT of the derived mix for the seven probe sessions (`data/private/emaldo/PROBE-NOTES.md`)
      lands near the probe's proportional column. Shaped sessions may be a few points higher, and nights with
      grid-charged battery show battery-grid kWh.
@@ -132,3 +136,16 @@ Each must pass, with the result recorded in the table, before the next step star
     pre-re-fetch values were replaced, so this is the closest available "unchanged" check.
   - Prod's SQL sessions print doubles with `extra_float_digits = 0`: compare numbers, not their text.
   Next: step 3 in a new session, starting with its plan revision for the SoC cap (Log, 2026-10-04 above).
+- 2026-10-04: step 3 built ([#77](https://github.com/ljukas/videbacken/pull/77)). Task 0 revised the plan for the SoC cap from the local full history: a row's
+  SoC is the bucket's middle, so the cap uses the mean of two rows, and `C` = 7.58 kWh per 100 %. The per-task and
+  branch reviews changed the design in a few places (spec "Derivation", amendments):
+  - checkpoints carry a derive version, so a fix to the math rebuilds history by itself;
+  - pending derives are queued durably, in the same transaction as the change they cover;
+  - a derive resumes one day early, so the previous day's last bucket gets its cap;
+  - requested days are clamped to [the day before the first reading, today];
+  - a session longer than a year, or with a slot ≥ 1000 kWh, is skipped and stays all-grid instead of failing every
+    derive;
+  - battery spots are bounded only to finite values (losses make winter battery energy ≈ 1.8× its purchase spot).
+  Local rehearsal: a full-history derive takes ≈ 0.3 s; five of the seven probe sessions land within 0–6 points of
+  the proportional column (shaped ones higher), 03-17 is 98 vs 94, and 02-15 is 73 % direct grid but 100 % grid-origin
+  (the battery charged from the grid while feeding the car). The three tables ship as migration 0017 (main took 0016).

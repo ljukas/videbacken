@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { HOUSE_BUCKET_KWH_MAX } from '~/lib/db/schema'
+import { energyMixDeriveRequest, HOUSE_BUCKET_KWH_MAX } from '~/lib/db/schema'
 import { stockholmDayBounds } from '~/lib/time/stockholm'
 import { setupDatabase } from '~test/setup'
 import { HouseEnergyDomainError } from './errors'
@@ -272,4 +272,14 @@ test.each([
   expect(err.message).toContain('bucket 0: batterySocPct')
   expect(err.message).not.toContain(String(batterySocPct))
   expect((await all()).map((r) => r.batterySocPct)).toEqual([50])
+})
+
+test('replacing a day queues an energy-mix derive from that day, in the same transaction', async () => {
+  const day = '2026-06-10'
+  const { startMs, endMs } = stockholmDayBounds(day)
+  await replaceDay({ dayStart: new Date(startMs), dayEnd: new Date(endMs) }, [])
+  const queued = await db
+    .select({ fromDay: energyMixDeriveRequest.fromDay })
+    .from(energyMixDeriveRequest)
+  expect(queued).toEqual([{ fromDay: day }])
 })
