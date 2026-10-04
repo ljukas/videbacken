@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { logger } from '~/lib/logger/server'
 import type { SessionEnergy } from '~/lib/services/evCharging'
 import { mixSlot } from '~test/fixtures/energyMix'
@@ -107,4 +107,52 @@ test('the guard compares against the interval energy, not the session total', ()
   // Zaptec's session total can differ slightly from its intervals; the mix is derived from the intervals.
   const s = { ...S, energyKwh: 3.4 }
   expect(toIntervals(s, MIX)).toHaveLength(2)
+})
+
+test('a mix short of the session (energy it would drop) is ignored too', () => {
+  const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+  const pieces = toIntervals(S, [MIX[0]])
+  expect(pieces).toEqual([
+    expect.objectContaining({ kwh: 3, mix: { ...ZERO_MIX, noHouseDataKwh: 3 } }),
+  ])
+  expect(warn).toHaveBeenCalledTimes(1)
+})
+
+test('every stored part reaches its piece unchanged', () => {
+  const parts = {
+    gridKwh: 0.1,
+    solarKwh: 0.2,
+    batteryGridKwh: 0.3,
+    batteryGridSpotSek: 0.5,
+    batterySolarKwh: 0.4,
+    batterySolarSpotSek: 0.6,
+    batteryUnpricedKwh: 0.7,
+    noHouseDataKwh: 0.8,
+  }
+  const slot = mixSlot('2026-09-28T08:00:00Z', parts)
+  const s = sessionOf([['2026-09-28T08:00:00Z', '2026-09-28T08:15:00Z', slot.kwh]])
+  expect(toIntervals(s, [slot])[0].mix).toEqual(parts)
+})
+
+describe('a session of several intervals', () => {
+  const multi = sessionOf([
+    ['2026-09-28T08:00:00Z', '2026-09-28T08:10:00Z', 1],
+    ['2026-09-28T08:20:00Z', '2026-09-28T08:30:00Z', 2],
+  ])
+
+  test('a mix matching their sum is used', () => {
+    expect(toIntervals(multi, MIX)).toHaveLength(2)
+    expect(toIntervals(multi, MIX).map((p) => p.mix?.solarKwh)).toEqual([0.5, 0])
+  })
+
+  test('without a usable mix each interval stays its own all-grid piece', () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const expected = multi.stretches.map((s) => ({
+      ...s,
+      gridShare: 1,
+      mix: { ...ZERO_MIX, noHouseDataKwh: s.kwh },
+    }))
+    expect(toIntervals(multi)).toEqual(expected)
+    expect(toIntervals(multi, [MIX[0]])).toEqual(expected)
+  })
 })

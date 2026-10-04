@@ -1,11 +1,14 @@
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
-import { getOverview } from '~/lib/services/evCharging'
+import { replaceForSessions } from '~/lib/services/energyMix'
+import { getOverview, listSessionEnergy } from '~/lib/services/evCharging'
 import { replaceDay } from '~/lib/services/spotPrice'
 import * as tariffService from '~/lib/services/tariff'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
+import { mixSlot } from '~test/fixtures/energyMix'
 import { setupDatabase } from '~test/setup'
+import { loadMix } from './costInputs'
 import { getCostOverview, getSessionCosts } from './costing'
 
 setupDatabase()
@@ -262,4 +265,31 @@ test('getSessionCosts prices a guest session (unscoped by id)', async () => {
   })
   const costs = await getSessionCosts({ sessionIds: [guest] })
   expect(costs.map((c) => [c.sessionId, c.kwh])).toEqual([[guest, 4]])
+})
+
+test('loadMix returns the stored mix of the sessions that have one, and times it', async () => {
+  const a = await session('2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3, [
+    ['2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3],
+  ])
+  const b = await session('2026-09-21T18:00:00Z', '2026-09-21T18:30:00Z', 2, [
+    ['2026-09-21T18:00:00Z', '2026-09-21T18:30:00Z', 2],
+  ])
+  const slots = [
+    mixSlot('2026-09-20T18:00:00Z', { gridKwh: 1, solarKwh: 0.5 }),
+    mixSlot('2026-09-20T18:15:00Z', { gridKwh: 1.5 }),
+  ]
+  await replaceForSessions(
+    [a],
+    slots.map((s) => ({ ...s, sessionId: a })),
+  )
+  const sessions = await listSessionEnergy({ sessionIds: [a, b] })
+  const timings: { mixMs?: number } = {}
+  const mixes = await loadMix(sessions, timings)
+  expect([...mixes.keys()]).toEqual([a])
+  expect(mixes.get(a)).toEqual(slots)
+  expect(timings.mixMs).toEqual(expect.any(Number))
+
+  const none: { mixMs?: number } = {}
+  expect(await loadMix([], none)).toEqual(new Map())
+  expect(none.mixMs).toEqual(expect.any(Number))
 })
