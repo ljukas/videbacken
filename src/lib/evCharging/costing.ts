@@ -87,10 +87,13 @@ export async function getCostOverview(input: {
 
   const costStart = performance.now()
   // year*100+month → that month's intervals.
-  const buckets = Map.groupBy(sessions.flatMap(toIntervals), (iv) => {
-    const { year: y, month } = stockholmYearMonth(iv.startMs)
-    return y * 100 + month
-  })
+  const buckets = Map.groupBy(
+    sessions.flatMap((s) => toIntervals(s)),
+    (iv) => {
+      const { year: y, month } = stockholmYearMonth(iv.startMs)
+      return y * 100 + month
+    },
+  )
   const priced = new Map<number, CostTotals>()
   for (const [key, ivs] of buckets) priced.set(key, priceIntervals(ivs, index, tariffsAsc))
 
