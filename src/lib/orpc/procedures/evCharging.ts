@@ -276,6 +276,7 @@ export const evChargingRouter = {
       const run = await runEmaldoSync({ trigger: 'admin', deps: { log: context.log } })
       if (context.timings) {
         context.timings.emaldoSyncMs = run.durationMs
+        // Summed request time over the four parallel series: busy time, not latency.
         context.timings.emaldoFetchMs = run.fetchMs
         context.timings.emaldoStoreMs = run.storeMs
       }
