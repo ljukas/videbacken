@@ -220,15 +220,19 @@ async function syncDays(
   })
   run.backfillDaysLeft = plan.backfill.length + plan.backfillLeft
   run.since = startOf(plan.backfill[0] ?? plan.yesterday)
-  const sync = (day: string, recent: boolean) =>
-    syncDay(client, run, stats, ctx, { day, today, recent })
+  const sync = (day: string, strict: boolean) =>
+    syncDay(client, run, stats, ctx, { day, today, strict })
 
+  // Only yesterday is strict: it is the day the watermark waits on. Today is
+  // still filling (and is yesterday, strictly, tomorrow); an old day must not
+  // wedge the backfill.
   const yesterdayStored = await sync(plan.yesterday, true)
-  // Emaldo answered, so the plan's start is safe as the watermark floor: every
-  // day before it is stored or before the lead. Set only now, so a run that
-  // never got an answer (not configured, auth) plants no watermark.
+  // The watermark floor: the plan's start is never before the stored
+  // watermark, and every day before it is stored or before the lead. Set only
+  // once Emaldo has answered, so a run that never got an answer (not
+  // configured, auth) plants no watermark.
   run.syncedUntil = startOf(plan.start)
-  await sync(plan.today, true)
+  await sync(plan.today, false)
 
   for (const [i, day] of plan.backfill.entries()) {
     if (now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS) break
@@ -258,7 +262,7 @@ async function syncDay(
   run: EmaldoSyncRun,
   stats: EmaldoCallStats,
   ctx: Ctx,
-  a: { day: string; today: string; recent: boolean },
+  a: { day: string; today: string; strict: boolean },
 ): Promise<boolean> {
   const { signal, log } = ctx
   const offset = daysBetween(a.today, a.day)
@@ -295,9 +299,9 @@ async function syncDay(
   } catch (error) {
     if (!(error instanceof HouseEnergyDomainError)) throw error
     // Bad data from Emaldo is Emaldo's failure (`failed`, not `error`). One bad
-    // old day must not wedge the backfill (as in the elpris sync); a bad
-    // recent day fails the run so health shows it.
-    if (a.recent) {
+    // old day (or today) must not wedge the backfill (as in the elpris sync); a
+    // bad yesterday fails the run so health shows it.
+    if (a.strict) {
       throw new EmaldoError('unexpected_response', 'stats', undefined, {
         cause: error,
         message: `Emaldo readings for ${a.day} failed validation: ${error.message}`,

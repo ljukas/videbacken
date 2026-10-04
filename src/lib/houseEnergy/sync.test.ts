@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { user } from '~/lib/db/schema'
+import { integrationSyncRun, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import {
   type EmaldoClient,
@@ -71,6 +71,7 @@ function fakeEmaldo(
         o.stats.requests += 4
         o.stats.fetchMs += 10
         o.stats.retries += 1
+        o.stats.logins += 1
       }
       return (script[day] ?? ((d: string) => syntheticDay(d)))(day)
     },
@@ -460,4 +461,115 @@ test('without credentials (the real facade under VITEST) the run is not_configur
   expect(result).toMatchObject({ outcome: 'failed', code: 'not_configured' })
   expect(publish).not.toHaveBeenCalled()
   expect(await getLastSuccessStartedAt('emaldo')).toBeNull()
+})
+
+test('the budget can end mid-backfill: the watermark is the end of the last stored day', async () => {
+  await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30
+  let clock = NOW.getTime()
+  const { client, requested } = fakeEmaldo({}, () => {
+    clock += 35_000
+  })
+
+  const result = await run(client, { now: () => new Date(clock) })
+
+  // 35 s per day: two backfill days start before the 120 s budget is used.
+  expect(requested).toEqual([YESTERDAY, TODAY, '2026-03-24', '2026-03-25'])
+  expect(result).toMatchObject({ outcome: 'ok', backfillDaysLeft: 5 })
+  expect(await getLastSuccessStartedAt('emaldo')).toEqual(startOf('2026-03-26'))
+})
+
+test('a backfill day whose end is off (a DST slip) fails the run and stores nothing for it', async () => {
+  await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30
+  const dst = '2026-03-29'
+  const { client } = fakeEmaldo({
+    // Right start, but a 24 h day where Stockholm has 23 h.
+    [dst]: (d) => ({ ...syntheticDay(d), dayEnd: new Date(startOf(d).getTime() + 86_400_000) }),
+  })
+
+  const result = await run(client)
+
+  expect(result).toMatchObject({ outcome: 'failed', code: 'unexpected_response' })
+  expect(await countOn(dst)).toBe(0)
+  expect(await getLastSuccessStartedAt('emaldo')).toEqual(startOf(dst))
+})
+
+test('a failure storing a day that is not a validation error ends the run as error', async () => {
+  await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30
+  const transaction = db.transaction.bind(db)
+  let writes = 0
+  // Yesterday, today, 2026-03-24 store; the write for 2026-03-25 fails.
+  vi.spyOn(db, 'transaction').mockImplementation(((fn: Parameters<typeof db.transaction>[0]) => {
+    writes++
+    if (writes === 4) return Promise.reject(new Error('connection lost'))
+    return transaction(fn)
+  }) as typeof db.transaction)
+
+  await expect(run(fakeEmaldo().client)).rejects.toThrow()
+
+  const [row] = await listRecentRuns('emaldo', { limit: 1 })
+  expect(row).toMatchObject({ outcome: 'error', errorCode: 'internal_error' })
+  // Not skipped as a rejected day: the next run retries it.
+  expect(await getLastSuccessStartedAt('emaldo')).toEqual(startOf('2026-03-25'))
+})
+
+test('a caught-up watermark never moves back for a session imported later', async () => {
+  await run(fakeEmaldo().client)
+  expect(await getLastSuccessStartedAt('emaldo')).toEqual(startOf(TODAY))
+
+  await sessionOn('2026-01-10')
+  const { client, requested } = fakeEmaldo()
+  await run(client)
+
+  expect(requested).toEqual([YESTERDAY, TODAY])
+  expect(await getLastSuccessStartedAt('emaldo')).toEqual(startOf(TODAY))
+})
+
+// Today never moves the watermark, and becomes yesterday tomorrow (strict
+// then); a bad bucket in it must not stall the backfill all day.
+test('invalid readings for today are skipped and warned, not a failed run', async () => {
+  await sessionOn(YESTERDAY) // backfill 2026-03-24 … 2026-03-30
+  const cap = capturingLogger()
+  const { client, requested } = fakeEmaldo({ [TODAY]: (d) => syntheticDay(d, 3, -0.5) })
+
+  const result = await run(client, { log: cap.log })
+
+  expect(result).toMatchObject({ outcome: 'ok', rejectedDays: 1, syncedUntil: startOf(TODAY) })
+  expect(requested).toHaveLength(9)
+  expect(await countOn(TODAY)).toBe(0)
+  expect(cap.entries().some((e) => e.msg === 'emaldo day rejected' && e.day === TODAY)).toBe(true)
+})
+
+test('an empty today is normal just after midnight', async () => {
+  const { client } = fakeEmaldo({ [TODAY]: (d) => syntheticDay(d, 0) })
+  expect(await run(client)).toMatchObject({
+    outcome: 'ok',
+    emptyDays: 1,
+    syncedUntil: startOf(TODAY),
+  })
+})
+
+test('invalid readings for yesterday name the day in the recorded error', async () => {
+  const { client } = fakeEmaldo({ [YESTERDAY]: (d) => syntheticDay(d, 3, -0.5) })
+  await run(client)
+  const health = await getHealth('emaldo', { now: NOW, includeAdminDetail: true })
+  expect(health.adminDetail?.lastErrorMessage).toContain(YESTERDAY)
+  expect(health.adminDetail?.lastErrorMessage).not.toContain('-0.5')
+})
+
+test('the run row records since and every counter', async () => {
+  await run(fakeEmaldo().client)
+  const [row] = await db.select().from(integrationSyncRun)
+  expect(row.since).toEqual(startOf(YESTERDAY))
+  expect(row.timings).toEqual({
+    fetchMs: 20,
+    storeMs: expect.any(Number),
+    requests: 8,
+    retries: 2,
+    logins: 2,
+    daysFetched: 2,
+    droppedBuckets: 1,
+    emptyDays: 0,
+    rejectedDays: 0,
+    backfillDaysLeft: 0,
+  })
 })
