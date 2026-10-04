@@ -370,7 +370,13 @@ test('reportProgress with another attempt’s id writes nothing', async () => {
 test('recordOutcome clears progress, and a late write after it writes nothing', async () => {
   const attemptId = await acquire(T0)
   await reportProgress('zaptec', attemptId, { done: 1, total: 2 }, { now: at(1000) })
-  await recordOutcome('zaptec', ok, { attemptId, trigger: 'cron', startedAt: T0, now: at(2000) })
+  const { health } = await recordOutcome('zaptec', ok, {
+    attemptId,
+    trigger: 'cron',
+    startedAt: T0,
+    now: at(2000),
+  })
+  expect(health.progress).toBeNull()
   await reportProgress('zaptec', attemptId, { done: 2, total: 2 }, { now: at(3000) })
   const [row] = await db.select().from(integrationSync)
   expect(row.progressDone).toBeNull()
@@ -401,4 +407,12 @@ test('getHealth hides progress once the lease has expired', async () => {
 test('getHealth hides leftover progress on a row without a lease (a rollback’s recordOutcome)', async () => {
   await db.insert(integrationSync).values({ source: 'zaptec', progressDone: 3, progressTotal: 4 })
   expect((await getHealth('zaptec', { now: T0, includeAdminDetail: false })).progress).toBeNull()
+})
+
+test('reportProgress after the lease expired (not yet taken over) writes nothing', async () => {
+  const attemptId = await acquire(T0)
+  await reportProgress('zaptec', attemptId, { done: 1, total: 2 }, { now: at(6 * 60 * 1000) })
+  const [row] = await db.select().from(integrationSync)
+  expect(row.progressDone).toBeNull()
+  expect(row.progressTotal).toBeNull()
 })

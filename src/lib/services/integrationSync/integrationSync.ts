@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun } from '~/lib/db/schema'
 import type {
@@ -275,8 +275,8 @@ export async function listRecentRuns(
 }
 
 // The running attempt's progress, overwritten in place. Matched on the lease
-// token, so a lost lease (expired, taken over, or already recorded) writes
-// nothing: a late write can never touch a newer run's progress or re-set a
+// token and an unexpired lease, so a lost lease (expired, taken over, or
+// already recorded) writes nothing: a late write can never touch a newer run's progress or re-set a
 // finished one. Values come from runPulledSync, which normalizes them; the
 // CHECKs are the backstop.
 export async function reportProgress(
@@ -288,5 +288,11 @@ export async function reportProgress(
   await db
     .update(integrationSync)
     .set({ progressDone: done, progressTotal: total, updatedAt: now })
-    .where(and(eq(integrationSync.source, source), eq(integrationSync.leaseToken, attemptId)))
+    .where(
+      and(
+        eq(integrationSync.source, source),
+        eq(integrationSync.leaseToken, attemptId),
+        gt(integrationSync.leaseUntil, now),
+      ),
+    )
 }
