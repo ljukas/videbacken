@@ -1,5 +1,6 @@
 import { HistoryIcon } from 'lucide-react'
 import type * as React from 'react'
+import { Fragment } from 'react'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card } from '~/components/ui/card'
@@ -48,6 +49,23 @@ export function SyncStateBadge({ health }: { health: Health | undefined }) {
   )
 }
 
+// A domain name ("elprisetjustnu.se") gets a break opportunity before each dot,
+// so a narrow tile wraps it at ".se" rather than mid-word.
+function BreakableName({ name }: { name: string }) {
+  const parts = name.split('.')
+  return parts.map((part, i) => (
+    // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed name
+    <Fragment key={i}>
+      {i > 0 ? (
+        <>
+          <wbr />.
+        </>
+      ) : null}
+      {part}
+    </Fragment>
+  ))
+}
+
 // "Senast synkad …", or "Aldrig synkad" where that adds something: not under a
 // badge that already says never-synced / not-configured.
 function lastSyncLine(health: Health): string | null {
@@ -61,9 +79,9 @@ function lastSyncLine(health: Health): string | null {
 // last synced, and its own sync + history. The state is the server's
 // `health.state`, never re-derived here. `health` is undefined while its read
 // is pending or failed — the tile still renders (status unknown) so the admin
-// can sync or open the history. The tile is its own container: narrow tiles
-// (four across) stack the mark above the name and the buttons; wider ones sit
-// them side by side.
+// can sync or open the history. The tile is its own container: the mark sits
+// beside the name from 11rem (four across on desktop is ~11.5rem) and above it
+// below that; the buttons sit side by side from 13rem and stack below it.
 export function SyncSourceTile({
   source,
   health,
@@ -92,7 +110,7 @@ export function SyncSourceTile({
       : m.charging_sync_now()
   return (
     <Card className="@container h-full min-w-0 px-5 py-5">
-      <div className="flex @[15rem]:flex-row flex-col @[15rem]:items-start gap-3">
+      <div className="flex @[11rem]:flex-row flex-col @[11rem]:items-start gap-3">
         <SyncSourceMark source={source} />
         <div className="flex min-w-0 flex-col">
           {/* translate="no": a company/domain name, not prose. */}
@@ -100,7 +118,7 @@ export function SyncSourceTile({
             translate="no"
             className="text-balance break-words font-heading font-semibold text-base leading-snug"
           >
-            {name}
+            <BreakableName name={name} />
           </h3>
           <p className="text-muted-foreground text-xs">{syncSourceRole(source)}</p>
         </div>

@@ -61,6 +61,10 @@ test('a labelled list of one tile per source, with a summary', async () => {
   await expect
     .element(screen.getByText(m.charging_sources_summary({ ok: 2, total: 4 })))
     .toBeVisible()
+  // Emaldo's state wasn't read: unknown, not "not working".
+  await expect
+    .element(screen.getByText(m.charging_sources_summary_unknown({ count: 1 }), { exact: false }))
+    .toBeVisible()
   expect(screen.getByRole('list').elements()).toHaveLength(1)
   expect(screen.getByRole('listitem').elements()).toHaveLength(4)
   for (const name of ['Zaptec', 'elprisetjustnu.se', 'Škoda', 'Emaldo']) {

@@ -119,6 +119,7 @@
   "charging_sources_description": "Tjänsterna som sidans data hämtas från. Bara admins ser den här delen.",
   "charging_sources_heading": "Datakällor",
   "charging_sources_summary": "{ok} av {total} fungerar",
+  "charging_sources_summary_unknown": "{count} med okänd status",
   "charging_sync_failed": "Synkningen misslyckades",
   "charging_sync_now": "Synka nu",
   "charging_sync_ok": [

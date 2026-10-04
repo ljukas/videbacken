@@ -119,6 +119,7 @@
   "charging_sources_description": "The services this page's data comes from. Only admins see this section.",
   "charging_sources_heading": "Data sources",
   "charging_sources_summary": "{ok} of {total} working",
+  "charging_sources_summary_unknown": "{count} with unknown status",
   "charging_sync_failed": "The sync failed",
   "charging_sync_now": "Sync now",
   "charging_sync_ok": [

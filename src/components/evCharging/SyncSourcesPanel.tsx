@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { IntegrationSource } from '~/lib/integrationHealth'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -36,8 +36,15 @@ export function SyncSourcesPanel({
   // box — and focus goes back to that source's "Historik" button.
   const [shown, setShown] = useState(openSource)
   if (openSource !== undefined && openSource !== shown) setShown(openSource)
-  const historyButtons = useRef(new Map<IntegrationSource, HTMLButtonElement>())
+  const [historyButtons] = useState(() => new Map<IntegrationSource, HTMLButtonElement>())
+  // Read by onCloseAutoFocus, which can fire from a stale render's closure.
+  const openRef = useRef(openSource)
+  useEffect(() => {
+    openRef.current = openSource
+  }, [openSource])
   const ok = entries.filter((e) => e.health?.state === 'ok').length
+  // An unread state isn't "not working": say it's unknown instead.
+  const unknown = entries.filter((e) => e.health === undefined).length
   const entry = entries.find((e) => e.source === shown)
   return (
     <section aria-labelledby="sync-sources-heading" className="@container flex flex-col gap-3">
@@ -50,10 +57,13 @@ export function SyncSourcesPanel({
         </div>
         <p className="text-muted-foreground text-xs tabular-nums">
           {m.charging_sources_summary({ ok, total: entries.length })}
+          {unknown > 0 ? <> · {m.charging_sources_summary_unknown({ count: unknown })}</> : null}
         </p>
       </div>
+      {/* Four across only from 56rem: the shell caps the section at ~60rem, and
+          narrower four-column tiles get too tight for their names and messages. */}
       {/* biome-ignore lint/a11y/noRedundantRoles: list-style none makes Safari drop the list semantics */}
-      <ul role="list" className="grid @3xl:grid-cols-4 @md:grid-cols-2 grid-cols-1 gap-4">
+      <ul role="list" className="grid @4xl:grid-cols-4 @md:grid-cols-2 grid-cols-1 gap-4">
         {entries.map((e) => (
           <li key={e.source} className="min-w-0">
             <SyncSourceTile
@@ -63,8 +73,11 @@ export function SyncSourcesPanel({
               syncing={isPendingFor(e.source)}
               onOpenHistory={() => onOpenHistory(e.source)}
               historyRef={(el) => {
-                if (el) historyButtons.current.set(e.source, el)
-                else historyButtons.current.delete(e.source)
+                if (!el) return
+                historyButtons.set(e.source, el)
+                return () => {
+                  historyButtons.delete(e.source)
+                }
               }}
             />
           </li>
@@ -81,7 +94,10 @@ export function SyncSourcesPanel({
         // Opened via URL state, not a Radix trigger: Radix has nothing to
         // return focus to, so put it back on the button that opened it.
         onCloseAutoFocus={(event) => {
-          const opener = shown ? historyButtons.current.get(shown) : undefined
+          // Still open: the overlay only swapped dialog ↔ bottom sheet (a
+          // rotation, or a phone deep link hydrating) — not a close.
+          if (openRef.current !== undefined) return
+          const opener = shown ? historyButtons.get(shown) : undefined
           if (!opener) return
           event.preventDefault()
           opener.focus()

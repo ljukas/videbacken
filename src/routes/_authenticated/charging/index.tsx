@@ -129,12 +129,14 @@ export const Route = createFileRoute('/_authenticated/charging/')({
       queryClient.ensureQueryData(orpc.tariff.list.queryOptions()),
       queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
       user.role === 'admin' ? queryClient.ensureQueryData(pricesHealthQuery) : null,
+      // Sync histories are diagnostics behind the Datakällor overlay: prefetched,
+      // so a failed read shows there (with a retry) and never takes the page down.
       user.role === 'admin'
-        ? queryClient.ensureQueryData(
+        ? queryClient.prefetchQuery(
             orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
           )
         : null,
-      user.role === 'admin' ? queryClient.ensureQueryData(pricesRunsQuery) : null,
+      user.role === 'admin' ? queryClient.prefetchQuery(pricesRunsQuery) : null,
       // Prefetched: a failed read shows in its card, it must not take the page down.
       user.role === 'admin' ? queryClient.prefetchQuery(vehicleCoverageQuery) : null,
       // Prefetched too: a failed car read must not take the page down.
@@ -244,7 +246,8 @@ function ChargingPage() {
   )
   const { data: health } = useSuspenseQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
-    refetchInterval: healthPoll,
+    // Members read only the alert: a plain minute. Admins also watch "Synkar…".
+    refetchInterval: isAdmin ? healthPoll : 60_000,
   })
   // Admin-only (see the alerts and the Datakällor panel below). Polled like
   // Zaptec's, so a tile's "running" state (a cron run seen mid-flight) clears
