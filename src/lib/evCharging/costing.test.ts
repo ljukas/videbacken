@@ -1,8 +1,11 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
+import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
+import { logger } from '~/lib/logger/server'
 import { replaceForSessions } from '~/lib/services/energyMix'
 import { getOverview, listSessionEnergy } from '~/lib/services/evCharging'
+import { replaceDay as replaceHouseDay } from '~/lib/services/houseEnergy'
 import { replaceDay } from '~/lib/services/spotPrice'
 import * as tariffService from '~/lib/services/tariff'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
@@ -174,6 +177,8 @@ test('records sub-timings when asked', async () => {
     energyMs: expect.any(Number),
     slotsMs: expect.any(Number),
     tariffMs: expect.any(Number),
+    mixMs: expect.any(Number),
+    houseFromMs: expect.any(Number),
     computeMs: expect.any(Number),
   })
 })
@@ -292,4 +297,140 @@ test('loadMix returns the stored mix of the sessions that have one, and times it
   const none: { mixMs?: number } = {}
   expect(await loadMix([], none)).toEqual(new Map())
   expect(none.mixMs).toEqual(expect.any(Number))
+})
+
+const storeMix = (sessionId: string, slots: MixSlot[]) =>
+  replaceForSessions(
+    [sessionId],
+    slots.map((s) => ({ ...s, sessionId })),
+  )
+
+test('a session with a stored mix costs its cash: own solar 0 kr, battery at its stored spot', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-20',
+    daySlots('2026-09-20', 15, () => 0.5),
+  )
+  await tariffService.create(TARIFF)
+  const id = await session('2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3, [
+    ['2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3],
+  ])
+  await storeMix(id, [
+    mixSlot('2026-09-20T18:00:00Z', { gridKwh: 1, solarKwh: 0.5 }),
+    mixSlot('2026-09-20T18:15:00Z', { gridKwh: 0.5, batteryGridKwh: 1, batteryGridSpotSek: 0.2 }),
+  ])
+
+  const sep = (await getCostOverview({ now: NOW })).months[8]
+  expect(sep).toMatchObject({
+    kwh: 3,
+    solarKwh: 0.5,
+    batteryKwh: 1,
+    noHouseDataKwh: 0,
+    complete: true,
+  })
+  expect(sep.gridKwh).toBeCloseTo(2.5)
+  expect(sep.spotSek).toBeCloseTo((1.5 * 0.5 + 1 * 0.2) * 1.25)
+  expect(sep.feesSek).toBeCloseTo(((2.5 * FEES_ORE) / 100) * 1.25)
+  expect(sep.solarValueSek).toBeCloseTo(0.5 * 0.5)
+  expect(sep.avgOre).toBeCloseTo((sep.totalSek / 3) * 100)
+
+  const [cost] = await getSessionCosts({ sessionIds: [id] })
+  expect(cost.totalSek).toBeCloseTo(sep.totalSek, 9)
+  expect(cost.solarKwh).toBeCloseTo(0.5)
+})
+
+test('a session without a mix is all grid, labelled as without house data', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-20',
+    daySlots('2026-09-20', 15, () => 0.5),
+  )
+  await tariffService.create(TARIFF)
+  await session('2026-09-20T18:00:00Z', '2026-09-20T19:00:00Z', 4, [
+    ['2026-09-20T18:00:00Z', '2026-09-20T19:00:00Z', 4],
+  ])
+  const sep = (await getCostOverview({ now: NOW })).months[8]
+  expect(sep).toMatchObject({
+    kwh: 4,
+    noHouseDataKwh: 4,
+    solarKwh: 0,
+    batteryKwh: 0,
+    complete: true,
+  })
+  expect(sep.spotSek).toBeCloseTo(4 * 0.5 * 1.25)
+})
+
+test('a mix that no longer matches the session falls back to all grid', async () => {
+  const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+  const id = await session('2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3, [
+    ['2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3],
+  ])
+  await storeMix(id, [mixSlot('2026-09-20T18:00:00Z', { solarKwh: 2 })])
+  const [cost] = await getSessionCosts({ sessionIds: [id] })
+  expect(cost).toMatchObject({ kwh: 3, solarKwh: 0, noHouseDataKwh: 3 })
+  expect(warn).toHaveBeenCalledWith(
+    'cost: energy mix ignored, kWh differs from the session',
+    expect.objectContaining({ sessionId: id }),
+  )
+  vi.restoreAllMocks()
+})
+
+test('mix pieces count in the month of their own interval, like the kWh overview', async () => {
+  // Local 23:00 Aug 31 → 01:00 Sep 1 (CEST), hour-aligned intervals.
+  const id = await session('2026-08-31T21:00:00Z', '2026-08-31T23:00:00Z', 10, [
+    ['2026-08-31T21:00:00Z', '2026-08-31T22:00:00Z', 4],
+    ['2026-08-31T22:00:00Z', '2026-08-31T23:00:00Z', 6],
+  ])
+  await storeMix(id, [
+    ...['21:00', '21:15', '21:30', '21:45'].map((hm) =>
+      mixSlot(`2026-08-31T${hm}:00Z`, { gridKwh: 1 }),
+    ),
+    ...['22:00', '22:15', '22:30', '22:45'].map((hm) =>
+      mixSlot(`2026-08-31T${hm}:00Z`, { solarKwh: 1.5 }),
+    ),
+  ])
+  const [kwh, cost] = await Promise.all([
+    getOverview({ year: 2026, now: NOW }),
+    getCostOverview({ year: 2026, now: NOW }),
+  ])
+  expect(cost.months[7].kwh).toBeCloseTo(kwh.months[7].kwh, 9) // August: 4
+  expect(cost.months[8].kwh).toBeCloseTo(kwh.months[8].kwh, 9) // September: 6
+  expect(cost.months[8].solarKwh).toBeCloseTo(6)
+})
+
+test('an interval-less session with a mix stays whole in its start month', async () => {
+  // Local 23:30 Aug 31 → 00:30 Sep 1, no intervals: one estimated stretch.
+  const id = await session('2026-08-31T21:30:00Z', '2026-08-31T22:30:00Z', 2)
+  await storeMix(
+    id,
+    ['21:30', '21:45', '22:00', '22:15'].map((hm) =>
+      mixSlot(`2026-08-31T${hm}:00Z`, { gridKwh: 0.25, solarKwh: 0.25 }),
+    ),
+  )
+  const cost = await getCostOverview({ year: 2026, now: NOW })
+  expect(cost.months[7]).toMatchObject({ kwh: 2, solarKwh: 1 })
+  expect(cost.months[8].kwh).toBe(0)
+})
+
+test('reports when house data starts (null before any reading)', async () => {
+  expect((await getCostOverview({ now: NOW })).houseDataFrom).toBeNull()
+  const bucketStart = new Date('2026-09-01T06:00:00Z')
+  await replaceHouseDay(
+    { dayStart: new Date('2026-08-31T22:00:00Z'), dayEnd: new Date('2026-09-01T22:00:00Z') },
+    [
+      {
+        bucketStart,
+        gridImportKwh: 0.1,
+        gridExportKwh: 0,
+        solarKwh: 0,
+        loadKwh: 0.1,
+        batteryDischargeKwh: 0,
+        batteryChargeSolarKwh: 0,
+        batteryChargeGridKwh: 0,
+        batteryChargeAcKwh: 0,
+        batterySocPct: null,
+      },
+    ],
+  )
+  expect((await getCostOverview({ now: NOW })).houseDataFrom).toEqual(bucketStart)
 })
