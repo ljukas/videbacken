@@ -19,7 +19,8 @@
 > - **Losses raise the cost of what's left, as agreed.** In the prototype (flat spot), the pool's average cost was
 >   1.8× its inflow spot in Jan–Feb (median; p95 2.5×, max 5.4×) and 1.01–1.14× from March. Real winter economics:
 >   only ≈ 55 % comes back out. So a battery spot average isn't a market price, and the mix table's battery-spot CHECK
->   is a wide sanity bound (±1000 SEK/kWh, Task 1). The ±100 of `spot_price` could fail a whole derive.
+>   checks only that the spot is finite (superseded by deviation 7; first drafted as ±1000). The ±100 of
+>   `spot_price` could fail a whole derive.
 > - The checkpoint stores `capacity_kwh` in place of `eta`. A checkpoint computed with another `C` is never resumed
 >   from, so changing `C` rebuilds history at the next derive.
 > - The **first** derive in prod rebuilds all history on its own: there is no checkpoint yet and earlier readings
@@ -56,7 +57,7 @@ All additive; only step 3 calls the changed functions unless noted.
    `listSessionEnergy(filter, dbOrTx?)` (which also gains a `{ endsAfter: Date }` filter);
    `replaceForSessions(sessionIds, rows, dbOrTx?)`. Existing callers are unchanged. `src/lib/db/index.ts` exports
    `DbTransaction` / `DbOrTx` types.
-2. **Pool checkpoints carry their capacity.** `battery_pool_day` gains `capacity_kwh` and `derived_at`;
+2. **Pool checkpoints carry their capacity** (and, since Task 1's review, a derive version: see 7). `battery_pool_day` gains `capacity_kwh` and `derived_at`;
    `getPoolDay(day, dbOrTx?)` returns `{ state: PoolState; capacityKwh: number } | null` (not bare `PoolState`), and
    `replacePoolDaysFrom(day, rows, capacityKwh, dbOrTx?)` takes the `C` the rows were computed with. A derive never
    resumes from a checkpoint with another `C`; it rebuilds from the first reading. So a change of
@@ -70,6 +71,9 @@ All additive; only step 3 calls the changed functions unless noted.
 5. **A fifth pure module** `mix/houseTimeline.ts` (`runHouseTimeline`) runs the pool forward day by day, works out
    each bucket's SoC cap from its own and the next reading's SoC, and records each bucket's supply and battery
    outflow; `deriveSessionMix(buckets, house)` consumes its map.
+6. Step 4 note: Σ mix `kwh` of a session equals Σ of its **stretches** (`SessionEnergy.stretches`, i.e. its Zaptec
+   intervals, or `energyKwh` for an `estimated` session), not necessarily `energyKwh`. Step 4's guard should compare
+   against the stretches.
 7. **From Task 1's schema review (built):** checkpoints also store `derive_version` (smallint, `DERIVE_VERSION` in
    `derive.ts`, starting at 1). A derive resumes only when both `C` and the version match, so a fix to the derive
    math rebuilds history at the next trigger, with no script. `getPoolDay` returns
@@ -85,9 +89,6 @@ All additive; only step 3 calls the changed functions unless noted.
    - `pruneUncounted()` takes no window: it prunes every uncounted session.
    - The script refuses future `--from` and query-string target overrides, and prints the user (the Supabase
      project ref) with the target.
-6. Step 4 note: Σ mix `kwh` of a session equals Σ of its **stretches** (`SessionEnergy.stretches`, i.e. its Zaptec
-   intervals, or `energyKwh` for an `estimated` session), not necessarily `energyKwh`. Step 4's guard should compare
-   against the stretches.
 
 ## Global Constraints
 
@@ -292,6 +293,7 @@ export const evChargeEnergyMix = pgTable(
         + ${table.batterySolarKwh} + ${table.batteryUnpricedKwh} + ${table.noHouseDataKwh}))
         <= 1e-9 * ${table.kwh} + 1e-9`,
     ),
+    // (As first drafted; built finite-only, no value bound: deviation 7.)
     // A spot exactly when there is energy to price. Only a sanity bound on its
     // value, far wider than spot_price's ±100: battery losses raise the
     // average cost of what is left in the pool (spec decision 7; the history
@@ -3738,7 +3740,7 @@ rule has a test that names it).
   the very next bucket. `C` = 7.58 kWh per 100 % (all history; ≈ 6.2 in Jan–Feb, 7.5–8.1 from March).
 - Losses raise the cost of what is left: on the history, battery energy's average cost is ≈ 1.8× its inflow spot in
   Jan–Feb (median) and ≈ 1.01–1.14× from March. So a mix row's battery spot isn't a market price, and its CHECK is
-  a wide ±1000 SEK/kWh sanity bound.
+  finite-only (no value bound; deviation 7).
 - `battery_pool_day` stores the `C` each checkpoint was computed with (`capacity_kwh`, and `derived_at`). A derive
   never resumes from a checkpoint with another `C`, nor without a checkpoint while earlier readings exist: it
   rebuilds from the first reading. So the first derive in prod, and any change of `C`, rebuilds history at the next

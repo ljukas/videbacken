@@ -2,7 +2,7 @@ import { asc, inArray, not, sql } from 'drizzle-orm'
 import { type DbOrTx, type DbTransaction, db } from '~/lib/db'
 import { energyMixDeriveRequest, evChargeEnergyMix, evChargeSession } from '~/lib/db/schema'
 import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
-import { countedSessionFilter } from '~/lib/services/evCharging/counted'
+import { countedSessionFilter } from '~/lib/services/evCharging'
 import { isStockholmDay } from '~/lib/time/stockholm'
 
 // The stored energy mix of charging sessions (ADR-0023): per session × 15-min
