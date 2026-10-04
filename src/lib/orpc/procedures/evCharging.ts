@@ -84,8 +84,9 @@ export const evChargingRouter = {
       return overview
     }),
 
-  // Cost of the sessions on the list's current page (the client passes the
-  // ids it shows, capped like `sessions`' limit).
+  // Cash cost (stored solar/battery mix, `costMixMs`) of the sessions on the
+  // list's current page (the client passes the ids it shows, capped like
+  // `sessions`' limit).
   sessionCosts: protectedProcedure
     .input(z.object({ sessionIds: z.array(z.uuid()).max(500) }))
     .handler(async ({ input, context }) => {
@@ -138,8 +139,8 @@ export const evChargingRouter = {
 
   // One session's economy + chart data (/charging/sessions/$sessionId). An
   // unknown or uncounted id is a typed 404 the page turns into "not found".
-  // Carries the cash `cost` (the hero) beside the grid-only `economy`;
-  // `economyMixMs`.
+  // Carries the cash `cost` (the hero, mix load timed as `economyMixMs`)
+  // beside the grid-only `economy`.
   session: protectedProcedure
     .errors(evChargingErrors)
     .input(z.object({ sessionId: z.uuid() }))
