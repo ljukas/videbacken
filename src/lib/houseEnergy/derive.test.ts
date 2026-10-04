@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { energyMixDeriveRequest, evChargeSession } from '~/lib/db/schema'
@@ -12,6 +12,7 @@ import { insertInterval, insertSession } from '~test/fixtures/evCharging'
 import { type Flows, syntheticDay } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
 import { DERIVE_VERSION, deriveFrom } from './derive'
+import { deriveAfterSync } from './deriveAfterSync'
 import type { MixSlot } from './mix/carMix'
 import { BATTERY_CAPACITY_KWH } from './mix/pool'
 
@@ -90,7 +91,8 @@ test.each<[string, boolean]>([
   await storePrices('2026-06-10')
   const id = await session('2026-06-10T07:00:00Z', '2026-06-10T10:00:00Z', 24, { intervals })
   const result = await derive('2026-06-10')
-  expect(result).toMatchObject({ sessions: 1, days: 3 }) // 06-10 … 06-12 (today)
+  // From the day before the requested one (its last bucket's cap), through today.
+  expect(result).toMatchObject({ sessions: 1, days: 4 }) // 06-09 … 06-12
   const slots = await mixOf(id)
   expect(slots).toHaveLength(8)
   expect(slots[0].slotStart).toEqual(new Date('2026-06-10T08:00:00Z'))
@@ -157,20 +159,23 @@ test('the pool follows the measured SoC: losses leave less energy at a higher co
   expect(checkpoint?.state.gridSpotSekSum).toBeCloseTo(1.2, 9)
 })
 
-test("resuming from the previous day's checkpoint gives the same mix as deriving both days", async () => {
-  // Charged on the night of 02-15, used by a session on 02-16.
+test('resuming from a checkpoint gives the same mix as deriving every day', async () => {
+  // Charged on the night of 02-15, used by a session on 02-17.
   await storeDay('2026-02-15', (ms) => (ms < NIGHT_CHARGE_END ? NIGHT_CHARGE : BASE))
-  await storeDay('2026-02-16', (ms) =>
-    inRange(ms, '2026-02-16T19:00:00Z', '2026-02-16T20:00:00Z') ? BATTERY_HALF : BASE,
+  await storeDay('2026-02-16', () => BASE)
+  await storeDay('2026-02-17', (ms) =>
+    inRange(ms, '2026-02-17T19:00:00Z', '2026-02-17T20:00:00Z') ? BATTERY_HALF : BASE,
   )
   await storePrices('2026-02-15', (ms) => (ms < NIGHT_CHARGE_END ? 0.2 : 1))
-  await storePrices('2026-02-16')
-  const id = await session('2026-02-16T19:00:00Z', '2026-02-16T20:00:00Z', 6)
-  await derive('2026-02-15', '2026-02-16T22:00:00Z')
+  await storePrices('2026-02-17')
+  const id = await session('2026-02-17T19:00:00Z', '2026-02-17T20:00:00Z', 6)
+  expect((await derive('2026-02-15', '2026-02-17T22:00:00Z')).days).toBe(4) // 02-14 … 02-17
   const full = await mixOf(id)
-  await derive('2026-02-16', '2026-02-16T22:00:00Z')
+  // 02-16 and 02-17: resumed from 02-15's charged checkpoint, not rebuilt (that would be 3).
+  expect((await derive('2026-02-17', '2026-02-17T22:00:00Z')).days).toBe(2)
   expect(await mixOf(id)).toEqual(full)
   expect(total(full, 'batteryGridKwh')).toBeCloseTo(3, 9)
+  for (const s of full) if (s.batteryGridKwh > 0) expect(s.batteryGridSpotSek).toBeCloseTo(0.2, 9)
 })
 
 test('a session spanning midnight widens the derive to its start day', async () => {
@@ -283,10 +288,10 @@ test('a request left queued by a failed derive widens the next derive back to it
   const id = await session('2026-06-08T10:00:00Z', '2026-06-08T11:00:00Z', 2)
   await energyMixService.requestDerive('2026-06-08')
   const result = await derive('2026-06-10')
-  expect(result.days).toBe(5) // 06-08 … 06-12, not 06-10 … 06-12
+  expect(result.days).toBe(6) // 06-07 … 06-12, not 06-09 … 06-12
   expect(total(await mixOf(id), 'kwh')).toBeCloseTo(2, 9)
-  // The queue is empty again: the next derive from 06-10 stays at 06-10.
-  expect((await derive('2026-06-10')).days).toBe(3)
+  // The queue is empty again: the next derive from 06-10 starts at 06-09.
+  expect((await derive('2026-06-10')).days).toBe(4)
 })
 
 test('a request queued for hours means derives kept failing: warned, with counts only', async () => {
@@ -310,4 +315,154 @@ test('a request queued for hours means derives kept failing: warned, with counts
     queuedForMin: expect.any(Number),
   })
   expect(entries.find((e) => e.msg === 'energy mix derived')).toMatchObject({ queuedRequests: 1 })
+})
+
+const takeQueue = () =>
+  energyMixService.withDeriveLock((tx) => energyMixService.takeDeriveRequests(tx))
+
+test('a derive that fails leaves the queue, the mix and the checkpoints as they were', async () => {
+  await storeDay('2026-06-10', sunny)
+  const id = await session('2026-06-10T07:00:00Z', '2026-06-10T10:00:00Z', 24)
+  await derive('2026-06-10')
+  const mix = await mixOf(id)
+  const checkpoint = await houseEnergyService.getPoolDay('2026-06-10')
+  await energyMixService.requestDerive('2026-06-08')
+  // Any mix write now fails (the per-test schema goes, trigger and all).
+  await db.execute(sql`
+    CREATE FUNCTION refuse_mix() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'mix write refused'; END $$`)
+  await db.execute(sql`
+    CREATE TRIGGER refuse_mix BEFORE INSERT ON ev_charge_energy_mix
+    FOR EACH ROW EXECUTE FUNCTION refuse_mix()`)
+  await expect(derive('2026-06-10')).rejects.toThrow()
+  await db.execute(sql`DROP TRIGGER refuse_mix ON ev_charge_energy_mix`)
+  expect(await mixOf(id)).toEqual(mix)
+  expect(await houseEnergyService.getPoolDay('2026-06-10')).toEqual(checkpoint)
+  expect(await takeQueue()).toMatchObject({ fromDay: '2026-06-08', count: 1 })
+})
+
+test('a matching checkpoint is resumed from: its pool carries into the next days', async () => {
+  // The derive from 06-10 starts on 06-09 and resumes from 06-08's checkpoint.
+  await storeDay('2026-06-08', () => BASE)
+  await storeDay('2026-06-09', () => BASE)
+  await storeDay('2026-06-10', (ms) =>
+    inRange(ms, '2026-06-10T19:00:00Z', '2026-06-10T20:00:00Z') ? BATTERY_HALF : BASE,
+  )
+  const id = await session('2026-06-10T19:00:00Z', '2026-06-10T20:00:00Z', 6)
+  const pool = {
+    storedKwh: 5,
+    gridKwh: 5,
+    gridSpotSekSum: 1,
+    solarKwh: 0,
+    solarSpotSekSum: 0,
+    unpricedKwh: 0,
+  }
+  await houseEnergyService.replacePoolDaysFrom('2026-06-08', [{ day: '2026-06-08', state: pool }], {
+    capacityKwh: BATTERY_CAPACITY_KWH,
+    deriveVersion: DERIVE_VERSION,
+  })
+  expect((await derive('2026-06-10')).days).toBe(4) // 06-09 … 06-12
+  expect((await houseEnergyService.getPoolDay('2026-06-08'))?.state).toEqual(pool)
+  const slots = await mixOf(id)
+  expect(total(slots, 'batteryGridKwh')).toBeCloseTo(3, 9)
+  for (const s of slots) expect(s.batteryGridSpotSek).toBeCloseTo(0.2, 9)
+})
+
+test('with no house readings the queue is still taken', async () => {
+  await energyMixService.requestDerive('2026-06-08')
+  expect(await derive('2026-06-10')).toMatchObject({ days: 0, sessions: 0 })
+  expect(await takeQueue()).toBeNull()
+})
+
+test('a queued day later than the requested one changes nothing; of several, the earliest wins', async () => {
+  for (const day of ['2026-06-08', '2026-06-09', '2026-06-10']) await storeDay(day, () => BASE)
+  await derive('2026-06-08')
+  await energyMixService.requestDerive('2026-06-11')
+  expect((await derive('2026-06-10')).days).toBe(4) // 06-09 … 06-12
+  await energyMixService.requestDerive('2026-06-09')
+  await energyMixService.requestDerive('2026-06-08')
+  expect((await derive('2026-06-10')).days).toBe(6) // 06-07 … 06-12
+  expect(await takeQueue()).toBeNull()
+})
+
+test('a requested day before the first reading starts from an empty pool on that day', async () => {
+  await storeDay('2026-06-08', () => BASE)
+  expect((await derive('2026-06-05')).days).toBe(9) // 06-04 … 06-12
+  expect(await houseEnergyService.getPoolDay('2026-06-03')).toBeNull()
+  expect((await houseEnergyService.getPoolDay('2026-06-04'))?.state.storedKwh).toBe(0)
+})
+
+test('a rebuild runs from the first reading: an early night charge reaches a later session', async () => {
+  const nightEnd = stockholmDayBounds('2026-06-08').startMs + 3_600_000
+  await storeDay('2026-06-08', (ms) => (ms < nightEnd ? NIGHT_CHARGE : BASE))
+  await storeDay('2026-06-09', () => BASE)
+  await storeDay('2026-06-10', (ms) =>
+    inRange(ms, '2026-06-10T19:00:00Z', '2026-06-10T20:00:00Z') ? BATTERY_HALF : BASE,
+  )
+  await storePrices('2026-06-08', (ms) => (ms < nightEnd ? 0.2 : 1))
+  await storePrices('2026-06-10')
+  const early = await session('2026-06-08T10:00:00Z', '2026-06-08T11:00:00Z', 2)
+  const late = await session('2026-06-10T19:00:00Z', '2026-06-10T20:00:00Z', 6)
+  expect((await derive('2026-06-10')).days).toBe(5) // no checkpoint for 06-09: from 06-08
+  expect(total(await mixOf(early), 'kwh')).toBeCloseTo(2, 9)
+  const slots = await mixOf(late)
+  expect(total(slots, 'batteryGridKwh')).toBeCloseTo(3, 9)
+  for (const s of slots) expect(s.batteryGridSpotSek).toBeCloseTo(0.2, 9)
+})
+
+test('widening follows a chain of sessions spanning midnight', async () => {
+  for (const day of ['2026-06-08', '2026-06-09', '2026-06-10']) await storeDay(day, () => BASE)
+  await derive('2026-06-08')
+  // 22:00 → 01:00 local twice: 06-08 → 06-09, and 06-09 → 06-10.
+  const a = await session('2026-06-08T20:00:00Z', '2026-06-08T23:00:00Z', 3)
+  const b = await session('2026-06-09T20:00:00Z', '2026-06-09T23:00:00Z', 3)
+  expect((await derive('2026-06-10')).days).toBe(5) // 06-08 … 06-12
+  expect(total(await mixOf(a), 'kwh')).toBeCloseTo(3, 9)
+  expect(total(await mixOf(b), 'kwh')).toBeCloseTo(3, 9)
+})
+
+test('a session running past the last reading is partly no-house-data', async () => {
+  await storeDay('2026-06-10', () => BASE)
+  // 22:00 → 01:00 local: the hour after midnight has no readings.
+  const id = await session('2026-06-10T20:00:00Z', '2026-06-10T23:00:00Z', 3)
+  await derive('2026-06-10')
+  const slots = await mixOf(id)
+  expect(total(slots, 'kwh')).toBeCloseTo(3, 9)
+  expect(total(slots, 'noHouseDataKwh')).toBeCloseTo(1, 9)
+  expect(total(slots, 'gridKwh')).toBeCloseTo(2, 9)
+})
+
+test('deriveAfterSync end to end: queues, derives, empties the queue; a failed derive keeps it', async () => {
+  await storeDay('2026-06-10', sunny)
+  const id = await session('2026-06-10T07:00:00Z', '2026-06-10T10:00:00Z', 24)
+  await deriveAfterSync({ source: 'zaptec', fromDay: '2026-06-10', log })
+  expect(total(await mixOf(id), 'kwh')).toBeCloseTo(24, 9)
+  expect(await takeQueue()).toBeNull()
+  await deriveAfterSync({
+    source: 'zaptec',
+    fromDay: '2026-06-09',
+    log,
+    derive: async () => {
+      throw new Error('derive failed')
+    },
+  })
+  expect(await takeQueue()).toMatchObject({ fromDay: '2026-06-09' })
+})
+
+test("a resume re-derives the previous day, so a checkpoint written before the next day's readings is capped", async () => {
+  // 06-10's last bucket charges with SoC 4 %; 06-11's first reading (6 %) arrives later.
+  const next = stockholmDayBounds('2026-06-10').endMs
+  const lastOf10 = (ms: number): Flows =>
+    ms === next - 300_000 ? { batteryChargeGridKwh: 1, gridImportKwh: 1, batterySocPct: 4 } : BASE
+  await storeDay('2026-06-10', lastOf10)
+  await derive('2026-06-10', '2026-06-10T21:00:00Z')
+  // Written without a next reading: uncapped.
+  expect((await houseEnergyService.getPoolDay('2026-06-10'))?.state.storedKwh).toBeCloseTo(1, 9)
+  await storeDay('2026-06-11', (ms) => (ms === next ? { ...BASE, batterySocPct: 6 } : BASE))
+  await derive('2026-06-11', '2026-06-11T12:00:00Z')
+  // Now capped at the mean SoC, 5 % of C, exactly as a full derive gives.
+  const resumed = await houseEnergyService.getPoolDay('2026-06-10')
+  expect(resumed?.state.storedKwh).toBeCloseTo(0.05 * BATTERY_CAPACITY_KWH, 9)
+  await derive('2026-06-09', '2026-06-11T12:00:00Z')
+  expect(await houseEnergyService.getPoolDay('2026-06-10')).toEqual(resumed)
 })

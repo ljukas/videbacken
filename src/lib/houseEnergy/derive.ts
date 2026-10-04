@@ -41,6 +41,8 @@ const STALE_REQUEST_MIN = 180
 
 type DeriveStats = {
   fromDay: string | null
+  /** Widening hit MAX_WIDEN_STEPS with a session still starting before `fromDay`. */
+  widenExhausted: boolean
   /** Requests taken off the queue, and how long the oldest waited (wall clock). */
   queuedRequests: number
   queuedForMin: number | null
@@ -66,8 +68,10 @@ export async function deriveFrom(
 ): Promise<DeriveResult> {
   if (!isStockholmDay(day)) throw new RangeError(`Not a YYYY-MM-DD day: ${day}`)
   const started = performance.now()
-  const now = (opts.now ?? (() => new Date()))()
-  const stats = await energyMixService.withDeriveLock((tx) => deriveLocked(day, now, tx))
+  // Read inside the lock: a derive that waited across midnight uses the new day.
+  const stats = await energyMixService.withDeriveLock((tx) =>
+    deriveLocked(day, opts.now ?? (() => new Date()), tx),
+  )
   const deriveMs = Math.round(performance.now() - started)
   if (stats.queuedForMin !== null && stats.queuedForMin > STALE_REQUEST_MIN) {
     // An earlier derive failed and none succeeded since (ADR-0023).
@@ -77,6 +81,11 @@ export async function deriveFrom(
       queuedForMin: stats.queuedForMin,
     })
   }
+  if (stats.widenExhausted) {
+    // A chain of sessions spanning midnight longer than MAX_WIDEN_STEPS: the
+    // earliest of them is derived without its first part (counts only).
+    opts.log.warn('energy mix derive window starts inside a session', { requestedDay: day })
+  }
   if (stats.fromDay === null) {
     opts.log.debug('energy mix derive skipped: no house readings', { requestedDay: day })
   } else {
@@ -85,8 +94,9 @@ export async function deriveFrom(
   return { days: stats.days, sessions: stats.sessions, deriveMs }
 }
 
-async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<DeriveStats> {
+async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promise<DeriveStats> {
   const t0 = performance.now()
+  const now = clock()
   const queued = await energyMixService.takeDeriveRequests(tx)
   const requested = queued !== null && queued.fromDay < day ? queued.fromDay : day
   const queue = {
@@ -101,6 +111,7 @@ async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<Deriv
     return {
       ...queue,
       fromDay: null,
+      widenExhausted: false,
       days: 0,
       sessions: 0,
       rows: 0,
@@ -111,7 +122,14 @@ async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<Deriv
     }
   }
 
-  let fromDay = await widenToSessions(requested, tx)
+  // One day before the requested one: D−1's checkpoint may have been written
+  // before D's first reading existed, so its last bucket went uncapped (the
+  // SoC cap needs the next reading). Re-deriving D−1 makes a resume equal a
+  // full derive.
+  let { from: fromDay, exhausted: widenExhausted } = await widenToSessions(
+    addDays(requested, -1),
+    tx,
+  )
   let start: PoolState = emptyPool()
   const checkpoint = await houseEnergyService.getPoolDay(addDays(fromDay, -1), tx)
   if (
@@ -124,7 +142,10 @@ async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<Deriv
     // History exists before `fromDay` but no usable checkpoint (none yet, or
     // computed with another C or derive version): rebuild from the first
     // reading, empty pool.
-    fromDay = await widenToSessions(stockholmDayOf(first.getTime()), tx)
+    ;({ from: fromDay, exhausted: widenExhausted } = await widenToSessions(
+      stockholmDayOf(first.getTime()),
+      tx,
+    ))
   }
 
   const today = stockholmDayOf(now.getTime())
@@ -164,6 +185,7 @@ async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<Deriv
   return {
     ...queue,
     fromDay,
+    widenExhausted,
     days: days.length,
     sessions: sessions.length,
     rows: rows.length,
@@ -180,15 +202,19 @@ async function deriveLocked(day: string, now: Date, tx: DeriveTx): Promise<Deriv
  * overlapped by an even earlier one. Every rewritten session then lies wholly
  * inside the window the pool runs over.
  */
-async function widenToSessions(day: string, tx: DeriveTx): Promise<string> {
+async function widenToSessions(
+  day: string,
+  tx: DeriveTx,
+): Promise<{ from: string; exhausted: boolean }> {
   let from = day
-  for (let step = 0; step < MAX_WIDEN_STEPS; step++) {
+  for (let step = 0; step <= MAX_WIDEN_STEPS; step++) {
     const fromMs = stockholmDayBounds(from).startMs
     const earliest = await evChargingService.earliestCountedStartEndingAfter(new Date(fromMs), tx)
-    if (!earliest || earliest.getTime() >= fromMs) break
+    if (!earliest || earliest.getTime() >= fromMs) return { from, exhausted: false }
+    if (step === MAX_WIDEN_STEPS) break
     from = stockholmDayOf(earliest.getTime())
   }
-  return from
+  return { from, exhausted: true }
 }
 
 function sessionRows(

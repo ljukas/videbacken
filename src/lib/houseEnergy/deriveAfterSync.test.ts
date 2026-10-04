@@ -62,7 +62,10 @@ test('a derive past its budget is given up on with a warning', async () => {
   expect(ms).toBeLessThan(5_000)
   expect(warn).toHaveBeenCalledWith(
     'energy mix derive failed',
-    expect.objectContaining({ source: 'zaptec' }),
+    expect.objectContaining({
+      source: 'zaptec',
+      error: expect.objectContaining({ message: expect.stringContaining('within its budget') }),
+    }),
   )
 })
 
