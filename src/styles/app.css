@@ -156,12 +156,13 @@
   --share-i: oklch(0.905 0.058 350);
   --share-j: oklch(0.83 0.09 296);
   /* Integration source tones (the Datakällor tiles on /charging): categorical
-     identity like --share-*, not accents (ADR-0015 amendment). One hue per
-     company, dark enough for a 3:1 icon on its own wash; keep both themes in sync. */
-  --source-zaptec: oklch(0.56 0.19 41);
-  --source-elpris: oklch(0.5 0.1 185);
+     identity, not accents (ADR-0015 amendment). One hue per company, spread in
+     lightness too so red-orange and yellow stay apart under deuteranopia; each
+     icon ≥3:1 on its own wash; in sRGB gamut. Keep both themes in sync. */
+  --source-zaptec: oklch(0.48 0.17 33);
+  --source-elpris: oklch(0.5 0.085 185);
   --source-skoda: oklch(0.48 0.13 250);
-  --source-emaldo: oklch(0.58 0.13 70);
+  --source-emaldo: oklch(0.6 0.12 90);
 }
 
 .dark {
@@ -222,11 +223,11 @@
   --share-h: oklch(0.5 0.089 183);
   --share-i: oklch(0.44 0.1 350);
   --share-j: oklch(0.5 0.1 296);
-  /* Integration source tones, dark variants — same hues, lifted for the dark card. */
-  --source-zaptec: oklch(0.75 0.15 45);
+  /* Integration source tones, dark variants — the same hue families, lifted for the dark card. */
+  --source-zaptec: oklch(0.7 0.15 35);
   --source-elpris: oklch(0.77 0.11 185);
   --source-skoda: oklch(0.75 0.12 250);
-  --source-emaldo: oklch(0.83 0.14 85);
+  --source-emaldo: oklch(0.85 0.15 88);
 }
 
 @layer base {

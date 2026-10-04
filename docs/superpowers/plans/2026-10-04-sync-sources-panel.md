@@ -38,7 +38,7 @@
 | File | Responsibility |
 |---|---|
 | `src/styles/app.css` (modify) | `--source-{zaptec,elpris,skoda,emaldo}` tokens, light + dark, registered in `@theme inline` |
-| `src/components/evCharging/syncSource.tsx` (create) | Source identity: `SyncSourceMark` (tinted icon square), `syncSourceRole`, `syncSourceCadence` — exhaustive switches |
+| `src/components/evCharging/SyncSourceMark.tsx` + `syncSourceCopy.ts` (create) | Source identity: `SyncSourceMark` (tinted icon square) / `syncSourceRole`, `syncSourceCadence` — exhaustive switches |
 | `src/components/evCharging/SyncHealthAlert.tsx` (modify) | Export `syncHealthMessage(health)` (the existing per-state body copy), alert uses it |
 | `src/components/evCharging/SyncNowButton.tsx` (modify) | Optional `aria-label` passthrough on `SyncNowButton` |
 | `src/components/evCharging/SyncSourceTile.tsx` (create) | One tile + `SyncStateBadge` |
@@ -56,7 +56,7 @@
 
 **Files:**
 - Modify: `src/styles/app.css` (`@theme inline` block; `:root` after `--share-j`; `.dark` after `--share-j`)
-- Create: `src/components/evCharging/syncSource.tsx`
+- Create: `src/components/evCharging/SyncSourceMark.tsx` (component) + `src/components/evCharging/syncSourceCopy.ts` (role/cadence copy) — split after review: components are PascalCase
 - Test: `src/components/evCharging/syncSource.browser.test.tsx`
 - Modify: `messages/sv.json`, `messages/en.json`
 - Modify: `docs/adr/0015-visual-identity-and-design-language.md` (append an amendment)
@@ -71,7 +71,8 @@ import { expect, test } from 'vitest'
 import { INTEGRATION_SOURCES } from '~/lib/integrationHealth'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
-import { SyncSourceMark, syncSourceCadence, syncSourceRole } from './syncSource'
+import { SyncSourceMark } from './SyncSourceMark'
+import { syncSourceCadence, syncSourceRole } from './syncSourceCopy'
 
 const ICON_CLASS = {
   zaptec: 'lucide-ev-charger',
@@ -133,7 +134,7 @@ In `.dark` (after `--share-j`):
   --source-emaldo: oklch(0.83 0.14 85);
 ```
 
-- [ ] **Step 5: Implement** — `src/components/evCharging/syncSource.tsx`
+- [ ] **Step 5: Implement** — `SyncSourceMark.tsx` + `syncSourceCopy.ts` (final code: see the commits; token values amended after the colour-blindness review)
 
 ```tsx
 import {
@@ -406,7 +407,8 @@ import { m } from '~/paraglide/messages'
 import { formatAgo } from './format'
 import { syncHealthMessage } from './SyncHealthAlert'
 import { SyncNowButton } from './SyncNowButton'
-import { SyncSourceMark, syncSourceCadence, syncSourceRole } from './syncSource'
+import { SyncSourceMark } from './SyncSourceMark'
+import { syncSourceCadence, syncSourceRole } from './syncSourceCopy'
 
 type Health = RouterOutputs['evCharging']['syncStatus']
 
@@ -672,7 +674,7 @@ import { LoadErrorAlert, type LoadErrorQuery, loadFailed } from './LoadErrorAler
 import { RecentRunsTable, type Run } from './RecentRunsTable'
 import { syncHealthMessage } from './SyncHealthAlert'
 import { SyncStateBadge } from './SyncSourceTile'
-import { SyncSourceMark } from './syncSource'
+import { SyncSourceMark } from './SyncSourceMark'
 
 type Health = RouterOutputs['evCharging']['syncStatus']
 export type RunsQuery = LoadErrorQuery & { data: Run[] | undefined }
