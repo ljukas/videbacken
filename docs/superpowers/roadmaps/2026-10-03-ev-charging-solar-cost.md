@@ -11,7 +11,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 | 1 | Emaldo client (effect, env, `not_configured`; unused) | [plan](../plans/2026-10-03-solar-cost-1-emaldo-client.md) | [#68](https://github.com/ljukas/videbacken/pull/68) | checkpoint passed | 2026-10-03: 288/288 + 276/276 buckets, 0 mismatches (11 requests, 1 login) |
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
 | 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | checkpoint passed | 2026-10-04: re-fetch 258/258 days in 9 runs, all `ok`; SoC on 73,955/73,955 buckets, 0 days with nulls; 4 probe days exact; energy sums unchanged |
-| 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | PR_LINK | PR open | — |
+| 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | [#77](https://github.com/ljukas/videbacken/pull/77) | PR open | — |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | — | not started | — |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
 | — | *Later phase:* solar-aware economy page (own brainstorm) | — | — | — | — |
@@ -136,7 +136,7 @@ Each must pass, with the result recorded in the table, before the next step star
     pre-re-fetch values were replaced, so this is the closest available "unchanged" check.
   - Prod's SQL sessions print doubles with `extra_float_digits = 0`: compare numbers, not their text.
   Next: step 3 in a new session, starting with its plan revision for the SoC cap (Log, 2026-10-04 above).
-- 2026-10-04: step 3 built (PR_LINK). Task 0 revised the plan for the SoC cap from the local full history: a row's
+- 2026-10-04: step 3 built ([#77](https://github.com/ljukas/videbacken/pull/77)). Task 0 revised the plan for the SoC cap from the local full history: a row's
   SoC is the bucket's middle, so the cap uses the mean of two rows, and `C` = 7.58 kWh per 100 %. The per-task and
   branch reviews changed the design in a few places (spec "Derivation", amendments):
   - checkpoints carry a derive version, so a fix to the math rebuilds history by itself;
