@@ -474,13 +474,8 @@ test('the hero is the cash cost; the timing below is headed as all-grid', async 
     )
     .toBeInTheDocument()
   await expect
-    .element(
-      screen.getByRole('img', {
-        name: m.charging_session_sources_label({ grid: '28,0', solar: '20,0', battery: '8,0' }),
-      }),
-    )
-    // No app.css in browser tests: the bar has no height, so it's present, not "visible".
-    .toBeInTheDocument()
+    .element(screen.getByRole('figure', { name: m.charging_session_sources_title() }))
+    .toHaveTextContent(/28,0 kWh.*20,0 kWh.*8,0 kWh/)
 })
 
 test('an excluded session has the cash hero and no timing section', async () => {

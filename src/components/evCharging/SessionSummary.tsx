@@ -82,7 +82,7 @@ export function SessionSummary({
               aria-labelledby={timingHeadingId}
               className="flex flex-col gap-6 border-t pt-5"
             >
-              <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
                 <h2 id={timingHeadingId} className="max-w-prose text-pretty font-medium text-sm">
                   {m.charging_economy_grid_only_heading()}
                 </h2>
@@ -232,7 +232,7 @@ function Sentence({ cf }: { cf: Counterfactual }) {
 
 // Billigast → dyrast as a track, with where this session landed (solid) and
 // where charging at once would have (outline). The two marker labels never
-// share a row — "Faktiskt" above the track, "Direkt" below — so they can't
+// share a row — "Denna laddning" above the track, "Direkt" below — so they can't
 // collide at any width or distance, without measuring text. Each label is
 // pinned to its marker by `left: p%` and shifted back by p% of its own width,
 // so it stays inside the track at both ends.

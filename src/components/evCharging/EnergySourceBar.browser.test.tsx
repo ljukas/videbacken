@@ -5,28 +5,35 @@ import { EnergySourceBar } from './EnergySourceBar'
 
 const supply = { kwh: 56, solarKwh: 20, batteryKwh: 8, noHouseDataKwh: 0 }
 
-test('one image summarised in its label, with every figure in the legend', async () => {
+test('a captioned figure: the legend carries every figure, the bar is hidden from assistive tech', async () => {
   const { screen } = await renderWithProviders(<EnergySourceBar supply={supply} />)
-  const bar = screen.getByRole('img', {
-    name: m.charging_session_sources_label({ grid: '28,0', solar: '20,0', battery: '8,0' }),
-  })
-  // No app.css in browser tests: the bar has no height, so it's present, not "visible".
-  await expect.element(bar).toBeInTheDocument()
-  const segments = [...bar.element().querySelectorAll<HTMLElement>('[data-source]')]
+  const figure = screen.getByRole('figure', { name: m.charging_session_sources_title() })
+  await expect.element(figure).toBeInTheDocument()
+  const items = figure
+    .getByRole('listitem')
+    .elements()
+    .map((li) => li.textContent)
+  expect(items).toEqual([
+    `${m.charging_supply_grid()}28,0 kWh`,
+    `${m.charging_supply_solar()}20,0 kWh`,
+    `${m.charging_supply_battery()}8,0 kWh`,
+  ])
+  const bar = figure.element().querySelector<HTMLElement>('[aria-hidden="true"]:has([data-source])')
+  expect(bar).not.toBeNull()
+  const segments = [...(bar?.querySelectorAll<HTMLElement>('[data-source]') ?? [])]
   expect(segments.map((el) => el.dataset.source)).toEqual(['grid', 'solar', 'battery'])
   const widths = segments.map((el) => Number.parseFloat(el.style.width))
   expect(widths[0]).toBeCloseTo(50, 3)
   expect(widths[1]).toBeCloseTo((20 / 56) * 100, 3)
   expect(widths[2]).toBeCloseTo((8 / 56) * 100, 3)
-  await expect.element(screen.getByText(m.charging_supply_solar())).toBeVisible()
-  await expect.element(screen.getByText('20,0 kWh')).toBeVisible()
 })
 
-test('a source without energy is left out', async () => {
+test('a source that would read 0,0 kWh is left out of the bar and the legend', async () => {
   const { screen } = await renderWithProviders(
-    <EnergySourceBar supply={{ ...supply, batteryKwh: 0 }} />,
+    <EnergySourceBar supply={{ ...supply, batteryKwh: 0.04 }} />,
   )
   expect(screen.getByText(m.charging_supply_battery()).elements()).toHaveLength(0)
+  expect(screen.container.querySelectorAll('[data-source]')).toHaveLength(2)
 })
 
 test('no house data at all: a sentence instead of a 100 % grid bar', async () => {
@@ -34,7 +41,7 @@ test('no house data at all: a sentence instead of a 100 % grid bar', async () =>
     <EnergySourceBar supply={{ kwh: 56, solarKwh: 0, batteryKwh: 0, noHouseDataKwh: 56 }} />,
   )
   await expect.element(screen.getByText(m.charging_session_no_house_data_all())).toBeVisible()
-  expect(screen.getByRole('img').elements()).toHaveLength(0)
+  expect(screen.getByRole('figure').elements()).toHaveLength(0)
 })
 
 test('partly without house data says how much', async () => {
