@@ -440,10 +440,14 @@ test('a failed run still reports SoC gaps for the days that landed', async () =>
       throw new EmaldoError('unreachable', 'stats', 503)
     },
   })
-  const result = await run(client)
+  const cap = capturingLogger()
+  const result = await run(client, { log: cap.log })
   expect(result).toMatchObject({ outcome: 'failed', bucketsWithoutSoc: 9 }) // 3 stored days × 3
   const [row] = await db.select().from(integrationSyncRun)
   expect(row.timings).toMatchObject({ bucketsWithoutSoc: 9 })
+  expect(cap.entries().find((e) => e.msg === 'integration sync run')).toMatchObject({
+    bucketsWithoutSoc: 9,
+  })
 })
 
 test('a call that outlives the deadline fails as unreachable', async () => {
@@ -630,7 +634,11 @@ test('stored SoC lands with the readings, and buckets without it are counted', a
     return day
   }
   const { client } = fakeEmaldo({ [YESTERDAY]: withGap, [TODAY]: withGap })
-  const result = await run(client)
+  const cap = capturingLogger()
+  const result = await run(client, { log: cap.log })
+  expect(cap.entries().find((e) => e.msg === 'integration sync run')).toMatchObject({
+    bucketsWithoutSoc: 2,
+  })
   expect(result.bucketsWithoutSoc).toBe(2)
   const [row] = await db.select().from(integrationSyncRun)
   expect(row.timings).toMatchObject({ bucketsWithoutSoc: 2 })
@@ -660,6 +668,11 @@ const resetForSoc = () =>
       ),
     ),
   )
+
+test('migration 0015 is a no-op before Emaldo ever ran', async () => {
+  await resetForSoc()
+  expect(await db.select().from(integrationSync)).toEqual([])
+})
 
 test('migration 0015 makes the next run re-fetch the history and fill SoC', async () => {
   await sessionOn('2026-03-28') // backfill from 2026-03-21
