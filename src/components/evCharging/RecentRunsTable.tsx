@@ -11,7 +11,7 @@ import {
 } from '~/components/ui/table'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { formatCount, formatDateTime, formatRunDuration } from './format'
+import { formatCount, formatRunDuration, formatRunTime } from './format'
 
 export type Run = RouterOutputs['evCharging']['recentRuns'][number]
 
@@ -20,13 +20,23 @@ const TRIGGER_LABEL: Record<Run['trigger'], () => string> = {
   admin: m.charging_runs_trigger_admin,
 }
 
-const OUTCOME: Record<
-  Run['outcome'],
-  { label: () => string; variant: 'secondary' | 'destructive' }
-> = {
-  ok: { label: m.charging_runs_outcome_ok, variant: 'secondary' },
-  failed: { label: m.charging_runs_outcome_failed, variant: 'destructive' },
-  error: { label: m.charging_runs_outcome_error, variant: 'destructive' },
+// A failure is the neutral outline pill with a red dot, like SyncStateBadge:
+// the destructive Badge's red-on-red text is under 4.5:1.
+const OUTCOME: Record<Run['outcome'], { label: () => string; failed: boolean }> = {
+  ok: { label: m.charging_runs_outcome_ok, failed: false },
+  failed: { label: m.charging_runs_outcome_failed, failed: true },
+  error: { label: m.charging_runs_outcome_error, failed: true },
+}
+
+function OutcomeBadge({ outcome }: { outcome: Run['outcome'] }) {
+  const { label, failed } = OUTCOME[outcome]
+  if (!failed) return <Badge variant="secondary">{label()}</Badge>
+  return (
+    <Badge variant="outline" className="gap-1.5">
+      <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-destructive" />
+      {label()}
+    </Badge>
+  )
 }
 
 // One source's admin sync history (its last runs), or an empty state. The
@@ -66,11 +76,11 @@ export function RecentRunsTable({ runs }: { runs: Run[] }) {
         {runs.map((run) => (
           <TableRow key={run.id}>
             <TableCell className="whitespace-nowrap tabular-nums">
-              {formatDateTime(run.startedAt)}
+              {formatRunTime(run.startedAt)}
             </TableCell>
             <TableCell className="hidden sm:table-cell">{TRIGGER_LABEL[run.trigger]()}</TableCell>
             <TableCell>
-              <Badge variant={OUTCOME[run.outcome].variant}>{OUTCOME[run.outcome].label()}</Badge>
+              <OutcomeBadge outcome={run.outcome} />
             </TableCell>
             <TableCell className="hidden whitespace-nowrap text-right tabular-nums md:table-cell">
               {formatRunDuration(run.durationMs)}
@@ -78,7 +88,10 @@ export function RecentRunsTable({ runs }: { runs: Run[] }) {
             <TableCell className="hidden text-right tabular-nums sm:table-cell">
               {formatCount(run.upserted)}
             </TableCell>
-            <TableCell className="font-mono text-xs">{run.errorCode ?? '—'}</TableCell>
+            {/* Wraps rather than widening the phone sheet past its width. */}
+            <TableCell className="whitespace-normal break-all font-mono text-xs">
+              {run.errorCode ?? '—'}
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>

@@ -156,6 +156,18 @@ export function formatDateTime(date: Date): string {
   }).format(date)
 }
 
+// A sync run's start without the year ("4 okt. 10:00"): the run history only
+// ever holds the last few days, and the year costs a phone column its width.
+export function formatRunTime(date: Date): string {
+  return new Intl.DateTimeFormat(getIntlLocale(), {
+    timeZone: STOCKHOLM_TIME_ZONE,
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 // "för 5 minuter sedan" / "5 minutes ago". A server timestamp slightly ahead
 // of a lagging client clock reads as "just now", never "in 3 seconds".
 export function formatAgo(date: Date): string {

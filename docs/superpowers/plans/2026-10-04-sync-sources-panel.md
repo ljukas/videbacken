@@ -971,6 +971,7 @@ export function SyncSourcesPanel({
      ```
      (`useSyncNow`'s `SyncSource` union equals `IntegrationSource`; if TS disagrees, type `syncSource`'s param as `IntegrationSource` in `SyncNowButton.tsx`.)
   8. `emaldoHealth`'s query stays (the tile reads it).
+  11. (From the Task 3 UI review) the panel keeps the **last opened source** in state (state-during-render on a primitive: `if (openSource && openSource !== shown) setShown(openSource)`) and feeds the dialog that source's entry with `open={openSource !== undefined}`, so the close animation shows the content instead of an empty box. It also keeps a ref per tile's "Historik" button and passes `onCloseAutoFocus={(e) => { e.preventDefault(); historyButtons.get(shown)?.focus() }}`: the overlay opens via URL state, not a Radix trigger, so Radix has nothing to return focus to (WCAG 2.4.3). The tile forwards a `historyRef`.
   10. (From the Task 2 UI review) the tiles are a list: the grid is `<ul role="list">` (explicit role — Safari drops list semantics under `list-style: none`) with an `<li>` per tile, giving "list, 4 items"; the tile itself has no group role (its `h3` names it).
   9. (From the Task 2 review) the elpris / Škoda / Emaldo health queries get a `refetchInterval` like Zaptec's, faster while a run is in flight, so a `running: true` snapshot (a cron run seen mid-flight) can't keep a tile's sync button disabled until the next focus: `refetchInterval: (q) => (q.state.data?.running ? 5_000 : 60_000)`. These are admin-only reads (ADR-0018 polling, no held connections).
 

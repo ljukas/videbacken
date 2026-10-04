@@ -79,6 +79,7 @@
   "charging_runs_empty": "No runs yet",
   "charging_runs_empty_description": "The first run happens at the next scheduled sync.",
   "charging_runs_error_title": "Couldn't load the runs",
+  "charging_runs_loading": "Loading runs…",
   "charging_runs_outcome_error": "Error",
   "charging_runs_outcome_failed": "Failed",
   "charging_runs_outcome_ok": "OK",

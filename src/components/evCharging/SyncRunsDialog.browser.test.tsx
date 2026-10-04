@@ -1,8 +1,10 @@
-import { expect, test, vi } from 'vitest'
-import { integrationErrorMessage } from '~/lib/integrationHealthMessage'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { page } from 'vitest/browser'
+import { integrationErrorMessage, integrationHealthTitle } from '~/lib/integrationHealthMessage'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
+import { formatDateTime } from './format'
 import type { Run } from './RecentRunsTable'
 import { type RunsQuery, SyncRunsDialog } from './SyncRunsDialog'
 
@@ -73,7 +75,9 @@ test('shows the source title, state and the run table', async () => {
   await expect
     .element(overlay.getByText(m.charging_runs_description({ source: 'Zaptec' })))
     .toBeVisible()
-  await expect.element(overlay.getByText('Fungerar', { exact: true })).toBeVisible()
+  await expect
+    .element(overlay.getByText(integrationHealthTitle('ok'), { exact: true }))
+    .toBeVisible()
   await expect.element(overlay.getByRole('table')).toBeVisible()
   await expect.element(overlay.getByRole('cell', { name: /10:00/ }).first()).toBeVisible()
   await expect.element(overlay.getByText(m.charging_runs_trigger_cron())).toBeVisible()
@@ -116,9 +120,11 @@ test('a failed runs read is an error, never an empty history', async () => {
   expect(screen.getByRole('table').elements()).toHaveLength(0)
 })
 
-test('runs still loading show neither a table nor an empty history', async () => {
+test('runs still loading are an announced busy status, not a table or an empty history', async () => {
   const { screen } = await renderWithProviders(dialog({ runs: { ...loaded([]), data: undefined } }))
-  await expect.element(screen.getByRole('dialog', { name: title('Zaptec') })).toBeVisible()
+  const status = screen.getByRole('status')
+  await expect.element(status).toHaveAttribute('aria-busy', 'true')
+  await expect.element(status).toHaveTextContent(m.charging_runs_loading())
   expect(screen.getByText(m.charging_runs_empty()).elements()).toHaveLength(0)
   expect(screen.getByRole('table').elements()).toHaveLength(0)
 })
@@ -145,8 +151,42 @@ test('a failing source explains itself, since when, and the admin detail', async
       }),
     )
     .toBeVisible()
-  await expect.element(overlay.getByText(/Har inte fungerat sedan .*08:00/)).toBeVisible()
+  const since = m.charging_health_failing_since({
+    time: formatDateTime(new Date('2026-09-28T06:00:00Z')),
+  })
+  await expect.element(overlay.getByText(since, { exact: false })).toBeVisible()
   await expect.element(overlay.getByText('HTTP 401 from /oauth/token')).toBeVisible()
+  // Announced on open, not only shown.
+  await expect
+    .element(overlay)
+    .toHaveAccessibleDescription(
+      expect.stringContaining(integrationErrorMessage('auth_failed', { source: 'skoda' })),
+    )
+})
+
+// Browser tests run without app.css (Tailwind classes have no effect here), so
+// the capped height and the scrolling are checked live; this pins the
+// structure that makes them work: the table scrolls in the body, the title
+// stays outside it — on both the desktop dialog and the phone sheet.
+describe.each([
+  ['desktop dialog', 1280, 720],
+  ['phone sheet', 414, 896],
+])('%s', (_label, width, height) => {
+  beforeEach(async () => {
+    await page.viewport(width, height)
+  })
+  afterEach(async () => {
+    await page.viewport(414, 896)
+  })
+
+  test('only the body scrolls: the title stays outside it', async () => {
+    const { screen } = await renderWithProviders(dialog())
+    const heading = screen.getByRole('heading', { name: title('Zaptec') })
+    await expect.element(heading).toBeVisible()
+    const scroller = screen.getByRole('table').element().closest('.overflow-y-auto')
+    expect(scroller).not.toBeNull()
+    expect(scroller?.contains(heading.element())).toBe(false)
+  })
 })
 
 test('an ok source has no explanation box', async () => {

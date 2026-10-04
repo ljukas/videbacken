@@ -79,6 +79,7 @@
   "charging_runs_empty": "Inga körningar ännu",
   "charging_runs_empty_description": "Den första körningen sker vid nästa schemalagda synkning.",
   "charging_runs_error_title": "Kunde inte läsa körningarna",
+  "charging_runs_loading": "Läser in körningar…",
   "charging_runs_outcome_error": "Fel",
   "charging_runs_outcome_failed": "Misslyckad",
   "charging_runs_outcome_ok": "OK",
