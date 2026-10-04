@@ -129,7 +129,8 @@ The integration source list gains `emaldo` (CHECK constraints on `integration_sy
 - **Sync now** on `/charging` also runs Emaldo. The health alert lists Emaldo like the other sources, with
   sv/en messages per error code.
 - **SoC** (step 2b) is a fifth series fetched with the other four. It never gates a bucket: a minute missing from it,
-  or a value outside 0–100, stores null. Step 2b's migration clears the Emaldo watermark once, so the next runs
+  or a value outside 0–100, stores null. The request itself is part of the day, though: a refused or unparseable SoC
+  answer fails the day like any series (a day is all-or-nothing), so a broken SoC endpoint raises the Emaldo alert. Step 2b's migration clears the Emaldo watermark once, so the next runs
   re-fetch the whole history (≈9 hourly runs) and fill `battery_soc_pct`.
 - `battery_charge_ac` is **unused on this installation**: 0 in every bucket from 2026-01-20 to 2026-10-04
   (checkpoint 2, prod). It stays stored and keeps the **grid-origin** treatment below, which is conservative (it
@@ -162,8 +163,9 @@ orchestrates it through services.
    - An outflow removes energy proportionally from every part.
    - An outflow larger than the pool empties it, and the excess counts as grid-origin at the current slot's spot:
      conservative, absorbs drift.
-   - **SoC anchor** (decision 7): after each bucket with a known SoC, the pool is capped at
-     `SoC / 100 × C`. Above the cap, every part's kWh shrinks by the same factor and its spot sum stays, so
+   - **SoC anchor** (decision 7): after each bucket, the pool is capped at `SoC / 100 × C`, using the SoC
+     reading that describes the bucket's **end** (that bucket's own row or the next one: whether a row's SoC is its
+     bucket's start or end state is settled from data in step 3). Above the cap, every part's kWh shrinks by the same factor and its spot sum stays, so
      charging, standby and heating losses raise the average cost (and solar value) of what is left. Below the cap
      nothing changes: the pool never invents energy. A bucket without SoC is not capped.
    - `C` = kWh the battery delivers per 100 % SoC: a constant in `pool.ts`, measured in step 3 over all history

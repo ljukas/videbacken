@@ -372,7 +372,8 @@ test('a cleared watermark re-fetches the history and fills SoC', async () => {
 
 - [ ] Roadmap row 2b: PR link, status `PR open`; log line. Commit `docs(charging): mark solar-cost step 2b as PR open`.
 - [ ] Push; PR from `.github/PULL_REQUEST_TEMPLATE.md`. **Title:** `feat(charging): sync the home battery's state of
-  charge`. **Risks:** merge outside xx:35–xx:55, and don't press "Synka nu" or roll back during the deploy (an
+  charge`. **Risks:** merge outside xx:35–xx:55, and don't press "Synka nu" or roll back during the deploy; a
+  production build that fails after migrating leaves old code live on a cleared watermark, so fix forward fast (any
   old-code run re-fetches days without SoC; remedy: a new migration with 0015's UPDATE); the re-fetch takes ≈9 hourly
   runs; step 3's plan must be revised for the SoC pool first. Body ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
 
