@@ -55,9 +55,11 @@ Each must pass, with the result recorded in the table, before the next step star
    - `battery_charge_ac`'s meaning is settled from real data, recorded in the spec.
 2b. **After step 2b (prod).**
    - The re-fetch is done: the watermark is back at the end of yesterday, with every run `ok`.
-   - A read-only SELECT shows `battery_soc_pct` on ≥ 99 % of the buckets of every day since the first reading
-     (`SELECT count(*) FILTER (WHERE battery_soc_pct IS NULL), count(*) FROM house_energy_reading`, then per day if
-     nulls cluster), and two probe days (`data/private/emaldo/data/*.level.json`) match their stored SoC exactly.
+   - A read-only SELECT shows `battery_soc_pct` on ≥ 99 % of the buckets of every day since the first reading, per
+     Stockholm day (a 30-day block of nulls means an old-code run; a few scattered ones are Emaldo's gaps):
+     `SELECT (bucket_start AT TIME ZONE 'Europe/Stockholm')::date AS d, count(*) FILTER (WHERE battery_soc_pct IS
+     NULL) AS nulls, count(*) FROM house_energy_reading GROUP BY 1 HAVING count(*) FILTER (WHERE battery_soc_pct IS
+     NULL) > 0 ORDER BY 1`. Two probe days (`data/private/emaldo/data/*.level.json`) match their stored SoC exactly.
    - Whole days without SoC mean old code re-fetched them after 0015 ran: a `:45` run or "Synka nu" during the
      deploy's build, a production build that failed after migrating (the old deployment stays live), or a rollback.
      So: merge outside xx:35–xx:55, don't press "Synka nu" or roll back during the deploy, and if the build fails,

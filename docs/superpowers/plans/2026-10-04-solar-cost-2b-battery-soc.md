@@ -42,7 +42,8 @@ State of charge; "Data model" → `battery_soc_pct`; "Sync" → SoC; "Derivation
 - **Migrations are frozen once pushed.** `migration-guard` + schema-design approval before the first push; never
   hand-edit `drizzle/meta/`. Every Vercel deploy migrates prod.
 - **Merge timing:** the reset runs during the production build while the old deployment still serves the `:45` cron.
-  Merge outside xx:35–xx:55 so no old-code run re-fetches days without SoC. Checkpoint 2b catches it if one does.
+  Migration to promotion must not span `:45`: production builds take ≈35–45 s (2026-10-04), so merging outside
+  xx:35–xx:55 leaves a wide margin for a queued build. Checkpoint 2b catches it if an old-code run slips in.
 - Conventional Commits, subject ≤ 72 chars, one hat per commit; end every commit message with
   `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
 - Tests need the local DB: `bun run db:up && bun run db:migrate`.
@@ -138,10 +139,12 @@ test('battery SoC is optional and must be 0–100', async () => {
 -- One-off (solar-cost step 2b): clear the Emaldo day watermark so the hourly
 -- sync re-fetches the whole history and fills house_energy_reading.battery_soc_pct.
 -- Health reads last_success_at, which this leaves alone. No row (Emaldo never ran) → no-op.
--- The lease goes too (all three columns: CHECKs tie them together): a run in
--- flight while this commits loses its lease, and its outcome is discarded.
+-- A held lease gets a new token but keeps its expiry: a run in flight loses its
+-- lease (outcome discarded), and no second run starts until the lease expires.
 UPDATE "integration_sync"
-SET "last_success_started_at" = NULL, "running_since" = NULL, "lease_until" = NULL, "lease_token" = NULL
+SET
+  "last_success_started_at" = NULL,
+  "lease_token" = CASE WHEN "lease_token" IS NOT NULL THEN gen_random_uuid() END
 WHERE "source" = 'emaldo';
 ```
 

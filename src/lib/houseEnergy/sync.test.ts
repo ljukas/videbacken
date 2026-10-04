@@ -19,6 +19,7 @@ import {
   listRecentRuns,
   recordOutcome,
 } from '~/lib/services/integrationSync'
+import { LEASE_DURATION_MS } from '~/lib/services/integrationSync/policy'
 import { addDays, stockholmDayBounds } from '~/lib/time/stockholm'
 import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
@@ -721,6 +722,9 @@ test('a run in flight when migration 0015 commits cannot write the watermark bac
     { attemptId: inFlight.attemptId, trigger: 'cron', startedAt, now: NOW },
   )
   expect(await getLastSuccessStartedAt('emaldo')).toBeNull()
-  // The lease is free: the next run proceeds.
-  expect((await run(fakeEmaldo().client)).outcome).toBe('ok')
+  // The lease stays held until it expires, as after a crashed run: no overlap
+  // with the run still in flight. Then the next run proceeds.
+  expect((await run(fakeEmaldo().client)).outcome).toBe('skipped')
+  const later = new Date(startedAt.getTime() + LEASE_DURATION_MS + 1)
+  expect((await run(fakeEmaldo().client, { now: () => later })).outcome).toBe('ok')
 })
