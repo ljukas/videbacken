@@ -36,12 +36,14 @@ export type EmaldoSyncRun = RunBase & {
   bucketsStored: number
   /** Buckets the client dropped: partial series, outside the day, today's filling one. */
   droppedBuckets: number
+  /** Stored buckets without a battery SoC (missing or out of range in Emaldo's series). */
+  bucketsWithoutSoc: number
   /** Answered days without readings; what's stored is kept. */
   emptyDays: number
   /** Old days whose readings failed validation; skipped and warned. */
   rejectedDays: number
   /**
-   * Summed time of every request, the four parallel series included: busy
+   * Summed time of every request, the five parallel series included: busy
    * time, not wall-clock latency (that is `durationMs`).
    */
   fetchMs: number
@@ -63,7 +65,7 @@ const BACKFILL_LEAD_DAYS = 7
 const BACKFILL_DAYS_PER_RUN = 30
 /** No new backfill day starts once the run is this old; the next run continues. */
 const DAY_BUDGET_MS = 120_000
-/** Pause between backfill days: four requests each to an unofficial API. */
+/** Pause between backfill days: five requests each to an unofficial API. */
 const BACKFILL_PAUSE_MS = 1_000
 /**
  * Same 240 s budget as Zaptec and elpris: well under Vercel's 300 s limit, and
@@ -133,6 +135,7 @@ export async function runEmaldoSync(opts: {
       daysFetched: 0,
       bucketsStored: 0,
       droppedBuckets: 0,
+      bucketsWithoutSoc: 0,
       emptyDays: 0,
       rejectedDays: 0,
       fetchMs: 0,
@@ -160,6 +163,7 @@ export async function runEmaldoSync(opts: {
         logins: stats.logins,
         daysFetched: run.daysFetched,
         droppedBuckets: run.droppedBuckets,
+        bucketsWithoutSoc: run.bucketsWithoutSoc,
         emptyDays: run.emptyDays,
         rejectedDays: run.rejectedDays,
         backfillDaysLeft: run.backfillDaysLeft,
@@ -181,6 +185,7 @@ export async function runEmaldoSync(opts: {
       daysFetched: run.daysFetched,
       bucketsStored: run.bucketsStored,
       droppedBuckets: run.droppedBuckets,
+      bucketsWithoutSoc: run.bucketsWithoutSoc,
       emptyDays: run.emptyDays,
       rejectedDays: run.rejectedDays,
       backfillDaysLeft: run.backfillDaysLeft,
@@ -319,6 +324,7 @@ async function syncDay(
   } finally {
     run.storeMs += performance.now() - started
   }
+  run.bucketsWithoutSoc += fetched.buckets.filter((b) => b.batterySocPct === null).length
   if (run.earliestReplacedDay === null || a.day < run.earliestReplacedDay) {
     run.earliestReplacedDay = a.day
   }

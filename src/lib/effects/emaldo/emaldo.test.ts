@@ -45,6 +45,7 @@ const STATS: Record<SeriesName, string> = {
   mppt: `POST /bmt/stats/mppt-v2/day/${TEST_APP_ID}`,
   usage: `POST /bmt/stats/load/usage-v2/day/${TEST_APP_ID}`,
   battery: `POST /bmt/stats/battery-v2/day/${TEST_APP_ID}`,
+  level: `POST /bmt/stats/battery/power-level/day/${TEST_APP_ID}`,
 }
 const SECRETS = [
   TEST_USER,
@@ -219,6 +220,11 @@ describe('wire format', () => {
     expect(token).toBe(`${TEST_TOKEN}_${NOW.getTime()}000000`)
     const usage = await openRequest(f.callsTo(STATS.usage)[0])
     expect(usage.json).toContain('"offset":-3,"gmtime":')
+    // SoC: the device query and the offset, nothing else.
+    const level = await openRequest(f.callsTo(STATS.level)[0])
+    expect(level.json).toBe(
+      `{"home_id":"${HOME_ID}","id":"${DEVICE_ID}","model":"${MODEL}","offset":-3,"gmtime":${NOW.getTime()}000000}`,
+    )
   })
 })
 
@@ -232,15 +238,16 @@ describe('fetchDay', () => {
     expect(day.dayStart).toEqual(new Date('2026-06-09T22:00:00Z'))
     expect(day.dayEnd).toEqual(new Date('2026-06-10T22:00:00Z'))
     expect(f.callsTo(DEVICES)).toHaveLength(2) // the empty home first, then ours
-    expect(stats).toMatchObject({ requests: 8, retries: 0, logins: 1 }) // login, homes, 2 × list-bmt, 4 series
+    expect(stats).toMatchObject({ requests: 9, retries: 0, logins: 1 }) // login, homes, 2 × list-bmt, 5 series
+    expect(day.buckets[0].batterySocPct).toBe(1)
   })
 
-  test('a second day reuses the token and the device: four requests, no login', async () => {
+  test('a second day reuses the token and the device: five requests, no login', async () => {
     const { f, client } = server()
     await client.fetchDay(-1)
     const stats = newCallStats()
     await client.fetchDay(-2, { stats })
-    expect(stats).toMatchObject({ requests: 4, logins: 0 })
+    expect(stats).toMatchObject({ requests: 5, logins: 0 })
     expect(f.callsTo(LOGIN)).toHaveLength(1)
     expect(f.callsTo(HOMES)).toHaveLength(1)
   })
@@ -277,10 +284,10 @@ describe('session expiry (Status -12)', () => {
     state.accept = TEST_TOKEN_2 // the server has dropped the first session
     const stats = newCallStats()
     expect((await client.fetchDay(-2, { stats })).buckets).toHaveLength(288)
-    // All four series saw -12 at once; one shared re-login served them all.
+    // All five series saw -12 at once; one shared re-login served them all.
     expect(f.callsTo(LOGIN)).toHaveLength(2)
     expect(f.callsTo(HOMES)).toHaveLength(1)
-    expect(stats).toMatchObject({ logins: 1, requests: 9 }) // 4 refused + 1 login + 4 retried
+    expect(stats).toMatchObject({ logins: 1, requests: 11 }) // 5 refused + 1 login + 5 retried
     for (const n of SERIES_NAMES) expect(f.callsTo(STATS[n])).toHaveLength(3)
   })
 
@@ -380,6 +387,15 @@ describe('failures', () => {
     expect(err.message).toContain(`Status ${status}`)
     expect(err.message).toContain('app id/secret may have rotated')
     leaksNothing(err)
+  })
+
+  test('a refused SoC request fails the whole day, like any series', async () => {
+    const { f, client } = server({ [STATS.level]: () => statusReply(-1) })
+    const err = await caught(client.fetchDay(-1))
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'stats' })
+    expect(err.message).toContain('Status -1')
+    leaksNothing(err)
+    expect(f.callsTo(STATS.level)).toHaveLength(1)
   })
 
   test('a stats refusal drops the device: the next call rediscovers, keeping the token', async () => {
@@ -683,7 +699,7 @@ describe('shared re-login', () => {
     expect(f.callsTo(LOGIN)).toHaveLength(3)
   })
 
-  test('all four -12s arrive before the one shared re-login, which they all wait on', async () => {
+  test('all five -12s arrive before the one shared re-login, which they all wait on', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => {
       release = r
@@ -705,7 +721,7 @@ describe('shared re-login', () => {
     accept.value = TEST_TOKEN_2
     const day = client.fetchDay(-2)
     await loginSeen
-    expect(seen).toBe(4)
+    expect(seen).toBe(SERIES_NAMES.length)
     release()
     await expect(day).resolves.toMatchObject({ droppedBuckets: 0 })
     expect(f.callsTo(LOGIN)).toHaveLength(2)

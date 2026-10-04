@@ -19,6 +19,8 @@ export type HouseReading = {
   batteryChargeSolarKwh: number
   batteryChargeGridKwh: number
   batteryChargeAcKwh: number
+  /** Battery state of charge, % (0–100), as reported for the minute; null when missing. */
+  batterySocPct: number | null
 }
 
 const KWH_FIELDS = [
@@ -49,6 +51,7 @@ const readingColumns = {
   batteryChargeSolarKwh: houseEnergyReading.batteryChargeSolarKwh,
   batteryChargeGridKwh: houseEnergyReading.batteryChargeGridKwh,
   batteryChargeAcKwh: houseEnergyReading.batteryChargeAcKwh,
+  batterySocPct: houseEnergyReading.batterySocPct,
 }
 
 // What's wrong with `buckets` as the readings of `[startMs, endMs)`. Messages
@@ -68,6 +71,10 @@ function readingProblems(startMs: number, endMs: number, buckets: readonly House
       else if (value < 0) problems.push(`bucket ${i}: ${field} is negative`)
       else if (value >= HOUSE_BUCKET_KWH_MAX)
         problems.push(`bucket ${i}: ${field} is implausibly large`)
+    }
+    const soc = b.batterySocPct
+    if (soc !== null && !(Number.isFinite(soc) && soc >= 0 && soc <= 100)) {
+      problems.push(`bucket ${i}: batterySocPct is not a percentage`)
     }
   }
   return problems
@@ -148,6 +155,7 @@ async function insertDay(day: { dayStart: Date; dayEnd: Date }, buckets: readonl
         batteryChargeSolarKwh: b.batteryChargeSolarKwh,
         batteryChargeGridKwh: b.batteryChargeGridKwh,
         batteryChargeAcKwh: b.batteryChargeAcKwh,
+        batterySocPct: b.batterySocPct,
       })),
     )
   })

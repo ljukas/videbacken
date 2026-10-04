@@ -86,3 +86,20 @@ test('every integration source, emaldo included, passes both source CHECKs', asy
     })
   }
 })
+
+test('battery SoC is optional and must be 0–100', async () => {
+  for (const [i, batterySocPct] of [undefined, null, 0, 100, 42.5].entries()) {
+    await db
+      .insert(houseEnergyReading)
+      .values(row({ bucketStart: new Date(Date.UTC(2026, 3, 1, 11, i * 5)), batterySocPct }))
+  }
+  // NaN sorts above every number in Postgres, so `<= 100` rejects it.
+  for (const batterySocPct of [-0.001, 100.001, Number.NaN]) {
+    await expectConstraintViolation(
+      db
+        .insert(houseEnergyReading)
+        .values(row({ bucketStart: new Date('2026-04-01T12:00:00Z'), batterySocPct })),
+      'house_energy_reading_battery_soc_pct_check',
+    )
+  }
+})

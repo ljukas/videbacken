@@ -40,6 +40,7 @@ const reading = (bucketStart: Date, kwh = 0.1): HouseReading => ({
   batteryChargeSolarKwh: 0,
   batteryChargeGridKwh: 0,
   batteryChargeAcKwh: 0,
+  batterySocPct: 50,
 })
 
 /** Every 5-minute bucket of the Stockholm day (276 / 288 / 300 of them). */
@@ -232,4 +233,43 @@ test('a database failure is rethrown without any reading in it', async () => {
   expect(error.message).toContain('house_energy_reading_pkey')
   expect(error.cause).toBeUndefined()
   expect(`${error.message} ${error.stack} ${JSON.stringify(error)}`).not.toContain('0.123456')
+})
+
+test('SoC round-trips exactly, null included', async () => {
+  const d = dayOf('2026-04-01')
+  const at = (i: number) => new Date(d.dayStart.getTime() + i * FIVE_MIN)
+  const rows = [null, 0, 37.5, 100].map((batterySocPct, i) => ({
+    ...reading(at(i)),
+    batterySocPct,
+  }))
+  await replaceDay(d, rows)
+  const stored = await listReadings({ from: d.dayStart, to: d.dayEnd })
+  expect(stored.map((r) => r.batterySocPct)).toEqual([null, 0, 37.5, 100])
+})
+
+test('a bad SoC and a bad kWh in one bucket are both reported', async () => {
+  const d = dayOf('2026-04-01')
+  const err = (await replaceDay(d, [
+    { ...reading(d.dayStart), loadKwh: -1, batterySocPct: 101 },
+  ]).catch((e) => e)) as Error
+  expect(err.message).toContain('bucket 0: loadKwh')
+  expect(err.message).toContain('bucket 0: batterySocPct')
+  expect(err.message.split('; ')).toHaveLength(2)
+})
+
+test.each([
+  -0.001,
+  100.001,
+  Number.NaN,
+  Number.POSITIVE_INFINITY,
+  Number.NEGATIVE_INFINITY,
+])('a SoC of %s is a domain error naming the bucket and field only, keeping the stored day', async (batterySocPct) => {
+  const d = dayOf('2026-04-01')
+  await replaceDay(d, [reading(d.dayStart)])
+  const err = await replaceDay(d, [{ ...reading(d.dayStart), batterySocPct }]).catch((e) => e)
+  expect(err).toBeInstanceOf(HouseEnergyDomainError)
+  expect(err).toMatchObject({ code: 'INVALID_READINGS' })
+  expect(err.message).toContain('bucket 0: batterySocPct')
+  expect(err.message).not.toContain(String(batterySocPct))
+  expect((await all()).map((r) => r.batterySocPct)).toEqual([50])
 })

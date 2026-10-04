@@ -1,0 +1,2 @@
+ALTER TABLE "house_energy_reading" ADD COLUMN "battery_soc_pct" double precision;--> statement-breakpoint
+ALTER TABLE "house_energy_reading" ADD CONSTRAINT "house_energy_reading_battery_soc_pct_check" CHECK ("house_energy_reading"."battery_soc_pct" >= 0 AND "house_energy_reading"."battery_soc_pct" <= 100);

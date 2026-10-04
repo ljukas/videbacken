@@ -14,7 +14,7 @@ import {
   type SeriesName,
 } from './parse'
 
-/** The four parsed series of `day`, each with rows at `minutes[name]` (default: the whole day). */
+/** The five parsed series of `day`, each with rows at `minutes[name]` (default: the whole day). */
 function day(
   date: string,
   minutes: Partial<Record<SeriesName, number[]>> = {},
@@ -38,6 +38,7 @@ function expected(date: string, m: number): HouseBucket {
     batteryChargeSolarKwh: 84 / 12_000,
     batteryChargeGridKwh: 96 / 12_000,
     batteryChargeAcKwh: 108 / 12_000,
+    batterySocPct: k % 101,
   }
 }
 
@@ -123,6 +124,7 @@ describe('buildDay', () => {
       batteryChargeSolarKwh: 0,
       batteryChargeGridKwh: 0,
       batteryChargeAcKwh: 0,
+      batterySocPct: 0, // an empty battery is a reading, not a missing one
     })
   })
 
@@ -139,7 +141,7 @@ describe('buildDay', () => {
     expect(out.buckets[3]).toEqual(expected('2026-06-10', 15))
   })
 
-  test('a gap in all four series is just absent; a bucket missing from one series is dropped', () => {
+  test('a gap in all four energy series is just absent; a bucket missing from one is dropped', () => {
     const all = dayMinutes('2026-03-18')
     const gap = all.filter((m) => m < 180 || m >= 275) // the 95-min hole shape
     const out = buildDay(-1, day('2026-03-18', { grid: gap, mppt: gap, usage: gap, battery: gap }))
@@ -153,6 +155,63 @@ describe('buildDay', () => {
       expected('2026-03-18', 10).bucketStart,
     )
     expect(partial.droppedBuckets).toBe(1)
+  })
+
+  test('SoC is attached per minute; a missing or out-of-range value is null and the bucket stays', () => {
+    const row = (name: SeriesName, m: number) => {
+      const r: unknown[] = syntheticRow(name, m)
+      if (name === 'level' && m === 15) r[1] = -1
+      if (name === 'level' && m === 20) r[1] = 100.5
+      if (name === 'level' && m === 25) r[1] = 37.5
+      if (name === 'level' && m === 30) r[1] = 100.0000001
+      if (name === 'level' && m === 35) r[1] = -0.0000001
+      if (name === 'level' && m === 40) r[1] = 100
+      if (name === 'level' && m === 45) r[1] = 0
+      return r
+    }
+    const noLevelAt10 = dayMinutes('2026-06-10').filter((m) => m !== 10)
+    const out = buildDay(-1, day('2026-06-10', { level: noLevelAt10 }, row))
+    expect(out.buckets).toHaveLength(288)
+    expect(out.droppedBuckets).toBe(0)
+    expect(out.buckets.slice(0, 10).map((b) => b.batterySocPct)).toEqual([
+      1,
+      2,
+      null,
+      null,
+      null,
+      37.5,
+      null,
+      null,
+      100,
+      0,
+    ])
+    expect(out.buckets[287]).toEqual(expected('2026-06-10', 1435))
+  })
+
+  test('an empty SoC series keeps every energy bucket; SoC alone makes no bucket', () => {
+    const out = buildDay(-1, day('2026-06-10', { level: [] }))
+    expect(out.buckets).toHaveLength(288)
+    expect(out.buckets.every((b) => b.batterySocPct === null)).toBe(true)
+
+    const none = { grid: [], mppt: [], usage: [], battery: [] }
+    expect(buildDay(-1, day('2026-06-10', none))).toMatchObject({ buckets: [], droppedBuckets: 0 })
+
+    // SoC minutes where the energy series have none: no bucket, and not counted as dropped.
+    const morning = dayMinutes('2026-06-10').filter((m) => m <= 100)
+    const energy = { grid: morning, mppt: morning, usage: morning, battery: morning }
+    const out2 = buildDay(-1, day('2026-06-10', energy))
+    expect(out2.buckets).toHaveLength(21)
+    expect(out2.droppedBuckets).toBe(0)
+    expect(out2.buckets.at(-1)).toEqual(expected('2026-06-10', 100))
+  })
+
+  test("today's cutoff ignores the SoC series", () => {
+    const upTo = (last: number) => dayMinutes('2026-10-03').filter((m) => m <= last)
+    const energy = { grid: upTo(430), mppt: upTo(430), usage: upTo(430), battery: upTo(430) }
+    const lagging = buildDay(0, day('2026-10-03', { ...energy, level: upTo(400) }))
+    expect(lagging.buckets).toHaveLength(86)
+    expect(lagging.buckets.at(-1)?.batterySocPct).toBeNull() // 425: past the SoC series' end
+    expect(buildDay(0, day('2026-10-03', { ...energy, level: upTo(500) })).buckets).toHaveLength(86)
   })
 
   test('today drops the still-filling newest bucket, from the earliest series newest on', () => {
@@ -203,6 +262,8 @@ describe('buildDay', () => {
   test('series that disagree on the day, or a day not starting at Stockholm midnight, are refused', () => {
     const mixed = { ...day('2026-06-10'), usage: day('2026-06-11').usage }
     unexpected(() => buildDay(-1, mixed), 'stats', 'disagree')
+    const level = { ...day('2026-06-10'), level: day('2026-06-11').level }
+    unexpected(() => buildDay(-1, level), 'stats', 'disagree')
     const shifted = Object.fromEntries(
       Object.entries(day('2026-06-10')).map(([n, s]) => [
         n,
@@ -242,11 +303,24 @@ describe('parseSeries', () => {
     ['mppt', 'data.0.4', [0, 1, 2, 3]],
     ['usage', 'data.0.2', [0, 1]],
     ['battery', 'data.0.4', [0, 1, 2, 3]],
+    ['level', 'data.0.1', [0]],
   ] as const)('a short %s row is unexpected_response at %s', (name, at, row) => {
     unexpected(
       () => parseSeries(name, { ...seriesDay(name, '2026-06-10', []), data: [row] }),
       'stats',
       at,
+    )
+  })
+
+  test.each([
+    ['a string', '50'],
+    ['null', null],
+  ])('a SoC that is %s refuses the day at data.0.1', (_, value) => {
+    unexpected(
+      () => parseSeries('level', { ...seriesDay('level', '2026-06-10', []), data: [[0, value]] }),
+      'stats',
+      'data.0.1',
+      ['50'],
     )
   })
 

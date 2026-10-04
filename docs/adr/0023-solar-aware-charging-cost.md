@@ -46,8 +46,9 @@ The probe also showed:
    kWh with no house data. Re-derived from the earliest affected day when Emaldo, Zaptec or spot data change.
 4. **Car and house get the same mix** in each 5-minute step (proportional), not house-first or car-first.
 5. **The battery is an average-cost pool** run forward through history: inflows from grid and solar mix in at their
-   spot price, scaled by a measured round-trip efficiency; outflows carry the pool's current composition. A daily
-   checkpoint lets a re-derive restart from the first changed day.
+   spot price; outflows carry the pool's current composition. After each 5-minute step the pool is capped at the
+   battery's measured state of charge, keeping its cost, so losses raise the price of what is left (amended
+   2026-10-04, below). A daily checkpoint lets a re-derive restart from the first changed day.
 6. **Inside a Zaptec interval, the car's kWh are shaped by the house load's rise above its pre-session baseline**;
    the interval's kWh stay exact. Without a usable shape the spread stays uniform.
 7. **Pricing stays on read** (ADR-0020). Cash cost = grid kWh at (slot spot + fees) × VAT, battery-from-grid kWh at
@@ -69,6 +70,12 @@ The probe also showed:
   32 points below proportional.
 - **Battery energy as free.** Wrong whenever Emaldo's AI charges from the grid, which the probe caught mid-session.
 - **Cash cost only.** Hides that solar used for the car is export income given up. The owner wants both numbers.
+- **One measured round-trip efficiency** (the original decision 5, amended 2026-10-04). Checkpoint 2 measured 0.853
+  over all history, but 0.57 in Jan–Feb and 0.92–0.99 from March: in the cold, far less comes out than went in.
+  With one η and no upper bound the pool kept ≈100 kWh of phantom winter-grid energy in a ≈9 kWh battery into the
+  summer, costing summer battery energy as February grid energy. A per-month η balances each month but leaves the
+  pool unbounded inside it, and a fixed capacity cap holds the pool full all winter. Emaldo reports SoC every 5
+  minutes back to January, so the pool follows the real battery instead.
 
 ## Consequences
 
@@ -82,3 +89,11 @@ The probe also showed:
   monthly at most, so the error is small and stated.
 - A new trigger chain: Zaptec, elpris and Emaldo syncs each schedule a re-derive. A derive bug produces wrong
   mixes, not wrong raw data, so a fix plus a full re-derive repairs history.
+
+## Amendment 2026-10-04: SoC-anchored pool
+
+Decision 5 originally scaled inflows by one measured round-trip efficiency. Checkpoint 2's history showed the losses
+are seasonal and that an unbounded pool drifts far past the battery's size (Alternatives, "One measured round-trip
+efficiency"). The pool now takes inflows at full kWh and is capped at `SoC / 100 × C` after each bucket, `C` being
+the kWh the battery delivers per 100 % SoC, measured from history. The SoC series is synced as roadmap step 2b, before
+the derivation (step 3) is built.

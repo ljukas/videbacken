@@ -41,6 +41,8 @@ const SERIES_REQUEST: Record<SeriesName, { path: string; extra: Record<string, u
   mppt: { path: '/bmt/stats/mppt-v2/day/', extra: {} },
   usage: { path: '/bmt/stats/load/usage-v2/day/', extra: {} },
   battery: { path: '/bmt/stats/battery-v2/day/', extra: {} },
+  // State of charge; a refusal fails the day like any series (a day is all-or-nothing).
+  level: { path: '/bmt/stats/battery/power-level/day/', extra: {} },
 }
 
 type Device = { homeId: string; deviceId: string; model: string }

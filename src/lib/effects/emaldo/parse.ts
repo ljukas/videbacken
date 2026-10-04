@@ -4,7 +4,10 @@ import { STOCKHOLM_TIME_ZONE, stockholmDayBounds, stockholmDayOf } from '~/lib/t
 import type { EmaldoDay, HouseBucket } from './emaldo'
 import { EmaldoError, type EmaldoOp } from './errors'
 
-export const SERIES_NAMES = ['grid', 'mppt', 'usage', 'battery'] as const
+/** The series a bucket needs: a minute missing from any of them is no bucket. */
+export const ENERGY_SERIES = ['grid', 'mppt', 'usage', 'battery'] as const
+/** Every series fetched for a day: the energy series, plus the battery's state of charge. */
+export const SERIES_NAMES = [...ENERGY_SERIES, 'level'] as const
 export type SeriesName = (typeof SERIES_NAMES)[number]
 
 const BUCKET_MINUTES = 5
@@ -70,13 +73,16 @@ export function parseDevices(result: unknown): { deviceId: string; model: string
 // ---- day series -----------------------------------------------------------
 
 const minute = z.int().nonnegative().multipleOf(BUCKET_MINUTES)
-const w = z.number() // finite; a negative reading drops its bucket in `buildDay`
+// Finite. In `buildDay`, a negative energy reading drops its bucket; a SoC
+// outside 0–100 becomes null instead.
+const w = z.number()
 const rest = z.unknown() // columns we don't use may be anything
 const ROWS = {
   grid: z.tuple([minute, w, w, w], rest), // min, import, emergency import, export, …
   mppt: z.tuple([minute, w, w, w, w], rest), // min, string 1, 2, 3, third-party, …
   usage: z.tuple([minute, w, w], rest), // min, ?, load (charger included), …
   battery: z.tuple([minute, w, w, w, w], rest), // min, discharge, charge_mppt, charge_grid, charge_ac, …
+  level: z.tuple([minute, w], rest), // min, state of charge %, …
 }
 
 const dayOf = <T extends z.ZodType>(row: T) =>
@@ -112,17 +118,26 @@ export function parseSeries(name: SeriesName, result: unknown): SeriesDay {
       return collect(parse('stats', dayOf(ROWS.usage), result), (r) => [r[2]])
     case 'battery':
       return collect(parse('stats', dayOf(ROWS.battery), result), (r) => [r[1], r[2], r[3], r[4]])
+    case 'level':
+      return collect(parse('stats', dayOf(ROWS.level), result), (r) => [r[1]])
   }
 }
 
 const kwh = (watts: number) => watts / W_PER_KWH_BUCKET
 const newest = (rows: Map<number, unknown>) => (rows.size > 0 ? Math.max(...rows.keys()) : -1)
 
+/** A SoC reading, or null: SoC is optional and never drops a bucket. */
+const socOf = (cols: readonly number[] | undefined) => {
+  const pct = cols?.[0]
+  return pct !== undefined && pct >= 0 && pct <= 100 ? pct : null
+}
+
 /**
- * The four series of one day → the buckets present in all of them, inside
- * [start_time, next Stockholm midnight). Offset 0 (today) also drops the
+ * The five series of one day → the buckets present in all four energy
+ * series, inside [start_time, next Stockholm midnight), each with the SoC
+ * reported for its minute (or null). Offset 0 (today) also drops the
  * still-filling newest bucket: everything from the earliest of the four
- * series' newest minutes on.
+ * energy series' newest minutes on.
  */
 export function buildDay(offset: number, series: Record<SeriesName, SeriesDay>): EmaldoDay {
   const startTime = series.grid.startTime
@@ -135,8 +150,8 @@ export function buildDay(offset: number, series: Record<SeriesName, SeriesDay>):
     throw unexpected('stats', 'Emaldo day does not start at a Stockholm midnight')
 
   const cutoff =
-    offset === 0 ? Math.min(...SERIES_NAMES.map((n) => newest(series[n].rows))) : Infinity
-  const minutes = new Set(SERIES_NAMES.flatMap((n) => [...series[n].rows.keys()]))
+    offset === 0 ? Math.min(...ENERGY_SERIES.map((n) => newest(series[n].rows))) : Infinity
+  const minutes = new Set(ENERGY_SERIES.flatMap((n) => [...series[n].rows.keys()]))
   const buckets: HouseBucket[] = []
   for (const m of [...minutes].sort((a, b) => a - b)) {
     const at = startMs + m * 60_000
@@ -156,6 +171,7 @@ export function buildDay(offset: number, series: Record<SeriesName, SeriesDay>):
       batteryChargeSolarKwh: kwh(b[1]),
       batteryChargeGridKwh: kwh(b[2]),
       batteryChargeAcKwh: kwh(b[3]),
+      batterySocPct: socOf(series.level.rows.get(m)),
     })
   }
   return {

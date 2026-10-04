@@ -20,6 +20,8 @@ export type HouseBucket = {
   batteryChargeSolarKwh: number
   batteryChargeGridKwh: number
   batteryChargeAcKwh: number
+  /** Battery state of charge, % (0–100), as reported for the minute; null when missing or out of range. */
+  batterySocPct: number | null
 }
 
 export type EmaldoDay = {
@@ -27,10 +29,10 @@ export type EmaldoDay = {
   dayStart: Date
   /** The next Stockholm midnight (DST-aware), exclusive. */
   dayEnd: Date
-  /** Ascending; only buckets present in all four series, inside [dayStart, dayEnd). */
+  /** Ascending; only buckets present in all four energy series, inside [dayStart, dayEnd). */
   buckets: HouseBucket[]
   /**
-   * Buckets seen but not returned: in some series only, outside the day, a
+   * Buckets seen but not returned: in some energy series only, outside the day, a
    * negative reading, or (offset 0) the still-filling newest bucket.
    */
   droppedBuckets: number

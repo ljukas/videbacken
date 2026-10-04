@@ -106,7 +106,7 @@ cd ../videbacken-solar-cost-4 && bun install
 ```
 
 - [ ] **Step 2: Previous steps merged and checked.** In `docs/superpowers/roadmaps/2026-10-03-ev-charging-solar-cost.md`
-  rows 1–3 must read `checkpoint passed` (checkpoint 3: η set, derived mix plausible, owner agreed). If row 3 is only
+  rows 1–3 must read `checkpoint passed` (checkpoint 3: `C` set, pool within the measured SoC, derived mix plausible, owner agreed). If row 3 is only
   `merged`, STOP and run checkpoint 3 instead (roadmap "How a session runs a step", 1).
 
 - [ ] **Step 3: Consumed seams exist as the contract says.** Run each; every line must match:
