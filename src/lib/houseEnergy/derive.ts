@@ -34,7 +34,13 @@ export const DERIVE_VERSION = 1
 /** What this code's checkpoints are computed with. */
 const POOL_PARAMS = { capacityKwh: BATTERY_CAPACITY_KWH, deriveVersion: DERIVE_VERSION }
 
-export type DeriveResult = { days: number; sessions: number; deriveMs: number }
+/** `fromDay`: the day the derive actually started (null: no house readings). */
+export type DeriveResult = {
+  fromDay: string | null
+  days: number
+  sessions: number
+  deriveMs: number
+}
 
 /** A queued request this old means derives keep failing: worth a warning. */
 const STALE_REQUEST_MIN = 180
@@ -91,14 +97,18 @@ export async function deriveFrom(
   } else {
     opts.log.info('energy mix derived', { requestedDay: day, ...stats, deriveMs })
   }
-  return { days: stats.days, sessions: stats.sessions, deriveMs }
+  return { fromDay: stats.fromDay, days: stats.days, sessions: stats.sessions, deriveMs }
 }
 
 async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promise<DeriveStats> {
   const t0 = performance.now()
   const now = clock()
+  const today = stockholmDayOf(now.getTime())
   const queued = await energyMixService.takeDeriveRequests(tx)
-  const requested = queued !== null && queued.fromDay < day ? queued.fromDay : day
+  const earliest = queued !== null && queued.fromDay < day ? queued.fromDay : day
+  // Nothing after today has readings to derive; a later day (tomorrow's
+  // prices, a typo) would otherwise find no checkpoint and rebuild history.
+  const requested = earliest > today ? today : earliest
   const queue = {
     queuedRequests: queued?.count ?? 0,
     queuedForMin:
@@ -148,7 +158,6 @@ async function deriveLocked(day: string, clock: () => Date, tx: DeriveTx): Promi
     ))
   }
 
-  const today = stockholmDayOf(now.getTime())
   const fromMs = stockholmDayBounds(fromDay).startMs
   const toMs = Math.max(fromMs, stockholmDayBounds(today).endMs)
   // From 30 min before the window: the shaping baseline of a session starting at its midnight.

@@ -21,8 +21,30 @@ if (!url) {
   console.error('Set DATABASE_URL on the command line (see the header comment).')
   process.exit(1)
 }
-const target = new URL(url)
-console.log(`Target database: ${target.hostname}:${target.port || '5432'}${target.pathname}`)
+if (values.from !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(values.from)) {
+  console.error(`--from must be a YYYY-MM-DD day, got ${values.from}`)
+  process.exit(1)
+}
+let target: URL
+try {
+  target = new URL(url)
+} catch {
+  console.error('DATABASE_URL is not a valid URL.')
+  process.exit(1)
+}
+// The connection string's query can override what the authority says.
+const overrides = ['host', 'hostaddr', 'port', 'dbname'].filter((k) => target.searchParams.has(k))
+if (overrides.length > 0) {
+  console.error(
+    `DATABASE_URL overrides the target in its query (${overrides.join(', ')}): refused.`,
+  )
+  process.exit(1)
+}
+// The user names the Supabase project (postgres.<project-ref>): the pooler host
+// is shared by every project in the region. Never the password.
+console.log(
+  `Target database: ${decodeURIComponent(target.username)}@${target.hostname}:${target.port || '5432'}${target.pathname}`,
+)
 
 // Imported only now: ~/lib/db reads DATABASE_URL when it loads.
 const { deriveFrom } = await import('~/lib/houseEnergy/derive')
@@ -48,8 +70,8 @@ if (measured) {
 }
 
 const from = values.from ?? stockholmDayOf(first.getTime())
-if (!isStockholmDay(from)) {
-  console.error(`--from must be a YYYY-MM-DD day, got ${from}`)
+if (!isStockholmDay(from) || from > stockholmDayOf(Date.now())) {
+  console.error(`--from must be a real day, today or earlier, got ${from}`)
   process.exit(1)
 }
 if (!values.yes) {
@@ -57,7 +79,10 @@ if (!values.yes) {
   process.exit(0)
 }
 const result = await deriveFrom(from, { log: logger })
+// The derive starts a day early, and further back for a session spanning
+// midnight or a missing checkpoint: say where it actually started.
 console.log(
-  `Derived from ${from}: ${result.days} pool days, ${result.sessions} sessions, ${result.deriveMs} ms.`,
+  `Derived (requested ${from}, started ${result.fromDay}): ${result.days} pool days, ` +
+    `${result.sessions} sessions, ${result.deriveMs} ms.`,
 )
 process.exit(0)

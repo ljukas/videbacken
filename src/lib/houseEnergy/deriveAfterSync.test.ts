@@ -20,7 +20,12 @@ test('no day: nothing derived, 0 ms', async () => {
 })
 
 test("derives from the day with the run's logger and returns the time spent", async () => {
-  const derive = vi.fn<typeof deriveFrom>(async () => ({ days: 1, sessions: 1, deriveMs: 1 }))
+  const derive = vi.fn<typeof deriveFrom>(async () => ({
+    fromDay: '2026-09-28',
+    days: 1,
+    sessions: 1,
+    deriveMs: 1,
+  }))
   const { log } = fakeLog()
   const ms = await deriveAfterSync({
     source: 'elpris',
@@ -76,7 +81,7 @@ test('queues the day before deriving, so a failed derive is retried by the next 
   })
   const derive = vi.fn<typeof deriveFrom>(async (day) => {
     order.push(`derive ${day}`)
-    return { days: 1, sessions: 0, deriveMs: 1 }
+    return { fromDay: day, days: 1, sessions: 0, deriveMs: 1 }
   })
   const { log } = fakeLog()
   await deriveAfterSync({ source: 'emaldo', fromDay: '2026-09-28', log, derive, request: queue })
@@ -84,7 +89,12 @@ test('queues the day before deriving, so a failed derive is retried by the next 
 })
 
 test('a failing request is a warning; the derive still runs', async () => {
-  const derive = vi.fn<typeof deriveFrom>(async () => ({ days: 1, sessions: 0, deriveMs: 1 }))
+  const derive = vi.fn<typeof deriveFrom>(async () => ({
+    fromDay: '2026-09-28',
+    days: 1,
+    sessions: 0,
+    deriveMs: 1,
+  }))
   const failing = vi.fn(async () => {
     throw new Error('db down')
   })
