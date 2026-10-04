@@ -624,6 +624,7 @@ test('the run row records since and every counter', async () => {
     rejectedDays: 0,
     backfillDaysLeft: 0,
     bucketsWithoutSoc: 0,
+    deriveMs: expect.any(Number),
   })
 })
 

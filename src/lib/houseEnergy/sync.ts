@@ -13,6 +13,8 @@ import { earliestCountedStartAt } from '~/lib/services/evCharging'
 import { HouseEnergyDomainError, replaceDay } from '~/lib/services/houseEnergy'
 import { getLastSuccessStartedAt } from '~/lib/services/integrationSync'
 import { addDays, daysBetween, stockholmDayBounds, stockholmDayOf } from '~/lib/time/stockholm'
+import type { deriveFrom } from './derive'
+import { deriveAfterSync } from './deriveAfterSync'
 
 // Server-only (db, effects). Never import it from client code — and keep
 // `src/lib/houseEnergy/` free of an index barrel, so the client-safe modules
@@ -54,8 +56,10 @@ export type EmaldoSyncRun = RunBase & {
   logins: number
   /** Backfill days still missing after this run. */
   backfillDaysLeft: number
-  /** Earliest Stockholm day this run replaced; step 3 re-derives from it. */
+  /** Earliest Stockholm day this run replaced: where the energy-mix re-derive starts. */
   earliestReplacedDay: string | null
+  /** Time spent queuing and re-deriving the energy mix (ADR-0023). */
+  deriveMs: number
 }
 
 const SOURCE = 'emaldo'
@@ -117,7 +121,12 @@ export async function runEmaldoSync(opts: {
   now?: () => Date
   /** Overrides the 240 s deadline (tests). */
   deadlineMs?: number
-  deps?: { emaldo?: EmaldoClient; log?: Logger; sleep?: (ms: number) => Promise<void> }
+  deps?: {
+    emaldo?: EmaldoClient
+    log?: Logger
+    sleep?: (ms: number) => Promise<void>
+    deriveFrom?: typeof deriveFrom
+  }
 }): Promise<EmaldoSyncRun> {
   const client = opts.deps?.emaldo ?? emaldo
   const sleep = opts.deps?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
@@ -145,9 +154,22 @@ export async function runEmaldoSync(opts: {
       logins: 0,
       backfillDaysLeft: 0,
       earliestReplacedDay: null,
+      deriveMs: 0,
     }),
-    execute: ({ run, signal, now, log }) =>
-      syncDays(client, run, stats, { signal, now, sleep, log }),
+    execute: async ({ run, signal, now, log }) => {
+      try {
+        await syncDays(client, run, stats, { signal, now, sleep, log })
+      } finally {
+        // ADR-0023: new readings change the house mix and the pool from the
+        // earliest replaced day on — also when the run then fails part-way.
+        run.deriveMs = await deriveAfterSync({
+          source: SOURCE,
+          fromDay: run.earliestReplacedDay,
+          log,
+          derive: opts.deps?.deriveFrom,
+        })
+      }
+    },
     toRunStats: (run) => ({
       since: run.since,
       // Zaptec-era column names: pages = days fetched, sessionsSeen/upserted = readings stored.
@@ -167,6 +189,7 @@ export async function runEmaldoSync(opts: {
         emptyDays: run.emptyDays,
         rejectedDays: run.rejectedDays,
         backfillDaysLeft: run.backfillDaysLeft,
+        deriveMs: run.deriveMs,
       },
     }),
     finalize: (run) => {
@@ -190,6 +213,7 @@ export async function runEmaldoSync(opts: {
       rejectedDays: run.rejectedDays,
       backfillDaysLeft: run.backfillDaysLeft,
       earliestReplacedDay: run.earliestReplacedDay,
+      deriveMs: run.deriveMs,
     }),
   })
 }

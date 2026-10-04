@@ -5,6 +5,8 @@ import {
   elpris,
   newCallStats,
 } from '~/lib/effects/elpris'
+import type { deriveFrom } from '~/lib/houseEnergy/derive'
+import { deriveAfterSync } from '~/lib/houseEnergy/deriveAfterSync'
 import type { SyncTrigger } from '~/lib/integrationHealth'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
@@ -47,6 +49,10 @@ export type ElprisSyncRun = RunBase & {
   upserted: number
   requests: number
   retries: number
+  /** Earliest day this run stored (each was missing before): where the energy-mix re-derive starts. */
+  deriveFromDay: string | null
+  /** Time spent queuing and re-deriving the energy mix (ADR-0023). */
+  deriveMs: number
 }
 
 /** Oldest day ever planned, whatever the session history says. */
@@ -83,7 +89,12 @@ export async function runElprisSync(opts: {
   now?: () => Date
   /** Overrides the 240 s deadline (tests). */
   deadlineMs?: number
-  deps?: { elpris?: ElprisClient; log?: Logger; sleep?: (ms: number) => Promise<void> }
+  deps?: {
+    elpris?: ElprisClient
+    log?: Logger
+    sleep?: (ms: number) => Promise<void>
+    deriveFrom?: typeof deriveFrom
+  }
 }): Promise<ElprisSyncRun> {
   const client = opts.deps?.elpris ?? elpris
   const sleep = opts.deps?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
@@ -109,9 +120,24 @@ export async function runElprisSync(opts: {
       upserted: 0,
       requests: 0,
       retries: 0,
+      deriveFromDay: null,
+      deriveMs: 0,
     }),
-    execute: ({ run, signal, now, log }) =>
-      fetchMissingDays(client, run, stats, { signal, now, sleep, log }),
+    execute: async ({ run, signal, now, log }) => {
+      try {
+        await fetchMissingDays(client, run, stats, { signal, now, sleep, log })
+      } finally {
+        // ADR-0023: prices change the pool's value and the mix's battery spots
+        // from the earliest newly filled day on — also when the run then fails:
+        // a stored day is never "missing" again, so it would not re-trigger.
+        run.deriveMs = await deriveAfterSync({
+          source: 'elpris',
+          fromDay: run.deriveFromDay,
+          log,
+          derive: opts.deps?.deriveFrom,
+        })
+      }
+    },
     toRunStats: (run) => ({
       since: run.since,
       // Zaptec-era column names: pages = day requests, sessionsSeen = slots parsed.
@@ -129,6 +155,7 @@ export async function runElprisSync(opts: {
         notPublished: run.notPublished,
         gaps: run.gaps,
         rejected: run.rejected,
+        deriveMs: run.deriveMs,
       },
     }),
     finalize: (run) => {
@@ -148,6 +175,8 @@ export async function runElprisSync(opts: {
       upserted: run.upserted,
       requests: run.requests,
       retries: run.retries,
+      deriveFromDay: run.deriveFromDay,
+      deriveMs: run.deriveMs,
     }),
   })
 }
@@ -217,6 +246,7 @@ async function fetchMissingDays(
     run.importMs += performance.now() - importStart
     run.daysFetched++
     run.upserted += written
+    if (run.deriveFromDay === null || day < run.deriveFromDay) run.deriveFromDay = day
   }
 
   if (missingRecent.length > 0) {

@@ -280,6 +280,7 @@ export const evChargingRouter = {
         // Summed request time over the five parallel series: busy time, not latency.
         context.timings.emaldoFetchMs = run.fetchMs
         context.timings.emaldoStoreMs = run.storeMs
+        context.timings.emaldoDeriveMs = run.deriveMs
       }
       // Counts only: readings never leave the server (ADR-0023).
       return { outcome: run.outcome, code: run.code, upserted: run.bucketsStored }
@@ -301,6 +302,7 @@ export const evChargingRouter = {
         context.timings.elprisSyncMs = run.durationMs
         context.timings.elprisFetchMs = run.fetchMs
         context.timings.elprisImportMs = run.importMs
+        context.timings.elprisDeriveMs = run.deriveMs
       }
       return { outcome: run.outcome, code: run.code, upserted: run.upserted }
     }
@@ -309,6 +311,7 @@ export const evChargingRouter = {
       context.timings.zaptecSyncMs = run.durationMs
       context.timings.zaptecFetchMs = run.fetchMs
       context.timings.zaptecImportMs = run.importMs
+      context.timings.zaptecDeriveMs = run.deriveMs
     }
     return { outcome: run.outcome, code: run.code, upserted: run.upserted }
   }),
