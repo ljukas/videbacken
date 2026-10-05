@@ -152,3 +152,19 @@ has the same corrections inline.
   `credentials_unreadable`.
 - The grid watcher reads `facilityId` through the resolver. An unreadable row is `failed` / `credentials_unreadable`,
   nothing is fetched, and the run line logs at error.
+
+## Amendment (2026-10-05): step 3 brainstorm
+
+The [spec](../superpowers/specs/2026-10-05-charging-settings-design.md) has the detail ("Credentials per source",
+"Step 3a", "Step 3b").
+
+- **Per source, all fields together.** A save over an unreadable row must fill every field of that source
+  (`REENTER_ALL_FIELDS`); otherwise the unsent fields would silently fall back to env. Over a readable row, a blank
+  field keeps its stored value, as before.
+- **Name the wrong field.** `INVALID_FIELD` lists every invalid field at once. A failed sync stores the credential
+  field names the vendor's answer points at (`suspect_fields text[]` on `integration_sync` and
+  `integration_sync_run`, names only). Each client sets them from its own status handling. Storing the HTTP status
+  and mapping it in the UI was rejected: it spreads vendor rules into the client.
+- **A refused Emaldo login flags `user` + `password`**, even though a rotated app secret (which encrypts the login
+  body) can cause it too. The run message names both causes.
+- **Step 3 ships as two PRs:** 3a (server) and 3b (UI).

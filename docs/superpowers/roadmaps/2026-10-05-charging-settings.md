@@ -11,7 +11,8 @@ edits. A step starts only when the previous step's checkpoint has passed.
 |---|---|---|---|---|---|
 | 1 | Settings page: move the tariff card and Datakällor to `/charging/settings` (admin-only), with nav, links and emails | [plan](../plans/2026-10-05-charging-settings-1-move.md) | [#90](https://github.com/ljukas/videbacken/pull/90) | checkpoint passed | 2026-10-05: owner checked the settings page on prod; the member redirect was verified locally |
 | 2 | Credential store and resolver (table, crypto, service, per-field resolver, adapters, env docs; no UI) | [plan](../plans/2026-10-05-charging-settings-2-store.md) | [#96](https://github.com/ljukas/videbacken/pull/96) | checkpoint passed | 2026-10-05: after the deploy, all four sources ran `ok` (Emaldo cron; Škoda, Zaptec, elpris via "Synka nu"); Škoda's geofence was on (home point from env via the resolver); `integration_credential` exists, is empty, RLS on |
-| 3 | Credentials UI (dialog per source, grid card, save → sync, remove; copy, runbook) | written when step 3 starts | — | not started | — |
+| 3a | Credentials server: save rules (`INVALID_FIELD` lists every field, `REENTER_ALL_FIELDS`), suspect fields per run (migration + client mappings), `credentials` procedures; no UI | [plan](../plans/2026-10-05-charging-settings-3a-server.md) | — | in progress | — (checked with 3b) |
+| 3b | Credentials UI (key button per tile, dialog, grid card, save → sync, remove; copy, runbook) | written when step 3b starts | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
@@ -47,7 +48,8 @@ If a step changes a design decision, amend the spec and ADR-0026 in that step's 
    - With the key set and no stored rows, all four sources stay `ok` through one cron cycle of each. Nothing
      changes.
    - A read-only SELECT shows `integration_credential` exists and is empty.
-3. **After step 3 (prod).**
+3. **After step 3b (prod).** Step 3a has no checkpoint of its own: it changes no behavior an admin can see except the
+   stored suspect fields, which 3b shows.
    - The owner pastes the current Škoda key in the dialog. The tile shows "Sparad i appen", the post-save sync is
      `ok`, and the key-expiry date is unchanged.
    - "Ta bort sparade uppgifter" drops back to the env var, and the next sync is still `ok`.
