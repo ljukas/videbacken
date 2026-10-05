@@ -9,7 +9,7 @@ edits. A step starts only when the previous step's checkpoint has passed.
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Settings page: move the tariff card and Datakällor to `/charging/settings` (admin-only), with nav, links and emails | [plan](../plans/2026-10-05-charging-settings-1-move.md) | [#90](https://github.com/ljukas/videbacken/pull/90) | PR open | — |
+| 1 | Settings page: move the tariff card and Datakällor to `/charging/settings` (admin-only), with nav, links and emails | [plan](../plans/2026-10-05-charging-settings-1-move.md) | [#90](https://github.com/ljukas/videbacken/pull/90) | merged | — |
 | 2 | Credential store and resolver (table, crypto, service, per-field resolver, adapters; no UI) | written when step 2 starts | — | not started | — |
 | 3 | Credentials UI (dialog per source, grid card, save → sync, remove; copy, runbook, env docs) | written when step 3 starts | — | not started | — |
 
@@ -17,9 +17,11 @@ Status values: `not started` → `in progress` → `PR open` → `merged` → `c
 
 ## Owner prerequisites
 
-- **Before step 2 merges:** `CREDENTIALS_ENCRYPTION_KEY` (`openssl rand -base64 32`) is set in Vercel
-  **Production** (sensitive) and in `.env.local`. Preview gets its own key only if credentials are ever stored
-  there; Škoda and Emaldo must never be.
+- ✅ **Before step 2 merges** (done 2026-10-05): `CREDENTIALS_ENCRYPTION_KEY` (`openssl rand -base64 32`) is set in
+  Vercel **Production** (type `sensitive`, never printed or stored elsewhere, so it can't be read back) and a
+  separate local key in the main checkout's `.env.local`. Preview gets its own key only if credentials are ever
+  stored there; Škoda and Emaldo must never be. Losing the prod key only means re-entering the stored credentials
+  (ADR-0026, fail closed).
 
 ## How a session runs a step
 
