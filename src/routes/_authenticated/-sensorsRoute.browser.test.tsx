@@ -30,8 +30,9 @@ const device: Device = {
   location: null,
   displayName: 'Sensor 34cd',
   batteryPct: 88,
-  lastSeenAt: new Date(),
-  latest: { temperatureC: 21.7, humidityPct: 46, recordedAt: new Date() },
+  // Hours ago, not now: "seen 0 s ago" vs "1 s ago" would differ between two renders.
+  lastSeenAt: new Date(Date.now() - 2 * 3_600_000),
+  latest: { temperatureC: 21.7, humidityPct: 46, recordedAt: new Date(Date.now() - 2 * 3_600_000) },
 }
 const noSeries = { buckets: [], bucketSec: 900 }
 

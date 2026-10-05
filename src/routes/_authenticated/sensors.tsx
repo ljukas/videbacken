@@ -98,6 +98,8 @@ function SensorsPage() {
     setLoadedRange(range)
   }
   const shownRange = seriesStale ? loadedRange : range
+  const chartsPending = seriesPending || devicesPending
+  const chartsReady = series !== undefined && devices !== undefined
 
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   function toggle(id: string) {
@@ -209,26 +211,28 @@ function SensorsPage() {
       <LoadErrorAlert title={m.sensors_series_error_title()} query={seriesResult} />
       {seriesFailed ? null : (
         <>
-          <ChartSection
-            title={m.sensors_temp_chart_title()}
-            name="sensors-temp-chart"
-            loading={seriesPending || devicesPending}
-            ready={series !== undefined && devices !== undefined}
-            stale={seriesStale}
-            hasData={hasData}
-          >
-            <ClimateChart devices={tempDevices} unit="°C" formatTick={formatTick} />
+          <ChartSection title={m.sensors_temp_chart_title()}>
+            <SectionSkeleton
+              name="sensors-temp-chart"
+              loading={chartsPending}
+              fallbackHeight="260px"
+            >
+              <ChartBody ready={chartsReady} stale={seriesStale} hasData={hasData}>
+                <ClimateChart devices={tempDevices} unit="°C" formatTick={formatTick} />
+              </ChartBody>
+            </SectionSkeleton>
           </ChartSection>
 
-          <ChartSection
-            title={m.sensors_humidity_chart_title()}
-            name="sensors-hum-chart"
-            loading={seriesPending || devicesPending}
-            ready={series !== undefined && devices !== undefined}
-            stale={seriesStale}
-            hasData={hasData}
-          >
-            <ClimateChart devices={humDevices} unit="%" formatTick={formatTick} />
+          <ChartSection title={m.sensors_humidity_chart_title()}>
+            <SectionSkeleton
+              name="sensors-hum-chart"
+              loading={chartsPending}
+              fallbackHeight="260px"
+            >
+              <ChartBody ready={chartsReady} stale={seriesStale} hasData={hasData}>
+                <ClimateChart devices={humDevices} unit="%" formatTick={formatTick} />
+              </ChartBody>
+            </SectionSkeleton>
           </ChartSection>
         </>
       )}
@@ -257,48 +261,45 @@ function SensorsHeading() {
   )
 }
 
-// The title stays real text; only the chart area is a skeleton while loading.
-// Not `ready` (nothing to show, before the skeleton or the alert takes over):
-// an empty area, never "no data".
-function ChartSection({
-  title,
-  name,
-  loading,
+// The title stays real text; only the chart area (ChartBody) is a skeleton
+// while loading.
+function ChartSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="font-medium text-sm">{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+// Not `ready` (nothing to show, before the skeleton or the alert takes over): an
+// empty 260 px area, never "no data". `stale`: the previous range's chart while
+// the next one loads.
+function ChartBody({
   ready,
   stale,
   hasData,
   children,
 }: {
-  title: string
-  name: string
-  loading: boolean
   ready: boolean
   stale: boolean
   hasData: boolean
   children: React.ReactNode
 }) {
+  if (!ready) return <div className="h-[260px]" />
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="font-medium text-sm">{title}</h2>
-      <SectionSkeleton name={name} loading={loading} fallbackHeight="260px">
-        {!ready ? (
-          <div className="h-[260px]" />
-        ) : (
-          <div
-            aria-busy={stale}
-            className={stale ? 'opacity-60 transition-opacity' : 'transition-opacity'}
-          >
-            {hasData ? (
-              children
-            ) : (
-              <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
-                {m.sensors_chart_empty()}
-              </div>
-            )}
-          </div>
-        )}
-      </SectionSkeleton>
-    </section>
+    <div
+      aria-busy={stale}
+      className={stale ? 'opacity-60 transition-opacity' : 'transition-opacity'}
+    >
+      {hasData ? (
+        children
+      ) : (
+        <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
+          {m.sensors_chart_empty()}
+        </div>
+      )}
+    </div>
   )
 }
 
