@@ -200,8 +200,11 @@ is memoized **per HTTP request**: once per SSR render, and once per RPC.
     it's worth it.
 - **The memo keeps ADR-0017's guarantee.** It never outlives one HTTP request, so a revoked user is still rejected
   on the next request (an SSR render already in flight finishes its reads; it never mutates). A short cross-request cache of the user lookup was rejected because it would delay revocation.
-- **The pool's state goes in the `rpc timing` line** (`poolTotal`, `poolIdle`, `poolWaiting`). The remaining burst
-  cost (§Context 3) can then be fixed from evidence.
+- **The pool's state goes in the `rpc timing` line**, so the remaining burst cost (§Context 3) is fixed from evidence:
+  `poolTotal` / `poolIdle` / `poolWaiting` as the request found the pool, and `poolOpened` / `poolPeakWaiting` for
+  what it did while the request ran (instance-wide, so a request also sees its burst's neighbours). The lifetime pair
+  tells the fixes apart: connections opened (keep them warm) vs. a queue (pool size). A start-of-request sample can't
+  see a burst's queue, which forms after every request in it has started.
 
 **Where the line is.** Merge reads that share a source table and a refresh rhythm. Don't merge across concerns
 whose failures should stay apart: `overview` and `costOverview` stay separate so a price problem blanks only the

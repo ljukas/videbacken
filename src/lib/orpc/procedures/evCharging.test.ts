@@ -438,7 +438,7 @@ test('vehicleStateLatest is admin-only and null before any poll', async () => {
   ).toBeNull()
 })
 
-test('syncStatuses and recentRuns take a source', async () => {
+test('syncStatuses and recentRuns report each source’s own health and runs', async () => {
   await signIn('admin')
   await call(evChargingRouter.syncNow, { source: 'elpris' }, { context: baseContext() })
 
@@ -994,7 +994,7 @@ test('syncNow with source emaldo is forbidden for a non-admin user', async () =>
   ).rejects.toMatchObject({ code: 'FORBIDDEN' })
 })
 
-test('syncStatuses and recentRuns take emaldo', async () => {
+test('syncStatuses and recentRuns report Emaldo’s own health and runs', async () => {
   await signIn('admin')
   await call(evChargingRouter.syncNow, { source: 'emaldo' }, { context: baseContext() })
   const health = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })

@@ -267,7 +267,13 @@ test('the sources’ state failed to load: an error with a retry, not just "Okä
   const { screen } = await renderSettings('', {
     prepare: (qc) => qc.removeQueries({ queryKey: syncHealthQuery.queryKey }),
   })
-  await expect.element(screen.getByText(m.charging_sources_error_title())).toBeVisible()
+  const alert = screen.getByText(m.charging_sources_error_title())
+  await expect.element(alert).toBeVisible()
+  // Above the tiles, so a phone shows it without scrolling past four unknowns.
+  const sources = screen.getByRole('heading', sourcesHeading)
+  expect(
+    alert.element().compareDocumentPosition(sources.element()) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0)
 })
 
 test('tariffs still loading: the tariff card is a skeleton, and the edit dialog stays in the URL', async () => {

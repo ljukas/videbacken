@@ -41,9 +41,10 @@ the step needs a short brainstorm before its plan.
 3. **After step 3 (prod).** An admin `/charging` client navigation makes 6 oRPC requests and `/charging/settings`
    5, with no `sessionCosts` waterfall (re-measured baseline in [step 3 notes](#step-3-notes); a stale `user/me`
    refresh isn't counted). The `rpc timing`
-   lines carry `poolTotal`, `poolIdle` and `poolWaiting`. Record what a navigation's burst shows. If the gauges
-   point at opening connections or at queueing, add the pool fix as a new row; otherwise the checkpoint passes
-   without one.
+   lines carry the pool's start state (`poolTotal`, `poolIdle`, `poolWaiting`) and what it did during the request
+   (`poolOpened`, `poolPeakWaiting`; read these). Record what a navigation's burst shows. If they point at opening
+   connections (`poolOpened` > 0) or at queueing (`poolPeakWaiting` > 0), add the pool fix as a new row; otherwise the
+   checkpoint passes without one. Only the app's pool shows here, not Supavisor's own queue.
 4. **After step 4 (build).** The form chunk no longer contains `country-flag-icons` or `libphonenumber-js` except on
    pages with a phone field. `/charging` adds at most ~245 KB gz beyond the entry (from ~361 after step 1, which
    added ~27 KB gz of skeleton bones). `/sensors` and `/users` load only their own bones.

@@ -150,6 +150,9 @@ function ChargingSettingsPage() {
         </div>
       </header>
 
+      {/* One read covers every source: when it fails, say so with a retry,
+          above the tiles that then read "Okänd status" (ADR-0016). */}
+      <LoadErrorAlert title={m.charging_sources_error_title()} query={healthResult} />
       <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
         <SyncSourcesPanel
           entries={[
@@ -182,9 +185,6 @@ function ChargingSettingsPage() {
           onCloseHistory={close}
         />
       </SectionSkeleton>
-      {/* One read covers every source: when it fails, say so with a retry
-          rather than leaving four tiles at "Okänd status" (ADR-0016). */}
-      <LoadErrorAlert title={m.charging_sources_error_title()} query={healthResult} />
 
       <SectionSkeleton
         name="charging-tariffs"
