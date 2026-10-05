@@ -55,7 +55,7 @@ src/
     api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), emaldo-sync.ts hourly at :45, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
-    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging, sensors
+    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging/{index,patterns,economy,settings (admin-only: Datakällor + tariffs)}, sensors
   lib/
     auth.ts / authClient.ts     betterAuth() (drizzleAdapter + google + magicLink + admin; allowlist gate) / createAuthClient()
     getSession.ts               server fn wrapping auth.api.getSession()
