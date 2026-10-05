@@ -1,7 +1,7 @@
 {
   "name": "videbacken",
   "private": true,
-  "sideEffects": false,
+  "sideEffects": ["./src/bones/registry.ts"],
   "type": "module",
   "scripts": {
     "dev": "vite dev",
