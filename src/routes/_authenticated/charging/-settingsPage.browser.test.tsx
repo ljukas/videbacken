@@ -37,17 +37,13 @@ const TARIFF = {
   updatedAt: new Date('2026-01-01T00:00:00Z'),
 }
 
+const runsKey = orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey
+
 function seed(qc: QueryClient, opts: { coverage?: boolean; adminReads?: boolean } = {}) {
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF] as never)
   seedSourcesHealth(qc)
-  for (const source of ['elpris', 'skoda', 'emaldo'] as const) {
-    qc.setQueryData(
-      orpc.evCharging.recentRuns.queryOptions({ input: { source, limit: 20 } }).queryKey,
-      [],
-    )
-  }
   if (opts.adminReads !== false)
-    qc.setQueryData(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey, [])
+    qc.setQueryData(runsKey, { zaptec: [], elpris: [], skoda: [], emaldo: [] } as never)
   qc.setQueryData(orpc.evCharging.vehicleStateLatest.queryOptions().queryKey, null)
   if (opts.coverage !== false && opts.adminReads !== false)
     qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
@@ -119,9 +115,7 @@ test('a household member is redirected to the overview, with no settings UI', as
   // The admin-only reads are left unseeded, so a fired read would leave a cache entry.
   const { screen, router, qc } = await renderSettings('', { role: 'user', adminReads: false })
   await expect.element(screen.getByText('overview stub')).toBeVisible()
-  expect(
-    qc.getQueryState(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey),
-  ).toBeUndefined()
+  expect(qc.getQueryState(runsKey)).toBeUndefined()
   expect(
     qc.getQueryState(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey),
   ).toBeUndefined()

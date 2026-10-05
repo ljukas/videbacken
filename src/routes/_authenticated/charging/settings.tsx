@@ -43,18 +43,7 @@ type SettingsDialog = NonNullable<SettingsSearch['dialog']>
 
 const RECENT_RUNS = 20
 
-const runsQueries = {
-  zaptec: orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
-  elpris: orpc.evCharging.recentRuns.queryOptions({
-    input: { source: 'elpris', limit: RECENT_RUNS },
-  }),
-  skoda: orpc.evCharging.recentRuns.queryOptions({
-    input: { source: 'skoda', limit: RECENT_RUNS },
-  }),
-  emaldo: orpc.evCharging.recentRuns.queryOptions({
-    input: { source: 'emaldo', limit: RECENT_RUNS },
-  }),
-} satisfies Record<IntegrationSource, unknown>
+const runsQuery = orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } })
 const vehicleCoverageQuery = orpc.evCharging.vehicleRecordCoverage.queryOptions()
 const vehicleLatestQuery = orpc.evCharging.vehicleStateLatest.queryOptions()
 
@@ -81,7 +70,7 @@ export const Route = createFileRoute('/_authenticated/charging/settings')({
   loader: async ({ context: { queryClient } }) => {
     await loadRouteData(queryClient, {
       critical: [syncHealthQuery, orpc.tariff.list.queryOptions()],
-      deferred: [...Object.values(runsQueries), vehicleCoverageQuery, vehicleLatestQuery],
+      deferred: [runsQuery, vehicleCoverageQuery, vehicleLatestQuery],
     })
   },
   component: ChargingSettingsPage,
@@ -136,10 +125,12 @@ function ChargingSettingsPage() {
   // Datakällor waits for the sources' state: a tile without one would read
   // "Okänd status", which is not the same as still loading (ADR-0016).
   const sourcesPending = firstLoadPending(healthResult)
-  const zaptecRuns = useQuery(runsQueries.zaptec)
-  const pricesRuns = useQuery(runsQueries.elpris)
-  const skodaRuns = useQuery(runsQueries.skoda)
-  const emaldoRuns = useQuery(runsQueries.emaldo)
+  // Every source's history is one read; each tile reads its own slice, and a
+  // failed read shows on each history with its retry.
+  const zaptecRuns = useQuery({ ...runsQuery, select: (runs) => runs.zaptec })
+  const pricesRuns = useQuery({ ...runsQuery, select: (runs) => runs.elpris })
+  const skodaRuns = useQuery({ ...runsQuery, select: (runs) => runs.skoda })
+  const emaldoRuns = useQuery({ ...runsQuery, select: (runs) => runs.emaldo })
   const vehicleCoverage = useQuery(vehicleCoverageQuery)
   const vehicleLatest = useQuery(vehicleLatestQuery)
 

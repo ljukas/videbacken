@@ -11,6 +11,7 @@ import {
   getHealth,
   getLastSuccessStartedAt,
   listRecentRuns,
+  listRecentRunsBySource,
   recordOutcome,
   reportProgress,
 } from './integrationSync'
@@ -476,4 +477,26 @@ test('getAllHealth gives each source its own row: state, progress and admin deta
   expect(member.zaptec.adminDetail).toBeNull()
   expect(member.skoda.adminDetail).toBeNull()
   expect(member.skoda.progress).toEqual({ done: 3, total: 9 })
+})
+
+test('listRecentRunsBySource returns each source’s newest runs, at most `limit` each', async () => {
+  // Three Zaptec runs and one elpris run, a second apart.
+  for (const [i, source] of (['zaptec', 'zaptec', 'zaptec', 'elpris'] as const).entries()) {
+    const lease = await beginAttempt(source, { now: at(i * 1000) })
+    if (!lease.acquired) throw new Error('expected the lease')
+    await recordOutcome(source, ok, {
+      attemptId: lease.attemptId,
+      trigger: 'cron',
+      startedAt: at(i * 1000),
+      now: at(i * 1000 + 500),
+    })
+  }
+  const runs = await listRecentRunsBySource({ limit: 2 })
+  expect(Object.keys(runs).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  expect(runs.zaptec.map((r) => r.startedAt)).toEqual([at(2000), at(1000)])
+  expect(runs.elpris.map((r) => r.startedAt)).toEqual([at(3000)])
+  expect(runs.skoda).toEqual([])
+  expect(runs.emaldo).toEqual([])
+  // Same row shape as the single-source read.
+  expect(runs.zaptec[0]).toEqual((await listRecentRuns('zaptec', { limit: 1 }))[0])
 })

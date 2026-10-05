@@ -275,16 +275,10 @@ export const evChargingRouter = {
   // The Škoda tile: when the poll last heard from the car (ADR-0022). Times only.
   vehicleStateLatest: adminProcedure.handler(() => vehicleStateService.latestSnapshot()),
 
+  // Each source's last runs in one read (the settings page's histories, ADR-0025 §5).
   recentRuns: adminProcedure
-    .input(
-      z.object({
-        source: chargingSource.default('zaptec'),
-        limit: z.number().int().min(1).max(50).default(20),
-      }),
-    )
-    .handler(({ input }) =>
-      integrationSyncService.listRecentRuns(input.source, { limit: input.limit }),
-    ),
+    .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }))
+    .handler(({ input }) => integrationSyncService.listRecentRunsBySource({ limit: input.limit })),
 
   // Manual sync trigger for one source (default Zaptec). The page's "Synka
   // nu" fires one call per source (sessions, prices, house energy) in
