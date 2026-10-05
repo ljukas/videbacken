@@ -89,6 +89,15 @@ function SensorsPage() {
   const seriesPending = firstLoadPending(seriesResult)
   const series = loadFailed(seriesResult) ? undefined : seriesResult.data
   const seriesFailed = hydrated && loadFailed(seriesResult)
+  // While a new range loads, the previous range's chart stays up (keepPreviousData):
+  // dimmed, and labelled as the range it shows. Set during render: React's
+  // pattern for state derived from a changing value.
+  const seriesStale = series !== undefined && seriesResult.isPlaceholderData
+  const [loadedRange, setLoadedRange] = useState(range)
+  if (seriesResult.data && !seriesResult.isPlaceholderData && loadedRange !== range) {
+    setLoadedRange(range)
+  }
+  const shownRange = seriesStale ? loadedRange : range
 
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   function toggle(id: string) {
@@ -105,7 +114,7 @@ function SensorsPage() {
 
   const buckets = series?.buckets ?? []
   const bucketSec = series?.bucketSec ?? 0
-  const formatTick = useMemo(() => makeTickFormatter(range, getIntlLocale()), [range])
+  const formatTick = useMemo(() => makeTickFormatter(shownRange, getIntlLocale()), [shownRange])
 
   // Each metric gets its own per-device series (with outage breaks inserted by
   // toDeviceSeries). Colors derive from the FULL roster position (stable order
@@ -180,7 +189,7 @@ function SensorsPage() {
 
       <div className="flex flex-col gap-3">
         <RangeSelector value={range} onChange={setRange} />
-        <SectionSkeleton name="sensors-tiles" loading={devicesPending} fallbackHeight="10rem">
+        <SectionSkeleton name="sensors-tiles" loading={devicesPending} fallbackHeight="13rem">
           {devices ? (
             <div className="flex flex-col gap-6">
               <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
@@ -205,6 +214,7 @@ function SensorsPage() {
             name="sensors-temp-chart"
             loading={seriesPending || devicesPending}
             ready={series !== undefined && devices !== undefined}
+            stale={seriesStale}
             hasData={hasData}
           >
             <ClimateChart devices={tempDevices} unit="°C" formatTick={formatTick} />
@@ -215,6 +225,7 @@ function SensorsPage() {
             name="sensors-hum-chart"
             loading={seriesPending || devicesPending}
             ready={series !== undefined && devices !== undefined}
+            stale={seriesStale}
             hasData={hasData}
           >
             <ClimateChart devices={humDevices} unit="%" formatTick={formatTick} />
@@ -254,6 +265,7 @@ function ChartSection({
   name,
   loading,
   ready,
+  stale,
   hasData,
   children,
 }: {
@@ -261,6 +273,7 @@ function ChartSection({
   name: string
   loading: boolean
   ready: boolean
+  stale: boolean
   hasData: boolean
   children: React.ReactNode
 }) {
@@ -268,11 +281,20 @@ function ChartSection({
     <section className="flex flex-col gap-2">
       <h2 className="font-medium text-sm">{title}</h2>
       <SectionSkeleton name={name} loading={loading} fallbackHeight="260px">
-        {!ready ? null : hasData ? (
-          children
+        {!ready ? (
+          <div className="h-[260px]" />
         ) : (
-          <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
-            {m.sensors_chart_empty()}
+          <div
+            aria-busy={stale}
+            className={stale ? 'opacity-60 transition-opacity' : 'transition-opacity'}
+          >
+            {hasData ? (
+              children
+            ) : (
+              <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
+                {m.sensors_chart_empty()}
+              </div>
+            )}
           </div>
         )}
       </SectionSkeleton>

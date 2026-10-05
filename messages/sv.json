@@ -375,7 +375,7 @@
   "sensors_empty_description": "Utlös en sensor så dyker den upp här.",
   "sensors_empty_title": "Inga sensorer ännu",
   "sensors_devices_error_title": "Sensorerna kunde inte hämtas",
-  "sensors_series_error_title": "Mätvärdena kunde inte hämtas",
+  "sensors_series_error_title": "Diagrammen kunde inte hämtas",
   "sensors_error_device_not_found": "Sensorn finns inte längre",
   "sensors_field_location": "Plats",
   "sensors_field_name": "Namn",

@@ -181,3 +181,32 @@ test.each([
   expect(server).not.toContain(m.sensors_chart_empty())
   expect(server).not.toContain(m.sensors_empty_title())
 })
+
+test("a range switch keeps the shown range's chart, dimmed, with that range's tick labels", async () => {
+  const HOUR = 3_600_000
+  const t0 = Date.now() - 24 * HOUR
+  const buckets = Array.from({ length: 24 }, (_, i) => ({
+    t: t0 + i * HOUR,
+    perDevice: { a: { tempAvg: 21 + (i % 3) * 0.2, humAvg: 45 } },
+  }))
+  const yearKey = orpc.sensor.series.queryOptions({ input: { range: '1y' } }).queryKey
+  const { screen } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [device])
+    qc.setQueryData(seriesKey, { buckets, bucketSec: 3600 })
+    pendingForever(qc, yearKey)
+  })
+  // The x-axis ticks: the y-axis ones carry the unit ("21.0°C", "45%").
+  const xTicks = () =>
+    [...document.querySelectorAll('.recharts-cartesian-axis-tick-value')]
+      .map((e) => e.textContent ?? '')
+      .filter((text) => !text.endsWith('°C') && !text.endsWith('%'))
+  // The chart measures its container before drawing axes: give it time.
+  await expect.poll(() => xTicks().length, { timeout: 5000 }).toBeGreaterThan(0)
+  expect(document.querySelector('[aria-busy="true"]')).toBeNull()
+
+  await screen.getByRole('radio', { name: m.sensors_range_1y() }).click()
+  // The 24 h data stays up while the year loads: dimmed, and still labelled as hours.
+  await expect.poll(() => document.querySelectorAll('[aria-busy="true"]').length).toBe(2)
+  expect(xTicks().length).toBeGreaterThan(0)
+  for (const tick of xTicks()) expect(tick).toMatch(/\d{1,2}[:.]\d{2}/)
+})

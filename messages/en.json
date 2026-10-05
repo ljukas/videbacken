@@ -375,7 +375,7 @@
   "sensors_empty_description": "Trigger a sensor and it will appear here.",
   "sensors_empty_title": "No sensors yet",
   "sensors_devices_error_title": "Couldn't load the sensors",
-  "sensors_series_error_title": "Couldn't load the readings",
+  "sensors_series_error_title": "Couldn't load the charts",
   "sensors_error_device_not_found": "That sensor no longer exists",
   "sensors_field_location": "Location",
   "sensors_field_name": "Name",
