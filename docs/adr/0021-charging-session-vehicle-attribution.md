@@ -41,7 +41,10 @@ figures agree too loosely to use, and the planned peak-power hint fails because 
 5. **The CSV is parsed in the browser.** Only the needed fields go to an admin RPC as structured rows: no file bytes
    through a Vercel Function (ADR-0006), and the address in the export never leaves the device.
 6. **One query seam.** `countedSessionFilter({ vehicle })` is the single place every scoped read filters on
-   vehicle; procedures default to `all` and routes to `ours`.
+   vehicle; procedures and routes default to `all` (`DEFAULT_VEHICLE_SCOPE` in `src/lib/evCharging/vehicle.ts`).
+   *Amended 2026-10-05:* routes defaulted to `ours` until the owner asked for Alla as the starting view — guests are
+   part of what the charger delivered. The scope is a page-level filter, carried across the charging views by the
+   sidebar.
 
 ## Alternatives considered
 

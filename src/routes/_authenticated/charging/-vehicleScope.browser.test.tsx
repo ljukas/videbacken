@@ -24,7 +24,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-test.each(routes)('%s: a junk ?vehicle= falls back to our car', (_name, route) => {
+test.each(routes)('%s: a junk ?vehicle= falls back to the default', (_name, route) => {
   const validate = validator(route)
   expect(validate({ vehicle: 'neighbour' }).vehicle).toBeUndefined()
   expect(validate({ vehicle: 'other' }).vehicle).toBe('other')
@@ -63,14 +63,15 @@ test.each([
   ['overview', Overview, ['overview', 'sessions', 'costOverview']],
   ['patterns', Patterns, ['patterns', 'timeline']],
   ['economy', Economy, ['economy']],
-] as const)('%s: a clean URL requests our car, ?vehicle=all passes all', async (_n, route, procs) => {
+] as const)('%s: a clean URL requests everything, ?vehicle=ours passes ours', async (_n, route, procs) => {
   const clean = await runLoader(route as unknown as RouteLike, {})
-  const all = await runLoader(route as unknown as RouteLike, { vehicle: 'all' })
+  const ours = await runLoader(route as unknown as RouteLike, { vehicle: 'ours' })
   for (const p of procs) {
     const c = scoped(clean, p)
-    const a = scoped(all, p)
+    const o = scoped(ours, p)
     expect(c.length, `${p} requested`).toBeGreaterThan(0)
-    for (const k of c) expect(k).toContain('"vehicle":"ours"')
-    for (const k of a) expect(k).toContain('"vehicle":"all"')
+    expect(o.length, `${p} requested for ours`).toBeGreaterThan(0)
+    for (const k of c) expect(k).toContain('"vehicle":"all"')
+    for (const k of o) expect(k).toContain('"vehicle":"ours"')
   }
 })

@@ -19,6 +19,14 @@ export type VehicleRecordSource = (typeof VEHICLE_RECORD_SOURCES)[number]
 
 export const vehicleScope = z.enum(VEHICLE_SCOPES)
 
+/** What a charging view shows when its URL names no scope: every counted session (ADR-0021, amended 2026-10-05). */
+export const DEFAULT_VEHICLE_SCOPE: VehicleScope = 'all'
+
+/** The `?vehicle=` value for a scope: the default is a clean URL. */
+export function vehicleScopeParam(scope: VehicleScope): VehicleScope | undefined {
+  return scope === DEFAULT_VEHICLE_SCOPE ? undefined : scope
+}
+
 /** Upper bound on one import (a year of the car's log is ≈ 200 rows). */
 export const MAX_IMPORT_ROWS = 5_000
 

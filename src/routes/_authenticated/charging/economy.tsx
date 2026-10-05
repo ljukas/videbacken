@@ -19,7 +19,12 @@ import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
+import {
+  DEFAULT_VEHICLE_SCOPE,
+  type VehicleScope,
+  vehicleScope,
+  vehicleScopeParam,
+} from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
@@ -43,7 +48,10 @@ export const Route = createFileRoute('/_authenticated/charging/economy')({
     }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ year: search.year, vehicle: search.vehicle ?? 'ours' }),
+  loaderDeps: ({ search }) => ({
+    year: search.year,
+    vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
+  }),
   // Prefetched, not ensured: a failed economy read shows its own alert under a
   // working heading and sync health, like /charging/patterns.
   loader: async ({ context: { queryClient }, deps }) => {
@@ -71,7 +79,7 @@ function EconomyPage() {
   const sessionsHeadingId = useId()
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
-  const vehicle: VehicleScope = search.vehicle ?? 'ours'
+  const vehicle: VehicleScope = search.vehicle ?? DEFAULT_VEHICLE_SCOPE
   const result = useQuery({
     ...economyQuery(search.year, vehicle),
     placeholderData: keepPreviousData,
@@ -86,7 +94,7 @@ function EconomyPage() {
     (v: VehicleScope) =>
       navigate({
         to: '.',
-        search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v }),
+        search: (s) => ({ ...s, vehicle: vehicleScopeParam(v) }),
         replace: true,
         resetScroll: false,
       }),

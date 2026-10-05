@@ -37,7 +37,12 @@ import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
+import {
+  DEFAULT_VEHICLE_SCOPE,
+  type VehicleScope,
+  vehicleScope,
+  vehicleScopeParam,
+} from '~/lib/evCharging/vehicle'
 import { INTEGRATION_SOURCES, type IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -56,7 +61,7 @@ const searchSchema = z.object({
   tariffId: z.string().optional().catch(undefined),
   // The data source whose sync history is open (`dialog=syncRuns`).
   source: z.enum(INTEGRATION_SOURCES).optional().catch(undefined),
-  // Whose charging: a clean URL means our car.
+  // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
 })
 type ChargingSearch = z.infer<typeof searchSchema>
@@ -93,7 +98,10 @@ export const Route = createFileRoute('/_authenticated/charging/')({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ year: search.year, vehicle: search.vehicle ?? 'ours' }),
+  loaderDeps: ({ search }) => ({
+    year: search.year,
+    vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
+  }),
   loader: async ({ context: { queryClient, user }, deps }) => {
     await Promise.all([
       // Prefetched, not ensured: a failed read must not take down the page (and
@@ -151,7 +159,7 @@ function ChargingPage() {
   const isAdmin = user.role === 'admin'
   const navigate = Route.useNavigate()
   const year = Route.useSearch({ select: (s) => s.year })
-  const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? 'ours' })
+  const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? DEFAULT_VEHICLE_SCOPE })
   const queryClient = useQueryClient()
   // The page size belongs to the scope it was grown in: another scope starts at its first page.
   const [limitState, setLimitState] = useState({ vehicle, limit: SESSIONS_PAGE })
@@ -296,10 +304,10 @@ function ChargingPage() {
   }
 
   function setVehicle(v: VehicleScope) {
-    // A clean URL means our car.
+    // The default scope is a clean URL.
     navigate({
       to: '.',
-      search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v }),
+      search: (s) => ({ ...s, vehicle: vehicleScopeParam(v) }),
       replace: true,
       resetScroll: false,
     })

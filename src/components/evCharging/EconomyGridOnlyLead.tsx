@@ -11,7 +11,7 @@ export function EconomyGridOnlyLead({
   vehicle,
 }: {
   year: number
-  /** The page's own search value: undefined is our car (a clean URL). */
+  /** The page's own search value: undefined is every session (a clean URL), as on the overview. */
   vehicle: VehicleScope | undefined
 }) {
   return (

@@ -25,7 +25,12 @@ import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
+import {
+  DEFAULT_VEHICLE_SCOPE,
+  type VehicleScope,
+  vehicleScope,
+  vehicleScopeParam,
+} from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { stockholmDayOf } from '~/lib/time/stockholm'
 import { cn } from '~/lib/utils'
@@ -59,7 +64,7 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
   loaderDeps: ({ search }) => ({
     year: search.year,
     month: search.month,
-    vehicle: search.vehicle ?? 'ours',
+    vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
   // The pattern and timeline reads are prefetched, not ensured: a failure
   // there must not take down the page (heading, sync health) — each
@@ -85,7 +90,7 @@ function PatternsPage() {
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const metric: PatternMetric = search.metric ?? 'kwh'
-  const vehicle: VehicleScope = search.vehicle ?? 'ours'
+  const vehicle: VehicleScope = search.vehicle ?? DEFAULT_VEHICLE_SCOPE
   const timelineRef = useRef<HTMLDivElement>(null)
   const patternsResult = useQuery({
     ...patternsQuery(search.year, vehicle),
@@ -152,7 +157,7 @@ function PatternsPage() {
         <VehicleScopeToggle
           value={vehicle}
           // A scope change clears the month, like a year change does.
-          onChange={(v) => set({ vehicle: v === 'ours' ? undefined : v, month: undefined })}
+          onChange={(v) => set({ vehicle: vehicleScopeParam(v), month: undefined })}
         />
         {patterns && !loadFailed(patternsResult) ? (
           <YearSelector
