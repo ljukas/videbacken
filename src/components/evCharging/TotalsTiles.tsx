@@ -259,7 +259,7 @@ function tileFooter(
 // One figure: a small label, the number large with its unit set small beside
 // it, and a detail line. The spaces between the parts are real text, so the
 // figure reads (and copies) as "1 659,8 kWh".
-function Readout({
+export function Readout({
   icon: Icon,
   label,
   value,
