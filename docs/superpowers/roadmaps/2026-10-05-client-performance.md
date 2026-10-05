@@ -39,9 +39,11 @@ the step needs a short brainstorm before its plan.
    revisit within the stale window fires no blocking request.
 2. **After step 2 (prod).** Same check on `/sensors` and `/users`.
 3. **After step 3 (prod).** An admin `/charging` client navigation makes 6 oRPC requests and `/charging/settings`
-   5, with no `sessionCosts` waterfall (re-measured baseline in [step 3 notes](#step-3-notes)). The `rpc timing`
+   5, with no `sessionCosts` waterfall (re-measured baseline in [step 3 notes](#step-3-notes); a stale `user/me`
+   refresh isn't counted). The `rpc timing`
    lines carry `poolTotal`, `poolIdle` and `poolWaiting`. Record what a navigation's burst shows. If the gauges
-   point at opening connections or at queueing, add the pool fix as a new row; otherwise close it.
+   point at opening connections or at queueing, add the pool fix as a new row; otherwise the checkpoint passes
+   without one.
 4. **After step 4 (build).** The form chunk no longer contains `country-flag-icons` or `libphonenumber-js` except on
    pages with a phone field. `/charging` adds at most ~245 KB gz beyond the entry (from ~361 after step 1, which
    added ~27 KB gz of skeleton bones). `/sensors` and `/users` load only their own bones.
@@ -68,7 +70,7 @@ per route chunk, and 24 h of prod `rpc timing` logs. Re-run the same way to comp
 | `/charging/sessions/$id` | 91 KB | visx |
 | `/`, `/account`, `/admin` | ~2 KB | — |
 
-**Requests on one admin `/charging` load:** 19. These were `getSession` ×3 (server function), `overview`,
+**Requests on one admin `/charging` load:** 19 (stale since #90 moved the Datakällor reads to `/charging/settings`; see [step 3 notes](#step-3-notes)). These were `getSession` ×3 (server function), `overview`,
 `costOverview`, `sessions`, `sessionCosts`, `tariff/list`, `syncStatus` ×4, `recentRuns` ×4,
 `vehicleRecordCoverage`, `vehicleStateLatest`, `liveStatus`.
 
@@ -107,7 +109,7 @@ every result, and streaming mode is unverified on Vercel.
 | `/charging` | 9: `overview`, `sessions`, `costOverview`, `tariff/list`, 3× `syncStatus`, `sessionCosts` (after `sessions`), `liveStatus` |
 | `/charging/settings` | 11: 4× `syncStatus`, 4× `recentRuns`, `vehicleRecordCoverage`, `vehicleStateLatest`, `tariff/list` |
 
-**Prod bursts** (5 h of `rpc timing` logs, 600 requests, de-duplicated by request id):
+**Prod bursts** (5 h of `rpc timing` logs on 2026-10-05, 600 requests, de-duplicated by request id):
 
 | Requests starting within 400 ms | `findActiveById` p50 / p90 / max |
 |---|---|
