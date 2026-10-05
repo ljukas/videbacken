@@ -58,8 +58,9 @@ owner wants to paste the new key into the app and be done.
    - The adapter facades replace `lazy()` with a cache keyed on that fingerprint. Unchanged credentials reuse the
      same client, which keeps the Zaptec and Emaldo token caches, so Emaldo doesn't re-login and end its other
      sessions on every call.
-   - Resolution is cached in memory for 60 s. A save invalidates it on the saving instance, so the post-save sync
-     uses the new value at once; other warm instances follow within 60 s.
+   - The stored read is cached in memory for 60 s (env is merged on every call; see the amendment). A save
+     invalidates it on the saving instance, so the post-save sync uses the new value at once; other warm instances
+     follow within 60 s.
 6. **Admin-only, write-only.**
    - Procedures return each field's *origin* (`stored` / `env` / `missing`) and when it was stored. They never
      return a value, not even masked.
@@ -94,3 +95,52 @@ owner wants to paste the new key into the app and be done.
   them in Preview.
 - `integration_sync`'s error-code CHECK gains `credentials_unreadable`. That is a migration, so it gets the schema
   review.
+- Removing or renaming a field in `CREDENTIAL_FIELDS` makes every stored row that holds it unreadable (fail closed).
+  Such a change needs re-entry or a data migration.
+- Rollback: once the new code has recorded `credentials_unreadable`, an instant rollback to older code shows that
+  row's code without copy. It is display-only.
+
+## Amendment (2026-10-05): as built in step 2
+
+The build refined the decision in these places. The [spec](../superpowers/specs/2026-10-05-charging-settings-design.md)
+has the same corrections inline.
+
+**Schema** (`drizzle/0018_integration_credential.sql`):
+- `updated_by` is `uuid`, because `user.id` is a uuid. Its FK is `on delete set null`. It has no index: the table
+  holds at most 4 rows.
+- The ciphertext CHECK is version-agnostic: `^v[1-9][0-9]*[.]` followed by three base64url parts, plus
+  `char_length(ciphertext) <= 16384`. A `v2` envelope needs no schema change.
+- `fields_set` is display-only metadata. The service validates it; there is no per-element CHECK. Resolution never
+  trusts it, only the decrypted object.
+- RLS is on with no policies; the app connects as the table owner. Revoking the `anon` and `authenticated` grants
+  was considered and skipped, since the values are encrypted anyway.
+
+**Saving** (`services/integrationCredential`):
+- `set` serializes per source. Its transaction (default READ COMMITTED) first runs
+  `pg_advisory_xact_lock(hashtext('videbacken.integration_credential:' || source))`, then `SELECT … FOR UPDATE`.
+- The lock is needed because `FOR UPDATE` can't lock a row that doesn't exist yet. Without it, two concurrent first
+  saves for one source would each merge over nothing, and the later upsert would drop the earlier fields.
+- `set` and `clear` invalidate the cache in a `finally`. A COMMIT that succeeded on the server but errored on the
+  client must still drop the cached read.
+- Validation also rejects ASCII control characters. An unknown field name is echoed in `INVALID_FIELD` only if it
+  matches `/^[A-Za-z]{1,32}$/`; otherwise the error names it `unknown`.
+
+**Resolving** (`src/lib/credentials/`):
+- Only the stored read is cached (60 s). A rejected read is not cached. Env is merged on every call: it is free, and
+  it keeps test env stubs live.
+- The fingerprint is an unsalted hash of low-entropy values. It is an in-memory cache key only, never logged or
+  returned.
+
+**Adapters** (`src/lib/effects/keyedAdapter.ts`):
+- `keyedAdapter` replaces `lazy()` for Zaptec, Škoda and Emaldo.
+- Under VITEST it returns not-configured before it imports the resolver. The import is dynamic, which keeps `db` out
+  of the facades' module graph.
+- Decrypting fails with a plain `CredentialsUnreadableError` (crypto layer). `keyedAdapter` maps it to the source's
+  own `IntegrationError` with `credentials_unreadable`, so `runPulledSync` records it instead of `internal_error`.
+- Effects reach the credential service only through the resolver, and only to read (an ADR-0001 note).
+
+**Home point and facility ID:**
+- The Škoda home point is resolved before `runPulledSync`, because the run's `init` needs it. An unreadable Škoda
+  row makes the home point `null` (geofence off), while the client call fails the run as `credentials_unreadable`.
+- The grid watcher reads `facilityId` through the resolver. An unreadable row is `failed` / `credentials_unreadable`,
+  nothing is fetched, and the run line logs at error.

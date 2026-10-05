@@ -61,9 +61,10 @@ src/
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
-    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,integrationSync,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
-    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, spotPrice, tariff, vehicleState, houseEnergy, energyMix — own all DB access + domain rules (ADR-0002)
-    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
+    db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,integrationSync,integrationCredential,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
+    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, energyMix — own all DB access + domain rules (ADR-0002)
+    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023; keyedAdapter.ts rebuilds their client only when the resolved credentials change, ADR-0026), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
+    credentials/                server-only (ADR-0026): crypto (AES-256-GCM envelope, CREDENTIALS_ENCRYPTION_KEY), env (field → env var map), cache (60 s stored read), resolve (`resolveCredentials`: stored → env per field)
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
@@ -77,6 +78,7 @@ src/
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
     time/stockholm.ts           client-safe Stockholm calendar helpers (DST-aware day bounds)
     integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — ADR-0019)
+    integrationCredentials.ts   client-safe credential vocabulary (sources, fields, field kinds, origins — ADR-0026)
     files/, image/              upload helpers: EXIF / blurhash, HEIC transcode, sizes
     query/                      routeData.ts: `loadRouteData` — the server awaits `critical` and skips `deferred`; the client starts everything and awaits nothing (ADR-0025)
     i18n/, zodLocale.ts, theme.ts, browserSession.ts, devHost.ts (dev:host LAN URLs), utils.ts
@@ -205,6 +207,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 - `INITIAL_ADMIN_EMAILS` (CSV; seeds the first admin(s) into `approved_email`).
 - Storage `BLOB_*` (prod) / `S3_*` (local RustFS); email `RESEND_API_KEY`+`EMAIL_FROM` (prod) / `SMTP_*` (local Mailpit); `REDIS_URL` (local queue); `LOG_LEVEL`.
   `STORAGE_ADAPTER=devLog` / `EMAIL_ADAPTER=devLog` force the no-op adapters (offline dev without docker).
+- `CREDENTIALS_ENCRYPTION_KEY` (`openssl rand -base64 32`, exactly 32 bytes; one per Vercel environment; ADR-0026): enables GUI-set credentials. **A stored value overrides its env var field by field** for every credential var below (`ZAPTEC_*`, `SKODA_*`, `EMALDO_*`, `GRID_FACILITY_ID`); env is the fallback. A stored row that can't be decrypted (key lost or changed) fails that source closed as `credentials_unreadable`, never falling back to env.
 - `ZAPTEC_USERNAME`/`ZAPTEC_PASSWORD` (unset → fails closed as `not_configured`, ADR-0019); `ZAPTEC_ADAPTER=fake` (dev-only synthetic data).
 - `SKODA_API_KEY`/`SKODA_VIN` (either unset → `not_configured`; Vercel Production only — Preview has its own DB but shares the VIN's 20/h quota) and `SKODA_HOME_COORDINATES` (never committed/logged; unset or invalid → geofence off: attribution falls back to plug state and whether the car is moving). Renewing the key: `docs/runbooks/skoda-api-key.md`.
 - `EMALDO_USER`/`EMALDO_PASSWORD`/`EMALDO_APP_ID`/`EMALDO_APP_SECRET` (any unset → `not_configured`; a dedicated Emaldo account — a login ends its other sessions; app id/secret come from the Emaldo Android app and can rotate; Vercel Production only, never Preview; ADR-0023); synced hourly at :45 by `/api/cron/emaldo-sync`.
