@@ -62,11 +62,13 @@ test('self-sufficiency is 0 when import exceeds load, and null without load', ()
   expect(energyFigures(sums({ gridImportKwh: 1 })).selfSufficiency).toBeNull()
 })
 
-test('car and the rest of the house; car above load leaves 0 for the house', () => {
+test('car and the rest of the house; car above load is capped at load, leaving 0 for the house', () => {
   const f = energyFigures(sums({ loadKwh: 947, carKwh: 312 }))
   expect(f.car).toBe(312)
   expect(f.restOfHouse).toBe(635)
-  expect(energyFigures(sums({ loadKwh: 2, carKwh: 3 })).restOfHouse).toBe(0)
+  const over = energyFigures(sums({ loadKwh: 2, carKwh: 3 }))
+  expect(over.car).toBe(2)
+  expect(over.restOfHouse).toBe(0)
 })
 
 test('battery in/out, SoC-corrected loss and efficiency', () => {
@@ -182,7 +184,7 @@ test('addPeriodSums keeps earlier.firstSocPct when both are present (guards ?? v
 })
 
 test('efficiency floor: netIn >= 1 (SoC-corrected charge)', () => {
-  // charge 10 kWh, SoC goes 0 → 100: deltaStored = 10 × (capacity default ~7.58)
+  // charge 10 kWh, SoC goes 0 → 100: deltaStored = 1.0 × capacity (default ~7.58 kWh)
   // netIn = 10 - 7.58 ≈ 2.42 >= 1, so efficiency is non-null.
   const f = energyFigures(
     sums({

@@ -25,10 +25,9 @@ export function energyTooltipRows(
 ): { parts: { key: SeriesKey; kwh: number }[]; totalKwh: number } {
   const f = energyFigures(p)
   // The parts must add up to the total the tooltip prints: battery charging
-  // from solar can overshoot the month's solar (meter noise), and car can
-  // overshoot load; cap them here (figures.ts stays the raw definition).
+  // from solar can overshoot the month's solar (meter noise); cap it here
+  // (figures.ts caps the car at load itself).
   const solarBattery = Math.min(f.solarToBattery, p.solarKwh)
-  const car = Math.min(f.car, p.loadKwh)
   const value: Record<SeriesKey, number> = {
     solarDirect: f.solarDirect,
     solarBattery,
@@ -36,8 +35,8 @@ export function energyTooltipRows(
     importDirect: f.importDirect,
     importBattery: f.importToBattery,
     exported: p.gridExportKwh,
-    car,
-    house: Math.max(0, p.loadKwh - car),
+    car: f.car,
+    house: f.restOfHouse,
   }
   const totalKwh = metric === 'solar' ? p.solarKwh : metric === 'grid' ? p.gridImportKwh : p.loadKwh
   return { parts: METRIC_SERIES[metric].map((key) => ({ key, kwh: value[key] })), totalKwh }

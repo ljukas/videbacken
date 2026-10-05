@@ -85,6 +85,8 @@ export function energyFigures(p: PeriodSums, capacityKwh = BATTERY_CAPACITY_KWH)
       : 0
   const netIn = batteryIn - deltaStored
   const enough = batteryIn >= MIN_BATTERY_IN_KWH && netIn >= MIN_BATTERY_IN_KWH
+  // The car cannot have drawn more than the house measured as load.
+  const car = Math.min(p.carKwh, p.loadKwh)
   return {
     solarToBattery,
     solarExported,
@@ -92,8 +94,8 @@ export function energyFigures(p: PeriodSums, capacityKwh = BATTERY_CAPACITY_KWH)
     importToBattery,
     importDirect: p.gridImportKwh - importToBattery,
     selfSufficiency: p.loadKwh > 0 ? Math.max(0, 1 - p.gridImportKwh / p.loadKwh) : null,
-    car: p.carKwh,
-    restOfHouse: Math.max(0, p.loadKwh - p.carKwh),
+    car,
+    restOfHouse: Math.max(0, p.loadKwh - car),
     batteryIn,
     batteryOut: p.batteryDischargeKwh,
     deltaStored,
