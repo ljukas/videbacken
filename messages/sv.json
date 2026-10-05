@@ -139,7 +139,7 @@
   "charging_sources_description": "Tjänsterna som laddningssidorna hämtar data från.",
   "meta_charging_settings_title": "Laddningsinställningar",
   "meta_charging_settings_description": "Datakällor, synkning och avgifter för laddningen.",
-  "charging_settings_title": "Inställningar",
+  "charging_settings_title": "Laddningsinställningar",
   "charging_settings_description": "Datakällorna och avgifterna bakom laddningssidorna. Bara admins ser den här sidan.",
   "charging_settings_link": "Gå till inställningar",
   "charging_sources_heading": "Datakällor",

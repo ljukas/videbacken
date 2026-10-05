@@ -139,7 +139,7 @@
   "charging_sources_description": "The services the charging pages get their data from.",
   "meta_charging_settings_title": "Charging settings",
   "meta_charging_settings_description": "Data sources, syncing and fees for charging.",
-  "charging_settings_title": "Settings",
+  "charging_settings_title": "Charging settings",
   "charging_settings_description": "The data sources and fees behind the charging pages. Only admins see this page.",
   "charging_settings_link": "Go to settings",
   "charging_sources_heading": "Data sources",
