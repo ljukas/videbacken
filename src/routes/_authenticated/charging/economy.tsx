@@ -123,22 +123,20 @@ function EconomyPage() {
         onRetry={() => syncNow.syncSource('elpris')}
         retrying={syncNow.isPendingFor('elpris')}
       />
-      {/* Outside the load branches: a failed read for one scope must not take
-          the control away, or the user can't switch back. */}
-      {/* The grid-only lead frames the whole page, so it sits beside the
-          controls (wrapping above them on mobile), outside the content that
-          dims on a switch; the controls stay right-aligned without it. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
-          <EconomyGridOnlyLead year={economy.year} vehicle={search.vehicle} />
+      {/* The page filter, outside the load branches: a failed read for one
+          scope must not take the control away, or the user can't switch back.
+          Same row as Mönster's: scope left, year right. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
+        {economy && !loadFailed(result) ? (
+          <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
         ) : null}
-        <div className="ml-auto flex flex-wrap items-center justify-between gap-2">
-          <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
-          {economy && !loadFailed(result) ? (
-            <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
-          ) : null}
-        </div>
       </div>
+      {/* The grid-only lead frames the whole page's figures, so it sits right
+          under the filter, outside the content that dims on a switch. */}
+      {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
+        <EconomyGridOnlyLead year={economy.year} vehicle={search.vehicle} />
+      ) : null}
       {economy && !loadFailed(result) ? (
         <>
           {economy.tiles.sessions > 0 ? (
