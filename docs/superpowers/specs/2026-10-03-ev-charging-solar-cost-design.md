@@ -296,9 +296,10 @@ page (to the öre). Display rules (`src/components/evCharging/solarValue.ts`):
 - A negative spot gives a negative value ("−3 kr": exporting would have cost money), "minst −3 kr" as a floor.
 - An estimated session marks it "≈", like its cost, unless it's a "minst" floor (already a hedge).
 - It shows even where the cash cost is unknown ("—", a "Pris saknas" stub month): the value needs only spot prices.
-- Set as a note, not a price: small muted text with a sun on the tiles and the session page. In the tooltip it sits
-  below a hairline, without a swatch, with a hint saying what it means, or why it's unknown (the tooltip ignores the
-  pointer, so a dash's title could never show).
+- Set as a note, not a price: small muted text with a sun on the tiles and the session page. On a tile it spans both
+  readouts above the footer (owner, step 5: in the cost column of a third-width tile it wrapped to five lines). In
+  the tooltip it sits below a hairline, without a swatch, with a hint saying what it means, or why it's unknown (the
+  tooltip ignores the pointer, so a dash's title could never show).
 
 All copy goes in `messages/{sv,en}.json` (sv is the source). Vehicle scope (Vår bil · Gäster · Alla) works
 unchanged: the mix is per session.

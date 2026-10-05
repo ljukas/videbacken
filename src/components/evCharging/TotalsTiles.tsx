@@ -130,8 +130,8 @@ function PeriodIcon({ period, className }: { period: Period; className?: string 
 // partly priced total is qualified "minst" with the share that lacks a price;
 // bought energy with no price at all reads "—". No energy, or energy that was
 // all own solar, is a true 0 kr — so "no price" is judged on the bought energy.
-// Under the cost, the value of own solar used when there was any (a separate
-// figure, never part of the cost).
+// Under both readouts, the value of own solar used when there was any (a
+// separate figure, never part of the cost).
 function TileReadouts({
   totals,
   cost,
@@ -165,7 +165,7 @@ function TileReadouts({
     <div className="@container/tile flex flex-1 flex-col gap-3">
       <div className="grid @[16rem]/tile:grid-cols-2 gap-3 @[16rem]/tile:gap-0">
         <div className="@[16rem]/tile:pr-4">{energy}</div>
-        <div className="flex flex-col gap-2 @[16rem]/tile:border-l @[16rem]/tile:pl-4">
+        <div className="@[16rem]/tile:border-l @[16rem]/tile:pl-4">
           {unpriced ? (
             <Readout
               icon={BanknoteIcon}
@@ -195,9 +195,10 @@ function TileReadouts({
               }
             />
           )}
-          <SolarValueLine cost={cost} />
         </div>
       </div>
+      {/* Full width: in the cost column of a third-width tile it wrapped to five lines. */}
+      <SolarValueLine cost={cost} />
       {footer.length > 0 ? (
         <div className="mt-auto flex flex-col gap-1.5 border-t pt-3 text-muted-foreground text-xs">
           {footer.map((line) => (
