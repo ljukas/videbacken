@@ -8,7 +8,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92) | PR open | — |
+| 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92) | merged | in progress: sums and car match prod; timing failed (721 ms), fixed by the hourly scan; owner review pending |
 | 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
@@ -38,7 +38,8 @@ Each must pass, with the result recorded in the table, before the next step star
 
 1. **After step 1 (prod).**
    - A read-only SELECT on prod of the monthly sums (import, export, solar, load, battery columns) matches the
-     page's tooltips for three months, 2026-08 (the 9.4 h gap) among them; that month shows "data saknas för 9 h".
+     page's tooltips for three months, 2026-08 among them; that month shows "data saknas för 14 h" (gaps of 9.4 h on
+     08-06 and 4.6 h on 08-23).
    - The car share per month equals `/charging`'s monthly kWh with the scope set to *Alla*.
    - `rpc timing` for `energy.overview` in Vercel Runtime Logs: `totalMs` < 150 ms, `getEnergyOverviewMs` logged.
    - The owner reviews `/energy` live (copy, figures, desktop + phone) and accepts it.
@@ -62,3 +63,10 @@ Each must pass, with the result recorded in the table, before the next step star
   (read-only): no house reading before 2026-01-20 and no counted charging before 2026-01-27.
   Rebased onto #89 mid-review: the page adopts ADR-0025 (`loadRouteData`, `useQuery` for health, `energy-tiles` /
   `energy-chart` skeletons captured with `bones:capture`); a failed read of another year keeps the year selector.
+- 2026-10-05: checkpoint 1 run on prod (read-only). Monthly sums of all ten months (2026-01 … 2026-10) match the
+  service's query; August's gaps add up to 14 h (9.4 h on 08-06, 4.6 h on 08-23), so the page's "14 h" is right and
+  the checkpoint text said 9 h. Car kWh is `/charging`'s own `vehicle: 'all'` figure. **Timing failed:** the one
+  logged `energy.overview` took `totalMs` 721 (`houseScanMs` 696); the scan alone was ≈180 ms warm (per-row Stockholm
+  conversion + an on-disk sort for the SoC `array_agg`, `work_mem` 2 MB). Fixed in its own PR by summing per UTC hour
+  first and probing first/last SoC through the primary key: 40–49 ms on prod, old vs new results identical (prod
+  `EXCEPT` empty; local whole-output diff 0). Still open: `rpc timing` after the fix deploys, and the owner's live review.
