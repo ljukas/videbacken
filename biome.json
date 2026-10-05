@@ -11,6 +11,7 @@
       "**",
       "!**/src/routeTree.gen.ts",
       "!**/src/paraglide/**",
+      "!**/src/bones/**",
       "!**/src/lib/db/schema/betterAuth.ts",
       "!**/drizzle/**",
       "!**/bun.lock",
