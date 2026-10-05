@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
+import { invalidateCredentials } from '~/lib/credentials/cache'
 import { __testClient } from '~/lib/db'
 
 // Concatenate every migration's statements into one SQL string with `"public".`
@@ -58,6 +59,8 @@ export function setupDatabase() {
   })
 
   beforeEach(async () => {
+    // Each test gets a fresh schema, so a cached stored-credential read would leak across tests.
+    invalidateCredentials()
     counter += 1
     const schema = `${SCHEMA_PREFIX}${counter}`
     currentSchema = schema
