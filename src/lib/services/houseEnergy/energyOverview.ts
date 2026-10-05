@@ -36,38 +36,102 @@ type MonthRow = {
 }
 
 const r = houseEnergyReading
-const local = sql`(${r.bucketStart} AT TIME ZONE 'Europe/Stockholm')`
 const num = (v: string | number | null) => (v === null ? 0 : Number(v))
 const numOrNull = (v: string | number | null) => (v === null ? null : Number(v))
 
-// Every month with readings, oldest first: one scan of the table (ADR-0024;
-// ≈40 ms per year of readings locally). Grouped by Stockholm month, so a DST
-// day stays in its own month. Returns sums only, never a bucket.
-async function monthRows(): Promise<MonthRow[]> {
-  const rows = await db
+// Readings summed per UTC hour: a cheap hash aggregate with no per-row time
+// zone math. Stockholm's offsets are whole hours, so every hour lies inside
+// one Stockholm month.
+const hourly = db.$with('hourly').as(
+  db
     .select({
-      year: sql<number>`extract(year from ${local})::int`,
-      month: sql<number>`extract(month from ${local})::int`,
-      gridImportKwh: sql<string>`sum(${r.gridImportKwh})`,
-      gridExportKwh: sql<string>`sum(${r.gridExportKwh})`,
-      solarKwh: sql<string>`sum(${r.solarKwh})`,
-      loadKwh: sql<string>`sum(${r.loadKwh})`,
-      batteryDischargeKwh: sql<string>`sum(${r.batteryDischargeKwh})`,
-      batteryChargeSolarKwh: sql<string>`sum(${r.batteryChargeSolarKwh})`,
-      batteryChargeGridKwh: sql<string>`sum(${r.batteryChargeGridKwh} + ${r.batteryChargeAcKwh})`,
-      firstSocPct: sql<
-        string | null
-      >`(array_agg(${r.batterySocPct} ORDER BY ${r.bucketStart}) FILTER (WHERE ${r.batterySocPct} IS NOT NULL))[1]`,
-      lastSocPct: sql<
-        string | null
-      >`(array_agg(${r.batterySocPct} ORDER BY ${r.bucketStart} DESC) FILTER (WHERE ${r.batterySocPct} IS NOT NULL))[1]`,
-      buckets: count(),
-      firstBucket: min(r.bucketStart),
-      lastBucket: max(r.bucketStart),
+      hour: sql<Date>`date_bin('1 hour', ${r.bucketStart}, timestamptz '2000-01-01 00:00:00+00')`.as(
+        'hour',
+      ),
+      gridImportKwh: sql<number>`sum(${r.gridImportKwh})`.as('grid_import_kwh'),
+      gridExportKwh: sql<number>`sum(${r.gridExportKwh})`.as('grid_export_kwh'),
+      solarKwh: sql<number>`sum(${r.solarKwh})`.as('solar_kwh'),
+      loadKwh: sql<number>`sum(${r.loadKwh})`.as('load_kwh'),
+      batteryDischargeKwh: sql<number>`sum(${r.batteryDischargeKwh})`.as('battery_discharge_kwh'),
+      batteryChargeSolarKwh: sql<number>`sum(${r.batteryChargeSolarKwh})`.as(
+        'battery_charge_solar_kwh',
+      ),
+      batteryChargeGridKwh:
+        sql<number>`sum(${r.batteryChargeGridKwh} + ${r.batteryChargeAcKwh})`.as(
+          'battery_charge_grid_kwh',
+        ),
+      buckets: count().as('buckets'),
+      firstBucket: min(r.bucketStart).as('first_bucket'),
+      lastBucket: max(r.bucketStart).as('last_bucket'),
     })
     .from(r)
-    .groupBy(sql`1, 2`)
-    .orderBy(sql`1, 2`)
+    .groupBy(sql`1`),
+)
+const local = sql`(${hourly.hour} AT TIME ZONE 'Europe/Stockholm')`
+const monthly = db.$with('monthly').as(
+  db
+    .with(hourly)
+    .select({
+      year: sql<number>`extract(year from ${local})::int`.as('year'),
+      month: sql<number>`extract(month from ${local})::int`.as('month'),
+      gridImportKwh: sql<number>`sum(${hourly.gridImportKwh})`.as('grid_import_kwh'),
+      gridExportKwh: sql<number>`sum(${hourly.gridExportKwh})`.as('grid_export_kwh'),
+      solarKwh: sql<number>`sum(${hourly.solarKwh})`.as('solar_kwh'),
+      loadKwh: sql<number>`sum(${hourly.loadKwh})`.as('load_kwh'),
+      batteryDischargeKwh: sql<number>`sum(${hourly.batteryDischargeKwh})`.as(
+        'battery_discharge_kwh',
+      ),
+      batteryChargeSolarKwh: sql<number>`sum(${hourly.batteryChargeSolarKwh})`.as(
+        'battery_charge_solar_kwh',
+      ),
+      batteryChargeGridKwh: sql<number>`sum(${hourly.batteryChargeGridKwh})`.as(
+        'battery_charge_grid_kwh',
+      ),
+      buckets: sql<number>`sum(${hourly.buckets})::int`.as('buckets'),
+      firstBucket: sql<Date>`min(${hourly.firstBucket})`.as('first_bucket'),
+      lastBucket: sql<Date>`max(${hourly.lastBucket})`.as('last_bucket'),
+    })
+    .from(hourly)
+    .groupBy(sql`1, 2`),
+)
+// The month's first or last SoC: one primary-key probe inside the month's own
+// readings. Spelled out with qualified names: Drizzle drops table names inside
+// a single-table select, which would leave the outer columns to name lookup.
+const col = (table: string, name: string) => sql`${sql.identifier(table)}.${sql.identifier(name)}`
+const probeSoc = col('p', r.batterySocPct.name)
+const probeStart = col('p', r.bucketStart.name)
+const edgeSoc = (direction: 'asc' | 'desc') =>
+  sql<number | null>`(SELECT ${probeSoc} FROM ${r} ${sql.identifier('p')}
+    WHERE ${probeStart} BETWEEN ${col('monthly', 'first_bucket')} AND ${col('monthly', 'last_bucket')}
+      AND ${probeSoc} IS NOT NULL
+    ORDER BY ${probeStart} ${sql.raw(direction)} LIMIT 1)`
+
+// Every month with readings, oldest first: one scan of the table (ADR-0024),
+// summed per UTC hour, then per Stockholm month, so a DST day stays in its own
+// month. Summing every row per Stockholm month directly converted each row's
+// time zone and sorted the whole table on disk: ≈180 ms on prod, against ≈45.
+// Returns sums only, never a bucket.
+async function monthRows(): Promise<MonthRow[]> {
+  const rows = await db
+    .with(monthly)
+    .select({
+      year: monthly.year,
+      month: monthly.month,
+      gridImportKwh: monthly.gridImportKwh,
+      gridExportKwh: monthly.gridExportKwh,
+      solarKwh: monthly.solarKwh,
+      loadKwh: monthly.loadKwh,
+      batteryDischargeKwh: monthly.batteryDischargeKwh,
+      batteryChargeSolarKwh: monthly.batteryChargeSolarKwh,
+      batteryChargeGridKwh: monthly.batteryChargeGridKwh,
+      firstSocPct: edgeSoc('asc'),
+      lastSocPct: edgeSoc('desc'),
+      buckets: monthly.buckets,
+      firstBucket: monthly.firstBucket,
+      lastBucket: monthly.lastBucket,
+    })
+    .from(monthly)
+    .orderBy(monthly.year, monthly.month)
   return rows.map((row) => ({
     year: row.year,
     month: row.month,
@@ -83,9 +147,9 @@ async function monthRows(): Promise<MonthRow[]> {
       lastSocPct: numOrNull(row.lastSocPct),
       buckets: row.buckets,
     },
-    // min/max over a non-empty group are never null.
-    firstBucket: row.firstBucket as Date,
-    lastBucket: row.lastBucket as Date,
+    // min/max over a non-empty group are never null; raw SQL comes back as the driver's string.
+    firstBucket: new Date(row.firstBucket),
+    lastBucket: new Date(row.lastBucket),
   }))
 }
 
