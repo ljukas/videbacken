@@ -1,13 +1,6 @@
-import {
-  keepPreviousData,
-  useMutation,
-  useQuery,
-  useQueryClient,
-  useSuspenseQuery,
-} from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
@@ -24,6 +17,7 @@ import {
 } from '~/components/evCharging/MonthlyChart'
 import { PriceFootnote } from '~/components/evCharging/PriceFootnote'
 import { SessionList } from '~/components/evCharging/SessionList'
+import { SessionPagination } from '~/components/evCharging/SessionPagination'
 import {
   SkodaSourceDetails,
   VehicleLogImportButton,
@@ -40,6 +34,11 @@ import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import {
+  DEFAULT_SESSION_PAGE_SIZE,
+  type SessionPageSize,
+  sessionPagingSearch,
+} from '~/lib/evCharging/paging'
 import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
 import { INTEGRATION_SOURCES, type IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
@@ -61,16 +60,16 @@ const searchSchema = z.object({
   source: z.enum(INTEGRATION_SOURCES).optional().catch(undefined),
   // Whose charging: a clean URL means our car.
   vehicle: vehicleScope.optional().catch(undefined),
+  // The session list's page and rows per page: a clean URL is its first 10.
+  ...sessionPagingSearch.shape,
 })
 type ChargingSearch = z.infer<typeof searchSchema>
 type ChargingDialog = NonNullable<ChargingSearch['dialog']>
 
-const SESSIONS_PAGE = 20
-const SESSIONS_MAX = 500 // the `sessions` procedure's `limit` cap
 const RECENT_RUNS = 20
 
-const sessionsQuery = (limit: number, vehicle: VehicleScope) =>
-  orpc.evCharging.sessions.queryOptions({ input: { limit, vehicle } })
+const sessionsQuery = (page: number, pageSize: SessionPageSize, vehicle: VehicleScope) =>
+  orpc.evCharging.sessions.queryOptions({ input: { page, pageSize, vehicle } })
 const sessionCostsQuery = (sessionIds: string[]) =>
   orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } })
 // Spot price sync (elpris). Zaptec's keep their input-less calls, so their
@@ -96,7 +95,12 @@ export const Route = createFileRoute('/_authenticated/charging/')({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ year: search.year, vehicle: search.vehicle ?? 'ours' }),
+  loaderDeps: ({ search }) => ({
+    year: search.year,
+    vehicle: search.vehicle ?? 'ours',
+    page: search.page ?? 1,
+    size: search.size ?? DEFAULT_SESSION_PAGE_SIZE,
+  }),
   loader: async ({ context: { queryClient, user }, deps }) => {
     await Promise.all([
       // Prefetched, not ensured: a failed read must not take down the page (and
@@ -112,9 +116,9 @@ export const Route = createFileRoute('/_authenticated/charging/')({
       // arrives; the sessions' costs follow the sessions (they need the ids).
       // Prefetched too (a failed read must not unmount the scope toggle); the
       // costs chain reads the sessions back from the cache.
-      queryClient.prefetchQuery(sessionsQuery(SESSIONS_PAGE, deps.vehicle)).then(() => {
+      queryClient.prefetchQuery(sessionsQuery(deps.page, deps.size, deps.vehicle)).then(() => {
         const sessions = queryClient.getQueryData(
-          sessionsQuery(SESSIONS_PAGE, deps.vehicle).queryKey,
+          sessionsQuery(deps.page, deps.size, deps.vehicle).queryKey,
         )?.sessions
         return sessions?.length
           ? queryClient.prefetchQuery(sessionCostsQuery(sessions.map((sess) => sess.id)))
@@ -155,10 +159,8 @@ function ChargingPage() {
   const navigate = Route.useNavigate()
   const year = Route.useSearch({ select: (s) => s.year })
   const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? 'ours' })
-  const queryClient = useQueryClient()
-  // The page size belongs to the scope it was grown in: another scope starts at its first page.
-  const [limitState, setLimitState] = useState({ vehicle, limit: SESSIONS_PAGE })
-  const sessionLimit = limitState.vehicle === vehicle ? limitState.limit : SESSIONS_PAGE
+  const sessionPage = Route.useSearch({ select: (s) => s.page ?? 1 })
+  const sessionPageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
@@ -203,8 +205,10 @@ function ChargingPage() {
   // Placeholder data is the previous key's, so a failed read doesn't show it.
   const overview = loadFailed(overviewResult) ? undefined : overviewResult.data
   const sessions = useQuery({
-    ...sessionsQuery(sessionLimit, vehicle),
-    placeholderData: keepPreviousData, // never flash the empty state while another scope loads
+    ...sessionsQuery(sessionPage, sessionPageSize, vehicle),
+    // Never flash the empty state while another scope or page loads: the
+    // current rows stay until the next ones arrive.
+    placeholderData: keepPreviousData,
   })
   const { data: cost, isPlaceholderData: costIsStale } = useQuery({
     ...orpc.evCharging.costOverview.queryOptions({ input: { year, vehicle } }),
@@ -241,8 +245,8 @@ function ChargingPage() {
     placeholderData: keepPreviousData,
   })
   const sessionCostList = sessionCostsResult.data
-  // Rows still waiting for their cost (first load, or new rows after "Visa
-  // fler") show a placeholder, not the "missing" dash.
+  // Rows still waiting for their cost (first load, or another page's rows)
+  // show a placeholder, not the "missing" dash.
   const sessionCostsPending = sessionCostsResult.isPending || sessionCostsResult.isPlaceholderData
   const sessionCosts = useMemo(
     () => new Map(sessionCostList?.map((c) => [c.sessionId, c])),
@@ -282,28 +286,38 @@ function ChargingPage() {
   const emaldoRuns = useQuery({ ...emaldoRunsQuery, enabled: isAdmin })
   const vehicleLatest = useQuery({ ...vehicleLatestQuery, enabled: isAdmin })
 
-  // "Visa fler" fetches the longer page first and only then switches to it, so
-  // a failed fetch leaves the rows on screen (with a toast; the button stays
-  // for a retry) instead of swapping the list for an errored, empty query.
-  const showMore = useMutation({
-    mutationFn: ({ limit, scope }: { limit: number; scope: VehicleScope }) =>
-      queryClient.fetchQuery(sessionsQuery(limit, scope)),
-    // Keyed to the scope it was fetched for: a result that lands after a scope
-    // switch can't leak its limit into the new scope.
-    onSuccess: (_data, { limit, scope }) => setLimitState({ vehicle: scope, limit }),
-    onError: () => toast.error(m.charging_sessions_show_more_failed()),
-  })
-
   function setYear(y: number) {
     navigate({ to: '.', search: (s) => ({ ...s, year: y }), replace: true, resetScroll: false })
   }
 
   function setVehicle(v: VehicleScope) {
-    // A clean URL means our car.
+    // A clean URL means our car. Another scope is another list: back to its first page.
     navigate({
       to: '.',
-      search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v }),
+      search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v, page: undefined }),
       replace: true,
+      resetScroll: false,
+    })
+  }
+
+  // Paging pushes history, so back steps to the previous page. A clean URL is
+  // page 1 at the default size; a new size starts over at its first page.
+  function setSessionPage(page: number) {
+    navigate({
+      to: '.',
+      search: (s) => ({ ...s, page: page === 1 ? undefined : page }),
+      resetScroll: false,
+    })
+  }
+
+  function setSessionPageSize(size: SessionPageSize) {
+    navigate({
+      to: '.',
+      search: (s) => ({
+        ...s,
+        page: undefined,
+        size: size === DEFAULT_SESSION_PAGE_SIZE ? undefined : size,
+      }),
       resetScroll: false,
     })
   }
@@ -443,14 +457,16 @@ function ChargingPage() {
           // not flash "no sessions" before its first result (ADR-0016).
           <SessionList
             sessions={sessions.data.sessions}
-            hasMore={sessions.data.hasMore && sessionLimit < SESSIONS_MAX}
-            onShowMore={() =>
-              showMore.mutate({
-                limit: Math.min(sessionLimit + SESSIONS_PAGE, SESSIONS_MAX),
-                scope: vehicle,
-              })
+            pagination={
+              // The page the server served: a stale `?page=` past the end shows as the last.
+              <SessionPagination
+                page={sessions.data.page}
+                pageSize={sessionPageSize}
+                total={sessions.data.total}
+                onPageChange={setSessionPage}
+                onPageSizeChange={setSessionPageSize}
+              />
             }
-            loadingMore={showMore.isPending}
             costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
             // A sync can't create guest sessions: an admin marks them instead.
             onSync={isAdmin && vehicle !== 'other' ? () => syncNow.syncSource('zaptec') : undefined}

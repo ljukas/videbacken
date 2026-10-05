@@ -202,7 +202,7 @@ test('years is sorted descending and always includes the current Stockholm year'
   expect(overview.years).toEqual([2026, 2023])
 })
 
-test('listSessions orders newest first, reports hasMore via limit+1, and computes peakKw', async () => {
+test('listSessions pages newest first, reports the total, and computes peakKw', async () => {
   const chargerId = await insertCharger()
 
   // Oldest, no intervals → peakKw null.
@@ -232,17 +232,72 @@ test('listSessions orders newest first, reports hasMore via limit+1, and compute
   await insertInterval(s3, new Date('2026-01-03T08:00:00Z'), new Date('2026-01-03T09:00:00Z'), 1)
   await insertInterval(s3, new Date('2026-01-03T09:00:00Z'), new Date('2026-01-03T10:00:00Z'), 3)
 
-  const page = await listSessions({ limit: 2 })
-  expect(page.hasMore).toBe(true)
-  expect(page.sessions.map((s) => s.id)).toEqual([s3, s2])
+  const first = await listSessions({ page: 1, pageSize: 2 })
+  expect(first).toMatchObject({ total: 3, page: 1 })
+  expect(first.sessions.map((s) => s.id)).toEqual([s3, s2])
+  const second = await listSessions({ page: 2, pageSize: 2 })
+  expect(second).toMatchObject({ total: 3, page: 2 })
+  expect(second.sessions.map((s) => s.id)).toEqual([s1])
 
-  const all = await listSessions({ limit: 10 })
-  expect(all.hasMore).toBe(false)
+  const all = await listSessions({ page: 1, pageSize: 10 })
+  expect(all.total).toBe(3)
   expect(all.sessions).toHaveLength(3)
   const byId = new Map(all.sessions.map((s) => [s.id, s]))
   expect(byId.get(s3)?.peakKw).toBe(3)
   expect(byId.get(s2)?.peakKw).toBe(2)
   expect(byId.get(s1)?.peakKw).toBeNull()
+})
+
+test('listSessions serves the last page for a page past the end', async () => {
+  const ids = []
+  for (let day = 1; day <= 5; day++) {
+    ids.push(
+      await insertSession({
+        startAt: new Date(`2026-01-0${day}T08:00:00Z`),
+        endAt: new Date(`2026-01-0${day}T09:00:00Z`),
+      }),
+    )
+  }
+  const page = await listSessions({ page: 9, pageSize: 2 })
+  expect(page.page).toBe(3)
+  expect(page.total).toBe(5)
+  expect(page.sessions.map((s) => s.id)).toEqual([ids[0]])
+})
+
+test('listSessions on an empty list is page 1 of nothing', async () => {
+  expect(await listSessions({ page: 4, pageSize: 10 })).toEqual({ sessions: [], total: 0, page: 1 })
+})
+
+test('listSessions pages sessions with the same start without repeating or skipping one', async () => {
+  const startAt = new Date('2026-02-01T08:00:00Z')
+  const endAt = new Date('2026-02-01T09:00:00Z')
+  const ids: string[] = []
+  for (let i = 0; i < 6; i++) ids.push(await insertSession({ startAt, endAt }))
+  const seen: string[] = []
+  for (let page = 1; page <= 3; page++) {
+    seen.push(...(await listSessions({ page, pageSize: 2 })).sessions.map((s) => s.id))
+  }
+  // A total order (id breaks the tie; uuids compare like their lowercase hex),
+  // not whatever order the heap happens to return, which offset can't rely on.
+  expect(seen).toEqual([...ids].sort().reverse())
+})
+
+test('listSessions counts only counted sessions in the scope', async () => {
+  await insertSession({ voided: true })
+  await insertSession({ energyKwh: 0.1 })
+  await insertSession({ vehicle: 'other', vehicleSource: 'admin' })
+  await insertSession()
+  await insertSession()
+  expect((await listSessions({ page: 1, pageSize: 10 })).total).toBe(3)
+  expect((await listSessions({ page: 1, pageSize: 10, vehicle: 'ours' })).total).toBe(2)
+  expect((await listSessions({ page: 1, pageSize: 10, vehicle: 'other' })).total).toBe(1)
+})
+
+test('listSessions records how long the count took', async () => {
+  await insertSession()
+  const timings: { countMs?: number } = {}
+  await listSessions({ page: 1, pageSize: 10, timings })
+  expect(timings.countMs).toEqual(expect.any(Number))
 })
 
 test('listSessions excludes intervals shorter than 10 minutes from the peakKw calculation', async () => {
@@ -263,7 +318,7 @@ test('listSessions excludes intervals shorter than 10 minutes from the peakKw ca
     0.5,
   )
 
-  const { sessions } = await listSessions({ limit: 10 })
+  const { sessions } = await listSessions({ page: 1, pageSize: 10 })
   expect(sessions).toHaveLength(1)
   expect(sessions[0].peakKw).toBe(1)
 })
@@ -275,7 +330,7 @@ test('listSessions excludes voided, replaced, and noise sessions', async () => {
   await insertSession({ chargerId, energyKwh: 0.1 })
   const counted = await insertSession({ chargerId, energyKwh: 5 })
 
-  const { sessions } = await listSessions({ limit: 10 })
+  const { sessions } = await listSessions({ page: 1, pageSize: 10 })
   expect(sessions.map((s) => s.id)).toEqual([counted])
 })
 
@@ -306,12 +361,15 @@ test('getOverview and listSessions follow the vehicle scope', async () => {
     sessions: 2,
   })
 
-  const list = await listSessions({ limit: 10, vehicle: 'other' })
+  const list = await listSessions({ page: 1, pageSize: 10, vehicle: 'other' })
   expect(list.sessions.map((s) => [s.id, s.vehicle])).toEqual([[guest, 'other']])
-  expect((await listSessions({ limit: 10, vehicle: 'ours' })).sessions.map((s) => s.id)).toEqual([
+  expect(
+    (await listSessions({ page: 1, pageSize: 10, vehicle: 'ours' })).sessions.map((s) => s.id),
+  ).toEqual([ours])
+  expect((await listSessions({ page: 1, pageSize: 10 })).sessions.map((s) => s.id)).toEqual([
+    guest,
     ours,
   ])
-  expect((await listSessions({ limit: 10 })).sessions.map((s) => s.id)).toEqual([guest, ours])
 })
 
 test('years stay unscoped: a guest-only year is listed under every scope', async () => {

@@ -110,8 +110,6 @@
   "charging_sessions_pagination_position": "Sida {page} av {count}",
   "charging_sessions_pagination_previous": "Föregående sida",
   "charging_sessions_pagination_range": "Visar {from}–{to} av {total}",
-  "charging_sessions_show_more": "Visa fler",
-  "charging_sessions_show_more_failed": "Kunde inte ladda fler sessioner",
   "charging_source_action_label": "{action}, {source}",
   "charging_source_cadence_elpris": "Hämtas två gånger om dagen",
   "charging_source_cadence_emaldo": "Hämtas varje timme",

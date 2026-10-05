@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { evChargeInterval, evChargeSession } from '~/lib/db/schema'
 import {
@@ -6,6 +6,7 @@ import {
   OVERVIEW_MIN_YEAR,
   PEAK_MIN_INTERVAL_MS,
 } from '~/lib/evCharging/counting'
+import { pageCount } from '~/lib/evCharging/paging'
 import type { Vehicle, VehicleScope } from '~/lib/evCharging/vehicle'
 import { stockholmYearBounds, stockholmYearMonth } from '~/lib/time/stockholm'
 import { countedSessionFilter } from './counted'
@@ -222,11 +223,31 @@ export async function getOverview(input: {
 
 const PEAK_MIN_DURATION_SEC = PEAK_MIN_INTERVAL_MS / 1000
 
+export type SessionListTimings = { countMs?: number }
+
+export type SessionPage = { sessions: SessionRow[]; total: number; page: number }
+
+// One page of the counted sessions, newest first, plus how many there are in
+// all (the pagination control's "av 214" and its last page). A page past the
+// end (a stale link, or sessions voided since) serves the last page and says
+// so in `page`, so the list never shows an empty page while sessions exist.
+// `id` breaks ties between sessions that start at the same instant, so offset
+// paging neither repeats nor skips one.
 export async function listSessions(input: {
-  limit: number
+  page: number
+  pageSize: number
   vehicle?: VehicleScope
-}): Promise<{ sessions: SessionRow[]; hasMore: boolean }> {
-  const rows = await db
+  timings?: SessionListTimings
+}): Promise<SessionPage> {
+  const filter = countedSessionFilter({ vehicle: input.vehicle })
+  const countStartedAt = performance.now()
+  const [{ total }] = await db.select({ total: count() }).from(evChargeSession).where(filter)
+  if (input.timings) input.timings.countMs = Math.round(performance.now() - countStartedAt)
+
+  const pageNumber = Math.min(Math.max(input.page, 1), pageCount(total, input.pageSize))
+  if (total === 0) return { sessions: [], total, page: pageNumber }
+
+  const page = await db
     .select({
       id: evChargeSession.id,
       startAt: evChargeSession.startAt,
@@ -237,13 +258,12 @@ export async function listSessions(input: {
       vehicle: sql<Vehicle>`${evChargeSession.vehicle}`,
     })
     .from(evChargeSession)
-    .where(countedSessionFilter({ vehicle: input.vehicle }))
-    .orderBy(desc(evChargeSession.startAt))
-    .limit(input.limit + 1)
-
-  const hasMore = rows.length > input.limit
-  const page = hasMore ? rows.slice(0, input.limit) : rows
-  if (page.length === 0) return { sessions: [], hasMore }
+    .where(filter)
+    .orderBy(desc(evChargeSession.startAt), desc(evChargeSession.id))
+    .limit(input.pageSize)
+    .offset((pageNumber - 1) * input.pageSize)
+  // Empty only if the page's sessions stopped counting between the two reads.
+  if (page.length === 0) return { sessions: [], total, page: pageNumber }
 
   const ids = page.map((r) => r.id)
   const peakRows = await db
@@ -266,6 +286,7 @@ export async function listSessions(input: {
 
   return {
     sessions: page.map((r) => ({ ...r, peakKw: peakBySession.get(r.id) ?? null })),
-    hasMore,
+    total,
+    page: pageNumber,
   }
 }

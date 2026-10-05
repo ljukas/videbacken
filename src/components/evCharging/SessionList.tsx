@@ -1,5 +1,5 @@
 import { ZapIcon } from 'lucide-react'
-import { Button } from '~/components/ui/button'
+import type { ReactNode } from 'react'
 import {
   Empty,
   EmptyContent,
@@ -28,15 +28,13 @@ import { SyncNowButton } from './SyncNowButton'
 type Session = RouterOutputs['evCharging']['sessions']['sessions'][number]
 type SessionCost = RouterOutputs['evCharging']['sessionCosts'][number]
 
-// Counted sessions, newest first. The parent owns the growing `limit`; "Visa
-// fler" asks for the next page while the server reports `hasMore`. Empty →
-// the shared `Empty` (ADR-0016) with the one obvious next action — sync —
-// offered to admins only (`onSync` is only passed for admins).
+// One page of counted sessions, newest first. The parent owns the page and
+// passes its pagination control, shown right under the table. Empty → the
+// shared `Empty` (ADR-0016) with the one obvious next action — sync — offered
+// to admins only (`onSync` is only passed for admins).
 export function SessionList({
   sessions,
-  hasMore,
-  onShowMore,
-  loadingMore,
+  pagination,
   onSync,
   syncing = false,
   costs,
@@ -44,9 +42,8 @@ export function SessionList({
   emptyDescription = m.charging_sessions_empty_description(),
 }: {
   sessions: Session[]
-  hasMore: boolean
-  onShowMore: () => void
-  loadingMore: boolean
+  /** The pagination control for the list (it hides itself while one page holds everything). */
+  pagination?: ReactNode
   onSync?: () => void
   syncing?: boolean
   /**
@@ -136,19 +133,13 @@ export function SessionList({
           </TableBody>
         </Table>
       </div>
+      {pagination}
       {/* The cost column's marks, spelled out for whoever can't hover a title. */}
       {costs && sessions.some((s) => costs.byId.get(s.id)?.estimated) ? (
         <p className="text-muted-foreground text-xs">{m.charging_sessions_cost_legend()}</p>
       ) : null}
       {costs && sessions.some((s) => costs.byId.get(s.id)?.complete === false) ? (
         <p className="text-muted-foreground text-xs">{m.charging_sessions_cost_legend_missing()}</p>
-      ) : null}
-      {hasMore ? (
-        <div className="flex justify-center">
-          <Button variant="outline" size="sm" onClick={onShowMore} disabled={loadingMore}>
-            {m.charging_sessions_show_more()}
-          </Button>
-        </div>
       ) : null}
     </div>
   )

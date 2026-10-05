@@ -125,10 +125,11 @@ function seedOverview(qc: QueryClient, vehicle: 'ours' | 'other', sessions: unkn
     { year: 2026, months: [], tiles: { thisMonth: {}, thisYear: {}, allTime: {} } } as never,
   )
   qc.setQueryData(
-    orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle } }).queryKey,
+    orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle } }).queryKey,
     {
       sessions,
-      hasMore: false,
+      total: sessions.length,
+      page: 1,
     } as never,
   )
 }
@@ -198,12 +199,13 @@ test('Översikt: switching scope never shows the sessions empty state mid-switch
     seedOverview(qc, 'other', [])
     // The guests' sessions are the slow read; the rest is cached.
     qc.removeQueries({
-      queryKey: orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'other' } })
-        .queryKey,
+      queryKey: orpc.evCharging.sessions.queryOptions({
+        input: { page: 1, pageSize: 10, vehicle: 'other' },
+      }).queryKey,
     })
   })
   const otherKey = orpc.evCharging.sessions.queryOptions({
-    input: { limit: 20, vehicle: 'other' },
+    input: { page: 1, pageSize: 10, vehicle: 'other' },
   }).queryKey
   const original = qc.prefetchQuery.bind(qc)
   // Released by hand: no timer to race against the assertions under CI load.
@@ -216,7 +218,7 @@ test('Översikt: switching scope never shows the sessions empty state mid-switch
     if (JSON.stringify(opts.queryKey) !== JSON.stringify(otherKey)) return original(opts as never)
     held = true
     return gate.then(() => {
-      qc.setQueryData(otherKey, { sessions: [], hasMore: false } as never)
+      qc.setQueryData(otherKey, { sessions: [], total: 0, page: 1 } as never)
     })
   }) as never)
   await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
@@ -236,7 +238,7 @@ test('Översikt: a sessions read still pending shows no empty state or sync offe
   // so the client mounts the query unseeded and its read stays pending (an in-flight
   // fetch is joined by the page's own observer).
   const key = orpc.evCharging.sessions.queryOptions({
-    input: { limit: 20, vehicle: 'ours' },
+    input: { page: 1, pageSize: 10, vehicle: 'ours' },
   }).queryKey
   const { screen } = await renderPage(
     Overview,
@@ -268,8 +270,9 @@ test('Översikt: a failed overview read shows the alert and the toggle; Vår bil
   const { screen, router } = await renderPage(Overview, '/charging', '?vehicle=other', (qc) => {
     seedOverviewShell(qc)
     qc.setQueryData(
-      orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'other' } }).queryKey,
-      { sessions: [], hasMore: false } as never,
+      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'other' } })
+        .queryKey,
+      { sessions: [], total: 0, page: 1 } as never,
     )
   })
   await expect
@@ -290,8 +293,9 @@ test('Översikt: a failed sessions read shows an error, never the empty list or 
     seedOverviewShell(qc)
     seedOverview(qc, 'ours', [])
     qc.removeQueries({
-      queryKey: orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'ours' } })
-        .queryKey,
+      queryKey: orpc.evCharging.sessions.queryOptions({
+        input: { page: 1, pageSize: 10, vehicle: 'ours' },
+      }).queryKey,
     })
   })
   await expect
@@ -484,8 +488,9 @@ function seedCost(qc: QueryClient, allTime: Record<string, unknown>, houseDataFr
     } as never,
   )
   qc.setQueryData(
-    orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'ours' } }).queryKey,
-    { sessions: [], hasMore: false } as never,
+    orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'ours' } })
+      .queryKey,
+    { sessions: [], total: 0, page: 1 } as never,
   )
 }
 
@@ -581,4 +586,107 @@ test('Ekonomi: no lead without sessions or when the read fails; the scope toggle
   expect(
     failed.screen.getByText(m.charging_economy_grid_only_heading(), { exact: false }).elements(),
   ).toHaveLength(0)
+})
+
+// --- Översikt: the session list's pages -------------------------------------
+
+// One seeded page of the list: `rows` sessions, `total` across all pages, and
+// the page the server says it served (the requested one unless it clamped).
+function seedSessionsPage(
+  qc: QueryClient,
+  input: { page: number; pageSize: 10 | 25 | 50; vehicle?: 'ours' | 'other' },
+  rows: unknown[],
+  total: number,
+  served = input.page,
+) {
+  qc.setQueryData(
+    orpc.evCharging.sessions.queryOptions({ input: { vehicle: 'ours', ...input } }).queryKey,
+    { sessions: rows, total, page: served } as never,
+  )
+}
+
+function seedPagedOverview(qc: QueryClient) {
+  seedOverviewShell(qc)
+  seedOverview(qc, 'ours', [])
+  seedOverview(qc, 'other', [])
+  seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
+  seedSessionsPage(qc, { page: 2, pageSize: 10 }, [session('p2', 2.2)], 25)
+  seedSessionsPage(qc, { page: 3, pageSize: 10 }, [session('p3', 3.3)], 25)
+  seedSessionsPage(qc, { page: 1, pageSize: 25 }, [session('p1-25', 4.4)], 25)
+}
+
+test('Översikt: ?page=2 shows the second page of sessions', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '?page=2', seedPagedOverview)
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  await expect
+    .element(screen.getByRole('status'))
+    .toHaveTextContent(m.charging_sessions_pagination_range({ from: 11, to: 20, total: 25 }))
+  await expect
+    .element(screen.getByRole('button', { name: '2', exact: true }))
+    .toHaveAttribute('aria-current', 'page')
+})
+
+test('Översikt: a page link puts the page in the URL; page 1 is a clean URL', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '', seedPagedOverview)
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: '3', exact: true }).click()
+  await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 3 })
+  await screen.getByRole('button', { name: '1', exact: true }).click()
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  expect(router.state.location.search).not.toHaveProperty('page')
+})
+
+test('Översikt: back steps to the previous page', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '?page=2', seedPagedOverview)
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
+  await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
+  router.history.back()
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 2 })
+})
+
+test('Översikt: a new page size starts over at its first page', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '?page=2', seedPagedOverview)
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '25' }).click()
+  await expect.element(screen.getByText('4,4', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ size: 25 })
+  expect(router.state.location.search).not.toHaveProperty('page')
+})
+
+test('Översikt: another vehicle scope starts at its first page', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '?page=2', (qc) => {
+    seedPagedOverview(qc)
+    seedSessionsPage(qc, { page: 1, pageSize: 10, vehicle: 'other' }, [session('g1', 5.5)], 1)
+  })
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  await radio(screen, m.charging_vehicle_scope_other()).click()
+  await expect.element(screen.getByText('5,5', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ vehicle: 'other' })
+  expect(router.state.location.search).not.toHaveProperty('page')
+})
+
+test('Översikt: a stale page past the end shows the last page the server served', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '?page=9', (qc) => {
+    seedPagedOverview(qc)
+    seedSessionsPage(qc, { page: 9, pageSize: 10 }, [session('p3', 3.3)], 25, 3)
+  })
+  await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
+  await expect
+    .element(screen.getByRole('status'))
+    .toHaveTextContent(m.charging_sessions_pagination_range({ from: 21, to: 25, total: 25 }))
+  await expect
+    .element(screen.getByRole('button', { name: '3', exact: true }))
+    .toHaveAttribute('aria-current', 'page')
+})
+
+test('Översikt: a garbage ?size= falls back to 10 rows', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '?size=7', seedPagedOverview)
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  await expect
+    .element(screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }))
+    .toHaveTextContent('10')
 })

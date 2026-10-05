@@ -19,6 +19,7 @@ import {
   TEST_CREDS,
   tokenBody,
 } from '~/lib/effects/zaptec/fixtures'
+import { MAX_SESSION_PAGE } from '~/lib/evCharging/paging'
 import { MAX_IMPORT_ROWS } from '~/lib/evCharging/vehicle'
 import type { Logger } from '~/lib/logger'
 import * as evChargingService from '~/lib/services/evCharging'
@@ -93,24 +94,43 @@ test('overview returns zero totals for a signed-in user with no data', async () 
 
 test('sessions rejects an unauthenticated caller', async () => {
   await expect(
-    call(evChargingRouter.sessions, { limit: 20 }, { context: baseContext() }),
+    call(evChargingRouter.sessions, { page: 1, pageSize: 10 }, { context: baseContext() }),
   ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
 })
 
-test('sessions returns an empty page for a signed-in user with no data', async () => {
+test('sessions returns an empty first page for a signed-in user with no data', async () => {
   await signIn('user')
-  const result = await call(evChargingRouter.sessions, { limit: 20 }, { context: baseContext() })
-  expect(result).toEqual({ sessions: [], hasMore: false })
+  const result = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
+    { context: baseContext() },
+  )
+  expect(result).toEqual({ sessions: [], total: 0, page: 1 })
 })
 
-test('sessions rejects an out-of-range limit', async () => {
+test('sessions records the count as a sub-timing', async () => {
   await signIn('user')
-  await expect(
-    call(evChargingRouter.sessions, { limit: 0 }, { context: baseContext() }),
-  ).rejects.toBeDefined()
-  await expect(
-    call(evChargingRouter.sessions, { limit: 501 }, { context: baseContext() }),
-  ).rejects.toBeDefined()
+  const context = { ...baseContext(), timings: {} as Record<string, number> }
+  await call(evChargingRouter.sessions, { page: 1, pageSize: 10 }, { context })
+  expect(context.timings).toMatchObject({
+    sessionsMs: expect.any(Number),
+    sessionsCountMs: expect.any(Number),
+  })
+})
+
+test('sessions rejects a page size it does not offer, and an out-of-range page', async () => {
+  await signIn('user')
+  for (const input of [
+    { page: 1, pageSize: 7 },
+    { page: 1, pageSize: 500 },
+    { page: 0, pageSize: 10 },
+    { page: 1.5, pageSize: 10 },
+    { page: MAX_SESSION_PAGE + 1, pageSize: 10 },
+  ]) {
+    await expect(
+      call(evChargingRouter.sessions, input as never, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  }
 })
 
 test('syncStatus rejects an unauthenticated caller', async () => {
@@ -672,10 +692,14 @@ test('reads take a vehicle scope and default to all', async () => {
     vehicle: 'other',
     vehicleSource: 'admin',
   })
-  const all = await call(evChargingRouter.sessions, { limit: 10 }, { context: baseContext() })
+  const all = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
+    { context: baseContext() },
+  )
   const guests = await call(
     evChargingRouter.sessions,
-    { limit: 10, vehicle: 'other' },
+    { page: 1, pageSize: 10, vehicle: 'other' },
     { context: baseContext() },
   )
   expect(all.sessions).toHaveLength(2)
@@ -683,7 +707,7 @@ test('reads take a vehicle scope and default to all', async () => {
   await expect(
     call(
       evChargingRouter.sessions,
-      { limit: 10, vehicle: 'x' as never },
+      { page: 1, pageSize: 10, vehicle: 'x' as never },
       { context: baseContext() },
     ),
   ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
