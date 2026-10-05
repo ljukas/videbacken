@@ -50,6 +50,9 @@ Measured on the full local history (2026-10-05):
 5. **kWh only.** No kronor on these pages in this phase.
 6. **Monthly granularity only:** tiles (this month / this year / all time) and a 12-month chart per year. No day
    or intraday views.
+   - *Amended 2026-10-05 (step 1b):* the tiles show any **chosen** month, year or all time (`?period=`), picked with a
+     period control or by clicking a month in the chart; the chosen period's year is the chart's year. Still monthly
+     granularity, still on-read. Design: [period control](../superpowers/specs/2026-10-05-energy-period-control-design.md).
 7. **Freshness:** no polling interval; focus refetch, and the Emaldo sync health alert shows when data is stale.
 
 ## Alternatives considered

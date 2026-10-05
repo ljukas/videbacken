@@ -28,7 +28,7 @@ much of the load is the car, and what the home battery takes in, gives back and 
 | 3 | **kWh only**: no kronor in this phase. |
 | 4 | **Overview figures**: solar produced + where it went; grid import & export; self-sufficiency; car vs rest of house. |
 | 5 | **Self-sufficiency = max(0, 1 − import ÷ load)**: grid-charged battery energy counts as bought. |
-| 6 | **Periods**: tiles (this month / this year / all time) + a 12-month chart per year. No day or intraday views. |
+| 6 | **Periods**: tiles (this month / this year / all time) + a 12-month chart per year. No day or intraday views. *Amended by step 1b ([period control design](./2026-10-05-energy-period-control-design.md)): the tiles show a chosen month, year or all time, picked with a period control or a chart click; the chosen period's year is the chart's year.* |
 | 7 | **Approach A**: on-read monthly aggregates, no rollup table. |
 | 8 | **Read-only for every signed-in member** (`protectedProcedure`). |
 | 9 | **Two PRs** after the docs PR, one per session, each with a prod checkpoint (roadmap). |
@@ -137,6 +137,10 @@ exactly 1 shows "≈ 100 %". `coverage < 0.99` adds "data saknas för N h" (hour
 - No `errors.ts`: an empty house is data. A DB failure is the generic 500 the page handles.
 
 ## Pages
+
+> **Step 1b** replaces the tiles' tabs, the chart's year selector, `?year=` (now `?period=`), the chart colours and
+> the page's text sizes: see the [period control design](./2026-10-05-energy-period-control-design.md). The
+> sketches below show step 1.
 
 Shared by both pages:
 - `?year=` search param, `.catch(undefined)` like `/charging/economy`; a year without readings falls back to the

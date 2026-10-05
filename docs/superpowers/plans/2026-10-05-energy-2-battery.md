@@ -1,5 +1,10 @@
 # House energy, step 2: Energi › Batteri — implementation plan
 
+> **Re-check before building (2026-10-05):** step 1b ([period control design](../specs/2026-10-05-energy-period-control-design.md))
+> replaces `PeriodTabs`, the `tiles.thisMonth/thisYear/allTime` shape, `?year=` and the colour tokens this plan
+> was written against. Task 0 rewrites the affected tasks (2–4) to use the period control, `EnergyOverview`'s
+> `months` / `yearTotal` / `allTime`, `?period=`, and step 1b's readout and size rules.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A second Energi sub-page, `/energy/battery`, showing what the home battery took in (solar / grid), gave
