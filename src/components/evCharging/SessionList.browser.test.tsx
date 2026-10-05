@@ -122,6 +122,12 @@ const priced: SessionCost = {
   fullKwh: 14.26,
   noPriceKwh: 0,
   noTariffKwh: 0,
+  solarKwh: 0,
+  batteryKwh: 0,
+  noHouseDataKwh: 0,
+  solarValueSek: 0,
+  solarPricedKwh: 0,
+  solarUnpricedKwh: 0,
   spotSek: 8.97,
   feesSek: 13.71,
   totalSek: 22.68,
@@ -252,4 +258,15 @@ test('a guest session carries the Gäst badge; our own does not', async () => {
   )
   await expect.element(screen.getByText(m.charging_vehicle_guest_badge())).toBeVisible()
   expect(screen.getByText(m.charging_vehicle_guest_badge()).elements()).toHaveLength(1)
+})
+
+test('a session partly charged from own solar shows its cash cost', async () => {
+  const { screen } = await renderWithCost({
+    ...priced,
+    gridKwh: 10.26,
+    fullKwh: 10.26,
+    solarKwh: 4,
+    totalSek: 16.3,
+  })
+  await expect.element(screen.getByText(/^16,30\s?kr$/)).toBeVisible()
 })

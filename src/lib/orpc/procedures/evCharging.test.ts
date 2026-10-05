@@ -589,15 +589,40 @@ test('session returns one counted session with its economy for a signed-in user'
     energyKwh: 10,
   })
 
+  const timings: Record<string, number> = {}
   const result = await call(
     evChargingRouter.session,
     { sessionId: row.id },
-    { context: baseContext() },
+    { context: { ...baseContext(), timings } },
   )
   expect(result.session.id).toBe(row.id)
   expect(result.economy).toBeDefined()
   expect(result.economy.excluded).toBeNull()
   expect(result.economy.actualComplete).toBe(true)
+  expect(result.cost).toMatchObject({ kwh: 10, complete: true, noHouseDataKwh: 10 })
+  expect(result.cost.totalSek).toBeCloseTo(result.economy.actual.totalSek, 9)
+  expect(timings).toMatchObject({ economyMixMs: expect.any(Number) })
+  const listTimings: Record<string, number> = {}
+  const [listed] = await call(
+    evChargingRouter.sessionCosts,
+    { sessionIds: [row.id] },
+    { context: { ...baseContext(), timings: listTimings } },
+  )
+  expect(listed.totalSek).toBeCloseTo(result.cost.totalSek, 9)
+  expect(listTimings).toMatchObject({ costMixMs: expect.any(Number) })
+  // Aggregates only: no raw house readings ride along.
+  expect(Object.keys(result).sort()).toEqual(
+    [
+      'cost',
+      'economy',
+      'intervals',
+      'optimalSchedule',
+      'prices',
+      'rateKw',
+      'session',
+      'window',
+    ].sort(),
+  )
 })
 
 // --- Vehicle attribution (ADR-0021) ---

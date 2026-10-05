@@ -247,13 +247,40 @@ orchestrates it through services.
 - The economy path (`economy/`) keeps `gridShare: 1`; its comments point to this spec.
 
 **Step 4: cash cost on screen.**
-- Overview tiles, the monthly chart and session list costs become the cash cost. Subline: "34 % från sol och
-  batteri" / "34 % from solar and battery".
+- Overview tiles, the monthly chart and session list costs become the cash cost. Subline: "34 % egen solel" /
+  "34 % own solar power" (owner, step 4: only the energy that cost nothing; originally "från sol och batteri").
 - The cost notice says what's included: solar and battery are counted from the first day with house data, and
   energy without house data is counted as bought from the grid.
 - The session page hero becomes the cash cost, plus a grid / solar / battery bar with kWh for each.
 - Economy content (the verdict, best-to-worst range and what-if tiles on the economy and session pages) is headed as
   spot timing **as if all energy were bought from the grid**.
+
+**As built (step 4, 2026-10-04):**
+- A session without a usable mix is priced exactly as before but labelled: its energy counts as `noHouseDataKwh`,
+  so the page says how much had no house data instead of silently showing an upper bound. The read-time guard warns
+  only when a mix exists but no longer matches (once per pricing call); a missing mix is normal.
+- `avgOre` is the cash öre per charged kWh whose cost is known: `totalSek / (fullKwh + (kwh − gridKwh))`, own solar
+  in the denominator at 0 kr; null when nothing bought is priced. Identical to before for all-grid energy.
+- `gridKwh` keeps its name but means bought kWh: grid, no-house-data, battery-from-grid and battery of unknown
+  price. `isComplete` is unchanged, so battery energy of unknown price makes a total "minst …" / a session "—".
+  "No price" checks use the bought energy (`gridKwh > 0 && fullKwh === 0`): all-own-solar is a true 0 kr, and the
+  cost shows for a scope whose energy was all own solar.
+- Cost months follow each mix piece's own Zaptec interval (the one it starts in, or the first), as the kWh overview
+  does. They can differ only when a stretch boundary is off the quarter-hour at a month change: then that quarter's
+  kWh of the new month's first stretch counts in the earlier month.
+- The cost note under the overview figures says what's included: "Sol och batteri räknas in från och med {date}"
+  (`CostOverview.houseDataFrom` = the first reading), or that all charging counts as bought while there's no house
+  data. A tile's footer says "Husets energidata saknas för N % av laddningen" once house data exists at all.
+- The tile subline counts only energy that cost nothing (`ownSolarShare` = (kwh − gridKwh) / kwh): battery energy
+  the battery took from the grid is bought. The session page's bar keeps the physical grid / solar / battery split.
+- The session hero is `detail.cost` (a `CostSummary` on the `session` procedure); the verdict, range bar and
+  what-ifs sit under the heading "Pristajming som om all el hade köpts från elnätet" and use the grid-only
+  `economy.actual`, whose range marker reads "Denna laddning" (not "Faktiskt", which would contradict the hero).
+- The source bar has its own colour tokens (`--energy-grid/solar/battery`; green and amber mean timing verdicts on
+  the same card), leaves out a source under 0.05 kWh, and is a captioned figure whose legend carries the figures.
+- The economy page opens with a grid-only lead pointing to the overview for the cash cost.
+- `CostTotals` also carries `solarPricedKwh` / `solarUnpricedKwh` (solar-origin kWh with and without a spot to value
+  it), for step 5's solar value.
 
 **Step 5: value of own solar.** One line under the cash cost: "Värde av egen sol: 212 kr (vad den hade gett vid
 försäljning)". Shown on the overview tiles, in the monthly chart popover and on the session page. Hidden when no

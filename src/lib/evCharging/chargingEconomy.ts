@@ -1,5 +1,5 @@
 import { millisecondsInHour } from 'date-fns/constants'
-import { SlotIndex, tariffAt, unitPrice } from '~/lib/evCharging/cost'
+import { priceIntervals, SlotIndex, tariffAt, unitPrice } from '~/lib/evCharging/cost'
 import {
   analyzeSession,
   averageSpotOre,
@@ -22,13 +22,16 @@ import {
 import { dailyAverageSpot, listSlotsOverlapping } from '~/lib/services/spotPrice'
 import { SPOT_ZONE } from '~/lib/spotPrice/zones'
 import { stockholmDayOf, stockholmYearMonth } from '~/lib/time/stockholm'
-import { loadTariffs, timed } from './costInputs'
+import { loadMix, loadTariffs, timed, toIntervals } from './costInputs'
+import { type CostSummary, summarize } from './costing'
 
 // Server-only. The charging-economy read model (Phase 4, ADR-0020
 // "Counterfactuals"): session energy, the spot slots of each plug-in window,
 // per-day average spot and tariff periods — each through its own service —
-// run through the pure counterfactual math. Spot timing only: every kWh is
-// treated as grid-bought.
+// run through the pure counterfactual math. Spot timing only: the
+// counterfactuals treat every kWh as grid-bought (ADR-0023 decision 8). A
+// session's detail also carries its cash cost (the stored solar/battery mix),
+// the page's hero.
 
 export type EconomyTimings = {
   energyMs?: number
@@ -36,6 +39,7 @@ export type EconomyTimings = {
   slotsMs?: number
   dailySpotMs?: number
   yearsMs?: number
+  mixMs?: number
   computeMs?: number
 }
 
@@ -78,6 +82,8 @@ export type SessionEconomyDetail = {
   optimalSchedule: EconomyStretch[] | null
   /** The kW the counterfactual schedules charged at (the session's rate cap); null when excluded. */
   rateKw: number | null
+  /** What the session cost in cash, solar and battery included (ADR-0023) — the hero. `economy` stays grid-only. */
+  cost: CostSummary
   economy: SessionEconomy
 }
 
@@ -162,17 +168,22 @@ export async function getSessionEconomy(input: {
   ])
   const session = toEconomySession(energy)
   const window = economyWindow(session)
-  const slots = await timed(t, 'slotsMs', () =>
-    listSlotsOverlapping(SPOT_ZONE, [
-      { startMs: window.startMs - CONTEXT_MS, endMs: window.endMs + CONTEXT_MS },
-    ]),
-  )
+  // The window ± 1 h (CONTEXT_MS, keep it ≥ one 15-min mix slot) covers every
+  // mix slot: one starts at most 15 min before the first stretch.
+  const [slots, mixes] = await Promise.all([
+    timed(t, 'slotsMs', () =>
+      listSlotsOverlapping(SPOT_ZONE, [
+        { startMs: window.startMs - CONTEXT_MS, endMs: window.endMs + CONTEXT_MS },
+      ]),
+    ),
+    loadMix([energy], t),
+  ])
 
   const computeStart = performance.now()
-  const { economy, optimalSchedule, rateKw } = analyzeSession(
-    session,
-    new SlotIndex(slots),
-    tariffsAsc,
+  const index = new SlotIndex(slots)
+  const { economy, optimalSchedule, rateKw } = analyzeSession(session, index, tariffsAsc)
+  const cost = summarize(
+    priceIntervals(toIntervals(energy, mixes.get(energy.sessionId)), index, tariffsAsc),
   )
   const intervals = energy.estimated ? [] : energy.stretches
   const detail: SessionEconomyDetail = {
@@ -205,6 +216,7 @@ export async function getSessionEconomy(input: {
     optimalSchedule:
       optimalSchedule?.map(({ startMs, endMs, kwh }) => ({ startMs, endMs, kwh })) ?? null,
     rateKw,
+    cost,
     economy,
   }
   if (t) t.computeMs = Math.round(performance.now() - computeStart)

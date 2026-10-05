@@ -9,6 +9,7 @@ import {
   TriangleAlertIcon,
 } from 'lucide-react'
 import type * as React from 'react'
+import { useId } from 'react'
 import { Alert, AlertDescription } from '~/components/ui/alert'
 import { Card } from '~/components/ui/card'
 import {
@@ -21,6 +22,7 @@ import {
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
+import { EnergySourceBar } from './EnergySourceBar'
 import { Estimated } from './Estimated'
 import {
   formatKronor,
@@ -50,14 +52,19 @@ type Counterfactual = NonNullable<Detail['economy']['counterfactual']>
 // --warning itself is ~2:1 there. The Direkt outline (--muted-foreground) is
 // 4.73 / 6.68 on the card.
 
-/** A session's summary: the cost, how good its timing was, and what charging at other times would have cost. */
+/**
+ * A session's summary: what it cost in cash (with where the energy came from),
+ * then — grid-only — how good its timing was and what charging at other times
+ * would have cost.
+ */
 export function SessionSummary({
   detail,
 }: {
-  detail: Pick<Detail, 'session' | 'economy' | 'optimalSchedule' | 'rateKw'>
+  detail: Pick<Detail, 'session' | 'economy' | 'optimalSchedule' | 'rateKw' | 'cost'>
 }) {
-  const { session, economy } = detail
+  const { session, economy, cost } = detail
   const cf = economy.counterfactual
+  const timingHeadingId = useId()
   return (
     <div className="flex flex-col gap-3">
       <Card
@@ -66,12 +73,21 @@ export function SessionSummary({
         className="@container gap-0 py-0"
       >
         <div className="flex flex-col gap-6 p-4 md:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-            <Hero detail={detail} />
-            {cf ? <VerdictPill verdict={timingVerdict(cf.score)} /> : null}
-          </div>
+          <Hero session={session} economy={economy} cost={cost} />
+          <EnergySourceBar supply={cost} />
           {cf ? (
-            <>
+            // Price timing stays grid-only (ADR-0023 decision 8): headed so its
+            // figures aren't read as the cash cost above.
+            <section
+              aria-labelledby={timingHeadingId}
+              className="flex flex-col gap-6 border-t pt-5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                <h2 id={timingHeadingId} className="max-w-prose text-pretty font-medium text-sm">
+                  {m.charging_economy_grid_only_heading()}
+                </h2>
+                <VerdictPill verdict={timingVerdict(cf.score)} />
+              </div>
               <p className="max-w-prose text-pretty text-base">
                 <Sentence cf={cf} />
               </p>
@@ -92,7 +108,7 @@ export function SessionSummary({
                   }
                 />
               </div>
-            </>
+            </section>
           ) : null}
         </div>
       </Card>
@@ -110,13 +126,12 @@ export function SessionSummary({
   )
 }
 
-// The page's one hero figure. A partial cost (an excluded no_price session) is
-// "—", never the partial kronor; a cost priced from the total alone is "≈".
-// An excluded session keeps only its cost (no kWh · kr/kWh line): an estimated
-// session is always excluded, so the line never shows an unmarked estimate.
-function Hero({ detail }: { detail: Pick<Detail, 'session' | 'economy'> }) {
-  const { session, economy } = detail
-  const { actual } = economy
+// The page's one hero figure: what the session cost in cash, own solar and
+// the battery included (ADR-0023). A partial cost is "—", never the partial
+// kronor; a cost priced from the total alone is "≈". The cash per charged kWh
+// shows beside a complete cost of a non-excluded session only (an estimated
+// session is always excluded, so the line never shows an unmarked estimate).
+function Hero({ session, economy, cost }: Pick<Detail, 'session' | 'economy' | 'cost'>) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <span className="font-medium text-muted-foreground text-sm">
@@ -124,17 +139,15 @@ function Hero({ detail }: { detail: Pick<Detail, 'session' | 'economy'> }) {
       </span>
       {/* The heading face (ADR-0015), with proportional figures: tabular digits look loose at display size. */}
       <span className="font-heading font-semibold text-4xl leading-tight tracking-tight md:text-5xl">
-        {economy.actualComplete ? (
-          <Estimated estimated={session.estimated}>{formatSek(actual.totalSek, 2)}</Estimated>
+        {cost.complete ? (
+          <Estimated estimated={session.estimated}>{formatSek(cost.totalSek, 2)}</Estimated>
         ) : (
           <Unknown label={m.charging_sessions_cost_unknown()} />
         )}
       </span>
-      {economy.excluded === null && actual.fullKwh > 0 ? (
+      {economy.excluded === null && cost.complete && cost.avgOre !== null ? (
         <span className="text-muted-foreground text-sm">
-          {m.charging_session_kwh_unit_price({
-            price: formatKronor(actual.totalSek / actual.fullKwh, 2),
-          })}
+          {m.charging_session_kwh_unit_price({ price: formatKronor(cost.avgOre / 100, 2) })}
         </span>
       ) : null}
     </div>
@@ -219,7 +232,7 @@ function Sentence({ cf }: { cf: Counterfactual }) {
 
 // Billigast → dyrast as a track, with where this session landed (solid) and
 // where charging at once would have (outline). The two marker labels never
-// share a row — "Faktiskt" above the track, "Direkt" below — so they can't
+// share a row — "Denna laddning" above the track, "Direkt" below — so they can't
 // collide at any width or distance, without measuring text. Each label is
 // pinned to its marker by `left: p%` and shifted back by p% of its own width,
 // so it stays inside the track at both ends.

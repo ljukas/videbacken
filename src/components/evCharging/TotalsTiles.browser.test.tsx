@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
+import { formatShare } from './format'
 import { type Cost, TotalsTiles } from './TotalsTiles'
 
 // No app.css in browser tests, so both layouts render: scope each assertion to one.
@@ -67,6 +68,12 @@ const priced: Cost = {
   fullKwh: 100,
   noPriceKwh: 0,
   noTariffKwh: 0,
+  solarKwh: 0,
+  batteryKwh: 0,
+  noHouseDataKwh: 0,
+  solarValueSek: 0,
+  solarPricedKwh: 0,
+  solarUnpricedKwh: 0,
   spotSek: 62.9,
   feesSek: 96.2,
   totalSek: 159.1,
@@ -248,4 +255,114 @@ test('arrow keys move between periods', async () => {
     .element(tabs.getByRole('tab', { name: m.charging_tile_this_year() }))
     .toHaveAttribute('aria-selected', 'true')
   await expect.element(tabs.getByRole('tabpanel').getByText('812,5 kWh')).toBeVisible()
+})
+
+// ADR-0023: the cash cost, with what came from own solar and the battery.
+const mixed: Cost = {
+  ...priced,
+  kwh: 100,
+  gridKwh: 66,
+  fullKwh: 66,
+  solarKwh: 22,
+  batteryKwh: 12,
+  spotSek: 41.5,
+  feesSek: 63.5,
+  totalSek: 105,
+  avgOre: 105,
+}
+
+test('a tile with own solar says the share that cost nothing under the cash cost', async () => {
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(mixed)} houseData />,
+  )
+  const screen = grid(page)
+  expect(screen.getByText(/^105 kr$/).elements()).toHaveLength(3)
+  expect(
+    screen.getByText(m.charging_cost_own_solar_share({ share: formatShare(0.34) })).elements(),
+  ).toHaveLength(3)
+})
+
+test('no share line without own solar', async () => {
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(priced)} houseData />,
+  )
+  expect(
+    grid(page)
+      .getByText(/egen solel/)
+      .elements(),
+  ).toHaveLength(0)
+})
+
+test('battery energy bought from the grid is not own solar', async () => {
+  // 30 kWh from the battery, 20 of it grid-charged: 10 + 10 of 100 kWh cost nothing.
+  const winter: Cost = { ...mixed, gridKwh: 80, fullKwh: 80, solarKwh: 10, batteryKwh: 30 }
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(winter)} houseData />,
+  )
+  expect(
+    grid(page)
+      .getByText(m.charging_cost_own_solar_share({ share: formatShare(0.2) }))
+      .elements(),
+  ).toHaveLength(3)
+})
+
+test('energy without house data is said in the footer, once house data exists at all', async () => {
+  const cost = { ...priced, noHouseDataKwh: 25 }
+  const hint = m.charging_cost_no_house_data_hint({ share: formatShare(0.25) })
+  const withData = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(cost)} houseData />,
+  )
+  expect(grid(withData.screen).getByText(hint).elements()).toHaveLength(3)
+  // The average still shows beside it.
+  expect(grid(withData.screen).getByText('159 öre/kWh i snitt').elements()).toHaveLength(3)
+  await withData.screen.unmount()
+  const without = await renderWithProviders(<TotalsTiles tiles={zeroTiles} cost={allTiles(cost)} />)
+  expect(grid(without.screen).getByText(hint).elements()).toHaveLength(0)
+})
+
+test('an all-solar tile is a true 0 kr, never "price missing"', async () => {
+  const solar: Cost = {
+    ...priced,
+    kwh: 10,
+    gridKwh: 0,
+    fullKwh: 0,
+    solarKwh: 10,
+    spotSek: 0,
+    feesSek: 0,
+    totalSek: 0,
+    avgOre: null,
+    complete: true,
+  }
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(solar)} houseData />,
+  )
+  const screen = grid(page)
+  expect(screen.getByText(/^0 kr$/).elements()).toHaveLength(3)
+  expect(screen.getByText(m.charging_cost_unknown()).elements()).toHaveLength(0)
+  expect(
+    screen.getByText(m.charging_cost_own_solar_share({ share: formatShare(1) })).elements(),
+  ).toHaveLength(3)
+})
+
+test('a partly priced share counts against all charged energy', async () => {
+  // 10 of 100 kWh lack a price, 40 came from own solar: 10 % of the charging.
+  const partial = {
+    ...mixed,
+    gridKwh: 60,
+    fullKwh: 50,
+    noPriceKwh: 10,
+    solarKwh: 40,
+    batteryKwh: 0,
+    complete: false,
+  }
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(partial)} houseData />,
+  )
+  await expect
+    .element(
+      grid(page)
+        .getByText(m.charging_cost_partial_hint({ share: '10 %' }))
+        .first(),
+    )
+    .toBeVisible()
 })

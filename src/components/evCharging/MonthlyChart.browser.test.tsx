@@ -46,6 +46,12 @@ const costMonths = months.map((mo) => ({
   fullKwh: mo.kwh,
   noPriceKwh: 0,
   noTariffKwh: 0,
+  solarKwh: 0,
+  batteryKwh: 0,
+  noHouseDataKwh: 0,
+  solarValueSek: 0,
+  solarPricedKwh: 0,
+  solarUnpricedKwh: 0,
   spotSek: mo.kwh * 0.6,
   feesSek: mo.kwh * 0.95,
   totalSek: mo.kwh * 1.55,
@@ -166,6 +172,26 @@ test('a year with nothing priced says so in the kr view instead of drawing 0 kr'
   expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(0)
 })
 
+test('a year charged only from own solar draws its 0 kr, never "nothing priced"', async () => {
+  const solar = costMonths.map((c) => ({
+    ...c,
+    gridKwh: 0,
+    fullKwh: 0,
+    solarKwh: c.kwh,
+    spotSek: 0,
+    feesSek: 0,
+    totalSek: 0,
+    avgOre: null,
+  }))
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2023, months: solar }} metric="sek" />
+    </div>,
+  )
+  await expect.element(screen.getByText(m.charging_chart_series_spot()).first()).toBeVisible()
+  expect(screen.getByText(m.charging_chart_cost_empty({ year: 2023 })).elements()).toHaveLength(0)
+})
+
 const barHeights = (container: Element, bar = 0) =>
   [
     ...container
@@ -209,4 +235,28 @@ test('the kr view keeps a tiny real month visible, and invents no stub for a rea
   )
   expect(Math.min(...barHeights(screen.container, 0))).toBeGreaterThanOrEqual(2)
   expect(barHeights(screen.container, 1)).toHaveLength(1)
+})
+
+test('a month charged only from own solar is 0 kr, not "Pris saknas"', async () => {
+  const solarJune = costMonths.map((c) =>
+    c.month === 6
+      ? {
+          ...c,
+          gridKwh: 0,
+          fullKwh: 0,
+          solarKwh: c.kwh,
+          spotSek: 0,
+          feesSek: 0,
+          totalSek: 0,
+          avgOre: null,
+        }
+      : c,
+  )
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: solarJune }} metric="sek" />
+    </div>,
+  )
+  await expect.element(screen.getByText(m.charging_chart_series_spot()).first()).toBeVisible()
+  expect(screen.getByText(m.charging_chart_no_price()).elements()).toHaveLength(0)
 })

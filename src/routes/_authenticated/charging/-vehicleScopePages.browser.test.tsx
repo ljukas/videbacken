@@ -8,6 +8,8 @@ import {
 } from '@tanstack/react-router'
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { formatDate } from '~/components/evCharging/format'
+import { emptyTotals } from '~/lib/evCharging/cost'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
@@ -435,4 +437,145 @@ test.each([
   await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
   expect(router.state.location.search).not.toHaveProperty('source')
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+})
+
+// --- Cash cost (ADR-0023) ----------------------------------------------------
+
+const TARIFF_ROW = {
+  id: '00000000-0000-4000-8000-0000000000aa',
+  validFrom: '2026-01-01',
+  retailMarkupOre: 5.331,
+  gridTransferOre: 35.6,
+  energyTaxOre: 36,
+  vatPercent: 25,
+  createdAt: new Date('2026-01-01T00:00:00Z'),
+  updatedAt: new Date('2026-01-01T00:00:00Z'),
+}
+const summary = (over: Record<string, unknown>) => ({
+  ...emptyTotals(),
+  avgOre: null,
+  complete: true,
+  ...over,
+})
+
+function seedCost(qc: QueryClient, allTime: Record<string, unknown>, houseDataFrom: Date | null) {
+  const t = summary(allTime)
+  qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF_ROW] as never)
+  qc.setQueryData(
+    orpc.evCharging.overview.queryOptions({ input: { year: undefined, vehicle: 'ours' } }).queryKey,
+    {
+      year: 2026,
+      years: [2026],
+      months: [],
+      tiles: { thisMonth: totals, thisYear: totals, allTime: { kwh: t.kwh, sessions: 1 } },
+    } as never,
+  )
+  qc.setQueryData(
+    orpc.evCharging.costOverview.queryOptions({ input: { year: undefined, vehicle: 'ours' } })
+      .queryKey,
+    {
+      year: 2026,
+      months: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...summary({}) })),
+      tiles: { thisMonth: summary({}), thisYear: summary({}), allTime: t },
+      houseDataFrom,
+    } as never,
+  )
+  qc.setQueryData(
+    orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'ours' } }).queryKey,
+    { sessions: [], hasMore: false } as never,
+  )
+}
+
+test('Översikt: energy that was all own solar is a priced 0 kr, with the house-data note', async () => {
+  const from = new Date('2026-01-20T06:00:00Z')
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, solarKwh: 10, gridKwh: 0 }, from)
+  })
+  await expect
+    .element(screen.getByText(m.charging_cost_note_mix({ date: formatDate(from) })))
+    .toBeVisible()
+  expect(screen.getByText(m.charging_cost_notice_unpriced()).elements()).toHaveLength(0)
+})
+
+test('Översikt: bought energy with no price is the notice, not a 0 kr cost', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, solarKwh: 7, gridKwh: 3, noPriceKwh: 3, complete: false }, new Date())
+  })
+  await expect.element(screen.getByText(m.charging_cost_notice_unpriced())).toBeVisible()
+  expect(screen.getByText(/Sol och batteri räknas in/).elements()).toHaveLength(0)
+})
+
+test('Översikt: before any house data the note says all charging counts as bought', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, gridKwh: 10, fullKwh: 10, totalSek: 20, avgOre: 200 }, null)
+  })
+  await expect.element(screen.getByText(m.charging_cost_note_all_grid())).toBeVisible()
+  expect(screen.getByText(/Sol och batteri räknas in/).elements()).toHaveLength(0)
+})
+
+// --- Ekonomi: the grid-only lead ------------------------------------------------
+
+const economyTotals = (sessions: number) => ({
+  sessions,
+  included: sessions,
+  excluded: { noHourly: 0, noPrice: 0 },
+  kwh: sessions * 10,
+  actualSek: sessions * 20,
+  immediateSek: sessions * 22,
+  optimalSek: sessions * 15,
+  dearestSek: sessions * 25,
+  savedVsImmediateSek: sessions * 2,
+  leftOnTableSek: sessions * 5,
+  score: sessions > 0 ? 0.5 : null,
+  paidSpotOre: sessions > 0 ? 100 : null,
+  avgSpotOre: sessions > 0 ? 110 : null,
+})
+
+function seedEconomy(qc: QueryClient, vehicle: 'ours' | 'other', sessions: number) {
+  qc.setQueryData(
+    orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle } }).queryKey,
+    {
+      year: 2026,
+      years: [2026],
+      tiles: economyTotals(sessions),
+      months: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...economyTotals(0) })),
+      sessions: [],
+    } as never,
+  )
+}
+
+test.each([
+  ['our car', '', 'ours', '/charging?year=2026'],
+  ['guests', '?vehicle=other', 'other', '/charging?year=2026&vehicle=other'],
+] as const)('Ekonomi, %s: the grid-only lead links the overview for the same year and scope', async (_n, search, vehicle, href) => {
+  const { screen } = await renderPage(Economy, '/charging/economy', search, (qc) =>
+    seedEconomy(qc, vehicle, 3),
+  )
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_economy_grid_only_link() }))
+    .toHaveAttribute('href', href)
+})
+
+test('Ekonomi: no lead without sessions or when the read fails; the scope toggle stays', async () => {
+  const empty = await renderPage(Economy, '/charging/economy', '', (qc) =>
+    seedEconomy(qc, 'ours', 0),
+  )
+  await expect
+    .element(empty.screen.getByText(m.charging_economy_empty_title({ year: 2026 })))
+    .toBeVisible()
+  expect(
+    empty.screen.getByText(m.charging_economy_grid_only_heading(), { exact: false }).elements(),
+  ).toHaveLength(0)
+  await empty.screen.unmount()
+
+  const failed = await renderPage(Economy, '/charging/economy', '', () => {})
+  await expect
+    .element(radio(failed.screen, m.charging_vehicle_scope_ours()))
+    .toHaveAttribute('aria-checked', 'true')
+  expect(
+    failed.screen.getByText(m.charging_economy_grid_only_heading(), { exact: false }).elements(),
+  ).toHaveLength(0)
 })

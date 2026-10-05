@@ -52,6 +52,8 @@ on its slot's Stockholm day: `total = (spot + markup + grid + tax) × (1 + VAT)`
   explains a page with nothing priced once (no tariff yet / no price yet) — never 0 kr. Zero energy is a true 0 kr.
 - **`gridShare`** (0…1, always 1 today) scales what's priced. A later solar/battery source (Emaldo) supplies the real
   share per interval without touching the math; Phase 4 counterfactuals price hypothetical intervals the same way.
+  Since ADR-0023 a piece may instead carry a `mix` (grid / solar / battery parts); `gridShare` is then 1 and ignored.
+  The economy keeps `gridShare` 1.
 - Invalid input (non-finite, negative kWh, share outside 0…1) throws — stored data is CHECK-constrained, so it's a bug.
 
 ### Reading it
@@ -113,8 +115,11 @@ window hours if higher), and prices the result with `priceIntervals`:
 
 - One small, pure, heavily tested module decides every kronor figure; DST days, the hourly→15-min switch and tariff
   changes at Stockholm midnight are unit tests, not SQL fixtures.
-- Cost is an **upper bound** today: all charging counts as grid-bought (stated on the page), and Zaptec's hourly
-  intervals can't resolve cheaper quarters inside an hour.
+- Cost was an **upper bound** until ADR-0023 (2026-10): all charging counted as grid-bought. Since then the cash
+  cost prices each session's stored solar/battery mix on read; a session without house data is still priced as
+  grid-bought, and the page says how much ("Husets energidata saknas för …"). Zaptec's hourly intervals still can't
+  resolve cheaper quarters inside an hour, though the mix's load-shaped spread narrows it. The economy
+  counterfactuals remain grid-only (spot timing), labelled so.
 - Adding a zone or a tariff component is a migration each (CHECK list; column) — cheap, but not free.
 - Time-of-use grid pricing (effektavgift) doesn't fit a flat per-kWh period; it would need a child table, most likely
   fed by Eltariff-API.

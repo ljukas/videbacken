@@ -154,6 +154,7 @@ const foundDetail = (vehicle: 'ours' | 'other' = 'ours') => {
     totalSek,
   })
   const detail = {
+    cost: { ...cost(20), avgOre: 200, complete: true, noHouseDataKwh: 10 },
     session: {
       id: SESSION_ID,
       startAt: new Date(at('08:00')),

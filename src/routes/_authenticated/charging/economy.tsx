@@ -5,6 +5,7 @@ import { useCallback, useId } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
+import { EconomyGridOnlyLead } from '~/components/evCharging/EconomyGridOnlyLead'
 import { EconomyMonthlyChart } from '~/components/evCharging/EconomyMonthlyChart'
 import { EconomySessionTable } from '~/components/evCharging/EconomySessionTable'
 import { EconomyTiles } from '~/components/evCharging/EconomyTiles'
@@ -117,11 +118,19 @@ function EconomyPage() {
       />
       {/* Outside the load branches: a failed read for one scope must not take
           the control away, or the user can't switch back. */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
-        {economy && !loadFailed(result) ? (
-          <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
+      {/* The grid-only lead frames the whole page, so it sits beside the
+          controls (wrapping above them on mobile), outside the content that
+          dims on a switch; the controls stay right-aligned without it. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
+          <EconomyGridOnlyLead year={economy.year} vehicle={search.vehicle} />
         ) : null}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
+          {economy && !loadFailed(result) ? (
+            <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
+          ) : null}
+        </div>
       </div>
       {economy && !loadFailed(result) ? (
         <>

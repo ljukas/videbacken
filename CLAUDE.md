@@ -67,7 +67,7 @@ src/
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
-    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, `skodaExport.ts` client-safe MySkoda CSV parser (papaparse lazy-loaded), tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
+    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts: prices each session's stored solar/battery mix, ADR-0023) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, `skodaExport.ts` client-safe MySkoda CSV parser (papaparse lazy-loaded), tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
     vehicleState/               Škoda live-state poll: geofence (home point → boolean), sync + cron (ADR-0022)
     houseEnergy/                Emaldo house-energy readings sync (sync.ts: recent days + backfill, day watermark) + cron (ADR-0019, ADR-0023) — no index barrel;
                                 energy-mix derivation (ADR-0023): pure client-safe mix/ (supply, shape, pool + SoC cap, carMix, houseTimeline),

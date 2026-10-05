@@ -31,6 +31,17 @@ const quarters = (fromIso: string, toIso: string) => {
 }
 const OWNER_SCHEDULE = quarters('2026-09-27T22:00:00Z', '2026-09-28T04:30:00Z')
 
+// The cash cost (ADR-0023). By default it mirrors the grid-only actual with no
+// house data, so the source bar is a sentence and the range bar the only image.
+type Cash = Detail['cost']
+const cash = (totalSek: number, over: Partial<Cash> = {}): Cash => ({
+  ...cost(totalSek),
+  noHouseDataKwh: 56,
+  avgOre: (totalSek / 56) * 100,
+  complete: true,
+  ...over,
+})
+
 const counterfactual = (over: Partial<Counterfactual> = {}): Counterfactual => ({
   immediate: cost(128.27),
   optimal: cost(59.44),
@@ -50,6 +61,7 @@ const detail = (
     optimalSchedule?: Detail['optimalSchedule']
     rateKw?: number | null
     peakKw?: number | null
+    cost?: Cash
   } = {},
 ) => {
   const economy = {
@@ -75,14 +87,20 @@ const detail = (
     economy,
     optimalSchedule: 'optimalSchedule' in over ? (over.optimalSchedule ?? null) : OWNER_SCHEDULE,
     rateKw: 'rateKw' in over ? (over.rateKw ?? null) : 8.9,
+    cost: over.cost ?? cash(95.13),
   }
 }
 
-const excluded = (reason: 'no_hourly' | 'no_price', economy: Partial<Economy> = {}) =>
+const excluded = (
+  reason: 'no_hourly' | 'no_price',
+  economy: Partial<Economy> = {},
+  cashCost?: Cash,
+) =>
   detail({
     economy: { excluded: reason, counterfactual: null, ...economy } as Partial<Economy>,
     optimalSchedule: null,
     rateKw: null,
+    cost: cashCost,
   })
 
 const render = (d: ReturnType<typeof detail>) => renderWithProviders(<SessionSummary detail={d} />)
@@ -108,7 +126,9 @@ test('the owner’s session: hero cost, verdict, sentence, range bar and both ex
   )
   await expect.element(card.getByText(sentence)).toBeVisible()
 
-  await expect.element(card.getByText(m.charging_session_fig_score())).toBeVisible()
+  await expect
+    .element(card.getByText(m.charging_session_fig_score(), { exact: true }))
+    .toBeVisible()
   await expect.element(card.getByText(/^50\s?%$/)).toBeVisible()
 
   const saved = screen.getByRole('group', { name: m.charging_session_saved_title() })
@@ -208,7 +228,9 @@ describe('verdict tiers', () => {
       )
       .toBeVisible()
     expect(screen.getByRole('img').elements()).toHaveLength(0)
-    expect(screen.getByText(m.charging_session_fig_score()).elements()).toHaveLength(0)
+    expect(
+      screen.getByText(m.charging_session_fig_score(), { exact: true }).elements(),
+    ).toHaveLength(0)
     // The deltas still explain the (tiny) figures.
     await expect
       .element(screen.getByRole('group', { name: m.charging_session_left_title() }))
@@ -393,7 +415,11 @@ describe('an excluded session', () => {
 
   test('a partial actual shows "—" with its reason, never the partial kronor', async () => {
     const { screen } = await render(
-      excluded('no_price', { actualComplete: false, actual: cost(17.5) }),
+      excluded(
+        'no_price',
+        { actualComplete: false, actual: cost(17.5) },
+        { ...cash(17.5), complete: false, avgOre: null },
+      ),
     )
     await expect.element(screen.getByText(m.charging_session_excluded_no_price())).toBeVisible()
     await expect.element(screen.getByText(m.charging_sessions_cost_unknown())).toBeInTheDocument()
@@ -416,4 +442,53 @@ test('an estimated session marks its cost "≈" with the reason for screen reade
 test('an exact session has no "≈"', async () => {
   const { screen } = await render(detail())
   expect(screen.getByText(/≈/).elements()).toHaveLength(0)
+})
+
+const mixedCash = cash(61.2, {
+  noHouseDataKwh: 0,
+  solarKwh: 20,
+  batteryKwh: 8,
+  gridKwh: 36,
+  fullKwh: 36,
+  avgOre: (61.2 / 56) * 100,
+})
+
+test('the hero is the cash cost; the timing below is headed as all-grid', async () => {
+  const { screen } = await render(detail({ cost: mixedCash }))
+  const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
+  await expect.element(card).toHaveTextContent(/61,20\s?kr/)
+  await expect.element(card.getByText('1,09 kr/kWh i snitt')).toBeVisible()
+  const timing = screen.getByRole('region', { name: m.charging_economy_grid_only_heading() })
+  await expect.element(timing.getByText(m.charging_session_verdict_ok())).toBeVisible()
+  // The range bar still compares the grid-only actual.
+  await expect
+    .element(
+      timing.getByRole('img', {
+        name: m.charging_session_range_label({
+          actual: formatSek(95.13, 2),
+          immediate: formatSek(128.27, 2),
+          cheapest: formatSek(59.44, 2),
+          dearest: formatSek(130.82, 2),
+        }),
+      }),
+    )
+    .toBeInTheDocument()
+  await expect
+    .element(screen.getByRole('figure', { name: m.charging_session_sources_title() }))
+    .toHaveTextContent(/28,0 kWh.*20,0 kWh.*8,0 kWh/)
+})
+
+test('an excluded session has the cash hero and no timing section', async () => {
+  const { screen } = await render(excluded('no_hourly', {}, mixedCash))
+  await expect.element(screen.getByText(/61,20/)).toBeVisible()
+  expect(
+    screen.getByRole('region', { name: m.charging_economy_grid_only_heading() }).elements(),
+  ).toHaveLength(0)
+})
+
+test('a cash cost with a missing price is "—", even beside a complete grid-only actual', async () => {
+  const { screen } = await render(detail({ cost: { ...mixedCash, complete: false } }))
+  const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
+  await expect.element(card.getByText(m.charging_sessions_cost_unknown())).toBeInTheDocument()
+  expect(card.getByText(/61,20/).elements()).toHaveLength(0)
 })
