@@ -3,7 +3,7 @@ import { RPCHandler } from '@orpc/server/fetch'
 import { BatchHandlerPlugin } from '@orpc/server/plugins'
 import { createFileRoute } from '@tanstack/react-router'
 import { createRequestLogger } from '~/lib/logger/server'
-import type { RequestTimings } from '~/lib/orpc/context'
+import { createAuthMemo, type RequestTimings } from '~/lib/orpc/context'
 import { logRpcError } from '~/lib/orpc/logRpcError'
 import { appRouter } from '~/lib/orpc/router'
 
@@ -32,7 +32,14 @@ export const Route = createFileRoute('/api/rpc/$')({
         const startedAt = performance.now()
         const { response } = await handler.handle(request, {
           prefix: '/api/rpc',
-          context: { headers: request.headers, log, requestId, timings },
+          // One auth lookup per HTTP request, however many calls it carries (ADR-0025 §5).
+          context: {
+            headers: request.headers,
+            log,
+            requestId,
+            timings,
+            authMemo: createAuthMemo(),
+          },
         })
         // One structured line per RPC → Vercel Runtime Logs. `region` confirms
         // where the function actually executed (VERCEL_REGION); the sub-timings
