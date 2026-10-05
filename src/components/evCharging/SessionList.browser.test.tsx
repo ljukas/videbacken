@@ -19,19 +19,9 @@ const session: Session = {
   vehicle: 'ours',
 }
 
-const noop = () => {}
-
 test('empty (admin): the shared Empty state with a "Synka nu" CTA', async () => {
   const onSync = vi.fn()
-  const { screen } = await renderWithRouter(
-    <SessionList
-      sessions={[]}
-      hasMore={false}
-      onShowMore={noop}
-      loadingMore={false}
-      onSync={onSync}
-    />,
-  )
+  const { screen } = await renderWithRouter(<SessionList sessions={[]} onSync={onSync} />)
   await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
   await screen.getByRole('button', { name: m.charging_sync_now() }).click()
   expect(onSync).toHaveBeenCalledOnce()
@@ -39,22 +29,14 @@ test('empty (admin): the shared Empty state with a "Synka nu" CTA', async () => 
 })
 
 test('empty (non-admin): no CTA', async () => {
-  const { screen } = await renderWithRouter(
-    <SessionList sessions={[]} hasMore={false} onShowMore={noop} loadingMore={false} />,
-  )
+  const { screen } = await renderWithRouter(<SessionList sessions={[]} />)
   await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
   expect(screen.getByRole('button', { name: m.charging_sync_now() }).elements()).toHaveLength(0)
 })
 
 test('empty: an emptyTitle override replaces the default title', async () => {
   const { screen } = await renderWithRouter(
-    <SessionList
-      sessions={[]}
-      hasMore={false}
-      onShowMore={noop}
-      loadingMore={false}
-      emptyTitle={m.charging_vehicle_sessions_empty_other()}
-    />,
+    <SessionList sessions={[]} emptyTitle={m.charging_vehicle_sessions_empty_other()} />,
   )
   await expect.element(screen.getByText(m.charging_vehicle_sessions_empty_other())).toBeVisible()
   expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
@@ -63,7 +45,7 @@ test('empty: an emptyTitle override replaces the default title', async () => {
 test('populated: date, Stockholm start–end, duration, kWh and peak kW', async () => {
   const { screen } = await renderWithRouter(
     <div style={{ width: 1024 }}>
-      <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />
+      <SessionList sessions={[session]} />
     </div>,
   )
   await expect.element(screen.getByRole('cell', { name: '18:05–20:20', exact: true })).toBeVisible()
@@ -76,18 +58,12 @@ test('populated: date, Stockholm start–end, duration, kWh and peak kW', async 
     .toBeInTheDocument()
   await expect.element(screen.getByRole('cell', { name: '14,3 kWh' })).toBeVisible()
   await expect.element(screen.getByRole('cell', { name: '7,2 kW' })).toBeInTheDocument()
-  expect(
-    screen.getByRole('button', { name: m.charging_sessions_show_more() }).elements(),
-  ).toHaveLength(0)
 })
 
 test('a session without intervals shows an em-dash for peak power', async () => {
   const { screen } = await renderWithRouter(
     <SessionList
       sessions={[{ ...session, peakKw: null }]}
-      hasMore={false}
-      onShowMore={noop}
-      loadingMore={false}
       // Priced, so the cost cell isn't a second dash.
       costs={{ byId: new Map([['s1', priced]]), pending: false }}
     />,
@@ -95,22 +71,35 @@ test('a session without intervals shows an em-dash for peak power', async () => 
   await expect.element(screen.getByRole('cell', { name: '—' })).toBeInTheDocument()
 })
 
-test('"Visa fler" appears while hasMore and asks for more', async () => {
-  const onShowMore = vi.fn()
+test('the pagination control sits right under the table, before the legends', async () => {
   const { screen } = await renderWithRouter(
-    <SessionList sessions={[session]} hasMore onShowMore={onShowMore} loadingMore={false} />,
+    <SessionList
+      sessions={[session]}
+      pagination={<nav aria-label="paging">paging</nav>}
+      costs={{ byId: new Map([['s1', { ...priced, complete: false }]]), pending: false }}
+    />,
   )
-  await screen.getByRole('button', { name: m.charging_sessions_show_more() }).click()
-  expect(onShowMore).toHaveBeenCalledOnce()
+  const nav = screen.getByRole('navigation', { name: 'paging' })
+  await expect.element(nav).toBeVisible()
+  const table = screen.getByRole('table').element()
+  const legend = screen
+    .getByText(m.charging_sessions_cost_legend_missing(), { exact: true })
+    .element()
+  // DOCUMENT_POSITION_FOLLOWING: the nav comes after the table, the legend after the nav.
+  expect(
+    table.compareDocumentPosition(nav.element()) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+  expect(
+    nav.element().compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
 })
 
-test('"Visa fler" is disabled while the next page loads', async () => {
+test('an empty list shows no pagination', async () => {
   const { screen } = await renderWithRouter(
-    <SessionList sessions={[session]} hasMore onShowMore={noop} loadingMore />,
+    <SessionList sessions={[]} pagination={<nav aria-label="paging">paging</nav>} />,
   )
-  await expect
-    .element(screen.getByRole('button', { name: m.charging_sessions_show_more() }))
-    .toBeDisabled()
+  await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
+  expect(screen.getByRole('navigation', { name: 'paging' }).elements()).toHaveLength(0)
 })
 
 type SessionCost = RouterOutputs['evCharging']['sessionCosts'][number]
@@ -140,9 +129,6 @@ function renderWithCost(cost: SessionCost | undefined, pending = false) {
     <div style={{ width: 1024 }}>
       <SessionList
         sessions={[session]}
-        hasMore={false}
-        onShowMore={noop}
-        loadingMore={false}
         costs={{ byId: new Map(cost ? [[cost.sessionId, cost]] : []), pending }}
       />
     </div>,
@@ -213,9 +199,7 @@ test('a priced, measured session has no ≈ legend', async () => {
 })
 
 test('without cost (nothing priced yet) there is no cost column', async () => {
-  const { screen } = await renderWithRouter(
-    <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />,
-  )
+  const { screen } = await renderWithRouter(<SessionList sessions={[session]} />)
   expect(screen.getByText(m.charging_sessions_col_cost(), { exact: true }).elements()).toHaveLength(
     0,
   )
@@ -235,9 +219,7 @@ test('on a phone the time moves under the date and the spot line hides', async (
 })
 
 test('the date links to the session page', async () => {
-  const { screen } = await renderWithRouter(
-    <SessionList sessions={[session]} hasMore={false} onShowMore={noop} loadingMore={false} />,
-  )
+  const { screen } = await renderWithRouter(<SessionList sessions={[session]} />)
   const link = screen.getByRole('link', {
     name: m.charging_session_link_label({
       date: formatDate(session.startAt),
@@ -249,12 +231,7 @@ test('the date links to the session page', async () => {
 
 test('a guest session carries the Gäst badge; our own does not', async () => {
   const { screen } = await renderWithRouter(
-    <SessionList
-      sessions={[session, { ...session, id: 's2', vehicle: 'other' }]}
-      hasMore={false}
-      onShowMore={noop}
-      loadingMore={false}
-    />,
+    <SessionList sessions={[session, { ...session, id: 's2', vehicle: 'other' }]} />,
   )
   await expect.element(screen.getByText(m.charging_vehicle_guest_badge())).toBeVisible()
   expect(screen.getByText(m.charging_vehicle_guest_badge()).elements()).toHaveLength(1)

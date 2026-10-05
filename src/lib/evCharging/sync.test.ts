@@ -712,7 +712,11 @@ test('a sessions page that never arrives fails at the deadline and keeps earlier
   const run = await runZaptecSync({
     trigger: 'cron',
     now: () => T1,
-    deadlineMs: 50,
+    // The deadline runs from before the lease, so it must outlast the real DB
+    // work before page 1 arrives (the lease, the charger upsert, the watermark
+    // read): 50 ms lost that race on a loaded CI runner (pages 0, upserted 0).
+    // The second page never arrives either way, so only the margin changes.
+    deadlineMs: 1_000,
     deps: { zaptec: client, log },
   })
 

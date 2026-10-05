@@ -331,7 +331,9 @@ test('a re-match that never settles is cut off by the run deadline; the poll sti
   const result = await runSkodaSync({
     trigger: 'cron',
     now: () => NOW,
-    deadlineMs: 300,
+    // Room for the real DB work before the poll counts (the lease, the fetch):
+    // the deadline runs from before the lease.
+    deadlineMs: 1_000,
     deps: { skoda: fakeSkoda(async () => reading()), homePoint: HOME, log },
   })
   expect(performance.now() - started).toBeLessThan(5_000)
@@ -353,7 +355,7 @@ test('the re-match is skipped when the snapshot write outlasted the run deadline
   // lands and the poll counts (outcome ok), but the re-match is not started.
   const recordSnapshot = vehicleStateService.recordSnapshot
   vi.spyOn(vehicleStateService, 'recordSnapshot').mockImplementationOnce(async (input) => {
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
     return recordSnapshot(input)
   })
   const rematch = vi.spyOn(evChargingService, 'reattributeSessions')
@@ -361,7 +363,8 @@ test('the re-match is skipped when the snapshot write outlasted the run deadline
   const result = await runSkodaSync({
     trigger: 'cron',
     now: () => NOW,
-    deadlineMs: 300,
+    // Room for the lease and the fetch first; the slowed write outlasts it.
+    deadlineMs: 1_000,
     deps: { skoda: fakeSkoda(async () => reading()), homePoint: HOME, log },
   })
   expect(rematch).not.toHaveBeenCalled()

@@ -19,6 +19,7 @@ import {
   TEST_CREDS,
   tokenBody,
 } from '~/lib/effects/zaptec/fixtures'
+import { MAX_SESSION_PAGE } from '~/lib/evCharging/paging'
 import { MAX_IMPORT_ROWS } from '~/lib/evCharging/vehicle'
 import type { Logger } from '~/lib/logger'
 import * as evChargingService from '~/lib/services/evCharging'
@@ -93,24 +94,90 @@ test('overview returns zero totals for a signed-in user with no data', async () 
 
 test('sessions rejects an unauthenticated caller', async () => {
   await expect(
-    call(evChargingRouter.sessions, { limit: 20 }, { context: baseContext() }),
+    call(evChargingRouter.sessions, { page: 1, pageSize: 10 }, { context: baseContext() }),
   ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
 })
 
-test('sessions returns an empty page for a signed-in user with no data', async () => {
+test('sessions returns an empty first page for a signed-in user with no data', async () => {
   await signIn('user')
-  const result = await call(evChargingRouter.sessions, { limit: 20 }, { context: baseContext() })
-  expect(result).toEqual({ sessions: [], hasMore: false })
+  const result = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
+    { context: baseContext() },
+  )
+  expect(result).toEqual({ sessions: [], total: 0, page: 1, pageSize: 10 })
 })
 
-test('sessions rejects an out-of-range limit', async () => {
+test('sessions serves the page and size asked for, and the last page for one past the end', async () => {
   await signIn('user')
+  const ids: string[] = []
+  for (let day = 10; day < 22; day++) {
+    ids.push(
+      await insertSession({
+        startAt: new Date(`2026-05-${day}T08:00:00Z`),
+        endAt: new Date(`2026-05-${day}T09:00:00Z`),
+      }),
+    )
+  }
+  const newestFirst = [...ids].reverse()
+  const second = await call(
+    evChargingRouter.sessions,
+    { page: 2, pageSize: 10 },
+    { context: baseContext() },
+  )
+  expect(second).toMatchObject({ total: 12, page: 2, pageSize: 10 })
+  expect(second.sessions.map((s) => s.id)).toEqual(newestFirst.slice(10))
+  const wide = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 25 },
+    { context: baseContext() },
+  )
+  expect(wide).toMatchObject({ total: 12, page: 1, pageSize: 25 })
+  expect(wide.sessions).toHaveLength(12)
+  const past = await call(
+    evChargingRouter.sessions,
+    { page: MAX_SESSION_PAGE, pageSize: 10 },
+    { context: baseContext() },
+  )
+  expect(past).toMatchObject({ total: 12, page: 2, pageSize: 10 })
+  expect(past.sessions.map((s) => s.id)).toEqual(newestFirst.slice(10))
+})
+
+test('sessionCosts takes at most one page of ids', async () => {
+  await signIn('user')
+  const ids = (n: number) =>
+    Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
   await expect(
-    call(evChargingRouter.sessions, { limit: 0 }, { context: baseContext() }),
-  ).rejects.toBeDefined()
+    call(evChargingRouter.sessionCosts, { sessionIds: ids(50) }, { context: baseContext() }),
+  ).resolves.toEqual([])
   await expect(
-    call(evChargingRouter.sessions, { limit: 501 }, { context: baseContext() }),
-  ).rejects.toBeDefined()
+    call(evChargingRouter.sessionCosts, { sessionIds: ids(51) }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
+test('sessions records the count as a sub-timing', async () => {
+  await signIn('user')
+  const context = { ...baseContext(), timings: {} as Record<string, number> }
+  await call(evChargingRouter.sessions, { page: 1, pageSize: 10 }, { context })
+  expect(context.timings).toMatchObject({
+    sessionsMs: expect.any(Number),
+    sessionsCountMs: expect.any(Number),
+  })
+})
+
+test('sessions rejects a page size it does not offer, and an out-of-range page', async () => {
+  await signIn('user')
+  for (const input of [
+    { page: 1, pageSize: 7 },
+    { page: 1, pageSize: 500 },
+    { page: 0, pageSize: 10 },
+    { page: 1.5, pageSize: 10 },
+    { page: MAX_SESSION_PAGE + 1, pageSize: 10 },
+  ]) {
+    await expect(
+      call(evChargingRouter.sessions, input as never, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  }
 })
 
 test('syncStatus rejects an unauthenticated caller', async () => {
@@ -672,10 +739,14 @@ test('reads take a vehicle scope and default to all', async () => {
     vehicle: 'other',
     vehicleSource: 'admin',
   })
-  const all = await call(evChargingRouter.sessions, { limit: 10 }, { context: baseContext() })
+  const all = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
+    { context: baseContext() },
+  )
   const guests = await call(
     evChargingRouter.sessions,
-    { limit: 10, vehicle: 'other' },
+    { page: 1, pageSize: 10, vehicle: 'other' },
     { context: baseContext() },
   )
   expect(all.sessions).toHaveLength(2)
@@ -683,7 +754,7 @@ test('reads take a vehicle scope and default to all', async () => {
   await expect(
     call(
       evChargingRouter.sessions,
-      { limit: 10, vehicle: 'x' as never },
+      { page: 1, pageSize: 10, vehicle: 'x' as never },
       { context: baseContext() },
     ),
   ).rejects.toMatchObject({ code: 'BAD_REQUEST' })

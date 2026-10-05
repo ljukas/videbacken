@@ -52,6 +52,8 @@ async function runLoader(route: RouteLike, search: Record<string, unknown>) {
   await loader({
     context: { queryClient, user: { role: 'user' } },
     deps,
+    // As the router passes it: the raw search (the /charging loader reads its page from it).
+    location: { search },
   })
   return calls.map((c) => JSON.stringify(c.queryKey))
 }
@@ -75,4 +77,15 @@ test.each([
     for (const k of c) expect(k).toContain('"vehicle":"all"')
     for (const k of o) expect(k).toContain('"vehicle":"ours"')
   }
+})
+
+test.each([
+  ['overview', Overview],
+  ['economy', Economy],
+] as const)('%s: the session list’s page and size are no loader deps', (_n, route) => {
+  // A dep change blocks a navigation on the whole loader; a page click must not.
+  const r = route as unknown as RouteLike
+  const deps = (search: Record<string, unknown>) =>
+    (r.options.loaderDeps as (a: { search: unknown }) => unknown)({ search: validator(r)(search) })
+  expect(deps({ page: 2, size: 25 })).toEqual(deps({}))
 })

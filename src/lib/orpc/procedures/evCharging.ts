@@ -7,6 +7,7 @@ import {
 } from '~/lib/evCharging/chargingEconomy'
 import { type CostTimings, getCostOverview, getSessionCosts } from '~/lib/evCharging/costing'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import { MAX_SESSION_PAGE, MAX_SESSION_PAGE_SIZE, sessionPageSize } from '~/lib/evCharging/paging'
 import { runZaptecSync } from '~/lib/evCharging/sync'
 import {
   MAX_IMPORT_ROWS,
@@ -16,7 +17,7 @@ import {
 } from '~/lib/evCharging/vehicle'
 import { runEmaldoSync } from '~/lib/houseEnergy/sync'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
-import type { PatternTimings } from '~/lib/services/evCharging'
+import type { PatternTimings, SessionListTimings } from '~/lib/services/evCharging'
 import * as evChargingService from '~/lib/services/evCharging'
 import { EvChargingDomainError, type EvChargingDomainErrorCode } from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
@@ -58,15 +59,28 @@ export const evChargingRouter = {
       return overview
     }),
 
+  // One page of the session list (count + page + peaks → `sessionsCountMs`
+  // beside the whole call's `sessionsMs`). A page past the end comes back as
+  // the last page, with its number in `page`.
   sessions: protectedProcedure
-    .input(z.object({ limit: z.number().int().min(1).max(500), vehicle: vehicleInput }))
+    .input(
+      z.object({
+        page: z.number().int().min(1).max(MAX_SESSION_PAGE),
+        pageSize: sessionPageSize,
+        vehicle: vehicleInput,
+      }),
+    )
     .handler(async ({ input, context }) => {
       const startedAt = performance.now()
+      const timings: SessionListTimings = {}
       const result = await evChargingService.listSessions({
-        limit: input.limit,
+        page: input.page,
+        pageSize: input.pageSize,
         vehicle: input.vehicle,
+        timings,
       })
       if (context.timings) context.timings.sessionsMs = Math.round(performance.now() - startedAt)
+      recordPrefixedTimings(context.timings, 'sessions', timings)
       return result
     }),
 
@@ -85,10 +99,9 @@ export const evChargingRouter = {
     }),
 
   // Cash cost (stored solar/battery mix, `costMixMs`) of the sessions on the
-  // list's current page (the client passes the ids it shows, capped like
-  // `sessions`' limit).
+  // list's current page: the client passes the ids it shows, at most one page.
   sessionCosts: protectedProcedure
-    .input(z.object({ sessionIds: z.array(z.uuid()).max(500) }))
+    .input(z.object({ sessionIds: z.array(z.uuid()).max(MAX_SESSION_PAGE_SIZE) }))
     .handler(async ({ input, context }) => {
       const timings: CostTimings = {}
       const costs = await getSessionCosts({ sessionIds: input.sessionIds, timings })

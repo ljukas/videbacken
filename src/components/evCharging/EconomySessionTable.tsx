@@ -26,10 +26,10 @@ const reason = (r: Row) =>
     ? m.charging_economy_reason_no_hourly()
     : m.charging_economy_reason_no_price()
 
-// The selected year's sessions, newest first (~100/yr → no paging). Excluded
-// sessions keep their actual cost when it is complete and say why the
-// comparison is missing. < sm the comparison folds under the date, like
-// SessionList.
+// One page of the selected year's sessions, newest first (the route slices
+// it). Excluded sessions keep their actual cost when it is complete and say
+// why the comparison is missing. < sm the comparison folds under the date,
+// like SessionList.
 export function EconomySessionTable({
   sessions,
   labelledBy,

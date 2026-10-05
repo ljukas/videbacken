@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { PiggyBankIcon } from 'lucide-react'
-import { useCallback, useId } from 'react'
+import { useCallback, useId, useState } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
@@ -10,6 +10,7 @@ import { EconomyMonthlyChart } from '~/components/evCharging/EconomyMonthlyChart
 import { EconomySessionTable } from '~/components/evCharging/EconomySessionTable'
 import { EconomyTiles } from '~/components/evCharging/EconomyTiles'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
+import { SessionPagination } from '~/components/evCharging/SessionPagination'
 import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
@@ -18,14 +19,16 @@ import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
+import { useSessionPaging } from '~/hooks/useSessionPaging'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import { DEFAULT_SESSION_PAGE_SIZE, pageSlice, sessionPagingSearch } from '~/lib/evCharging/paging'
 import {
   DEFAULT_VEHICLE_SCOPE,
   type VehicleScope,
   vehicleScope,
   vehicleScopeParam,
 } from '~/lib/evCharging/vehicle'
-import { orpc } from '~/lib/orpc/client'
+import { orpc, type RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
@@ -34,6 +37,10 @@ const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
   // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
+  // The session table's page and rows per page: a clean URL is its first 10.
+  // Not loader deps: the page loads the whole year (the tiles and charts need
+  // all of it) and the table shows a slice of it.
+  ...sessionPagingSearch.shape,
 })
 
 const economyQuery = (year: number | undefined, vehicle: VehicleScope) =>
@@ -76,25 +83,32 @@ function EconomyPage() {
   const { data: pricesHealth } = useSuspenseQuery(pricesHealthQuery)
   const sekHeadingId = useId()
   const spotHeadingId = useId()
-  const sessionsHeadingId = useId()
   const navigate = Route.useNavigate()
-  const search = Route.useSearch()
-  const vehicle: VehicleScope = search.vehicle ?? DEFAULT_VEHICLE_SCOPE
+  // Per-key selects: a page click in the session table re-renders only its card.
+  const year = Route.useSearch({ select: (s) => s.year })
+  const vehicleParam = Route.useSearch({ select: (s) => s.vehicle })
+  const vehicle: VehicleScope = vehicleParam ?? DEFAULT_VEHICLE_SCOPE
   const result = useQuery({
-    ...economyQuery(search.year, vehicle),
+    ...economyQuery(year, vehicle),
     placeholderData: keepPreviousData,
   })
   const { data: economy, isPlaceholderData: stale } = result
+  // Another year or scope is another table: back to its first page.
   const setYear = useCallback(
     (year: number) =>
-      navigate({ to: '.', search: (s) => ({ ...s, year }), replace: true, resetScroll: false }),
+      navigate({
+        to: '.',
+        search: (s) => ({ ...s, year, page: undefined }),
+        replace: true,
+        resetScroll: false,
+      }),
     [navigate],
   )
   const setVehicle = useCallback(
     (v: VehicleScope) =>
       navigate({
         to: '.',
-        search: (s) => ({ ...s, vehicle: vehicleScopeParam(v) }),
+        search: (s) => ({ ...s, vehicle: vehicleScopeParam(v), page: undefined }),
         replace: true,
         resetScroll: false,
       }),
@@ -135,7 +149,7 @@ function EconomyPage() {
       {/* The grid-only lead frames the whole page's figures, so it sits right
           under the filter, outside the content that dims on a switch. */}
       {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
-        <EconomyGridOnlyLead year={economy.year} vehicle={search.vehicle} />
+        <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
       ) : null}
       {economy && !loadFailed(result) ? (
         <>
@@ -169,21 +183,7 @@ function EconomyPage() {
                   </CardContent>
                 </Card>
               </section>
-              <section aria-labelledby={sessionsHeadingId}>
-                <Card>
-                  <CardHeader>
-                    <h2 id={sessionsHeadingId} className="font-medium text-sm">
-                      {m.charging_economy_sessions_title()}
-                    </h2>
-                  </CardHeader>
-                  <CardContent>
-                    <EconomySessionTable
-                      sessions={economy.sessions}
-                      labelledBy={sessionsHeadingId}
-                    />
-                  </CardContent>
-                </Card>
-              </section>
+              <EconomySessionsCard sessions={economy.sessions} stale={stale} />
               <EconomyFootnote excluded={economy.tiles.excluded} />
             </div>
           ) : (
@@ -210,5 +210,57 @@ function EconomyPage() {
         <LoadErrorAlert title={m.charging_economy_error_title()} query={result} />
       )}
     </PageContainer>
+  )
+}
+
+type EconomyRow = RouterOutputs['evCharging']['economy']['sessions'][number]
+
+// The year's sessions, newest first, one page at a time, sliced from the year
+// the page already loaded (a page past the end shows the last). Its own
+// component, reading only its own params, so a page click re-renders this card
+// and not the charts. While another year or scope loads (`stale`, the old
+// payload dimmed) it keeps slicing at the page it showed: the URL has already
+// gone back to page 1, and slicing the old year there would flash its first
+// page before the new year lands.
+function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stale: boolean }) {
+  const headingId = useId()
+  // The same URL conventions as /charging's list.
+  const requestedPage = Route.useSearch({ select: (s) => s.page ?? 1 })
+  const pageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
+  // Set during render: React's pattern for state derived from a changing value.
+  const [shownPage, setShownPage] = useState(requestedPage)
+  if (!stale && shownPage !== requestedPage) setShownPage(requestedPage)
+  const page = pageSlice(sessions, stale ? shownPage : requestedPage, pageSize)
+  const paging = useSessionPaging<z.infer<typeof searchSchema>>(Route.useNavigate())
+
+  return (
+    <section aria-labelledby={headingId}>
+      <Card>
+        <CardHeader>
+          <h2
+            id={headingId}
+            ref={paging.headingRef}
+            tabIndex={-1}
+            className="scroll-mt-4 rounded-sm font-medium text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {m.charging_economy_sessions_title()}
+          </h2>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <EconomySessionTable sessions={page.rows} labelledBy={headingId} />
+          {/* Inert while another year or scope loads: a page picked in the old
+              year's table would carry into the new one's. */}
+          <div inert={stale}>
+            <SessionPagination
+              page={page.page}
+              pageSize={pageSize}
+              total={sessions.length}
+              onPageChange={paging.setPage}
+              onPageSizeChange={paging.setPageSize}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </section>
   )
 }
