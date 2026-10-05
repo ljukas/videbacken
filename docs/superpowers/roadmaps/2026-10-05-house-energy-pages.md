@@ -8,8 +8,8 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | not written | — | not started | — |
-| 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | not written | — | not started | — |
+| 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | — | not started | — |
+| 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 

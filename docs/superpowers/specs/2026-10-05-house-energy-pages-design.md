@@ -75,23 +75,23 @@ type EnergyOverview = {
 }
 ```
 
-- **One aggregate query per span**, grouped by Stockholm month (`date_trunc('month', bucket_start AT TIME ZONE
-  'Europe/Stockholm')`): Σ of each kWh column, `count(*)`, and the first/last SoC by `bucket_start`. The chart's year
-  and the current year share a query when they're the same year. All time = Σ over every month row of all years
-  (one more `GROUP BY` month without a year filter), with the first and last SoC of the whole history.
+- **One aggregate query** groups all readings by Stockholm month (`extract(year/month from bucket_start AT TIME
+  ZONE 'Europe/Stockholm')`): Σ of each kWh column, `count(*)`, min/max `bucket_start`, and the first/last SoC by
+  `bucket_start` (`array_agg … FILTER (WHERE soc IS NOT NULL)`). The chart's months, the current month, the current
+  year and all time are all built from those rows (`addPeriodSums`): one scan per request.
 - Period sums of months add up; first/last SoC of a span are those of its first/last non-empty month.
 - `null` period = no reading in it. Before the first reading every period is `null` and `firstReadingDay` is null.
 - **Expected buckets** use `stockholmDayBounds` (`src/lib/time/stockholm.ts`): (min(end, now) − start) ÷ 5 min,
   where `start` is the later of the period start and the first reading's Stockholm day start (so January 2026 isn't
   "missing" 19 days the integration never had). The current month's expected count runs to the newest reading's
   bucket, not to now: the sync runs hourly, and the last hour isn't a gap.
-- **Car kWh**: the `/charging` overview's rule (`services/evCharging/overview.ts` `monthlyTotals`): interval kWh by
-  each interval's Stockholm month, with a session's own `energy_kwh` as a fallback when it has no intervals, over
-  counted sessions **of every vehicle** (the charger is part of the house load whoever charges). Extract that rule
-  into an exported helper in the evCharging service (month-bucketed kWh over a `start_at` range and a vehicle scope)
-  and call it from both, rather than duplicating the query. Services calling services is fine (ADR-0002).
-- `year` outside `availableYears` → the chart is 12 `null`s (the procedure already bounds it; the service doesn't
-  throw).
+- **Car kWh**: the service calls the charging overview's own `getOverview({ year, now, vehicle: 'all' })`
+  (`services/evCharging/overview.ts`) and takes its month and tile kWh: interval kWh by each interval's Stockholm
+  month, a session's own `energy_kwh` when it has no intervals, counted sessions **of every vehicle** (the charger is
+  part of the house load whoever charges). The rule lives in one place, and Energi's car figure equals `/charging`'s
+  *Alla* figure by construction.
+- `year` outside `availableYears` (or missing) → the current Stockholm year; `year` in the result says which one
+  the chart shows. The service never throws for a year.
 
 ### Pure figures — `src/lib/houseEnergy/figures.ts` (client-safe)
 
@@ -133,8 +133,8 @@ exactly 1 shows "≈ 100 %". `coverage < 0.99` adds "data saknas för N h" (hour
 ## Pages
 
 Shared by both pages:
-- `?year=` search param, `.catch(undefined)` like `/charging/economy`, outside `[min(availableYears), current]`
-  → current year. The **same query key** on both pages (`orpc.energy.overview.queryOptions({ input: { year } })`),
+- `?year=` search param, `.catch(undefined)` like `/charging/economy`; a year without readings falls back to the
+  current year in the service. The **same query key** on both pages (`orpc.energy.overview.queryOptions({ input: { year } })`),
   so switching sub-page reuses the cache.
 - Loader `prefetchQuery` (not ensure) + `useQuery` with `keepPreviousData`: a failed read shows `LoadErrorAlert`
   under a working heading. `ensureQueryData` on `evCharging.syncStatus` for the `emaldo` health, rendered with the
@@ -192,7 +192,8 @@ Loss % on the tile = loss ÷ (batteryIn − deltaStored), shown only with effici
   `LoadErrorAlert`, `SyncHealthAlert`, `format.ts`. Don't fork a charging component to tweak it; a component that
   needs a charging-specific prop changed stays where it is. Moving the generic ones to a shared folder is a
   separate refactor, not part of this work.
-- **Charts**: d3-scale + SVG, the existing chart idiom (MonthlyChart). No new chart library.
+- **Charts**: Recharts through shadcn's `ChartContainer` (`ChartFrame`), the existing monthly-chart idiom
+  (`MonthlyChart`). No new chart library.
 - **Colours**: `--energy-solar`, `--energy-grid`, `--energy-battery` (step 4 tokens). Export: a lighter tint of
   `--energy-solar` or a hatched pattern (decide in the plan with a contrast check); car: `--brand`.
 - **Months without data** render no bar (not a zero bar). The current month's tooltip says "hittills".
@@ -223,8 +224,8 @@ Loss % on the tile = loss ÷ (batteryIn − deltaStored), shown only with effici
   2026-03-29 spring-forward day; car kWh from intervals + the no-interval fallback, guest sessions included;
   tiles independent of the chart year; all time spanning two years; first-reading-day coverage; current month
   expected buckets to the newest reading; empty DB.
-- **Extracted evCharging helper**: the existing overview tests stay green unchanged (it's a move); one new test for
-  the all-vehicles scope.
+- **Car kWh**: covered in the service tests (interval month, no-interval fallback, guest sessions); the charging
+  overview's own tests are untouched.
 - **Procedure**: year validation, default year, output has no per-bucket arrays (privacy).
 - **Components** (browser): tiles per period and the notes; both metric toggles; empty state; sidebar sub-items;
   palette entries; `figures.ts` in the client-safe guard. Layout isn't testable there (no app CSS) → verified live.
