@@ -113,6 +113,30 @@ test('outside Vitest, unreadable stored credentials fail the poll as credentials
   }
 })
 
+test('outside Vitest, the resolved API key and VIN reach the request', async () => {
+  const resolved = { apiKey: 'resolved-key-0815', vin: 'TMBJB9NY5RF000001' }
+  const f = fakeFetch({ [`GET /api/v1/vehicles/${resolved.vin}`]: ok(chargingAtHome) })
+  vi.resetModules()
+  vi.stubEnv('VITEST', '')
+  vi.stubGlobal('fetch', f.fetch)
+  try {
+    vi.doMock('~/lib/credentials/resolve', () => ({
+      resolveCredentials: async () => ({ values: resolved, fingerprint: 'f' }),
+    }))
+    const fresh = await import('./skoda')
+    const reading = await fresh.skoda.vehicleState()
+    expect(reading.state.socPercent).toBe(55)
+    const [req] = f.calls
+    expect(req.headers.get('x-api-key')).toBe(resolved.apiKey)
+    expect(new URL(req.url).pathname).toBe(`/api/v1/vehicles/${resolved.vin}`)
+  } finally {
+    vi.doUnmock('~/lib/credentials/resolve')
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  }
+})
+
 test('sends the key header and asks for charging, odometer and parking position', async () => {
   const { f, skoda } = client(ok(chargingAtHome))
   await skoda.vehicleState()

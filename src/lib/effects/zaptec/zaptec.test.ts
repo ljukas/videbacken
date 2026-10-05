@@ -1241,10 +1241,45 @@ describe('adapter selection', () => {
 })
 
 describe('the singleton outside Vitest', () => {
+  async function freshZaptec(values: Record<string, string>, fetch?: typeof globalThis.fetch) {
+    vi.resetModules()
+    vi.stubEnv('VITEST', '')
+    if (fetch) vi.stubGlobal('fetch', fetch)
+    vi.doMock('~/lib/credentials/resolve', () => ({
+      resolveCredentials: async () => ({ values, fingerprint: 'f' }),
+    }))
+    return (await import('./zaptec')).zaptec
+  }
+
   afterEach(() => {
     vi.doUnmock('~/lib/credentials/resolve')
     vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
     vi.resetModules()
+  })
+
+  test('logs in with the resolved username and password', async () => {
+    vi.stubEnv('ZAPTEC_ADAPTER', '')
+    const ff = fakeFetch({ [TOKEN]: tokenOk, [CHARGERS]: chargersOk })
+    const resolved = { username: 'resolved@example.test', password: 'pw-RESOLVED-0815' }
+    const zaptecFresh = await freshZaptec(resolved, ff.fetch)
+    expect(await zaptecFresh.chargers()).toEqual([expect.objectContaining({ id: CHARGER_ID })])
+    const [tokenReq] = ff.callsTo(TOKEN)
+    const form = Object.fromEntries(new URLSearchParams(await tokenReq.text()))
+    expect(form).toMatchObject({ username: resolved.username, password: resolved.password })
+    expect(ff.callsTo(CHARGERS)[0].headers.get('authorization')).toBe(`Bearer ${TEST_TOKEN}`)
+  })
+
+  test('ZAPTEC_ADAPTER=fake outside production serves the fake data with no credentials', async () => {
+    vi.stubEnv('ZAPTEC_ADAPTER', 'fake')
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('VERCEL_ENV', '')
+    const fetch = vi.fn(() => {
+      throw new Error('the fake adapter sends no request')
+    })
+    const zaptecFresh = await freshZaptec({}, fetch)
+    expect(await zaptecFresh.chargers()).toEqual(await fake.chargers())
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   test('unreadable stored credentials fail every call as credentials_unreadable', async () => {
