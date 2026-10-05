@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import { Client } from 'pg'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cachedStored } from '~/lib/credentials/cache'
 import { CredentialsUnreadableError, encrypt } from '~/lib/credentials/crypto'
 import { db } from '~/lib/db'
 import { integrationCredential, user } from '~/lib/db/schema'
@@ -116,6 +118,41 @@ describe('set', () => {
       expect(err.field).toBe('token')
       expect(await rows()).toEqual([])
     })
+
+    it("names an unknown field 'unknown' unless it looks like a field name", async () => {
+      for (const key of ['x-secret-token', 'a'.repeat(33), 'tok3n', '']) {
+        const err = await domainError(() => set('skoda', { [key]: 'v' }, null))
+        expect(err.code).toBe('INVALID_FIELD')
+        expect(err.field).toBe('unknown')
+        expect(err.message).toBe('INVALID_FIELD (unknown)')
+      }
+      const err = await domainError(() => set('skoda', { ['a'.repeat(32)]: 'v' }, null))
+      expect(err.field).toBe('a'.repeat(32))
+    })
+
+    it('rejects control characters inside a value', async () => {
+      for (const value of ['a\u0000b', 'p\nq', 'x\u007fy', 'tab\there']) {
+        const err = await domainError(() => set('zaptec', { password: value }, null))
+        expect(err.code).toBe('INVALID_FIELD')
+        expect(err.field).toBe('password')
+      }
+      expect(await rows()).toEqual([])
+    })
+
+    it('rejects a non-string value', async () => {
+      const err = await domainError(() => set('skoda', { apiKey: 7 as never }, null))
+      expect(err.code).toBe('INVALID_FIELD')
+      expect(err.field).toBe('apiKey')
+    })
+
+    it('leaves an existing row unchanged', async () => {
+      await set('skoda', { apiKey: 'good' }, null)
+      const [before] = await rows()
+      const err = await domainError(() => set('skoda', { apiKey: 'new', vin: 'bad' }, null))
+      expect(err.field).toBe('vin')
+      expect(await readStored('skoda')).toEqual({ apiKey: 'good' })
+      expect(await rows()).toEqual([before])
+    })
   })
 
   it('NOTHING_TO_SAVE for no fields or only blank ones', async () => {
@@ -126,13 +163,26 @@ describe('set', () => {
     expect(await rows()).toEqual([])
   })
 
-  it('ENCRYPTION_KEY_MISSING without a key, writing nothing', async () => {
-    vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', '')
-    const err = await domainError(() => set('skoda', { apiKey: 'k' }, null))
-    expect(err.code).toBe('ENCRYPTION_KEY_MISSING')
-    expect(err.message).toBe('ENCRYPTION_KEY_MISSING')
-    expect(await rows()).toEqual([])
+  it('NOTHING_TO_SAVE leaves an existing row unchanged', async () => {
+    await set('skoda', { apiKey: 'good' }, null)
+    const [before] = await rows()
+    const err = await domainError(() => set('skoda', { apiKey: ' ', vin: '' }, null))
+    expect(err.code).toBe('NOTHING_TO_SAVE')
+    expect(await rows()).toEqual([before])
   })
+
+  for (const [name, key] of [
+    ['without a key', ''],
+    ['with a malformed key', 'abc'],
+  ]) {
+    it(`ENCRYPTION_KEY_MISSING ${name}, writing nothing`, async () => {
+      vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', key)
+      const err = await domainError(() => set('skoda', { apiKey: 'k' }, null))
+      expect(err.code).toBe('ENCRYPTION_KEY_MISSING')
+      expect(err.message).toBe('ENCRYPTION_KEY_MISSING')
+      expect(await rows()).toEqual([])
+    })
+  }
 
   it('replaces an unreadable row and logs only the source', async () => {
     await set('skoda', { vin: 'TMBJR7NY0PZ123456', apiKey: 'old' }, null)
@@ -155,9 +205,47 @@ describe('set', () => {
     expect(row.fieldsSet).toEqual(['username', 'password'])
   })
 
-  it('keeps both fields of two concurrent first saves', async () => {
-    await Promise.all([set('emaldo', { user: 'u' }, null), set('emaldo', { password: 'p' }, null)])
-    expect(await readStored('emaldo')).toEqual({ user: 'u', password: 'p' })
+  it('waits on the per-source lock, so a concurrent first save is merged, not dropped', async () => {
+    // The test pool has one connection, so a second save on it would just queue
+    // at checkout. A separate connection on this test's schema holds the lock
+    // while its own first save is still uncommitted.
+    const {
+      rows: [{ schema }],
+    } = await db.execute<{ schema: string }>(sql`SELECT current_schema() AS schema`)
+    const other = new Client({
+      connectionString: process.env.DATABASE_URL,
+      options: `-c search_path=${schema},public`,
+    })
+    await other.connect()
+    let pending: Promise<unknown> | undefined
+    try {
+      await other.query('BEGIN')
+      await other.query(
+        "SELECT pg_advisory_xact_lock(hashtext('videbacken.integration_credential:emaldo'))",
+      )
+      await other.query(
+        'INSERT INTO integration_credential (source, ciphertext, fields_set) VALUES ($1, $2, $3)',
+        ['emaldo', encrypt('emaldo', '{"password":"p"}'), ['password']],
+      )
+
+      const saving = set('emaldo', { user: 'u' }, null)
+      pending = saving
+      const PENDING = Symbol('pending')
+      const first = await Promise.race([
+        saving,
+        new Promise((resolve) => setTimeout(() => resolve(PENDING), 150)),
+      ])
+      expect(first).toBe(PENDING)
+
+      await other.query('COMMIT')
+      await saving
+      expect(await readStored('emaldo')).toEqual({ user: 'u', password: 'p' })
+    } finally {
+      // Ending the connection rolls back and releases the lock, so a failed
+      // assertion never leaves `set` blocked on the single pool connection.
+      await other.end()
+      await pending?.catch(() => {})
+    }
   })
 
   it('sets updatedBy null when that user is deleted', async () => {
@@ -212,6 +300,8 @@ describe('status', () => {
     vi.stubEnv('SKODA_VIN', 'ENVVIN0000000000X')
     vi.stubEnv('SKODA_HOME_COORDINATES', '  ')
     vi.stubEnv('ZAPTEC_PASSWORD', 'env-zaptec-password')
+    // test/setup.ts loads .env, so pin every field asserted `missing`.
+    vi.stubEnv('ZAPTEC_USERNAME', '')
     const result = await status()
     expect(result.encryptionKeyConfigured).toBe(true)
     expect(result.sources.skoda.fields).toEqual({
@@ -256,5 +346,31 @@ describe('clear', () => {
     expect(await clear('gridTariff')).toBe(true)
     expect(await readStored('gridTariff')).toBeNull()
     expect(await clear('gridTariff')).toBe(false)
+  })
+})
+
+describe('cache invalidation', () => {
+  // One fixed `now`: the TTL never expires, so only invalidation can refresh a read.
+  const NOW = 1_000
+  const cachedSkoda = () => cachedStored('skoda', () => readStored('skoda'), NOW)
+
+  it('set invalidates the cached stored read', async () => {
+    expect(await cachedSkoda()).toBeNull()
+    await set('skoda', { apiKey: 'k' }, null)
+    expect(await cachedSkoda()).toEqual({ apiKey: 'k' })
+  })
+
+  it('clear invalidates the cached stored read', async () => {
+    await set('skoda', { apiKey: 'k' }, null)
+    expect(await cachedSkoda()).toEqual({ apiKey: 'k' })
+    await clear('skoda')
+    expect(await cachedSkoda()).toBeNull()
+  })
+
+  it('a set rejected by validation does not invalidate', async () => {
+    expect(await cachedSkoda()).toBeNull()
+    await domainError(() => set('skoda', { vin: 'bad' }, null))
+    await insertRaw('skoda', '{"apiKey":"raw"}')
+    expect(await cachedSkoda()).toBeNull()
   })
 })

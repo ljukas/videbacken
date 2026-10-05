@@ -44,6 +44,11 @@ export type CredentialStatus = {
 
 const MAX_VALUE_LENGTH = 512
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
+// Real credentials never contain them, and JSON escapes each as six characters,
+// which could push the envelope past the 16384-char ciphertext CHECK.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
+const SAFE_FIELD_NAME = /^[A-Za-z]{1,32}$/
 
 const fieldsOf = <S extends CredentialSource>(source: S) =>
   CREDENTIAL_FIELDS[source] as readonly CredentialField<S>[]
@@ -136,6 +141,7 @@ function normalize(source: CredentialSource, field: string, raw: unknown): strin
   const value = source === 'skoda' && field === 'vin' ? trimmed.toUpperCase() : trimmed
   const valid =
     value.length <= MAX_VALUE_LENGTH &&
+    !CONTROL_CHARACTER.test(value) &&
     (source === 'skoda' && field === 'vin'
       ? VIN_PATTERN.test(value)
       : source === 'skoda' && field === 'homeCoordinates'
@@ -162,7 +168,9 @@ export async function set<S extends CredentialSource>(
 ): Promise<{ fieldsSet: CredentialField<S>[]; updatedAt: Date }> {
   for (const field of Object.keys(fields)) {
     if (!isCredentialField(source, field)) {
-      throw new IntegrationCredentialDomainError('INVALID_FIELD', field)
+      // Echo the caller's key only when it looks like a field name.
+      const name = SAFE_FIELD_NAME.test(field) ? field : 'unknown'
+      throw new IntegrationCredentialDomainError('INVALID_FIELD', name)
     }
   }
   const updates: CredentialValues<S> = {}
@@ -178,53 +186,59 @@ export async function set<S extends CredentialSource>(
     throw new IntegrationCredentialDomainError('ENCRYPTION_KEY_MISSING')
   }
 
-  const result = await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext('videbacken.integration_credential:' || ${source}))`,
-    )
-    const [row] = await tx
-      .select({ ciphertext: integrationCredential.ciphertext })
-      .from(integrationCredential)
-      .where(eq(integrationCredential.source, source))
-      .for('update')
+  // `finally`: a COMMIT that succeeded server-side but errored client-side must
+  // still drop the cached read.
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext('videbacken.integration_credential:' || ${source}))`,
+      )
+      const [row] = await tx
+        .select({ ciphertext: integrationCredential.ciphertext })
+        .from(integrationCredential)
+        .where(eq(integrationCredential.source, source))
+        .for('update')
 
-    let current: CredentialValues<S> = {}
-    if (row) {
-      try {
-        current = parseStored(source, row.ciphertext)
-      } catch (err) {
-        if (!(err instanceof CredentialsUnreadableError)) throw err
-        logger.warn('integration credentials replaced unreadable row', { source })
+      let current: CredentialValues<S> = {}
+      if (row) {
+        try {
+          current = parseStored(source, row.ciphertext)
+        } catch (err) {
+          if (!(err instanceof CredentialsUnreadableError)) throw err
+          logger.warn('integration credentials replaced unreadable row', { source })
+        }
       }
-    }
 
-    const combined: CredentialValues<S> = { ...current, ...updates }
-    // Vocabulary order, from the merged object's own keys.
-    const fieldsSet = fieldsOf(source).filter((field) => combined[field] !== undefined)
-    const merged = Object.fromEntries(fieldsSet.map((field) => [field, combined[field]]))
-    const ciphertext = encrypt(source, JSON.stringify(merged))
+      const combined: CredentialValues<S> = { ...current, ...updates }
+      // Vocabulary order, from the merged object's own keys.
+      const fieldsSet = fieldsOf(source).filter((field) => combined[field] !== undefined)
+      const merged = Object.fromEntries(fieldsSet.map((field) => [field, combined[field]]))
+      const ciphertext = encrypt(source, JSON.stringify(merged))
 
-    const [saved] = await tx
-      .insert(integrationCredential)
-      .values({ source, ciphertext, fieldsSet, updatedBy: userId })
-      .onConflictDoUpdate({
-        target: integrationCredential.source,
-        set: { ciphertext, fieldsSet, updatedBy: userId, updatedAt: new Date() },
-      })
-      .returning({ updatedAt: integrationCredential.updatedAt })
-    return { fieldsSet, updatedAt: saved.updatedAt }
-  })
-
-  invalidateCredentials(source)
-  return result
+      const [saved] = await tx
+        .insert(integrationCredential)
+        .values({ source, ciphertext, fieldsSet, updatedBy: userId })
+        .onConflictDoUpdate({
+          target: integrationCredential.source,
+          set: { ciphertext, fieldsSet, updatedBy: userId, updatedAt: new Date() },
+        })
+        .returning({ updatedAt: integrationCredential.updatedAt })
+      return { fieldsSet, updatedAt: saved.updatedAt }
+    })
+  } finally {
+    invalidateCredentials(source)
+  }
 }
 
 /** Deletes the stored row; true when one was deleted. */
 export async function clear(source: CredentialSource): Promise<boolean> {
-  const deleted = await db
-    .delete(integrationCredential)
-    .where(eq(integrationCredential.source, source))
-    .returning({ source: integrationCredential.source })
-  invalidateCredentials(source)
-  return deleted.length > 0
+  try {
+    const deleted = await db
+      .delete(integrationCredential)
+      .where(eq(integrationCredential.source, source))
+      .returning({ source: integrationCredential.source })
+    return deleted.length > 0
+  } finally {
+    invalidateCredentials(source)
+  }
 }
