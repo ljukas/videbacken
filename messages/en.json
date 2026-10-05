@@ -436,6 +436,7 @@
   "users_description": "Manage who has access to Videbacken.",
   "users_invite_button": "Invite user",
   "users_title": "Users",
+  "users_list_error_title": "Couldn't load the users",
   "validation_email_invalid": "Enter a valid email address",
   "validation_email_required": "Enter an email address",
   "validation_name_required": "Enter a name",

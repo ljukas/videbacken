@@ -1,9 +1,11 @@
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { UserPlusIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Button } from '~/components/ui/button'
 import { EditUserDialog } from '~/components/user/EditUserDialog'
 import { InviteUserDialog } from '~/components/user/InviteUserDialog'
@@ -11,6 +13,7 @@ import { type RevokeTarget, RevokeUserDialog } from '~/components/user/RevokeUse
 import { UsersTable } from '~/components/user/UsersTable'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { orpc } from '~/lib/orpc/client'
+import { loadRouteData } from '~/lib/query/routeData'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
@@ -31,14 +34,9 @@ export const Route = createFileRoute('/_authenticated/users')({
     }),
   }),
   validateSearch: usersSearchSchema,
-  loaderDeps: ({ search }) => ({
-    dialog: search.dialog,
-    userId: search.userId,
-    email: search.email,
-  }),
-  loader: async ({ context: { queryClient } }) => {
-    await queryClient.ensureQueryData(orpc.user.list.queryOptions())
-  },
+  // No loaderDeps: opening a dialog (a search change) mustn't re-run the loader.
+  loader: ({ context: { queryClient } }) =>
+    loadRouteData(queryClient, { critical: [orpc.user.list.queryOptions()] }),
   component: Users,
 })
 
@@ -68,11 +66,12 @@ function Users() {
   // should surface without a manual reload. Polling — not a push — because an
   // open SSE stream keeps a Vercel Fluid instance (and its 2 GB of provisioned
   // memory) billing 24/7; see ADR-0018. Same cadence as the sensors tiles.
-  const { data: users } = useSuspenseQuery({
+  const usersResult = useQuery({
     ...orpc.user.list.queryOptions(),
     refetchInterval: 60_000,
   })
-  const revokeUserRow = revokeEmail ? users.find((u) => u.email === revokeEmail) : undefined
+  const users = loadFailed(usersResult) ? undefined : usersResult.data
+  const revokeUserRow = revokeEmail ? users?.find((u) => u.email === revokeEmail) : undefined
   const revokeTarget: RevokeTarget | undefined = revokeUserRow
     ? { email: revokeUserRow.email, name: revokeUserRow.name, status: revokeUserRow.status }
     : undefined
@@ -105,20 +104,29 @@ function Users() {
         </div>
       ) : null}
 
-      <UsersTable
-        users={users}
-        currentUserId={currentUser.id}
-        isAdmin={isAdmin}
-        onEdit={(id) => open('edit', { userId: id })}
-        onRevoke={(targetEmail) => open('revoke', { email: targetEmail })}
-        onResendInvite={
-          isAdmin
-            ? (targetEmail) => {
-                if (!resendInvite.isPending) resendInvite.mutate({ email: targetEmail })
-              }
-            : undefined
-        }
-      />
+      <LoadErrorAlert title={m.users_list_error_title()} query={usersResult} />
+      <SectionSkeleton
+        name="users-table"
+        loading={firstLoadPending(usersResult)}
+        fallbackHeight="20rem"
+      >
+        {users ? (
+          <UsersTable
+            users={users}
+            currentUserId={currentUser.id}
+            isAdmin={isAdmin}
+            onEdit={(id) => open('edit', { userId: id })}
+            onRevoke={(targetEmail) => open('revoke', { email: targetEmail })}
+            onResendInvite={
+              isAdmin
+                ? (targetEmail) => {
+                    if (!resendInvite.isPending) resendInvite.mutate({ email: targetEmail })
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+      </SectionSkeleton>
 
       {isAdmin ? (
         <>

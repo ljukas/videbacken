@@ -436,6 +436,7 @@
   "users_description": "Hantera vilka som har åtkomst till Videbacken.",
   "users_invite_button": "Bjud in användare",
   "users_title": "Användare",
+  "users_list_error_title": "Kunde inte hämta användarna",
   "validation_email_invalid": "Ange en giltig e-postadress",
   "validation_email_required": "Ange en e-postadress",
   "validation_name_required": "Ange ett namn",
