@@ -40,7 +40,8 @@ the step needs a short brainstorm before its plan.
 3. **After step 3 (prod).** One `/charging` load (admin) makes at most half of today's 19 requests (see baseline),
    and `findActiveById` within that load stays under ~20 ms.
 4. **After step 4 (build).** The form chunk no longer contains `country-flag-icons` or `libphonenumber-js` except on
-   pages with a phone field. `/charging` adds at most ~220 KB gz beyond the entry (from 335).
+   pages with a phone field. `/charging` adds at most ~245 KB gz beyond the entry (from ~361 after step 1, which
+   added ~27 KB gz of skeleton bones).
 5. **After step 5 (prod).** Owner reviews every converted chart live. recharts, redux, immer and decimal.js-light are
    gone from the build.
 6. **After step 6 (build).** The upload chunk shrinks, and the font preload shows in the SSR `<head>`.

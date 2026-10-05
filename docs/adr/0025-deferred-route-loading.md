@@ -83,7 +83,8 @@ the `getSession` server function every time.
 - **The cache never holds the session token.** The SSR query integration serializes the cache into the HTML, so the
   query function returns `{ user }` (or `null`), never Better Auth's session object.
 - **On the server it's always fresh.** `getRouter()` builds a new `QueryClient` per request.
-- **Sign-out already clears it.** `useSignOut` calls `queryClient.clear()`.
+- **Sign-out clears it.** `useSignOut` removes the cached session before navigating to `/login`, and clears the whole
+  cache afterwards.
 
 ### 3. Sections own their loading state
 

@@ -19,6 +19,8 @@ section skeletons filling in, instead of freezing the old page for a second or m
 **Spec:** [ADR-0025](../../adr/0025-deferred-route-loading.md). Read it first. Roadmap:
 [client performance](../roadmaps/2026-10-05-client-performance.md), step 1 (baseline numbers there).
 
+> **Superseded in part:** ADR-0025 and the controller's rulings during the build override this plan where they differ: `src/lib/bones.ts` was dropped (`SectionSkeleton` imports the registry), deferred queries start on the client only, and the capture widths are 375/768/1100/1280.
+
 ## Global Constraints
 
 - Client code may only `import type` from services (CLAUDE.md gotcha). `loadRouteData` and `SectionSkeleton` are
