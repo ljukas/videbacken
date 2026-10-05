@@ -96,5 +96,5 @@ drove 4 km; only its position (`IN_MOTION`, then parked elsewhere) told the trut
   changes 0-1 rows and the crons (:00 vs :07/:22/:37/:52) don't overlap.
 - Roll forward only once `skoda_live` rows exist: PR 1 code can't label them, so rolling back leaves rows it can't
   display.
-- The 20 requests/h per VIN are shared by the cron (4/h), admin "Hämta bilens status", and any local testing with the
+- The 20 requests/h per VIN are shared by the cron (4/h), the admin's "Synka nu" on the Škoda tile, and any local testing with the
   same key; the client retries at most once.

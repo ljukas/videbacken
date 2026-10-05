@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { IntegrationSource } from '~/lib/integrationHealth'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -10,6 +10,9 @@ export type SourceEntry = {
   source: IntegrationSource
   health: Health | undefined
   runs: RunsQuery | undefined
+  /** Source-specific lines and buttons for its tile (see SyncSourceTile). */
+  details?: ReactNode
+  actions?: ReactNode
 }
 
 // Admin-only "Datakällor": every integration the page reads, at a glance, with
@@ -72,6 +75,8 @@ export function SyncSourcesPanel({
               onSync={() => onSync(e.source)}
               syncing={isPendingFor(e.source)}
               onOpenHistory={() => onOpenHistory(e.source)}
+              details={e.details}
+              actions={e.actions}
               historyRef={(el) => {
                 if (!el) return
                 historyButtons.set(e.source, el)

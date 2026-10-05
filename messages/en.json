@@ -127,7 +127,7 @@
   "charging_source_progress_label": "Sync progress, {source}",
   "charging_source_role_elpris": "Spot prices",
   "charging_source_role_emaldo": "House energy",
-  "charging_source_role_skoda": "Car state",
+  "charging_source_role_skoda": "Car state and charging log",
   "charging_source_role_zaptec": "Charging sessions",
   "charging_source_state_unknown": "Status unknown",
   "charging_source_syncing": "Syncing…",
@@ -152,7 +152,6 @@
     }
   ],
   "charging_sync_prices_failed": "Electricity prices couldn't be fetched",
-  "charging_sync_skoda_now": "Fetch the car's status",
   "charging_sync_skoda_ok": "The car's status is up to date",
   "charging_sync_skoda_failed": "The car's status couldn't be fetched",
   "charging_sync_house_ok": "The house's energy data is up to date",
@@ -248,7 +247,7 @@
   "dashboard_empty_description": "This is your starting point — pages you add will show up here.",
   "dashboard_empty_title": "Nothing here yet",
   "dashboard_welcome_heading": "Welcome, {name}",
-  "email_credential_expiry_body": "The API key Videbacken uses to read the car's status expires on {date}. After that, new charging sessions count as our car, even if a guest charged. Create a new key in the MyŠkoda app (https://go.skoda.eu/api-keys), replace SKODA_API_KEY in Vercel (Production) and redeploy — or ask whoever manages the Vercel project. Verify with Fetch the car's status on the overview page.",
+  "email_credential_expiry_body": "The API key Videbacken uses to read the car's status expires on {date}. After that, new charging sessions count as our car, even if a guest charged. Create a new key in the MyŠkoda app (https://go.skoda.eu/api-keys), replace SKODA_API_KEY in Vercel (Production) and redeploy — or ask whoever manages the Vercel project. Verify with Sync now on Škoda under Data sources on the overview page.",
   "email_credential_expiry_button": "View charging overview",
   "email_credential_expiry_fallback": "If the button doesn't work, copy and paste the following link into your browser:",
   "email_credential_expiry_footer": "This is an automated message from Videbacken.",
@@ -654,26 +653,7 @@
   "charging_vehicle_auto": "Automatic",
   "charging_vehicle_saved": "Saved",
   "charging_vehicle_save_error": "Couldn't save who charged",
-  "charging_vehicle_log_title": "Car data",
-  "charging_vehicle_log_description": "The car's charging log and the status it reports during each session decide which sessions are our car.",
-  "charging_vehicle_log_coverage": [
-    {
-      "declarations": [
-        "input count",
-        "input from",
-        "input to",
-        "local countPlural = count: plural",
-        "local countFormatted = count: number"
-      ],
-      "selectors": ["countPlural"],
-      "match": {
-        "countPlural=one": "Charging log: {countFormatted} charge, {from} – {to}",
-        "countPlural=other": "Charging log: {countFormatted} charges, {from} – {to}"
-      }
-    }
-  ],
   "charging_vehicle_log_none": "No charging log imported",
-  "charging_vehicle_live_last_contact": "Last contact with the car:",
   "charging_vehicle_live_none": "No contact with the car yet",
   "charging_vehicle_live_error_title": "The last contact with the car couldn't be loaded",
   "charging_vehicle_import_button": "Import charging log",
@@ -748,5 +728,21 @@
   ],
   "charging_skoda_key_expiring_body_today": "It expires today, {date}. Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy.",
   "charging_vehicle_key_expires": "The key expires on {date}",
-  "charging_vehicle_key_expired": "The key expired on {date}"
+  "charging_vehicle_key_expired": "The key expired on {date}",
+  "charging_vehicle_live_heard": "Last heard from the car {time} · {at}",
+  "charging_vehicle_log_through": [
+    {
+      "declarations": [
+        "input count",
+        "input to",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Charging log: {countFormatted} session through {to}",
+        "countPlural=other": "Charging log: {countFormatted} sessions through {to}"
+      }
+    }
+  ]
 }

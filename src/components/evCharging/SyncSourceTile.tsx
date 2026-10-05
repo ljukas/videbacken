@@ -90,6 +90,8 @@ export function SyncSourceTile({
   syncing,
   onOpenHistory,
   historyRef,
+  details,
+  actions,
 }: {
   source: IntegrationSource
   health: Health | undefined
@@ -98,6 +100,10 @@ export function SyncSourceTile({
   onOpenHistory: () => void
   /** The "Historik" button, so the panel can return focus to it when the overlay closes. */
   historyRef?: React.Ref<HTMLButtonElement>
+  /** Source-specific lines under the state (the car's last contact, its log). */
+  details?: React.ReactNode
+  /** Source-specific `<Button>`s (the rows size them by data-slot), each on its own full-width row above sync + history; pass undefined for none. */
+  actions?: React.ReactNode
 }) {
   const name = integrationSourceName(source)
   const message = health ? syncHealthMessage(health) : null
@@ -174,33 +180,39 @@ export function SyncSourceTile({
             {message}
           </p>
         ) : null}
+        {details}
       </div>
       {/* Even full-width buttons: stacked in a narrow tile, side by side from
-          13rem; 44px tall on touch input, whatever the viewport. */}
-      <div className="mt-auto grid @[13rem]:grid-cols-2 grid-cols-1 gap-2 [&>button:only-child]:col-span-full pointer-coarse:[&>button]:h-11 [&>button]:w-full">
-        {/* Retrying can't fix missing credentials, so no sync while unconfigured. */}
-        {health?.state !== 'not_configured' ? (
-          <SyncNowButton
-            onSync={onSync}
-            pending={pending}
-            label={syncLabel}
-            aria-label={m.charging_source_action_label({ action: syncLabel, source: name })}
-            keepFocusWhilePending
-          />
-        ) : null}
-        <Button
-          ref={historyRef}
-          variant="secondary"
-          size="sm"
-          onClick={onOpenHistory}
-          aria-label={m.charging_source_action_label({
-            action: m.charging_source_history(),
-            source: name,
-          })}
-        >
-          <HistoryIcon />
-          {m.charging_source_history()}
-        </Button>
+          13rem; 44px tall on touch input, whatever the viewport. A source's own
+          actions sit on full-width rows above, so they never pair up with sync +
+          history, and those stay level with the row-mates' at the tile's foot. */}
+      <div className="mt-auto flex flex-col gap-2 pointer-coarse:[&_[data-slot=button]]:h-11 [&_[data-slot=button]]:w-full">
+        {actions ? <div className="grid gap-2">{actions}</div> : null}
+        <div className="grid @[13rem]:grid-cols-2 grid-cols-1 gap-2 [&>[data-slot=button]:only-child]:col-span-full">
+          {/* Retrying can't fix missing credentials, so no sync while unconfigured. */}
+          {health?.state !== 'not_configured' ? (
+            <SyncNowButton
+              onSync={onSync}
+              pending={pending}
+              label={syncLabel}
+              aria-label={m.charging_source_action_label({ action: syncLabel, source: name })}
+              keepFocusWhilePending
+            />
+          ) : null}
+          <Button
+            ref={historyRef}
+            variant="secondary"
+            size="sm"
+            onClick={onOpenHistory}
+            aria-label={m.charging_source_action_label({
+              action: m.charging_source_history(),
+              source: name,
+            })}
+          >
+            <HistoryIcon />
+            {m.charging_source_history()}
+          </Button>
+        </div>
       </div>
     </Card>
   )
