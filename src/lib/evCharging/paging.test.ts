@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest'
 import {
   DEFAULT_SESSION_PAGE_SIZE,
+  MAX_SESSION_PAGE,
   pageCount,
   pageItems,
   SESSION_PAGE_SIZES,
+  sessionPageSize,
   sessionPagingSearch,
 } from './paging'
 
@@ -18,12 +20,24 @@ test('pageCount rounds up and never drops below one page', () => {
   expect(pageCount(10, 10)).toBe(1)
   expect(pageCount(11, 10)).toBe(2)
   expect(pageCount(214, 10)).toBe(22)
+  expect(pageCount(25, 25)).toBe(1)
+  expect(pageCount(26, 25)).toBe(2)
+  expect(pageCount(214, 25)).toBe(9)
+  expect(pageCount(50, 50)).toBe(1)
+  expect(pageCount(51, 50)).toBe(2)
 })
 
 test('pageItems lists every page when they all fit in seven slots', () => {
   expect(pageItems(1, 1)).toEqual([1])
   expect(pageItems(3, 5)).toEqual([1, 2, 3, 4, 5])
   expect(pageItems(7, 7)).toEqual([1, 2, 3, 4, 5, 6, 7])
+})
+
+test('pageItems collapses from eight pages, pivoting between pages 4 and 5', () => {
+  expect(pageItems(1, 8)).toEqual([1, 2, 3, 4, 5, 'ellipsis', 8])
+  expect(pageItems(4, 8)).toEqual([1, 2, 3, 4, 5, 'ellipsis', 8])
+  expect(pageItems(5, 8)).toEqual([1, 'ellipsis', 4, 5, 6, 7, 8])
+  expect(pageItems(8, 8)).toEqual([1, 'ellipsis', 4, 5, 6, 7, 8])
 })
 
 test('pageItems collapses the far end near the start', () => {
@@ -45,9 +59,17 @@ test('pageItems always has seven slots once pages overflow, so the control never
   for (let page = 1; page <= 30; page++) expect(pageItems(page, 30)).toHaveLength(7)
 })
 
-test('pageItems clamps an out-of-range page', () => {
+test('pageItems treats an out-of-range or NaN page as the nearest real one', () => {
   expect(pageItems(99, 3)).toEqual([1, 2, 3])
+  expect(pageItems(99, 22)).toEqual(pageItems(22, 22))
   expect(pageItems(0, 22)).toEqual(pageItems(1, 22))
+  expect(pageItems(Number.NaN, 22)).toEqual(pageItems(1, 22))
+})
+
+test('sessionPageSize accepts only the offered sizes', () => {
+  for (const size of SESSION_PAGE_SIZES) expect(sessionPageSize.parse(size)).toBe(size)
+  expect(sessionPageSize.safeParse(7).success).toBe(false)
+  expect(sessionPageSize.safeParse('10').success).toBe(false)
 })
 
 test('the URL paging params fall back to defaults instead of erroring', () => {
@@ -62,4 +84,13 @@ test('the URL paging params fall back to defaults instead of erroring', () => {
     size: undefined,
   })
   expect(sessionPagingSearch.parse({ page: 1.5 })).toEqual({ page: undefined, size: undefined })
+  expect(sessionPagingSearch.parse({ page: MAX_SESSION_PAGE + 1 })).toEqual({
+    page: undefined,
+    size: undefined,
+  })
+})
+
+test('a bad URL paging param falls back on its own, keeping the other', () => {
+  expect(sessionPagingSearch.parse({ page: 3, size: 7 })).toEqual({ page: 3, size: undefined })
+  expect(sessionPagingSearch.parse({ page: 0, size: 25 })).toEqual({ page: undefined, size: 25 })
 })

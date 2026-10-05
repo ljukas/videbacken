@@ -8,12 +8,15 @@ export const SESSION_PAGE_SIZES = [10, 25, 50] as const
 export type SessionPageSize = (typeof SESSION_PAGE_SIZES)[number]
 export const DEFAULT_SESSION_PAGE_SIZE: SessionPageSize = 10
 
-export const sessionPageSize = z.union(SESSION_PAGE_SIZES.map((n) => z.literal(n)))
+/** One of the offered page sizes; the `sessions` procedure's input rejects anything else. */
+export const sessionPageSize = z.literal(SESSION_PAGE_SIZES)
+/** A page past any real list: bounds the offset a hand-edited URL can ask for. */
+export const MAX_SESSION_PAGE = 10_000
 
 // `?page=&size=`: a clean URL means the first page at the default size, and
 // garbage (`size=7`, `page=0`) falls back to that instead of erroring the loader.
 export const sessionPagingSearch = z.object({
-  page: z.number().int().min(1).optional().catch(undefined),
+  page: z.number().int().min(1).max(MAX_SESSION_PAGE).optional().catch(undefined),
   size: sessionPageSize.optional().catch(undefined),
 })
 
@@ -31,7 +34,8 @@ export type PageItem = number | 'ellipsis'
 const SLOTS = 7
 
 export function pageItems(page: number, count: number): PageItem[] {
-  const current = Math.min(Math.max(page, 1), count)
+  // A NaN page would slip past min/max; treat it as the first page.
+  const current = Number.isNaN(page) ? 1 : Math.min(Math.max(page, 1), count)
   const range = (from: number, to: number) =>
     Array.from({ length: to - from + 1 }, (_, i) => from + i)
   if (count <= SLOTS) return range(1, count)
