@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
   DEFAULT_SESSION_PAGE_SIZE,
   MAX_SESSION_PAGE,
+  MAX_SESSION_PAGE_SIZE,
   pageCount,
   pageItems,
   pageSlice,
@@ -13,6 +14,7 @@ import {
 test('offers 10, 25 and 50 rows per page, 10 by default', () => {
   expect(SESSION_PAGE_SIZES).toEqual([10, 25, 50])
   expect(DEFAULT_SESSION_PAGE_SIZE).toBe(10)
+  expect(MAX_SESSION_PAGE_SIZE).toBe(Math.max(...SESSION_PAGE_SIZES))
 })
 
 test('pageCount rounds up and never drops below one page', () => {
@@ -85,6 +87,10 @@ test('the URL paging params fall back to defaults instead of erroring', () => {
     size: undefined,
   })
   expect(sessionPagingSearch.parse({ page: 1.5 })).toEqual({ page: undefined, size: undefined })
+  expect(sessionPagingSearch.parse({ page: MAX_SESSION_PAGE })).toEqual({
+    page: MAX_SESSION_PAGE,
+    size: undefined,
+  })
   expect(sessionPagingSearch.parse({ page: MAX_SESSION_PAGE + 1 })).toEqual({
     page: undefined,
     size: undefined,

@@ -78,3 +78,14 @@ test.each([
     for (const k of o) expect(k).toContain('"vehicle":"ours"')
   }
 })
+
+test.each([
+  ['overview', Overview],
+  ['economy', Economy],
+] as const)('%s: the session list’s page and size are no loader deps', (_n, route) => {
+  // A dep change blocks a navigation on the whole loader; a page click must not.
+  const r = route as unknown as RouteLike
+  const deps = (search: Record<string, unknown>) =>
+    (r.options.loaderDeps as (a: { search: unknown }) => unknown)({ search: validator(r)(search) })
+  expect(deps({ page: 2, size: 25 })).toEqual(deps({}))
+})

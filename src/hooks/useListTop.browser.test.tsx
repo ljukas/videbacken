@@ -58,3 +58,21 @@ function SmallHarness() {
     </div>
   )
 }
+
+test('a heading hidden under a scroller that sits below a header still counts as out of view', async () => {
+  // The heading's viewport top stays positive (the header pushes the scroller
+  // down), but it has scrolled above the scroller's top edge.
+  const screen = await render(
+    <div>
+      <div style={{ height: 120 }} />
+      <Harness />
+    </div>,
+  )
+  const scroller = screen.getByTestId('scroller').element() as HTMLElement
+  scroller.scrollTop = 60
+  const heading = screen.getByRole('heading', { name: 'Sessions' }).element() as HTMLElement
+  expect(heading.getBoundingClientRect().top).toBeGreaterThan(0)
+  expect(heading.getBoundingClientRect().top).toBeLessThan(scroller.getBoundingClientRect().top)
+  ;(screen.getByRole('button', { name: 'Next' }).element() as HTMLButtonElement).click()
+  expect(document.activeElement).toBe(heading)
+})

@@ -7,7 +7,7 @@ import {
 } from '~/lib/evCharging/chargingEconomy'
 import { type CostTimings, getCostOverview, getSessionCosts } from '~/lib/evCharging/costing'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { MAX_SESSION_PAGE, sessionPageSize } from '~/lib/evCharging/paging'
+import { MAX_SESSION_PAGE, MAX_SESSION_PAGE_SIZE, sessionPageSize } from '~/lib/evCharging/paging'
 import { runZaptecSync } from '~/lib/evCharging/sync'
 import {
   MAX_IMPORT_ROWS,
@@ -99,10 +99,9 @@ export const evChargingRouter = {
     }),
 
   // Cash cost (stored solar/battery mix, `costMixMs`) of the sessions on the
-  // list's current page (the client passes the ids it shows; a page is at most
-  // 50, the cap leaves room).
+  // list's current page: the client passes the ids it shows, at most one page.
   sessionCosts: protectedProcedure
-    .input(z.object({ sessionIds: z.array(z.uuid()).max(500) }))
+    .input(z.object({ sessionIds: z.array(z.uuid()).max(MAX_SESSION_PAGE_SIZE) }))
     .handler(async ({ input, context }) => {
       const timings: CostTimings = {}
       const costs = await getSessionCosts({ sessionIds: input.sessionIds, timings })

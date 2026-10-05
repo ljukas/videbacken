@@ -7,6 +7,7 @@ import { z } from 'zod'
 export const SESSION_PAGE_SIZES = [10, 25, 50] as const
 export type SessionPageSize = (typeof SESSION_PAGE_SIZES)[number]
 export const DEFAULT_SESSION_PAGE_SIZE: SessionPageSize = 10
+export const MAX_SESSION_PAGE_SIZE: SessionPageSize = 50
 
 /** One of the offered page sizes; the `sessions` procedure's input rejects anything else. */
 export const sessionPageSize = z.literal(SESSION_PAGE_SIZES)

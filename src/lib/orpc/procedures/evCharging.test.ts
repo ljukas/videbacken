@@ -143,6 +143,18 @@ test('sessions serves the page and size asked for, and the last page for one pas
   expect(past.sessions.map((s) => s.id)).toEqual(newestFirst.slice(10))
 })
 
+test('sessionCosts takes at most one page of ids', async () => {
+  await signIn('user')
+  const ids = (n: number) =>
+    Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
+  await expect(
+    call(evChargingRouter.sessionCosts, { sessionIds: ids(50) }, { context: baseContext() }),
+  ).resolves.toEqual([])
+  await expect(
+    call(evChargingRouter.sessionCosts, { sessionIds: ids(51) }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
 test('sessions records the count as a sub-timing', async () => {
   await signIn('user')
   const context = { ...baseContext(), timings: {} as Record<string, number> }

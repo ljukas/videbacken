@@ -246,6 +246,9 @@ test('listSessions pages newest first, reports the total, and computes peakKw', 
   expect(byId.get(s3)?.peakKw).toBe(3)
   expect(byId.get(s2)?.peakKw).toBe(2)
   expect(byId.get(s1)?.peakKw).toBeNull()
+  // Peaks follow the page served, not the first page.
+  const middle = await listSessions({ page: 2, pageSize: 1 })
+  expect(middle.sessions.map((s) => [s.id, s.peakKw])).toEqual([[s2, 2]])
 })
 
 test('listSessions serves the last page for a page past the end', async () => {

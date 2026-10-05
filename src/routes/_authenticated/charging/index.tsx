@@ -32,7 +32,7 @@ import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
-import { useListTop } from '~/hooks/useListTop'
+import { useSessionPaging } from '~/hooks/useSessionPaging'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import {
@@ -175,7 +175,7 @@ function ChargingPage() {
   const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? DEFAULT_VEHICLE_SCOPE })
   const sessionPage = Route.useSearch({ select: (s) => s.page ?? 1 })
   const sessionPageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
-  const sessionsTop = useListTop()
+  const paging = useSessionPaging<ChargingSearch>(navigate)
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
@@ -226,14 +226,21 @@ function ChargingPage() {
     placeholderData: keepPreviousData,
   })
   // The page on screen. Placeholder data lasts only while the next page is
-  // pending; once that fetch has failed for good, `data` is gone. Keeping the
-  // last page shown here leaves its rows (and the pagination control, with the
-  // focus on it) under the error alert instead of unmounting them. Set during
-  // render: React's pattern for state derived from a changing value.
-  const [shownSessions, setShownSessions] = useState(sessions.data)
-  if (sessions.data !== undefined && sessions.data !== shownSessions) {
-    setShownSessions(sessions.data)
+  // pending; once that fetch has failed for good, `data` is gone. The last page
+  // that loaded in this scope stays then, under the error alert (rows and the
+  // pagination control, with the focus on it) instead of unmounting. Only this
+  // scope's: another scope's rows would read as this one's. Set during render:
+  // React's pattern for state derived from a changing value.
+  const [lastLoaded, setLastLoaded] = useState(() =>
+    sessions.data && !sessions.isPlaceholderData ? { vehicle, data: sessions.data } : undefined,
+  )
+  if (sessions.data && !sessions.isPlaceholderData && sessions.data !== lastLoaded?.data) {
+    setLastLoaded({ vehicle, data: sessions.data })
   }
+  const lastInScope = lastLoaded?.vehicle === vehicle ? lastLoaded.data : undefined
+  // Once the read has failed (retries included), only this scope's last page:
+  // the placeholder may be another scope's rows.
+  const shownSessions = loadFailed(sessions) ? lastInScope : (sessions.data ?? lastInScope)
   // Rows that aren't this URL's (another page still loading, or one that failed) are dimmed.
   const sessionsStale = sessions.data === undefined || sessions.isPlaceholderData
   const { data: cost, isPlaceholderData: costIsStale } = useQuery({
@@ -321,34 +328,6 @@ function ChargingPage() {
     navigate({
       to: '.',
       search: (s) => ({ ...s, vehicle: vehicleScopeParam(v), page: undefined }),
-      replace: true,
-      resetScroll: false,
-    })
-  }
-
-  // Paging pushes history, so back steps to the previous page. A clean URL is
-  // page 1 at the default size. Paging from the control under a long page
-  // brings the list's heading (and focus) back into view, so the new page
-  // reads from its newest session.
-  function setSessionPage(page: number) {
-    navigate({
-      to: '.',
-      search: (s) => ({ ...s, page: page === 1 ? undefined : page }),
-      resetScroll: false,
-    })
-    sessionsTop.reveal()
-  }
-
-  // The size is a preference, not a step to go back to: it replaces the entry,
-  // like the year and scope, and starts over at its first page.
-  function setSessionPageSize(size: SessionPageSize) {
-    navigate({
-      to: '.',
-      search: (s) => ({
-        ...s,
-        page: undefined,
-        size: size === DEFAULT_SESSION_PAGE_SIZE ? undefined : size,
-      }),
       replace: true,
       resetScroll: false,
     })
@@ -463,7 +442,7 @@ function ChargingPage() {
 
       <section className="flex flex-col gap-2">
         <h2
-          ref={sessionsTop.ref}
+          ref={paging.headingRef}
           tabIndex={-1}
           className="scroll-mt-4 font-medium text-sm outline-none"
         >
@@ -489,8 +468,8 @@ function ChargingPage() {
                   page={shownSessions.page}
                   pageSize={shownSessions.pageSize}
                   total={shownSessions.total}
-                  onPageChange={setSessionPage}
-                  onPageSizeChange={setSessionPageSize}
+                  onPageChange={paging.setPage}
+                  onPageSizeChange={paging.setPageSize}
                 />
               }
               costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}

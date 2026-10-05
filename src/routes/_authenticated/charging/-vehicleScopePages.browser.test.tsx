@@ -966,3 +966,107 @@ test('Översikt: Vår bil from a clean URL is checked and written to the URL', a
     .toHaveAttribute('aria-checked', 'true')
   expect(router.state.location.search).toMatchObject({ vehicle: 'ours' })
 })
+
+// --- Paging while the next page loads, fails, or another scope/year loads ------
+
+// Puts `key` in flight with a fetch released by hand: the page's own observer
+// joins it, so the page sits in its loading state until `release(data)`.
+function holdQuery(qc: QueryClient, key: readonly unknown[]) {
+  let release!: (data: unknown) => void
+  const gate = new Promise((r) => {
+    release = r
+  })
+  void qc.fetchQuery({ queryKey: key, queryFn: () => gate } as never)
+  return (data: unknown) => release(data)
+}
+
+const sessionsKey = (page: number, pageSize: 10 | 25 | 50 = 10) =>
+  orpc.evCharging.sessions.queryOptions({ input: { page, pageSize, vehicle: 'all' } }).queryKey
+
+test('Översikt: while the next page loads, the current rows stay, dimmed and busy', async () => {
+  const { screen, qc } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedOverview(qc, 'all', [])
+    seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
+  })
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  const release = holdQuery(qc, sessionsKey(2))
+  await screen.getByRole('button', { name: '2', exact: true }).click()
+  // Not blocked on the loader (the page is no loader dep): the list itself shows it's loading.
+  const list = () => screen.getByRole('table').element().closest('[aria-busy]')
+  await vi.waitFor(() => expect(list()?.getAttribute('aria-busy')).toBe('true'))
+  expect(list()?.className).toContain('opacity-60')
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  release({ sessions: [session('p2', 2.2)], total: 25, page: 2, pageSize: 10 })
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  expect(list()?.getAttribute('aria-busy')).toBe('false')
+  expect(list()?.className).not.toContain('opacity-60')
+})
+
+test('Översikt: after a page fails, another page that loads clears the alert', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedOverview(qc, 'all', [])
+    seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
+    seedSessionsPage(qc, { page: 3, pageSize: 10 }, [session('p3', 3.3)], 25)
+  })
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: '2', exact: true }).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  await screen.getByRole('button', { name: '3', exact: true }).click()
+  await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
+  expect(screen.getByText(m.charging_sessions_error_title()).elements()).toHaveLength(0)
+})
+
+test('Översikt: a scope that fails to load never keeps the previous scope’s rows', async () => {
+  // Gäster is unseeded, so its read fails: the Alla rows must not stay under its toggle.
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedOverview(qc, 'all', [])
+    seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
+  })
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  await radio(screen, m.charging_vehicle_scope_other()).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  await vi.waitFor(() =>
+    expect(screen.getByText('1,1', { exact: false }).elements()).toHaveLength(0),
+  )
+  expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
+})
+
+test('Ekonomi: while another year loads, the table keeps the page it showed', async () => {
+  const year2025 = orpc.evCharging.economy.queryOptions({
+    input: { year: 2025, vehicle: 'all' },
+  }).queryKey
+  const { screen, qc, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) =>
+    seedEconomyRows(qc, 23, [2026, 2025]),
+  )
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  // The year's read stays in flight, and the loader doesn't wait for it, so the
+  // page renders the old year as a placeholder while it loads.
+  holdQuery(qc, year2025)
+  const original = qc.prefetchQuery.bind(qc)
+  vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) =>
+    JSON.stringify(opts.queryKey) === JSON.stringify(year2025)
+      ? Promise.resolve()
+      : original(opts as never)) as never)
+  await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
+  await screen.getByRole('option', { name: '2025' }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
+  expect(router.state.location.search).not.toHaveProperty('page')
+  // Still the old year's second page (dimmed), not a flash of its first.
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0)
+})
+
+test('Ekonomi: back steps to the previous page of the table', async () => {
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) =>
+    seedEconomyRows(qc, 23),
+  )
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: '3', exact: true }).click()
+  await expect.element(screen.getByText(kwhCell(21), { exact: false })).toBeVisible()
+  router.history.back()
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 2 })
+})

@@ -19,14 +19,9 @@ import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
-import { useListTop } from '~/hooks/useListTop'
+import { useSessionPaging } from '~/hooks/useSessionPaging'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import {
-  DEFAULT_SESSION_PAGE_SIZE,
-  pageSlice,
-  type SessionPageSize,
-  sessionPagingSearch,
-} from '~/lib/evCharging/paging'
+import { DEFAULT_SESSION_PAGE_SIZE, pageSlice, sessionPagingSearch } from '~/lib/evCharging/paging'
 import {
   DEFAULT_VEHICLE_SCOPE,
   type VehicleScope,
@@ -229,8 +224,8 @@ type EconomyRow = RouterOutputs['evCharging']['economy']['sessions'][number]
 // page before the new year lands.
 function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stale: boolean }) {
   const headingId = useId()
-  const top = useListTop()
-  const navigate = Route.useNavigate()
+  // The same URL conventions as /charging's list.
+  const paging = useSessionPaging<z.infer<typeof searchSchema>>(Route.useNavigate())
   const requestedPage = Route.useSearch({ select: (s) => s.page ?? 1 })
   const pageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
   // Set during render: React's pattern for state derived from a changing value.
@@ -238,41 +233,13 @@ function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stal
   if (!stale && shownPage !== requestedPage) setShownPage(requestedPage)
   const page = pageSlice(sessions, stale ? shownPage : requestedPage, pageSize)
 
-  // As on /charging: paging pushes history and brings the heading (and focus)
-  // back into view; a new size replaces the entry and starts at its first page.
-  const setPage = useCallback(
-    (next: number) => {
-      navigate({
-        to: '.',
-        search: (s) => ({ ...s, page: next === 1 ? undefined : next }),
-        resetScroll: false,
-      })
-      top.reveal()
-    },
-    [navigate, top.reveal],
-  )
-  const setPageSize = useCallback(
-    (size: SessionPageSize) =>
-      navigate({
-        to: '.',
-        search: (s) => ({
-          ...s,
-          page: undefined,
-          size: size === DEFAULT_SESSION_PAGE_SIZE ? undefined : size,
-        }),
-        replace: true,
-        resetScroll: false,
-      }),
-    [navigate],
-  )
-
   return (
     <section aria-labelledby={headingId}>
       <Card>
         <CardHeader>
           <h2
             id={headingId}
-            ref={top.ref}
+            ref={paging.headingRef}
             tabIndex={-1}
             className="scroll-mt-4 font-medium text-sm outline-none"
           >
@@ -285,8 +252,8 @@ function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stal
             page={page.page}
             pageSize={pageSize}
             total={sessions.length}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
+            onPageChange={paging.setPage}
+            onPageSizeChange={paging.setPageSize}
           />
         </CardContent>
       </Card>
