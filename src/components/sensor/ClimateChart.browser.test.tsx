@@ -1,10 +1,22 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS } from '~/lib/sensor/range'
 import type { SeriesBucket } from '~/lib/services/sensor'
 import { renderWithProviders } from '~test/browser/render'
 import { ClimateChart } from './ClimateChart'
+
+// Browser mode shares one real pointer across tests and files: one left over a
+// chart (by an earlier test's click or hover) shows its tooltip and active dot,
+// which these assertions would count. Park it in the viewport's bottom-right
+// corner, below every chart here, before each test.
+beforeEach(async () => {
+  const park = document.createElement('div')
+  park.style.cssText = 'position:fixed;right:0;bottom:0;width:10px;height:10px'
+  document.body.append(park)
+  await userEvent.hover(park)
+  park.remove()
+})
 
 test('draws connected lines for hours-apart readings on a coarse range', async () => {
   // End-to-end guard for the epoch-ms gap-threshold bug: buckets → toDeviceSeries
