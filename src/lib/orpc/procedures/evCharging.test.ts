@@ -20,6 +20,7 @@ import {
   TEST_CREDS,
   tokenBody,
 } from '~/lib/effects/zaptec/fixtures'
+import * as costing from '~/lib/evCharging/costing'
 import { MAX_SESSION_PAGE } from '~/lib/evCharging/paging'
 import { MAX_IMPORT_ROWS } from '~/lib/evCharging/vehicle'
 import type { Logger } from '~/lib/logger'
@@ -106,7 +107,7 @@ test('sessions returns an empty first page for a signed-in user with no data', a
     { page: 1, pageSize: 10 },
     { context: baseContext() },
   )
-  expect(result).toEqual({ sessions: [], total: 0, page: 1, pageSize: 10 })
+  expect(result).toEqual({ sessions: [], total: 0, page: 1, pageSize: 10, costs: [] })
 })
 
 test('sessions serves the page and size asked for, and the last page for one past the end', async () => {
@@ -142,18 +143,6 @@ test('sessions serves the page and size asked for, and the last page for one pas
   )
   expect(past).toMatchObject({ total: 12, page: 2, pageSize: 10 })
   expect(past.sessions.map((s) => s.id)).toEqual(newestFirst.slice(10))
-})
-
-test('sessionCosts takes at most one page of ids', async () => {
-  await signIn('user')
-  const ids = (n: number) =>
-    Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
-  await expect(
-    call(evChargingRouter.sessionCosts, { sessionIds: ids(50) }, { context: baseContext() }),
-  ).resolves.toEqual([])
-  await expect(
-    call(evChargingRouter.sessionCosts, { sessionIds: ids(51) }, { context: baseContext() }),
-  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
 })
 
 test('sessions records the count as a sub-timing', async () => {
@@ -643,13 +632,17 @@ test('session returns one counted session with its economy for a signed-in user'
   expect(result.cost.totalSek).toBeCloseTo(result.economy.actual.totalSek, 9)
   expect(timings).toMatchObject({ economyMixMs: expect.any(Number) })
   const listTimings: Record<string, number> = {}
-  const [listed] = await call(
-    evChargingRouter.sessionCosts,
-    { sessionIds: [row.id] },
+  const listed = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
     { context: { ...baseContext(), timings: listTimings } },
   )
-  expect(listed.totalSek).toBeCloseTo(result.cost.totalSek, 9)
-  expect(listTimings).toMatchObject({ costMixMs: expect.any(Number) })
+  const listedCost = listed.costs?.find((c) => c.sessionId === row.id)
+  expect(listedCost?.totalSek).toBeCloseTo(result.cost.totalSek, 9)
+  expect(listTimings).toMatchObject({
+    costMixMs: expect.any(Number),
+    sessionCostsMs: expect.any(Number),
+  })
   // Aggregates only: no raw house readings ride along.
   expect(Object.keys(result).sort()).toEqual(
     [
@@ -689,6 +682,19 @@ async function insertSession(
     .returning({ id: evChargeSession.id })
   return row.id
 }
+
+test('sessions keeps its rows when costing fails: costs is null, never 0 kr', async () => {
+  await signIn('user')
+  await insertSession()
+  vi.spyOn(costing, 'getSessionCosts').mockRejectedValueOnce(new Error('prices down'))
+  const page = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
+    { context: baseContext() },
+  )
+  expect(page.sessions).toHaveLength(1)
+  expect(page.costs).toBeNull()
+})
 
 const importRow = (id: string, start = '2026-02-01T10:00:00Z', end = '2026-02-01T11:00:00Z') => ({
   sourceSessionId: id,

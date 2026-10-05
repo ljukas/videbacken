@@ -98,7 +98,6 @@
   "charging_sessions_cost_estimated": "Estimated – no hourly readings",
   "charging_sessions_cost_legend": "≈ estimated, the session has no hourly readings",
   "charging_sessions_cost_legend_missing": "— electricity price or fees missing",
-  "charging_sessions_cost_loading": "Working out the cost…",
   "charging_sessions_cost_spot": "of which spot price {spot}",
   "charging_sessions_cost_unknown": "Electricity price or fees missing",
   "charging_sessions_empty_description": "Sessions from Zaptec appear here after the next sync.",

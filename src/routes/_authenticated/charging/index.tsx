@@ -1,4 +1,4 @@
-import { environmentManager, keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
@@ -57,8 +57,6 @@ type ChargingSearch = z.infer<typeof searchSchema>
 
 const sessionsQuery = (page: number, pageSize: SessionPageSize, vehicle: VehicleScope) =>
   orpc.evCharging.sessions.queryOptions({ input: { page, pageSize, vehicle } })
-const sessionCostsQuery = (sessionIds: string[]) =>
-  orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } })
 // The sources whose health alerts this page shows (an admin sees all three).
 const ALERT_SOURCES = ['zaptec', 'elpris', 'skoda'] as const satisfies readonly IntegrationSource[]
 export const Route = createFileRoute('/_authenticated/charging/')({
@@ -71,8 +69,8 @@ export const Route = createFileRoute('/_authenticated/charging/')({
     vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
   // ADR-0025: the server waits for what renders at the top; the client waits
-  // for nothing (sections show skeletons). The sessions' costs are deferred
-  // (below). The data sources' tiles and histories live on /charging/settings.
+  // for nothing (sections show skeletons). The sessions bring their costs. The
+  // data sources' tiles and histories live on /charging/settings.
   loader: async ({ context: { queryClient }, deps, location }) => {
     // The session list's page is deliberately not a loader dep: a dep change
     // blocks the navigation on this whole loader (every prefetch below), so a
@@ -102,15 +100,6 @@ export const Route = createFileRoute('/_authenticated/charging/')({
         syncHealthQuery,
       ],
     })
-    // The costs need the sessions' ids, and are deferred: never started on the
-    // server (see loadRouteData), so the server and the hydrating client both
-    // render them pending. On the client, cached sessions (a revisit) start
-    // them here; otherwise the page's own query starts them once the sessions land.
-    if (environmentManager.isServer()) return
-    const sessions = queryClient.getQueryData(sessionPage.queryKey)
-    if (sessions?.sessions.length) {
-      void queryClient.prefetchQuery(sessionCostsQuery(sessions.sessions.map((s) => s.id)))
-    }
   },
   component: ChargingPage,
 })
@@ -200,23 +189,11 @@ function ChargingPage() {
   const [chartMetric, setChartMetric] = useState<ChartMetric>('kwh')
   const chartCost = showCost && cost ? { year: cost.year, months: cost.months } : undefined
   const showingCost = chartMetric === 'sek' && chartCost !== undefined
-  // Cost for the sessions on screen, keyed by id for the list's cost column.
-  const sessionIds = useMemo(
-    () => shownSessions?.sessions.map((sess) => sess.id) ?? [],
-    [shownSessions],
-  )
-  const sessionCostsResult = useQuery({
-    ...sessionCostsQuery(sessionIds),
-    enabled: sessionIds.length > 0,
-    placeholderData: keepPreviousData,
-  })
-  const sessionCostList = sessionCostsResult.data
-  // Rows still waiting for their cost (first load, or another page's rows)
-  // show a placeholder, not the "missing" dash.
-  const sessionCostsPending = sessionCostsResult.isPending || sessionCostsResult.isPlaceholderData
+  // The cost column for the rows on screen: each page brings its own costs
+  // (null when costing failed: the column's dash, never 0 kr — ADR-0020).
   const sessionCosts = useMemo(
-    () => new Map(sessionCostList?.map((c) => [c.sessionId, c])),
-    [sessionCostList],
+    () => new Map(shownSessions?.costs?.map((c) => [c.sessionId, c])),
+    [shownSessions],
   )
   // Every source's health in one read. Members see only Zaptec's alert, polled
   // at a plain minute; admins also follow "Synkar…" on the sources whose alerts
@@ -403,7 +380,7 @@ function ChargingPage() {
                     onPageSizeChange={paging.setPageSize}
                   />
                 }
-                costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
+                costs={showCost ? { byId: sessionCosts } : undefined}
                 // A sync can't create guest sessions: an admin marks them instead.
                 onSync={
                   isAdmin && vehicle !== 'other' ? () => syncNow.syncSource('zaptec') : undefined

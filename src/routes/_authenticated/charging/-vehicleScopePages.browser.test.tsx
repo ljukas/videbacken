@@ -133,6 +133,7 @@ function seedOverview(qc: QueryClient, vehicle: VehicleScope, sessions: unknown[
       total: sessions.length,
       page: 1,
       pageSize: 10,
+      costs: [],
     } as never,
   )
 }
@@ -205,7 +206,13 @@ test('Översikt: switching scope never shows the sessions empty state mid-switch
     if (JSON.stringify(opts.queryKey) !== JSON.stringify(otherKey)) return original(opts as never)
     held = true
     return gate.then(() => {
-      qc.setQueryData(otherKey, { sessions: [], total: 0, page: 1, pageSize: 10 } as never)
+      qc.setQueryData(otherKey, {
+        sessions: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+        costs: [],
+      } as never)
     })
   }) as never)
   await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
@@ -259,7 +266,7 @@ test('Översikt: a failed overview read shows the alert and the toggle; Alla giv
     qc.setQueryData(
       orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'other' } })
         .queryKey,
-      { sessions: [], total: 0, page: 1, pageSize: 10 } as never,
+      { sessions: [], total: 0, page: 1, pageSize: 10, costs: [] } as never,
     )
   })
   await expect
@@ -384,7 +391,7 @@ function seedCost(qc: QueryClient, allTime: Record<string, unknown>, houseDataFr
   qc.setQueryData(
     orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
       .queryKey,
-    { sessions: [], total: 0, page: 1, pageSize: 10 } as never,
+    { sessions: [], total: 0, page: 1, pageSize: 10, costs: [] } as never,
   )
 }
 
@@ -443,7 +450,7 @@ test('Översikt, cost still loading: the totals and chart hold their skeletons, 
     qc.setQueryData(
       orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
         .queryKey,
-      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10 } as never,
+      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10, costs: [] } as never,
     )
     pendingForever(qc, costKey)
   })
@@ -659,7 +666,7 @@ function seedSessionsPage(
 ) {
   qc.setQueryData(
     orpc.evCharging.sessions.queryOptions({ input: { vehicle: 'all', ...input } }).queryKey,
-    { sessions: rows, total, page: served, pageSize: input.pageSize } as never,
+    { sessions: rows, total, page: served, pageSize: input.pageSize, costs: [] } as never,
   )
 }
 
@@ -749,7 +756,7 @@ test('Översikt: a garbage ?size= falls back to 10 rows', async () => {
     .toHaveTextContent('10')
 })
 
-test('Översikt: the loader prefetches the page and size in the URL, then that page’s costs', async () => {
+test('Översikt: the loader prefetches the page and size in the URL (its costs come with it)', async () => {
   const keys: string[] = []
   await renderPage(Overview, '/charging', '?page=2&size=25', (qc) => {
     seedPagedOverview(qc)
@@ -772,9 +779,6 @@ test('Översikt: the loader prefetches the page and size in the URL, then that p
       orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
         .queryKey,
     ),
-  )
-  expect(keys).toContain(
-    key(orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds: ['p2-25'] } }).queryKey),
   )
 })
 
@@ -1076,7 +1080,7 @@ test('Översikt: while the next page loads, the current rows stay, dimmed and bu
   await vi.waitFor(() => expect(list()?.getAttribute('aria-busy')).toBe('true'))
   expect(list()?.className).toContain('opacity-60')
   await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
-  release({ sessions: [session('p2', 2.2)], total: 25, page: 2, pageSize: 10 })
+  release({ sessions: [session('p2', 2.2)], total: 25, page: 2, pageSize: 10, costs: [] })
   await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
   expect(list()?.getAttribute('aria-busy')).toBe('false')
   expect(list()?.className).not.toContain('opacity-60')

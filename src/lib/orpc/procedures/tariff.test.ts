@@ -138,7 +138,7 @@ test('out-of-range amounts are rejected at the input boundary', async () => {
   ).toMatchObject({ retailMarkupOre: -2 })
 })
 
-test('costOverview and sessionCosts are readable by users and record cost sub-timings', async () => {
+test('costOverview is readable by users and records cost sub-timings', async () => {
   await signIn('user')
   const timings: Record<string, number> = {}
   const overview = await call(
@@ -156,12 +156,6 @@ test('costOverview and sessionCosts are readable by users and record cost sub-ti
     costHouseFromMs: expect.any(Number),
     costComputeMs: expect.any(Number),
   })
-  expect(
-    await call(evChargingRouter.sessionCosts, { sessionIds: [] }, { context: baseContext() }),
-  ).toEqual([])
-  await expect(
-    call(evChargingRouter.sessionCosts, { sessionIds: ['not-a-uuid'] }, { context: baseContext() }),
-  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
 })
 
 test('update surfaces every domain error as its typed code', async () => {
@@ -229,9 +223,5 @@ test('cost procedures reject anonymous callers and out-of-range input', async ()
   await signIn('user')
   await expect(
     call(evChargingRouter.costOverview, { year: 1999 }, { context: baseContext() }),
-  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-  const tooMany = Array.from({ length: 501 }, () => '00000000-0000-4000-8000-000000000000')
-  await expect(
-    call(evChargingRouter.sessionCosts, { sessionIds: tooMany }, { context: baseContext() }),
   ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
 })

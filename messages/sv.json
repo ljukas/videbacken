@@ -98,7 +98,6 @@
   "charging_sessions_cost_estimated": "Uppskattad – timvis mätning saknas",
   "charging_sessions_cost_legend": "≈ uppskattad, timvis mätning saknas för sessionen",
   "charging_sessions_cost_legend_missing": "— elpris eller avgifter saknas",
-  "charging_sessions_cost_loading": "Räknar ut kostnaden…",
   "charging_sessions_cost_spot": "varav spotpris {spot}",
   "charging_sessions_cost_unknown": "Elpris eller avgifter saknas",
   "charging_sessions_empty_description": "Sessioner från Zaptec dyker upp här efter nästa synkning.",
