@@ -166,9 +166,9 @@ export const evChargingRouter = {
     }),
   ),
 
-  // Live charger power/mode for the dashboard tile. Deliberately independent
+  // Live charger power/mode for the overview's live status line. Deliberately independent
   // of the sync health snapshot: a `ZaptecError` here (including
-  // `not_configured`) just means "no live tile", not a health transition.
+  // `not_configured`) just means "no live reading", not a health transition.
   // The whole Zaptec wait (shared login included) is capped at 6 s so a slow
   // Zaptec can never hold this polled request open (ADR-0018); failures are
   // cached in the client, so the poll doesn't re-hit a down/rejecting Zaptec.
@@ -257,7 +257,7 @@ export const evChargingRouter = {
 
   vehicleRecordCoverage: adminProcedure.handler(() => vehicleChargeService.coverage()),
 
-  // Admin card: when the Škoda poll last heard from the car (ADR-0022). Times only.
+  // The Škoda tile: when the poll last heard from the car (ADR-0022). Times only.
   vehicleStateLatest: adminProcedure.handler(() => vehicleStateService.latestSnapshot()),
 
   recentRuns: adminProcedure

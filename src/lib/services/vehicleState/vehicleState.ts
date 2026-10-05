@@ -22,10 +22,10 @@ export async function recordSnapshot(input: SnapshotInput): Promise<void> {
   await db.insert(vehicleStateSnapshot).values(input)
 }
 
-/** Times only — the card needs no presence data (ADR-0022, Privacy). */
+/** Times only — the Škoda tile needs no presence data (ADR-0022, Privacy). */
 export type LatestSnapshot = { polledAt: Date; capturedAt: Date | null }
 
-/** The newest poll, for the admin card's "last contact with the car". */
+/** The newest poll, for the Škoda tile's last contact with the car (admin-only). */
 export async function latestSnapshot(): Promise<LatestSnapshot | null> {
   const [row] = await db
     .select({

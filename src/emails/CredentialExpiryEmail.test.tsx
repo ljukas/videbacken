@@ -92,11 +92,11 @@ test('says what an expired key does and how to verify the new one, in html and t
   const sentences = {
     sv: [
       'Efter det räknas nya laddningar som vår bil, även om en gäst laddade.',
-      'Verifiera med Hämta bilens status på Översikt.',
+      'Verifiera med Synka nu på Škoda under Datakällor på Översikt.',
     ],
     en: [
       'After that, new charging sessions count as our car, even if a guest charged.',
-      "Verify with Fetch the car's status on the overview page.",
+      'Verify with Sync now on Škoda under Data sources on the overview page.',
     ],
   } as const
   for (const locale of ['sv', 'en'] as const) {

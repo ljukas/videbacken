@@ -19,6 +19,7 @@ import {
 } from '~/components/ui/sidebar'
 import { SidebarUserMenu } from '~/components/user/UserMenu'
 import { useModKeyLabel } from '~/hooks/useModKeyLabel'
+import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { m } from '~/paraglide/messages'
 
 // label is a message function rather than a string: module scope evaluates
@@ -43,9 +44,13 @@ type NavSubItem = (typeof chargingSubItems)[number]
 // own match, prefix by default, so it must be exact or /charging would read as
 // the current page on /charging/patterns too. The views' own params (month,
 // metric, dialog) mustn't count, so search is ignored for the match. The chosen
-// year is kept when switching between the views.
+// year and vehicle scope (the page filter, ADR-0021) are kept when switching
+// between the views.
 const sectionLinkProps = {
-  search: (prev: { year?: number }) => ({ year: prev.year }),
+  search: (prev: { year?: number; vehicle?: VehicleScope }) => ({
+    year: prev.year,
+    vehicle: prev.vehicle,
+  }),
   activeOptions: { exact: true, includeSearch: false },
 } as const
 
