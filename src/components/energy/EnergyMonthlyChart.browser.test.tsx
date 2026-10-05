@@ -41,15 +41,17 @@ test('solar: three stacked series, one bar per month with data', async () => {
   await expect.element(screen.getByText(m.energy_series_solar_exported())).toBeVisible()
 })
 
-test('grid and load metrics name their series in the legend', async () => {
-  const grid = await render('grid')
-  await expect.element(grid.screen.getByText(m.energy_series_import_direct())).toBeVisible()
-  await expect.element(grid.screen.getByText(m.energy_series_import_battery())).toBeVisible()
-  await expect.element(grid.screen.getByText(m.energy_series_export())).toBeVisible()
-  grid.screen.unmount()
-  const load = await render('load')
-  await expect.element(load.screen.getByText(m.energy_series_car())).toBeVisible()
-  await expect.element(load.screen.getByText(m.energy_series_house())).toBeVisible()
+test('grid metric names its series in the legend', async () => {
+  const { screen } = await render('grid')
+  await expect.element(screen.getByText(m.energy_series_import_direct())).toBeVisible()
+  await expect.element(screen.getByText(m.energy_series_import_battery())).toBeVisible()
+  await expect.element(screen.getByText(m.energy_series_export())).toBeVisible()
+})
+
+test('load metric names its series in the legend', async () => {
+  const { screen } = await render('load')
+  await expect.element(screen.getByText(m.energy_series_car())).toBeVisible()
+  await expect.element(screen.getByText(m.energy_series_house())).toBeVisible()
 })
 
 test('a year without any data shows the no-data state, not an empty chart', async () => {

@@ -17,8 +17,11 @@ import {
 import { energyFigures, gapHours, type PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
 import {
+  type ChartRow,
+  chartRows,
   type EnergyMetric,
   energyTooltipRows,
+  isBelowAxis,
   METRIC_SERIES,
   type SeriesKey,
 } from './energyTooltip'
@@ -33,18 +36,16 @@ export function energyMetricOptions(): MetricOption<EnergyMetric>[] {
   ]
 }
 
-const EXPORT_COLOR = 'color-mix(in oklab, var(--energy-solar) 50%, var(--background))'
-
 function seriesConfig(): Record<SeriesKey, { label: string; color: string }> {
   return {
     solarDirect: { label: m.energy_series_solar_direct(), color: 'var(--energy-solar)' },
     solarBattery: { label: m.energy_series_solar_battery(), color: 'var(--energy-battery)' },
-    solarExported: { label: m.energy_series_solar_exported(), color: EXPORT_COLOR },
+    solarExported: { label: m.energy_series_solar_exported(), color: 'var(--energy-export)' },
     importDirect: { label: m.energy_series_import_direct(), color: 'var(--energy-grid)' },
     importBattery: { label: m.energy_series_import_battery(), color: 'var(--energy-battery)' },
-    exported: { label: m.energy_series_export(), color: EXPORT_COLOR },
+    exported: { label: m.energy_series_export(), color: 'var(--energy-export)' },
     car: { label: m.energy_series_car(), color: 'var(--brand)' },
-    house: { label: m.energy_series_house(), color: 'var(--chart-1)' },
+    house: { label: m.energy_series_house(), color: 'var(--chart-2)' },
   }
 }
 
@@ -54,9 +55,7 @@ const TOTAL_LABEL: Record<EnergyMetric, () => string> = {
   load: m.energy_chart_total_load,
 }
 
-type Row = { label: string; month: number; sums: PeriodSums | null } & Partial<
-  Record<SeriesKey, number | null>
->
+type Row = ChartRow & { label: string }
 
 // The house's energy per month of `year` for one metric: stacked bars, export
 // below the axis on Nät, a legend (touch can't hover), and a tooltip with the
@@ -87,16 +86,7 @@ export function EnergyMonthlyChart({
   const series = METRIC_SERIES[metric]
   const all = seriesConfig()
   const config = Object.fromEntries(series.map((k) => [k, all[k]])) satisfies ChartConfig
-  const data: Row[] = months.map((p, i) => {
-    const row: Row = { label: monthLabel(i + 1), month: i + 1, sums: p }
-    const rows = p ? energyTooltipRows(metric, p).parts : []
-    for (const key of series) {
-      const part = rows.find((r) => r.key === key)
-      // null (not 0) for a month without data: no bar, no tooltip row.
-      row[key] = part ? (metric === 'grid' && key === 'exported' ? -part.kwh : part.kwh) : null
-    }
-    return row
-  })
+  const data: Row[] = chartRows(metric, months).map((r) => ({ ...r, label: monthLabel(r.month) }))
   const seam = { stroke: 'var(--background)', strokeWidth: 1 }
   const top = series[series.length - (metric === 'grid' ? 2 : 1)]
 
@@ -135,7 +125,7 @@ export function EnergyMonthlyChart({
             dataKey={key}
             stackId="kwh"
             fill={`var(--color-${key})`}
-            radius={key === top || (metric === 'grid' && key === 'exported') ? 4 : 0}
+            radius={isBelowAxis(metric, key) ? [0, 0, 4, 4] : key === top ? [4, 4, 0, 0] : 0}
             {...seam}
             isAnimationActive={false}
           />
@@ -161,20 +151,25 @@ function EnergyTooltip({
   const f = energyFigures(row.sums)
   const gap = gapHours(f)
   const config = seriesConfig()
+  // Nät's export is a separate flow: it follows the total instead of adding to it.
+  const stacked = parts.filter((p) => !isBelowAxis(metric, p.key))
+  const after = parts.filter((p) => isBelowAxis(metric, p.key))
+  const rowFor = ({ key, kwh }: (typeof parts)[number]) => (
+    <TooltipRow key={key} label={config[key].label} color={config[key].color}>
+      {formatOneDecimal(kwh)} kWh
+    </TooltipRow>
+  )
   return (
     <div className="grid min-w-44 gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs shadow-xl">
       <div className="font-medium">
         {monthName(row.month)}
         {row.month === currentMonth ? ` (${m.energy_chart_so_far()})` : ''}
       </div>
-      {parts.map(({ key, kwh }) => (
-        <TooltipRow key={key} label={config[key].label} color={config[key].color}>
-          {formatOneDecimal(kwh)} kWh
-        </TooltipRow>
-      ))}
+      {stacked.map(rowFor)}
       <TooltipRow label={TOTAL_LABEL[metric]()} strong>
         {formatOneDecimal(totalKwh)} kWh
       </TooltipRow>
+      {after.map(rowFor)}
       {f.selfSufficiency === null ? null : (
         <TooltipRow label={m.energy_tile_self_sufficiency()}>
           {formatShare(f.selfSufficiency)}

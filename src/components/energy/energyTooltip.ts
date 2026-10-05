@@ -24,16 +24,42 @@ export function energyTooltipRows(
   p: PeriodSums,
 ): { parts: { key: SeriesKey; kwh: number }[]; totalKwh: number } {
   const f = energyFigures(p)
+  // The parts must add up to the total the tooltip prints: battery charging
+  // from solar can overshoot the month's solar (meter noise), and car can
+  // overshoot load; cap them here (figures.ts stays the raw definition).
+  const solarBattery = Math.min(f.solarToBattery, p.solarKwh)
+  const car = Math.min(f.car, p.loadKwh)
   const value: Record<SeriesKey, number> = {
     solarDirect: f.solarDirect,
-    solarBattery: f.solarToBattery,
+    solarBattery,
     solarExported: f.solarExported,
     importDirect: f.importDirect,
     importBattery: f.importToBattery,
     exported: p.gridExportKwh,
-    car: f.car,
-    house: f.restOfHouse,
+    car,
+    house: Math.max(0, p.loadKwh - car),
   }
   const totalKwh = metric === 'solar' ? p.solarKwh : metric === 'grid' ? p.gridImportKwh : p.loadKwh
   return { parts: METRIC_SERIES[metric].map((key) => ({ key, kwh: value[key] })), totalKwh }
+}
+
+/** The one series that draws below the axis: Nät's export (a separate flow, not part of the purchase). */
+export const isBelowAxis = (metric: EnergyMetric, key: SeriesKey) =>
+  metric === 'grid' && key === 'exported'
+
+export type ChartRow = { month: number; sums: PeriodSums | null } & Partial<
+  Record<SeriesKey, number | null>
+>
+
+/** One row per month for the stacked bars: null (not 0) without data; Nät's export negated (below the axis). */
+export function chartRows(metric: EnergyMetric, months: (PeriodSums | null)[]): ChartRow[] {
+  return months.map((sums, i) => {
+    const row: ChartRow = { month: i + 1, sums }
+    const parts = sums ? energyTooltipRows(metric, sums).parts : []
+    for (const key of METRIC_SERIES[metric]) {
+      const part = parts.find((r) => r.key === key)
+      row[key] = part ? (isBelowAxis(metric, key) ? -part.kwh : part.kwh) : null
+    }
+    return row
+  })
 }
