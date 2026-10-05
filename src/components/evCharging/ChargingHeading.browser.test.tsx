@@ -38,9 +38,13 @@ test('names the view when given a title', async () => {
     .toBeVisible()
 })
 
-test('renders the optional note line', async () => {
+test('renders the live slot between the description and the sync time', async () => {
   const { screen } = await renderWithProviders(
-    <ChargingHeading lastSuccessAt={null} note={m.charging_vehicle_note_ours()} />,
+    <ChargingHeading lastSuccessAt={null} live={<span>live-line</span>} />,
   )
-  await expect.element(screen.getByText(m.charging_vehicle_note_ours())).toBeVisible()
+  const live = screen.getByText('live-line').element()
+  const synced = screen.getByText(m.charging_never_synced()).element()
+  const description = screen.getByText(m.charging_description(), { exact: false }).element()
+  expect(description.compareDocumentPosition(live) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(live.compareDocumentPosition(synced) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })

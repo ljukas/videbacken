@@ -14,7 +14,7 @@ import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostN
 import { CredentialExpiryAlert } from '~/components/evCharging/CredentialExpiryAlert'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { healthPoll } from '~/components/evCharging/healthPoll'
-import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
+import { LiveStatusLine, useLiveStatus } from '~/components/evCharging/LiveStatusLine'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import {
@@ -35,12 +35,17 @@ import { TariffCard } from '~/components/evCharging/TariffCard'
 import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
-import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
+import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
+import {
+  DEFAULT_VEHICLE_SCOPE,
+  type VehicleScope,
+  vehicleScope,
+  vehicleScopeParam,
+} from '~/lib/evCharging/vehicle'
 import { INTEGRATION_SOURCES, type IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -59,7 +64,7 @@ const searchSchema = z.object({
   tariffId: z.string().optional().catch(undefined),
   // The data source whose sync history is open (`dialog=syncRuns`).
   source: z.enum(INTEGRATION_SOURCES).optional().catch(undefined),
-  // Whose charging: a clean URL means our car.
+  // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
 })
 type ChargingSearch = z.infer<typeof searchSchema>
@@ -96,7 +101,10 @@ export const Route = createFileRoute('/_authenticated/charging/')({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ year: search.year, vehicle: search.vehicle ?? 'ours' }),
+  loaderDeps: ({ search }) => ({
+    year: search.year,
+    vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
+  }),
   loader: async ({ context: { queryClient, user }, deps }) => {
     await Promise.all([
       // Prefetched, not ensured: a failed read must not take down the page (and
@@ -154,7 +162,7 @@ function ChargingPage() {
   const isAdmin = user.role === 'admin'
   const navigate = Route.useNavigate()
   const year = Route.useSearch({ select: (s) => s.year })
-  const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? 'ours' })
+  const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? DEFAULT_VEHICLE_SCOPE })
   const queryClient = useQueryClient()
   // The page size belongs to the scope it was grown in: another scope starts at its first page.
   const [limitState, setLimitState] = useState({ vehicle, limit: SESSIONS_PAGE })
@@ -299,10 +307,10 @@ function ChargingPage() {
   }
 
   function setVehicle(v: VehicleScope) {
-    // A clean URL means our car.
+    // The default scope is a clean URL.
     navigate({
       to: '.',
-      search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v }),
+      search: (s) => ({ ...s, vehicle: vehicleScopeParam(v) }),
       replace: true,
       resetScroll: false,
     })
@@ -311,8 +319,8 @@ function ChargingPage() {
   return (
     <PageContainer>
       <ChargingHeading
-        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
+        live={<LiveStatusLine live={live} />}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
         }
@@ -346,7 +354,9 @@ function ChargingPage() {
         <CredentialExpiryAlert expiry={skodaHealth.adminDetail?.credentialExpiry ?? null} />
       ) : null}
 
-      <LiveStatusTile live={live} />
+      {/* The page filter: everything below it down to the sessions is scoped,
+          and it stays when a scoped read fails, so the user can switch back. */}
+      <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
 
       {overview ? (
         <>
@@ -386,7 +396,6 @@ function ChargingPage() {
                     aria-label={m.charging_chart_metric_label()}
                   />
                 ) : null}
-                <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
                 <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
               </div>
             </div>
@@ -411,27 +420,8 @@ function ChargingPage() {
           ) : null}
         </>
       ) : (
-        <>
-          {/* The scope stays switchable when its read fails, or the user can't switch back. */}
-          <div className="flex justify-end">
-            <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
-          </div>
-          <LoadErrorAlert title={m.charging_overview_error_title()} query={overviewResult} />
-        </>
+        <LoadErrorAlert title={m.charging_overview_error_title()} query={overviewResult} />
       )}
-
-      <TariffCard
-        tariffs={tariffs}
-        admin={
-          isAdmin
-            ? {
-                onNew: () => open('tariffNew'),
-                onEdit: (id) => open('tariffEdit', { tariffId: id }),
-                onDelete: (id) => open('tariffDelete', { tariffId: id }),
-              }
-            : undefined
-        }
-      />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
@@ -462,6 +452,19 @@ function ChargingPage() {
           />
         ) : null}
       </section>
+
+      <TariffCard
+        tariffs={tariffs}
+        admin={
+          isAdmin
+            ? {
+                onNew: () => open('tariffNew'),
+                onEdit: (id) => open('tariffEdit', { tariffId: id }),
+                onDelete: (id) => open('tariffDelete', { tariffId: id }),
+              }
+            : undefined
+        }
+      />
 
       {/* Every data source's state, sync and history. Emaldo's state lives only
           here, not as an alert up top: nothing on the page uses the house data

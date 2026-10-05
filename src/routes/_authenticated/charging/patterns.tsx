@@ -18,14 +18,19 @@ import {
 import { SessionTimeline } from '~/components/evCharging/SessionTimeline'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
-import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
+import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
+import {
+  DEFAULT_VEHICLE_SCOPE,
+  type VehicleScope,
+  vehicleScope,
+  vehicleScopeParam,
+} from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { stockholmDayOf } from '~/lib/time/stockholm'
 import { cn } from '~/lib/utils'
@@ -36,7 +41,7 @@ const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
   metric: z.enum(['kwh', 'plugged']).optional().catch(undefined),
   month: z.number().int().min(1).max(12).optional().catch(undefined),
-  // Whose charging: a clean URL means our car.
+  // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
 })
 
@@ -59,7 +64,7 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
   loaderDeps: ({ search }) => ({
     year: search.year,
     month: search.month,
-    vehicle: search.vehicle ?? 'ours',
+    vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
   // The pattern and timeline reads are prefetched, not ensured: a failure
   // there must not take down the page (heading, sync health) — each
@@ -85,7 +90,7 @@ function PatternsPage() {
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const metric: PatternMetric = search.metric ?? 'kwh'
-  const vehicle: VehicleScope = search.vehicle ?? 'ours'
+  const vehicle: VehicleScope = search.vehicle ?? DEFAULT_VEHICLE_SCOPE
   const timelineRef = useRef<HTMLDivElement>(null)
   const patternsResult = useQuery({
     ...patternsQuery(search.year, vehicle),
@@ -133,7 +138,6 @@ function PatternsPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_patterns_title()}
-        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -148,11 +152,11 @@ function PatternsPage() {
 
       {/* Outside the load branches: a failed read for one scope must not take
           the control away, or the user can't switch back. */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <VehicleScopeToggle
           value={vehicle}
           // A scope change clears the month, like a year change does.
-          onChange={(v) => set({ vehicle: v === 'ours' ? undefined : v, month: undefined })}
+          onChange={(v) => set({ vehicle: vehicleScopeParam(v), month: undefined })}
         />
         {patterns && !loadFailed(patternsResult) ? (
           <YearSelector
