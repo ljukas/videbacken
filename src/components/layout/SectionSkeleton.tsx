@@ -1,6 +1,7 @@
 import { useHydrated } from '@tanstack/react-router'
 import { Skeleton } from 'boneyard-js/react'
 import type * as React from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { m } from '~/paraglide/messages'
 // The captured bones (and the boneyard runtime) load with the first route that
 // shows a skeleton, not with the entry chunk.
@@ -39,6 +40,11 @@ export function SectionSkeleton({
   if (!showLoading && !capturing()) return <>{children}</>
   // The loading -> loaded flip remounts the children; fine, since firstLoadPending
   // only goes false once data exists, so it is one-way per key.
+  // boneyard scales its bones to the wrapper's measured height. While loading,
+  // render no children (a section's no-data render is shorter than its loaded
+  // one, so hidden children would squash the bones): the empty wrapper reserves
+  // the captured height instead. (The CLI's capture renders the children itself.)
+  const content = showLoading && !capturing() ? null : children
   return (
     <>
       <Skeleton
@@ -46,15 +52,9 @@ export function SectionSkeleton({
         loading={showLoading}
         select="viewport"
         className={className}
-        fallback={
-          <div
-            data-section-skeleton-fallback
-            className="rounded-lg bg-foreground/8 motion-safe:animate-pulse"
-            style={{ height: fallbackHeight }}
-          />
-        }
+        fallback={<FallbackBlock height={fallbackHeight} />}
       >
-        {children}
+        {content}
       </Skeleton>
       {showLoading && (
         <span role="status" className="sr-only">
@@ -62,5 +62,23 @@ export function SectionSkeleton({
         </span>
       )}
     </>
+  )
+}
+
+// The block for a section without captured bones. boneyard renders the fallback
+// on its own first render even when bones exist (it hasn't read the viewport
+// width yet) and measures the wrapper then; a visible block would become the
+// height every bone is scaled to. So the block appears only after mounting:
+// that measurement sees an empty wrapper, and the bones keep their own height.
+function FallbackBlock({ height }: { height: string }) {
+  const [mounted, setMounted] = useState(false)
+  useLayoutEffect(() => setMounted(true), [])
+  if (!mounted) return null
+  return (
+    <div
+      data-section-skeleton-fallback
+      className="rounded-lg bg-foreground/8 motion-safe:animate-pulse"
+      style={{ height }}
+    />
   )
 }
