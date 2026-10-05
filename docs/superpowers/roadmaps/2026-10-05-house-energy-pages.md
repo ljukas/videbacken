@@ -91,4 +91,4 @@ and rewrite the affected tasks before building.
   stepper + a picker that never scrolls, chart click, hover outline and tooltip with shares, no layout shift,
   validated colours (data-viz validator), readable sizes (researched). Design:
   [period control](../specs/2026-10-05-energy-period-control-design.md). The owner also found text too small
-  app-wide: an app-wide type scale is a separate decision.
+  app-wide and decided the whole app follows the same scale; that pass is planned separately (ADR-0015 amendment).

@@ -32,7 +32,7 @@ a month shows its values.
 | 5 | **The chosen month is highlighted in the chart** (a tinted column and a bold month label); other months keep their full colours (no dimming). |
 | 6 | **Hovering a month outlines its column** (label included) and shows a **tooltip**: each series' kWh and share (%, smaller), the view's total, and "Data saknas för N h" when it applies. Keyboard focus does the same. On touch, a tap selects the month; no tooltip. |
 | 7 | **No layout shift**: the period label has the width of the widest label it can show; detail lines and the gap note always keep their space. |
-| 8 | **Readable sizes on this page** (researched, see below). The app-wide type scale is a separate decision. |
+| 8 | **Readable sizes** (researched, see below). The owner made them the **app-wide** scale; this page goes first, the rest of the app in its own pass. |
 | 9 | **Validated colours, one meaning each** (see below), shared with `/charging` through the existing tokens. |
 
 ## Period model
@@ -166,8 +166,11 @@ From WCAG 2.2, Apple HIG, Material 3, GOV.UK, USWDS, NN/g and chart guides (ONS,
 | Card titles | 18 px |
 | Icons next to text | 16–20 px; tap targets ≥ 40 px (44 px in the picker) |
 
-Muted text stays on the card surface only (muted on `bg-muted` fails 4.5:1). The rest of the app keeps its sizes
-until the owner decides on an app-wide type scale (a separate ADR-0015 amendment).
+Muted text stays on the card surface only (muted on `bg-muted` fails 4.5:1).
+
+**App-wide (owner, 2026-10-05):** the whole app follows this scale. This page adopts it in step 1b; the rest of the
+app gets its own pass (an ADR-0015 type-scale amendment, then the ≈48 `text-xs` + muted places and the 9–11 px
+chart labels), planned separately so it doesn't tangle with the energy steps.
 
 ## Error handling and edge cases
 
@@ -196,5 +199,5 @@ until the owner decides on an app-wide type scale (a separate ADR-0015 amendment
 
 ## Out of scope
 
-- The app-wide type scale (pending the owner's decision; this page already follows the researched sizes).
+- Applying the scale to the rest of the app (decided; its own plan and PR, after this step).
 - Day views, kronor (unchanged from the design).
