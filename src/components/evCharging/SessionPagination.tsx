@@ -65,11 +65,16 @@ export function SessionPagination({
           role="status"
           className="mr-auto min-w-[22ch] text-muted-foreground text-sm tabular-nums"
         >
-          {m.charging_sessions_pagination_range({
-            from: formatCount(from),
-            to: formatCount(to),
-            total: formatCount(total),
-          })}
+          {from === to
+            ? m.charging_sessions_pagination_range_one({
+                n: formatCount(from),
+                total: formatCount(total),
+              })
+            : m.charging_sessions_pagination_range({
+                from: formatCount(from),
+                to: formatCount(to),
+                total: formatCount(total),
+              })}
         </p>
         <div className="flex items-center gap-2">
           <Label htmlFor={sizeId} className="whitespace-nowrap font-normal text-muted-foreground">

@@ -110,6 +110,7 @@
   "charging_sessions_pagination_position": "Page {page} of {count}",
   "charging_sessions_pagination_previous": "Previous page",
   "charging_sessions_pagination_range": "Showing {from}–{to} of {total}",
+  "charging_sessions_pagination_range_one": "Showing {n} of {total}",
   "charging_source_action_label": "{action}, {source}",
   "charging_source_cadence_elpris": "Fetched twice a day",
   "charging_source_cadence_emaldo": "Fetched hourly",

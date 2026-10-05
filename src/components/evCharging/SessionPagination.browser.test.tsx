@@ -210,3 +210,18 @@ test('the size selector offers 10, 25 and 50 and reports the chosen size', async
   await screen.getByRole('option', { name: '25' }).click()
   expect(onPageSizeChange).toHaveBeenCalledWith(25)
 })
+
+test('a last page holding one session names it alone, not as "101–101"', async () => {
+  const screen = await render(
+    <SessionPagination
+      page={11}
+      pageSize={10}
+      total={101}
+      onPageChange={noop}
+      onPageSizeChange={noop}
+    />,
+  )
+  await expect
+    .element(screen.getByRole('status'))
+    .toHaveTextContent(m.charging_sessions_pagination_range_one({ n: 101, total: 101 }))
+})
