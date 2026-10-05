@@ -1,6 +1,6 @@
 # ADR 0024 — Deferred Route Loading and Section Skeletons
 
-- **Status**: Accepted (the skeleton library is gated on a spike, see [Decision 4](#4-boneyard-js-is-the-loading-state-primitive-spike-gated))
+- **Status**: Accepted (the boneyard-js spike passed on 2026-10-05, see [Decision 4](#4-boneyard-js-is-the-loading-state-primitive-spike-gated))
 - **Date**: 2026-10-05
 - **Deciders**: Lukas
 - **Decision in one line**: A client-side navigation never waits on the network. Route loaders await their data on the
@@ -51,6 +51,12 @@ of calling `prefetchQuery` / `ensureQueryData` directly:
   Query refreshes it in the background, so a revisit shows no skeleton at all.
 - **Failures never throw from a loader.** A failed read shows the section's own `LoadErrorAlert` with a retry
   (ADR-0016), exactly as `prefetchQuery` already guaranteed.
+- **Critical means "in the first HTML", not "never late".** The sources' health statuses are critical, so a first
+  load renders their alerts in place. On a client navigation nothing is awaited, so a failing source's alert can
+  appear a moment after the page, pushing the content down once. We accept that: it's rare and needs attention.
+- **Deferred queries must be bounded.** A deferred query started on the server keeps the SSR stream open until it
+  settles (its result streams into the client's cache). Every deferred query today is a DB read; one that calls an
+  external service needs a timeout first, or it holds the response open (ADR-0018).
 
 **One exception:** a loader may await on the client when the result decides *routing*: a `redirect` or a
 `notFound`. Today that is `_authenticated`'s `user.me` (the onboarding redirect) and the session page's not-found
@@ -61,8 +67,9 @@ check. Both use `ensureQueryData`, which returns cached data immediately, so the
 `_authenticated`'s `beforeLoad` reads the session through the query cache (`staleTime` 5 min) instead of calling
 the `getSession` server function every time.
 
-- **Only a live session is cached.** A `null` or soft-deleted result has `staleTime` 0, so a user who has just
-  signed in (or been re-invited) is never bounced back to `/login` by a cached miss.
+- **Only a live session is reused.** A `null` or soft-deleted result has `staleTime` 0, and the guard removes it
+  from the cache before redirecting, so a user who has just signed in (or been re-invited) is never bounced back to
+  `/login` by a cached miss.
 - **Nearly as loose as today.** 5 min equals Better Auth's `session.cookieCache.maxAge`, but the client can hold a
   session for up to about 2x that (a fetch near the end of a cookie snapshot's life). Returning to the tab marks
   the entry stale (`focusManager`), so a sign-out in another tab is noticed on the next navigation. If the
@@ -70,7 +77,7 @@ the `getSession` server function every time.
 - **The guard is UX, not security.** Every RPC still checks the session and the soft-delete flag server-side
   (`protectedProcedure` / `adminProcedure`, ADR-0017).
 - **The cache never holds the session token.** The SSR query integration serializes the cache into the HTML, so the
-  cached value is `{ user }` only.
+  query function returns `{ user }` (or `null`), never Better Auth's session object.
 - **On the server it's always fresh.** `getRouter()` builds a new `QueryClient` per request.
 - **Sign-out already clears it.** `useSignOut` calls `queryClient.clear()`.
 
@@ -94,16 +101,28 @@ Instead of hand-sized placeholders, it captures each named section's real render
 app at fixed viewport widths and replays it while loading.
 
 - **Capture is an explicit command, not the always-on Vite plugin.** `bun run bones:capture` signs a Playwright
-  browser in through the local Mailpit magic link, then runs the boneyard CLI against that browser over CDP. The
-  plugin's own headless browser has no session (every authed route would capture `/login`), and it would re-crawl on
-  every HMR save.
+  browser in through the local Mailpit magic link, then runs the boneyard CLI with that session's `better-auth.*`
+  cookies (`--cookie`). The plugin's own headless browser has no session (every authed route would capture
+  `/login`), and it would re-crawl on every HMR save.
 - **Widths** 375 / 768 / 1280 px: our mobile / tablet / desktop rule. `select: 'viewport'`, because the sidebar makes
   the content area narrower than the window.
-- **Bones are committed** (`src/bones/`) and imported once through the generated registry. **Re-capture after
-  changing a section's layout**, or its skeleton stops matching.
-- **Theme and motion.** Bone geometry is theme-independent. Colours come from our tokens via `configureBoneyard`, and
-  it follows the `.dark` class `ThemeProvider` sets. It doesn't honour `prefers-reduced-motion` itself, so the
-  config picks the static style when reduced motion is on (ADR-0015).
+- **Bones are committed** (`src/bones/`). `SectionSkeleton` imports the generated registry, so the bones and the
+  boneyard runtime load with the first route that shows a skeleton, not with the entry chunk. The registry is a
+  side-effect-only import, so `package.json`'s `sideEffects` lists it; without that a production build drops it and
+  every skeleton falls back to a plain block. **Re-capture after changing a section's layout**, or its skeleton
+  stops matching.
+- **Theme and motion.** Bone geometry is theme-independent. The colours are set in `boneyard.config.json` (written
+  into the registry's `configureBoneyard`), and boneyard follows the `.dark` class `ThemeProvider` sets. The light
+  bone colour `#ebebeb` is deliberately darker than `--muted` (`#f5f5f5`): at `--muted` the bones are invisible on
+  the `#fcfcfc` page. Don't "fix" it back. boneyard doesn't honour `prefers-reduced-motion` itself, so app.css's
+  reduced-motion block stops the bones' animation (ADR-0015).
+- **No fade-out.** boneyard can fade the skeleton out when loading ends, but `SectionSkeleton` drops boneyard's
+  wrapper as soon as a section stops loading, so that fade is bypassed by design: the content replaces the bones in
+  one frame.
+- **Sizing.** boneyard scales the bones to its wrapper's measured height. So while loading, `SectionSkeleton`
+  renders no children (a section's no-data render is shorter than its loaded one) and shows the fallback block only
+  after mounting (boneyard measures on its first render, before it picks the bones). The empty wrapper then reserves
+  the captured height.
 - **Missing bones degrade.** A section without captured bones renders the `fallback` prop (a plain block of the
   section's height) rather than nothing.
 - **Data.** Capture shows whatever the local database holds, so it runs against realistic local data. A section that
@@ -119,6 +138,21 @@ app at fixed viewport widths and replays it while loading.
 `/charging` tiles through `bones:capture` at all three widths, then replay them in both themes. If it can't do that
 cleanly, the fallback is [react-loading-skeleton](https://github.com/dvtng/react-loading-skeleton), and that
 outcome is recorded as an amendment here.
+
+**Spike (2026-10-05): go.** `bones:capture /charging` signed in on the first try and captured `charging-totals` at
+375, 768 and 1280 px (13, 13 and 42 bones: one tabbed card when narrow, three cards when wide). Replayed in light and
+dark, every bone sat inside its real tile and the skeleton was exactly the content's height. Under reduced motion the
+bones stayed static. A second capture was byte-identical apart from `_hash`, which changes on every capture. Step 1
+then captured all seven skeletons (`charging-totals`, `-chart`, `-sessions`, `-tariffs`, `-economy`, `-patterns`,
+`-timeline`). Known limits, accepted for step 1:
+- **Bones are sparse.** Text next to an icon gets no bone, and card outlines aren't drawn, so a tile reads as a few
+  bars on the page background.
+- **Graphics become slabs.** A chart, the patterns heatmap and the day-by-day calendars are each one solid block, and
+  a table's middle columns read as one block.
+- **Three widths, one layout per range.** The 768 capture serves viewports 768–1279. `/charging`'s totals switch to
+  three cards when the content is 768 px wide (a ~1100 px viewport beside the sidebar), so from there to 1279 the
+  skeleton shows the narrow layout. A fourth breakpoint would fix it.
+- **Size.** The seven skeletons add ~20 KB gz to every charging page (economy and patterns are ~9 KB each).
 
 ---
 
@@ -148,7 +182,10 @@ outcome is recorded as an amendment here.
   queries in one hop instead of 15 in two, which also eases the pool queueing behind the inflated `findActiveById`.
 - **A new step in UI work:** re-run `bones:capture` after changing a section's layout. Stale bones look slightly wrong
   but never break anything.
+- **The bones cost bytes.** All seven skeletons (~20 KB gz) load with the first charging page, whichever it is. A
+  per-route registry would split them if this grows.
 - **`useSuspenseQuery` is now rare.** Reviewers should flag it on data a client navigation defers.
-- **Role changes take effect within 5 min** on the client guard, the same bound the cookie cache already imposed.
+- **Role changes reach the client guard within about 5–10 min** (§2: up to ~2× the cookie cache's 5 min), or on
+  the next navigation after the tab regains focus.
 - The loader helper is the one place that decides await vs defer. A page whose loader bypasses it reintroduces the
   frozen navigation.
