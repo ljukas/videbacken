@@ -425,6 +425,36 @@ test('Översikt: before any house data the note says all charging counts as boug
   expect(screen.getByText(/Sol och batteri räknas in/).elements()).toHaveLength(0)
 })
 
+test('Översikt: when a page’s costs failed, the rows stay and an alert offers a retry, never 0 kr', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, gridKwh: 10, fullKwh: 10, totalSek: 20, avgOre: 200 }, null)
+    qc.setQueryData(
+      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
+        .queryKey,
+      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10, costs: null } as never,
+    )
+  })
+  await expect.element(screen.getByText('7,7', { exact: false })).toBeVisible()
+  await expect.element(screen.getByText(m.charging_sessions_costs_error_title())).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: m.common_try_again() })).toBeVisible()
+  expect(screen.getByText('0,00 kr', { exact: false }).elements()).toHaveLength(0)
+})
+
+test('Översikt: costs that loaded show no costs alert', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, gridKwh: 10, fullKwh: 10, totalSek: 20, avgOre: 200 }, null)
+    qc.setQueryData(
+      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
+        .queryKey,
+      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10, costs: [] } as never,
+    )
+  })
+  await expect.element(screen.getByText('7,7', { exact: false })).toBeVisible()
+  expect(screen.getByText(m.charging_sessions_costs_error_title()).elements()).toHaveLength(0)
+})
+
 // --- Översikt: deferred loading (ADR-0025) ------------------------------------
 
 const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)

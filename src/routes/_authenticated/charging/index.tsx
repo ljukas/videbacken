@@ -22,7 +22,12 @@ import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
-import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
+import {
+  firstLoadPending,
+  LoadErrorAlert,
+  loadFailed,
+  RetryAlert,
+} from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { useSessionPaging } from '~/hooks/useSessionPaging'
@@ -353,6 +358,15 @@ function ChargingPage() {
             failed to load keeps the last page on screen below the alert,
             dimmed, so the pagination control stays for another try. */}
         <LoadErrorAlert title={m.charging_sessions_error_title()} query={sessions} />
+        {/* The rows loaded but their costs didn't: say so, with a retry, rather
+            than a column of "price missing" dashes (ADR-0016, ADR-0020). */}
+        {showCost && shownSessions?.costs === null ? (
+          <RetryAlert
+            title={m.charging_sessions_costs_error_title()}
+            onRetry={() => void sessions.refetch()}
+            pending={sessions.isFetching}
+          />
+        ) : null}
         {/* The skeleton only while nothing has loaded yet: another page or scope
             keeps the current rows on screen, dimmed (placeholder data). */}
         <SectionSkeleton

@@ -658,6 +658,7 @@
   "charging_vehicle_empty_other_description": "Gästladdningar visas här när bilen eller en admin har markerat dem.",
   "charging_vehicle_chart_empty_other": "Inga gästladdningar under {year}.",
   "charging_overview_error_title": "Laddningsöversikten kunde inte hämtas",
+  "charging_sessions_costs_error_title": "Kostnaden för sessionerna kunde inte räknas ut",
   "charging_sessions_error_title": "Laddsessionerna kunde inte hämtas",
   "charging_sources_error_title": "Datakällornas status kunde inte hämtas",
   "charging_tariff_error_title": "Påslag, elnät och skatt kunde inte hämtas",

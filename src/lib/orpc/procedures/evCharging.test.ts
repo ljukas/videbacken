@@ -709,13 +709,16 @@ test('sessions keeps its rows when costing fails: costs is null, never 0 kr', as
   await signIn('user')
   await insertSession()
   vi.spyOn(costing, 'getSessionCosts').mockRejectedValueOnce(new Error('prices down'))
+  const warnings: string[] = []
+  const log: Logger = { ...noopLog, warn: (msg) => warnings.push(msg), child: () => log }
   const page = await call(
     evChargingRouter.sessions,
     { page: 1, pageSize: 10 },
-    { context: baseContext() },
+    { context: { ...baseContext(), log } },
   )
   expect(page.sessions).toHaveLength(1)
   expect(page.costs).toBeNull()
+  expect(warnings).toEqual(['session costs failed; the list shows none'])
 })
 
 const importRow = (id: string, start = '2026-02-01T10:00:00Z', end = '2026-02-01T11:00:00Z') => ({
