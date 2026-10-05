@@ -111,7 +111,7 @@ function Users() {
       {/* The table bleeds md:-mx-4 past the content column, so its cell padding
           lines up with the heading. The bleed sits outside the skeleton, so the
           bones are captured, and replayed, at the table's full width. */}
-      <div className="flex min-h-0 flex-col md:-mx-4">
+      <div className="flex min-h-0 w-full flex-col md:-mx-4">
         <SectionSkeleton
           name="users-table"
           loading={firstLoadPending(usersResult)}

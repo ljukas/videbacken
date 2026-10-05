@@ -6,6 +6,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
+import { renderToString } from 'react-dom/server'
 import { expect, test } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { orpc } from '~/lib/orpc/client'
@@ -39,7 +40,7 @@ const pendingForever = (qc: QueryClient) => {
   void qc.prefetchQuery({ queryKey: listKey, queryFn: () => new Promise(() => {}) })
 }
 
-async function renderUsers(
+async function loadUsers(
   search: string,
   prepare: (qc: QueryClient) => void,
   role: 'admin' | 'user' = 'admin',
@@ -61,11 +62,21 @@ async function renderUsers(
     history: createMemoryHistory({ initialEntries: [`/users${search}`] }),
   })
   await router.load()
-  const screen = await render(
+  const ui = (
     <QueryClientProvider client={qc}>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  return { ui, router, qc }
+}
+
+async function renderUsers(
+  search: string,
+  prepare: (qc: QueryClient) => void,
+  role: 'admin' | 'user' = 'admin',
+) {
+  const { ui, router, qc } = await loadUsers(search, prepare, role)
+  const screen = await render(ui)
   return { screen, router, qc }
 }
 
@@ -124,4 +135,22 @@ test('a member sees the list without the invite button', async () => {
   const { screen } = await renderUsers('', (qc) => qc.setQueryData(listKey, [row()]), 'user')
   await expect.element(screen.getByText('Anna Andersson').first()).toBeVisible()
   expect(screen.getByRole('button', { name: m.users_invite_button() }).elements()).toHaveLength(0)
+})
+
+// A failed server prefetch isn't dehydrated, so the client hydrates with the list
+// missing: both sides' pre-hydration HTML must match.
+test('list failed on the server: the HTML matches the hydrating client', async () => {
+  const server = await loadUsers('', (qc) =>
+    qc
+      .getQueryCache()
+      .build(qc, { queryKey: listKey })
+      .setState({
+        status: 'error',
+        error: new Error('x'),
+        errorUpdateCount: 1,
+        fetchStatus: 'idle',
+      }),
+  )
+  const client = await loadUsers('', () => {})
+  expect(renderToString(server.ui)).toBe(renderToString(client.ui))
 })

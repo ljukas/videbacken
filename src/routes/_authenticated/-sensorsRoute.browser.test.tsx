@@ -136,6 +136,11 @@ test('series failed: one alert in place of the charts, never "no data"', async (
   await expect.element(screen.getByText('21.7°C')).toBeVisible()
   expect(screen.getByText(m.sensors_chart_empty()).elements()).toHaveLength(0)
   expect(skeleton('sensors-temp-chart')).toBeNull()
+  expect(skeleton('sensors-hum-chart')).toBeNull()
+  expect(screen.getByRole('alert').elements()).toHaveLength(1)
+  expect(
+    screen.getByRole('heading', { name: m.sensors_temp_chart_title() }).elements(),
+  ).toHaveLength(0)
 })
 
 test('both cached: no skeleton at all', async () => {
@@ -159,11 +164,14 @@ test('an edit deep link keeps its params while the devices load', async () => {
   expect(router.state.location.search).toMatchObject({ dialog: 'edit', deviceId: 'a' })
 })
 
-test('an edit deep link opens once the devices are in', async () => {
-  const { screen } = await renderSensors('?dialog=edit&deviceId=a', (qc) => {
-    qc.setQueryData(devicesKey, [device])
+test('an edit deep link waits for the devices, then opens', async () => {
+  const { screen, qc } = await renderSensors('?dialog=edit&deviceId=a', (qc) => {
+    pendingForever(qc, devicesKey)
     qc.setQueryData(seriesKey, noSeries)
   })
+  await expect.poll(() => skeleton('sensors-tiles')).not.toBeNull()
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+  qc.setQueryData(devicesKey, [device])
   await expect.element(screen.getByRole('dialog')).toBeVisible()
 })
 
@@ -210,4 +218,18 @@ test("a range switch keeps the shown range's chart, dimmed, with that range's ti
   await expect.poll(() => document.querySelectorAll('[aria-busy="true"]').length).toBe(2)
   expect(xTicks().length).toBeGreaterThan(0)
   for (const tick of xTicks()) expect(tick).toMatch(/\d{1,2}[:.]\d{2}/)
+})
+
+test('a range switch from an empty range never claims "no data" while the next loads', async () => {
+  const yearKey = orpc.sensor.series.queryOptions({ input: { range: '1y' } }).queryKey
+  const { screen } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [device])
+    qc.setQueryData(seriesKey, noSeries)
+    pendingForever(qc, yearKey)
+  })
+  // The 24 h range really is empty: "no data" is the loaded state there.
+  await expect.element(screen.getByText(m.sensors_chart_empty()).first()).toBeVisible()
+  await screen.getByRole('radio', { name: m.sensors_range_1y() }).click()
+  await expect.poll(() => document.querySelectorAll('[aria-busy="true"]').length).toBe(2)
+  expect(screen.getByText(m.sensors_chart_empty()).elements()).toHaveLength(0)
 })

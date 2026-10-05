@@ -294,6 +294,9 @@ function ChartBody({
     >
       {hasData ? (
         children
+      ) : stale ? (
+        // The previous range was empty; that says nothing about the one loading.
+        <div className="h-[260px] rounded-lg border" />
       ) : (
         <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
           {m.sensors_chart_empty()}
