@@ -71,11 +71,11 @@ test('unavailable(code) throws SkodaError op vehicle with an admin message namin
   const cases = [
     [
       'not_configured',
-      'Škoda client is not configured (set it under Inställningar or as SKODA_API_KEY / SKODA_VIN)',
+      'Škoda client is not configured (set it under Charging → Settings or as SKODA_API_KEY / SKODA_VIN)',
     ],
     [
       'credentials_unreadable',
-      'Stored Škoda credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Inställningar',
+      'Stored Škoda credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings',
     ],
   ] as const
   for (const [code, message] of cases) {

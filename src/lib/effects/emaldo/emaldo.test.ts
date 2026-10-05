@@ -136,11 +136,11 @@ describe('adapter selection', () => {
     const cases = [
       [
         'not_configured',
-        'Emaldo client is not configured (set it under Inställningar or as EMALDO_USER / EMALDO_PASSWORD / EMALDO_APP_ID / EMALDO_APP_SECRET)',
+        'Emaldo client is not configured (set it under Charging → Settings or as EMALDO_USER / EMALDO_PASSWORD / EMALDO_APP_ID / EMALDO_APP_SECRET)',
       ],
       [
         'credentials_unreadable',
-        'Stored Emaldo credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Inställningar',
+        'Stored Emaldo credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings',
       ],
     ] as const
     for (const [code, message] of cases) {

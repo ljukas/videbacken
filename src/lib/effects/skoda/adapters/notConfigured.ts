@@ -4,9 +4,9 @@ import type { SkodaClient } from '../skoda'
 
 const MESSAGES: Record<UnavailableCode, string> = {
   not_configured:
-    'Škoda client is not configured (set it under Inställningar or as SKODA_API_KEY / SKODA_VIN)',
+    'Škoda client is not configured (set it under Charging → Settings or as SKODA_API_KEY / SKODA_VIN)',
   credentials_unreadable:
-    'Stored Škoda credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Inställningar',
+    'Stored Škoda credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings',
 }
 
 // `not_configured` when the API key or VIN is missing (and under VITEST),

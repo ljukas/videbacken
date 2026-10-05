@@ -4,9 +4,9 @@ import type { ZaptecClient } from '../zaptec'
 
 const MESSAGES: Record<UnavailableCode, string> = {
   not_configured:
-    'Zaptec client is not configured (set it under Inställningar or as ZAPTEC_USERNAME / ZAPTEC_PASSWORD)',
+    'Zaptec client is not configured (set it under Charging → Settings or as ZAPTEC_USERNAME / ZAPTEC_PASSWORD)',
   credentials_unreadable:
-    'Stored Zaptec credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Inställningar',
+    'Stored Zaptec credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings',
 }
 
 /**
