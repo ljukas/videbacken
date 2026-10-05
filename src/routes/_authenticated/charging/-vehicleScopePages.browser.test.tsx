@@ -618,6 +618,18 @@ test('Översikt, tariffs still loading: no "set up a tariff" notice, and the edi
   expect(screen.getByText(m.charging_cost_notice_setup_admin()).elements()).toHaveLength(0)
 })
 
+test('Översikt, one source state still loading: Datakällor is a skeleton, never "Okänd status"', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedOverview(qc, 'all', [session('s1', 7.7)])
+    pendingForever(qc, orpc.evCharging.syncStatus.queryOptions().queryKey)
+  })
+  // Positive signals first: the page rendered past its reads, and the panel's skeleton mounted.
+  await expect.element(screen.getByText('7,7', { exact: false })).toBeVisible()
+  await expect.poll(() => skeleton('charging-sources')).not.toBeNull()
+  expect(screen.getByText(m.charging_source_state_unknown()).elements()).toHaveLength(0)
+})
+
 // --- Ekonomi and Mönster: deferred loading (ADR-0024) -------------------------
 
 const economyKey = orpc.evCharging.economy.queryOptions({

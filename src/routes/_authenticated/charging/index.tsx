@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { environmentManager, keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
@@ -155,9 +155,11 @@ export const Route = createFileRoute('/_authenticated/charging/')({
         admin && vehicleLatestQuery,
       ],
     })
-    // The costs need the sessions' ids. On the server the sessions are in by
-    // now, so the costs start and stream; on the client the page's own query
-    // starts them once the sessions land.
+    // The costs need the sessions' ids, and are deferred: never started on the
+    // server (see loadRouteData), so the server and the hydrating client both
+    // render them pending. On the client, cached sessions (a revisit) start
+    // them here; otherwise the page's own query starts them once the sessions land.
+    if (environmentManager.isServer()) return
     const sessions = queryClient.getQueryData(sessionPage.queryKey)
     if (sessions?.sessions.length) {
       void queryClient.prefetchQuery(sessionCostsQuery(sessions.sessions.map((s) => s.id)))
@@ -301,7 +303,7 @@ function ChargingPage() {
     () => new Map(sessionCostList?.map((c) => [c.sessionId, c])),
     [sessionCostList],
   )
-  const { data: health } = useQuery({
+  const healthResult = useQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
     // Members read only the alert: a plain minute. Admins also watch "Synkar…".
     refetchInterval: isAdmin ? healthPoll(syncNow.isPendingFor('zaptec')) : 60_000,
@@ -309,7 +311,7 @@ function ChargingPage() {
   // Admin-only (see the alerts and the Datakällor panel below). Polled like
   // Zaptec's, so a tile's "running" state (a cron run seen mid-flight) clears
   // on its own instead of waiting for a focus refetch (ADR-0018: polled).
-  const { data: pricesHealth } = useQuery({
+  const pricesHealthResult = useQuery({
     ...pricesHealthQuery,
     enabled: isAdmin,
     refetchInterval: healthPoll(syncNow.isPendingFor('elpris')),
@@ -321,19 +323,30 @@ function ChargingPage() {
   })
   const pricesRuns = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
   const vehicleCoverage = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
-  const { data: skodaHealth } = useQuery({
+  const skodaHealthResult = useQuery({
     ...skodaHealthQuery,
     enabled: isAdmin,
     refetchInterval: healthPoll(syncNow.isPendingFor('skoda')),
   })
   const skodaRuns = useQuery({ ...skodaRunsQuery, enabled: isAdmin })
-  const { data: emaldoHealth } = useQuery({
+  const emaldoHealthResult = useQuery({
     ...emaldoHealthQuery,
     enabled: isAdmin,
     refetchInterval: healthPoll(syncNow.isPendingFor('emaldo')),
   })
   const emaldoRuns = useQuery({ ...emaldoRunsQuery, enabled: isAdmin })
   const vehicleLatest = useQuery({ ...vehicleLatestQuery, enabled: isAdmin })
+  const health = healthResult.data
+  const pricesHealth = pricesHealthResult.data
+  const skodaHealth = skodaHealthResult.data
+  const emaldoHealth = emaldoHealthResult.data
+  // Datakällor waits for every source's state: a tile without one would read
+  // "Okänd status", which is not the same as still loading (ADR-0016).
+  const sourcesPending =
+    firstLoadPending(healthResult) ||
+    firstLoadPending(pricesHealthResult) ||
+    firstLoadPending(skodaHealthResult) ||
+    firstLoadPending(emaldoHealthResult)
 
   function setYear(y: number) {
     navigate({ to: '.', search: (s) => ({ ...s, year: y }), replace: true, resetScroll: false })
@@ -544,36 +557,38 @@ function ChargingPage() {
           yet (ADR-0023, step 4), and it reads not_configured wherever EMALDO_*
           is unset. */}
       {isAdmin ? (
-        <SyncSourcesPanel
-          entries={[
-            { source: 'zaptec', health, runs: zaptecRuns },
-            { source: 'elpris', health: pricesHealth, runs: pricesRuns },
-            {
-              source: 'skoda',
-              health: skodaHealth,
-              runs: skodaRuns,
-              // The car's log and live poll are one source to the admin: its last
-              // contact, key expiry and log (+ import) live on its tile. Prefetched
-              // by the loader; a failed read shows an error, never "none".
-              details: (
-                <SkodaSourceDetails
-                  live={vehicleLatest.data}
-                  liveQuery={vehicleLatest}
-                  keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
-                  coverage={vehicleCoverage.data}
-                  coverageQuery={vehicleCoverage}
-                />
-              ),
-              actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
-            },
-            { source: 'emaldo', health: emaldoHealth, runs: emaldoRuns },
-          ]}
-          onSync={syncNow.syncSource}
-          isPendingFor={syncNow.isPendingFor}
-          openSource={isOpen('syncRuns') ? runsSource : undefined}
-          onOpenHistory={(source: IntegrationSource) => open('syncRuns', { source })}
-          onCloseHistory={close}
-        />
+        <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
+          <SyncSourcesPanel
+            entries={[
+              { source: 'zaptec', health, runs: zaptecRuns },
+              { source: 'elpris', health: pricesHealth, runs: pricesRuns },
+              {
+                source: 'skoda',
+                health: skodaHealth,
+                runs: skodaRuns,
+                // The car's log and live poll are one source to the admin: its last
+                // contact, key expiry and log (+ import) live on its tile. Prefetched
+                // by the loader; a failed read shows an error, never "none".
+                details: (
+                  <SkodaSourceDetails
+                    live={vehicleLatest.data}
+                    liveQuery={vehicleLatest}
+                    keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
+                    coverage={vehicleCoverage.data}
+                    coverageQuery={vehicleCoverage}
+                  />
+                ),
+                actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
+              },
+              { source: 'emaldo', health: emaldoHealth, runs: emaldoRuns },
+            ]}
+            onSync={syncNow.syncSource}
+            isPendingFor={syncNow.isPendingFor}
+            openSource={isOpen('syncRuns') ? runsSource : undefined}
+            onOpenHistory={(source: IntegrationSource) => open('syncRuns', { source })}
+            onCloseHistory={close}
+          />
+        </SectionSkeleton>
       ) : null}
 
       {isAdmin ? (

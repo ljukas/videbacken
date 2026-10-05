@@ -11,8 +11,12 @@ const present = (q: MaybeRouteQuery): q is RouteQuery => Boolean(q)
 /**
  * A route loader's data (ADR-0024 §1). The one place that decides what a
  * navigation waits for:
- * - server (first load, refresh): awaits `critical` so the HTML is complete;
- *   `deferred` starts without awaiting and streams to the client.
+ * - server (first load, refresh): awaits `critical` so the HTML is complete,
+ *   and doesn't start `deferred` at all. A deferred query streamed to the
+ *   client could land before hydration, so the hydrating render (a plain
+ *   `useQuery`) would show data where the server rendered "pending": a
+ *   hydration mismatch. Unstarted, both sides render it pending, and the
+ *   section's own `useQuery` fetches it after hydration.
  * - client: starts everything, awaits nothing. The navigation commits at once,
  *   cached data (even stale) renders while it refreshes, and each section shows
  *   its skeleton until its query lands.
@@ -26,7 +30,10 @@ export async function loadRouteData(
     deferred = [],
   }: { critical?: readonly MaybeRouteQuery[]; deferred?: readonly MaybeRouteQuery[] },
 ): Promise<void> {
-  for (const query of deferred.filter(present)) void queryClient.prefetchQuery(query)
   const started = critical.filter(present).map((query) => queryClient.prefetchQuery(query))
-  if (environmentManager.isServer()) await Promise.all(started)
+  if (environmentManager.isServer()) {
+    await Promise.all(started)
+    return
+  }
+  for (const query of deferred.filter(present)) void queryClient.prefetchQuery(query)
 }

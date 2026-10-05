@@ -14,12 +14,24 @@ test('on the server it awaits critical queries', async () => {
   expect(qc.getQueryData(['a'])).toBe(1)
 })
 
-test('on the server deferred queries start but are not awaited', async () => {
+test('on the server deferred queries are not started', async () => {
+  // Started, one could stream in before hydration and mismatch the server's
+  // "pending" render; the section's useQuery fetches it after hydration.
   environmentManager.setIsServer(() => true)
+  const qc = new QueryClient()
+  const deferredFn = vi.fn(async () => 1)
+  await loadRouteData(qc, { critical: [q('a', async () => 1)], deferred: [q('d', deferredFn)] })
+  expect(deferredFn).not.toHaveBeenCalled()
+  expect(qc.getQueryState(['d'])).toBeUndefined()
+})
+
+test('on the client deferred queries start but are not awaited', async () => {
+  environmentManager.setIsServer(() => false)
   const qc = new QueryClient()
   const deferredFn = vi.fn(never)
   await loadRouteData(qc, { deferred: [q('d', deferredFn)] }) // resolves despite a never-ending fetch
   expect(deferredFn).toHaveBeenCalledOnce()
+  expect(qc.getQueryState(['d'])?.status).toBe('pending')
 })
 
 test('on the client it awaits nothing', async () => {

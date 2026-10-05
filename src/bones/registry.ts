@@ -7,6 +7,7 @@ import _charging_totals from './charging-totals.bones.json'
 import _charging_chart from './charging-chart.bones.json'
 import _charging_sessions from './charging-sessions.bones.json'
 import _charging_tariffs from './charging-tariffs.bones.json'
+import _charging_sources from './charging-sources.bones.json'
 import _charging_economy from './charging-economy.bones.json'
 import _charging_patterns from './charging-patterns.bones.json'
 import _charging_timeline from './charging-timeline.bones.json'
@@ -18,6 +19,7 @@ registerBones({
   "charging-chart": _charging_chart,
   "charging-sessions": _charging_sessions,
   "charging-tariffs": _charging_tariffs,
+  "charging-sources": _charging_sources,
   "charging-economy": _charging_economy,
   "charging-patterns": _charging_patterns,
   "charging-timeline": _charging_timeline,

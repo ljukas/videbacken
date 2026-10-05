@@ -1,3 +1,4 @@
+import { registerBones } from 'boneyard-js'
 import { expect, test } from 'vitest'
 import { renderWithRouter } from '~test/browser/render'
 import { SectionSkeleton } from './SectionSkeleton'
@@ -47,4 +48,38 @@ test('loading announces a status; not loading has none', async () => {
   )
   await expect.element(idle.screen.getByText('content')).toBeVisible()
   expect(document.querySelector('[role="status"]')).toBeNull()
+})
+
+// A tiny capture: 237 px tall, two bars. Not keyed by breakpoint, so any width uses it.
+registerBones({
+  'test-sized': {
+    name: 'test-sized',
+    viewportWidth: 300,
+    width: 300,
+    height: 237,
+    bones: [
+      [0, 0, 100, 20, 4],
+      [0, 40, 50, 20, 4],
+    ],
+  },
+})
+
+test('loading with captured bones: no children, and the wrapper reserves the captured height', async () => {
+  const { screen } = await renderWithRouter(
+    <div style={{ width: 300 }}>
+      <SectionSkeleton name="test-sized" loading fallbackHeight="5rem">
+        {/* A no-data render shorter than the capture: it must not set the bones' scale. */}
+        <p style={{ height: 30 }}>content</p>
+      </SectionSkeleton>
+    </div>,
+  )
+  const wrapper = () => document.querySelector<HTMLElement>('[data-boneyard="test-sized"]')
+  await expect.poll(() => wrapper()?.querySelectorAll('[data-boneyard-bone]').length).toBe(2)
+  expect(screen.getByText('content').elements()).toHaveLength(0)
+  // boneyard sets the reserved height inline (minHeight) and scales the bones to the
+  // measured height: both must be the capture's, not the fallback's (80 px) or the children's.
+  await expect.poll(() => wrapper()?.getBoundingClientRect().height).toBe(237)
+  expect(wrapper()?.style.minHeight).toBe('237px')
+  const second = wrapper()?.querySelectorAll<HTMLElement>('[data-boneyard-bone]')[1]
+  expect(second?.style.top).toBe('40px') // scaleY 1
 })
