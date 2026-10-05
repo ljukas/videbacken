@@ -697,6 +697,19 @@ test('Mönster loaded, timeline still loading: only the timeline is a skeleton',
   expect(skeleton('charging-patterns')).toBeNull()
 })
 
+test.each([
+  ['Ekonomi', Economy, '/charging/economy', () => m.charging_economy_title()],
+  ['Mönster', Patterns, '/charging/patterns', () => m.charging_patterns_title()],
+] as const)('%s, sync health still loading: no "never synced" line and no health alert', async (_n, route, path, title) => {
+  const { screen } = await renderPage(route, path, '', (qc) => {
+    pendingForever(qc, orpc.evCharging.syncStatus.queryOptions().queryKey)
+  })
+  await expect.element(screen.getByRole('heading', { name: title() })).toBeVisible()
+  await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
+  expect(screen.getByText(m.charging_never_synced()).elements()).toHaveLength(0)
+  expect(document.querySelector('[role="alert"]')).toBeNull()
+})
+
 // --- Ekonomi: the grid-only lead ------------------------------------------------
 
 const economyTotals = (sessions: number) => ({

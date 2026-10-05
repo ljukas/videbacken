@@ -160,7 +160,7 @@ function PatternsPage() {
 
       {/* Outside the load branches: a failed read for one scope must not take
           the control away, or the user can't switch back. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
         <VehicleScopeToggle
           value={vehicle}
           // A scope change clears the month, like a year change does.
@@ -302,7 +302,10 @@ function PatternsPage() {
                 </section>
               </div>
             ) : (
-              <Empty className="brand-wash rounded-lg border">
+              <Empty
+                className={cn('brand-wash rounded-lg border', dim(patternsStale))}
+                aria-busy={patternsStale}
+              >
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
                     <CalendarXIcon />

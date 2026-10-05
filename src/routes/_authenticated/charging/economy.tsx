@@ -151,17 +151,12 @@ function EconomyPage() {
       {/* The page filter, outside the load branches: a failed read for one
           scope must not take the control away, or the user can't switch back.
           Same row as Mönster's: scope left, year right. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
         <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
         {economy && !loadFailed(result) ? (
           <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
         ) : null}
       </div>
-      {/* The grid-only lead frames the whole page's figures, so it sits right
-          under the filter, outside the content that dims on a switch. */}
-      {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
-        <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
-      ) : null}
       <SectionSkeleton
         name="charging-economy"
         loading={firstLoadPending(result)}
@@ -169,6 +164,12 @@ function EconomyPage() {
       >
         {economy && !loadFailed(result) ? (
           <>
+            {/* The grid-only lead frames the whole page's figures. Inside the
+                skeleton so it can't push the body down when the data lands, but
+                outside the content that dims on a switch. */}
+            {economy.tiles.sessions > 0 ? (
+              <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
+            ) : null}
             {economy.tiles.sessions > 0 ? (
               <div
                 className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}
@@ -203,7 +204,13 @@ function EconomyPage() {
                 <EconomyFootnote excluded={economy.tiles.excluded} />
               </div>
             ) : (
-              <Empty className="brand-wash rounded-lg border">
+              <Empty
+                className={cn(
+                  'brand-wash rounded-lg border transition-opacity',
+                  stale && 'opacity-60',
+                )}
+                aria-busy={stale}
+              >
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
                     <PiggyBankIcon />
