@@ -563,6 +563,16 @@ describe('value of own solar', () => {
       .toBeVisible()
   })
 
+  test('an estimated session with unknown solar says "okänt", with no "≈" or estimate reason', async () => {
+    const { screen } = await render(
+      withSolar({ solarPricedKwh: 0, solarUnpricedKwh: 6, solarValueSek: 0 }, { estimated: true }),
+    )
+    const line = screen.getByText(m.charging_solar_value_unknown(), { exact: true })
+    await expect.element(line).toBeVisible()
+    expect(line.element().textContent).not.toContain('≈')
+    expect(line.element().textContent).not.toContain(m.charging_sessions_cost_estimated())
+  })
+
   test('the line shows even when the cash cost is unknown', async () => {
     const { screen } = await render(
       detail({

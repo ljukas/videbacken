@@ -448,3 +448,17 @@ test('the narrow layout shows the line in the open period', async () => {
     )
     .toBeVisible()
 })
+
+test('a negative solar value (export would have cost money) keeps its sign', async () => {
+  const negative: Cost = { ...sunny, solarValueSek: -3.4 }
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(negative)} />,
+  )
+  await expect
+    .element(
+      grid(page)
+        .getByText(/^Värde av egen sol: −3\skr/)
+        .first(),
+    )
+    .toBeVisible()
+})

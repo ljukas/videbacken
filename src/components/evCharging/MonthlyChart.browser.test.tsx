@@ -419,3 +419,65 @@ test('a month charged only from own solar shows 0 kr and then its solar value', 
   })
   expect(tooltipText()).not.toContain(m.charging_chart_no_price())
 })
+
+// June as a "Pris saknas" stub (no tariff) carrying the given solar; the stub is
+// the last rectangle (11 priced months × spot + fees, then the stub).
+const stubJune = (solar: {
+  solarPricedKwh: number
+  solarUnpricedKwh: number
+  solarValueSek: number
+}) =>
+  costMonths.map((c) =>
+    c.month === 6
+      ? {
+          ...c,
+          fullKwh: 0,
+          noTariffKwh: c.kwh,
+          spotSek: 0,
+          feesSek: 0,
+          totalSek: 0,
+          avgOre: null,
+          complete: false,
+          ...solar,
+        }
+      : c,
+  )
+const hoverStub = async (stubbed: ReturnType<typeof stubJune>) => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: stubbed }} metric="sek" />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(23),
+  )
+  await hoverBar(screen.container, 22)
+  await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_chart_no_price()))
+}
+
+test('a stub month without solar has no solar row', async () => {
+  await hoverStub(stubJune({ solarPricedKwh: 0, solarUnpricedKwh: 0, solarValueSek: 0 }))
+  expect(tooltipText()).not.toContain(m.charging_solar_value_label())
+})
+
+test('a stub month with solar but no spot says why its value is unknown', async () => {
+  await hoverStub(stubJune({ solarPricedKwh: 0, solarUnpricedKwh: 300, solarValueSek: 0 }))
+  expect(tooltipText()).toContain(m.charging_solar_value_unknown_hint())
+})
+
+test('a stub month with partly unpriced solar reads "minst"', async () => {
+  await hoverStub(stubJune({ solarPricedKwh: 250, solarUnpricedKwh: 50, solarValueSek: 212 }))
+  expect(tooltipText()).toContain(m.charging_cost_min({ total: formatSek(212) }))
+})
+
+test('a negative solar value keeps its sign in the tooltip', async () => {
+  const negative = withSolar({ solarPricedKwh: 300, solarUnpricedKwh: 0, solarValueSek: -3.4 })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: negative }} metric="sek" />
+    </div>,
+  )
+  await hoverBar(screen.container, 5)
+  await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_solar_value_label()))
+  expect(tooltipText()).toMatch(/Värde av egen sol−3\skr/)
+})
