@@ -20,12 +20,18 @@ type ActiveUser = Awaited<ReturnType<typeof userService.findActiveById>>
 // It never outlives the request, so a revoked user is still rejected on the
 // next one (ADR-0017); a cross-request cache would delay that (ADR-0025 §5).
 // A failed lookup stays failed for the rest of its request.
+// Bound to the credentials the session came from, so a memo can never answer
+// for a caller carrying other ones (both call sites pass one request's headers;
+// this keeps a future caller honest).
 export type AuthMemo = {
-  session?: Promise<Session>
+  session?: { credentials: string; lookup: Promise<Session> }
   activeUsers: Map<string, Promise<ActiveUser>>
 }
 
 export const createAuthMemo = (): AuthMemo => ({ activeUsers: new Map() })
+
+const credentialsOf = (headers: Headers) =>
+  `${headers.get('cookie') ?? ''}\n${headers.get('authorization') ?? ''}`
 
 // SSR's in-process client builds a context per call; the incoming Request
 // is what one render's calls share. Weak, so a memo goes with its request.
@@ -49,10 +55,11 @@ export const base = os.$context<{
 
 const sessionMiddleware = base.middleware(async ({ context, next }) => {
   const memo = context.authMemo
-  const cached = memo?.session
+  const credentials = credentialsOf(context.headers)
+  const cached = memo?.session?.credentials === credentials ? memo.session.lookup : undefined
   const startedAt = performance.now()
   const pending = cached ?? auth.api.getSession({ headers: context.headers })
-  if (memo && !cached) memo.session = pending
+  if (memo && !memo.session) memo.session = { credentials, lookup: pending }
   const data = await pending
   // Timed only by the call that ran it: a reused lookup cost nothing.
   if (context.timings && !cached)

@@ -57,7 +57,8 @@ export const Route = createFileRoute('/api/rpc/$')({
         // (getSessionMs, findActiveByIdMs) separate auth round-trips from the
         // procedure's own query time (= totalMs minus the parts). Filter these in
         // Vercel logs by msg "rpc timing". For a "__batch__" request the
-        // sub-timings reflect only the last inner call (see context.ts).
+        // procedures' sub-timings reflect only the last inner call, and the auth
+        // ones the call that ran the lookup (memoized per request, context.ts).
         // `poolTotal` / `poolIdle` / `poolWaiting` are the DB pool at the
         // request's start; `poolOpened` / `poolPeakWaiting` what it did while the
         // request ran (instance-wide, the whole HTTP request even for a batch).

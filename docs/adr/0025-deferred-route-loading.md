@@ -199,7 +199,7 @@ is memoized **per HTTP request**: once per SSR render, and once per RPC.
   - Its saving overlaps with the merges above. The memo is the hook it would use, if a later measurement says
     it's worth it.
 - **The memo keeps ADR-0017's guarantee.** It never outlives one HTTP request, so a revoked user is still rejected
-  on the next request. A short cross-request cache of the user lookup was rejected because it would delay revocation.
+  on the next request (an SSR render already in flight finishes its reads; it never mutates). A short cross-request cache of the user lookup was rejected because it would delay revocation.
 - **The pool's state goes in the `rpc timing` line** (`poolTotal`, `poolIdle`, `poolWaiting`). The remaining burst
   cost (§Context 3) can then be fixed from evidence.
 

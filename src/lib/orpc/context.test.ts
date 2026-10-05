@@ -185,3 +185,32 @@ test('authMemoFor gives every call of one SSR request the same memo', () => {
   expect(authMemoFor(a)).toBe(authMemoFor(a))
   expect(authMemoFor(a)).not.toBe(authMemoFor(b))
 })
+
+test('concurrent calls of one request share the one in-flight lookup', async () => {
+  await activeUser()
+  const getSession = vi.mocked(auth.api.getSession)
+  const findActiveById = vi.spyOn(userService, 'findActiveById')
+  const authMemo = createAuthMemo()
+  await Promise.all(
+    [1, 2, 3].map(() => call(echo, undefined, { context: { ...baseContext(), authMemo } })),
+  )
+  expect(getSession).toHaveBeenCalledTimes(1)
+  expect(findActiveById).toHaveBeenCalledTimes(1)
+})
+
+test('a memo never answers for other headers: a different cookie looks up again', async () => {
+  await activeUser()
+  const getSession = vi.mocked(auth.api.getSession)
+  const authMemo = createAuthMemo()
+  const withCookie = (cookie: string) => ({
+    ...baseContext(),
+    headers: new Headers({ cookie }),
+    authMemo,
+  })
+  await call(echo, undefined, { context: withCookie('session=a') })
+  await call(echo, undefined, { context: withCookie('session=b') })
+  expect(getSession).toHaveBeenCalledTimes(2)
+  // The same cookie again is the memo's request: no new lookup.
+  await call(echo, undefined, { context: withCookie('session=a') })
+  expect(getSession).toHaveBeenCalledTimes(2)
+})
