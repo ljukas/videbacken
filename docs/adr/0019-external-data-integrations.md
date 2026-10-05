@@ -514,7 +514,7 @@ in "One `integration sync run` log line, alert on transitions only" above.
 
 The key's expiry is tracked generically: `integration_sync.credential_expires_at` (set by a source whose
 credential expires, read from the credential itself) and `credential_reminder_days` (the last reminder
-threshold sent, reset when the key is renewed). Admins get reminder emails at 30 and 7 days, and `syncStatus`'s
+threshold sent, reset when the key is renewed). Admins get reminder emails at 30 and 7 days, and `syncStatuses`'s
 admin-only `adminDetail.credentialExpiry` drives an in-app warning from 30 days out while the source is
 healthy. See [ADR-0022](./0022-live-vehicle-state-attribution.md) and the
 [runbook](../runbooks/skoda-api-key.md).
