@@ -34,12 +34,17 @@ export const Route = createFileRoute('/_authenticated/energy/')({
     meta: seo({ title: m.meta_energy_title(), description: m.meta_energy_description() }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ year: search.year }),
   // Prefetched, not ensured: a failed read shows its own alert under a
   // working heading and health alert (like /charging/economy).
-  loader: async ({ context: { queryClient }, deps }) => {
+  // The year is deliberately not a loader dep: a dep change blocks the navigation
+  // on this loader, freezing the old chart with no feedback. Read here, it still
+  // prefetches the year a URL asks for (SSR, a shared link); a year switch is the
+  // page's own query, whose old chart stays, dimmed, until the new year lands.
+  // Parsed with the route's own fallbacks.
+  loader: async ({ context: { queryClient }, location }) => {
+    const { year } = searchSchema.parse(location.search)
     await Promise.all([
-      queryClient.prefetchQuery(energyOverviewQuery(deps.year)),
+      queryClient.prefetchQuery(energyOverviewQuery(year)),
       queryClient.ensureQueryData(emaldoHealthQuery),
     ])
   },
@@ -58,7 +63,7 @@ function EnergyOverviewPage() {
   const navigate = Route.useNavigate()
   const [metric, setMetric] = useState<EnergyMetric>('solar')
   const chartHeadingId = useId()
-  const metricLabelId = useId()
+  const tilesHeadingId = useId()
   const setYear = useCallback(
     (y: number) =>
       navigate({ to: '.', search: (s) => ({ ...s, year: y }), replace: true, resetScroll: false }),
@@ -89,7 +94,12 @@ function EnergyOverviewPage() {
         ) : (
           <div className="flex flex-col gap-4">
             {/* Tiles are always the current periods: they don't dim on a year switch. */}
-            <EnergyTiles tiles={overview.tiles} />
+            <section aria-labelledby={tilesHeadingId}>
+              <h2 id={tilesHeadingId} className="sr-only">
+                {m.energy_tiles_heading()}
+              </h2>
+              <EnergyTiles tiles={overview.tiles} />
+            </section>
             <section aria-labelledby={chartHeadingId}>
               <Card>
                 <CardHeader className="flex flex-wrap items-center justify-between gap-2">
@@ -97,14 +107,11 @@ function EnergyOverviewPage() {
                     {m.energy_chart_title()}
                   </h2>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span id={metricLabelId} className="sr-only">
-                      {m.energy_metric_label()}
-                    </span>
                     <MetricToggle
                       value={metric}
                       options={energyMetricOptions()}
                       onChange={setMetric}
-                      aria-labelledby={metricLabelId}
+                      aria-label={m.energy_metric_label()}
                     />
                     <YearSelector
                       years={overview.availableYears}
@@ -115,7 +122,7 @@ function EnergyOverviewPage() {
                 </CardHeader>
                 <CardContent
                   className={cn('transition-opacity', stale && 'opacity-60')}
-                  aria-busy={stale}
+                  aria-busy={stale || undefined}
                 >
                   <EnergyMonthlyChart
                     year={overview.year}

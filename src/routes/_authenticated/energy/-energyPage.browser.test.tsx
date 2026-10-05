@@ -53,7 +53,7 @@ const seedOverview = (data: unknown) => (qc: QueryClient) =>
 
 async function renderPage(route: AnyRoute, path: string, prepare: (qc: QueryClient) => void) {
   const qc = makeTestQueryClient()
-  qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
+  qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY, retry: false } })
   qc.setQueryData(emaldoHealthQuery.queryKey, {
     source: 'emaldo',
     state: 'ok',
@@ -105,6 +105,49 @@ test('Nät switches the chart to the grid series', async () => {
   const { screen } = await renderPage(Overview, '/energy', seedOverview(withData))
   await screen.getByRole('radio', { name: m.energy_metric_grid() }).click()
   await expect.element(screen.getByText(m.energy_series_import_direct())).toBeVisible()
+})
+
+const with2025 = { ...withData, year: 2025, availableYears: [2026, 2025] }
+
+async function pickYear(screen: Awaited<ReturnType<typeof renderPage>>['screen'], y: number) {
+  await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
+  await screen.getByRole('option', { name: String(y) }).click()
+}
+
+test('picking a year puts it in the URL, replacing the history entry', async () => {
+  const { screen, router } = await renderPage(Overview, '/energy', (qc) => {
+    seedOverview({ ...withData, availableYears: [2026, 2025] })(qc)
+    qc.setQueryData(energyOverviewQuery(2025).queryKey, with2025 as never)
+  })
+  const before = router.history.length
+  await pickYear(screen, 2025)
+  await expect.poll(() => (router.state.location.search as { year?: number }).year).toBe(2025)
+  expect(router.history.length).toBe(before)
+})
+
+test('another year loading: the old chart stays, dimmed; the tiles do not', async () => {
+  const { screen, qc } = await renderPage(Overview, '/energy', (qc) => {
+    seedOverview({ ...withData, availableYears: [2026, 2025] })(qc)
+  })
+  let release: (v: unknown) => void = () => {}
+  const gate = new Promise((r) => {
+    release = r
+  })
+  // Held in flight; the page's own query joins it (the RPC link binds fetch early).
+  const held = qc.fetchQuery({
+    queryKey: energyOverviewQuery(2025).queryKey,
+    queryFn: () => gate as never,
+  })
+  await pickYear(screen, 2025)
+  const chart = screen.getByRole('heading', { name: m.energy_chart_title() })
+  await expect.element(chart).toBeVisible()
+  const busy = screen.getByRole('region', { name: m.energy_chart_title() }).element()
+  await expect.poll(() => busy.querySelector('[aria-busy="true"]')).not.toBeNull()
+  const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
+  expect(tiles.closest('[aria-busy="true"]')).toBeNull()
+  release({ ...with2025, year: 2025, availableYears: [2026, 2025] })
+  await held
+  await expect.poll(() => busy.querySelector('[aria-busy="true"]')).toBeNull()
 })
 
 test('a failed read: the error under a working heading', async () => {
