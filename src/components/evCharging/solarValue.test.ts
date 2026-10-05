@@ -51,7 +51,29 @@ describe('solarValueView', () => {
 
   test('a non-finite total is hidden rather than printed', () => {
     expect(solarValueView(totals(Number.NaN, 0, 0))).toEqual({ kind: 'hidden' })
+    expect(solarValueView(totals(10, Number.NaN, 9))).toEqual({ kind: 'hidden' })
     expect(solarValueView(totals(10, 0, Number.NaN))).toEqual({ kind: 'hidden' })
+    expect(solarValueView(totals(10, 0, Number.POSITIVE_INFINITY))).toEqual({ kind: 'hidden' })
+  })
+
+  test('a sliver of unpriced-only solar is hidden, not "okänt"', () => {
+    expect(solarValueView(totals(0, SOLAR_VALUE_MIN_KWH - 0.01, 0))).toEqual({ kind: 'hidden' })
+  })
+
+  test('the threshold counts priced and unpriced solar together', () => {
+    expect(solarValueView(totals(0.03, 0.03, 1))).toEqual({ kind: 'value', sek: 1, atLeast: true })
+  })
+
+  test('a priced crumb beside real unpriced solar is still unknown', () => {
+    expect(solarValueView(totals(1e-9, 3, 0))).toEqual({ kind: 'unknown' })
+  })
+
+  test('unknown ignores whatever value the crumbs carry', () => {
+    expect(solarValueView(totals(0, 3, 5))).toEqual({ kind: 'unknown' })
+  })
+
+  test('a negative value passes through with its sign (exporting would have cost money)', () => {
+    expect(solarValueView(totals(10, 0, -3))).toEqual({ kind: 'value', sek: -3, atLeast: false })
   })
 })
 
@@ -73,10 +95,15 @@ describe('formatSolarValue', () => {
     expect(formatSolarValue({ kind: 'value', sek: -0.2, atLeast: false })).toBe('0 kr')
   })
 
+  test('a floor can be negative: "minst −3 kr"', () => {
+    expect(formatSolarValue({ kind: 'value', sek: -3, atLeast: true })).toBe('minst −3 kr')
+  })
+
   test('follows the UI locale', () => {
     overwriteGetLocale(() => 'en')
     expect(formatSolarValue({ kind: 'value', sek: 1234.5, atLeast: true }, 2)).toBe(
       'at least 1,234.50 kr',
     )
+    expect(formatSolarValue({ kind: 'value', sek: -3.4, atLeast: false })).toBe('−3 kr')
   })
 })
