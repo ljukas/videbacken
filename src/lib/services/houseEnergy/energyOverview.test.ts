@@ -80,6 +80,23 @@ test('first and last SoC stay inside their own month at a month edge', async () 
   expect(o.months[3]?.lastSocPct).toBe(57) // bucket 287 → 50 + 7
 })
 
+test('a month with readings but no SoC has no first or last SoC, even between months that do', async () => {
+  const withSoc = (day: string, soc: number | null) =>
+    replaceDay(
+      dayOf(day),
+      syntheticDay(day, () => ({ batterySocPct: soc })),
+    )
+  await withSoc('2026-02-28', 30)
+  await withSoc('2026-03-15', null)
+  await withSoc('2026-04-01', 70)
+  const o = await getEnergyOverview({ year: 2026, now: new Date('2026-04-02T12:00:00Z') })
+  expect(o.months[2]?.buckets).toBe(288)
+  expect(o.months[2]?.firstSocPct).toBeNull()
+  expect(o.months[2]?.lastSocPct).toBeNull()
+  expect(o.months[1]?.lastSocPct).toBe(30)
+  expect(o.months[3]?.firstSocPct).toBe(70)
+})
+
 test('spring-forward: a full March is complete', async () => {
   // Every day of March 2026 stored (743 h); now is in April so March isn't the newest month… plus one April day.
   for (let d = 1; d <= 31; d++) await storeDay(`2026-03-${String(d).padStart(2, '0')}`)
