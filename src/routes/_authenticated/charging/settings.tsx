@@ -4,7 +4,6 @@ import { useEffect } from 'react'
 import { z } from 'zod'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { healthPoll } from '~/components/evCharging/healthPoll'
-import { firstLoadPending, LoadErrorAlert } from '~/components/evCharging/LoadErrorAlert'
 import {
   SkodaSourceDetails,
   VehicleLogImportButton,
@@ -14,6 +13,7 @@ import { SyncSourcesPanel } from '~/components/evCharging/SyncSourcesPanel'
 import { TariffCard } from '~/components/evCharging/TariffCard'
 import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
+import { firstLoadPending, LoadErrorAlert } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { useUrlDialog } from '~/hooks/useUrlDialog'

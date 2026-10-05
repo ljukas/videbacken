@@ -29,6 +29,8 @@ const DEFAULT_PATHS = [
   '/charging/patterns',
   '/charging/settings',
   '/energy',
+  '/sensors',
+  '/users',
 ]
 
 const email = process.env.INITIAL_ADMIN_EMAILS?.split(',')[0]?.trim()

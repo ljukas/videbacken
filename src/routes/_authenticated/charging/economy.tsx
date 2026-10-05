@@ -9,17 +9,13 @@ import { EconomyGridOnlyLead } from '~/components/evCharging/EconomyGridOnlyLead
 import { EconomyMonthlyChart } from '~/components/evCharging/EconomyMonthlyChart'
 import { EconomySessionTable } from '~/components/evCharging/EconomySessionTable'
 import { EconomyTiles } from '~/components/evCharging/EconomyTiles'
-import {
-  firstLoadPending,
-  LoadErrorAlert,
-  loadFailed,
-} from '~/components/evCharging/LoadErrorAlert'
 import { SessionPagination } from '~/components/evCharging/SessionPagination'
 import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
+import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'

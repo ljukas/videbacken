@@ -13,6 +13,10 @@ import _charging_timeline from './charging-timeline.bones.json'
 import _charging_totals from './charging-totals.bones.json'
 import _energy_chart from './energy-chart.bones.json'
 import _energy_tiles from './energy-tiles.bones.json'
+import _sensors_hum_chart from './sensors-hum-chart.bones.json'
+import _sensors_temp_chart from './sensors-temp-chart.bones.json'
+import _sensors_tiles from './sensors-tiles.bones.json'
+import _users_table from './users-table.bones.json'
 
 configureBoneyard({"color":"#ebebeb","darkColor":"#262626","animate":"pulse"})
 
@@ -27,4 +31,8 @@ registerBones({
   "charging-totals": _charging_totals,
   "energy-chart": _energy_chart,
   "energy-tiles": _energy_tiles,
+  "sensors-hum-chart": _sensors_hum_chart,
+  "sensors-temp-chart": _sensors_temp_chart,
+  "sensors-tiles": _sensors_tiles,
+  "users-table": _users_table,
 })

@@ -1,9 +1,9 @@
 import { UploadIcon } from 'lucide-react'
+import { LoadErrorLine, type LoadErrorQuery, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { Button } from '~/components/ui/button'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { formatAgo, formatDate, formatRunTime } from './format'
-import { LoadErrorLine, type LoadErrorQuery, loadFailed } from './LoadErrorAlert'
 
 type Props = {
   /** The Škoda poll's last contact; null when never, undefined while unknown. */

@@ -11,15 +11,11 @@ import {
 } from '~/components/energy/EnergyMonthlyChart'
 import { EnergyTiles } from '~/components/energy/EnergyTiles'
 import { emaldoHealthQuery, energyOverviewQuery } from '~/components/energy/energyQueries'
-import {
-  firstLoadPending,
-  LoadErrorAlert,
-  loadFailed,
-} from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { YearSelector } from '~/components/evCharging/YearSelector'
+import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'

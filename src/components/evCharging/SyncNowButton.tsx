@@ -1,11 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { RefreshCwIcon } from 'lucide-react'
+import type { ComponentProps } from 'react'
 import { toast } from 'sonner'
-import { Button } from '~/components/ui/button'
+import { RefreshButton } from '~/components/layout/RefreshButton'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
 import { integrationErrorMessage } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
-import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
 type SyncSource = 'zaptec' | 'elpris' | 'skoda' | 'emaldo'
@@ -213,40 +212,14 @@ export function useSyncNow() {
   }
 }
 
+// The "Synka nu" button: a RefreshButton with that default label.
 export function SyncNowButton({
   onSync,
-  pending,
   label = m.charging_sync_now(),
-  variant = 'outline',
-  'aria-label': ariaLabel,
-  keepFocusWhilePending = false,
-}: {
+  ...rest
+}: Omit<ComponentProps<typeof RefreshButton>, 'onClick' | 'label'> & {
   onSync: () => void
-  pending: boolean
   label?: string
-  variant?: 'outline' | 'default'
-  /** Names the button when several sit on one screen ("Synka nu, Zaptec": the visible label first, WCAG 2.5.3). */
-  'aria-label'?: string
-  /**
-   * While pending, mark the button aria-disabled (and ignore clicks) instead of
-   * `disabled`, so a keyboard user who just pressed it keeps focus there rather
-   * than being dropped to <body> — for screens with several of these side by side.
-   */
-  keepFocusWhilePending?: boolean
 }) {
-  const softDisabled = keepFocusWhilePending && pending
-  return (
-    <Button
-      variant={variant}
-      size="sm"
-      onClick={softDisabled ? undefined : onSync}
-      disabled={pending && !keepFocusWhilePending}
-      aria-disabled={softDisabled || undefined}
-      aria-label={ariaLabel}
-      className={cn(softDisabled && 'cursor-not-allowed opacity-50')}
-    >
-      <RefreshCwIcon className={cn(pending && 'animate-spin motion-reduce:animate-none')} />
-      {label}
-    </Button>
-  )
+  return <RefreshButton onClick={onSync} label={label} {...rest} />
 }

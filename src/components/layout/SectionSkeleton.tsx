@@ -27,6 +27,7 @@ export function SectionSkeleton({
   loading,
   className,
   fallbackHeight = '8rem',
+  excludeSelectors,
   children,
 }: {
   name: string
@@ -34,6 +35,8 @@ export function SectionSkeleton({
   className?: string
   /** The fallback block's height until bones are captured. */
   fallbackHeight?: string
+  /** Elements the capture leaves out of the bones (e.g. admin-only controls). */
+  excludeSelectors?: string[]
   children: React.ReactNode
 }) {
   const hydrated = useHydrated()
@@ -55,6 +58,7 @@ export function SectionSkeleton({
         // Clipped: a capture's bones can run a few px past the section's edge.
         className={cn('overflow-hidden', className)}
         fallback={<FallbackBlock height={fallbackHeight} />}
+        snapshotConfig={excludeSelectors ? { excludeSelectors } : undefined}
       >
         {content}
       </Skeleton>
