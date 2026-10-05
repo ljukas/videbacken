@@ -566,8 +566,9 @@ test('Översikt, cost still loading: the totals and chart hold their skeletons, 
     seedOverviewShell(qc)
     seedCost(qc, { kwh: 10, gridKwh: 10, fullKwh: 10, totalSek: 20, avgOre: 200 }, null)
     qc.setQueryData(
-      orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'all' } }).queryKey,
-      { sessions: [session('s1', 7.7)], hasMore: false } as never,
+      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
+        .queryKey,
+      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10 } as never,
     )
     pendingForever(qc, costKey)
   })
@@ -615,6 +616,85 @@ test('Översikt, tariffs still loading: no "set up a tariff" notice, and the edi
   await expect.poll(() => router.history.location.search).toBe('?dialog=tariffEdit&tariffId=t1')
   expect(router.state.location.search).toMatchObject({ dialog: 'tariffEdit', tariffId: 't1' })
   expect(screen.getByText(m.charging_cost_notice_setup_admin()).elements()).toHaveLength(0)
+})
+
+// --- Ekonomi and Mönster: deferred loading (ADR-0024) -------------------------
+
+const economyKey = orpc.evCharging.economy.queryOptions({
+  input: { year: undefined, vehicle: 'all' },
+}).queryKey
+const timelineKey = orpc.evCharging.timeline.queryOptions({
+  input: { year: undefined, month: undefined, vehicle: 'all' },
+}).queryKey
+
+// A loaded patterns read with one charged hour, so the page shows its sections
+// (and the timeline card) rather than the empty state.
+function seedPatterns(qc: QueryClient, vehicle: VehicleScope = 'all') {
+  const slot = (kwh: number) => ({ kwh, pluggedHours: kwh })
+  qc.setQueryData(
+    orpc.evCharging.patterns.queryOptions({ input: { year: undefined, vehicle } }).queryKey,
+    {
+      year: 2026,
+      years: [2026],
+      weekdayHour: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => slot(0))),
+      hourOfDay: Array.from({ length: 24 }, (_, h) => slot(h === 3 ? 5 : 0)),
+      daily: [],
+      months: Array.from({ length: 12 }, (_, i) => ({
+        month: i + 1,
+        kwh: i === 0 ? 5 : 0,
+        sessions: i === 0 ? 1 : 0,
+      })),
+      unhourlySessions: 0,
+    } as never,
+  )
+}
+
+test('Ekonomi still loading: one skeleton for the body, heading and scope toggle usable', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    pendingForever(qc, economyKey)
+  })
+  await expect
+    .element(screen.getByRole('heading', { name: m.charging_economy_title() }))
+    .toBeVisible()
+  await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
+  await expect.poll(() => skeleton('charging-economy')).not.toBeNull()
+  // Loading is not an error (ADR-0016).
+  expect(screen.getByText(m.charging_economy_error_title()).elements()).toHaveLength(0)
+})
+
+test('Ekonomi loaded: no skeleton', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) =>
+    seedEconomy(qc, 'all', 3),
+  )
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_economy_grid_only_link() }))
+    .toBeVisible()
+  expect(skeleton('charging-economy')).toBeNull()
+})
+
+test('Mönster still loading: one skeleton for the body, heading and scope toggle usable', async () => {
+  const { screen } = await renderPage(Patterns, '/charging/patterns', '', (qc) => {
+    pendingForever(
+      qc,
+      orpc.evCharging.patterns.queryOptions({ input: { year: undefined, vehicle: 'all' } })
+        .queryKey,
+    )
+  })
+  await expect
+    .element(screen.getByRole('heading', { name: m.charging_patterns_title() }))
+    .toBeVisible()
+  await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
+  await expect.poll(() => skeleton('charging-patterns')).not.toBeNull()
+})
+
+test('Mönster loaded, timeline still loading: only the timeline is a skeleton', async () => {
+  const { screen } = await renderPage(Patterns, '/charging/patterns', '', (qc) => {
+    seedPatterns(qc)
+    pendingForever(qc, timelineKey)
+  })
+  await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
+  await expect.poll(() => skeleton('charging-timeline')).not.toBeNull()
+  expect(skeleton('charging-patterns')).toBeNull()
 })
 
 // --- Ekonomi: the grid-only lead ------------------------------------------------

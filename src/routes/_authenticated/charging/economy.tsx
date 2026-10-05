@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { PiggyBankIcon } from 'lucide-react'
 import { useCallback, useId, useState } from 'react'
@@ -9,7 +9,11 @@ import { EconomyGridOnlyLead } from '~/components/evCharging/EconomyGridOnlyLead
 import { EconomyMonthlyChart } from '~/components/evCharging/EconomyMonthlyChart'
 import { EconomySessionTable } from '~/components/evCharging/EconomySessionTable'
 import { EconomyTiles } from '~/components/evCharging/EconomyTiles'
-import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
+import {
+  firstLoadPending,
+  LoadErrorAlert,
+  loadFailed,
+} from '~/components/evCharging/LoadErrorAlert'
 import { SessionPagination } from '~/components/evCharging/SessionPagination'
 import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
@@ -17,6 +21,7 @@ import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { useSessionPaging } from '~/hooks/useSessionPaging'
@@ -29,6 +34,7 @@ import {
   vehicleScopeParam,
 } from '~/lib/evCharging/vehicle'
 import { orpc, type RouterOutputs } from '~/lib/orpc/client'
+import { loadRouteData } from '~/lib/query/routeData'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
@@ -59,15 +65,16 @@ export const Route = createFileRoute('/_authenticated/charging/economy')({
     year: search.year,
     vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
-  // Prefetched, not ensured: a failed economy read shows its own alert under a
-  // working heading and sync health, like /charging/patterns.
-  loader: async ({ context: { queryClient }, deps }) => {
-    await Promise.all([
-      queryClient.prefetchQuery(economyQuery(deps.year, deps.vehicle)),
-      queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
-      queryClient.ensureQueryData(pricesHealthQuery),
-    ])
-  },
+  // ADR-0024: awaited on the server only; the client shows the skeleton. A
+  // failed economy read shows its own alert under a working heading.
+  loader: ({ context: { queryClient }, deps }) =>
+    loadRouteData(queryClient, {
+      critical: [
+        economyQuery(deps.year, deps.vehicle),
+        orpc.evCharging.syncStatus.queryOptions(),
+        pricesHealthQuery,
+      ],
+    }),
   component: EconomyPage,
 })
 
@@ -75,12 +82,12 @@ function EconomyPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   const syncNow = useSyncNow()
-  const { data: health } = useSuspenseQuery({
+  const { data: health } = useQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
   })
   // Daily data: focus refetch only, no polling interval.
-  const { data: pricesHealth } = useSuspenseQuery(pricesHealthQuery)
+  const { data: pricesHealth } = useQuery(pricesHealthQuery)
   const sekHeadingId = useId()
   const spotHeadingId = useId()
   const navigate = Route.useNavigate()
@@ -118,25 +125,29 @@ function EconomyPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_economy_title()}
-        lastSuccessAt={health.lastSuccessAt}
+        lastSuccessAt={health?.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
         }
       />
-      <SyncHealthAlert
-        health={health}
-        isAdmin={isAdmin}
-        onRetry={() => syncNow.syncSource('zaptec')}
-        retrying={syncNow.isPendingFor('zaptec')}
-      />
+      {health ? (
+        <SyncHealthAlert
+          health={health}
+          isAdmin={isAdmin}
+          onRetry={() => syncNow.syncSource('zaptec')}
+          retrying={syncNow.isPendingFor('zaptec')}
+        />
+      ) : null}
       {/* Every signed-in user sees the price feed's health here: this page is
           all prices, so a stale feed affects what they read. */}
-      <SyncHealthAlert
-        health={pricesHealth}
-        isAdmin={isAdmin}
-        onRetry={() => syncNow.syncSource('elpris')}
-        retrying={syncNow.isPendingFor('elpris')}
-      />
+      {pricesHealth ? (
+        <SyncHealthAlert
+          health={pricesHealth}
+          isAdmin={isAdmin}
+          onRetry={() => syncNow.syncSource('elpris')}
+          retrying={syncNow.isPendingFor('elpris')}
+        />
+      ) : null}
       {/* The page filter, outside the load branches: a failed read for one
           scope must not take the control away, or the user can't switch back.
           Same row as Mönster's: scope left, year right. */}
@@ -151,64 +162,69 @@ function EconomyPage() {
       {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
         <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
       ) : null}
-      {economy && !loadFailed(result) ? (
-        <>
-          {economy.tiles.sessions > 0 ? (
-            <div
-              className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}
-              aria-busy={stale}
-            >
-              <EconomyTiles tiles={economy.tiles} />
-              <section aria-labelledby={sekHeadingId}>
-                <Card>
-                  <CardHeader>
-                    <h2 id={sekHeadingId} className="font-medium text-sm">
-                      {m.charging_economy_chart_sek_title()}
-                    </h2>
-                  </CardHeader>
-                  <CardContent>
-                    <EconomyMonthlyChart months={economy.months} />
-                  </CardContent>
-                </Card>
-              </section>
-              <section aria-labelledby={spotHeadingId}>
-                <Card>
-                  <CardHeader>
-                    <h2 id={spotHeadingId} className="font-medium text-sm">
-                      {m.charging_economy_chart_spot_title()}
-                    </h2>
-                  </CardHeader>
-                  <CardContent>
-                    <SpotComparisonChart months={economy.months} />
-                  </CardContent>
-                </Card>
-              </section>
-              <EconomySessionsCard sessions={economy.sessions} stale={stale} />
-              <EconomyFootnote excluded={economy.tiles.excluded} />
-            </div>
-          ) : (
-            <Empty className="brand-wash rounded-lg border">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <PiggyBankIcon />
-                </EmptyMedia>
-                <EmptyTitle>
-                  {vehicle === 'other'
-                    ? m.charging_vehicle_empty_other_title({ year: economy.year })
-                    : m.charging_economy_empty_title({ year: economy.year })}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {vehicle === 'other'
-                    ? m.charging_vehicle_empty_other_description()
-                    : m.charging_economy_empty_description()}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          )}
-        </>
-      ) : (
-        <LoadErrorAlert title={m.charging_economy_error_title()} query={result} />
-      )}
+      <SectionSkeleton
+        name="charging-economy"
+        loading={firstLoadPending(result)}
+        fallbackHeight="40rem"
+      >
+        {economy && !loadFailed(result) ? (
+          <>
+            {economy.tiles.sessions > 0 ? (
+              <div
+                className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}
+                aria-busy={stale}
+              >
+                <EconomyTiles tiles={economy.tiles} />
+                <section aria-labelledby={sekHeadingId}>
+                  <Card>
+                    <CardHeader>
+                      <h2 id={sekHeadingId} className="font-medium text-sm">
+                        {m.charging_economy_chart_sek_title()}
+                      </h2>
+                    </CardHeader>
+                    <CardContent>
+                      <EconomyMonthlyChart months={economy.months} />
+                    </CardContent>
+                  </Card>
+                </section>
+                <section aria-labelledby={spotHeadingId}>
+                  <Card>
+                    <CardHeader>
+                      <h2 id={spotHeadingId} className="font-medium text-sm">
+                        {m.charging_economy_chart_spot_title()}
+                      </h2>
+                    </CardHeader>
+                    <CardContent>
+                      <SpotComparisonChart months={economy.months} />
+                    </CardContent>
+                  </Card>
+                </section>
+                <EconomySessionsCard sessions={economy.sessions} stale={stale} />
+                <EconomyFootnote excluded={economy.tiles.excluded} />
+              </div>
+            ) : (
+              <Empty className="brand-wash rounded-lg border">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <PiggyBankIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>
+                    {vehicle === 'other'
+                      ? m.charging_vehicle_empty_other_title({ year: economy.year })
+                      : m.charging_economy_empty_title({ year: economy.year })}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {vehicle === 'other'
+                      ? m.charging_vehicle_empty_other_description()
+                      : m.charging_economy_empty_description()}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </>
+        ) : null}
+      </SectionSkeleton>
+      <LoadErrorAlert title={m.charging_economy_error_title()} query={result} />
     </PageContainer>
   )
 }
