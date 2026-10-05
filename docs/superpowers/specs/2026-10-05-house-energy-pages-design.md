@@ -55,7 +55,7 @@ much of the load is the car, and what the home battery takes in, gives back and 
 
 ### Service — `src/lib/services/houseEnergy/energyOverview.ts`
 
-`getEnergyOverview(year: number): Promise<EnergyOverview>`
+`getEnergyOverview(input?: { year?: number; now?: Date; timings?: { houseScanMs?: number; carMs?: number } }): Promise<EnergyOverview>`
 
 ```ts
 type PeriodSums = {
@@ -65,13 +65,14 @@ type PeriodSums = {
   carKwh: number
   firstSocPct: number | null; lastSocPct: number | null  // first / last bucket with a SoC in the period
   buckets: number                         // readings in the period
-  expectedBuckets: number                 // DST-aware: 5-min steps from period start to min(period end, now)
+  expectedBuckets: number                 // DST-aware 5-min steps over the period's covered span (see below)
 }
 type EnergyOverview = {
-  tiles: { thisMonth: PeriodSums | null; thisYear: PeriodSums | null; allTime: PeriodSums | null }
-  chart: { year: number; months: (PeriodSums | null)[] }   // 12 entries, null = no reading in that month
+  year: number                            // the chart's year (requested, or the current one as fallback)
+  availableYears: number[]                // first reading's year … current Stockholm year, newest first
   firstReadingDay: string | null          // Stockholm 'YYYY-MM-DD'
-  availableYears: number[]                // first reading's year … current Stockholm year
+  tiles: { thisMonth: PeriodSums | null; thisYear: PeriodSums | null; allTime: PeriodSums | null }
+  months: (PeriodSums | null)[]           // the chart year's 12 months, null = no reading in that month
 }
 ```
 
@@ -83,13 +84,17 @@ type EnergyOverview = {
 - `null` period = no reading in it. Before the first reading every period is `null` and `firstReadingDay` is null.
 - **Expected buckets** use `stockholmDayBounds` (`src/lib/time/stockholm.ts`): (min(end, now) − start) ÷ 5 min,
   where `start` is the later of the period start and the first reading's Stockholm day start (so January 2026 isn't
-  "missing" 19 days the integration never had). The current month's expected count runs to the newest reading's
-  bucket, not to now: the sync runs hourly, and the last hour isn't a gap.
+  "missing" 19 days the integration never had). The newest month with readings (the current month, or the month
+  an outage started in) runs to the newest reading's bucket, not to now: the sync runs hourly, and the last hour
+  isn't a gap; an ongoing outage is the Emaldo health alert's job. A tile's expected count comes from its own period
+  bounds, clipped to the first reading's day and the newest reading, so a month with no readings at all counts as
+  missing (step 1 review).
 - **Car kWh**: the service calls the charging overview's own `getOverview({ year, now, vehicle: 'all' })`
   (`services/evCharging/overview.ts`) and takes its month and tile kWh: interval kWh by each interval's Stockholm
   month, a session's own `energy_kwh` when it has no intervals, counted sessions **of every vehicle** (the charger is
   part of the house load whoever charges). The rule lives in one place, and Energi's car figure equals `/charging`'s
-  *Alla* figure by construction.
+  *Alla* figure by construction (not clipped to the house-data window; on prod charging starts after the first
+  house reading). `energyFigures` caps the displayed car figure at the period's load.
 - `year` outside `availableYears` (or missing) → the current Stockholm year; `year` in the result says which one
   the chart shows. The service never throws for a year.
 
@@ -105,12 +110,12 @@ type EnergyOverview = {
 | `importToBattery` | min(`gridImportKwh`, `batteryChargeGridKwh`) |
 | `importDirect` | `gridImportKwh` − importToBattery |
 | `selfSufficiency` | load > 0 ? max(0, 1 − import ÷ load) : null |
-| `car`, `restOfHouse` | `carKwh`, max(0, load − car) |
+| `car`, `restOfHouse` | min(`carKwh`, load), load − car |
 | `batteryIn` | solarToBattery + `batteryChargeGridKwh` |
 | `batteryOut` | `batteryDischargeKwh` |
 | `deltaStored` | both SoCs set ? (last − first) ÷ 100 × `BATTERY_CAPACITY_KWH` : 0 |
 | `loss` | batteryIn − batteryOut − deltaStored |
-| `efficiency` | batteryIn − deltaStored ≥ 1 kWh ? min(1, batteryOut ÷ (batteryIn − deltaStored)) : null |
+| `efficiency` | batteryIn ≥ 1 kWh and batteryIn − deltaStored ≥ 1 kWh ? min(1, batteryOut ÷ (batteryIn − deltaStored)) : null |
 | `gridChargedShare` | batteryIn ≥ 1 kWh ? `batteryChargeGridKwh` ÷ batteryIn : null |
 | `coverage` | expectedBuckets > 0 ? buckets ÷ expectedBuckets : null |
 | `missingHours` | max(0, expected − buckets) × 5 ÷ 60 |
@@ -127,7 +132,8 @@ exactly 1 shows "≈ 100 %". `coverage < 0.99` adds "data saknas för N h" (hour
 - `src/lib/orpc/procedures/energy.ts`, registered as `energy` in `orpc/router.ts`.
 - `protectedProcedure`, input `z.object({ year: z.number().int().min(2020).max(2100).optional() })`; missing
   year → the current Stockholm year.
-- Thin glue: `getEnergyOverview(year)`; `context.timings.getEnergyOverviewMs`.
+- Thin glue: `getEnergyOverview({ year, timings })`; `context.timings.getEnergyOverviewMs` plus the service's
+  `houseScanMs` and `carMs`.
 - No `errors.ts`: an empty house is data. A DB failure is the generic 500 the page handles.
 
 ## Pages
@@ -135,7 +141,9 @@ exactly 1 shows "≈ 100 %". `coverage < 0.99` adds "data saknas för N h" (hour
 Shared by both pages:
 - `?year=` search param, `.catch(undefined)` like `/charging/economy`; a year without readings falls back to the
   current year in the service. The **same query key** on both pages (`orpc.energy.overview.queryOptions({ input: { year } })`),
-  so switching sub-page reuses the cache.
+  so switching sub-page reuses the cache. `year` is **not** a `loaderDeps` entry: the loader reads it from
+  `location.search` (the `/charging` paging pattern), so a year switch renders at once and the chart dims over the
+  old year while the new one loads (step 1 review).
 - Loader `prefetchQuery` (not ensure) + `useQuery` with `keepPreviousData`: a failed read shows `LoadErrorAlert`
   under a working heading. `ensureQueryData` on `evCharging.syncStatus` for the `emaldo` health, rendered with the
   existing `SyncHealthAlert`.
@@ -156,7 +164,8 @@ Shared by both pages:
 │ · såld                   batteriet                          │
 │ Såld el 114 kWh          Förbrukning 947 kWh                 │
 │                          varav laddning 312 kWh             │
-│ note: "hittills" / "data saknas för 9 h" when it applies    │
+│ note: "data saknas för 9 h" when it applies (the tab names  │
+│ the running period, so no "hittills" on the tiles)          │
 └─────────────────────────────────────────────────────────────┘
 ┌ Per månad   [Solel | Nät | Förbrukning]   [◀ 2026 ▶] ───────┐
 │ Solel: stacked direkt / batteri / såld                      │
@@ -194,8 +203,9 @@ Loss % on the tile = loss ÷ (batteryIn − deltaStored), shown only with effici
   separate refactor, not part of this work.
 - **Charts**: Recharts through shadcn's `ChartContainer` (`ChartFrame`), the existing monthly-chart idiom
   (`MonthlyChart`). No new chart library.
-- **Colours**: `--energy-solar`, `--energy-grid`, `--energy-battery` (step 4 tokens). Export: a lighter tint of
-  `--energy-solar` or a hatched pattern (decide in the plan with a contrast check); car: `--brand`.
+- **Colours**: `--energy-solar`, `--energy-grid`, `--energy-battery` (step 4 tokens). Export: its own
+  `--energy-export` token (an ochre, ≥ 3:1 against the background in both themes; a solar tint failed the contrast
+  check); car: `--brand`; rest of the house: `--chart-2`.
 - **Months without data** render no bar (not a zero bar). The current month's tooltip says "hittills".
 - **Responsive**: tiles 1 → 2 → 3/4 columns; 12 bars at phone width with short month labels, like MonthlyChart.
 - **Navigation**: sidebar item *Energi* (`SunIcon`) after *Laddning*, `subItems` Översikt / Batteri; both pages in

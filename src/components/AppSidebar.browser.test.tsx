@@ -165,3 +165,14 @@ test('on /charging/settings only Inställningar (and Laddning) is active', async
   expect(active(link(m.nav_charging_overview()))).toBe(false)
   expect(active(link(m.nav_charging()))).toBe(true)
 })
+
+test('lists Energi after Laddning, linking to /energy, active on /energy', async () => {
+  current.path = '/energy'
+  const { screen } = await renderSidebar()
+  const energy = screen.getByRole('link', { name: m.nav_energy(), exact: true })
+  await expect.element(energy).toHaveAttribute('href', '/energy')
+  expect(active(energy.element())).toBe(true)
+  const hrefs = [...screen.container.querySelectorAll('a')].map((a) => a.getAttribute('href'))
+  expect(hrefs.indexOf('/energy')).toBeGreaterThan(hrefs.lastIndexOf('/charging/economy'))
+  expect(hrefs.indexOf('/energy')).toBeLessThan(hrefs.indexOf('/users'))
+})

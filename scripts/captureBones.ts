@@ -28,6 +28,7 @@ const DEFAULT_PATHS = [
   '/charging/economy',
   '/charging/patterns',
   '/charging/settings',
+  '/energy',
   '/sensors',
   '/users',
 ]
