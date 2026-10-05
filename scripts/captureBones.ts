@@ -22,7 +22,7 @@ import './loadEnv'
 
 const ORIGIN = process.env.BONES_ORIGIN ?? 'http://localhost:14610'
 const MAILPIT = 'http://localhost:14602'
-const DEFAULT_PATHS = ['/charging', '/charging/economy', '/charging/patterns']
+const DEFAULT_PATHS = ['/charging', '/charging/economy', '/charging/patterns', '/energy']
 
 const email = process.env.INITIAL_ADMIN_EMAILS?.split(',')[0]?.trim()
 if (!email) {

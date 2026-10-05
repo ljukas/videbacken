@@ -11,6 +11,8 @@ import _charging_sources from './charging-sources.bones.json'
 import _charging_tariffs from './charging-tariffs.bones.json'
 import _charging_timeline from './charging-timeline.bones.json'
 import _charging_totals from './charging-totals.bones.json'
+import _energy_chart from './energy-chart.bones.json'
+import _energy_tiles from './energy-tiles.bones.json'
 
 configureBoneyard({"color":"#ebebeb","darkColor":"#262626","animate":"pulse"})
 
@@ -23,4 +25,6 @@ registerBones({
   "charging-tariffs": _charging_tariffs,
   "charging-timeline": _charging_timeline,
   "charging-totals": _charging_totals,
+  "energy-chart": _energy_chart,
+  "energy-tiles": _energy_tiles,
 })
