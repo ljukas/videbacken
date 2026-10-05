@@ -64,15 +64,17 @@ The page is a pure *settings and status* page for the connected sources and thei
   `source`. They move from the overview's schema unchanged, together with:
   - the `useUrlDialog` wiring;
   - the "clear a dialog that can't show" effect.
-- The loader prefetches what the moved blocks read:
-  - `tariff.list`;
-  - all four `syncStatus` queries;
-  - all four `recentRuns` queries;
-  - `vehicleRecordCoverage` and `vehicleStateLatest`.
+- The loader uses `loadRouteData` ([ADR-0025](../../adr/0025-deferred-route-loading.md), merged in #89 while this
+  step was being built):
+  - **critical** (awaited on the server, so SSR and deep links render complete): `tariff.list` and all four
+    `syncStatus` queries;
+  - **deferred** (started on the client after hydration): all four `recentRuns` queries, `vehicleRecordCoverage`
+    and `vehicleStateLatest`.
 
-  Use `prefetchQuery` wherever a failed read must not take the page down, as today.
+  Every read is a plain `useQuery`. The Datakällor panel and the tariff card sit in the same `SectionSkeleton`s
+  they had on the overview (`charging-sources`, `charging-tariffs`), captured from this page.
 - Page:
-  - A `PageContainer` with the heading "Inställningar" and a short lead.
+  - A `PageContainer` with the heading "Laddningsinställningar" and a short lead.
   - The admin "Synka nu" (sync all) action, as in `ChargingHeading`. The live-status line stays on the overview.
   - Then **Datakällor** (`SyncSourcesPanel`, entries exactly as today), then the **tariff card**, then the three
     dialogs (`TariffDialog`, `DeleteTariffDialog`, `VehicleImportDialog`).
