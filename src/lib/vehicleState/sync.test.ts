@@ -3,7 +3,13 @@ import { asc, desc, eq } from 'drizzle-orm'
 import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
 import * as credentialResolver from '~/lib/credentials/resolve'
 import { db } from '~/lib/db'
-import { evChargeSession, integrationSyncRun, user, vehicleStateSnapshot } from '~/lib/db/schema'
+import {
+  evChargeSession,
+  integrationSync,
+  integrationSyncRun,
+  user,
+  vehicleStateSnapshot,
+} from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { type SkodaClient, SkodaError, type SkodaReading } from '~/lib/effects/skoda'
 import { createServerLogger } from '~/lib/logger/server'
@@ -103,6 +109,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 
 test('stores the poll with the geofence result and no coordinates', async () => {
@@ -180,6 +187,58 @@ test('an unreadable Škoda row turns the geofence off', async () => {
   const result = await runResolved()
   expect(result).toMatchObject({ outcome: 'ok', geofence: 'off' })
   expect((await snapshots()).map((r) => r.atHome)).toEqual([null])
+})
+
+test('an unreadable Škoda row fails a real-facade run as credentials_unreadable, with no request', async () => {
+  vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+  await integrationCredentialService.set(
+    'skoda',
+    { apiKey: 'stored-key', vin: 'TMBJB9NY5RF999999', homeCoordinates: '59.3293,18.0686' },
+    null,
+  )
+  // Another key: the row no longer decrypts, and env must not stand in for it.
+  vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+  vi.stubEnv('SKODA_API_KEY', 'env-key')
+  vi.stubEnv('SKODA_VIN', 'TMBJB9NY5RF999999')
+  vi.stubEnv('SKODA_HOME_COORDINATES', `${HOME.latitude},${HOME.longitude}`)
+  // keyedAdapter reads VITEST on every call: blank, the real facade resolves from the DB.
+  vi.stubEnv('VITEST', '')
+  const fetch = vi.fn(() => {
+    throw new Error('no request may be sent with unreadable credentials')
+  })
+  vi.stubGlobal('fetch', fetch)
+  const { log, entries } = capturingLogger()
+
+  // No deps.skoda: the exported facade, so the resolver's error is what the run records.
+  const result = await runSkodaSync({ trigger: 'cron', now: () => NOW, deps: { log } })
+
+  expect(result).toMatchObject({
+    outcome: 'failed',
+    code: 'credentials_unreadable',
+    stored: false,
+    geofence: 'off',
+  })
+  expect(fetch).not.toHaveBeenCalled()
+  const [health] = await db
+    .select()
+    .from(integrationSync)
+    .where(eq(integrationSync.source, 'skoda'))
+  expect(health).toMatchObject({ errorCode: 'credentials_unreadable', consecutiveFailures: 1 })
+  expect((await runRows())[0]).toMatchObject({
+    outcome: 'failed',
+    errorCode: 'credentials_unreadable',
+  })
+  // A failed (IntegrationError) run logs its one line at warn.
+  expect(entries().filter((e) => e.msg === 'integration sync run')).toEqual([
+    expect.objectContaining({
+      level: 40,
+      source: 'skoda',
+      outcome: 'failed',
+      code: 'credentials_unreadable',
+      geofence: 'off',
+    }),
+  ])
+  expect(await snapshots()).toHaveLength(0)
 })
 
 test('a home-point resolve that fails for another reason is recorded as the run, not thrown before it', async () => {
