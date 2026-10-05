@@ -220,3 +220,10 @@ Open questions:
     session table's "Kostnad" → "Kostnad som köpt el").
   - Added the house battery page as a later phase that needs shaping (owner request). Next: step 5 (value of own
     solar) in a new session.
+- 2026-10-05: step 5 (value of own solar) built on step 4's `solarPricedKwh` / `solarUnpricedKwh`: one line under
+  the cash cost on the tiles, in the monthly kr tooltip and on the session page, with "minst" / "okänt" states and a
+  0.05 kWh hide threshold (spec "Step 5"). Task 0 found the plan's assumptions held: step 4 had already put the cash
+  `cost` on the session page and stopped drawing an all-solar month as a "Pris saknas" stub. Reviews set the line as
+  a note (small, muted) rather than a second price, and made the tooltip say in words why a value is unknown.
+  **Next phase, the solar-aware economy page, needs its own brainstorm** (`superpowers:brainstorming`, then a spec
+  and its own roadmap) before any plan. The stored mix is its input; this roadmap ends at checkpoint 5.

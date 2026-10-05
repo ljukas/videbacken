@@ -286,8 +286,18 @@ orchestrates it through services.
   it), for step 5's solar value.
 
 **Step 5: value of own solar.** One line under the cash cost: "Värde av egen sol: 212 kr (vad den hade gett vid
-försäljning)". Shown on the overview tiles, in the monthly chart popover and on the session page. Hidden when no
-solar was used.
+försäljning)". Shown on the overview tiles, in the monthly chart's kr tooltip (under the total) and on the session
+page (to the öre). Display rules (`src/components/evCharging/solarValue.ts`):
+- Hidden below 0.05 kWh of solar-origin energy (direct solar + battery-from-solar), so a night session charged from
+  a solar-filled battery still shows its value. A non-finite total is hidden too, never printed.
+- Some solar without a spot price → "minst …"; none priced → "Värde av egen sol: okänt, spotpris saknas". Never 0 kr.
+  Unpriced solar under 1e-6 kWh is float noise and doesn't make it "minst".
+- A negative spot gives a negative value ("−3 kr": exporting would have cost money), "minst −3 kr" as a floor.
+- An estimated session marks it "≈", like its cost.
+- It shows even where the cash cost is unknown ("—", a "Pris saknas" stub month): the value needs only spot prices.
+- Set as a note, not a price: small muted text with a sun on the tiles and the session page. In the tooltip it sits
+  below a hairline, without a swatch, with a hint saying what it means, or why it's unknown (the tooltip ignores the
+  pointer, so a dash's title could never show).
 
 All copy goes in `messages/{sv,en}.json` (sv is the source). Vehicle scope (Vår bil · Gäster · Alla) works
 unchanged: the mix is per session.
