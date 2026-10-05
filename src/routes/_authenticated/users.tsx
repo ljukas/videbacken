@@ -34,7 +34,7 @@ export const Route = createFileRoute('/_authenticated/users')({
     }),
   }),
   validateSearch: usersSearchSchema,
-  // No loaderDeps: opening a dialog (a search change) mustn't re-run the loader.
+  // No loaderDeps: a dialog's search params aren't the loader's input.
   loader: ({ context: { queryClient } }) =>
     loadRouteData(queryClient, { critical: [orpc.user.list.queryOptions()] }),
   component: Users,

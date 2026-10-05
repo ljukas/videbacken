@@ -57,9 +57,9 @@ export function EditUserDialog({ open, userId, onOpenChange }: Props) {
 
 function EditUserDialogBody({ userId, onDone }: { userId: string; onDone: () => void }) {
   const queryClient = useQueryClient()
-  // Edit only ever targets an *active* row, already present in the `user.list`
-  // cache the route loader ensured — no separate detail fetch needed (unlike
-  // the old model, reads are the same list everyone already has).
+  // Edit only ever targets an *active* row, already in the `user.list` cache:
+  // /users opens this dialog only once its list has loaded — no separate detail
+  // fetch needed (unlike the old model, reads are the same list everyone already has).
   const { data: users } = useSuspenseQuery(orpc.user.list.queryOptions())
   const target = users.find((u) => u.id === userId)
 
