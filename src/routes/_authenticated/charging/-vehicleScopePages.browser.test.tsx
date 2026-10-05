@@ -305,7 +305,7 @@ test('Översikt: a failed sessions read shows an error, never the empty list or 
   ).toHaveLength(1)
 })
 
-test('Översikt: an admin sees the car-log card, and ?dialog=vehicleImport opens the import', async () => {
+test('Översikt: an admin sees the car log on the Škoda tile, and ?dialog=vehicleImport opens the import', async () => {
   const { screen } = await renderPage(Overview, '/charging', '?dialog=vehicleImport', (qc) => {
     seedOverviewShell(qc)
     seedOverview(qc, 'ours', [])
@@ -314,7 +314,7 @@ test('Översikt: an admin sees the car-log card, and ?dialog=vehicleImport opens
   await expect.element(screen.getByText(m.charging_vehicle_import_title())).toBeVisible()
 })
 
-test('Översikt: a failed coverage read shows an error in the card, not "no log imported"', async () => {
+test('Översikt: a failed coverage read shows an error on the Škoda tile, not "no log imported"', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverviewShell(qc, { coverage: false })
     seedOverview(qc, 'ours', [])
@@ -323,7 +323,7 @@ test('Översikt: a failed coverage read shows an error in the card, not "no log 
   expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
 })
 
-test('Översikt: a non-admin gets no card, no dialog, and the param is cleared', async () => {
+test('Översikt: a non-admin gets no car log, no import, no dialog, and the param is cleared', async () => {
   const { screen, router } = await renderPage(
     Overview,
     '/charging',
@@ -335,7 +335,10 @@ test('Översikt: a non-admin gets no card, no dialog, and the param is cleared',
     'user',
   )
   await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
-  expect(screen.getByText(m.charging_vehicle_log_title()).elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
+  expect(
+    screen.getByRole('button', { name: m.charging_vehicle_import_button() }).elements(),
+  ).toHaveLength(0)
   expect(screen.getByText(m.charging_vehicle_import_title()).elements()).toHaveLength(0)
   await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
 })

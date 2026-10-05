@@ -24,6 +24,10 @@ import {
 } from '~/components/evCharging/MonthlyChart'
 import { PriceFootnote } from '~/components/evCharging/PriceFootnote'
 import { SessionList } from '~/components/evCharging/SessionList'
+import {
+  SkodaSourceDetails,
+  VehicleLogImportButton,
+} from '~/components/evCharging/SkodaSourceDetails'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { SyncSourcesPanel } from '~/components/evCharging/SyncSourcesPanel'
@@ -31,7 +35,6 @@ import { TariffCard } from '~/components/evCharging/TariffCard'
 import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
-import { VehicleLogCard } from '~/components/evCharging/VehicleLogCard'
 import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
@@ -430,20 +433,6 @@ function ChargingPage() {
         }
       />
 
-      {isAdmin ? (
-        <VehicleLogCard
-          // Prefetched by the loader; a failed read shows an error, never "none imported".
-          coverage={vehicleCoverage.data}
-          loadError={vehicleCoverage}
-          onImport={() => open('vehicleImport')}
-          live={vehicleLatest.data}
-          liveLoadError={vehicleLatest}
-          onSyncLive={() => syncNow.syncSource('skoda')}
-          syncingLive={syncNow.isPendingFor('skoda')}
-          keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
-        />
-      ) : null}
-
       <section className="flex flex-col gap-2">
         <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
         {loadFailed(sessions) ? (
@@ -483,7 +472,24 @@ function ChargingPage() {
           entries={[
             { source: 'zaptec', health, runs: zaptecRuns },
             { source: 'elpris', health: pricesHealth, runs: pricesRuns },
-            { source: 'skoda', health: skodaHealth, runs: skodaRuns },
+            {
+              source: 'skoda',
+              health: skodaHealth,
+              runs: skodaRuns,
+              // The car's log and live poll are one source to the admin: its last
+              // contact, key expiry and log (+ import) live on its tile. Prefetched
+              // by the loader; a failed read shows an error, never "none".
+              details: (
+                <SkodaSourceDetails
+                  live={vehicleLatest.data}
+                  liveQuery={vehicleLatest}
+                  keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
+                  coverage={vehicleCoverage.data}
+                  coverageQuery={vehicleCoverage}
+                />
+              ),
+              actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
+            },
             { source: 'emaldo', health: emaldoHealth, runs: emaldoRuns },
           ]}
           onSync={syncNow.syncSource}

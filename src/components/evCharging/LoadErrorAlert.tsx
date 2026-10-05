@@ -1,5 +1,6 @@
 import { useHydrated } from '@tanstack/react-router'
 import { AlertTriangleIcon } from 'lucide-react'
+import { useId } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert'
 import { m } from '~/paraglide/messages'
 import { SyncNowButton } from './SyncNowButton'
@@ -51,5 +52,34 @@ export function LoadErrorAlert({ title, query }: { title: string; query: LoadErr
         </div>
       </AlertDescription>
     </Alert>
+  )
+}
+
+// The same failure as one line, for a spot too tight for the Alert box (a
+// Datakällor tile): the title in red and a small retry. Client-only and
+// self-gating, like the Alert. The retry is described by the title, so two
+// failed lines in one tile still say which read each "Försök igen" retries.
+export function LoadErrorLine({ title, query }: { title: string; query: LoadErrorQuery }) {
+  const hydrated = useHydrated()
+  const titleId = useId()
+  if (!hydrated || !loadFailed(query)) return null
+  return (
+    // 44px tall on touch input, like the tile's own buttons.
+    <div
+      role="alert"
+      className="flex flex-col items-start gap-1.5 pointer-coarse:[&_[data-slot=button]]:h-11"
+    >
+      <p id={titleId} className="text-destructive text-xs">
+        {title}
+      </p>
+      {/* Keeps focus while retrying: a disabled button would drop it to <body>. */}
+      <SyncNowButton
+        onSync={() => void query.refetch()}
+        pending={query.isFetching}
+        label={m.common_try_again()}
+        aria-describedby={titleId}
+        keepFocusWhilePending
+      />
+    </div>
   )
 }

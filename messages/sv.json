@@ -127,7 +127,7 @@
   "charging_source_progress_label": "Synkförlopp, {source}",
   "charging_source_role_elpris": "Spotpriser",
   "charging_source_role_emaldo": "Husets energi",
-  "charging_source_role_skoda": "Bilens läge",
+  "charging_source_role_skoda": "Bilens läge och laddlogg",
   "charging_source_role_zaptec": "Laddsessioner",
   "charging_source_state_unknown": "Okänd status",
   "charging_source_syncing": "Synkar…",
@@ -152,7 +152,6 @@
     }
   ],
   "charging_sync_prices_failed": "Elpriserna kunde inte hämtas",
-  "charging_sync_skoda_now": "Hämta bilens status",
   "charging_sync_skoda_ok": "Bilens status är uppdaterad",
   "charging_sync_skoda_failed": "Bilens status kunde inte hämtas",
   "charging_sync_house_ok": "Husets energidata är uppdaterad",
@@ -248,7 +247,7 @@
   "dashboard_empty_description": "Det här är din startpunkt — sidor du lägger till visas här.",
   "dashboard_empty_title": "Inget här än",
   "dashboard_welcome_heading": "Välkommen, {name}",
-  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det räknas nya laddningar som vår bil, även om en gäst laddade. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys), byt SKODA_API_KEY i Vercel (Production) och deploya om — eller be den som sköter Vercel-projektet. Verifiera med Hämta bilens status på Översikt.",
+  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det räknas nya laddningar som vår bil, även om en gäst laddade. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys), byt SKODA_API_KEY i Vercel (Production) och deploya om — eller be den som sköter Vercel-projektet. Verifiera med Synka nu på Škoda under Datakällor på Översikt.",
   "email_credential_expiry_button": "Visa laddningsöversikt",
   "email_credential_expiry_fallback": "Om knappen inte fungerar, kopiera och klistra in följande länk i din webbläsare:",
   "email_credential_expiry_footer": "Det här är ett automatiskt meddelande från Videbacken.",
@@ -656,26 +655,7 @@
   "charging_vehicle_auto": "Automatiskt",
   "charging_vehicle_saved": "Sparat",
   "charging_vehicle_save_error": "Kunde inte spara vem som laddade",
-  "charging_vehicle_log_title": "Bilens data",
-  "charging_vehicle_log_description": "Bilens laddlogg och statusen bilen rapporterar under laddningen avgör vilka laddningar som är vår bil.",
-  "charging_vehicle_log_coverage": [
-    {
-      "declarations": [
-        "input count",
-        "input from",
-        "input to",
-        "local countPlural = count: plural",
-        "local countFormatted = count: number"
-      ],
-      "selectors": ["countPlural"],
-      "match": {
-        "countPlural=one": "Laddlogg: {countFormatted} laddning, {from} – {to}",
-        "countPlural=other": "Laddlogg: {countFormatted} laddningar, {from} – {to}"
-      }
-    }
-  ],
   "charging_vehicle_log_none": "Ingen laddlogg importerad",
-  "charging_vehicle_live_last_contact": "Senaste kontakt med bilen:",
   "charging_vehicle_live_none": "Ingen kontakt med bilen ännu",
   "charging_vehicle_live_error_title": "Bilens senaste kontakt kunde inte hämtas",
   "charging_vehicle_import_button": "Importera laddlogg",
@@ -750,5 +730,21 @@
   ],
   "charging_skoda_key_expiring_body_today": "Den går ut i dag, {date}. Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om.",
   "charging_vehicle_key_expires": "Nyckeln går ut den {date}",
-  "charging_vehicle_key_expired": "Nyckeln gick ut den {date}"
+  "charging_vehicle_key_expired": "Nyckeln gick ut den {date}",
+  "charging_vehicle_live_heard": "Bilen hördes av {time}",
+  "charging_vehicle_log_through": [
+    {
+      "declarations": [
+        "input count",
+        "input to",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Laddlogg: {countFormatted} laddning t.o.m. {to}",
+        "countPlural=other": "Laddlogg: {countFormatted} laddningar t.o.m. {to}"
+      }
+    }
+  ]
 }
