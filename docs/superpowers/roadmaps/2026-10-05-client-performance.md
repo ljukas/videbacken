@@ -11,7 +11,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | [#89](https://github.com/ljukas/videbacken/pull/89) | checkpoint passed | 2026-10-05: the owner confirmed the drag is gone on the phone. Prod logs show 0 `/_serverFn` calls since the #89 deploy (230 in the 6 h before), across `/charging`, economy, patterns, `/sensors` and `/users`. Small layout shifts seen, now step 7. |
-| 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | PR_LINK | PR open | — |
+| 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | [#93](https://github.com/ljukas/videbacken/pull/93) | PR open | — |
 | 3 | Fewer requests per `/charging` load: one procedure for the Datakällor panel *or* app-wide oRPC batching (decided in its session; see [notes](#step-3-notes)) | — | — | needs shaping | — |
 | 4 | Bundle: phone fields out of the global form hook; lazy-load the admin-only dialogs on `/charging`; one bones registry per page group (since step 2, `/sensors` and `/users` load ~23 KB gz of charging bones) | — | — | not started | — |
 | 5 | Replace recharts with visx (refactor-workflow) | — | — | not started | — |
