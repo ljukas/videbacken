@@ -15,7 +15,8 @@ export function SettingsLink({
 }) {
   return (
     <Button asChild size="sm" variant="outline">
-      <Link to="/charging/settings" search={search}>
+      {/* AlertDescription underlines every link; this one is a button. */}
+      <Link className="no-underline!" to="/charging/settings" search={search}>
         {children ?? m.charging_settings_link()}
       </Link>
     </Button>

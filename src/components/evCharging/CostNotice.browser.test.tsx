@@ -6,9 +6,10 @@ import { CostNotice } from './CostNotice'
 test('with no tariff, an admin is asked to add the fees and gets a link to the new-period dialog', async () => {
   const { screen } = await renderWithRouter(<CostNotice reason="noTariff" canAddTariff />)
   await expect.element(screen.getByText(m.charging_cost_notice_setup_admin())).toBeVisible()
-  await expect
-    .element(screen.getByRole('link', { name: m.charging_cost_notice_setup_action() }))
-    .toHaveAttribute('href', '/charging/settings?dialog=tariffNew')
+  const link = screen.getByRole('link', { name: m.charging_cost_notice_setup_action() })
+  await expect.element(link).toHaveAttribute('href', '/charging/settings?dialog=tariffNew')
+  // AlertDescription underlines links; the settings link is button-styled.
+  await expect.element(link).toHaveClass('no-underline!')
 })
 
 test('with no tariff, a member is told the cost comes once fees are added (no link)', async () => {
