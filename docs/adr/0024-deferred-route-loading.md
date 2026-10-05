@@ -105,6 +105,12 @@ app at fixed viewport widths and replays it while loading.
   section's height) rather than nothing.
 - **Data.** Capture shows whatever the local database holds, so it runs against realistic local data. A section that
   can't have real data at capture time gets a `fixture`.
+- **One seam.** Pages never import boneyard directly. They use `SectionSkeleton`
+  (`src/components/layout/SectionSkeleton.tsx`), which decides "loading" the same way everywhere (nothing to show
+  yet, nothing failed, and hydrated, so the server HTML and the first client render agree). A library swap changes
+  that one file.
+- **Not for inline placeholders.** A placeholder *inside* an already-rendered section, such as a session row's cost
+  cell while its cost loads, stays shadcn's `Skeleton`. boneyard is for whole sections.
 
 **Spike gate.** It is a six-month-old library, so the first task of the first build step is a spike: capture the
 `/charging` tiles through `bones:capture` at all three widths, then replay them in both themes. If it can't do that
