@@ -38,6 +38,16 @@ const pool = new Pool({
 // re-emitted on the pool; unhandled, it would crash the process. The pool has
 // already discarded that client, so logging is all that's left to do.
 pool.on('error', (error) => logger.warn('idle postgres client error', { error }))
+
+// The pool's state for the `rpc timing` line (ADR-0025 §5): at a request's
+// start, how many connections are open, idle, and how many checkouts wait.
+// A burst that opens connections (total < 10, idle 0) and one that queues
+// (waiting > 0) need different fixes. Counters only — not a query.
+export const poolStats = () => ({
+  poolTotal: pool.totalCount,
+  poolIdle: pool.idleCount,
+  poolWaiting: pool.waitingCount,
+})
 // Deliberately no `attachDatabasePool` (@vercel/functions): it `waitUntil`s
 // idleTimeoutMillis + 100 ms (~10 s) after every query, so each ~100 ms poll
 // would keep its Fluid instance billed ~100x longer (ADR-0018). Connections
