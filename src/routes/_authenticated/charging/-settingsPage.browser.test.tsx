@@ -197,7 +197,7 @@ const pendingForever = (qc: QueryClient, queryKey: readonly unknown[]) => {
   void qc.prefetchQuery({ queryKey, queryFn: () => new Promise(() => {}) })
 }
 
-test('one source state still loading: Datakällor is a skeleton, never "Okänd status"', async () => {
+test('the sources’ state still loading: Datakällor is a skeleton, never "Okänd status"', async () => {
   const { screen } = await renderSettings('', {
     prepare: (qc) => pendingForever(qc, syncHealthQuery.queryKey),
   })
@@ -207,6 +207,13 @@ test('one source state still loading: Datakällor is a skeleton, never "Okänd s
     .toBeVisible()
   await expect.poll(() => skeleton('charging-sources')).not.toBeNull()
   expect(screen.getByText(m.charging_source_state_unknown()).elements()).toHaveLength(0)
+})
+
+test('the sources’ state failed to load: an error with a retry, not just "Okänd status"', async () => {
+  const { screen } = await renderSettings('', {
+    prepare: (qc) => qc.removeQueries({ queryKey: syncHealthQuery.queryKey }),
+  })
+  await expect.element(screen.getByText(m.charging_sources_error_title())).toBeVisible()
 })
 
 test('tariffs still loading: the tariff card is a skeleton, and the edit dialog stays in the URL', async () => {

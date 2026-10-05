@@ -183,7 +183,7 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
 
 A page made of many reads keeps **one query per thing a section shows**: cached, invalidated, polled and failing on
 its own. Where several reads are really **one concern**, the server returns them as one procedure, and each section
-picks its part with `select`. Examples: the sources' health statuses, each source's recent runs, and a session page
+picks its part (by key, or with `select` where a slice needs its own query state). Examples: the sources' health statuses, each source's recent runs, and a session page
 plus its costs.
 
 **Requests are not batched at the transport.** Every request goes through the auth middleware, and the auth lookup

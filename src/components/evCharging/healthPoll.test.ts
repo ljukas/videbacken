@@ -17,3 +17,8 @@ test('polls every minute otherwise', () => {
 test('polls every minute with no data yet', () => {
   expect(healthPoll(false)(q())).toBe(60_000)
 })
+test('given the sources a page shows, ignores a run on any other source', () => {
+  const emaldoRunning = q({ ...idle, emaldo: { running: true } })
+  expect(healthPoll(false, ['zaptec', 'elpris'])(emaldoRunning)).toBe(60_000)
+  expect(healthPoll(false, ['zaptec', 'emaldo'])(emaldoRunning)).toBe(5_000)
+})

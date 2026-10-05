@@ -38,7 +38,7 @@ import {
   vehicleScope,
   vehicleScopeParam,
 } from '~/lib/evCharging/vehicle'
-import { INTEGRATION_SOURCES } from '~/lib/integrationHealth'
+import type { IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
 import { loadRouteData } from '~/lib/query/routeData'
 import { m } from '~/paraglide/messages'
@@ -59,6 +59,8 @@ const sessionsQuery = (page: number, pageSize: SessionPageSize, vehicle: Vehicle
   orpc.evCharging.sessions.queryOptions({ input: { page, pageSize, vehicle } })
 const sessionCostsQuery = (sessionIds: string[]) =>
   orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } })
+// The sources whose health alerts this page shows (an admin sees all three).
+const ALERT_SOURCES = ['zaptec', 'elpris', 'skoda'] as const satisfies readonly IntegrationSource[]
 export const Route = createFileRoute('/_authenticated/charging/')({
   head: () => ({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
@@ -217,12 +219,15 @@ function ChargingPage() {
     [sessionCostList],
   )
   // Every source's health in one read. Members see only Zaptec's alert, polled
-  // at a plain minute; admins also follow "Synkar…" on any source, so an alert's
-  // retry state clears on its own (ADR-0018: polled).
+  // at a plain minute; admins also follow "Synkar…" on the sources whose alerts
+  // this page shows, so an alert's retry state clears on its own (ADR-0018: polled).
   const healthResult = useQuery({
     ...syncHealthQuery,
     refetchInterval: isAdmin
-      ? healthPoll(INTEGRATION_SOURCES.some((source) => syncNow.isPendingFor(source)))
+      ? healthPoll(
+          ALERT_SOURCES.some((source) => syncNow.isPendingFor(source)),
+          ALERT_SOURCES,
+        )
       : 60_000,
   })
   const live = useLiveStatus()

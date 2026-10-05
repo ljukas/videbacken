@@ -63,10 +63,11 @@ The owner asked for the best practice for loading a page made of many separate r
   - `includeAdminDetail` comes from `context.user.role`, as today, so a member never sees `adminDetail`.
   - Members could already read every source's health through `syncStatus({ source })`, so access doesn't widen.
 - **Consumers.**
-  - Every consumer moves to this one query and picks its source with `select`. That covers `/charging`'s alerts,
-    the settings tiles, economy, patterns and the energy page.
-  - A shared helper (`healthQuery(source)` in `components/evCharging/`) builds those options. One cache entry then
-    serves every page.
+  - Every consumer moves to this one query (`syncHealthQuery` in `components/evCharging/syncHealth.ts`) and reads
+    its sources by key (`data?.[source]`). That covers `/charging`'s alerts, the settings tiles, economy, patterns
+    and the energy page. One cache entry serves every page.
+  - Not `select`: every health record carries `Date`s, so each fetch is a new object anyway, and a per-source
+    `select` would save no renders.
 - **Polling.** One poll for all sources:
   - every 5 s while any source is pending (`syncNow.isPendingFor`) or `running`;
   - otherwise every 60 s;
