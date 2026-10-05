@@ -73,5 +73,12 @@ Measured on the full local history (2026-10-05):
 - Two read-only pages and one procedure; no schema change, no new sync, no new env vars.
 - Request time grows with history (≈40 ms per year of readings locally). The procedure records `getEnergyOverviewMs`,
   so the rollup alternative can be revisited on evidence.
+  - *Amended 2026-10-05 (checkpoint 1):* on prod the per-row Stockholm conversion plus a full sort (spilling past the
+    2 MB `work_mem`) took ≈180 ms, and one RPC logged 721 ms. The scan now sums per UTC hour first (exact: Stockholm's
+    offsets are whole hours), converts only the hours, and reads first/last SoC through the primary key: ≈45 ms on
+    prod for ≈74k rows. Still on read, no rollup table. The cost still grows linearly (≈8.9k rows a month): around
+    2–2.5× today's rows (mid–late 2027) the scan alone reaches the 150 ms budget, and past ≈25–30k hours the hourly
+    hash spills to disk at prod's `work_mem`. Watch `houseScanMs`; a per-month rollup written in `replaceDay`'s
+    transaction is the next step then.
 - `figures.ts` is the single home of the house-energy definitions; a later kronor or economy phase builds on it.
 - `C` is a code constant (ADR-0023). If it changes, past loss figures change with it, which is intended.
