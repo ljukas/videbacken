@@ -4,11 +4,14 @@ import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun } from '~/lib/db/schema'
 import type { Logger } from '~/lib/logger'
 import { setupDatabase } from '~test/setup'
+import { recordCredentialExpiry } from './credential'
 import {
   beginAttempt,
+  getAllHealth,
   getHealth,
   getLastSuccessStartedAt,
   listRecentRuns,
+  listRecentRunsBySource,
   recordOutcome,
   reportProgress,
 } from './integrationSync'
@@ -415,4 +418,103 @@ test('reportProgress after the lease expired (not yet taken over) writes nothing
   const [row] = await db.select().from(integrationSync)
   expect(row.progressDone).toBeNull()
   expect(row.progressTotal).toBeNull()
+})
+
+test('getAllHealth reads every source at once; a source with no row is never_synced', async () => {
+  await acquire(T0) // Zaptec has a row, with a live lease
+  const all = await getAllHealth({ now: at(1000), includeAdminDetail: false })
+  expect(Object.keys(all).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  expect(all.zaptec).toEqual(
+    await getHealth('zaptec', { now: at(1000), includeAdminDetail: false }),
+  )
+  expect(all.zaptec.running).toBe(true)
+  for (const source of ['elpris', 'skoda', 'emaldo'] as const)
+    expect(all[source]).toMatchObject({ source, state: 'never_synced', running: false })
+})
+
+test('getAllHealth includes adminDetail only when asked', async () => {
+  const member = await getAllHealth({ now: T0, includeAdminDetail: false })
+  const admin = await getAllHealth({ now: T0, includeAdminDetail: true })
+  for (const health of Object.values(member)) expect(health.adminDetail).toBeNull()
+  for (const health of Object.values(admin))
+    expect(health.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
+})
+
+test('getAllHealth gives each source its own row: state, progress and admin detail', async () => {
+  await db.insert(integrationSync).values({
+    source: 'zaptec',
+    updatedAt: T0,
+    lastAttemptAt: T0,
+    errorCode: 'unreachable',
+    consecutiveFailures: 1,
+    failingSince: T0,
+    lastErrorMessage: 'connect ECONNREFUSED',
+  })
+  const lease = await beginAttempt('skoda', { now: T0 })
+  if (!lease.acquired) throw new Error('expected the lease')
+  await reportProgress('skoda', lease.attemptId, { done: 3, total: 9 }, { now: at(1000) })
+  const expires = new Date(T0.getTime() + 10 * DAY_MS)
+  await recordCredentialExpiry('skoda', expires)
+
+  const admin = await getAllHealth({ now: at(2000), includeAdminDetail: true })
+  expect(admin.zaptec).toMatchObject({
+    code: 'unreachable',
+    consecutiveFailures: 1,
+    running: false,
+    progress: null,
+    adminDetail: { lastErrorMessage: 'connect ECONNREFUSED', credentialExpiry: null },
+  })
+  expect(admin.skoda).toMatchObject({
+    code: null,
+    running: true,
+    progress: { done: 3, total: 9 },
+    adminDetail: { lastErrorMessage: null, credentialExpiry: { expiresAt: expires } },
+  })
+  expect(admin.elpris.state).toBe('never_synced')
+  expect(admin.emaldo.state).toBe('never_synced')
+
+  const member = await getAllHealth({ now: at(2000), includeAdminDetail: false })
+  expect(member.zaptec.adminDetail).toBeNull()
+  expect(member.skoda.adminDetail).toBeNull()
+  expect(member.skoda.progress).toEqual({ done: 3, total: 9 })
+})
+
+test('listRecentRunsBySource returns each source’s newest runs, at most `limit` each', async () => {
+  // Three Zaptec runs and one elpris run, a second apart.
+  for (const [i, source] of (['zaptec', 'zaptec', 'zaptec', 'elpris'] as const).entries()) {
+    const lease = await beginAttempt(source, { now: at(i * 1000) })
+    if (!lease.acquired) throw new Error('expected the lease')
+    await recordOutcome(source, ok, {
+      attemptId: lease.attemptId,
+      trigger: 'cron',
+      startedAt: at(i * 1000),
+      now: at(i * 1000 + 500),
+    })
+  }
+  const runs = await listRecentRunsBySource({ limit: 2 })
+  expect(Object.keys(runs).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  expect(runs.zaptec.map((r) => r.startedAt)).toEqual([at(2000), at(1000)])
+  expect(runs.elpris.map((r) => r.startedAt)).toEqual([at(3000)])
+  expect(runs.skoda).toEqual([])
+  expect(runs.emaldo).toEqual([])
+  // Same row shape as the single-source read.
+  expect(runs.zaptec[0]).toEqual((await listRecentRuns('zaptec', { limit: 1 }))[0])
+})
+
+test('listRecentRunsBySource keeps a failed run’s error fields, as listRecentRuns does', async () => {
+  const lease = await beginAttempt('elpris', { now: T0 })
+  if (!lease.acquired) throw new Error('expected the lease')
+  await recordOutcome('elpris', failed, {
+    attemptId: lease.attemptId,
+    trigger: 'admin',
+    startedAt: T0,
+    now: at(500),
+  })
+  const runs = await listRecentRunsBySource({ limit: 5 })
+  expect(runs.elpris).toEqual(await listRecentRuns('elpris', { limit: 5 }))
+  expect(runs.elpris[0]).toMatchObject({
+    outcome: 'failed',
+    errorCode: 'unreachable',
+    errorMessage: 'connect ECONNREFUSED',
+  })
 })

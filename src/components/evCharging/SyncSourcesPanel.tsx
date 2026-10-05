@@ -1,11 +1,10 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { IntegrationSource } from '~/lib/integrationHealth'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { type RunsQuery, SyncRunsDialog } from './SyncRunsDialog'
 import { SyncSourceTile } from './SyncSourceTile'
+import type { SourceHealth as Health } from './syncHealth'
 
-type Health = RouterOutputs['evCharging']['syncStatus']
 export type SourceEntry = {
   source: IntegrationSource
   health: Health | undefined

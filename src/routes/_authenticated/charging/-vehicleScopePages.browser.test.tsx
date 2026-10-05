@@ -9,11 +9,13 @@ import {
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { formatDate } from '~/components/evCharging/format'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { emptyTotals } from '~/lib/evCharging/cost'
 import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
+import { seedSourcesHealth } from '~test/browser/syncHealth'
 import { Route as Economy } from './economy'
 import { Route as Overview } from './index'
 import { Route as Patterns } from './patterns'
@@ -28,23 +30,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const health = (source: string) =>
-  ({ source, state: 'ok', lastSuccessAt: null, lastError: null }) as never
-
 function seedShell(qc: QueryClient) {
-  qc.setQueryData(orpc.evCharging.syncStatus.queryOptions().queryKey, health('zaptec'))
-  qc.setQueryData(
-    orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } }).queryKey,
-    health('elpris'),
-  )
-  qc.setQueryData(
-    orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } }).queryKey,
-    health('skoda'),
-  )
-  qc.setQueryData(
-    orpc.evCharging.syncStatus.queryOptions({ input: { source: 'emaldo' } }).queryKey,
-    health('emaldo'),
-  )
+  seedSourcesHealth(qc)
 }
 
 async function renderPage(
@@ -146,6 +133,7 @@ function seedOverview(qc: QueryClient, vehicle: VehicleScope, sessions: unknown[
       total: sessions.length,
       page: 1,
       pageSize: 10,
+      costs: [],
     } as never,
   )
 }
@@ -218,7 +206,13 @@ test('Översikt: switching scope never shows the sessions empty state mid-switch
     if (JSON.stringify(opts.queryKey) !== JSON.stringify(otherKey)) return original(opts as never)
     held = true
     return gate.then(() => {
-      qc.setQueryData(otherKey, { sessions: [], total: 0, page: 1, pageSize: 10 } as never)
+      qc.setQueryData(otherKey, {
+        sessions: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+        costs: [],
+      } as never)
     })
   }) as never)
   await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
@@ -272,7 +266,7 @@ test('Översikt: a failed overview read shows the alert and the toggle; Alla giv
     qc.setQueryData(
       orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'other' } })
         .queryKey,
-      { sessions: [], total: 0, page: 1, pageSize: 10 } as never,
+      { sessions: [], total: 0, page: 1, pageSize: 10, costs: [] } as never,
     )
   })
   await expect
@@ -397,7 +391,7 @@ function seedCost(qc: QueryClient, allTime: Record<string, unknown>, houseDataFr
   qc.setQueryData(
     orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
       .queryKey,
-    { sessions: [], total: 0, page: 1, pageSize: 10 } as never,
+    { sessions: [], total: 0, page: 1, pageSize: 10, costs: [] } as never,
   )
 }
 
@@ -431,6 +425,36 @@ test('Översikt: before any house data the note says all charging counts as boug
   expect(screen.getByText(/Sol och batteri räknas in/).elements()).toHaveLength(0)
 })
 
+test('Översikt: when a page’s costs failed, the rows stay and an alert offers a retry, never 0 kr', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, gridKwh: 10, fullKwh: 10, totalSek: 20, avgOre: 200 }, null)
+    qc.setQueryData(
+      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
+        .queryKey,
+      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10, costs: null } as never,
+    )
+  })
+  await expect.element(screen.getByText('7,7', { exact: false })).toBeVisible()
+  await expect.element(screen.getByText(m.charging_sessions_costs_error_title())).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: m.common_try_again() })).toBeVisible()
+  expect(screen.getByText('0,00 kr', { exact: false }).elements()).toHaveLength(0)
+})
+
+test('Översikt: costs that loaded show no costs alert', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, gridKwh: 10, fullKwh: 10, totalSek: 20, avgOre: 200 }, null)
+    qc.setQueryData(
+      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
+        .queryKey,
+      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10, costs: [] } as never,
+    )
+  })
+  await expect.element(screen.getByText('7,7', { exact: false })).toBeVisible()
+  expect(screen.getByText(m.charging_sessions_costs_error_title()).elements()).toHaveLength(0)
+})
+
 // --- Översikt: deferred loading (ADR-0025) ------------------------------------
 
 const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)
@@ -456,7 +480,7 @@ test('Översikt, cost still loading: the totals and chart hold their skeletons, 
     qc.setQueryData(
       orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
         .queryKey,
-      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10 } as never,
+      { sessions: [session('s1', 7.7)], total: 1, page: 1, pageSize: 10, costs: [] } as never,
     )
     pendingForever(qc, costKey)
   })
@@ -586,7 +610,7 @@ test.each([
   ['Mönster', Patterns, '/charging/patterns', () => m.charging_patterns_title()],
 ] as const)('%s, sync health still loading: no "never synced" line and no health alert', async (_n, route, path, title) => {
   const { screen } = await renderPage(route, path, '', (qc) => {
-    pendingForever(qc, orpc.evCharging.syncStatus.queryOptions().queryKey)
+    pendingForever(qc, syncHealthQuery.queryKey)
   })
   await expect.element(screen.getByRole('heading', { name: title() })).toBeVisible()
   await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
@@ -672,7 +696,7 @@ function seedSessionsPage(
 ) {
   qc.setQueryData(
     orpc.evCharging.sessions.queryOptions({ input: { vehicle: 'all', ...input } }).queryKey,
-    { sessions: rows, total, page: served, pageSize: input.pageSize } as never,
+    { sessions: rows, total, page: served, pageSize: input.pageSize, costs: [] } as never,
   )
 }
 
@@ -762,7 +786,7 @@ test('Översikt: a garbage ?size= falls back to 10 rows', async () => {
     .toHaveTextContent('10')
 })
 
-test('Översikt: the loader prefetches the page and size in the URL, then that page’s costs', async () => {
+test('Översikt: the loader prefetches the page and size in the URL (its costs come with it)', async () => {
   const keys: string[] = []
   await renderPage(Overview, '/charging', '?page=2&size=25', (qc) => {
     seedPagedOverview(qc)
@@ -785,9 +809,6 @@ test('Översikt: the loader prefetches the page and size in the URL, then that p
       orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
         .queryKey,
     ),
-  )
-  expect(keys).toContain(
-    key(orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds: ['p2-25'] } }).queryKey),
   )
 })
 
@@ -1028,18 +1049,9 @@ test.each([
 test('Översikt: an admin’s failing Škoda alert links to the settings page', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedEmptyOverview(qc)
-    qc.setQueryData(
-      orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } }).queryKey,
-      {
-        source: 'skoda',
-        state: 'failing',
-        code: 'auth_failed',
-        lastSuccessAt: null,
-        failingSince: null,
-        running: false,
-        adminDetail: null,
-      } as never,
-    )
+    seedSourcesHealth(qc, {
+      skoda: { state: 'failing', code: 'auth_failed', lastSuccessAt: null, failingSince: null },
+    })
   })
   await expect
     .element(screen.getByRole('link', { name: m.charging_settings_link() }))
@@ -1098,7 +1110,7 @@ test('Översikt: while the next page loads, the current rows stay, dimmed and bu
   await vi.waitFor(() => expect(list()?.getAttribute('aria-busy')).toBe('true'))
   expect(list()?.className).toContain('opacity-60')
   await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
-  release({ sessions: [session('p2', 2.2)], total: 25, page: 2, pageSize: 10 })
+  release({ sessions: [session('p2', 2.2)], total: 25, page: 2, pageSize: 10, costs: [] })
   await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
   expect(list()?.getAttribute('aria-busy')).toBe('false')
   expect(list()?.className).not.toContain('opacity-60')

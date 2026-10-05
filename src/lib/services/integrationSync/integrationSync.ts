@@ -1,12 +1,13 @@
 import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun } from '~/lib/db/schema'
-import type {
-  HealthState,
-  HealthTransition,
-  IntegrationErrorCode,
-  IntegrationSource,
-  SyncTrigger,
+import {
+  type HealthState,
+  type HealthTransition,
+  INTEGRATION_SOURCES,
+  type IntegrationErrorCode,
+  type IntegrationSource,
+  type SyncTrigger,
 } from '~/lib/integrationHealth'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
@@ -235,6 +236,26 @@ export async function getHealth(
   return toHealth(source, row, now, includeAdminDetail)
 }
 
+// Every source's health in one read (≤ 4 rows): the pages show several sources
+// at once and poll them together (ADR-0025 §5). A source without a row yet
+// reads as never synced, as in `getHealth`.
+export async function getAllHealth({
+  now,
+  includeAdminDetail,
+}: {
+  now: Date
+  includeAdminDetail: boolean
+}): Promise<Record<IntegrationSource, IntegrationHealth>> {
+  const rows = await db.select().from(integrationSync)
+  const bySource = new Map(rows.map((row) => [row.source, row]))
+  return Object.fromEntries(
+    INTEGRATION_SOURCES.map((source) => [
+      source,
+      toHealth(source, bySource.get(source), now, includeAdminDetail),
+    ]),
+  ) as Record<IntegrationSource, IntegrationHealth>
+}
+
 // The sync run's watermark: the next fetch window starts from here.
 export async function getLastSuccessStartedAt(source: IntegrationSource): Promise<Date | null> {
   const [row] = await db
@@ -244,34 +265,88 @@ export async function getLastSuccessStartedAt(source: IntegrationSource): Promis
   return row?.lastSuccessStartedAt ?? null
 }
 
+// One run's fields as the history shows them (no stats JSON, no `since`).
+const runColumns = {
+  id: integrationSyncRun.id,
+  trigger: integrationSyncRun.trigger,
+  startedAt: integrationSyncRun.startedAt,
+  finishedAt: integrationSyncRun.finishedAt,
+  durationMs: integrationSyncRun.durationMs,
+  outcome: integrationSyncRun.outcome,
+  errorCode: integrationSyncRun.errorCode,
+  errorMessage: integrationSyncRun.errorMessage,
+  upserted: integrationSyncRun.upserted,
+  sessionsSeen: integrationSyncRun.sessionsSeen,
+  pages: integrationSyncRun.pages,
+}
+
+type RunSelect = Omit<RunRow, 'trigger' | 'outcome' | 'errorCode'> & {
+  trigger: string
+  outcome: string
+  errorCode: string | null
+}
+
+const toRunRow = (r: RunSelect): RunRow => ({
+  ...r,
+  trigger: r.trigger as SyncTrigger,
+  outcome: r.outcome as RunRow['outcome'],
+  errorCode: r.errorCode as IntegrationErrorCode | null,
+})
+
 export async function listRecentRuns(
   source: IntegrationSource,
   { limit }: { limit: number },
 ): Promise<RunRow[]> {
   const rows = await db
-    .select({
-      id: integrationSyncRun.id,
-      trigger: integrationSyncRun.trigger,
-      startedAt: integrationSyncRun.startedAt,
-      finishedAt: integrationSyncRun.finishedAt,
-      durationMs: integrationSyncRun.durationMs,
-      outcome: integrationSyncRun.outcome,
-      errorCode: integrationSyncRun.errorCode,
-      errorMessage: integrationSyncRun.errorMessage,
-      upserted: integrationSyncRun.upserted,
-      sessionsSeen: integrationSyncRun.sessionsSeen,
-      pages: integrationSyncRun.pages,
-    })
+    .select(runColumns)
     .from(integrationSyncRun)
     .where(eq(integrationSyncRun.source, source))
-    .orderBy(desc(integrationSyncRun.startedAt))
+    .orderBy(desc(integrationSyncRun.startedAt), desc(integrationSyncRun.id))
     .limit(limit)
-  return rows.map((r) => ({
-    ...r,
-    trigger: r.trigger as SyncTrigger,
-    outcome: r.outcome as RunRow['outcome'],
-    errorCode: r.errorCode as IntegrationErrorCode | null,
-  }))
+  return rows.map(toRunRow)
+}
+
+// Each source's last `limit` runs, newest first, in one query (the settings
+// page's histories, ADR-0025 §5): for each source's sync row, a LATERAL
+// subquery reads that source's top runs off integration_sync_run_source_started_idx.
+// A source without a sync row has never run, so it gets [].
+export async function listRecentRunsBySource({
+  limit,
+}: {
+  limit: number
+}): Promise<Record<IntegrationSource, RunRow[]>> {
+  const recent = db
+    .select(runColumns)
+    .from(integrationSyncRun)
+    .where(eq(integrationSyncRun.source, integrationSync.source))
+    .orderBy(desc(integrationSyncRun.startedAt), desc(integrationSyncRun.id))
+    .limit(limit)
+    .as('recent')
+  const rows = await db
+    .select({
+      source: integrationSync.source,
+      id: recent.id,
+      trigger: recent.trigger,
+      startedAt: recent.startedAt,
+      finishedAt: recent.finishedAt,
+      durationMs: recent.durationMs,
+      outcome: recent.outcome,
+      errorCode: recent.errorCode,
+      errorMessage: recent.errorMessage,
+      upserted: recent.upserted,
+      sessionsSeen: recent.sessionsSeen,
+      pages: recent.pages,
+    })
+    .from(integrationSync)
+    .innerJoinLateral(recent, sql`true`)
+    // The join keeps no order of its own: newest first within each source,
+    // tie-broken like `listRecentRuns`.
+    .orderBy(integrationSync.source, desc(recent.startedAt), desc(recent.id))
+  const bySource = Object.fromEntries(
+    INTEGRATION_SOURCES.map((source) => [source, [] as RunRow[]]),
+  ) as Record<IntegrationSource, RunRow[]>
+  for (const { source, ...run } of rows) bySource[source as IntegrationSource]?.push(toRunRow(run))
+  return bySource
 }
 
 // The running attempt's progress, overwritten in place. Matched on the lease

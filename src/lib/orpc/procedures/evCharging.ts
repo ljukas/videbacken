@@ -5,9 +5,14 @@ import {
   getEconomyOverview,
   getSessionEconomy,
 } from '~/lib/evCharging/chargingEconomy'
-import { type CostTimings, getCostOverview, getSessionCosts } from '~/lib/evCharging/costing'
+import {
+  type CostTimings,
+  getCostOverview,
+  getSessionCosts,
+  type SessionCost,
+} from '~/lib/evCharging/costing'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { MAX_SESSION_PAGE, MAX_SESSION_PAGE_SIZE, sessionPageSize } from '~/lib/evCharging/paging'
+import { MAX_SESSION_PAGE, sessionPageSize } from '~/lib/evCharging/paging'
 import { runZaptecSync } from '~/lib/evCharging/sync'
 import {
   MAX_IMPORT_ROWS,
@@ -60,8 +65,11 @@ export const evChargingRouter = {
     }),
 
   // One page of the session list (count + page + peaks → `sessionsCountMs`
-  // beside the whole call's `sessionsMs`). A page past the end comes back as
-  // the last page, with its number in `page`.
+  // beside the whole call's `sessionsMs`), with the page's cash cost (stored
+  // solar/battery mix: `cost*`, total `sessionCostsMs`). One read, so the list
+  // never waits on a second round trip (ADR-0025 §5). A cost failure keeps the
+  // rows: `costs` is null and the cost column shows its dash (ADR-0020: never
+  // 0 kr). A page past the end comes back as the last page, with its number in `page`.
   sessions: protectedProcedure
     .input(
       z.object({
@@ -73,15 +81,31 @@ export const evChargingRouter = {
     .handler(async ({ input, context }) => {
       const startedAt = performance.now()
       const timings: SessionListTimings = {}
-      const result = await evChargingService.listSessions({
+      const page = await evChargingService.listSessions({
         page: input.page,
         pageSize: input.pageSize,
         vehicle: input.vehicle,
         timings,
       })
-      if (context.timings) context.timings.sessionsMs = Math.round(performance.now() - startedAt)
+      const costStart = performance.now()
+      const costTimings: CostTimings = {}
+      let costs: SessionCost[] | null
+      try {
+        costs = await getSessionCosts({
+          sessionIds: page.sessions.map((s) => s.id),
+          timings: costTimings,
+        })
+      } catch (error) {
+        context.log.warn('session costs failed; the list shows none', { error })
+        costs = null
+      }
+      if (context.timings) {
+        context.timings.sessionCostsMs = Math.round(performance.now() - costStart)
+        context.timings.sessionsMs = Math.round(performance.now() - startedAt)
+      }
       recordPrefixedTimings(context.timings, 'sessions', timings)
-      return result
+      recordPrefixedTimings(context.timings, 'cost', costTimings)
+      return { ...page, costs }
     }),
 
   // Cost per month/tile (spot + tariff), kept apart from `overview` so a price
@@ -96,17 +120,6 @@ export const evChargingRouter = {
       const overview = await getCostOverview({ year: input.year, timings, vehicle: input.vehicle })
       recordPrefixedTimings(context.timings, 'cost', timings)
       return overview
-    }),
-
-  // Cash cost (stored solar/battery mix, `costMixMs`) of the sessions on the
-  // list's current page: the client passes the ids it shows, at most one page.
-  sessionCosts: protectedProcedure
-    .input(z.object({ sessionIds: z.array(z.uuid()).max(MAX_SESSION_PAGE_SIZE) }))
-    .handler(async ({ input, context }) => {
-      const timings: CostTimings = {}
-      const costs = await getSessionCosts({ sessionIds: input.sessionIds, timings })
-      recordPrefixedTimings(context.timings, 'cost', timings)
-      return costs
     }),
 
   // When-we-charge views (/charging/patterns). Two queries + pure aggregation
@@ -169,11 +182,12 @@ export const evChargingRouter = {
       }
     }),
 
-  // `includeAdminDetail` is a flag derived from the caller's own role, never
-  // trusted client input (ADR-0002 amendment) — a non-admin never sees
-  // `adminDetail`, even if it asked for it.
-  syncStatus: protectedProcedure.input(sourceInput).handler(({ input, context }) =>
-    integrationSyncService.getHealth(input?.source ?? 'zaptec', {
+  // Every source's health in one read: the pages show several sources' alerts
+  // and tiles, and poll them together (ADR-0025 §5). `includeAdminDetail` is a
+  // flag derived from the caller's own role, never trusted client input
+  // (ADR-0002 amendment) — a non-admin never sees `adminDetail`.
+  syncStatuses: protectedProcedure.handler(({ context }) =>
+    integrationSyncService.getAllHealth({
       now: new Date(),
       includeAdminDetail: context.user.role === 'admin',
     }),
@@ -274,16 +288,10 @@ export const evChargingRouter = {
   // The Škoda tile: when the poll last heard from the car (ADR-0022). Times only.
   vehicleStateLatest: adminProcedure.handler(() => vehicleStateService.latestSnapshot()),
 
+  // Each source's last runs in one read (the settings page's histories, ADR-0025 §5).
   recentRuns: adminProcedure
-    .input(
-      z.object({
-        source: chargingSource.default('zaptec'),
-        limit: z.number().int().min(1).max(50).default(20),
-      }),
-    )
-    .handler(({ input }) =>
-      integrationSyncService.listRecentRuns(input.source, { limit: input.limit }),
-    ),
+    .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }))
+    .handler(({ input }) => integrationSyncService.listRecentRunsBySource({ limit: input.limit })),
 
   // Manual sync trigger for one source (default Zaptec). The page's "Synka
   // nu" fires one call per source (sessions, prices, house energy) in

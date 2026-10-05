@@ -4,12 +4,10 @@ import {
   integrationHealthTitle,
   integrationSourceName,
 } from '~/lib/integrationHealthMessage'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { SyncSourceTile } from './SyncSourceTile'
-
-type Health = RouterOutputs['evCharging']['syncStatus']
+import type { SourceHealth as Health } from './syncHealth'
 
 const ok: Health = {
   source: 'zaptec',

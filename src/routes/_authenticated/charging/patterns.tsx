@@ -17,6 +17,7 @@ import {
 import { SessionTimeline } from '~/components/evCharging/SessionTimeline'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
 import { YearSelector } from '~/components/evCharging/YearSelector'
@@ -75,7 +76,7 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
       critical: [
         patternsQuery(deps.year, deps.vehicle),
         timelineQuery(deps.year, deps.month, deps.vehicle),
-        orpc.evCharging.syncStatus.queryOptions(),
+        syncHealthQuery,
       ],
     }),
   component: PatternsPage,
@@ -85,10 +86,9 @@ function PatternsPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   const syncNow = useSyncNow()
-  const { data: health } = useQuery({
-    ...orpc.evCharging.syncStatus.queryOptions(),
-    refetchInterval: 60_000,
-  })
+  // Every source's health (one read); this page shows Zaptec's.
+  const { data: sourcesHealth } = useQuery({ ...syncHealthQuery, refetchInterval: 60_000 })
+  const health = sourcesHealth?.zaptec
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const metric: PatternMetric = search.metric ?? 'kwh'

@@ -7,16 +7,14 @@ import { Card } from '~/components/ui/card'
 import { Progress } from '~/components/ui/progress'
 import type { IntegrationSource } from '~/lib/integrationHealth'
 import { integrationHealthTitle, integrationSourceName } from '~/lib/integrationHealthMessage'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { formatAgo } from './format'
 import { syncHealthMessage } from './SyncHealthAlert'
 import { SyncNowButton } from './SyncNowButton'
 import { SyncSourceMark } from './SyncSourceMark'
+import type { SourceHealth as Health } from './syncHealth'
 import { syncSourceCadence, syncSourceRole } from './syncSourceCopy'
-
-type Health = RouterOutputs['evCharging']['syncStatus']
 
 // The state reads in text; the dot only reinforces it (never colour alone).
 const DOT: Record<Health['state'], string> = {

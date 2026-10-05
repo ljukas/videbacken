@@ -61,8 +61,9 @@ on its slot's Stockholm day: `total = (spot + markup + grid + tax) × (1 + VAT)`
 `src/lib/evCharging/costing.ts` (a domain orchestrator, ADR-0001) loads counted-session energy, **only the slots
 those sessions overlap** (one `unnest` join over their windows), and all tariff periods — each through its own service
 — and buckets by each interval's Stockholm start month, exactly as the kWh overview does (a test pins kWh parity).
-It backs `costOverview` / `sessionCosts`, **separate procedures** from `overview` / `sessions`, so a price or tariff
-problem degrades the cost figures and never the energy ones; the page prefetches cost best-effort.
+It backs `costOverview`, a **separate procedure** from `overview`, and the costs `sessions` returns with each page
+(`costs: null` when costing throws, ADR-0025 §5), so a price or tariff problem degrades the cost figures and never
+the energy ones; the page prefetches `costOverview` best-effort, and a session page brings its own costs.
 
 ### Energy tax is built in
 

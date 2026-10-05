@@ -34,6 +34,8 @@ The page is a pure *settings and status* page for the connected sources and thei
 | What saving does | **Save, then run that source's sync once.** The tile's health shows the result. No separate "test" path. |
 | Removing | **"Ta bort sparade uppgifter"** clears the stored row: env applies again (or `not_configured`), then a sync runs. |
 | Slicing | Three steps, one PR each: **move → store → UI** (see the roadmap). |
+| One source or all | **Per source** (owner, 2026-10-05, after checkpoint 2). A source's fields are set together (all the Škoda fields in one save), and each source is independent of the others (Škoda never with Emaldo). See [Credentials per source](#credentials-per-source-owner-decision-after-checkpoint-2). |
+| When one fails | **Only that source fails** (owner, same day). A rejected save, a refused key or an unreadable row affects that source only. |
 
 ## Scope
 
@@ -268,6 +270,40 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
 - `.env.example` and the CLAUDE.md code map and env list were updated in step 2, not step 3.
 - Rollback: after the new code has recorded `credentials_unreadable`, an instant rollback to older code shows that
   row's code without copy (display-only).
+
+## Credentials per source (owner decision after checkpoint 2)
+
+The owner reviewed the design from the UI's side after checkpoint 2 (2026-10-05). A source's fields are set
+together, sources are set independently, and if one source fails, the others must not.
+
+- **Step 2's storage already fits.** There is one encrypted row per source, so an unreadable or refused source never
+  affects another. Each source has its own dialog, save and sync.
+- **A save over an unreadable row needs every field of the source.**
+  - Today, `set` replaces an unreadable row with only the fields sent, so the unsent ones would silently fall back
+    to env.
+  - Step 3 makes `set` refuse that with a new domain code (for example `REENTER_ALL_FIELDS`).
+  - The dialog's "Fyll i alla fält igen" alert then matches the rule.
+  - Over a readable row, a blank field still keeps its stored value.
+- **A missing or rotated `CREDENTIALS_ENCRYPTION_KEY` makes every stored source unreadable at once.** They share one
+  key, so this is a key event, not one source failing. The fix is to restore the key or re-enter the sources.
+- **Name the wrong field when we can tell** (owner, same day). For example "the VIN is invalid", while the other
+  fields show as fine.
+  - **At save:** validation reports every invalid field at once, not just the first. `INVALID_FIELD` carries a
+    list of field names. Each name shows on its own input.
+  - **At sync:** the run maps a vendor's answer to the field it points at, where the answer allows it. The dialog
+    and tile flag that field.
+
+    | Source | Answer | Flags |
+    |---|---|---|
+    | Škoda | 401 | `apiKey` (expired or wrong) |
+    | Škoda | 404 | `vin` (no car for that VIN) |
+    | Škoda | 403 | `apiKey` + `vin` together (the key isn't authorized for that car); can't tell which |
+    | Zaptec | refused login | `username` + `password` together (Zaptec doesn't say which) |
+    | Emaldo | refused login | `user` + `password` |
+    | Emaldo | answer we can't decode (often a rotated app key) | `appId` + `appSecret` |
+
+    Step 3 checks these mappings against the current client code and the vendors' documented error bodies before
+    relying on them. It stores the suspect fields with the run, by name only, never a value.
 
 ## Step 3 — credentials UI
 

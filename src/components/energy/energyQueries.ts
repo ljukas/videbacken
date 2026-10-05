@@ -4,7 +4,3 @@ import { orpc } from '~/lib/orpc/client'
 // Översikt and Batteri costs no request (spec "Pages").
 export const energyOverviewQuery = (year: number | undefined) =>
   orpc.energy.overview.queryOptions({ input: { year } })
-
-export const emaldoHealthQuery = orpc.evCharging.syncStatus.queryOptions({
-  input: { source: 'emaldo' },
-})

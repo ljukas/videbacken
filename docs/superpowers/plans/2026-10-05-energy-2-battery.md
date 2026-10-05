@@ -76,7 +76,8 @@ cd /Users/lukas/prog/videbacken && git fetch -q && git switch main && git pull -
 grep -n "checkpoint passed" docs/superpowers/roadmaps/2026-10-05-house-energy-pages.md | head -1   # row 1
 grep -n "export function energyFigures\|export function gapHours\|export type PeriodSums" src/lib/houseEnergy/figures.ts
 grep -n "batteryIn\|deltaStored\|gridChargedShare" src/lib/houseEnergy/figures.ts | head -5
-grep -n "export const energyOverviewQuery\|export const emaldoHealthQuery" src/components/energy/energyQueries.ts
+grep -n "export const energyOverviewQuery" src/components/energy/energyQueries.ts
+grep -n "export const syncHealthQuery" src/components/evCharging/syncHealth.ts  # Emaldo's health: `data?.emaldo` (client-perf step 3)
 grep -n "export function EnergyHeading" src/components/energy/EnergyHeading.tsx
 grep -n "export function Readout" src/components/evCharging/TotalsTiles.tsx
 grep -n "'/energy'" src/components/AppSidebar.tsx src/components/command/commands.ts

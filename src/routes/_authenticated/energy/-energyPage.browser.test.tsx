@@ -8,10 +8,12 @@ import {
 } from '@tanstack/react-router'
 import { expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
-import { emaldoHealthQuery, energyOverviewQuery } from '~/components/energy/energyQueries'
+import { energyOverviewQuery } from '~/components/energy/energyQueries'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
+import { seedSourcesHealth } from '~test/browser/syncHealth'
 import { Route as Overview } from './index'
 
 // Step 2 widens this union with the battery route.
@@ -56,12 +58,7 @@ const seedOverview = (data: unknown) => (qc: QueryClient) =>
 async function renderPage(route: AnyRoute, path: string, prepare: (qc: QueryClient) => void) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY, retry: false } })
-  qc.setQueryData(emaldoHealthQuery.queryKey, {
-    source: 'emaldo',
-    state: 'ok',
-    lastSuccessAt: null,
-    lastError: null,
-  } as never)
+  seedSourcesHealth(qc)
   prepare(qc)
   const root = createRootRouteWithContext<{ queryClient: QueryClient; user: unknown }>()({
     component: Outlet,
@@ -152,17 +149,9 @@ const failingHealth = {
 // The failing case is the control: the same page does show the health alert
 // once a health that warrants one is in.
 test.each([
-  [
-    'failing',
-    (qc: QueryClient) => qc.setQueryData(emaldoHealthQuery.queryKey, failingHealth as never),
-    true,
-  ],
-  ['still loading', (qc: QueryClient) => pendingForever(qc, emaldoHealthQuery.queryKey), false],
-  [
-    'failed',
-    (qc: QueryClient) => qc.removeQueries({ queryKey: emaldoHealthQuery.queryKey }),
-    false,
-  ],
+  ['failing', (qc: QueryClient) => seedSourcesHealth(qc, { emaldo: failingHealth }), true],
+  ['still loading', (qc: QueryClient) => pendingForever(qc, syncHealthQuery.queryKey), false],
+  ['failed', (qc: QueryClient) => qc.removeQueries({ queryKey: syncHealthQuery.queryKey }), false],
 ] as const)('Emaldo health %s: the page renders; the health alert only for a failing source', async (_n, health, alerted) => {
   const { screen } = await renderPage(Overview, '/energy', (qc) => {
     seedOverview(withData)(qc)

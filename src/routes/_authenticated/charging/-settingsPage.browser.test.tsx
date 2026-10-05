@@ -9,9 +9,12 @@ import {
 } from '@tanstack/react-router'
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
+import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
+import { seedSourcesHealth } from '~test/browser/syncHealth'
 import { Route as Settings } from './settings'
 
 // The real settings page mounted under a bare root (routeTree.gen.ts isn't
@@ -24,9 +27,6 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const health = (source: string) =>
-  ({ source, state: 'ok', lastSuccessAt: null, lastError: null }) as never
-
 const TARIFF = {
   id: '00000000-0000-4000-8000-0000000000aa',
   validFrom: '2026-01-01',
@@ -38,21 +38,13 @@ const TARIFF = {
   updatedAt: new Date('2026-01-01T00:00:00Z'),
 }
 
+const runsKey = orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey
+
 function seed(qc: QueryClient, opts: { coverage?: boolean; adminReads?: boolean } = {}) {
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF] as never)
-  qc.setQueryData(orpc.evCharging.syncStatus.queryOptions().queryKey, health('zaptec'))
-  for (const source of ['elpris', 'skoda', 'emaldo'] as const) {
-    qc.setQueryData(
-      orpc.evCharging.syncStatus.queryOptions({ input: { source } }).queryKey,
-      health(source),
-    )
-    qc.setQueryData(
-      orpc.evCharging.recentRuns.queryOptions({ input: { source, limit: 20 } }).queryKey,
-      [],
-    )
-  }
+  seedSourcesHealth(qc)
   if (opts.adminReads !== false)
-    qc.setQueryData(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey, [])
+    qc.setQueryData(runsKey, { zaptec: [], elpris: [], skoda: [], emaldo: [] } as never)
   qc.setQueryData(orpc.evCharging.vehicleStateLatest.queryOptions().queryKey, null)
   if (opts.coverage !== false && opts.adminReads !== false)
     qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
@@ -124,9 +116,7 @@ test('a household member is redirected to the overview, with no settings UI', as
   // The admin-only reads are left unseeded, so a fired read would leave a cache entry.
   const { screen, router, qc } = await renderSettings('', { role: 'user', adminReads: false })
   await expect.element(screen.getByText('overview stub')).toBeVisible()
-  expect(
-    qc.getQueryState(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey),
-  ).toBeUndefined()
+  expect(qc.getQueryState(runsKey)).toBeUndefined()
   expect(
     qc.getQueryState(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey),
   ).toBeUndefined()
@@ -170,6 +160,59 @@ test('a deep link opens that source’s history', async () => {
   await expect.element(screen.getByRole('dialog', { name: historyTitle('Škoda') })).toBeVisible()
 })
 
+// One distinct error code per source, so a history showing another source's runs is caught.
+const RUN_CODE = {
+  zaptec: 'unreachable',
+  elpris: 'rate_limited',
+  skoda: 'auth_failed',
+  emaldo: 'forbidden',
+} as const
+const failedRun = (source: keyof typeof RUN_CODE) => ({
+  id: `00000000-0000-4000-8000-00000000000${Object.keys(RUN_CODE).indexOf(source)}`,
+  trigger: 'cron',
+  startedAt: new Date('2026-10-05T10:00:00Z'),
+  finishedAt: new Date('2026-10-05T10:00:01Z'),
+  durationMs: 1000,
+  outcome: 'failed',
+  errorCode: RUN_CODE[source],
+  errorMessage: null,
+  upserted: 0,
+  sessionsSeen: 0,
+  pages: 0,
+})
+
+test.each(
+  Object.keys(RUN_CODE) as (keyof typeof RUN_CODE)[],
+)('%s’s history shows its own runs, not another source’s', async (source) => {
+  const { screen } = await renderSettings(`?dialog=syncRuns&source=${source}`, {
+    prepare: (qc) =>
+      qc.setQueryData(runsKey, {
+        zaptec: [failedRun('zaptec')],
+        elpris: [failedRun('elpris')],
+        skoda: [failedRun('skoda')],
+        emaldo: [failedRun('emaldo')],
+      } as never),
+  })
+  const dialog = screen.getByRole('dialog', {
+    name: historyTitle(integrationSourceName(source)),
+  })
+  await expect.element(dialog.getByText(RUN_CODE[source], { exact: true })).toBeVisible()
+  for (const other of Object.keys(RUN_CODE) as (keyof typeof RUN_CODE)[]) {
+    if (other !== source)
+      expect(dialog.getByText(RUN_CODE[other], { exact: true }).elements()).toHaveLength(0)
+  }
+})
+
+test('a failed runs read shows an error with a retry in the history', async () => {
+  const { screen } = await renderSettings('?dialog=syncRuns&source=elpris', {
+    // Unseeded: the test server has no /api/rpc, so the read fails.
+    prepare: (qc) => qc.removeQueries({ queryKey: runsKey }),
+  })
+  const dialog = screen.getByRole('dialog', { name: historyTitle('elprisetjustnu.se') })
+  await expect.element(dialog.getByText(m.charging_runs_error_title())).toBeVisible()
+  await expect.element(dialog.getByRole('button', { name: m.common_try_again() })).toBeVisible()
+})
+
 test('?dialog=tariffNew opens the new-period dialog', async () => {
   const { screen } = await renderSettings('?dialog=tariffNew')
   await expect
@@ -208,9 +251,9 @@ const pendingForever = (qc: QueryClient, queryKey: readonly unknown[]) => {
   void qc.prefetchQuery({ queryKey, queryFn: () => new Promise(() => {}) })
 }
 
-test('one source state still loading: Datakällor is a skeleton, never "Okänd status"', async () => {
+test('the sources’ state still loading: Datakällor is a skeleton, never "Okänd status"', async () => {
   const { screen } = await renderSettings('', {
-    prepare: (qc) => pendingForever(qc, orpc.evCharging.syncStatus.queryOptions().queryKey),
+    prepare: (qc) => pendingForever(qc, syncHealthQuery.queryKey),
   })
   // Positive signals first: the page rendered past its reads, and the panel's skeleton mounted.
   await expect
@@ -218,6 +261,19 @@ test('one source state still loading: Datakällor is a skeleton, never "Okänd s
     .toBeVisible()
   await expect.poll(() => skeleton('charging-sources')).not.toBeNull()
   expect(screen.getByText(m.charging_source_state_unknown()).elements()).toHaveLength(0)
+})
+
+test('the sources’ state failed to load: an error with a retry, not just "Okänd status"', async () => {
+  const { screen } = await renderSettings('', {
+    prepare: (qc) => qc.removeQueries({ queryKey: syncHealthQuery.queryKey }),
+  })
+  const alert = screen.getByText(m.charging_sources_error_title())
+  await expect.element(alert).toBeVisible()
+  // Above the tiles, so a phone shows it without scrolling past four unknowns.
+  const sources = screen.getByRole('heading', sourcesHeading)
+  expect(
+    alert.element().compareDocumentPosition(sources.element()) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0)
 })
 
 test('tariffs still loading: the tariff card is a skeleton, and the edit dialog stays in the URL', async () => {

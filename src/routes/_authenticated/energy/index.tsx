@@ -10,10 +10,11 @@ import {
   energyMetricOptions,
 } from '~/components/energy/EnergyMonthlyChart'
 import { EnergyTiles } from '~/components/energy/EnergyTiles'
-import { emaldoHealthQuery, energyOverviewQuery } from '~/components/energy/energyQueries'
+import { energyOverviewQuery } from '~/components/energy/energyQueries'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
@@ -47,7 +48,7 @@ export const Route = createFileRoute('/_authenticated/energy/')({
   loader: ({ context: { queryClient }, location }) => {
     const { year } = searchSchema.parse(location.search)
     return loadRouteData(queryClient, {
-      critical: [energyOverviewQuery(year), emaldoHealthQuery],
+      critical: [energyOverviewQuery(year), syncHealthQuery],
     })
   },
   component: EnergyOverviewPage,
@@ -57,8 +58,10 @@ function EnergyOverviewPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   const syncNow = useSyncNow()
-  // Not suspending: a client navigation doesn't wait for it (ADR-0025 §3).
-  const { data: health } = useQuery({ ...emaldoHealthQuery, refetchInterval: 60_000 })
+  // Every source's health (one read); this page shows Emaldo's. Not suspending:
+  // a client navigation doesn't wait for it (ADR-0025 §3).
+  const { data: sourcesHealth } = useQuery({ ...syncHealthQuery, refetchInterval: 60_000 })
+  const health = sourcesHealth?.emaldo
   const year = Route.useSearch({ select: (s) => s.year })
   // Hourly data: focus refetch only, no polling interval (ADR-0018).
   const result = useQuery({ ...energyOverviewQuery(year), placeholderData: keepPreviousData })

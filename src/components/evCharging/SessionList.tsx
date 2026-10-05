@@ -8,7 +8,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '~/components/ui/empty'
-import { Skeleton } from '~/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -26,7 +25,7 @@ import { SessionLink } from './SessionLink'
 import { SyncNowButton } from './SyncNowButton'
 
 type Session = RouterOutputs['evCharging']['sessions']['sessions'][number]
-type SessionCost = RouterOutputs['evCharging']['sessionCosts'][number]
+type SessionCost = NonNullable<RouterOutputs['evCharging']['sessions']['costs']>[number]
 
 // One page of counted sessions, newest first. The parent owns the page and
 // passes its pagination control, shown right under the table. Empty → the
@@ -47,10 +46,10 @@ export function SessionList({
   onSync?: () => void
   syncing?: boolean
   /**
-   * The cost column, present once the page shows cost at all. `pending`: rows
-   * without an entry are still loading (a placeholder), not missing a price.
+   * The cost column, present once the page shows cost at all. A row without an
+   * entry has no price (or its costs failed to load): the dash, never 0 kr.
    */
-  costs?: { byId: ReadonlyMap<string, SessionCost>; pending: boolean }
+  costs?: { byId: ReadonlyMap<string, SessionCost> }
   /** Overrides the empty state's title, e.g. when a vehicle scope has no sessions. */
   emptyTitle?: string
   /** Overrides the empty state's description; pair it with no `onSync` when a sync wouldn't help. */
@@ -122,7 +121,7 @@ export function SessionList({
                 </TableCell>
                 {costs ? (
                   <TableCell className="whitespace-nowrap text-right tabular-nums">
-                    <SessionCostCell cost={costs.byId.get(s.id)} pending={costs.pending} />
+                    <SessionCostCell cost={costs.byId.get(s.id)} />
                   </TableCell>
                 ) : null}
                 <TableCell className="hidden whitespace-nowrap text-right tabular-nums md:table-cell">
@@ -150,17 +149,9 @@ const timeRange = (s: Session) => `${formatTime(s.startAt)}–${formatTime(s.end
 // Total incl VAT, with the spot share under it from `sm` up. "≈" marks a
 // session priced from its total alone (no hourly values; the legend under the
 // table says so); "—" (with the reason for screen readers and on hover) when
-// a price or the tariff is missing — never 0 kr. A row whose cost is still
-// loading gets a placeholder instead of that dash.
-function SessionCostCell({ cost, pending }: { cost: SessionCost | undefined; pending: boolean }) {
-  if (!cost && pending) {
-    return (
-      <span className="inline-flex justify-end">
-        <Skeleton className="h-4 w-14" />
-        <span className="sr-only">{m.charging_sessions_cost_loading()}</span>
-      </span>
-    )
-  }
+// a price or the tariff is missing — never 0 kr. A page brings its rows'
+// costs (ADR-0025 §5), so a row is never waiting for its cost.
+function SessionCostCell({ cost }: { cost: SessionCost | undefined }) {
   if (!cost?.complete) {
     return (
       <span className="text-muted-foreground" title={m.charging_sessions_cost_unknown()}>
