@@ -3,6 +3,7 @@ import {
   CalendarClockIcon,
   HomeIcon,
   PiggyBankIcon,
+  SunIcon,
   ThermometerIcon,
   UserIcon,
   UsersIcon,
@@ -57,6 +58,13 @@ export const NAVIGATE_COMMANDS = linkOptions([
     label: m.nav_charging_economy,
     keywords: m.cmd_kw_charging_economy,
     icon: PiggyBankIcon,
+    adminOnly: false,
+  },
+  {
+    to: '/energy',
+    label: m.nav_energy,
+    keywords: m.cmd_kw_energy,
+    icon: SunIcon,
     adminOnly: false,
   },
   {

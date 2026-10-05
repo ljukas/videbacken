@@ -1,5 +1,5 @@
 import { Link, linkOptions, useMatchRoute } from '@tanstack/react-router'
-import { HomeIcon, SearchIcon, ThermometerIcon, UsersIcon, ZapIcon } from 'lucide-react'
+import { HomeIcon, SearchIcon, SunIcon, ThermometerIcon, UsersIcon, ZapIcon } from 'lucide-react'
 import { useCommandPalette } from '~/components/command/useCommandPalette'
 import { Wordmark } from '~/components/Logo'
 import {
@@ -34,6 +34,7 @@ const mainNavItems = linkOptions([
   { to: '/', label: m.nav_home, icon: HomeIcon },
   { to: '/sensors', label: m.nav_sensors, icon: ThermometerIcon },
   { to: '/charging', label: m.nav_charging, icon: ZapIcon, subItems: chargingSubItems },
+  { to: '/energy', label: m.nav_energy, icon: SunIcon },
   { to: '/users', label: m.nav_users, icon: UsersIcon },
 ])
 

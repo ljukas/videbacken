@@ -24,6 +24,7 @@ import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authe
 import { Route as AuthenticatedChargingIndexRouteImport } from './routes/_authenticated/charging/index'
 import { Route as AuthenticatedChargingEconomyRouteImport } from './routes/_authenticated/charging/economy'
 import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_authenticated/charging/patterns'
+import { Route as AuthenticatedEnergyIndexRouteImport } from './routes/_authenticated/energy/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
 import { Route as ApiCronEmaldoSyncRouteImport } from './routes/api/cron/emaldo-sync'
@@ -113,6 +114,12 @@ const AuthenticatedChargingPatternsRoute =
     path: '/charging/patterns',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedEnergyIndexRoute =
+  AuthenticatedEnergyIndexRouteImport.update({
+    id: '/energy/',
+    path: '/energy/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -184,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account/': typeof AuthenticatedAccountIndexRoute
   '/charging/': typeof AuthenticatedChargingIndexRoute
+  '/energy/': typeof AuthenticatedEnergyIndexRoute
   '/charging/sessions/$sessionId': typeof AuthenticatedChargingSessionsSessionIdRoute
 }
 export interface FileRoutesByTo {
@@ -208,6 +216,7 @@ export interface FileRoutesByTo {
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/account': typeof AuthenticatedAccountIndexRoute
   '/charging': typeof AuthenticatedChargingIndexRoute
+  '/energy': typeof AuthenticatedEnergyIndexRoute
   '/charging/sessions/$sessionId': typeof AuthenticatedChargingSessionsSessionIdRoute
 }
 export interface FileRoutesById {
@@ -235,6 +244,7 @@ export interface FileRoutesById {
   '/api/webhooks/shelly': typeof ApiWebhooksShellyRoute
   '/_authenticated/account/': typeof AuthenticatedAccountIndexRoute
   '/_authenticated/charging/': typeof AuthenticatedChargingIndexRoute
+  '/_authenticated/energy/': typeof AuthenticatedEnergyIndexRoute
   '/_authenticated/charging/sessions/$sessionId': typeof AuthenticatedChargingSessionsSessionIdRoute
 }
 export interface FileRouteTypes {
@@ -262,6 +272,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/shelly'
     | '/account/'
     | '/charging/'
+    | '/energy/'
     | '/charging/sessions/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -286,6 +297,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/shelly'
     | '/account'
     | '/charging'
+    | '/energy'
     | '/charging/sessions/$sessionId'
   id:
     | '__root__'
@@ -312,6 +324,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/shelly'
     | '/_authenticated/account/'
     | '/_authenticated/charging/'
+    | '/_authenticated/energy/'
     | '/_authenticated/charging/sessions/$sessionId'
   fileRoutesById: FileRoutesById
 }
@@ -438,6 +451,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChargingPatternsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/energy/': {
+      id: '/_authenticated/energy/'
+      path: '/energy'
+      fullPath: '/energy/'
+      preLoaderRoute: typeof AuthenticatedEnergyIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -526,6 +546,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedChargingEconomyRoute: typeof AuthenticatedChargingEconomyRoute
   AuthenticatedChargingPatternsRoute: typeof AuthenticatedChargingPatternsRoute
   AuthenticatedChargingIndexRoute: typeof AuthenticatedChargingIndexRoute
+  AuthenticatedEnergyIndexRoute: typeof AuthenticatedEnergyIndexRoute
   AuthenticatedChargingSessionsSessionIdRoute: typeof AuthenticatedChargingSessionsSessionIdRoute
 }
 
@@ -538,6 +559,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedChargingEconomyRoute: AuthenticatedChargingEconomyRoute,
   AuthenticatedChargingPatternsRoute: AuthenticatedChargingPatternsRoute,
   AuthenticatedChargingIndexRoute: AuthenticatedChargingIndexRoute,
+  AuthenticatedEnergyIndexRoute: AuthenticatedEnergyIndexRoute,
   AuthenticatedChargingSessionsSessionIdRoute:
     AuthenticatedChargingSessionsSessionIdRoute,
 }
