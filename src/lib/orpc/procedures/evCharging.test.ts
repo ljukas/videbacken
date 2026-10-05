@@ -105,7 +105,42 @@ test('sessions returns an empty first page for a signed-in user with no data', a
     { page: 1, pageSize: 10 },
     { context: baseContext() },
   )
-  expect(result).toEqual({ sessions: [], total: 0, page: 1 })
+  expect(result).toEqual({ sessions: [], total: 0, page: 1, pageSize: 10 })
+})
+
+test('sessions serves the page and size asked for, and the last page for one past the end', async () => {
+  await signIn('user')
+  const ids: string[] = []
+  for (let day = 10; day < 22; day++) {
+    ids.push(
+      await insertSession({
+        startAt: new Date(`2026-05-${day}T08:00:00Z`),
+        endAt: new Date(`2026-05-${day}T09:00:00Z`),
+      }),
+    )
+  }
+  const newestFirst = [...ids].reverse()
+  const second = await call(
+    evChargingRouter.sessions,
+    { page: 2, pageSize: 10 },
+    { context: baseContext() },
+  )
+  expect(second).toMatchObject({ total: 12, page: 2, pageSize: 10 })
+  expect(second.sessions.map((s) => s.id)).toEqual(newestFirst.slice(10))
+  const wide = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 25 },
+    { context: baseContext() },
+  )
+  expect(wide).toMatchObject({ total: 12, page: 1, pageSize: 25 })
+  expect(wide.sessions).toHaveLength(12)
+  const past = await call(
+    evChargingRouter.sessions,
+    { page: MAX_SESSION_PAGE, pageSize: 10 },
+    { context: baseContext() },
+  )
+  expect(past).toMatchObject({ total: 12, page: 2, pageSize: 10 })
+  expect(past.sessions.map((s) => s.id)).toEqual(newestFirst.slice(10))
 })
 
 test('sessions records the count as a sub-timing', async () => {

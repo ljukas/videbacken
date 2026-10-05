@@ -225,12 +225,21 @@ const PEAK_MIN_DURATION_SEC = PEAK_MIN_INTERVAL_MS / 1000
 
 export type SessionListTimings = { countMs?: number }
 
-export type SessionPage = { sessions: SessionRow[]; total: number; page: number }
+/** One served page: its rows, the total across all pages, and the page and size it is. */
+export type SessionPage = {
+  sessions: SessionRow[]
+  total: number
+  page: number
+  pageSize: number
+}
 
 // One page of the counted sessions, newest first, plus how many there are in
 // all (the pagination control's "av 214" and its last page). A page past the
 // end (a stale link, or sessions voided since) serves the last page and says
 // so in `page`, so the list never shows an empty page while sessions exist.
+// The count and the page read one snapshot (a read-only repeatable-read
+// transaction): a sync voiding sessions between the two can't leave an empty
+// page under a non-zero total, which would read as "no sessions" (ADR-0016).
 // `id` breaks ties between sessions that start at the same instant, so offset
 // paging neither repeats nor skips one.
 export async function listSessions(input: {
@@ -240,30 +249,35 @@ export async function listSessions(input: {
   timings?: SessionListTimings
 }): Promise<SessionPage> {
   const filter = countedSessionFilter({ vehicle: input.vehicle })
-  const countStartedAt = performance.now()
-  const [{ total }] = await db.select({ total: count() }).from(evChargeSession).where(filter)
-  if (input.timings) input.timings.countMs = Math.round(performance.now() - countStartedAt)
+  const { pageSize } = input
+  const { total, pageNumber, page } = await db.transaction(
+    async (tx) => {
+      const countStartedAt = performance.now()
+      const [{ total }] = await tx.select({ total: count() }).from(evChargeSession).where(filter)
+      if (input.timings) input.timings.countMs = Math.round(performance.now() - countStartedAt)
 
-  const pageNumber = Math.min(Math.max(input.page, 1), pageCount(total, input.pageSize))
-  if (total === 0) return { sessions: [], total, page: pageNumber }
-
-  const page = await db
-    .select({
-      id: evChargeSession.id,
-      startAt: evChargeSession.startAt,
-      endAt: evChargeSession.endAt,
-      energyKwh: evChargeSession.energyKwh,
-      offline: evChargeSession.offline,
-      reliableClock: evChargeSession.reliableClock,
-      vehicle: sql<Vehicle>`${evChargeSession.vehicle}`,
-    })
-    .from(evChargeSession)
-    .where(filter)
-    .orderBy(desc(evChargeSession.startAt), desc(evChargeSession.id))
-    .limit(input.pageSize)
-    .offset((pageNumber - 1) * input.pageSize)
-  // Empty only if the page's sessions stopped counting between the two reads.
-  if (page.length === 0) return { sessions: [], total, page: pageNumber }
+      const pageNumber = Math.min(Math.max(input.page, 1), pageCount(total, pageSize))
+      if (total === 0) return { total, pageNumber, page: [] }
+      const page = await tx
+        .select({
+          id: evChargeSession.id,
+          startAt: evChargeSession.startAt,
+          endAt: evChargeSession.endAt,
+          energyKwh: evChargeSession.energyKwh,
+          offline: evChargeSession.offline,
+          reliableClock: evChargeSession.reliableClock,
+          vehicle: sql<Vehicle>`${evChargeSession.vehicle}`,
+        })
+        .from(evChargeSession)
+        .where(filter)
+        .orderBy(desc(evChargeSession.startAt), desc(evChargeSession.id))
+        .limit(pageSize)
+        .offset((pageNumber - 1) * pageSize)
+      return { total, pageNumber, page }
+    },
+    { isolationLevel: 'repeatable read', accessMode: 'read only' },
+  )
+  if (page.length === 0) return { sessions: [], total, page: pageNumber, pageSize }
 
   const ids = page.map((r) => r.id)
   const peakRows = await db
@@ -288,5 +302,6 @@ export async function listSessions(input: {
     sessions: page.map((r) => ({ ...r, peakKw: peakBySession.get(r.id) ?? null })),
     total,
     page: pageNumber,
+    pageSize,
   }
 }

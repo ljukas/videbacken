@@ -51,6 +51,8 @@ async function runLoader(route: RouteLike, search: Record<string, unknown>) {
   await loader({
     context: { queryClient, user: { role: 'user' } },
     deps,
+    // As the router passes it: the raw search (the /charging loader reads its page from it).
+    location: { search },
   })
   return calls.map((c) => JSON.stringify(c.queryKey))
 }

@@ -130,6 +130,7 @@ function seedOverview(qc: QueryClient, vehicle: 'ours' | 'other', sessions: unkn
       sessions,
       total: sessions.length,
       page: 1,
+      pageSize: 10,
     } as never,
   )
 }
@@ -218,7 +219,7 @@ test('Översikt: switching scope never shows the sessions empty state mid-switch
     if (JSON.stringify(opts.queryKey) !== JSON.stringify(otherKey)) return original(opts as never)
     held = true
     return gate.then(() => {
-      qc.setQueryData(otherKey, { sessions: [], total: 0, page: 1 } as never)
+      qc.setQueryData(otherKey, { sessions: [], total: 0, page: 1, pageSize: 10 } as never)
     })
   }) as never)
   await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
@@ -272,7 +273,7 @@ test('Översikt: a failed overview read shows the alert and the toggle; Vår bil
     qc.setQueryData(
       orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'other' } })
         .queryKey,
-      { sessions: [], total: 0, page: 1 } as never,
+      { sessions: [], total: 0, page: 1, pageSize: 10 } as never,
     )
   })
   await expect
@@ -490,7 +491,7 @@ function seedCost(qc: QueryClient, allTime: Record<string, unknown>, houseDataFr
   qc.setQueryData(
     orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'ours' } })
       .queryKey,
-    { sessions: [], total: 0, page: 1 } as never,
+    { sessions: [], total: 0, page: 1, pageSize: 10 } as never,
   )
 }
 
@@ -601,7 +602,7 @@ function seedSessionsPage(
 ) {
   qc.setQueryData(
     orpc.evCharging.sessions.queryOptions({ input: { vehicle: 'ours', ...input } }).queryKey,
-    { sessions: rows, total, page: served } as never,
+    { sessions: rows, total, page: served, pageSize: input.pageSize } as never,
   )
 }
 
@@ -689,4 +690,115 @@ test('Översikt: a garbage ?size= falls back to 10 rows', async () => {
   await expect
     .element(screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }))
     .toHaveTextContent('10')
+})
+
+test('Översikt: the loader prefetches the page and size in the URL, then that page’s costs', async () => {
+  const keys: string[] = []
+  await renderPage(Overview, '/charging', '?page=2&size=25', (qc) => {
+    seedPagedOverview(qc)
+    seedSessionsPage(qc, { page: 2, pageSize: 25 }, [session('p2-25', 6.6)], 40)
+    const original = qc.prefetchQuery.bind(qc)
+    vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown }) => {
+      keys.push(JSON.stringify(opts.queryKey))
+      return original(opts as never)
+    }) as never)
+  })
+  const key = (input: unknown) => JSON.stringify(input)
+  expect(keys).toContain(
+    key(
+      orpc.evCharging.sessions.queryOptions({ input: { page: 2, pageSize: 25, vehicle: 'ours' } })
+        .queryKey,
+    ),
+  )
+  expect(keys).not.toContain(
+    key(
+      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'ours' } })
+        .queryKey,
+    ),
+  )
+  expect(keys).toContain(
+    key(orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds: ['p2-25'] } }).queryKey),
+  )
+})
+
+test('Översikt: previous from a page past the end steps back from the page served', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '?page=9', (qc) => {
+    seedPagedOverview(qc)
+    seedSessionsPage(qc, { page: 9, pageSize: 10 }, [session('p3', 3.3)], 25, 3)
+  })
+  await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_previous() }).click()
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 2 })
+})
+
+test('Översikt: another year keeps the page (the list is all-time)', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '?page=2', (qc) => {
+    seedPagedOverview(qc)
+    qc.setQueryData(
+      orpc.evCharging.overview.queryOptions({ input: { year: undefined, vehicle: 'ours' } })
+        .queryKey,
+      { year: 2026, years: [2026, 2025], months: [], tiles } as never,
+    )
+  })
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
+  await screen.getByRole('option', { name: '2025' }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
+  expect(router.state.location.search).toMatchObject({ page: 2 })
+})
+
+test('Översikt: another vehicle scope keeps the page size', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '?size=25', (qc) => {
+    seedPagedOverview(qc)
+    seedSessionsPage(qc, { page: 1, pageSize: 25, vehicle: 'other' }, [session('g1', 5.5)], 1)
+  })
+  await expect.element(screen.getByText('4,4', { exact: false })).toBeVisible()
+  await radio(screen, m.charging_vehicle_scope_other()).click()
+  await expect.element(screen.getByText('5,5', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ vehicle: 'other', size: 25 })
+})
+
+test('Översikt: choosing 10 rows again gives a clean URL', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '?size=25', seedPagedOverview)
+  await expect.element(screen.getByText('4,4', { exact: false })).toBeVisible()
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '10' }).click()
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  expect(router.state.location.search).not.toHaveProperty('size')
+})
+
+test('Översikt: a size change replaces the page it left in history', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '?page=2', seedPagedOverview)
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: '3', exact: true }).click()
+  await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '25' }).click()
+  await expect.element(screen.getByText('4,4', { exact: false })).toBeVisible()
+  // Back skips the replaced page-3 entry and lands on page 2.
+  router.history.back()
+  await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 2 })
+  expect(router.state.location.search).not.toHaveProperty('size')
+})
+
+test('Översikt: a page that fails to load keeps the last page, dimmed, under the alert', async () => {
+  // Page 2 is unseeded, so its read fails (no /api/rpc in the test server).
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedOverview(qc, 'ours', [])
+    seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
+  })
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  const two = screen.getByRole('button', { name: '2', exact: true })
+  await two.click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  // The rows and the control stay (focus with them), never an empty state.
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  expect(document.activeElement).toBe(two.element())
+  expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
+  const list = screen.getByRole('table').element().closest('[aria-busy]')
+  expect(list?.getAttribute('aria-busy')).toBe('false')
+  expect(list?.className).toContain('opacity-60')
 })

@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
@@ -95,13 +95,20 @@ export const Route = createFileRoute('/_authenticated/charging/')({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({
-    year: search.year,
-    vehicle: search.vehicle ?? 'ours',
-    page: search.page ?? 1,
-    size: search.size ?? DEFAULT_SESSION_PAGE_SIZE,
-  }),
-  loader: async ({ context: { queryClient, user }, deps }) => {
+  loaderDeps: ({ search }) => ({ year: search.year, vehicle: search.vehicle ?? 'ours' }),
+  loader: async ({ context: { queryClient, user }, deps, location }) => {
+    // The session list's page is deliberately not a loader dep: a dep change
+    // blocks the navigation on this whole loader (every prefetch below), so a
+    // page click would freeze on the old page with no feedback. Read here, it
+    // still prefetches the page a URL asks for (SSR, a shared link), and a page
+    // click becomes the list's own query: its old rows stay, dimmed, until the
+    // next page lands. Parsed with the route's own fallbacks.
+    const paging = sessionPagingSearch.parse(location.search)
+    const sessionPage = sessionsQuery(
+      paging.page ?? 1,
+      paging.size ?? DEFAULT_SESSION_PAGE_SIZE,
+      deps.vehicle,
+    )
     await Promise.all([
       // Prefetched, not ensured: a failed read must not take down the page (and
       // with it the scope toggle) — the component shows an alert with a retry.
@@ -116,10 +123,8 @@ export const Route = createFileRoute('/_authenticated/charging/')({
       // arrives; the sessions' costs follow the sessions (they need the ids).
       // Prefetched too (a failed read must not unmount the scope toggle); the
       // costs chain reads the sessions back from the cache.
-      queryClient.prefetchQuery(sessionsQuery(deps.page, deps.size, deps.vehicle)).then(() => {
-        const sessions = queryClient.getQueryData(
-          sessionsQuery(deps.page, deps.size, deps.vehicle).queryKey,
-        )?.sessions
+      queryClient.prefetchQuery(sessionPage).then(() => {
+        const sessions = queryClient.getQueryData(sessionPage.queryKey)?.sessions
         return sessions?.length
           ? queryClient.prefetchQuery(sessionCostsQuery(sessions.map((sess) => sess.id)))
           : undefined
@@ -161,6 +166,7 @@ function ChargingPage() {
   const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? 'ours' })
   const sessionPage = Route.useSearch({ select: (s) => s.page ?? 1 })
   const sessionPageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
+  const sessionsHeadingRef = useRef<HTMLHeadingElement>(null)
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
@@ -210,6 +216,17 @@ function ChargingPage() {
     // current rows stay until the next ones arrive.
     placeholderData: keepPreviousData,
   })
+  // The page on screen. Placeholder data lasts only while the next page is
+  // pending; once that fetch has failed for good, `data` is gone. Keeping the
+  // last page shown here leaves its rows (and the pagination control, with the
+  // focus on it) under the error alert instead of unmounting them. Set during
+  // render: React's pattern for state derived from a changing value.
+  const [shownSessions, setShownSessions] = useState(sessions.data)
+  if (sessions.data !== undefined && sessions.data !== shownSessions) {
+    setShownSessions(sessions.data)
+  }
+  // Rows that aren't this URL's (another page still loading, or one that failed) are dimmed.
+  const sessionsStale = sessions.data === undefined || sessions.isPlaceholderData
   const { data: cost, isPlaceholderData: costIsStale } = useQuery({
     ...orpc.evCharging.costOverview.queryOptions({ input: { year, vehicle } }),
     placeholderData: keepPreviousData,
@@ -236,8 +253,8 @@ function ChargingPage() {
   const showingCost = chartMetric === 'sek' && chartCost !== undefined
   // Cost for the sessions on screen, keyed by id for the list's cost column.
   const sessionIds = useMemo(
-    () => sessions.data?.sessions.map((sess) => sess.id) ?? [],
-    [sessions.data],
+    () => shownSessions?.sessions.map((sess) => sess.id) ?? [],
+    [shownSessions],
   )
   const sessionCostsResult = useQuery({
     ...sessionCostsQuery(sessionIds),
@@ -301,15 +318,20 @@ function ChargingPage() {
   }
 
   // Paging pushes history, so back steps to the previous page. A clean URL is
-  // page 1 at the default size; a new size starts over at its first page.
+  // page 1 at the default size. Paging from the control under a long page
+  // brings the list's heading back into view (it doesn't scroll if it's
+  // already visible), so the new page reads from its newest session.
   function setSessionPage(page: number) {
     navigate({
       to: '.',
       search: (s) => ({ ...s, page: page === 1 ? undefined : page }),
       resetScroll: false,
     })
+    sessionsHeadingRef.current?.scrollIntoView({ block: 'nearest' })
   }
 
+  // The size is a preference, not a step to go back to: it replaces the entry,
+  // like the year and scope, and starts over at its first page.
   function setSessionPageSize(size: SessionPageSize) {
     navigate({
       to: '.',
@@ -318,6 +340,7 @@ function ChargingPage() {
         page: undefined,
         size: size === DEFAULT_SESSION_PAGE_SIZE ? undefined : size,
       }),
+      replace: true,
       resetScroll: false,
     })
   }
@@ -448,34 +471,47 @@ function ChargingPage() {
       />
 
       <section className="flex flex-col gap-2">
-        <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
-        {loadFailed(sessions) ? (
-          // An error must never read as "no sessions" (ADR-0016).
-          <LoadErrorAlert title={m.charging_sessions_error_title()} query={sessions} />
-        ) : sessions.data ? (
-          // Not rendered while pending: an unseeded query (failed SSR prefetch) must
-          // not flash "no sessions" before its first result (ADR-0016).
-          <SessionList
-            sessions={sessions.data.sessions}
-            pagination={
-              // The page the server served: a stale `?page=` past the end shows as the last.
-              <SessionPagination
-                page={sessions.data.page}
-                pageSize={sessionPageSize}
-                total={sessions.data.total}
-                onPageChange={setSessionPage}
-                onPageSizeChange={setSessionPageSize}
-              />
-            }
-            costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
-            // A sync can't create guest sessions: an admin marks them instead.
-            onSync={isAdmin && vehicle !== 'other' ? () => syncNow.syncSource('zaptec') : undefined}
-            syncing={syncNow.isPendingFor('zaptec')}
-            emptyTitle={vehicle === 'other' ? m.charging_vehicle_sessions_empty_other() : undefined}
-            emptyDescription={
-              vehicle === 'other' ? m.charging_vehicle_empty_other_description() : undefined
-            }
-          />
+        <h2 ref={sessionsHeadingRef} className="scroll-mt-4 font-medium text-sm">
+          {m.charging_sessions_heading()}
+        </h2>
+        {/* An error must never read as "no sessions" (ADR-0016). A page that
+            failed to load keeps the last page on screen below the alert,
+            dimmed, so the pagination control stays for another try. */}
+        <LoadErrorAlert title={m.charging_sessions_error_title()} query={sessions} />
+        {shownSessions ? (
+          // Not rendered before the first result: an unseeded query (failed SSR
+          // prefetch) must not flash "no sessions" (ADR-0016).
+          <div
+            aria-busy={sessionsStale && !loadFailed(sessions)}
+            className={sessionsStale ? 'opacity-60 transition-opacity' : 'transition-opacity'}
+          >
+            <SessionList
+              sessions={shownSessions.sessions}
+              pagination={
+                // All from the page on screen, the one the server served: a stale
+                // `?page=` past the end shows as the last.
+                <SessionPagination
+                  page={shownSessions.page}
+                  pageSize={shownSessions.pageSize}
+                  total={shownSessions.total}
+                  onPageChange={setSessionPage}
+                  onPageSizeChange={setSessionPageSize}
+                />
+              }
+              costs={showCost ? { byId: sessionCosts, pending: sessionCostsPending } : undefined}
+              // A sync can't create guest sessions: an admin marks them instead.
+              onSync={
+                isAdmin && vehicle !== 'other' ? () => syncNow.syncSource('zaptec') : undefined
+              }
+              syncing={syncNow.isPendingFor('zaptec')}
+              emptyTitle={
+                vehicle === 'other' ? m.charging_vehicle_sessions_empty_other() : undefined
+              }
+              emptyDescription={
+                vehicle === 'other' ? m.charging_vehicle_empty_other_description() : undefined
+              }
+            />
+          </div>
         ) : null}
       </section>
 

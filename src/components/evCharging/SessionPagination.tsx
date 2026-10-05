@@ -38,7 +38,7 @@ export function SessionPagination({
   onPageSizeChange,
 }: {
   page: number
-  pageSize: SessionPageSize
+  pageSize: number
   total: number
   onPageChange: (page: number) => void
   onPageSizeChange: (pageSize: SessionPageSize) => void
@@ -72,8 +72,8 @@ export function SessionPagination({
             if (size) onPageSizeChange(size)
           }}
         >
-          {/* Full height on a phone, where it's a touch target. */}
-          <SelectTrigger id={sizeId} size="sm" className="w-auto max-sm:h-9">
+          {/* A 44 px target under a finger (the size variant would win without the !). */}
+          <SelectTrigger id={sizeId} size="sm" className="pointer-coarse:h-11! w-auto">
             {/* Rendered explicitly so SSR already shows the size (Radix fills it in
                 only after hydration). */}
             <SelectValue>{pageSize}</SelectValue>
@@ -119,7 +119,7 @@ export function SessionPagination({
                 <Button
                   variant={item === current ? 'outline' : 'ghost'}
                   size="icon"
-                  className="tabular-nums"
+                  className="pointer-coarse:size-11 tabular-nums"
                   aria-current={item === current ? 'page' : undefined}
                   onClick={item === current ? undefined : () => onPageChange(item)}
                 >
@@ -149,8 +149,8 @@ export function SessionPagination({
 
 // Previous/next. At either end it is aria-disabled rather than disabled: a
 // focused button that turns `disabled` drops focus to <body>, so stepping onto
-// the last page would lose a keyboard user's place. Larger on a phone, where
-// these are the only page controls.
+// the last page would lose a keyboard user's place. A 44 px target under a
+// finger, like every button in the control.
 function StepButton({
   label,
   unavailable,
@@ -166,7 +166,7 @@ function StepButton({
     <Button
       variant="ghost"
       size="icon"
-      className="aria-disabled:pointer-events-none aria-disabled:opacity-50 max-sm:size-10"
+      className="pointer-coarse:size-11 aria-disabled:pointer-events-none aria-disabled:opacity-50"
       aria-label={label}
       aria-disabled={unavailable || undefined}
       onClick={unavailable ? undefined : onClick}

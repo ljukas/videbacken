@@ -233,7 +233,7 @@ test('listSessions pages newest first, reports the total, and computes peakKw', 
   await insertInterval(s3, new Date('2026-01-03T09:00:00Z'), new Date('2026-01-03T10:00:00Z'), 3)
 
   const first = await listSessions({ page: 1, pageSize: 2 })
-  expect(first).toMatchObject({ total: 3, page: 1 })
+  expect(first).toMatchObject({ total: 3, page: 1, pageSize: 2 })
   expect(first.sessions.map((s) => s.id)).toEqual([s3, s2])
   const second = await listSessions({ page: 2, pageSize: 2 })
   expect(second).toMatchObject({ total: 3, page: 2 })
@@ -265,7 +265,12 @@ test('listSessions serves the last page for a page past the end', async () => {
 })
 
 test('listSessions on an empty list is page 1 of nothing', async () => {
-  expect(await listSessions({ page: 4, pageSize: 10 })).toEqual({ sessions: [], total: 0, page: 1 })
+  expect(await listSessions({ page: 4, pageSize: 10 })).toEqual({
+    sessions: [],
+    total: 0,
+    page: 1,
+    pageSize: 10,
+  })
 })
 
 test('listSessions pages sessions with the same start without repeating or skipping one', async () => {
@@ -291,6 +296,28 @@ test('listSessions counts only counted sessions in the scope', async () => {
   expect((await listSessions({ page: 1, pageSize: 10 })).total).toBe(3)
   expect((await listSessions({ page: 1, pageSize: 10, vehicle: 'ours' })).total).toBe(2)
   expect((await listSessions({ page: 1, pageSize: 10, vehicle: 'other' })).total).toBe(1)
+})
+
+test('listSessions pages within the vehicle scope', async () => {
+  const ours: string[] = []
+  for (let day = 1; day <= 3; day++) {
+    ours.push(
+      await insertSession({
+        startAt: new Date(`2026-04-0${day}T08:00:00Z`),
+        endAt: new Date(`2026-04-0${day}T09:00:00Z`),
+      }),
+    )
+    // A newer guest session between each of ours: it must count on neither page.
+    await insertSession({
+      startAt: new Date(`2026-04-0${day}T12:00:00Z`),
+      endAt: new Date(`2026-04-0${day}T13:00:00Z`),
+      vehicle: 'other',
+      vehicleSource: 'admin',
+    })
+  }
+  const second = await listSessions({ page: 2, pageSize: 2, vehicle: 'ours' })
+  expect(second).toMatchObject({ total: 3, page: 2, pageSize: 2 })
+  expect(second.sessions.map((s) => s.id)).toEqual([ours[0]])
 })
 
 test('listSessions records how long the count took', async () => {
