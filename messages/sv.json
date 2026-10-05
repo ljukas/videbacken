@@ -136,7 +136,12 @@
   "charging_source_role_zaptec": "Laddsessioner",
   "charging_source_state_unknown": "Okänd status",
   "charging_source_syncing": "Synkar…",
-  "charging_sources_description": "Tjänsterna som sidans data hämtas från. Bara admins ser den här delen.",
+  "charging_sources_description": "Tjänsterna som laddningssidorna hämtar data från.",
+  "meta_charging_settings_title": "Laddningsinställningar",
+  "meta_charging_settings_description": "Datakällor, synkning och avgifter för laddningen.",
+  "charging_settings_title": "Laddningsinställningar",
+  "charging_settings_description": "Datakällorna och avgifterna bakom laddningssidorna. Bara admins ser den här sidan.",
+  "charging_settings_link": "Gå till inställningar",
   "charging_sources_heading": "Datakällor",
   "charging_sources_summary": "{ok} av {total} fungerar",
   "charging_sources_summary_unknown": "{count} med okänd status",
@@ -252,15 +257,15 @@
   "dashboard_empty_description": "Det här är din startpunkt — sidor du lägger till visas här.",
   "dashboard_empty_title": "Inget här än",
   "dashboard_welcome_heading": "Välkommen, {name}",
-  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det räknas nya laddningar som vår bil, även om en gäst laddade. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys), byt SKODA_API_KEY i Vercel (Production) och deploya om — eller be den som sköter Vercel-projektet. Verifiera med Synka nu på Škoda under Datakällor på Översikt.",
-  "email_credential_expiry_button": "Visa laddningsöversikt",
+  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det räknas nya laddningar som vår bil, även om en gäst laddade. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys), byt SKODA_API_KEY i Vercel (Production) och deploya om — eller be den som sköter Vercel-projektet. Verifiera med Synka nu på Škoda under Laddning → Inställningar.",
+  "email_credential_expiry_button": "Öppna laddningsinställningarna",
   "email_credential_expiry_fallback": "Om knappen inte fungerar, kopiera och klistra in följande länk i din webbläsare:",
   "email_credential_expiry_footer": "Det här är ett automatiskt meddelande från Videbacken.",
   "email_credential_expiry_heading": "Škoda-nyckeln går ut den {date}",
   "email_credential_expiry_heading_final": "Sista påminnelsen: Škoda-nyckeln går ut den {date}",
   "email_credential_expiry_preview": "Skapa en ny nyckel före den {date}",
   "email_grid_tariff_body": "{company} publicerar nu sina nättariffer via Eltariff-API, och vår anläggning ingår i deras register. Elöverföringen kan därmed hämtas automatiskt i stället för att föras in för hand, men den hämtningen behöver byggas först. Du får det här meddelandet en gång i månaden tills den är på plats.",
-  "email_grid_tariff_button": "Visa laddningsöversikt",
+  "email_grid_tariff_button": "Öppna laddningsinställningarna",
   "email_grid_tariff_company_unknown": "Vårt nätbolag",
   "email_grid_tariff_fallback": "Om knappen inte fungerar, kopiera och klistra in följande länk i din webbläsare:",
   "email_grid_tariff_footer": "Det här är ett automatiskt meddelande från Videbacken.",
@@ -268,7 +273,7 @@
   "email_grid_tariff_preview": "{company} publicerar nu sina nättariffer via Eltariff-API.",
   "email_integration_sync_body_failing": "Synkningen mot {source} har slutat fungera.",
   "email_integration_sync_body_recovered": "Synkningen mot {source} fungerar igen som vanligt.",
-  "email_integration_sync_button": "Visa laddningsöversikt",
+  "email_integration_sync_button": "Öppna laddningsinställningarna",
   "email_integration_sync_fallback": "Om knappen inte fungerar, kopiera och klistra in följande länk i din webbläsare:",
   "email_integration_sync_footer": "Det här är ett automatiskt meddelande om synkningsstatus.",
   "email_integration_sync_heading_failing": "Synkningen mot {source} fungerar inte",
@@ -755,5 +760,8 @@
         "countPlural=other": "Laddlogg: {countFormatted} laddningar t.o.m. {to}"
       }
     }
-  ]
+  ],
+  "nav_charging_settings_short": "Inställningar",
+  "nav_charging_settings": "Laddningsinställningar",
+  "cmd_kw_charging_settings": "datakällor synk synkronisering historik integrationer tariff avgifter påslag elnät kostnad nyckel zaptec skoda emaldo elpris"
 }

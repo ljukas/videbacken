@@ -134,6 +134,7 @@ function EconomyPage() {
         <SyncHealthAlert
           health={health}
           isAdmin={isAdmin}
+          settingsLink={isAdmin}
           onRetry={() => syncNow.syncSource('zaptec')}
           retrying={syncNow.isPendingFor('zaptec')}
         />
@@ -144,6 +145,7 @@ function EconomyPage() {
         <SyncHealthAlert
           health={pricesHealth}
           isAdmin={isAdmin}
+          settingsLink={isAdmin}
           onRetry={() => syncNow.syncSource('elpris')}
           retrying={syncNow.isPendingFor('elpris')}
         />

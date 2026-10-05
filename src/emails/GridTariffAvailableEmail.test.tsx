@@ -57,8 +57,8 @@ test('escapes catalogue text in the html', async () => {
   expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
 })
 
-test('links to /charging in both html and text', async () => {
+test('links to /charging/settings in both html and text', async () => {
   const { html, text } = await renderGridTariffAvailable({ companyName: 'Nät AB', locale: 'sv' })
-  expect(html).toContain('/charging')
-  expect(text).toContain('/charging')
+  expect(html).toContain('/charging/settings')
+  expect(text).toContain('/charging/settings')
 })

@@ -1,11 +1,10 @@
 import { environmentManager, keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { CredentialExpiryAlert } from '~/components/evCharging/CredentialExpiryAlert'
-import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { healthPoll } from '~/components/evCharging/healthPoll'
 import { LiveStatusLine, useLiveStatus } from '~/components/evCharging/LiveStatusLine'
 import {
@@ -22,23 +21,14 @@ import {
 import { PriceFootnote } from '~/components/evCharging/PriceFootnote'
 import { SessionList } from '~/components/evCharging/SessionList'
 import { SessionPagination } from '~/components/evCharging/SessionPagination'
-import {
-  SkodaSourceDetails,
-  VehicleLogImportButton,
-} from '~/components/evCharging/SkodaSourceDetails'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
-import { SyncSourcesPanel } from '~/components/evCharging/SyncSourcesPanel'
-import { TariffCard } from '~/components/evCharging/TariffCard'
-import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
-import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { useSessionPaging } from '~/hooks/useSessionPaging'
-import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import {
   DEFAULT_SESSION_PAGE_SIZE,
@@ -51,7 +41,6 @@ import {
   vehicleScope,
   vehicleScopeParam,
 } from '~/lib/evCharging/vehicle'
-import { INTEGRATION_SOURCES, type IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
 import { loadRouteData } from '~/lib/query/routeData'
 import { m } from '~/paraglide/messages'
@@ -61,24 +50,12 @@ import { seo } from '~/utils/seo'
 // `?year=` falls back to the current year instead of erroring the loader.
 const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
-  // Dialogs (ADR-0013): tariff new (optionally pre-filled), edit, delete; the
-  // car's log import; one data source's sync history.
-  dialog: z
-    .enum(['tariffNew', 'tariffEdit', 'tariffDelete', 'vehicleImport', 'syncRuns'])
-    .optional()
-    .catch(undefined),
-  tariffId: z.string().optional().catch(undefined),
-  // The data source whose sync history is open (`dialog=syncRuns`).
-  source: z.enum(INTEGRATION_SOURCES).optional().catch(undefined),
   // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
   // The session list's page and rows per page: a clean URL is its first 10.
   ...sessionPagingSearch.shape,
 })
 type ChargingSearch = z.infer<typeof searchSchema>
-type ChargingDialog = NonNullable<ChargingSearch['dialog']>
-
-const RECENT_RUNS = 20
 
 const sessionsQuery = (page: number, pageSize: SessionPageSize, vehicle: VehicleScope) =>
   orpc.evCharging.sessions.queryOptions({ input: { page, pageSize, vehicle } })
@@ -87,21 +64,8 @@ const sessionCostsQuery = (sessionIds: string[]) =>
 // Spot price sync (elpris). Zaptec's keep their input-less calls, so their
 // query keys are unchanged; prices always pass their source.
 const pricesHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } })
-const vehicleCoverageQuery = orpc.evCharging.vehicleRecordCoverage.queryOptions()
-const pricesRunsQuery = orpc.evCharging.recentRuns.queryOptions({
-  input: { source: 'elpris', limit: RECENT_RUNS },
-})
 // The car's live-state poll (Škoda), admin-only.
 const skodaHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } })
-const skodaRunsQuery = orpc.evCharging.recentRuns.queryOptions({
-  input: { source: 'skoda', limit: RECENT_RUNS },
-})
-// The house's energy flows (Emaldo), admin-only like the car feed.
-const emaldoHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'emaldo' } })
-const emaldoRunsQuery = orpc.evCharging.recentRuns.queryOptions({
-  input: { source: 'emaldo', limit: RECENT_RUNS },
-})
-const vehicleLatestQuery = orpc.evCharging.vehicleStateLatest.queryOptions()
 export const Route = createFileRoute('/_authenticated/charging/')({
   head: () => ({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
@@ -112,8 +76,8 @@ export const Route = createFileRoute('/_authenticated/charging/')({
     vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
   // ADR-0025: the server waits for what renders at the top; the client waits
-  // for nothing (sections show skeletons). Datakällor's histories, the car's
-  // latest state and the log coverage sit at the bottom, so they're deferred.
+  // for nothing (sections show skeletons). The sessions' costs are deferred
+  // (below). The data sources' tiles and histories live on /charging/settings.
   loader: async ({ context: { queryClient, user }, deps, location }) => {
     // The session list's page is deliberately not a loader dep: a dep change
     // blocks the navigation on this whole loader (every prefetch below), so a
@@ -144,15 +108,6 @@ export const Route = createFileRoute('/_authenticated/charging/')({
         // source's alert can appear a moment later (rare, and it needs attention).
         admin && pricesHealthQuery,
         admin && skodaHealthQuery,
-        admin && emaldoHealthQuery,
-      ],
-      deferred: [
-        admin && orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
-        admin && pricesRunsQuery,
-        admin && skodaRunsQuery,
-        admin && emaldoRunsQuery,
-        admin && vehicleCoverageQuery,
-        admin && vehicleLatestQuery,
       ],
     })
     // The costs need the sessions' ids, and are deferred: never started on the
@@ -177,42 +132,10 @@ function ChargingPage() {
   const sessionPage = Route.useSearch({ select: (s) => s.page ?? 1 })
   const sessionPageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
   const syncNow = useSyncNow()
-  const dialog = Route.useSearch({ select: (s) => s.dialog })
-  const tariffId = Route.useSearch({ select: (s) => s.tariffId })
-  const runsSource = Route.useSearch({ select: (s) => s.source })
-  const { isOpen, open, close } = useUrlDialog<ChargingDialog, ChargingSearch>({
-    current: dialog,
-    navigate,
-    clearKeys: ['tariffId', 'source'],
-  })
+  // Only for the cost display (whether to price, and the notice): the tariff
+  // card and its dialogs live on /charging/settings.
   const tariffsResult = useQuery(orpc.tariff.list.queryOptions())
   const tariffs = tariffsResult.data
-  const selectedTariff = tariffs?.find((t) => t.id === tariffId)
-  // A dialog that can't show (a non-admin; a tariffId that no longer exists;
-  // a sync history without a valid source) is cleared from the URL instead of
-  // lingering there. A tariff dialog is only judged once the tariffs are known.
-  const dialogUnavailable =
-    dialog !== undefined &&
-    (!isAdmin ||
-      (dialog === 'syncRuns'
-        ? runsSource === undefined
-        : dialog !== 'tariffNew' &&
-          dialog !== 'vehicleImport' &&
-          tariffs !== undefined && // still loading: not "gone" yet
-          !selectedTariff))
-  useEffect(() => {
-    // `replace`, so Back doesn't return to the bad URL (and bounce again).
-    if (dialogUnavailable) {
-      navigate({
-        to: '.',
-        replace: true,
-        resetScroll: false,
-        search: (prev) => ({ ...prev, dialog: undefined, tariffId: undefined, source: undefined }),
-      })
-    }
-  }, [dialogUnavailable, navigate])
-  // "Ny period" starts from the newest period's amounts (the list is oldest first).
-  const latestTariff = tariffs?.at(-1)
 
   // Hourly data: no polling on overview/sessions — the default focus refetch
   // plus `syncNow`'s invalidation keep them fresh (ADR-0018).
@@ -308,45 +231,22 @@ function ChargingPage() {
     // Members read only the alert: a plain minute. Admins also watch "Synkar…".
     refetchInterval: isAdmin ? healthPoll(syncNow.isPendingFor('zaptec')) : 60_000,
   })
-  // Admin-only (see the alerts and the Datakällor panel below). Polled like
-  // Zaptec's, so a tile's "running" state (a cron run seen mid-flight) clears
-  // on its own instead of waiting for a focus refetch (ADR-0018: polled).
+  // Admin-only (see the alerts below). Polled like Zaptec's, so an alert's
+  // retry state clears on its own (ADR-0018: polled).
   const pricesHealthResult = useQuery({
     ...pricesHealthQuery,
     enabled: isAdmin,
     refetchInterval: healthPoll(syncNow.isPendingFor('elpris')),
   })
   const live = useLiveStatus()
-  const zaptecRuns = useQuery({
-    ...orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
-    enabled: isAdmin,
-  })
-  const pricesRuns = useQuery({ ...pricesRunsQuery, enabled: isAdmin })
-  const vehicleCoverage = useQuery({ ...vehicleCoverageQuery, enabled: isAdmin })
   const skodaHealthResult = useQuery({
     ...skodaHealthQuery,
     enabled: isAdmin,
     refetchInterval: healthPoll(syncNow.isPendingFor('skoda')),
   })
-  const skodaRuns = useQuery({ ...skodaRunsQuery, enabled: isAdmin })
-  const emaldoHealthResult = useQuery({
-    ...emaldoHealthQuery,
-    enabled: isAdmin,
-    refetchInterval: healthPoll(syncNow.isPendingFor('emaldo')),
-  })
-  const emaldoRuns = useQuery({ ...emaldoRunsQuery, enabled: isAdmin })
-  const vehicleLatest = useQuery({ ...vehicleLatestQuery, enabled: isAdmin })
   const health = healthResult.data
   const pricesHealth = pricesHealthResult.data
   const skodaHealth = skodaHealthResult.data
-  const emaldoHealth = emaldoHealthResult.data
-  // Datakällor waits for every source's state: a tile without one would read
-  // "Okänd status", which is not the same as still loading (ADR-0016).
-  const sourcesPending =
-    firstLoadPending(healthResult) ||
-    firstLoadPending(pricesHealthResult) ||
-    firstLoadPending(skodaHealthResult) ||
-    firstLoadPending(emaldoHealthResult)
 
   function setYear(y: number) {
     navigate({ to: '.', search: (s) => ({ ...s, year: y }), replace: true, resetScroll: false })
@@ -375,6 +275,7 @@ function ChargingPage() {
         <SyncHealthAlert
           health={health}
           isAdmin={isAdmin}
+          settingsLink={isAdmin}
           onRetry={() => syncNow.syncSource('zaptec')}
           retrying={syncNow.isPendingFor('zaptec') || health.running}
         />
@@ -385,6 +286,7 @@ function ChargingPage() {
         <SyncHealthAlert
           health={pricesHealth}
           isAdmin
+          settingsLink
           onRetry={() => syncNow.syncSource('elpris')}
           retrying={syncNow.isPendingFor('elpris') || pricesHealth.running}
         />
@@ -394,12 +296,16 @@ function ChargingPage() {
         <SyncHealthAlert
           health={skodaHealth}
           isAdmin
+          settingsLink
           onRetry={() => syncNow.syncSource('skoda')}
           retrying={syncNow.isPendingFor('skoda') || skodaHealth.running}
         />
       ) : null}
       {isAdmin && skodaHealth?.state === 'ok' ? (
-        <CredentialExpiryAlert expiry={skodaHealth.adminDetail?.credentialExpiry ?? null} />
+        <CredentialExpiryAlert
+          expiry={skodaHealth.adminDetail?.credentialExpiry ?? null}
+          settingsLink
+        />
       ) : null}
 
       {/* The page filter: everything below it down to the sessions is scoped,
@@ -407,10 +313,7 @@ function ChargingPage() {
       <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
 
       {overview && costNotice && !shapePending ? (
-        <CostNotice
-          reason={costNotice}
-          onAddTariff={isAdmin ? () => open('tariffNew') : undefined}
-        />
+        <CostNotice reason={costNotice} canAddTariff={isAdmin} />
       ) : null}
       <SectionSkeleton name="charging-totals" loading={shapePending} fallbackHeight="7rem">
         {overview ? (
@@ -529,103 +432,6 @@ function ChargingPage() {
           ) : null}
         </SectionSkeleton>
       </section>
-
-      <SectionSkeleton
-        name="charging-tariffs"
-        loading={firstLoadPending(tariffsResult)}
-        fallbackHeight="10rem"
-      >
-        {tariffs ? (
-          <TariffCard
-            tariffs={tariffs}
-            admin={
-              isAdmin
-                ? {
-                    onNew: () => open('tariffNew'),
-                    onEdit: (id) => open('tariffEdit', { tariffId: id }),
-                    onDelete: (id) => open('tariffDelete', { tariffId: id }),
-                  }
-                : undefined
-            }
-          />
-        ) : null}
-      </SectionSkeleton>
-      <LoadErrorAlert title={m.charging_tariff_error_title()} query={tariffsResult} />
-
-      {/* Every data source's state, sync and history. Emaldo's state lives only
-          here, not as an alert up top: nothing on the page uses the house data
-          yet (ADR-0023, step 4), and it reads not_configured wherever EMALDO_*
-          is unset. */}
-      {isAdmin ? (
-        <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
-          <SyncSourcesPanel
-            entries={[
-              { source: 'zaptec', health, runs: zaptecRuns },
-              { source: 'elpris', health: pricesHealth, runs: pricesRuns },
-              {
-                source: 'skoda',
-                health: skodaHealth,
-                runs: skodaRuns,
-                // The car's log and live poll are one source to the admin: its last
-                // contact, key expiry and log (+ import) live on its tile. Prefetched
-                // by the loader; a failed read shows an error, never "none".
-                details: (
-                  <SkodaSourceDetails
-                    live={vehicleLatest.data}
-                    liveQuery={vehicleLatest}
-                    keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
-                    coverage={vehicleCoverage.data}
-                    coverageQuery={vehicleCoverage}
-                  />
-                ),
-                actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
-              },
-              { source: 'emaldo', health: emaldoHealth, runs: emaldoRuns },
-            ]}
-            onSync={syncNow.syncSource}
-            isPendingFor={syncNow.isPendingFor}
-            openSource={isOpen('syncRuns') ? runsSource : undefined}
-            onOpenHistory={(source: IntegrationSource) => open('syncRuns', { source })}
-            onCloseHistory={close}
-          />
-        </SectionSkeleton>
-      ) : null}
-
-      {isAdmin ? (
-        <>
-          {/* Waits for the tariffs: "new" starts from the newest period's
-              amounts, and the form keeps the defaults it mounted with. */}
-          <TariffDialog
-            open={
-              tariffs !== undefined &&
-              (isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined))
-            }
-            mode={
-              isOpen('tariffEdit') && selectedTariff
-                ? { kind: 'edit', tariff: selectedTariff }
-                : isOpen('tariffNew') && tariffs !== undefined
-                  ? { kind: 'new', from: latestTariff }
-                  : undefined
-            }
-            onOpenChange={(o) => {
-              if (!o) close()
-            }}
-          />
-          <VehicleImportDialog
-            open={isOpen('vehicleImport')}
-            onOpenChange={(o) => {
-              if (!o) close()
-            }}
-          />
-          <DeleteTariffDialog
-            open={isOpen('tariffDelete') && selectedTariff !== undefined}
-            tariff={selectedTariff}
-            onOpenChange={(o) => {
-              if (!o) close()
-            }}
-          />
-        </>
-      ) : null}
     </PageContainer>
   )
 }

@@ -36,6 +36,9 @@ test('the 7-day reminder has its own subject', async () => {
   expect(subject).toBe('Sista påminnelsen: Škoda-nyckeln går ut den 15 januari 2027')
 })
 
+// nav_charging_settings_short per locale (m.x() without a locale is always sv).
+const settingsWord = { sv: 'Inställningar', en: 'Settings' } as const
+
 test('says how to renew, in html and text, both locales', async () => {
   for (const locale of ['sv', 'en'] as const) {
     const { html, text } = await renderCredentialExpiry({
@@ -47,7 +50,8 @@ test('says how to renew, in html and text, both locales', async () => {
     for (const out of [html, text]) {
       expect(out).toContain('https://go.skoda.eu/api-keys')
       expect(out).toContain('SKODA_API_KEY')
-      expect(out).toContain('/charging')
+      expect(out).toContain('/charging/settings')
+      expect(out).toContain(settingsWord[locale])
     }
   }
 })
@@ -92,11 +96,11 @@ test('says what an expired key does and how to verify the new one, in html and t
   const sentences = {
     sv: [
       'Efter det räknas nya laddningar som vår bil, även om en gäst laddade.',
-      'Verifiera med Synka nu på Škoda under Datakällor på Översikt.',
+      'Verifiera med Synka nu på Škoda under Laddning → Inställningar.',
     ],
     en: [
       'After that, new charging sessions count as our car, even if a guest charged.',
-      'Verify with Sync now on Škoda under Data sources on the overview page.',
+      'Verify with Sync now on Škoda under Charging → Settings.',
     ],
   } as const
   for (const locale of ['sv', 'en'] as const) {

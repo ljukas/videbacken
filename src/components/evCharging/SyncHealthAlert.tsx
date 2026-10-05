@@ -8,6 +8,7 @@ import {
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { formatDateTime } from './format'
+import { SettingsLink } from './SettingsLink'
 import { SyncNowButton } from './SyncNowButton'
 
 type Health = RouterOutputs['evCharging']['syncStatus']
@@ -16,15 +17,18 @@ type Health = RouterOutputs['evCharging']['syncStatus']
 // timestamps client-side — the server owns the stale/failing policy). `ok`
 // renders nothing. Admins additionally see the raw (sanitized) last error and
 // a retry that re-runs only this alert's source (`useSyncNow().syncSource`).
-// Emaldo has no alert: its state lives only on its Datakällor tile.
+// Emaldo has no alert: its state lives only on its Datakällor tile (charging settings).
 export function SyncHealthAlert({
   health,
   isAdmin,
+  settingsLink = false,
   onRetry,
   retrying,
 }: {
   health: Health
   isAdmin: boolean
+  /** Admins: a link to the settings page. */
+  settingsLink?: boolean
   onRetry: () => void
   retrying: boolean
 }) {
@@ -34,6 +38,7 @@ export function SyncHealthAlert({
   })
 
   const message = syncHealthMessage(health)
+  const link = isAdmin && settingsLink
   switch (health.state) {
     case 'ok':
       return null
@@ -41,21 +46,28 @@ export function SyncHealthAlert({
       return (
         <HealthAlert variant="default" title={title}>
           <div>{message}</div>
-          {isAdmin ? <RetryRow onRetry={onRetry} retrying={retrying} /> : null}
+          {isAdmin ? <RetryRow onRetry={onRetry} retrying={retrying} link={link} /> : null}
         </HealthAlert>
       )
     case 'not_configured':
-      // Retrying can't fix missing credentials, so no retry here.
+      // Retrying can't fix missing credentials, so no retry: the settings page is where they're fixed.
       return (
         <HealthAlert variant="default" title={title}>
           <div>{message}</div>
+          {link ? (
+            <div>
+              <SettingsLink />
+            </div>
+          ) : null}
         </HealthAlert>
       )
     case 'stale':
       return (
         <HealthAlert variant="default" title={title}>
           <div>{message}</div>
-          {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
+          {isAdmin ? (
+            <AdminDetail health={health} onRetry={onRetry} retrying={retrying} link={link} />
+          ) : null}
         </HealthAlert>
       )
     case 'failing':
@@ -67,7 +79,9 @@ export function SyncHealthAlert({
               <> {m.charging_health_failing_since({ time: formatDateTime(health.failingSince) })}</>
             ) : null}
           </div>
-          {isAdmin ? <AdminDetail health={health} onRetry={onRetry} retrying={retrying} /> : null}
+          {isAdmin ? (
+            <AdminDetail health={health} onRetry={onRetry} retrying={retrying} link={link} />
+          ) : null}
         </HealthAlert>
       )
   }
@@ -150,10 +164,12 @@ function AdminDetail({
   health,
   onRetry,
   retrying,
+  link,
 }: {
   health: Health
   onRetry: () => void
   retrying: boolean
+  link: boolean
 }) {
   const message = health.adminDetail?.lastErrorMessage
   return (
@@ -164,15 +180,24 @@ function AdminDetail({
           <code className="break-all font-mono text-xs">{message}</code>
         </div>
       ) : null}
-      <RetryRow onRetry={onRetry} retrying={retrying} />
+      <RetryRow onRetry={onRetry} retrying={retrying} link={link} />
     </>
   )
 }
 
-function RetryRow({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
+function RetryRow({
+  onRetry,
+  retrying,
+  link,
+}: {
+  onRetry: () => void
+  retrying: boolean
+  link: boolean
+}) {
   return (
-    <div>
+    <div className="flex flex-wrap items-center gap-2">
       <SyncNowButton onSync={onRetry} pending={retrying} label={m.common_try_again()} />
+      {link ? <SettingsLink /> : null}
     </div>
   )
 }

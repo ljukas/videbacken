@@ -1,8 +1,8 @@
 // Client-safe copy layer over `~/lib/integrationHealth`'s dependency-free
 // vocabulary. `import type` only from that module (never a value) plus the
-// Paraglide `m` messages — no `db`, no server-only import — so the `/charging`
-// health badge can import this straight into the browser bundle. Same
-// client-safe pattern as `src/lib/sensor/range.ts`.
+// Paraglide `m` messages — no `db`, no server-only import — so the charging
+// health badge (settings tiles, /charging alerts) can import this straight
+// into the browser bundle. Same client-safe pattern as `src/lib/sensor/range.ts`.
 //
 // `integrationErrorMessage` and `integrationHealthTitle` take an explicit
 // optional `locale` because `integrationErrorMessage` is also called from the

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
-import { renderWithProviders } from '~test/browser/render'
+import { m } from '~/paraglide/messages'
+import { renderWithProviders, renderWithRouter } from '~test/browser/render'
 import { CredentialExpiryAlert } from './CredentialExpiryAlert'
 
 const expiresAt = new Date('2027-01-15T12:00:00.500Z')
@@ -58,4 +59,16 @@ test('renders nothing before the warning window, after expiry, or without an exp
     expect(screen.container.textContent).toBe('')
     await screen.unmount()
   }
+})
+
+test('with settingsLink, links to the settings page', async () => {
+  const { screen } = await renderWithRouter(
+    <CredentialExpiryAlert
+      expiry={{ expiresAt, daysLeft: 12, warn: true, expired: false }}
+      settingsLink
+    />,
+  )
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_settings_link() }))
+    .toHaveAttribute('href', '/charging/settings')
 })
