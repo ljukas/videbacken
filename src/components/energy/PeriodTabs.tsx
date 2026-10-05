@@ -15,7 +15,7 @@ const PERIODS: { key: Period; icon: LucideIcon; label: () => string }[] = [
 ]
 
 // This month / this year / all time, one period at a time (five readouts don't
-// fit three side-by-side cards). Opens on this month; the choice isn't
+// fit three side-by-side cards). Opens on the first period with data; the choice isn't
 // persisted, as on /charging. A period without data says so; `children` only
 // ever gets a period's sums. Shared by the Översikt and Batteri tiles.
 export function PeriodTabs({

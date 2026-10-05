@@ -5,7 +5,7 @@ import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
 import type { Logger } from '~/lib/logger'
 import { replaceDay } from '~/lib/services/houseEnergy'
-import { stockholmDayBounds } from '~/lib/time/stockholm'
+import { stockholmDayBounds, stockholmYearMonth } from '~/lib/time/stockholm'
 import { syntheticDay } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
 import { energyRouter } from './energy'
@@ -93,7 +93,7 @@ test('privacy: the output holds period sums only, never buckets', async () => {
   const { startMs, endMs } = stockholmDayBounds(day)
   await replaceDay({ dayStart: new Date(startMs), dayEnd: new Date(endMs) }, syntheticDay(day))
   await signIn('user')
-  const o = await call(energyRouter.overview, {}, { context: context() })
+  const o = await call(energyRouter.overview, { year: 2026 }, { context: context() })
   expect(Object.keys(o).sort()).toEqual([
     'availableYears',
     'firstReadingDay',
@@ -104,6 +104,15 @@ test('privacy: the output holds period sums only, never buckets', async () => {
   // The only arrays are the 12 months and the years; every period is a flat object of numbers.
   const flat = (p: unknown) =>
     p === null || Object.values(p as object).every((v) => v === null || typeof v === 'number')
+  // Real sums are present, so the flatness check is not vacuous.
+  expect(o.months.some((p) => p !== null)).toBe(true)
+  expect(o.tiles.allTime).not.toBeNull()
   expect(o.months.every(flat)).toBe(true)
   expect(Object.values(o.tiles).every(flat)).toBe(true)
+})
+
+test('without a year it opens on the current Stockholm year', async () => {
+  await signIn('user')
+  const o = await call(energyRouter.overview, {}, { context: context() })
+  expect(o.year).toBe(stockholmYearMonth(Date.now()).year)
 })

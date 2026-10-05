@@ -148,6 +148,10 @@ test('another year loading: the old chart stays, dimmed; the tiles do not', asyn
   await expect.element(chart).toBeVisible()
   const busy = screen.getByRole('region', { name: m.energy_chart_title() }).element()
   await expect.poll(() => busy.querySelector('[aria-busy="true"]')).not.toBeNull()
+  // The selector shows the requested year while it loads, not the old one.
+  await expect
+    .element(screen.getByRole('combobox', { name: m.charging_year_label() }))
+    .toHaveTextContent('2025')
   const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
   expect(tiles.closest('[aria-busy="true"]')).toBeNull()
   release({ ...with2025, year: 2025, availableYears: [2026, 2025] })

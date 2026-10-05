@@ -166,7 +166,8 @@ test('tile coverage counts months without readings as missing', async () => {
 })
 
 test('the newest month, current or not, ends its expected buckets at the newest reading', async () => {
-  await storeDay('2026-09-10', {}, 145) // newest bucket 12:00 local - 5 min... 145 buckets = 12:05 end
+  // 145 buckets = 00:00 through 12:00 local inclusive: the newest reading starts at 12:00.
+  await storeDay('2026-09-10', {}, 145)
   const o = await getEnergyOverview({ year: 2026, now: new Date('2026-10-15T12:00:00Z') })
   expect(o.months[8]?.buckets).toBe(145)
   expect(o.months[8]?.expectedBuckets).toBe(145)
@@ -198,7 +199,8 @@ test('car kWh follows the interval month, not the session start month', async ()
   await storeDay('2026-03-31')
   await storeDay('2026-04-01')
   const chargerId = await insertCharger()
-  // Starts 2026-03-31 22:30 UTC+... (00:30 local on 1 April is 22:30Z): use 21:30Z = 23:30 local 31 March.
+  // The session starts 23:30 local on 31 March (21:30Z) but its only interval starts
+  // 00:30 local on 1 April (22:30Z, CEST), so the kWh belong to April.
   const id = await insertSession({
     chargerId,
     startAt: new Date('2026-03-31T21:30:00Z'),
