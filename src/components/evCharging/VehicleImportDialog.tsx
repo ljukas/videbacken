@@ -113,7 +113,7 @@ function ImportForm({
   const queryClient = useQueryClient()
   const importRecords = useMutation(
     orpc.evCharging.importVehicleRecords.mutationOptions({
-      // The attribution changes every charging figure, not just the log card.
+      // The attribution changes every charging figure, not just the Škoda tile's log line.
       onSettled: () => queryClient.invalidateQueries({ queryKey: orpc.evCharging.key() }),
     }),
   )

@@ -257,7 +257,7 @@ export const evChargingRouter = {
 
   vehicleRecordCoverage: adminProcedure.handler(() => vehicleChargeService.coverage()),
 
-  // Admin card: when the Škoda poll last heard from the car (ADR-0022). Times only.
+  // The Škoda tile: when the poll last heard from the car (ADR-0022). Times only.
   vehicleStateLatest: adminProcedure.handler(() => vehicleStateService.latestSnapshot()),
 
   recentRuns: adminProcedure

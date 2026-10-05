@@ -9,7 +9,7 @@ a warning on /charging from 30 days before, and get emails at 30 and 7 days.
    would share the car's 20 requests/h): set `SKODA_API_KEY` (on first setup also `SKODA_VIN`, and
    `SKODA_HOME_COORDINATES` = `lat,lon` of the charger). Never commit these.
 3. Redeploy production (env changes apply only to new deployments).
-4. /charging → "Bilens data" → **Hämta bilens status**. Expect "Bilens status är uppdaterad" and "Nyckeln går ut den …"
+4. /charging → Datakällor → Škoda → **Synka nu**. Expect "Bilens status är uppdaterad" and "Nyckeln går ut den …"
    with the new date; the warning disappears.
 
 ## Symptoms
