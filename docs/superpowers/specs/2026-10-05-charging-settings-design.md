@@ -170,7 +170,7 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
   and `AAD = source`.
 - The key comes from `CREDENTIALS_ENCRYPTION_KEY`, which must decode from base64 to exactly 32 bytes; anything else
   counts as missing.
-- `decrypt` throws a typed `CredentialsUnreadable` error on any failure. It never returns partial data.
+- `decrypt` throws a typed `CredentialsUnreadableError` on any failure. It never returns partial data.
 
 ### Service — `src/lib/services/integrationCredential/`
 - `status()`: per source, per field `{ origin }`, plus the row's `updatedAt` and `unreadable: boolean`.
@@ -190,7 +190,7 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
   fields are unchanged.
 - `clear(source)` deletes the row. It is idempotent.
 - `readStored(source)`, for the resolver: the decrypted values, or `null` when there is no row. It throws
-  `CredentialsUnreadable`.
+  `CredentialsUnreadableError`.
 - **Validation** (trimmed; at most 512 characters each; ASCII control characters are rejected):
   - `vin`: `^[A-HJ-NPR-Z0-9]{17}$`, after upper-casing.
   - `homeCoordinates`: must parse with `parseHomePoint`.
@@ -225,14 +225,19 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
   3. If the fingerprint is unchanged, reuse the cached client. This keeps the Zaptec and Emaldo token caches.
   4. Otherwise build a new client through the existing `select*Adapter`. The selector now takes the resolved values
      instead of `process.env`; Zaptec's `ZAPTEC_ADAPTER=fake` and the production guard still read env.
+
+  The cache holds one entry. A resolve still in flight from before a save can finish last and overwrite the newer
+  entry, costing one extra client rebuild (for Emaldo, one extra login) at a credential change; the next call
+  settles it. Accepted.
 - **`CredentialsUnreadableError`** is a plain error from the crypto layer. `keyedAdapter` maps it to the source's
   own `IntegrationError` subclass with code `credentials_unreadable`; otherwise `runPulledSync` would record
   `internal_error` and rethrow. The run fails closed and is health-tracked.
 - Effects reach the credential service only through the resolver (an ADR-0001 note).
-- **Home point.** `vehicleState/sync.ts` resolves `homeCoordinates` through `resolveCredentials('skoda')` before
-  `runPulledSync`, because the run's `init` needs it; the injected `deps.homePoint` still wins. An unreadable Škoda
-  row makes the home point `null` (geofence off), while the client call inside the run fails as
-  `credentials_unreadable`.
+- **Home point.** `vehicleState/sync.ts` resolves `homeCoordinates` through `resolveCredentials('skoda')` inside the
+  run (`execute`, before the client call); the injected `deps.homePoint` still wins. One run is one log line: the
+  cron handler doesn't log, so a resolve error before the run (DB down) would be a 500 with no line. Inside, it is
+  recorded as `internal_error`. An unreadable Škoda row makes the home point `null` (geofence off), while the client
+  call fails the run as `credentials_unreadable`.
 - **Grid.** `gridTariff/catalogueCheck.ts` replaces its `env` injection with a `facilityId` resolver injection that
   defaults to `resolveCredentials('gridTariff')`. An unreadable row logs an error and returns outcome
   `failed` / `credentials_unreadable`. The watcher isn't health-tracked, so nothing else changes.
@@ -260,7 +265,6 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
 
 ### Scope additions (as built)
 - `.env.example` and the CLAUDE.md code map and env list were updated in step 2, not step 3.
-- The grid watcher's run line logs an unreadable stored ID at error, nothing fetched.
 - Rollback: after the new code has recorded `credentials_unreadable`, an instant rollback to older code shows that
   row's code without copy (display-only).
 

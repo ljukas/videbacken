@@ -133,6 +133,9 @@ has the same corrections inline.
 
 **Adapters** (`src/lib/effects/keyedAdapter.ts`):
 - `keyedAdapter` replaces `lazy()` for Zaptec, Škoda and Emaldo.
+- Its cache holds one entry. A resolve still in flight from before a save can finish last and overwrite the newer
+  entry, costing one extra client rebuild (for Emaldo, one extra login) at a credential change; the next call
+  settles it. Accepted.
 - Under VITEST it returns not-configured before it imports the resolver. The import is dynamic, which keeps `db` out
   of the facades' module graph.
 - Decrypting fails with a plain `CredentialsUnreadableError` (crypto layer). `keyedAdapter` maps it to the source's
@@ -140,7 +143,11 @@ has the same corrections inline.
 - Effects reach the credential service only through the resolver, and only to read (an ADR-0001 note).
 
 **Home point and facility ID:**
-- The Škoda home point is resolved before `runPulledSync`, because the run's `init` needs it. An unreadable Škoda
-  row makes the home point `null` (geofence off), while the client call fails the run as `credentials_unreadable`.
+- The Škoda home point is resolved inside the run (`execute`, before the client call), not before `runPulledSync`.
+  One run is one log line: the cron handler doesn't log, so a resolve error outside the run (DB down) would be a
+  500 with no line, outside the lease and deadline. Inside, it is recorded as `internal_error`.
+- `init` sets `geofence` from an injected home point only; `execute` sets it from the resolved one.
+- An unreadable Škoda row makes the home point `null` (geofence off), while the client call fails the run as
+  `credentials_unreadable`.
 - The grid watcher reads `facilityId` through the resolver. An unreadable row is `failed` / `credentials_unreadable`,
   nothing is fetched, and the run line logs at error.
