@@ -225,6 +225,22 @@ Accepted residuals (an admin tag fixes them):
 After PR 1 merges: the owner sets `SKODA_API_KEY`, `SKODA_VIN`, `SKODA_HOME_COORDINATES` in Vercel **Production
 only** (Preview has its own database, but would share the VIN's 20 requests/h).
 
+## Production verification
+
+The rule is only trusted once each real-world case has been seen on prod. Real readings stay out of this doc
+(public repo, see Privacy) — each line records only the case and whether prod decided it correctly.
+
+| Case | Expected | Status |
+|---|---|---|
+| Our car charges at home | ours · `skoda_live` | ✅ verified |
+| Our car away from home (unplugged, outside the geofence) | not here | ✅ verified |
+| A guest charges while our car is home but unplugged | other · `skoda_live` (plug state decides, not the geofence) | ✅ verified |
+| A poll while the car is driving (`IN_MOTION`) | not here | ⬜ open |
+| A session under 40 min | unchanged (undecided) | ⬜ open |
+
+Open cases stay open until prod has seen them; check them with read-only SQL against `ev_charge_session` and
+`vehicle_state_snapshot`.
+
 ## Privacy
 
 `vehicle_state_snapshot` is a household presence history (plugged in / moving / parked away, every 15 min). Rules:
