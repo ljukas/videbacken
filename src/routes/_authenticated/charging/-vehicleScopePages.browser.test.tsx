@@ -136,24 +136,8 @@ function seedOverview(qc: QueryClient, vehicle: VehicleScope, sessions: unknown[
   )
 }
 
-function seedOverviewShell(qc: QueryClient, opts: { coverage?: boolean } = {}) {
+function seedOverviewShell(qc: QueryClient) {
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [] as never)
-  qc.setQueryData(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey, [])
-  qc.setQueryData(
-    orpc.evCharging.recentRuns.queryOptions({ input: { source: 'elpris', limit: 20 } }).queryKey,
-    [],
-  )
-  qc.setQueryData(
-    orpc.evCharging.recentRuns.queryOptions({ input: { source: 'skoda', limit: 20 } }).queryKey,
-    [],
-  )
-  qc.setQueryData(
-    orpc.evCharging.recentRuns.queryOptions({ input: { source: 'emaldo', limit: 20 } }).queryKey,
-    [],
-  )
-  qc.setQueryData(orpc.evCharging.vehicleStateLatest.queryOptions().queryKey, null)
-  if (opts.coverage !== false)
-    qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
 }
 
 test('Översikt, guests with nothing: guest copy, no sync button, even for an admin', async () => {
@@ -314,44 +298,6 @@ test('Översikt: a failed sessions read shows an error, never the empty list or 
   ).toHaveLength(1)
 })
 
-test('Översikt: an admin sees the car log on the Škoda tile, and ?dialog=vehicleImport opens the import', async () => {
-  const { screen } = await renderPage(Overview, '/charging', '?dialog=vehicleImport', (qc) => {
-    seedOverviewShell(qc)
-    seedOverview(qc, 'all', [])
-  })
-  await expect.element(screen.getByText(m.charging_vehicle_log_none())).toBeVisible()
-  await expect.element(screen.getByText(m.charging_vehicle_import_title())).toBeVisible()
-})
-
-test('Översikt: a failed coverage read shows an error on the Škoda tile, not "no log imported"', async () => {
-  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
-    seedOverviewShell(qc, { coverage: false })
-    seedOverview(qc, 'all', [])
-  })
-  await expect.element(screen.getByText(m.charging_vehicle_log_error_title())).toBeVisible()
-  expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
-})
-
-test('Översikt: a non-admin gets no car log, no import, no dialog, and the param is cleared', async () => {
-  const { screen, router } = await renderPage(
-    Overview,
-    '/charging',
-    '?dialog=vehicleImport',
-    (qc) => {
-      seedOverviewShell(qc)
-      seedOverview(qc, 'all', [])
-    },
-    'user',
-  )
-  await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
-  expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
-  expect(
-    screen.getByRole('button', { name: m.charging_vehicle_import_button() }).elements(),
-  ).toHaveLength(0)
-  expect(screen.getByText(m.charging_vehicle_import_title()).elements()).toHaveLength(0)
-  await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
-})
-
 // --- Scope switch keeps the year ---------------------------------------------
 
 test.each([
@@ -386,70 +332,12 @@ test('patterns: switching scope clears the month', async () => {
   expect(router.state.location.search).not.toHaveProperty('month')
 })
 
-// --- Datakällor -------------------------------------------------------------
+// --- Seeds shared by the overview tests --------------------------------------
 
 const seedEmptyOverview = (qc: QueryClient) => {
   seedOverviewShell(qc)
   seedOverview(qc, 'all', [])
 }
-const sourcesHeading = { name: m.charging_sources_heading(), level: 2 } as const
-const historyTitle = (source: string) => m.charging_source_dialog_title({ source })
-
-test('Översikt: admins get the Datakällor panel, household members do not', async () => {
-  const admin = await renderPage(Overview, '/charging', '', seedEmptyOverview)
-  await expect.element(admin.screen.getByRole('heading', sourcesHeading)).toBeVisible()
-  admin.screen.unmount()
-
-  const member = await renderPage(Overview, '/charging', '', seedEmptyOverview, 'user')
-  await expect.element(member.screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
-  expect(member.screen.getByRole('heading', sourcesHeading).elements()).toHaveLength(0)
-})
-
-test('Översikt: Historik opens that source in the URL, and closing clears it', async () => {
-  const { screen, router } = await renderPage(Overview, '/charging', '', seedEmptyOverview)
-  await screen
-    .getByRole('button', {
-      name: m.charging_source_action_label({
-        action: m.charging_source_history(),
-        source: 'elprisetjustnu.se',
-      }),
-    })
-    .click()
-  await expect
-    .element(screen.getByRole('dialog', { name: historyTitle('elprisetjustnu.se') }))
-    .toBeVisible()
-  expect(router.state.location.search).toMatchObject({ dialog: 'syncRuns', source: 'elpris' })
-  await screen.getByRole('button', { name: 'Close' }).click()
-  await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
-  expect(router.state.location.search).not.toHaveProperty('source')
-})
-
-test('Översikt: a deep link opens that source’s history', async () => {
-  const { screen } = await renderPage(
-    Overview,
-    '/charging',
-    '?dialog=syncRuns&source=skoda',
-    seedEmptyOverview,
-  )
-  await expect.element(screen.getByRole('dialog', { name: historyTitle('Škoda') })).toBeVisible()
-})
-
-test.each([
-  ['no source', '?dialog=syncRuns', 'admin'],
-  ['an unknown source', '?dialog=syncRuns&source=tesla', 'admin'],
-  ['a household member', '?dialog=syncRuns&source=skoda', 'user'],
-] as const)('Översikt: a sync-history link with %s is cleaned from the URL', async (_case, search, role) => {
-  const { screen, router } = await renderPage(
-    Overview,
-    '/charging',
-    search,
-    seedEmptyOverview,
-    role,
-  )
-  await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
-  expect(router.state.location.search).not.toHaveProperty('source')
-  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
-})
 
 // --- Cash cost (ADR-0023) ----------------------------------------------------
 
@@ -924,7 +812,7 @@ test('Ekonomi: ten sessions or fewer need no pagination', async () => {
 const precedes = (a: Element, b: Element) =>
   (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
 
-test('Översikt: the scope filter sits above the totals; the sessions above the tariff card', async () => {
+test('Översikt: the scope filter sits above the totals, the chart above the sessions; no admin blocks', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', seedEmptyOverview)
   const scope = screen.getByRole('radiogroup', { name: m.charging_vehicle_scope_label() })
   await expect.element(scope).toBeVisible()
@@ -932,10 +820,15 @@ test('Översikt: the scope filter sits above the totals; the sessions above the 
   const totals = screen.getByRole('heading', { name: m.charging_totals_heading() }).element()
   const chartTitle = screen.getByRole('heading', { name: m.charging_chart_title() }).element()
   const sessions = screen.getByRole('heading', { name: m.charging_sessions_heading() }).element()
-  const tariff = screen.getByRole('heading', { name: m.charging_tariff_title() }).element()
   expect(precedes(scopeEl, totals)).toBe(true)
   expect(precedes(chartTitle, sessions)).toBe(true)
-  expect(precedes(sessions, tariff)).toBe(true)
+  // The tariffs and the data sources moved to /charging/settings.
+  expect(screen.getByRole('heading', { name: m.charging_tariff_title() }).elements()).toHaveLength(
+    0,
+  )
+  expect(
+    screen.getByRole('heading', { name: m.charging_sources_heading() }).elements(),
+  ).toHaveLength(0)
   // The chart's toolbar holds only chart controls.
   expect(chartTitle.closest('section')?.contains(scopeEl)).toBe(false)
   // The live line sits in the page heading, not in the scoped content.
@@ -943,6 +836,37 @@ test('Översikt: the scope filter sits above the totals; the sessions above the 
   const liveName = screen.getByText(m.charging_live_title(), { exact: false }).element()
   expect(banner.contains(liveName)).toBe(true)
   expect(precedes(liveName, scopeEl)).toBe(true)
+})
+
+test.each([
+  '?dialog=tariffNew',
+  '?dialog=vehicleImport',
+  '?dialog=syncRuns&source=skoda',
+])('Översikt: an old dialog link %s loads the overview with no dialog', async (search) => {
+  const { screen } = await renderPage(Overview, '/charging', search, seedEmptyOverview)
+  await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+})
+
+test('Översikt: an admin’s failing Škoda alert links to the settings page', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedEmptyOverview(qc)
+    qc.setQueryData(
+      orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } }).queryKey,
+      {
+        source: 'skoda',
+        state: 'failing',
+        code: 'auth_failed',
+        lastSuccessAt: null,
+        failingSince: null,
+        running: false,
+        adminDetail: null,
+      } as never,
+    )
+  })
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_settings_link() }))
+    .toHaveAttribute('href', '/charging/settings')
 })
 
 test.each([

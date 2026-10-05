@@ -146,6 +146,7 @@ function PatternsPage() {
       <SyncHealthAlert
         health={health}
         isAdmin={isAdmin}
+        settingsLink={isAdmin}
         onRetry={() => syncNow.syncSource('zaptec')}
         retrying={syncNow.isPendingFor('zaptec')}
       />
