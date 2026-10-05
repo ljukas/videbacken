@@ -2,6 +2,7 @@
 // /api/rpc HTTP path, where router.tsx (the SSR entry that otherwise loads it)
 // is never evaluated.
 import '~/lib/zodLocale'
+import { energyRouter } from './procedures/energy'
 import { evChargingRouter } from './procedures/evCharging'
 import { healthRouter } from './procedures/health'
 import { imageRouter } from './procedures/image'
@@ -10,6 +11,7 @@ import { tariffRouter } from './procedures/tariff'
 import { userRouter } from './procedures/user'
 
 export const appRouter = {
+  energy: energyRouter,
   evCharging: evChargingRouter,
   health: healthRouter,
   image: imageRouter,
