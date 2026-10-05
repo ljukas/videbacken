@@ -713,9 +713,9 @@ test('a sessions page that never arrives fails at the deadline and keeps earlier
     trigger: 'cron',
     now: () => T1,
     // The deadline runs from before the lease, so it must outlast the real DB
-    // work this test asserts on (the lease, then storing page 1): 50 ms lost
-    // that race on a loaded CI runner (pages 0, upserted 0). The second page
-    // never arrives either way, so only the margin changes.
+    // work before page 1 arrives (the lease, the charger upsert, the watermark
+    // read): 50 ms lost that race on a loaded CI runner (pages 0, upserted 0).
+    // The second page never arrives either way, so only the margin changes.
     deadlineMs: 1_000,
     deps: { zaptec: client, log },
   })
