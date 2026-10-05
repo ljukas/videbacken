@@ -39,6 +39,12 @@ test('the tariff limits and tariff error copy are importable client-side', async
   expect(typeof copy.tariffErrorMessage).toBe('function')
 })
 
+test('the session paging vocabulary is importable client-side', async () => {
+  const paging = await import('~/lib/evCharging/paging')
+  expect(paging.SESSION_PAGE_SIZES).toContain(paging.DEFAULT_SESSION_PAGE_SIZE)
+  expect(typeof paging.pageItems).toBe('function')
+})
+
 test('the /charging route module evaluates client-side without a db leak', async () => {
   const mod = await import('~/routes/_authenticated/charging/index')
   expect(mod.Route).toBeDefined()
