@@ -12,5 +12,10 @@ export const sessionQueryOptions = queryOptions({
     const session = await getSession()
     return session ? { user: session.user } : null
   },
-  staleTime: SESSION_COOKIE_CACHE_MAX_AGE_S * 1000,
+  // Only a live session is reused: a cached `null` (or deleted user) would
+  // bounce a user who just signed in back to /login for up to 5 min.
+  staleTime: (query) =>
+    query.state.data && !query.state.data.user.deletedAt
+      ? SESSION_COOKIE_CACHE_MAX_AGE_S * 1000
+      : 0,
 })

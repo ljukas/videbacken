@@ -61,13 +61,16 @@ check. Both use `ensureQueryData`, which returns cached data immediately, so the
 `_authenticated`'s `beforeLoad` reads the session through the query cache (`staleTime` 5 min) instead of calling
 the `getSession` server function every time.
 
-- **No looser than today.** 5 min equals Better Auth's `session.cookieCache.maxAge`, so the server-side
-  `getSession()` the guard used to call could already return a session up to 5 min old. If that setting changes,
-  this one changes with it.
+- **Only a live session is cached.** A `null` or soft-deleted result has `staleTime` 0, so a user who has just
+  signed in (or been re-invited) is never bounced back to `/login` by a cached miss.
+- **Nearly as loose as today.** 5 min equals Better Auth's `session.cookieCache.maxAge`, but the client can hold a
+  session for up to about 2x that (a fetch near the end of a cookie snapshot's life). Returning to the tab marks
+  the entry stale (`focusManager`), so a sign-out in another tab is noticed on the next navigation. If the
+  cookie-cache setting changes, this one changes with it.
 - **The guard is UX, not security.** Every RPC still checks the session and the soft-delete flag server-side
   (`protectedProcedure` / `adminProcedure`, ADR-0017).
 - **The cache never holds the session token.** The SSR query integration serializes the cache into the HTML, so the
-  cached value is `{ user }` or `null` only.
+  cached value is `{ user }` only.
 - **On the server it's always fresh.** `getRouter()` builds a new `QueryClient` per request.
 - **Sign-out already clears it.** `useSignOut` calls `queryClient.clear()`.
 

@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query'
+import { focusManager, QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 const getSession = vi.fn()
@@ -37,4 +37,40 @@ test('reuses the session for the cookie-cache lifetime, then asks the server aga
   vi.advanceTimersByTime(2)
   await qc.fetchQuery(sessionQueryOptions)
   expect(getSession).toHaveBeenCalledTimes(2)
+})
+
+test('a null session is not reused: signing in is seen on the next read', async () => {
+  const qc = new QueryClient()
+  getSession.mockResolvedValueOnce(null)
+  expect(await qc.fetchQuery(sessionQueryOptions)).toBeNull()
+  getSession.mockResolvedValueOnce({ session: { token: 't' }, user })
+  expect(await qc.fetchQuery(sessionQueryOptions)).toEqual({ user })
+  expect(getSession).toHaveBeenCalledTimes(2)
+})
+
+test('a deleted user is not reused', async () => {
+  const deleted = { ...user, deletedAt: new Date('2026-10-01T00:00:00Z') }
+  const qc = new QueryClient()
+  getSession.mockResolvedValue({ session: { token: 't' }, user: deleted })
+  await qc.fetchQuery(sessionQueryOptions)
+  await qc.fetchQuery(sessionQueryOptions)
+  expect(getSession).toHaveBeenCalledTimes(2)
+})
+
+test('invalidating on tab focus makes the next read ask the server again', async () => {
+  getSession.mockResolvedValue({ session: { token: 't' }, user })
+  const qc = new QueryClient()
+  // Same subscription the _authenticated layout sets up.
+  const unsubscribe = focusManager.subscribe((focused) => {
+    if (focused) void qc.invalidateQueries({ queryKey: sessionQueryOptions.queryKey })
+  })
+  await qc.fetchQuery(sessionQueryOptions)
+  await qc.fetchQuery(sessionQueryOptions)
+  expect(getSession).toHaveBeenCalledTimes(1)
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await qc.fetchQuery(sessionQueryOptions)
+  expect(getSession).toHaveBeenCalledTimes(2)
+  unsubscribe()
+  focusManager.setFocused(undefined)
 })

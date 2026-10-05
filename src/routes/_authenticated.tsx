@@ -1,5 +1,6 @@
-import { environmentManager } from '@tanstack/react-query'
+import { environmentManager, focusManager, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { AppSidebar } from '~/components/AppSidebar'
 import { CommandPalette } from '~/components/command/CommandPalette'
 import { CommandTriggerButton } from '~/components/command/CommandTriggerButton'
@@ -17,6 +18,7 @@ export const Route = createFileRoute('/_authenticated')({
     // (ensureQueryData would keep returning a stale session forever).
     const session = await queryClient.fetchQuery(sessionQueryOptions)
     if (!session || session.user.deletedAt) {
+      queryClient.removeQueries({ queryKey: sessionQueryOptions.queryKey })
       throw redirect({ to: '/login', search: { redirect: location.href } })
     }
     if (environmentManager.isServer()) {
@@ -41,6 +43,17 @@ export const Route = createFileRoute('/_authenticated')({
 
 function AuthenticatedLayout() {
   const { user } = Route.useRouteContext()
+  const queryClient = useQueryClient()
+
+  // Returning to the tab re-checks the session on the next navigation, so a
+  // sign-out in another tab is noticed then (ADR-0024 §2).
+  useEffect(
+    () =>
+      focusManager.subscribe((focused) => {
+        if (focused) void queryClient.invalidateQueries({ queryKey: sessionQueryOptions.queryKey })
+      }),
+    [queryClient],
+  )
 
   return (
     <CommandPaletteProvider>
