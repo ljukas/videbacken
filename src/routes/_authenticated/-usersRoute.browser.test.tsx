@@ -39,7 +39,11 @@ const pendingForever = (qc: QueryClient) => {
   void qc.prefetchQuery({ queryKey: listKey, queryFn: () => new Promise(() => {}) })
 }
 
-async function renderUsers(search: string, prepare: (qc: QueryClient) => void) {
+async function renderUsers(
+  search: string,
+  prepare: (qc: QueryClient) => void,
+  role: 'admin' | 'user' = 'admin',
+) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
   prepare(qc)
@@ -53,7 +57,7 @@ async function renderUsers(search: string, prepare: (qc: QueryClient) => void) {
   })
   const router = createRouter({
     routeTree: root.addChildren([Users as never]),
-    context: { queryClient: qc, user: { id: 'u1', role: 'admin' } },
+    context: { queryClient: qc, user: { id: 'u1', role } },
     history: createMemoryHistory({ initialEntries: [`/users${search}`] }),
   })
   await router.load()
@@ -86,18 +90,38 @@ test('list cached: the table renders at once, no skeleton', async () => {
   expect(skeleton('users-table')).toBeNull()
 })
 
-test('a revoke deep link keeps its params while the list loads', async () => {
-  const { router } = await renderUsers('?dialog=revoke&email=anna%40example.com', pendingForever)
+test('a revoke deep link waits for the list, then opens', async () => {
+  const { screen, router, qc } = await renderUsers(
+    '?dialog=revoke&email=anna%40example.com',
+    pendingForever,
+  )
   await expect.poll(() => skeleton('users-table')).not.toBeNull()
+  expect(screen.getByRole('alertdialog').elements()).toHaveLength(0)
   expect(router.state.location.search).toMatchObject({
     dialog: 'revoke',
     email: 'anna@example.com',
   })
+  qc.setQueryData(listKey, [row()])
+  await expect.element(screen.getByRole('alertdialog')).toBeVisible()
 })
 
-test('a revoke deep link opens once the list is in', async () => {
-  const { screen } = await renderUsers('?dialog=revoke&email=anna%40example.com', (qc) =>
-    qc.setQueryData(listKey, [row()]),
-  )
-  await expect.element(screen.getByRole('alertdialog')).toBeVisible()
+test('an edit deep link waits for the list, then opens', async () => {
+  const { screen, router, qc } = await renderUsers('?dialog=edit&userId=u2', pendingForever)
+  await expect.poll(() => skeleton('users-table')).not.toBeNull()
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+  expect(router.state.location.search).toMatchObject({ dialog: 'edit', userId: 'u2' })
+  qc.setQueryData(listKey, [row()])
+  await expect.element(screen.getByRole('dialog')).toBeVisible()
+})
+
+test('an edit deep link with a failed list shows the alert, not an error page', async () => {
+  const { screen } = await renderUsers('?dialog=edit&userId=u2', () => {})
+  await expect.element(screen.getByText(m.users_list_error_title())).toBeVisible()
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+})
+
+test('a member sees the list without the invite button', async () => {
+  const { screen } = await renderUsers('', (qc) => qc.setQueryData(listKey, [row()]), 'user')
+  await expect.element(screen.getByText('Anna Andersson').first()).toBeVisible()
+  expect(screen.getByRole('button', { name: m.users_invite_button() }).elements()).toHaveLength(0)
 })

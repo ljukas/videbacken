@@ -59,7 +59,6 @@ function Users() {
   const isEdit = isAdmin && isOpen('edit')
   const isRevoke = isAdmin && isOpen('revoke')
 
-  const editUserId = isEdit ? userId : undefined
   const revokeEmail = isRevoke ? email : undefined
 
   // The directory is the one screen where another admin's invite/edit/revoke
@@ -71,6 +70,10 @@ function Users() {
     refetchInterval: 60_000,
   })
   const users = loadFailed(usersResult) ? undefined : usersResult.data
+  // Both row dialogs wait for the list (like revoke's target below): the edit
+  // form reads the list through suspense, which would throw a failed read to the
+  // route error boundary instead of the alert.
+  const editUserId = isEdit && users ? userId : undefined
   const revokeUserRow = revokeEmail ? users?.find((u) => u.email === revokeEmail) : undefined
   const revokeTarget: RevokeTarget | undefined = revokeUserRow
     ? { email: revokeUserRow.email, name: revokeUserRow.name, status: revokeUserRow.status }
