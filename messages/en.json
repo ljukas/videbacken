@@ -542,6 +542,7 @@
   "charging_solar_value_hint": "what it would have earned if sold",
   "charging_solar_value_label": "Value of own solar",
   "charging_solar_value_unknown": "Value of own solar: unknown, no spot price",
+  "charging_solar_value_unknown_hint": "unknown, no spot price",
   "charging_session_verdict_good": "Good timing",
   "charging_session_verdict_ok": "OK timing",
   "charging_session_verdict_poor": "Costly timing",

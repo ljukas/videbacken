@@ -13,7 +13,6 @@ import { formatCount, formatOneDecimal, formatSek, formatShare, monthLabel } fro
 import type { MetricOption } from './MetricToggle'
 import { minBarFor } from './minBar'
 import { formatSolarValue, type SolarValueView, solarValueView } from './solarValue'
-import { Unknown } from './Unknown'
 
 type Month = RouterOutputs['evCharging']['overview']['months'][number]
 type CostMonth = RouterOutputs['evCharging']['costOverview']['months'][number]
@@ -39,9 +38,8 @@ export function chartMetricOptions(): MetricOption<ChartMetric>[] {
 // whose energy has no price at all gets a muted stub labelled "Pris saknas" —
 // never an empty bar that reads as 0 kr; a partly priced one says so. The
 // tooltip adds the month's value of own solar under its total when there was
-// solar (ADR-0023), stub months included. The page
-// owns the metric (its <h2> names the chart and follows it); without cost
-// data it's always kWh.
+// solar (ADR-0023), stub months included. The page owns the metric (its <h2>
+// names the chart and follows it); without cost data it's always kWh.
 export function MonthlyChart({
   months,
   cost,
@@ -230,23 +228,21 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
   )
 }
 
-// The month's value of own solar as tooltip rows: a label/value row and the
-// "what it would have earned" hint beneath it (a separate figure from the
-// total, so no swatch). Unknown is a dash with its reason for screen readers.
+// The month's value of own solar as tooltip rows: a label/value row and a
+// hint beneath it (a separate figure from the total, so no swatch). The hint
+// says what the value means, or why it's unknown: the tooltip ignores the
+// pointer, so a dash's title could never show its reason.
 function SolarTooltipRows({ view }: { view: SolarValueView }) {
   if (view.kind === 'hidden') return null
+  const unknown = view.kind === 'unknown'
   return (
     <div className="mt-1 flex flex-col gap-0.5 border-t pt-1">
       <TooltipRow label={m.charging_solar_value_label()}>
-        {view.kind === 'unknown' ? (
-          <Unknown label={m.charging_solar_value_unknown()} />
-        ) : (
-          formatSolarValue(view)
-        )}
+        {unknown ? <span aria-hidden="true">—</span> : formatSolarValue(view)}
       </TooltipRow>
-      {view.kind === 'unknown' ? null : (
-        <span className="text-muted-foreground text-xs">{m.charging_solar_value_hint()}</span>
-      )}
+      <span className="text-pretty text-muted-foreground text-xs">
+        {unknown ? m.charging_solar_value_unknown_hint() : m.charging_solar_value_hint()}
+      </span>
     </div>
   )
 }

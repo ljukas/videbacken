@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
-import { formatSek } from './format'
+import { formatSek, monthLabel } from './format'
 import { MetricToggle } from './MetricToggle'
 import { chartMetricOptions, MonthlyChart } from './MonthlyChart'
 
@@ -333,8 +333,9 @@ test('wholly unpriced solar is a dash with its reason, never 0 kr', async () => 
     </div>,
   )
   await hoverBar(screen.container, 5)
-  await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_solar_value_unknown()))
-  // Never a bare 0 kr of solar.
+  // The reason is visible text: the tooltip ignores the pointer, so a title never shows.
+  await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_solar_value_unknown_hint()))
+  expect(tooltipText()).toContain(m.charging_solar_value_label())
   expect(tooltipText()).not.toContain(m.charging_solar_value_hint())
 })
 
@@ -372,4 +373,49 @@ test('an unpriced stub month still shows its solar value', async () => {
     expect(tooltipText()).toContain(m.charging_solar_value_label())
     expect(tooltipText()).toContain(formatSek(212))
   })
+})
+
+test('a month charged only from own solar shows 0 kr and then its solar value', async () => {
+  const solarJune = costMonths.map((c) =>
+    c.month === 6
+      ? {
+          ...c,
+          gridKwh: 0,
+          fullKwh: 0,
+          solarKwh: c.kwh,
+          spotSek: 0,
+          feesSek: 0,
+          totalSek: 0,
+          avgOre: null,
+          solarPricedKwh: c.kwh,
+          solarUnpricedKwh: 0,
+          solarValueSek: 20,
+        }
+      : c,
+  )
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: solarJune }} metric="sek" />
+    </div>,
+  )
+  // June's 0 kr draws no rectangle (index 5 is July's spot bar): point halfway
+  // between May's and July's, where June's band is.
+  const rects = () => [...screen.container.querySelectorAll('.recharts-bar-rectangle')]
+  await vi.waitFor(() => expect(rects().length).toBeGreaterThan(5))
+  const may = rects()[4].getBoundingClientRect()
+  const july = rects()[5].getBoundingClientRect()
+  rects()[4].dispatchEvent(
+    new MouseEvent('mousemove', {
+      bubbles: true,
+      clientX: (may.x + may.width / 2 + july.x + july.width / 2) / 2,
+      clientY: may.y + may.height / 2,
+    }),
+  )
+  await vi.waitFor(() => {
+    expect(tooltipText()).toContain(monthLabel(6))
+    expect(tooltipText()).toContain(m.charging_chart_total())
+    expect(tooltipText()).toContain(formatSek(0))
+    expect(tooltipText()).toContain(formatSek(20))
+  })
+  expect(tooltipText()).not.toContain(m.charging_chart_no_price())
 })

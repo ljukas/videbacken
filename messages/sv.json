@@ -542,6 +542,7 @@
   "charging_solar_value_hint": "vad den hade gett vid försäljning",
   "charging_solar_value_label": "Värde av egen sol",
   "charging_solar_value_unknown": "Värde av egen sol: okänt, spotpris saknas",
+  "charging_solar_value_unknown_hint": "okänt, spotpris saknas",
   "charging_session_verdict_good": "Bra tajming",
   "charging_session_verdict_ok": "Okej tajming",
   "charging_session_verdict_poor": "Dyr tajming",
