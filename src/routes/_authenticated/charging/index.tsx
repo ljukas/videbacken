@@ -377,12 +377,7 @@ function ChargingPage() {
 
       {overview ? (
         <>
-          {costNotice ? (
-            <CostNotice
-              reason={costNotice}
-              onAddTariff={isAdmin ? () => open('tariffNew') : undefined}
-            />
-          ) : null}
+          {costNotice ? <CostNotice reason={costNotice} canAddTariff={isAdmin} /> : null}
           <section className="flex flex-col gap-2">
             <h2 className="sr-only">{m.charging_totals_heading()}</h2>
             <div
