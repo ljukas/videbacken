@@ -12,6 +12,8 @@ import { ChartFrame, TooltipRow } from './ChartFrame'
 import { formatCount, formatOneDecimal, formatSek, formatShare, monthLabel } from './format'
 import type { MetricOption } from './MetricToggle'
 import { minBarFor } from './minBar'
+import { formatSolarValue, type SolarValueView, solarValueView } from './solarValue'
+import { Unknown } from './Unknown'
 
 type Month = RouterOutputs['evCharging']['overview']['months'][number]
 type CostMonth = RouterOutputs['evCharging']['costOverview']['months'][number]
@@ -35,7 +37,9 @@ export function chartMetricOptions(): MetricOption<ChartMetric>[] {
 // stacks the spot price under markup + grid + tax, both incl VAT, with a
 // legend (touch can't hover) and the month's total in the tooltip. A month
 // whose energy has no price at all gets a muted stub labelled "Pris saknas" —
-// never an empty bar that reads as 0 kr; a partly priced one says so. The page
+// never an empty bar that reads as 0 kr; a partly priced one says so. The
+// tooltip adds the month's value of own solar under its total when there was
+// solar (ADR-0023), stub months included. The page
 // owns the metric (its <h2> names the chart and follows it); without cost
 // data it's always kWh.
 export function MonthlyChart({
@@ -133,6 +137,8 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
       totalSek: c.totalSek,
       // Partly priced, as the tiles say it: "minst …" plus the missing share of the charging.
       missingShare: c.fullKwh > 0 && !c.complete && missingKwh > 0 ? missingKwh / c.kwh : null,
+      // The value of own solar used, under the total (ADR-0023); hidden without solar.
+      solar: solarValueView(c),
     }
   })
   const hasUnpriced = months.some(unpriced)
@@ -152,11 +158,16 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
           content={
             <ChartTooltipContent
               formatter={(value, name, item) => {
+                const { totalSek, missingShare, solar } = item.payload
                 if (name === 'unpriced') {
-                  return <TooltipRow label={config.unpriced.label} color={config.unpriced.color} />
+                  return (
+                    <div className="flex w-full flex-col gap-0.5">
+                      <TooltipRow label={config.unpriced.label} color={config.unpriced.color} />
+                      <SolarTooltipRows view={solar} />
+                    </div>
+                  )
                 }
                 const series = config[name as 'spot' | 'fees']
-                const { totalSek, missingShare } = item.payload
                 const total = formatSek(totalSek)
                 return (
                   <div className="flex w-full flex-col gap-0.5">
@@ -173,6 +184,7 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
                             {m.charging_cost_partial_hint({ share: formatShare(missingShare) })}
                           </span>
                         )}
+                        <SolarTooltipRows view={solar} />
                       </>
                     ) : null}
                   </div>
@@ -215,6 +227,27 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
         ) : null}
       </BarChart>
     </ChartFrame>
+  )
+}
+
+// The month's value of own solar as tooltip rows: a label/value row and the
+// "what it would have earned" hint beneath it (a separate figure from the
+// total, so no swatch). Unknown is a dash with its reason for screen readers.
+function SolarTooltipRows({ view }: { view: SolarValueView }) {
+  if (view.kind === 'hidden') return null
+  return (
+    <div className="mt-1 flex flex-col gap-0.5 border-t pt-1">
+      <TooltipRow label={m.charging_solar_value_label()}>
+        {view.kind === 'unknown' ? (
+          <Unknown label={m.charging_solar_value_unknown()} />
+        ) : (
+          formatSolarValue(view)
+        )}
+      </TooltipRow>
+      {view.kind === 'unknown' ? null : (
+        <span className="text-muted-foreground text-xs">{m.charging_solar_value_hint()}</span>
+      )}
+    </div>
   )
 }
 

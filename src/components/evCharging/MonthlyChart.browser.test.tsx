@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
+import { formatSek } from './format'
 import { MetricToggle } from './MetricToggle'
 import { chartMetricOptions, MonthlyChart } from './MonthlyChart'
 
@@ -259,4 +260,116 @@ test('a month charged only from own solar is 0 kr, not "Pris saknas"', async () 
   )
   await expect.element(screen.getByText(m.charging_chart_series_spot()).first()).toBeVisible()
   expect(screen.getByText(m.charging_chart_no_price()).elements()).toHaveLength(0)
+})
+
+// Moves the pointer onto the index-th bar rectangle (DOM order: all spot bars, then all fees bars).
+const hoverBar = async (container: Element, index: number) => {
+  const rects = () => [...container.querySelectorAll('.recharts-bar-rectangle')]
+  await vi.waitFor(() => expect(rects().length).toBeGreaterThan(index))
+  const box = rects()[index].getBoundingClientRect()
+  rects()[index].dispatchEvent(
+    new MouseEvent('mousemove', {
+      bubbles: true,
+      clientX: box.x + box.width / 2,
+      clientY: box.y + box.height / 2,
+    }),
+  )
+}
+const tooltipText = () => document.querySelector('.recharts-tooltip-wrapper')?.textContent ?? ''
+const withSolar = (
+  solar: { solarPricedKwh: number; solarUnpricedKwh: number; solarValueSek: number },
+  base = costMonths,
+) => base.map((c) => (c.month === 6 ? { ...c, ...solar } : c))
+
+test('a month with solar shows its value in the tooltip, under the total', async () => {
+  const sunny = withSolar({ solarPricedKwh: 300, solarUnpricedKwh: 0, solarValueSek: 212 })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: sunny }} metric="sek" />
+    </div>,
+  )
+  await hoverBar(screen.container, 5) // June's spot bar
+  await vi.waitFor(() => {
+    expect(tooltipText()).toContain(m.charging_solar_value_label())
+    expect(tooltipText()).toContain(formatSek(212))
+    expect(tooltipText()).toContain(m.charging_solar_value_hint())
+  })
+  // The total comes first, then the solar value.
+  const text = tooltipText()
+  expect(text.indexOf(m.charging_chart_total())).toBeLessThan(
+    text.indexOf(m.charging_solar_value_label()),
+  )
+})
+
+test('a month without solar has no solar row', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: costMonths }} metric="sek" />
+    </div>,
+  )
+  await hoverBar(screen.container, 5)
+  await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_chart_total()))
+  expect(tooltipText()).not.toContain(m.charging_solar_value_label())
+})
+
+test('partly unpriced solar reads "minst" in the tooltip', async () => {
+  const partly = withSolar({ solarPricedKwh: 250, solarUnpricedKwh: 50, solarValueSek: 212 })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: partly }} metric="sek" />
+    </div>,
+  )
+  await hoverBar(screen.container, 5)
+  await vi.waitFor(() =>
+    expect(tooltipText()).toContain(m.charging_cost_min({ total: formatSek(212) })),
+  )
+})
+
+test('wholly unpriced solar is a dash with its reason, never 0 kr', async () => {
+  const none = withSolar({ solarPricedKwh: 0, solarUnpricedKwh: 300, solarValueSek: 0 })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: none }} metric="sek" />
+    </div>,
+  )
+  await hoverBar(screen.container, 5)
+  await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_solar_value_unknown()))
+  // Never a bare 0 kr of solar.
+  expect(tooltipText()).not.toContain(m.charging_solar_value_hint())
+})
+
+test('an unpriced stub month still shows its solar value', async () => {
+  // No tariff in force: the cash cost is a "Pris saknas" stub, but spot prices exist, so solar is valued.
+  const stubbed = costMonths.map((c) =>
+    c.month === 6
+      ? {
+          ...c,
+          fullKwh: 0,
+          noTariffKwh: c.kwh,
+          spotSek: 0,
+          feesSek: 0,
+          totalSek: 0,
+          avgOre: null,
+          complete: false,
+          solarPricedKwh: 300,
+          solarUnpricedKwh: 0,
+          solarValueSek: 212,
+        }
+      : c,
+  )
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: stubbed }} metric="sek" />
+    </div>,
+  )
+  // 11 priced months × (spot + fees) + 1 stub, last in DOM order: hover the stub.
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(23),
+  )
+  await hoverBar(screen.container, 22)
+  await vi.waitFor(() => {
+    expect(tooltipText()).toContain(m.charging_chart_no_price())
+    expect(tooltipText()).toContain(m.charging_solar_value_label())
+    expect(tooltipText()).toContain(formatSek(212))
+  })
 })
