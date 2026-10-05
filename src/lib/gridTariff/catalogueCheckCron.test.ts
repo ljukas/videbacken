@@ -18,12 +18,17 @@ vi.mock('./catalogueCheck', async (importOriginal) => {
 
 // This file has no setupDatabase(): stand the resolver in for env only (no
 // stored row), so the check reads GRID_FACILITY_ID without touching the DB.
-vi.mock('~/lib/credentials/resolve', () => ({
-  resolveCredentials: async () => ({
-    values: { facilityId: process.env.GRID_FACILITY_ID?.trim() || undefined },
-    fingerprint: 'f',
-  }),
-}))
+// The env read itself is the real one.
+vi.mock('~/lib/credentials/resolve', async () => {
+  const { envCredential } =
+    await vi.importActual<typeof import('~/lib/credentials/env')>('~/lib/credentials/env')
+  return {
+    resolveCredentials: async () => ({
+      values: { facilityId: envCredential('gridTariff', 'facilityId') },
+      fingerprint: 'f',
+    }),
+  }
+})
 
 import { handleCatalogueCheckCron } from './catalogueCheckCron'
 

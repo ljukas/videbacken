@@ -266,6 +266,23 @@ test('an unreadable stored ID is failed / credentials_unreadable: nothing fetche
   ])
 })
 
+test('a facility ID read that fails for another reason is rethrown and logged at error', async () => {
+  const { log, lines, checkLines } = capturingLogger()
+  const client = fakeClient({ entries: [covering], invalidEntries: 0 })
+  const dbDown = new Error('db down')
+  const facilityId = async (): Promise<string | undefined> => {
+    throw dbDown
+  }
+
+  await expect(runCatalogueCheck({ log, client, facilityId })).rejects.toBe(dbDown)
+  expect(client.calls).toBe(0)
+  expect(publish).not.toHaveBeenCalled()
+  expect(checkLines()).toEqual([
+    expect.objectContaining({ level: ERROR, outcome: 'error', error: expect.anything() }),
+  ])
+  expect(lines.join('')).not.toContain(FACILITY)
+})
+
 test('the default reads the stored ID over GRID_FACILITY_ID', async () => {
   await seedAdmins()
   vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', randomBytes(32).toString('base64'))

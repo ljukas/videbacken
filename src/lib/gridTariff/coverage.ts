@@ -3,8 +3,8 @@ import type { CatalogueEntry } from '~/lib/effects/eltariff'
 const METERING_POINT_ID = /^\d{18}$/
 
 /**
- * The facility's metering-point ID (anläggnings-ID) from `GRID_FACILITY_ID`, or
- * null when it is unset or not 18 digits. Fails closed: a malformed ID is never
+ * The facility's metering-point ID (anläggnings-ID), from the stored or env
+ * facility ID (ADR-0026), or null when it is unset or not 18 digits. Fails closed: a malformed ID is never
  * matched against the catalogue.
  */
 export function parseFacilityId(raw: string | undefined): string | null {

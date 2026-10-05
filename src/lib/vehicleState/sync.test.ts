@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { asc, desc, eq } from 'drizzle-orm'
 import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
+import * as credentialResolver from '~/lib/credentials/resolve'
 import { db } from '~/lib/db'
 import { evChargeSession, integrationSyncRun, user, vehicleStateSnapshot } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
@@ -179,6 +180,26 @@ test('an unreadable Škoda row turns the geofence off', async () => {
   const result = await runResolved()
   expect(result).toMatchObject({ outcome: 'ok', geofence: 'off' })
   expect((await snapshots()).map((r) => r.atHome)).toEqual([null])
+})
+
+test('a home-point resolve that fails for another reason is recorded as the run, not thrown before it', async () => {
+  vi.spyOn(credentialResolver, 'resolveCredentials').mockRejectedValue(new Error('db down'))
+  let calls = 0
+  const client = fakeSkoda(async () => {
+    calls++
+    return reading()
+  })
+  const { log, entries } = capturingLogger()
+  await expect(
+    runSkodaSync({ trigger: 'cron', now: () => NOW, deps: { skoda: client, log } }),
+  ).rejects.toThrow('db down')
+  expect(calls).toBe(0)
+  expect((await runRows())[0]).toMatchObject({ outcome: 'error', errorCode: 'internal_error' })
+  // One run, one log line: the cron handler doesn't log, it relies on this one.
+  expect(entries().filter((e) => e.msg === 'integration sync run')).toEqual([
+    expect.objectContaining({ source: 'skoda', outcome: 'error' }),
+  ])
+  expect(await snapshots()).toHaveLength(0)
 })
 
 test('missing parts log only their count at info, invalid parts at warn, a clean poll neither', async () => {
