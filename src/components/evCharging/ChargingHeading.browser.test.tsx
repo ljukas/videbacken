@@ -37,3 +37,12 @@ test('names the view when given a title', async () => {
     .element(screen.getByRole('heading', { level: 1, name: m.charging_patterns_title() }))
     .toBeVisible()
 })
+
+test('renders the live slot between the description and the sync time', async () => {
+  const { screen } = await renderWithProviders(
+    <ChargingHeading lastSuccessAt={null} live={<span>live-line</span>} />,
+  )
+  const live = screen.getByText('live-line').element()
+  const synced = screen.getByText(m.charging_never_synced()).element()
+  expect(live.compareDocumentPosition(synced) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})

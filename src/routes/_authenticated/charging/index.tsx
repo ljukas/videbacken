@@ -14,7 +14,7 @@ import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostN
 import { CredentialExpiryAlert } from '~/components/evCharging/CredentialExpiryAlert'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { healthPoll } from '~/components/evCharging/healthPoll'
-import { LiveStatusTile, useLiveStatus } from '~/components/evCharging/LiveStatusTile'
+import { LiveStatusLine, useLiveStatus } from '~/components/evCharging/LiveStatusLine'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import {
@@ -317,6 +317,7 @@ function ChargingPage() {
     <PageContainer>
       <ChargingHeading
         lastSuccessAt={health.lastSuccessAt}
+        live={<LiveStatusLine live={live} />}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
         }
@@ -349,8 +350,6 @@ function ChargingPage() {
       {isAdmin && skodaHealth?.state === 'ok' ? (
         <CredentialExpiryAlert expiry={skodaHealth.adminDetail?.credentialExpiry ?? null} />
       ) : null}
-
-      <LiveStatusTile live={live} />
 
       {/* The page filter: everything below it down to the sessions is scoped,
           and it stays when a scoped read fails, so the user can switch back. */}
