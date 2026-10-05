@@ -4,6 +4,7 @@ import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun } from '~/lib/db/schema'
 import type { Logger } from '~/lib/logger'
 import { setupDatabase } from '~test/setup'
+import { recordCredentialExpiry } from './credential'
 import {
   beginAttempt,
   getAllHealth,
@@ -436,4 +437,43 @@ test('getAllHealth includes adminDetail only when asked', async () => {
   for (const health of Object.values(member)) expect(health.adminDetail).toBeNull()
   for (const health of Object.values(admin))
     expect(health.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
+})
+
+test('getAllHealth gives each source its own row: state, progress and admin detail', async () => {
+  await db.insert(integrationSync).values({
+    source: 'zaptec',
+    updatedAt: T0,
+    lastAttemptAt: T0,
+    errorCode: 'unreachable',
+    consecutiveFailures: 1,
+    failingSince: T0,
+    lastErrorMessage: 'connect ECONNREFUSED',
+  })
+  const lease = await beginAttempt('skoda', { now: T0 })
+  if (!lease.acquired) throw new Error('expected the lease')
+  await reportProgress('skoda', lease.attemptId, { done: 3, total: 9 }, { now: at(1000) })
+  const expires = new Date(T0.getTime() + 10 * DAY_MS)
+  await recordCredentialExpiry('skoda', expires)
+
+  const admin = await getAllHealth({ now: at(2000), includeAdminDetail: true })
+  expect(admin.zaptec).toMatchObject({
+    code: 'unreachable',
+    consecutiveFailures: 1,
+    running: false,
+    progress: null,
+    adminDetail: { lastErrorMessage: 'connect ECONNREFUSED', credentialExpiry: null },
+  })
+  expect(admin.skoda).toMatchObject({
+    code: null,
+    running: true,
+    progress: { done: 3, total: 9 },
+    adminDetail: { lastErrorMessage: null, credentialExpiry: { expiresAt: expires } },
+  })
+  expect(admin.elpris.state).toBe('never_synced')
+  expect(admin.emaldo.state).toBe('never_synced')
+
+  const member = await getAllHealth({ now: at(2000), includeAdminDetail: false })
+  expect(member.zaptec.adminDetail).toBeNull()
+  expect(member.skoda.adminDetail).toBeNull()
+  expect(member.skoda.progress).toEqual({ done: 3, total: 9 })
 })

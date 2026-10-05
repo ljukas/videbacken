@@ -7,6 +7,7 @@ import {
   evChargeInterval,
   evCharger,
   evChargeSession,
+  integrationSync,
   user,
   vehicleChargeRecord,
 } from '~/lib/db/schema'
@@ -1028,4 +1029,23 @@ test('syncStatuses gives an admin each source’s own state and detail', async (
   expect(all.elpris).toMatchObject({ source: 'elpris', state: 'not_configured' })
   expect(all.zaptec).toMatchObject({ source: 'zaptec', state: 'never_synced' })
   expect(all.skoda.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
+})
+
+test('syncStatuses never shows a member a stored error message; an admin sees it', async () => {
+  await db.insert(integrationSync).values({
+    source: 'zaptec',
+    updatedAt: new Date(),
+    lastAttemptAt: new Date(),
+    errorCode: 'unreachable',
+    consecutiveFailures: 1,
+    failingSince: new Date(),
+    lastErrorMessage: 'connect ECONNREFUSED',
+  })
+  await signIn('user')
+  const member = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(member.zaptec.code).toBe('unreachable')
+  expect(member.zaptec.adminDetail).toBeNull()
+  await signIn('admin')
+  const admin = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(admin.zaptec.adminDetail?.lastErrorMessage).toBe('connect ECONNREFUSED')
 })
