@@ -38,7 +38,7 @@ const TARIFF = {
   updatedAt: new Date('2026-01-01T00:00:00Z'),
 }
 
-function seed(qc: QueryClient, opts: { coverage?: boolean } = {}) {
+function seed(qc: QueryClient, opts: { coverage?: boolean; adminReads?: boolean } = {}) {
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF] as never)
   qc.setQueryData(orpc.evCharging.syncStatus.queryOptions().queryKey, health('zaptec'))
   for (const source of ['elpris', 'skoda', 'emaldo'] as const) {
@@ -51,15 +51,16 @@ function seed(qc: QueryClient, opts: { coverage?: boolean } = {}) {
       [],
     )
   }
-  qc.setQueryData(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey, [])
+  if (opts.adminReads !== false)
+    qc.setQueryData(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey, [])
   qc.setQueryData(orpc.evCharging.vehicleStateLatest.queryOptions().queryKey, null)
-  if (opts.coverage !== false)
+  if (opts.coverage !== false && opts.adminReads !== false)
     qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
 }
 
 async function renderSettings(
   search: string,
-  opts: { role?: 'admin' | 'user'; coverage?: boolean } = {},
+  opts: { role?: 'admin' | 'user'; coverage?: boolean; adminReads?: boolean } = {},
 ) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
@@ -113,8 +114,15 @@ test('an admin gets the heading, the Datakällor panel and the tariff card, in t
 })
 
 test('a household member is redirected to the overview, with no settings UI', async () => {
-  const { screen, router } = await renderSettings('', { role: 'user' })
+  // The admin-only reads are left unseeded, so a fired read would leave a cache entry.
+  const { screen, router, qc } = await renderSettings('', { role: 'user', adminReads: false })
   await expect.element(screen.getByText('overview stub')).toBeVisible()
+  expect(
+    qc.getQueryState(orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey),
+  ).toBeUndefined()
+  expect(
+    qc.getQueryState(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey),
+  ).toBeUndefined()
   expect(router.state.location.pathname).toBe('/charging')
   expect(screen.getByRole('heading', sourcesHeading).elements()).toHaveLength(0)
 })

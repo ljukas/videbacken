@@ -280,7 +280,7 @@ test('no settings link for a member, or without the prop', async () => {
   )
   await expect.element(member.screen.getByRole('alert')).toBeVisible()
   expect(member.screen.getByRole('link').elements()).toHaveLength(0)
-  member.screen.unmount()
+  await member.screen.unmount()
   const noProp = await renderWithRouter(
     <SyncHealthAlert health={failing} isAdmin onRetry={() => {}} retrying={false} />,
   )
