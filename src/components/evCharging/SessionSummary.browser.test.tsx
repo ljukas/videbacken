@@ -537,6 +537,23 @@ describe('value of own solar', () => {
     expect(line.element().textContent).toContain(`(${m.charging_sessions_cost_estimated()})`)
   })
 
+  test('an estimated session with partly unpriced solar says "minst", not "≈ minst"', async () => {
+    const { screen } = await render(
+      withSolar(
+        { solarPricedKwh: 4, solarUnpricedKwh: 2, solarValueSek: 4.62 },
+        { estimated: true },
+      ),
+    )
+    await expect
+      .element(
+        screen.getByText(
+          m.charging_solar_value({ value: m.charging_cost_min({ total: formatSek(4.62, 2) }) }),
+          { exact: true },
+        ),
+      )
+      .toBeVisible()
+  })
+
   test('solar with no spot price at all reads "okänt"', async () => {
     const { screen } = await render(
       withSolar({ solarPricedKwh: 0, solarUnpricedKwh: 6, solarValueSek: 0 }),

@@ -152,7 +152,7 @@ function Hero({ session, economy, cost }: Pick<Detail, 'session' | 'economy' | '
           {m.charging_session_kwh_unit_price({ price: formatKronor(cost.avgOre / 100, 2) })}
         </span>
       ) : null}
-      {/* The value of own solar used: a separate figure, never part of the cost (ADR-0023). */}
+      {/* The value of own solar used: a note on the cost, never added to it (ADR-0023). */}
       <SolarValueLine cost={cost} fractionDigits={2} estimated={session.estimated} />
     </div>
   )

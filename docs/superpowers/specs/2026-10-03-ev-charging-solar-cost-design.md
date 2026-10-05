@@ -293,7 +293,7 @@ page (to the öre). Display rules (`src/components/evCharging/solarValue.ts`):
 - Some solar without a spot price → "minst …"; none priced → "Värde av egen sol: okänt, spotpris saknas". Never 0 kr.
   Unpriced solar under 1e-6 kWh is float noise and doesn't make it "minst".
 - A negative spot gives a negative value ("−3 kr": exporting would have cost money), "minst −3 kr" as a floor.
-- An estimated session marks it "≈", like its cost.
+- An estimated session marks it "≈", like its cost, unless it's a "minst" floor (already a hedge).
 - It shows even where the cash cost is unknown ("—", a "Pris saknas" stub month): the value needs only spot prices.
 - Set as a note, not a price: small muted text with a sun on the tiles and the session page. In the tooltip it sits
   below a hairline, without a swatch, with a hint saying what it means, or why it's unknown (the tooltip ignores the
