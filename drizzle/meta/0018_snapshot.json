@@ -1,5 +1,5 @@
 {
-  "id": "08fef512-46cb-455c-9d7a-8aefc3776619",
+  "id": "bd602ef7-cb3b-4759-b4e4-b52d24630aa1",
   "prevId": "eba5cc18-b739-4fd0-8146-3938138d39fd",
   "version": "7",
   "dialect": "postgresql",
@@ -1485,7 +1485,11 @@
         },
         "integration_credential_ciphertext_check": {
           "name": "integration_credential_ciphertext_check",
-          "value": "\"integration_credential\".\"ciphertext\" LIKE 'v1.%'"
+          "value": "\"integration_credential\".\"ciphertext\" ~ '^v[1-9][0-9]*[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+$'"
+        },
+        "integration_credential_ciphertext_length_check": {
+          "name": "integration_credential_ciphertext_length_check",
+          "value": "char_length(\"integration_credential\".\"ciphertext\") <= 16384"
         },
         "integration_credential_fields_set_check": {
           "name": "integration_credential_fields_set_check",

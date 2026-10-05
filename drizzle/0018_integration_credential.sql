@@ -5,7 +5,8 @@ CREATE TABLE "integration_credential" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_by" uuid,
 	CONSTRAINT "integration_credential_source_check" CHECK ("integration_credential"."source" IN ('zaptec', 'skoda', 'emaldo', 'gridTariff')),
-	CONSTRAINT "integration_credential_ciphertext_check" CHECK ("integration_credential"."ciphertext" LIKE 'v1.%'),
+	CONSTRAINT "integration_credential_ciphertext_check" CHECK ("integration_credential"."ciphertext" ~ '^v[1-9][0-9]*[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+$'),
+	CONSTRAINT "integration_credential_ciphertext_length_check" CHECK (char_length("integration_credential"."ciphertext") <= 16384),
 	CONSTRAINT "integration_credential_fields_set_check" CHECK (cardinality("integration_credential"."fields_set") > 0)
 );
 --> statement-breakpoint

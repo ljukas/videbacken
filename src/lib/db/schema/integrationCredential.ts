@@ -11,7 +11,8 @@ export const integrationCredential = pgTable(
   'integration_credential',
   {
     source: text('source').primaryKey(),
-    // `v1.<iv>.<tag>.<ciphertext>`, base64url parts; the version prefix leaves room for key rotation.
+    // Any `v<N>.` envelope of three base64url parts (`v1.<iv>.<tag>.<ciphertext>`); the version
+    // prefix leaves room for key rotation without a schema change.
     ciphertext: text('ciphertext').notNull(),
     fieldsSet: text('fields_set').array().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -25,7 +26,14 @@ export const integrationCredential = pgTable(
       'integration_credential_source_check',
       sql`${table.source} IN (${sqlList(CREDENTIAL_SOURCES)})`,
     ),
-    check('integration_credential_ciphertext_check', sql`${table.ciphertext} LIKE 'v1.%'`),
+    check(
+      'integration_credential_ciphertext_check',
+      sql`${table.ciphertext} ~ '^v[1-9][0-9]*[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+$'`,
+    ),
+    check(
+      'integration_credential_ciphertext_length_check',
+      sql`char_length(${table.ciphertext}) <= 16384`,
+    ),
     check('integration_credential_fields_set_check', sql`cardinality(${table.fieldsSet}) > 0`),
   ],
 ).enableRLS()
