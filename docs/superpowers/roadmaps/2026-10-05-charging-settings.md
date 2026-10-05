@@ -1,7 +1,7 @@
 # Roadmap — charging settings (sources, tariffs, credentials)
 
 Control document for building [the charging settings design](../specs/2026-10-05-charging-settings-design.md)
-([ADR-0024](../../adr/0024-integration-credential-store.md)). **One step = one session = one PR.** Each step has
+([ADR-0025](../../adr/0025-integration-credential-store.md)). **One step = one session = one PR.** Each step has
 its own self-contained plan, written when the step starts: the previous step's merge changes the files the next one
 edits. A step starts only when the previous step's checkpoint has passed.
 
@@ -23,7 +23,7 @@ Status values: `not started` → `in progress` → `PR open` → `merged` → `c
 
 ## How a session runs a step
 
-1. Read this roadmap, the spec and ADR-0024. Find the first step whose status isn't `checkpoint passed`.
+1. Read this roadmap, the spec and ADR-0025. Find the first step whose status isn't `checkpoint passed`.
    - If it is `merged` but its checkpoint hasn't passed, **run the checkpoint, don't start the next step**. Record
      the result here.
 2. Write (or open) that step's plan from the spec. Its first task checks that `main` still matches the spec's
@@ -32,7 +32,7 @@ Status values: `not started` → `in progress` → `PR open` → `merged` → `c
 4. In the same PR, update this roadmap's row: PR link and status `PR open`; after merge, `merged`.
 5. Stop at the end of the step.
 
-If a step changes a design decision, amend the spec and ADR-0024 in that step's PR.
+If a step changes a design decision, amend the spec and ADR-0025 in that step's PR.
 
 ## Checkpoints (real-world gates)
 

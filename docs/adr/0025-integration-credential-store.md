@@ -1,4 +1,4 @@
-# ADR 0024 — Integration Credential Store
+# ADR 0025 — Integration Credential Store
 
 - **Status**: Accepted
 - **Date**: 2026-10-05

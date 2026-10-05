@@ -308,5 +308,5 @@ changes hue (chart-1 is orange in light, blue in dark).
 The charging section gets a fourth sub-item, "Inställningar" (`/charging/settings`, admin-only), because it is a
 peer destination holding the data sources and tariffs, not an in-page subpage of one view. The `Collapsible`
 revisit from the 2026-09-30 amendment is consciously deferred while the section stays at four items; members
-still see three. See [ADR-0024](0024-integration-credential-store.md) and the
+still see three. See [ADR-0025](0025-integration-credential-store.md) and the
 [charging settings design](../superpowers/specs/2026-10-05-charging-settings-design.md).

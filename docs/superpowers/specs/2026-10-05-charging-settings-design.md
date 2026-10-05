@@ -1,6 +1,6 @@
 # Charging settings — sources, tariffs and credentials — design
 
-Status: agreed 2026-10-05. Decision record: [ADR-0024](../../adr/0024-integration-credential-store.md).
+Status: agreed 2026-10-05. Decision record: [ADR-0025](../../adr/0025-integration-credential-store.md).
 Roadmap: [charging settings](../roadmaps/2026-10-05-charging-settings.md). Builds on:
 - [ADR-0019](../../adr/0019-external-data-integrations.md): pulled sync, fail closed, health.
 - [ADR-0013](../../adr/0013-form-presentation-and-dialog-architecture.md): URL dialog state.
@@ -30,7 +30,7 @@ The page is a pure *settings and status* page for the connected sources and thei
 | Question | Decision |
 |---|---|
 | Who sees the page | **Admins only.** The tariff table moves there too. Members still see the resulting costs. |
-| Where GUI-set credentials live | **Encrypted rows in our Postgres** (AES-256-GCM, dedicated `CREDENTIALS_ENCRYPTION_KEY`). Stored values win over env, field by field; env stays the fallback. See ADR-0024. |
+| Where GUI-set credentials live | **Encrypted rows in our Postgres** (AES-256-GCM, dedicated `CREDENTIALS_ENCRYPTION_KEY`). Stored values win over env, field by field; env stays the fallback. See ADR-0025. |
 | What saving does | **Save, then run that source's sync once.** The tile's health shows the result. No separate "test" path. |
 | Removing | **"Ta bort sparade uppgifter"** clears the stored row: env applies again (or `not_configured`), then a sync runs. |
 | Slicing | Three steps, one PR each: **move → store → UI** (see the roadmap). |
@@ -47,7 +47,7 @@ The page is a pure *settings and status* page for the connected sources and thei
 - Copy, email, runbook, ADR and `.env.example` updates.
 
 **Out**
-- **Testing credentials before saving** (ADR-0024 alternatives).
+- **Testing credentials before saving** (ADR-0025 alternatives).
 - **Key rotation tooling.** The envelope is versioned (`v1.`) so it can be added later.
 - **Other settings:** non-credential settings (cadences, zone, tariff defaults) and settings for other app areas
   (sensors).
@@ -295,7 +295,7 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
 - **Config docs:**
   - `.env.example` adds `CREDENTIALS_ENCRYPTION_KEY` and notes the GUI override.
   - The CLAUDE.md env list and code map are updated.
-  - ADR-0019 gets a short pointer to ADR-0024.
+  - ADR-0019 gets a short pointer to ADR-0025.
 
 ### Tests
 - **Browser, `CredentialsDialog`:**

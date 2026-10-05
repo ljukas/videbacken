@@ -144,6 +144,7 @@ drizzle/, compose.yaml, vite.config.ts (Nitro: plugins, region, crons, queue tri
 | Live vehicle-state attribution (Škoda poll, majority of known time, geofence) | **0022** |
 | Solar-aware charging cost (Emaldo energy mix, battery pool, cash + solar value) | **0023** |
 | House energy pages (on-read monthly aggregates, loss + self-sufficiency definitions) | **0024** |
+| Integration credential store (GUI-set, encrypted in Postgres, per-field over env; charging settings page) | **0025** |
 
 ---
 
