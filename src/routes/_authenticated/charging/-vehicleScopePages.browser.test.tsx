@@ -276,6 +276,9 @@ test('Översikt: a failed overview read shows the alert and the toggle; Alla giv
   await expect
     .element(screen.getByRole('alert'))
     .toHaveTextContent(m.charging_overview_error_title())
+  expect(
+    screen.getByRole('radiogroup', { name: m.charging_vehicle_scope_label() }).elements(),
+  ).toHaveLength(1)
   await expect
     .element(radio(screen, m.charging_vehicle_scope_other()))
     .toHaveAttribute('aria-checked', 'true')
@@ -580,4 +583,38 @@ test('Ekonomi: no lead without sessions or when the read fails; the scope toggle
   expect(
     failed.screen.getByText(m.charging_economy_grid_only_heading(), { exact: false }).elements(),
   ).toHaveLength(0)
+})
+
+// --- Översikt: the scope is a page filter --------------------------------------
+
+/** a precedes b in document order */
+const precedes = (a: Element, b: Element) =>
+  (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+
+test('Översikt: the scope filter sits above the totals; the sessions above the tariff card', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', seedEmptyOverview)
+  const scope = screen.getByRole('radiogroup', { name: m.charging_vehicle_scope_label() })
+  await expect.element(scope).toBeVisible()
+  const scopeEl = scope.element()
+  const totals = screen.getByRole('heading', { name: m.charging_totals_heading() }).element()
+  const chartTitle = screen.getByRole('heading', { name: m.charging_chart_title() }).element()
+  const sessions = screen.getByRole('heading', { name: m.charging_sessions_heading() }).element()
+  const tariff = screen.getByRole('heading', { name: m.charging_tariff_title() }).element()
+  expect(precedes(scopeEl, totals)).toBe(true)
+  expect(precedes(chartTitle, sessions)).toBe(true)
+  expect(precedes(sessions, tariff)).toBe(true)
+  // The chart's toolbar holds only chart controls.
+  expect(chartTitle.closest('section')?.contains(scopeEl)).toBe(false)
+})
+
+test('Översikt: Vår bil from a clean URL is checked and written to the URL', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedEmptyOverview(qc)
+    seedOverview(qc, 'ours', [])
+  })
+  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .toHaveAttribute('aria-checked', 'true')
+  expect(router.state.location.search).toMatchObject({ vehicle: 'ours' })
 })

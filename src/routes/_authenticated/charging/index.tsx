@@ -32,7 +32,7 @@ import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
 import { VehicleLogCard } from '~/components/evCharging/VehicleLogCard'
-import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
+import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
@@ -316,7 +316,6 @@ function ChargingPage() {
   return (
     <PageContainer>
       <ChargingHeading
-        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -352,6 +351,10 @@ function ChargingPage() {
       ) : null}
 
       <LiveStatusTile live={live} />
+
+      {/* The page filter: everything below it down to the sessions is scoped,
+          and it stays when a scoped read fails, so the user can switch back. */}
+      <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
 
       {overview ? (
         <>
@@ -391,7 +394,6 @@ function ChargingPage() {
                     aria-label={m.charging_chart_metric_label()}
                   />
                 ) : null}
-                <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
                 <YearSelector years={overview.years} value={overview.year} onChange={setYear} />
               </div>
             </div>
@@ -416,41 +418,8 @@ function ChargingPage() {
           ) : null}
         </>
       ) : (
-        <>
-          {/* The scope stays switchable when its read fails, or the user can't switch back. */}
-          <div className="flex justify-end">
-            <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
-          </div>
-          <LoadErrorAlert title={m.charging_overview_error_title()} query={overviewResult} />
-        </>
+        <LoadErrorAlert title={m.charging_overview_error_title()} query={overviewResult} />
       )}
-
-      <TariffCard
-        tariffs={tariffs}
-        admin={
-          isAdmin
-            ? {
-                onNew: () => open('tariffNew'),
-                onEdit: (id) => open('tariffEdit', { tariffId: id }),
-                onDelete: (id) => open('tariffDelete', { tariffId: id }),
-              }
-            : undefined
-        }
-      />
-
-      {isAdmin ? (
-        <VehicleLogCard
-          // Prefetched by the loader; a failed read shows an error, never "none imported".
-          coverage={vehicleCoverage.data}
-          loadError={vehicleCoverage}
-          onImport={() => open('vehicleImport')}
-          live={vehicleLatest.data}
-          liveLoadError={vehicleLatest}
-          onSyncLive={() => syncNow.syncSource('skoda')}
-          syncingLive={syncNow.isPendingFor('skoda')}
-          keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
-        />
-      ) : null}
 
       <section className="flex flex-col gap-2">
         <h2 className="font-medium text-sm">{m.charging_sessions_heading()}</h2>
@@ -481,6 +450,33 @@ function ChargingPage() {
           />
         ) : null}
       </section>
+
+      <TariffCard
+        tariffs={tariffs}
+        admin={
+          isAdmin
+            ? {
+                onNew: () => open('tariffNew'),
+                onEdit: (id) => open('tariffEdit', { tariffId: id }),
+                onDelete: (id) => open('tariffDelete', { tariffId: id }),
+              }
+            : undefined
+        }
+      />
+
+      {isAdmin ? (
+        <VehicleLogCard
+          // Prefetched by the loader; a failed read shows an error, never "none imported".
+          coverage={vehicleCoverage.data}
+          loadError={vehicleCoverage}
+          onImport={() => open('vehicleImport')}
+          live={vehicleLatest.data}
+          liveLoadError={vehicleLatest}
+          onSyncLive={() => syncNow.syncSource('skoda')}
+          syncingLive={syncNow.isPendingFor('skoda')}
+          keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
+        />
+      ) : null}
 
       {/* Every data source's state, sync and history. Emaldo's state lives only
           here, not as an alert up top: nothing on the page uses the house data

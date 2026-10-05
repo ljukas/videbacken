@@ -13,7 +13,7 @@ import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAle
 import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
-import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
+import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
@@ -32,7 +32,7 @@ import { seo } from '~/utils/seo'
 
 const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
-  // Whose charging: a clean URL means our car.
+  // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
 })
 
@@ -104,7 +104,6 @@ function EconomyPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_economy_title()}
-        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -133,7 +132,7 @@ function EconomyPage() {
         {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
           <EconomyGridOnlyLead year={economy.year} vehicle={search.vehicle} />
         ) : null}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-between gap-2">
           <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
           {economy && !loadFailed(result) ? (
             <YearSelector years={economy.years} value={economy.year} onChange={setYear} />

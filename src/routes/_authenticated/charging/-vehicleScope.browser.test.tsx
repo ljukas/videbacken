@@ -28,6 +28,7 @@ test.each(routes)('%s: a junk ?vehicle= falls back to the default', (_name, rout
   const validate = validator(route)
   expect(validate({ vehicle: 'neighbour' }).vehicle).toBeUndefined()
   expect(validate({ vehicle: 'other' }).vehicle).toBe('other')
+  expect(validate({ vehicle: 'ours' }).vehicle).toBe('ours')
   expect(validate({}).vehicle).toBeUndefined()
 })
 

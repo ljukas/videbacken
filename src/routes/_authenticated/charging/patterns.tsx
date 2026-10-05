@@ -18,7 +18,7 @@ import {
 import { SessionTimeline } from '~/components/evCharging/SessionTimeline'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
-import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
+import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
@@ -41,7 +41,7 @@ const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
   metric: z.enum(['kwh', 'plugged']).optional().catch(undefined),
   month: z.number().int().min(1).max(12).optional().catch(undefined),
-  // Whose charging: a clean URL means our car.
+  // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
 })
 
@@ -138,7 +138,6 @@ function PatternsPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_patterns_title()}
-        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -153,7 +152,7 @@ function PatternsPage() {
 
       {/* Outside the load branches: a failed read for one scope must not take
           the control away, or the user can't switch back. */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <VehicleScopeToggle
           value={vehicle}
           // A scope change clears the month, like a year change does.

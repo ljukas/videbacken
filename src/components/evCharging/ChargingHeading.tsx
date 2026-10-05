@@ -11,13 +11,10 @@ export function ChargingHeading({
   title = m.charging_title(),
   lastSuccessAt,
   action,
-  note,
 }: {
   title?: string
   lastSuccessAt: Date | null
   action?: React.ReactNode
-  /** A state line under the description, e.g. which vehicles the page covers; '' keeps its space. */
-  note?: string
 }) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -27,13 +24,6 @@ export function ChargingHeading({
           {m.charging_description()}{' '}
           {m.charging_noise_note({ threshold: formatThreshold(NOISE_THRESHOLD_KWH) })}
         </p>
-        {/* Always mounted once a page passes a note (empty for "all"), so the
-            layout doesn't shift and a screen reader hears the scope change. */}
-        {note !== undefined ? (
-          <p aria-live="polite" className="min-h-4 text-muted-foreground text-xs">
-            {note}
-          </p>
-        ) : null}
         {/* The relative time is measured against `new Date()`, which differs
             slightly between SSR and hydration — a benign mismatch, suppressed
             the same way as CurrentReadingTiles' "last seen". */}

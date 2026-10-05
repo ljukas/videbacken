@@ -1,9 +1,27 @@
 import { expect, test, vi } from 'vitest'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
-import { scopeNote, VehicleScopeToggle } from './VehicleScopeToggle'
+import { VehicleScopeToggle } from './VehicleScopeToggle'
 
-test('shows the three scopes and reports a change', async () => {
+test('a visible label names the group, and Alla comes first', async () => {
+  const { screen } = await renderWithProviders(
+    <VehicleScopeToggle value="all" onChange={vi.fn()} />,
+  )
+  await expect.element(screen.getByText(m.charging_vehicle_scope_label())).toBeVisible()
+  const group = screen.getByRole('radiogroup', { name: m.charging_vehicle_scope_label() })
+  await expect.element(group).toBeVisible()
+  const names = group
+    .getByRole('radio')
+    .elements()
+    .map((el) => el.textContent)
+  expect(names).toEqual([
+    m.charging_vehicle_scope_all(),
+    m.charging_vehicle_scope_ours(),
+    m.charging_vehicle_scope_other(),
+  ])
+})
+
+test('shows the active scope and reports a change', async () => {
   const onChange = vi.fn()
   const { screen } = await renderWithProviders(
     <VehicleScopeToggle value="ours" onChange={onChange} />,
@@ -11,9 +29,6 @@ test('shows the three scopes and reports a change', async () => {
   await expect
     .element(screen.getByRole('radio', { name: m.charging_vehicle_scope_ours() }))
     .toHaveAttribute('aria-checked', 'true')
-  await expect
-    .element(screen.getByRole('radio', { name: m.charging_vehicle_scope_all() }))
-    .toBeVisible()
   await screen.getByRole('radio', { name: m.charging_vehicle_scope_other() }).click()
   expect(onChange).toHaveBeenCalledWith('other')
 })
@@ -25,10 +40,4 @@ test('re-pressing the active scope does not deselect it', async () => {
   )
   await screen.getByRole('radio', { name: m.charging_vehicle_scope_all() }).click()
   expect(onChange).not.toHaveBeenCalled()
-})
-
-test('scopeNote names the filtered scopes and stays silent for all', () => {
-  expect(scopeNote('ours')).toBe(m.charging_vehicle_note_ours())
-  expect(scopeNote('other')).toBe(m.charging_vehicle_note_other())
-  expect(scopeNote('all')).toBeUndefined()
 })
