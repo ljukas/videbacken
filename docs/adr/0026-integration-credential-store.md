@@ -133,9 +133,10 @@ has the same corrections inline.
 
 **Adapters** (`src/lib/effects/keyedAdapter.ts`):
 - `keyedAdapter` replaces `lazy()` for Zaptec, Škoda and Emaldo.
-- Its cache holds one entry. A resolve still in flight from before a save can finish last and overwrite the newer
-  entry, costing one extra client rebuild (for Emaldo, one extra login) at a credential change; the next call
-  settles it. Accepted.
+- Its cache holds one entry. A resolve still in flight from before a save can finish last. That one call then uses
+  the just-superseded credentials: one more vendor call with a revoked secret (for Emaldo, a refused login that
+  sets the stale client's `loginBlock`). Its client also overwrites the newer entry, costing one extra rebuild
+  (for Emaldo, one extra login). The next call resolves the new values and settles it. Accepted.
 - Under VITEST it returns not-configured before it imports the resolver. The import is dynamic, which keeps `db` out
   of the facades' module graph.
 - Decrypting fails with a plain `CredentialsUnreadableError` (crypto layer). `keyedAdapter` maps it to the source's

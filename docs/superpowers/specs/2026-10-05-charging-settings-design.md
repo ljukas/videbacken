@@ -226,9 +226,10 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
   4. Otherwise build a new client through the existing `select*Adapter`. The selector now takes the resolved values
      instead of `process.env`; Zaptec's `ZAPTEC_ADAPTER=fake` and the production guard still read env.
 
-  The cache holds one entry. A resolve still in flight from before a save can finish last and overwrite the newer
-  entry, costing one extra client rebuild (for Emaldo, one extra login) at a credential change; the next call
-  settles it. Accepted.
+  The cache holds one entry. A resolve still in flight from before a save can finish last. That one call then uses
+  the just-superseded credentials: one more vendor call with a revoked secret (for Emaldo, a refused login that
+  sets the stale client's `loginBlock`). Its client also overwrites the newer entry, costing one extra rebuild
+  (for Emaldo, one extra login). The next call resolves the new values and settles it. Accepted.
 - **`CredentialsUnreadableError`** is a plain error from the crypto layer. `keyedAdapter` maps it to the source's
   own `IntegrationError` subclass with code `credentials_unreadable`; otherwise `runPulledSync` would record
   `internal_error` and rethrow. The run fails closed and is health-tracked.

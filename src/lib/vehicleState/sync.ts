@@ -30,7 +30,7 @@ export type SkodaSyncRun = RunBase & {
   retries: number
   /** The poll was written to vehicle_state_snapshot. */
   stored: boolean
-  /** Whether a valid home point was configured for this run. */
+  /** Whether a valid home point was resolved for this run ('off' until execute resolves it). */
   geofence: 'on' | 'off'
   missingParts: number
   invalidParts: number

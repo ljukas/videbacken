@@ -195,9 +195,10 @@ export const evChargingRouter = {
     // `zaptecRequests`/`zaptecRetries` its attempts started. The remainder
     // `zaptecLiveMs − auth − fetch` is waiting: on another caller's shared
     // login, on a login still in flight when the budget expired (then auth 0,
-    // requests 1, `zaptecLiveFailed` 1), on retry backoff, or on the adapter's
-    // lazy import. `zaptecRequests` 0 means no HTTP at all: answered from the
-    // client's state cache, or — with `zaptecLiveFailed` 1 — its failure cache.
+    // requests 1, `zaptecLiveFailed` 1), on retry backoff, on the adapter's
+    // lazy import, or on the credential resolve (a cached DB read).
+    // `zaptecRequests` 0 means no HTTP at all: answered from the client's
+    // state cache, or — with `zaptecLiveFailed` 1 — its failure cache.
     const stats = newCallStats()
     const liveStart = performance.now()
     try {

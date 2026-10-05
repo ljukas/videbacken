@@ -8,7 +8,10 @@ import type { LatLon } from '~/lib/effects/skoda'
 export const HOME_RADIUS_M = 150
 const EARTH_RADIUS_M = 6_371_000
 
-/** `SKODA_HOME_COORDINATES` ("lat,lon", decimal degrees) → a point, or null when unset/invalid. */
+/**
+ * The home point ("lat,lon", decimal degrees): the stored `homeCoordinates`, else
+ * `SKODA_HOME_COORDINATES` (ADR-0026). Null when unset/invalid.
+ */
 export function parseHomePoint(raw: string | undefined): LatLon | null {
   const parts = raw?.split(',').map((p) => p.trim())
   if (parts?.length !== 2 || parts.some((p) => p === '')) return null

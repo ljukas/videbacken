@@ -16,7 +16,11 @@ import { envCredential } from './env'
 
 export type ResolvedCredentials<S extends CredentialSource> = {
   values: CredentialValues<S>
-  /** sha256 hex over the effective values; changes exactly when a value does, reveals none. */
+  /**
+   * sha256 hex over the effective values; changes exactly when a value does. An
+   * unsalted hash of low-entropy values, so an in-memory cache key only: never
+   * log it, return it outside effects, or put it in an error.
+   */
   fingerprint: string
 }
 

@@ -53,8 +53,10 @@ export function keyedAdapter<S extends CredentialSource, T>(opts: {
     // Checked and set with no await in between, so concurrent callers share one build.
     if (cached?.fingerprint === resolved.fingerprint) return cached.client
     const entry = { fingerprint: resolved.fingerprint, client: opts.build(resolved.values) }
-    // Known race (accepted): a resolve begun before a save can land last and replace the newer entry,
-    // costing one extra rebuild (for Emaldo one extra login); the next call settles it.
+    // Known race (accepted): a resolve begun before a save can land last. That one call then uses the
+    // just-superseded credentials (one more vendor call with a revoked secret, e.g. a refused Emaldo
+    // login that sets the stale client's loginBlock) and replaces the newer entry, costing one extra
+    // rebuild (for Emaldo one extra login). The next call resolves the new values and settles it.
     cached = entry
     // A failed build must not stick: drop it, unless a newer entry already replaced it.
     entry.client.catch(() => {
