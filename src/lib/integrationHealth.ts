@@ -15,6 +15,7 @@ export const INTEGRATION_ERROR_CODES = [
   'unreachable',
   'unexpected_response',
   'not_configured',
+  'credentials_unreadable',
   'internal_error',
 ] as const
 export type IntegrationErrorCode = (typeof INTEGRATION_ERROR_CODES)[number]

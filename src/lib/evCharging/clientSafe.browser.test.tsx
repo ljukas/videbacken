@@ -16,6 +16,12 @@ test('the integration-health vocabulary is importable client-side', async () => 
   expect(mod.INTEGRATION_SOURCES).toContain('zaptec')
 })
 
+test('the credential vocabulary is importable client-side', async () => {
+  const mod = await import('~/lib/integrationCredentials')
+  expect(mod.CREDENTIAL_SOURCES).toContain('zaptec')
+  expect(mod.credentialFieldKind('skoda', 'vin')).toBe('text')
+})
+
 test('the integration-health copy is importable client-side', async () => {
   const mod = await import('~/lib/integrationHealthMessage')
   expect(typeof mod.integrationErrorMessage).toBe('function')

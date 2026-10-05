@@ -70,6 +70,8 @@ export function integrationErrorMessage(
         : m.integration_health_error_unexpected_response({ source }, opts)
     case 'not_configured':
       return m.integration_health_error_not_configured({ source }, opts)
+    case 'credentials_unreadable':
+      return m.integration_health_error_credentials_unreadable({ source }, opts)
     case 'internal_error':
       return m.integration_health_error_internal_error({}, opts)
   }

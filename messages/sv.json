@@ -303,6 +303,7 @@
   "integration_health_error_auth_failed": "Inloggningen mot {source} fungerar inte längre. En admin behöver uppdatera inloggningsuppgifterna.",
   "integration_health_error_auth_failed_skoda": "Škoda-nyckeln fungerar inte längre (har den gått ut?). En admin behöver skapa en ny i MyŠkoda-appen.",
   "integration_health_error_auth_failed_emaldo": "Emaldo nekade inloggningen. Kontrollera Emaldo-kontots inloggningsuppgifter – eller så har Emaldo-appens nyckel bytts ut. En admin behöver undersöka det.",
+  "integration_health_error_credentials_unreadable": "De sparade inloggningsuppgifterna för {source} går inte att läsa – krypteringsnyckeln saknas eller har bytts. En admin behöver fylla i dem igen under Laddning → Inställningar.",
   "integration_health_error_forbidden": "{source} nekar åtkomst. En admin behöver kontrollera behörigheterna.",
   "integration_health_error_internal_error": "Ett internt fel inträffade under synkningen. En admin behöver undersöka loggarna.",
   "integration_health_error_not_configured": "Anslutningen till {source} är inte konfigurerad i den här installationen.",
