@@ -49,6 +49,9 @@ function seriesConfig(): Record<SeriesKey, { label: string; color: string }> {
   }
 }
 
+const seriesOrder = (metric: EnergyMetric) => (item: { dataKey?: unknown }) =>
+  METRIC_SERIES[metric].indexOf(item.dataKey as SeriesKey)
+
 const TOTAL_LABEL: Record<EnergyMetric, () => string> = {
   solar: m.energy_chart_total_solar,
   grid: m.energy_chart_total_grid,
@@ -118,7 +121,10 @@ export function EnergyMonthlyChart({
             />
           )}
         />
-        <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />} />
+        <ChartLegend
+          itemSorter={seriesOrder(metric)}
+          content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
+        />
         {series.map((key) => (
           <Bar
             key={key}

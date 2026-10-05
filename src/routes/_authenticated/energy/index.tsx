@@ -115,7 +115,7 @@ function EnergyOverviewPage() {
                     />
                     <YearSelector
                       years={overview.availableYears}
-                      value={overview.year}
+                      value={stale && year !== undefined ? year : overview.year}
                       onChange={setYear}
                     />
                   </div>
