@@ -169,19 +169,10 @@ export const evChargingRouter = {
       }
     }),
 
-  // `includeAdminDetail` is a flag derived from the caller's own role, never
-  // trusted client input (ADR-0002 amendment) — a non-admin never sees
-  // `adminDetail`, even if it asked for it.
-  syncStatus: protectedProcedure.input(sourceInput).handler(({ input, context }) =>
-    integrationSyncService.getHealth(input?.source ?? 'zaptec', {
-      now: new Date(),
-      includeAdminDetail: context.user.role === 'admin',
-    }),
-  ),
-
   // Every source's health in one read: the pages show several sources' alerts
-  // and tiles, and poll them together (ADR-0025 §5). Same rule as `syncStatus`:
-  // `adminDetail` follows the caller's own role, never client input.
+  // and tiles, and poll them together (ADR-0025 §5). `includeAdminDetail` is a
+  // flag derived from the caller's own role, never trusted client input
+  // (ADR-0002 amendment) — a non-admin never sees `adminDetail`.
   syncStatuses: protectedProcedure.handler(({ context }) =>
     integrationSyncService.getAllHealth({
       now: new Date(),

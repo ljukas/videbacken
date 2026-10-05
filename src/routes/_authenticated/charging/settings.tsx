@@ -10,6 +10,7 @@ import {
 } from '~/components/evCharging/SkodaSourceDetails'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { SyncSourcesPanel } from '~/components/evCharging/SyncSourcesPanel'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { TariffCard } from '~/components/evCharging/TariffCard'
 import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
@@ -42,14 +43,6 @@ type SettingsDialog = NonNullable<SettingsSearch['dialog']>
 
 const RECENT_RUNS = 20
 
-// Zaptec's keep their input-less calls, so they share the overview's cache
-// entries; every other source passes its own.
-const healthQueries = {
-  zaptec: orpc.evCharging.syncStatus.queryOptions(),
-  elpris: orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } }),
-  skoda: orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } }),
-  emaldo: orpc.evCharging.syncStatus.queryOptions({ input: { source: 'emaldo' } }),
-} satisfies Record<IntegrationSource, unknown>
 const runsQueries = {
   zaptec: orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } }),
   elpris: orpc.evCharging.recentRuns.queryOptions({
@@ -87,7 +80,7 @@ export const Route = createFileRoute('/_authenticated/charging/settings')({
   // alert, each with a retry.
   loader: async ({ context: { queryClient } }) => {
     await loadRouteData(queryClient, {
-      critical: [...Object.values(healthQueries), orpc.tariff.list.queryOptions()],
+      critical: [syncHealthQuery, orpc.tariff.list.queryOptions()],
       deferred: [...Object.values(runsQueries), vehicleCoverageQuery, vehicleLatestQuery],
     })
   },
@@ -133,35 +126,16 @@ function ChargingSettingsPage() {
   // "Ny period" starts from the newest period's amounts (the list is oldest first).
   const latestTariff = tariffs?.at(-1)
 
-  // Polled, so a tile's "running" state (a cron run seen mid-flight) clears on
-  // its own instead of waiting for a focus refetch (ADR-0018: polled).
-  const zaptecHealthResult = useQuery({
-    ...healthQueries.zaptec,
-    refetchInterval: healthPoll(syncNow.isPendingFor('zaptec')),
+  // Every source's state in one read, polled together (ADR-0018: polled), so a
+  // tile's "running" state (a cron run seen mid-flight) clears on its own.
+  const healthResult = useQuery({
+    ...syncHealthQuery,
+    refetchInterval: healthPoll(INTEGRATION_SOURCES.some((source) => syncNow.isPendingFor(source))),
   })
-  const pricesHealthResult = useQuery({
-    ...healthQueries.elpris,
-    refetchInterval: healthPoll(syncNow.isPendingFor('elpris')),
-  })
-  const skodaHealthResult = useQuery({
-    ...healthQueries.skoda,
-    refetchInterval: healthPoll(syncNow.isPendingFor('skoda')),
-  })
-  const emaldoHealthResult = useQuery({
-    ...healthQueries.emaldo,
-    refetchInterval: healthPoll(syncNow.isPendingFor('emaldo')),
-  })
-  const zaptecHealth = zaptecHealthResult.data
-  const pricesHealth = pricesHealthResult.data
-  const skodaHealth = skodaHealthResult.data
-  const emaldoHealth = emaldoHealthResult.data
-  // Datakällor waits for every source's state: a tile without one would read
+  const sourcesHealth = healthResult.data
+  // Datakällor waits for the sources' state: a tile without one would read
   // "Okänd status", which is not the same as still loading (ADR-0016).
-  const sourcesPending =
-    firstLoadPending(zaptecHealthResult) ||
-    firstLoadPending(pricesHealthResult) ||
-    firstLoadPending(skodaHealthResult) ||
-    firstLoadPending(emaldoHealthResult)
+  const sourcesPending = firstLoadPending(healthResult)
   const zaptecRuns = useQuery(runsQueries.zaptec)
   const pricesRuns = useQuery(runsQueries.elpris)
   const skodaRuns = useQuery(runsQueries.skoda)
@@ -188,11 +162,11 @@ function ChargingSettingsPage() {
       <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
         <SyncSourcesPanel
           entries={[
-            { source: 'zaptec', health: zaptecHealth, runs: zaptecRuns },
-            { source: 'elpris', health: pricesHealth, runs: pricesRuns },
+            { source: 'zaptec', health: sourcesHealth?.zaptec, runs: zaptecRuns },
+            { source: 'elpris', health: sourcesHealth?.elpris, runs: pricesRuns },
             {
               source: 'skoda',
-              health: skodaHealth,
+              health: sourcesHealth?.skoda,
               runs: skodaRuns,
               // The car's log and live poll are one source to the admin: its last
               // contact, key expiry and log (+ import) live on its tile. A failed
@@ -201,14 +175,14 @@ function ChargingSettingsPage() {
                 <SkodaSourceDetails
                   live={vehicleLatest.data}
                   liveQuery={vehicleLatest}
-                  keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
+                  keyExpiry={sourcesHealth?.skoda?.adminDetail?.credentialExpiry ?? null}
                   coverage={vehicleCoverage.data}
                   coverageQuery={vehicleCoverage}
                 />
               ),
               actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
             },
-            { source: 'emaldo', health: emaldoHealth, runs: emaldoRuns },
+            { source: 'emaldo', health: sourcesHealth?.emaldo, runs: emaldoRuns },
           ]}
           onSync={syncNow.syncSource}
           isPendingFor={syncNow.isPendingFor}

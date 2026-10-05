@@ -9,11 +9,13 @@ import {
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { formatDate } from '~/components/evCharging/format'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { emptyTotals } from '~/lib/evCharging/cost'
 import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
+import { seedSourcesHealth } from '~test/browser/syncHealth'
 import { Route as Economy } from './economy'
 import { Route as Overview } from './index'
 import { Route as Patterns } from './patterns'
@@ -28,23 +30,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const health = (source: string) =>
-  ({ source, state: 'ok', lastSuccessAt: null, lastError: null }) as never
-
 function seedShell(qc: QueryClient) {
-  qc.setQueryData(orpc.evCharging.syncStatus.queryOptions().queryKey, health('zaptec'))
-  qc.setQueryData(
-    orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } }).queryKey,
-    health('elpris'),
-  )
-  qc.setQueryData(
-    orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } }).queryKey,
-    health('skoda'),
-  )
-  qc.setQueryData(
-    orpc.evCharging.syncStatus.queryOptions({ input: { source: 'emaldo' } }).queryKey,
-    health('emaldo'),
-  )
+  seedSourcesHealth(qc)
 }
 
 async function renderPage(
@@ -586,7 +573,7 @@ test.each([
   ['Mönster', Patterns, '/charging/patterns', () => m.charging_patterns_title()],
 ] as const)('%s, sync health still loading: no "never synced" line and no health alert', async (_n, route, path, title) => {
   const { screen } = await renderPage(route, path, '', (qc) => {
-    pendingForever(qc, orpc.evCharging.syncStatus.queryOptions().queryKey)
+    pendingForever(qc, syncHealthQuery.queryKey)
   })
   await expect.element(screen.getByRole('heading', { name: title() })).toBeVisible()
   await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
@@ -1028,18 +1015,9 @@ test.each([
 test('Översikt: an admin’s failing Škoda alert links to the settings page', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedEmptyOverview(qc)
-    qc.setQueryData(
-      orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } }).queryKey,
-      {
-        source: 'skoda',
-        state: 'failing',
-        code: 'auth_failed',
-        lastSuccessAt: null,
-        failingSince: null,
-        running: false,
-        adminDetail: null,
-      } as never,
-    )
+    seedSourcesHealth(qc, {
+      skoda: { state: 'failing', code: 'auth_failed', lastSuccessAt: null, failingSince: null },
+    })
   })
   await expect
     .element(screen.getByRole('link', { name: m.charging_settings_link() }))

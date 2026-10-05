@@ -9,9 +9,11 @@ import {
 } from '@tanstack/react-router'
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
+import { seedSourcesHealth } from '~test/browser/syncHealth'
 import { Route as Settings } from './settings'
 
 // The real settings page mounted under a bare root (routeTree.gen.ts isn't
@@ -23,9 +25,6 @@ import { Route as Settings } from './settings'
 afterEach(() => {
   vi.restoreAllMocks()
 })
-
-const health = (source: string) =>
-  ({ source, state: 'ok', lastSuccessAt: null, lastError: null }) as never
 
 const TARIFF = {
   id: '00000000-0000-4000-8000-0000000000aa',
@@ -40,12 +39,8 @@ const TARIFF = {
 
 function seed(qc: QueryClient, opts: { coverage?: boolean; adminReads?: boolean } = {}) {
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF] as never)
-  qc.setQueryData(orpc.evCharging.syncStatus.queryOptions().queryKey, health('zaptec'))
+  seedSourcesHealth(qc)
   for (const source of ['elpris', 'skoda', 'emaldo'] as const) {
-    qc.setQueryData(
-      orpc.evCharging.syncStatus.queryOptions({ input: { source } }).queryKey,
-      health(source),
-    )
     qc.setQueryData(
       orpc.evCharging.recentRuns.queryOptions({ input: { source, limit: 20 } }).queryKey,
       [],
@@ -210,7 +205,7 @@ const pendingForever = (qc: QueryClient, queryKey: readonly unknown[]) => {
 
 test('one source state still loading: Datakällor is a skeleton, never "Okänd status"', async () => {
   const { screen } = await renderSettings('', {
-    prepare: (qc) => pendingForever(qc, orpc.evCharging.syncStatus.queryOptions().queryKey),
+    prepare: (qc) => pendingForever(qc, syncHealthQuery.queryKey),
   })
   // Positive signals first: the page rendered past its reads, and the panel's skeleton mounted.
   await expect

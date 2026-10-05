@@ -5,13 +5,11 @@ import {
   integrationHealthTitle,
   integrationSourceName,
 } from '~/lib/integrationHealthMessage'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { formatDateTime } from './format'
 import { SettingsLink } from './SettingsLink'
 import { SyncNowButton } from './SyncNowButton'
-
-type Health = RouterOutputs['evCharging']['syncStatus']
+import type { SourceHealth as Health } from './syncHealth'
 
 // Sync health banner, driven by `state` alone (never re-derived from the
 // timestamps client-side — the server owns the stale/failing policy). `ok`

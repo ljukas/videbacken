@@ -10,7 +10,6 @@ import {
 import { Skeleton } from '~/components/ui/skeleton'
 import type { IntegrationSource } from '~/lib/integrationHealth'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { formatDateTime } from './format'
@@ -18,8 +17,8 @@ import { RecentRunsTable, type Run } from './RecentRunsTable'
 import { syncHealthMessage } from './SyncHealthAlert'
 import { SyncSourceMark } from './SyncSourceMark'
 import { SyncStateBadge } from './SyncSourceTile'
+import type { SourceHealth as Health } from './syncHealth'
 
-type Health = RouterOutputs['evCharging']['syncStatus']
 /**
  * The slice of the runs `useQuery` result the overlay reads. Always a real
  * (admin-enabled) query result: undefined only renders the loading state.

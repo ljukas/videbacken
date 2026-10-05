@@ -18,6 +18,7 @@ import { SessionList } from '~/components/evCharging/SessionList'
 import { SessionPagination } from '~/components/evCharging/SessionPagination'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
@@ -37,6 +38,7 @@ import {
   vehicleScope,
   vehicleScopeParam,
 } from '~/lib/evCharging/vehicle'
+import { INTEGRATION_SOURCES } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
 import { loadRouteData } from '~/lib/query/routeData'
 import { m } from '~/paraglide/messages'
@@ -57,11 +59,6 @@ const sessionsQuery = (page: number, pageSize: SessionPageSize, vehicle: Vehicle
   orpc.evCharging.sessions.queryOptions({ input: { page, pageSize, vehicle } })
 const sessionCostsQuery = (sessionIds: string[]) =>
   orpc.evCharging.sessionCosts.queryOptions({ input: { sessionIds } })
-// Spot price sync (elpris). Zaptec's keep their input-less calls, so their
-// query keys are unchanged; prices always pass their source.
-const pricesHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } })
-// The car's live-state poll (Škoda), admin-only.
-const skodaHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'skoda' } })
 export const Route = createFileRoute('/_authenticated/charging/')({
   head: () => ({
     meta: seo({ title: m.meta_charging_title(), description: m.meta_charging_description() }),
@@ -74,7 +71,7 @@ export const Route = createFileRoute('/_authenticated/charging/')({
   // ADR-0025: the server waits for what renders at the top; the client waits
   // for nothing (sections show skeletons). The sessions' costs are deferred
   // (below). The data sources' tiles and histories live on /charging/settings.
-  loader: async ({ context: { queryClient, user }, deps, location }) => {
+  loader: async ({ context: { queryClient }, deps, location }) => {
     // The session list's page is deliberately not a loader dep: a dep change
     // blocks the navigation on this whole loader (every prefetch below), so a
     // page click would freeze on the old page with no feedback. Read here, it
@@ -87,7 +84,6 @@ export const Route = createFileRoute('/_authenticated/charging/')({
       paging.size ?? DEFAULT_SESSION_PAGE_SIZE,
       deps.vehicle,
     )
-    const admin = user.role === 'admin'
     await loadRouteData(queryClient, {
       critical: [
         orpc.evCharging.overview.queryOptions({
@@ -98,12 +94,10 @@ export const Route = createFileRoute('/_authenticated/charging/')({
           input: { year: deps.year, vehicle: deps.vehicle },
         }),
         orpc.tariff.list.queryOptions(),
-        orpc.evCharging.syncStatus.queryOptions(),
-        // The sources' health drives the alerts at the top: awaited on the server,
-        // so a first load renders them in place. On a client navigation a failing
-        // source's alert can appear a moment later (rare, and it needs attention).
-        admin && pricesHealthQuery,
-        admin && skodaHealthQuery,
+        // Every source's health (one read) drives the alerts at the top: awaited on
+        // the server, so a first load renders them in place. On a client navigation
+        // a failing source's alert can appear a moment later (rare, and it needs attention).
+        syncHealthQuery,
       ],
     })
     // The costs need the sessions' ids, and are deferred: never started on the
@@ -222,27 +216,20 @@ function ChargingPage() {
     () => new Map(sessionCostList?.map((c) => [c.sessionId, c])),
     [sessionCostList],
   )
-  const healthResult = useQuery({
-    ...orpc.evCharging.syncStatus.queryOptions(),
-    // Members read only the alert: a plain minute. Admins also watch "Synkar…".
-    refetchInterval: isAdmin ? healthPoll(syncNow.isPendingFor('zaptec')) : 60_000,
-  })
-  // Admin-only (see the alerts below). Polled like Zaptec's, so an alert's
+  // Every source's health in one read. Members see only Zaptec's alert, polled
+  // at a plain minute; admins also follow "Synkar…" on any source, so an alert's
   // retry state clears on its own (ADR-0018: polled).
-  const pricesHealthResult = useQuery({
-    ...pricesHealthQuery,
-    enabled: isAdmin,
-    refetchInterval: healthPoll(syncNow.isPendingFor('elpris')),
+  const healthResult = useQuery({
+    ...syncHealthQuery,
+    refetchInterval: isAdmin
+      ? healthPoll(INTEGRATION_SOURCES.some((source) => syncNow.isPendingFor(source)))
+      : 60_000,
   })
   const live = useLiveStatus()
-  const skodaHealthResult = useQuery({
-    ...skodaHealthQuery,
-    enabled: isAdmin,
-    refetchInterval: healthPoll(syncNow.isPendingFor('skoda')),
-  })
-  const health = healthResult.data
-  const pricesHealth = pricesHealthResult.data
-  const skodaHealth = skodaHealthResult.data
+  const health = healthResult.data?.zaptec
+  // Admin-only until prices are shown on the page (see the alerts below).
+  const pricesHealth = isAdmin ? healthResult.data?.elpris : undefined
+  const skodaHealth = isAdmin ? healthResult.data?.skoda : undefined
 
   function setYear(y: number) {
     navigate({ to: '.', search: (s) => ({ ...s, year: y }), replace: true, resetScroll: false })

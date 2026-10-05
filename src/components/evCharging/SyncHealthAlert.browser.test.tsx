@@ -1,11 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { integrationErrorMessage, integrationHealthTitle } from '~/lib/integrationHealthMessage'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders, renderWithRouter } from '~test/browser/render'
 import { SyncHealthAlert } from './SyncHealthAlert'
-
-type Health = RouterOutputs['evCharging']['syncStatus']
+import type { SourceHealth as Health } from './syncHealth'
 
 const base: Health = {
   source: 'zaptec',

@@ -1,16 +1,18 @@
 import { expect, test } from 'vitest'
 import { healthPoll } from './healthPoll'
 
-const q = (data?: { running: boolean }) => ({ state: { data } })
+type H = { running: boolean }
+const q = (data?: Record<string, H>) => ({ state: { data } })
+const idle = { zaptec: { running: false }, elpris: { running: false } }
 
 test('polls every 5 s while this tab has a sync pending', () => {
-  expect(healthPoll(true)(q({ running: false }))).toBe(5_000)
+  expect(healthPoll(true)(q(idle))).toBe(5_000)
 })
-test('polls every 5 s while the server says running', () => {
-  expect(healthPoll(false)(q({ running: true }))).toBe(5_000)
+test('polls every 5 s while the server says any source is running', () => {
+  expect(healthPoll(false)(q({ ...idle, emaldo: { running: true } }))).toBe(5_000)
 })
 test('polls every minute otherwise', () => {
-  expect(healthPoll(false)(q({ running: false }))).toBe(60_000)
+  expect(healthPoll(false)(q(idle))).toBe(60_000)
 })
 test('polls every minute with no data yet', () => {
   expect(healthPoll(false)(q())).toBe(60_000)

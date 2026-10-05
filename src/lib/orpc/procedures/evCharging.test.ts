@@ -181,24 +181,6 @@ test('sessions rejects a page size it does not offer, and an out-of-range page',
   }
 })
 
-test('syncStatus rejects an unauthenticated caller', async () => {
-  await expect(
-    call(evChargingRouter.syncStatus, undefined, { context: baseContext() }),
-  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
-})
-
-test('syncStatus hides adminDetail for a non-admin user', async () => {
-  await signIn('user')
-  const health = await call(evChargingRouter.syncStatus, undefined, { context: baseContext() })
-  expect(health.adminDetail).toBeNull()
-})
-
-test('syncStatus exposes adminDetail for an admin', async () => {
-  await signIn('admin')
-  const health = await call(evChargingRouter.syncStatus, undefined, { context: baseContext() })
-  expect(health.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
-})
-
 test('liveStatus rejects an unauthenticated caller', async () => {
   await expect(
     call(evChargingRouter.liveStatus, undefined, { context: baseContext() }),
@@ -437,20 +419,13 @@ test('vehicleStateLatest is admin-only and null before any poll', async () => {
   ).toBeNull()
 })
 
-test('syncStatus and recentRuns take a source', async () => {
+test('syncStatuses and recentRuns take a source', async () => {
   await signIn('admin')
   await call(evChargingRouter.syncNow, { source: 'elpris' }, { context: baseContext() })
 
-  const elpris = await call(
-    evChargingRouter.syncStatus,
-    { source: 'elpris' },
-    { context: baseContext() },
-  )
-  const zaptecDefault = await call(evChargingRouter.syncStatus, undefined, {
-    context: baseContext(),
-  })
-  expect(elpris.source).toBe('elpris')
-  expect(zaptecDefault.source).toBe('zaptec')
+  const health = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(health.elpris).toMatchObject({ source: 'elpris', state: 'not_configured' })
+  expect(health.zaptec).toMatchObject({ source: 'zaptec', state: 'never_synced' })
 
   const runs = await call(
     evChargingRouter.recentRuns,
@@ -461,13 +436,6 @@ test('syncStatus and recentRuns take a source', async () => {
   expect(runs[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
   // Only the price sync ran, so Zaptec's history (the default source) is empty.
   expect(await call(evChargingRouter.recentRuns, {}, { context: baseContext() })).toHaveLength(0)
-})
-
-test('syncStatus rejects an unknown source', async () => {
-  await signIn('user')
-  await expect(
-    call(evChargingRouter.syncStatus, { source: 'nonsense' as never }, { context: baseContext() }),
-  ).rejects.toThrow()
 })
 
 test('syncNow records zaptec timing sub-timings when context.timings is present', async () => {
@@ -991,15 +959,11 @@ test('syncNow with source emaldo is forbidden for a non-admin user', async () =>
   ).rejects.toMatchObject({ code: 'FORBIDDEN' })
 })
 
-test('syncStatus and recentRuns take emaldo', async () => {
+test('syncStatuses and recentRuns take emaldo', async () => {
   await signIn('admin')
   await call(evChargingRouter.syncNow, { source: 'emaldo' }, { context: baseContext() })
-  const health = await call(
-    evChargingRouter.syncStatus,
-    { source: 'emaldo' },
-    { context: baseContext() },
-  )
-  expect(health).toMatchObject({ source: 'emaldo', state: 'not_configured' })
+  const health = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(health.emaldo).toMatchObject({ source: 'emaldo', state: 'not_configured' })
   const runs = await call(
     evChargingRouter.recentRuns,
     { source: 'emaldo' },
