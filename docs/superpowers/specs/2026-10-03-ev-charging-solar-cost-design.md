@@ -291,7 +291,8 @@ page (to the öre). Display rules (`src/components/evCharging/solarValue.ts`):
 - Hidden below 0.05 kWh of solar-origin energy (direct solar + battery-from-solar), so a night session charged from
   a solar-filled battery still shows its value. A non-finite total is hidden too, never printed.
 - Some solar without a spot price → "minst …"; none priced → "Värde av egen sol: okänt, spotpris saknas". Never 0 kr.
-  Unpriced solar under 1e-6 kWh is float noise and doesn't make it "minst".
+  The same 0.05 kWh decides both: under it, priced solar makes the value unknown (never "minst 0 kr"), and unpriced
+  solar doesn't make it "minst" (a month too small to show its own line can't qualify a year's total unexplained).
 - A negative spot gives a negative value ("−3 kr": exporting would have cost money), "minst −3 kr" as a floor.
 - An estimated session marks it "≈", like its cost, unless it's a "minst" floor (already a hedge).
 - It shows even where the cash cost is unknown ("—", a "Pris saknas" stub month): the value needs only spot prices.

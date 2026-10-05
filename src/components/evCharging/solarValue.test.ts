@@ -61,7 +61,26 @@ describe('solarValueView', () => {
   })
 
   test('the threshold counts priced and unpriced solar together', () => {
-    expect(solarValueView(totals(0.03, 0.03, 1))).toEqual({ kind: 'value', sek: 1, atLeast: true })
+    // 0,06 kWh in all shows; neither half is enough to price it by, so it's unknown.
+    expect(solarValueView(totals(0.03, 0.03, 0.01))).toEqual({ kind: 'unknown' })
+  })
+
+  test('almost all unpriced is unknown, never "minst 0 kr"', () => {
+    expect(solarValueView(totals(0.01, 5, 0.004))).toEqual({ kind: 'unknown' })
+  })
+
+  test('an unpriced sliver too small to show is not "minst" either', () => {
+    // A month's 0,03 kWh without spot shows no line, so it can't qualify a year's total.
+    expect(solarValueView(totals(100, 0.03, 50))).toEqual({
+      kind: 'value',
+      sek: 50,
+      atLeast: false,
+    })
+    expect(solarValueView(totals(100, SOLAR_VALUE_MIN_KWH, 50))).toEqual({
+      kind: 'value',
+      sek: 50,
+      atLeast: true,
+    })
   })
 
   test('a priced crumb beside real unpriced solar is still unknown', () => {

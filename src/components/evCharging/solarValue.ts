@@ -9,14 +9,14 @@ import { formatSignedSek } from './format'
 // session page share these rules.
 
 /**
- * Below this much solar-origin energy there's no line: it would show as
- * "0,0 kWh" wherever kWh are shown, and the proportional mix leaves float
- * crumbs that would otherwise print "0 kr" of solar.
+ * Solar energy below this is too little to show: it reads "0,0 kWh" wherever
+ * kWh are shown, and the proportional mix leaves float crumbs. One threshold
+ * for every decision, so the states agree: less solar than this in all hides
+ * the line, less priced solar makes it unknown (never "minst 0 kr"), and less
+ * unpriced solar doesn't make it "minst" (a month too small to show its own
+ * line can't qualify a year's total without saying why).
  */
 export const SOLAR_VALUE_MIN_KWH = 0.05
-
-/** Unpriced solar below this is float noise, not a reason to say "minst" (cf. the cost math's 1e-6). */
-const UNPRICED_EPSILON_KWH = 1e-6
 
 export type SolarValueInput = Pick<
   CostTotals,
@@ -27,19 +27,19 @@ export type SolarValueView = { kind: 'hidden' } | { kind: 'unknown' } | SolarVal
 
 /**
  * How a total's solar value reads: hidden when no solar was used; unknown when
- * none of it had a spot price (never 0 kr, ADR-0020); otherwise the value,
- * marked as a floor ("minst") when part of the solar lacked a price.
+ * (next to) none of it had a spot price (never 0 kr, ADR-0020); otherwise the
+ * value, marked as a floor ("minst") when part of the solar lacked a price.
  */
 export function solarValueView(t: SolarValueInput): SolarValueView {
   const solarKwh = t.solarPricedKwh + t.solarUnpricedKwh
   // `!(x >= …)` also hides NaN: a broken total prints nothing rather than "NaN kr".
   if (!(solarKwh >= SOLAR_VALUE_MIN_KWH)) return { kind: 'hidden' }
-  if (!(t.solarPricedKwh > UNPRICED_EPSILON_KWH)) return { kind: 'unknown' }
+  if (!(t.solarPricedKwh >= SOLAR_VALUE_MIN_KWH)) return { kind: 'unknown' }
   if (!Number.isFinite(t.solarValueSek)) return { kind: 'hidden' }
   return {
     kind: 'value',
     sek: t.solarValueSek,
-    atLeast: t.solarUnpricedKwh > UNPRICED_EPSILON_KWH,
+    atLeast: t.solarUnpricedKwh >= SOLAR_VALUE_MIN_KWH,
   }
 }
 
