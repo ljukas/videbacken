@@ -514,7 +514,7 @@ in "One `integration sync run` log line, alert on transitions only" above.
 
 The key's expiry is tracked generically: `integration_sync.credential_expires_at` (set by a source whose
 credential expires, read from the credential itself) and `credential_reminder_days` (the last reminder
-threshold sent, reset when the key is renewed). Admins get reminder emails at 30 and 7 days, and `syncStatus`'s
+threshold sent, reset when the key is renewed). Admins get reminder emails at 30 and 7 days, and `syncStatuses`'s
 admin-only `adminDetail.credentialExpiry` drives an in-app warning from 30 days out while the source is
 healthy. See [ADR-0022](./0022-live-vehicle-state-attribution.md) and the
 [runbook](../runbooks/skoda-api-key.md).
@@ -564,7 +564,8 @@ a duplicate here) — these are pointers, not summaries to read instead of them.
 - `src/lib/effects/zaptec/` — the fail-closed client: `notConfigured` / http / `fake` adapter
   selection, injected `fetch`, zod parsing, retry/timeout policy, login + live-state failure caches, `stats` reporting.
 - `src/lib/services/integrationSync/` — `beginAttempt` (lease acquire), `recordOutcome` (transition +
-  snapshot + history, `FOR UPDATE`), `reportProgress` (lease-guarded progress write), `getHealth`, `listRecentRuns`.
+  snapshot + history, `FOR UPDATE`), `reportProgress` (lease-guarded progress write), `getHealth` / `getAllHealth` (one source / every source),
+  `listRecentRuns` / `listRecentRunsBySource`.
 - `src/lib/db/schema/integrationSync.ts` — `integration_sync` (snapshot + lease) and
   `integration_sync_run` (append-only history) tables and their CHECK constraints (incl. the progress CHECKs).
 - `src/lib/db/schema/evCharging.ts` — `ev_charger` / `ev_charge_session` / `ev_charge_interval`; the

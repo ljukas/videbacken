@@ -42,6 +42,23 @@ export function LoadErrorAlert({ title, query }: { title: string; query: LoadErr
   const hydrated = useHydrated()
   if (!hydrated || !loadFailed(query)) return null
   return (
+    <RetryAlert title={title} onRetry={() => void query.refetch()} pending={query.isFetching} />
+  )
+}
+
+// The Alert itself, ungated: for a failure that isn't a failed query, such as
+// a read that succeeded with one part missing (`sessions`' `costs: null`,
+// ADR-0025 §5). The caller decides when it shows.
+export function RetryAlert({
+  title,
+  onRetry,
+  pending,
+}: {
+  title: string
+  onRetry: () => void
+  pending: boolean
+}) {
+  return (
     <Alert variant="destructive" role="alert">
       <AlertTriangleIcon />
       <AlertTitle>{title}</AlertTitle>
@@ -49,11 +66,7 @@ export function LoadErrorAlert({ title, query }: { title: string; query: LoadErr
       <AlertDescription className="flex flex-col gap-2">
         <div>{m.common_load_error_description()}</div>
         <div>
-          <RefreshButton
-            onClick={() => void query.refetch()}
-            pending={query.isFetching}
-            label={m.common_try_again()}
-          />
+          <RefreshButton onClick={onRetry} pending={pending} label={m.common_try_again()} />
         </div>
       </AlertDescription>
     </Alert>

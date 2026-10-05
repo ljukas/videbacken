@@ -13,6 +13,7 @@ import { SessionPagination } from '~/components/evCharging/SessionPagination'
 import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
+import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
@@ -47,7 +48,6 @@ const searchSchema = z.object({
 
 const economyQuery = (year: number | undefined, vehicle: VehicleScope) =>
   orpc.evCharging.economy.queryOptions({ input: { year, vehicle } })
-const pricesHealthQuery = orpc.evCharging.syncStatus.queryOptions({ input: { source: 'elpris' } })
 
 export const Route = createFileRoute('/_authenticated/charging/economy')({
   head: () => ({
@@ -65,11 +65,7 @@ export const Route = createFileRoute('/_authenticated/charging/economy')({
   // failed economy read shows its own alert under a working heading.
   loader: ({ context: { queryClient }, deps }) =>
     loadRouteData(queryClient, {
-      critical: [
-        economyQuery(deps.year, deps.vehicle),
-        orpc.evCharging.syncStatus.queryOptions(),
-        pricesHealthQuery,
-      ],
+      critical: [economyQuery(deps.year, deps.vehicle), syncHealthQuery],
     }),
   component: EconomyPage,
 })
@@ -78,12 +74,10 @@ function EconomyPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   const syncNow = useSyncNow()
-  const { data: health } = useQuery({
-    ...orpc.evCharging.syncStatus.queryOptions(),
-    refetchInterval: 60_000,
-  })
-  // Daily data: focus refetch only, no polling interval.
-  const { data: pricesHealth } = useQuery(pricesHealthQuery)
+  // Every source's health (one read); this page shows Zaptec's and the price feed's.
+  const { data: sourcesHealth } = useQuery({ ...syncHealthQuery, refetchInterval: 60_000 })
+  const health = sourcesHealth?.zaptec
+  const pricesHealth = sourcesHealth?.elpris
   const sekHeadingId = useId()
   const spotHeadingId = useId()
   const navigate = Route.useNavigate()

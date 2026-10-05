@@ -65,7 +65,7 @@ test('a session without intervals shows an em-dash for peak power', async () => 
     <SessionList
       sessions={[{ ...session, peakKw: null }]}
       // Priced, so the cost cell isn't a second dash.
-      costs={{ byId: new Map([['s1', priced]]), pending: false }}
+      costs={{ byId: new Map([['s1', priced]]) }}
     />,
   )
   await expect.element(screen.getByRole('cell', { name: '—' })).toBeInTheDocument()
@@ -76,7 +76,7 @@ test('the pagination control sits right under the table, before the legends', as
     <SessionList
       sessions={[session]}
       pagination={<nav aria-label="paging">paging</nav>}
-      costs={{ byId: new Map([['s1', { ...priced, complete: false }]]), pending: false }}
+      costs={{ byId: new Map([['s1', { ...priced, complete: false }]]) }}
     />,
   )
   const nav = screen.getByRole('navigation', { name: 'paging' })
@@ -102,7 +102,7 @@ test('an empty list shows no pagination', async () => {
   expect(screen.getByRole('navigation', { name: 'paging' }).elements()).toHaveLength(0)
 })
 
-type SessionCost = RouterOutputs['evCharging']['sessionCosts'][number]
+type SessionCost = NonNullable<RouterOutputs['evCharging']['sessions']['costs']>[number]
 const priced: SessionCost = {
   sessionId: 's1',
   estimated: false,
@@ -124,12 +124,12 @@ const priced: SessionCost = {
   complete: true,
 }
 
-function renderWithCost(cost: SessionCost | undefined, pending = false) {
+function renderWithCost(cost: SessionCost | undefined) {
   return renderWithRouter(
     <div style={{ width: 1024 }}>
       <SessionList
         sessions={[session]}
-        costs={{ byId: new Map(cost ? [[cost.sessionId, cost]] : []), pending }}
+        costs={{ byId: new Map(cost ? [[cost.sessionId, cost]] : []) }}
       />
     </div>,
   )
@@ -172,16 +172,8 @@ test('a priced session has no — legend', async () => {
   ).toHaveLength(0)
 })
 
-test('a session whose cost is still loading shows a placeholder, not the missing dash', async () => {
-  const { screen } = await renderWithCost(undefined, true)
-  await expect.element(screen.getByText(m.charging_sessions_cost_loading())).toBeInTheDocument()
-  expect(
-    screen.getByText(m.charging_sessions_cost_unknown(), { exact: false }).elements(),
-  ).toHaveLength(0)
-})
-
-test('a session missing from loaded costs (e.g. the query failed) says the cost is missing', async () => {
-  const { screen } = await renderWithCost(undefined, false)
+test('a session missing from its page’s costs (e.g. costing failed) says the cost is missing', async () => {
+  const { screen } = await renderWithCost(undefined)
   await expect
     .element(screen.getByText(m.charging_sessions_cost_unknown(), { exact: false }))
     .toBeInTheDocument()

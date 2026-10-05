@@ -7,6 +7,8 @@ import {
   evChargeInterval,
   evCharger,
   evChargeSession,
+  integrationSync,
+  integrationSyncRun,
   user,
   vehicleChargeRecord,
 } from '~/lib/db/schema'
@@ -19,6 +21,7 @@ import {
   TEST_CREDS,
   tokenBody,
 } from '~/lib/effects/zaptec/fixtures'
+import * as costing from '~/lib/evCharging/costing'
 import { MAX_SESSION_PAGE } from '~/lib/evCharging/paging'
 import { MAX_IMPORT_ROWS } from '~/lib/evCharging/vehicle'
 import type { Logger } from '~/lib/logger'
@@ -105,7 +108,7 @@ test('sessions returns an empty first page for a signed-in user with no data', a
     { page: 1, pageSize: 10 },
     { context: baseContext() },
   )
-  expect(result).toEqual({ sessions: [], total: 0, page: 1, pageSize: 10 })
+  expect(result).toEqual({ sessions: [], total: 0, page: 1, pageSize: 10, costs: [] })
 })
 
 test('sessions serves the page and size asked for, and the last page for one past the end', async () => {
@@ -143,18 +146,6 @@ test('sessions serves the page and size asked for, and the last page for one pas
   expect(past.sessions.map((s) => s.id)).toEqual(newestFirst.slice(10))
 })
 
-test('sessionCosts takes at most one page of ids', async () => {
-  await signIn('user')
-  const ids = (n: number) =>
-    Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
-  await expect(
-    call(evChargingRouter.sessionCosts, { sessionIds: ids(50) }, { context: baseContext() }),
-  ).resolves.toEqual([])
-  await expect(
-    call(evChargingRouter.sessionCosts, { sessionIds: ids(51) }, { context: baseContext() }),
-  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-})
-
 test('sessions records the count as a sub-timing', async () => {
   await signIn('user')
   const context = { ...baseContext(), timings: {} as Record<string, number> }
@@ -178,24 +169,6 @@ test('sessions rejects a page size it does not offer, and an out-of-range page',
       call(evChargingRouter.sessions, input as never, { context: baseContext() }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   }
-})
-
-test('syncStatus rejects an unauthenticated caller', async () => {
-  await expect(
-    call(evChargingRouter.syncStatus, undefined, { context: baseContext() }),
-  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
-})
-
-test('syncStatus hides adminDetail for a non-admin user', async () => {
-  await signIn('user')
-  const health = await call(evChargingRouter.syncStatus, undefined, { context: baseContext() })
-  expect(health.adminDetail).toBeNull()
-})
-
-test('syncStatus exposes adminDetail for an admin', async () => {
-  await signIn('admin')
-  const health = await call(evChargingRouter.syncStatus, undefined, { context: baseContext() })
-  expect(health.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
 })
 
 test('liveStatus rejects an unauthenticated caller', async () => {
@@ -361,10 +334,39 @@ test('recentRuns is forbidden for a non-admin user', async () => {
   ).rejects.toMatchObject({ code: 'FORBIDDEN' })
 })
 
-test('recentRuns returns the (empty) run history for an admin', async () => {
+test('recentRuns returns every source’s (empty) run history for an admin', async () => {
   await signIn('admin')
   const runs = await call(evChargingRouter.recentRuns, {}, { context: baseContext() })
-  expect(runs).toEqual([])
+  expect(runs).toEqual({ zaptec: [], elpris: [], skoda: [], emaldo: [] })
+})
+
+test('recentRuns takes a limit of 1–50 and defaults to 20 runs per source', async () => {
+  await signIn('admin')
+  await db.insert(integrationSync).values({ source: 'zaptec', updatedAt: new Date() })
+  await db.insert(integrationSyncRun).values(
+    Array.from({ length: 21 }, (_, i) => ({
+      source: 'zaptec',
+      trigger: 'cron',
+      startedAt: new Date(Date.UTC(2026, 9, 1, 0, i)),
+      finishedAt: new Date(Date.UTC(2026, 9, 1, 0, i, 1)),
+      durationMs: 1000,
+      outcome: 'ok',
+    })),
+  )
+  const byDefault = await call(evChargingRouter.recentRuns, {}, { context: baseContext() })
+  expect(byDefault.zaptec).toHaveLength(20)
+  for (const limit of [1, 50]) {
+    const runs = await call(evChargingRouter.recentRuns, { limit }, { context: baseContext() })
+    expect(runs.zaptec).toHaveLength(Math.min(limit, 21))
+  }
+})
+
+test('recentRuns rejects a limit outside 1–50', async () => {
+  await signIn('admin')
+  for (const limit of [0, 51])
+    await expect(
+      call(evChargingRouter.recentRuns, { limit }, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
 })
 
 test('syncNow rejects an unauthenticated caller', async () => {
@@ -436,37 +438,19 @@ test('vehicleStateLatest is admin-only and null before any poll', async () => {
   ).toBeNull()
 })
 
-test('syncStatus and recentRuns take a source', async () => {
+test('syncStatuses and recentRuns report each source’s own health and runs', async () => {
   await signIn('admin')
   await call(evChargingRouter.syncNow, { source: 'elpris' }, { context: baseContext() })
 
-  const elpris = await call(
-    evChargingRouter.syncStatus,
-    { source: 'elpris' },
-    { context: baseContext() },
-  )
-  const zaptecDefault = await call(evChargingRouter.syncStatus, undefined, {
-    context: baseContext(),
-  })
-  expect(elpris.source).toBe('elpris')
-  expect(zaptecDefault.source).toBe('zaptec')
+  const health = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(health.elpris).toMatchObject({ source: 'elpris', state: 'not_configured' })
+  expect(health.zaptec).toMatchObject({ source: 'zaptec', state: 'never_synced' })
 
-  const runs = await call(
-    evChargingRouter.recentRuns,
-    { source: 'elpris' },
-    { context: baseContext() },
-  )
-  expect(runs).toHaveLength(1)
-  expect(runs[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
-  // Only the price sync ran, so Zaptec's history (the default source) is empty.
-  expect(await call(evChargingRouter.recentRuns, {}, { context: baseContext() })).toHaveLength(0)
-})
-
-test('syncStatus rejects an unknown source', async () => {
-  await signIn('user')
-  await expect(
-    call(evChargingRouter.syncStatus, { source: 'nonsense' as never }, { context: baseContext() }),
-  ).rejects.toThrow()
+  const runs = await call(evChargingRouter.recentRuns, {}, { context: baseContext() })
+  expect(runs.elpris).toHaveLength(1)
+  expect(runs.elpris[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
+  // Only the price sync ran, so Zaptec's history is empty.
+  expect(runs.zaptec).toHaveLength(0)
 })
 
 test('syncNow records zaptec timing sub-timings when context.timings is present', async () => {
@@ -670,13 +654,17 @@ test('session returns one counted session with its economy for a signed-in user'
   expect(result.cost.totalSek).toBeCloseTo(result.economy.actual.totalSek, 9)
   expect(timings).toMatchObject({ economyMixMs: expect.any(Number) })
   const listTimings: Record<string, number> = {}
-  const [listed] = await call(
-    evChargingRouter.sessionCosts,
-    { sessionIds: [row.id] },
+  const listed = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
     { context: { ...baseContext(), timings: listTimings } },
   )
-  expect(listed.totalSek).toBeCloseTo(result.cost.totalSek, 9)
-  expect(listTimings).toMatchObject({ costMixMs: expect.any(Number) })
+  const listedCost = listed.costs?.find((c) => c.sessionId === row.id)
+  expect(listedCost?.totalSek).toBeCloseTo(result.cost.totalSek, 9)
+  expect(listTimings).toMatchObject({
+    costMixMs: expect.any(Number),
+    sessionCostsMs: expect.any(Number),
+  })
   // Aggregates only: no raw house readings ride along.
   expect(Object.keys(result).sort()).toEqual(
     [
@@ -716,6 +704,22 @@ async function insertSession(
     .returning({ id: evChargeSession.id })
   return row.id
 }
+
+test('sessions keeps its rows when costing fails: costs is null, never 0 kr', async () => {
+  await signIn('user')
+  await insertSession()
+  vi.spyOn(costing, 'getSessionCosts').mockRejectedValueOnce(new Error('prices down'))
+  const warnings: string[] = []
+  const log: Logger = { ...noopLog, warn: (msg) => warnings.push(msg), child: () => log }
+  const page = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
+    { context: { ...baseContext(), log } },
+  )
+  expect(page.sessions).toHaveLength(1)
+  expect(page.costs).toBeNull()
+  expect(warnings).toEqual(['session costs failed; the list shows none'])
+})
 
 const importRow = (id: string, start = '2026-02-01T10:00:00Z', end = '2026-02-01T11:00:00Z') => ({
   sourceSessionId: id,
@@ -990,20 +994,53 @@ test('syncNow with source emaldo is forbidden for a non-admin user', async () =>
   ).rejects.toMatchObject({ code: 'FORBIDDEN' })
 })
 
-test('syncStatus and recentRuns take emaldo', async () => {
+test('syncStatuses and recentRuns report Emaldo’s own health and runs', async () => {
   await signIn('admin')
   await call(evChargingRouter.syncNow, { source: 'emaldo' }, { context: baseContext() })
-  const health = await call(
-    evChargingRouter.syncStatus,
-    { source: 'emaldo' },
-    { context: baseContext() },
-  )
-  expect(health).toMatchObject({ source: 'emaldo', state: 'not_configured' })
-  const runs = await call(
-    evChargingRouter.recentRuns,
-    { source: 'emaldo' },
-    { context: baseContext() },
-  )
-  expect(runs).toHaveLength(1)
-  expect(runs[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
+  const health = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(health.emaldo).toMatchObject({ source: 'emaldo', state: 'not_configured' })
+  const runs = await call(evChargingRouter.recentRuns, {}, { context: baseContext() })
+  expect(runs.emaldo).toHaveLength(1)
+  expect(runs.emaldo[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
+})
+
+test('syncStatuses rejects an unauthenticated caller', async () => {
+  await expect(
+    call(evChargingRouter.syncStatuses, undefined, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+})
+
+test('syncStatuses hides every source’s adminDetail from a member', async () => {
+  await signIn('user')
+  const all = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(Object.keys(all).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  for (const health of Object.values(all)) expect(health.adminDetail).toBeNull()
+})
+
+test('syncStatuses gives an admin each source’s own state and detail', async () => {
+  await signIn('admin')
+  await call(evChargingRouter.syncNow, { source: 'elpris' }, { context: baseContext() })
+  const all = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(all.elpris).toMatchObject({ source: 'elpris', state: 'not_configured' })
+  expect(all.zaptec).toMatchObject({ source: 'zaptec', state: 'never_synced' })
+  expect(all.skoda.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
+})
+
+test('syncStatuses never shows a member a stored error message; an admin sees it', async () => {
+  await db.insert(integrationSync).values({
+    source: 'zaptec',
+    updatedAt: new Date(),
+    lastAttemptAt: new Date(),
+    errorCode: 'unreachable',
+    consecutiveFailures: 1,
+    failingSince: new Date(),
+    lastErrorMessage: 'connect ECONNREFUSED',
+  })
+  await signIn('user')
+  const member = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(member.zaptec.code).toBe('unreachable')
+  expect(member.zaptec.adminDetail).toBeNull()
+  await signIn('admin')
+  const admin = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(admin.zaptec.adminDetail?.lastErrorMessage).toBe('connect ECONNREFUSED')
 })

@@ -6,6 +6,7 @@ import { createTanstackQueryUtils } from '@orpc/tanstack-query'
 import { createIsomorphicFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
 import { createRequestLogger } from '~/lib/logger/server'
+import { authMemoFor } from './context'
 import { appRouter } from './router'
 
 const getORPCClient = createIsomorphicFn()
@@ -14,7 +15,8 @@ const getORPCClient = createIsomorphicFn()
       context: async () => {
         const request = getRequest()
         const { log, requestId } = createRequestLogger(request)
-        return { headers: request.headers, log, requestId }
+        // One render's calls share one auth lookup (ADR-0025 §5).
+        return { headers: request.headers, log, requestId, authMemo: authMemoFor(request) }
       },
     }),
   )

@@ -1,14 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { integrationErrorMessage, integrationHealthTitle } from '~/lib/integrationHealthMessage'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { formatDateTime } from './format'
 import type { Run } from './RecentRunsTable'
 import { type RunsQuery, SyncRunsDialog } from './SyncRunsDialog'
-
-type Health = RouterOutputs['evCharging']['syncStatus']
+import type { SourceHealth as Health } from './syncHealth'
 
 const okRun: Run = {
   id: 'r1',

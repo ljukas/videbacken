@@ -420,7 +420,7 @@ now that a service leans on it as its central invariant rather than incidentally
 includeAdminDetail })` takes a plain `includeAdminDetail: boolean`, not `role: 'user' | 'admin'`. A
 service has no business knowing about auth roles — "why services stay free of Better Auth / Resend /
 Blob imports" above already keeps `~/lib/auth` out of services entirely — so the procedure
-(`syncStatus` in `src/lib/orpc/procedures/evCharging.ts`) computes `includeAdminDetail =
+(`syncStatuses` in `src/lib/orpc/procedures/evCharging.ts`) computes `includeAdminDetail =
 context.user.role === 'admin'` and passes the boolean down. No prior service has had a read shape
 that varies by caller, so this wasn't previously a named convention; it now is one, for the next
 service that needs it.

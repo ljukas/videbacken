@@ -145,8 +145,8 @@ Shared by both pages:
   `location.search` (the `/charging` paging pattern), so a year switch renders at once and the chart dims over the
   old year while the new one loads (step 1 review).
 - Loader `prefetchQuery` (not ensure) + `useQuery` with `keepPreviousData`: a failed read shows `LoadErrorAlert`
-  under a working heading. `ensureQueryData` on `evCharging.syncStatus` for the `emaldo` health, rendered with the
-  existing `SyncHealthAlert`.
+  under a working heading. The `emaldo` health comes from the shared `evCharging.syncStatuses` read (client-perf step 3; first
+  written as `ensureQueryData` on `evCharging.syncStatus`), rendered with the existing `SyncHealthAlert`.
 - No `refetchInterval` on the overview query (data changes hourly); focus refetch only. The health query keeps its
   60 s interval, as on the charging pages.
 - Heading `EnergyHeading` in `ChargingHeading`'s shape: the view's title, a one-line description, and "senast

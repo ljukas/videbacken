@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { expect, test, vi } from 'vitest'
 import type { IntegrationSource } from '~/lib/integrationHealth'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { type SourceEntry, SyncSourcesPanel } from './SyncSourcesPanel'
-
-type Health = RouterOutputs['evCharging']['syncStatus']
+import type { SourceHealth as Health } from './syncHealth'
 
 const health = (source: IntegrationSource, state: Health['state']): Health => ({
   source,

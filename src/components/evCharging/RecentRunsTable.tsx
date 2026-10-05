@@ -9,11 +9,12 @@ import {
   TableHeader,
   TableRow,
 } from '~/components/ui/table'
+import type { IntegrationSource } from '~/lib/integrationHealth'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { formatCount, formatRunDuration, formatRunTime } from './format'
 
-export type Run = RouterOutputs['evCharging']['recentRuns'][number]
+export type Run = RouterOutputs['evCharging']['recentRuns'][IntegrationSource][number]
 
 const TRIGGER_LABEL: Record<Run['trigger'], () => string> = {
   cron: m.charging_runs_trigger_cron,

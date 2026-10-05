@@ -12,7 +12,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 |---|---|---|---|---|---|
 | 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | [#89](https://github.com/ljukas/videbacken/pull/89) | checkpoint passed | 2026-10-05: the owner confirmed the drag is gone on the phone. Prod logs show 0 `/_serverFn` calls since the #89 deploy (230 in the 6 h before), across `/charging`, economy, patterns, `/sensors` and `/users`. Small layout shifts seen, now step 7. |
 | 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | [#93](https://github.com/ljukas/videbacken/pull/93) | checkpoint passed | 2026-10-05: the owner confirmed on the phone that `/sensors` (including a range switch) and `/users` no longer drag. Prod logs since the #93 deploy show one `getSession` server-function call across the session's navigations: the cached guard's refresh, not one per navigation. |
-| 3 | Fewer requests per `/charging` load: one procedure for the Datakällor panel *or* app-wide oRPC batching (decided in its session; see [notes](#step-3-notes)) | — | — | needs shaping | — |
+| 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | PR open | — |
 | 4 | Bundle: phone fields out of the global form hook; lazy-load the admin-only dialogs on `/charging`; one bones registry per page group (since step 2, `/sensors` and `/users` load ~23 KB gz of charging bones) | — | — | not started | — |
 | 5 | Replace recharts with visx (refactor-workflow) | — | — | not started | — |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font | — | — | not started | — |
@@ -38,8 +38,13 @@ the step needs a short brainstorm before its plan.
    drag is gone. Prod `rpc timing` logs show no `getSession` server-function call per client navigation, and a
    revisit within the stale window fires no blocking request.
 2. **After step 2 (prod).** Same check on `/sensors` and `/users`.
-3. **After step 3 (prod).** One `/charging` load (admin) makes at most half of today's 19 requests (see baseline),
-   and `findActiveById` within that load stays under ~20 ms.
+3. **After step 3 (prod).** An admin `/charging` client navigation makes 6 oRPC requests and `/charging/settings`
+   5, with no `sessionCosts` waterfall (re-measured baseline in [step 3 notes](#step-3-notes); a stale `user/me`
+   refresh isn't counted). The `rpc timing`
+   lines carry the pool's start state (`poolTotal`, `poolIdle`, `poolWaiting`) and what it did during the request
+   (`poolOpened`, `poolPeakWaiting`; read these). Record what a navigation's burst shows. If they point at opening
+   connections (`poolOpened` > 0) or at queueing (`poolPeakWaiting` > 0), add the pool fix as a new row; otherwise the
+   checkpoint passes without one. Only the app's pool shows here, not Supavisor's own queue.
 4. **After step 4 (build).** The form chunk no longer contains `country-flag-icons` or `libphonenumber-js` except on
    pages with a phone field. `/charging` adds at most ~245 KB gz beyond the entry (from ~361 after step 1, which
    added ~27 KB gz of skeleton bones). `/sensors` and `/users` load only their own bones.
@@ -66,7 +71,7 @@ per route chunk, and 24 h of prod `rpc timing` logs. Re-run the same way to comp
 | `/charging/sessions/$id` | 91 KB | visx |
 | `/`, `/account`, `/admin` | ~2 KB | — |
 
-**Requests on one admin `/charging` load:** 19. These were `getSession` ×3 (server function), `overview`,
+**Requests on one admin `/charging` load:** 19 (stale since #90 moved the Datakällor reads to `/charging/settings`; see [step 3 notes](#step-3-notes)). These were `getSession` ×3 (server function), `overview`,
 `costOverview`, `sessions`, `sessionCosts`, `tariff/list`, `syncStatus` ×4, `recentRuns` ×4,
 `vehicleRecordCoverage`, `vehicleStateLatest`, `liveStatus`.
 
@@ -91,16 +96,31 @@ per route chunk, and 24 h of prod `rpc timing` logs. Re-run the same way to comp
 
 ## Step 3 notes
 
-oRPC batching is already wired (`BatchLinkPlugin` in `src/lib/orpc/client.ts`, `BatchHandlerPlugin` in
-`src/routes/api/rpc/$.ts`). It's limited to a `document.thumbnail` procedure left over from the template, which
-doesn't exist here. Enabling it for queries is a few lines, but two things need deciding:
+Re-shaped in its session ([spec](../specs/2026-10-05-client-perf-3-fewer-reads-design.md),
+[ADR-0025 §5](../../adr/0025-deferred-route-loading.md#5-many-reads-per-page-merge-per-concern-not-per-transport)).
+#90 had already moved the Datakällor panel off `/charging`, and the owner asked for the best practice for a page of
+many reads rather than batching as such. The research and the prod logs pointed at merging reads per concern and
+looking auth up once per request. Transport batching was decided against: in buffered mode the slowest call holds
+every result, and streaming mode is unverified on Vercel.
 
-- **Timings.** Today a batch request logs only the last inner call's sub-timings (`context.timings` is shared), so
-  batching needs per-call timing first.
-- **Per-call auth.** Batching doesn't remove the user lookup each inner call does.
+**Re-measured 2026-10-05 on `main` at `7b96625`** (local dev, one admin client navigation each, from `/users`):
 
-A single `evCharging.sources` read for the Datakällor panel removes 10 calls and their lookups outright, and turns
-its four 60 s polls into one.
+| Page | oRPC requests |
+|---|---|
+| `/charging` | 9: `overview`, `sessions`, `costOverview`, `tariff/list`, 3× `syncStatus`, `sessionCosts` (after `sessions`), `liveStatus` |
+| `/charging/settings` | 11: 4× `syncStatus`, 4× `recentRuns`, `vehicleRecordCoverage`, `vehicleStateLatest`, `tariff/list` |
+
+**Prod bursts** (5 h of `rpc timing` logs on 2026-10-05, 600 requests, de-duplicated by request id):
+
+| Requests starting within 400 ms | `findActiveById` p50 / p90 / max |
+|---|---|
+| 1 (alone) | 5 / 30 / 81 ms |
+| 4–6 | 21 / 41 / 111 ms |
+| 7+ | 12 / 77 / 120 ms |
+
+A one-row `syncStatus` takes 8–15 ms alone and 100–144 ms inside a `/charging/settings` load. Even lone requests
+reach 30–81 ms at p90, which points at opening pooled connections after `pg`'s 10 s idle timeout. That is why
+checkpoint 3 reads the new pool gauges before any pool change.
 
 ## Step 7 notes
 

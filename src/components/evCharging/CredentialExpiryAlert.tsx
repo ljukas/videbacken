@@ -1,13 +1,11 @@
 import { KeyRoundIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert'
-import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { formatDate } from './format'
 import { SettingsLink } from './SettingsLink'
+import type { SourceHealth } from './syncHealth'
 
-type Expiry = NonNullable<
-  RouterOutputs['evCharging']['syncStatus']['adminDetail']
->['credentialExpiry']
+type Expiry = NonNullable<SourceHealth['adminDetail']>['credentialExpiry']
 
 // Admin-only (the caller passes adminDetail, which only admins get): the Škoda
 // key expires about every six months (ADR-0022). The server decides when to
