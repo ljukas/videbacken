@@ -10,7 +10,7 @@ edits. A step starts only when the previous step's checkpoint has passed.
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1 | Settings page: move the tariff card and Datakällor to `/charging/settings` (admin-only), with nav, links and emails | [plan](../plans/2026-10-05-charging-settings-1-move.md) | [#90](https://github.com/ljukas/videbacken/pull/90) | checkpoint passed | 2026-10-05: owner checked the settings page on prod; the member redirect was verified locally |
-| 2 | Credential store and resolver (table, crypto, service, per-field resolver, adapters, env docs; no UI) | [plan](../plans/2026-10-05-charging-settings-2-store.md) | [#96](https://github.com/ljukas/videbacken/pull/96) | PR open | — |
+| 2 | Credential store and resolver (table, crypto, service, per-field resolver, adapters, env docs; no UI) | [plan](../plans/2026-10-05-charging-settings-2-store.md) | [#96](https://github.com/ljukas/videbacken/pull/96) | checkpoint passed | 2026-10-05: after the deploy, all four sources ran `ok` (Emaldo cron; Škoda, Zaptec, elpris via "Synka nu"); Škoda's geofence was on (home point from env via the resolver); `integration_credential` exists, is empty, RLS on |
 | 3 | Credentials UI (dialog per source, grid card, save → sync, remove; copy, runbook) | written when step 3 starts | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
