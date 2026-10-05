@@ -731,7 +731,7 @@
   "charging_skoda_key_expiring_body_today": "It expires today, {date}. Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy.",
   "charging_vehicle_key_expires": "The key expires on {date}",
   "charging_vehicle_key_expired": "The key expired on {date}",
-  "charging_vehicle_live_heard": "Car last heard from {time}",
+  "charging_vehicle_live_heard": "Last heard from the car {time} · {at}",
   "charging_vehicle_log_through": [
     {
       "declarations": [

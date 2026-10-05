@@ -188,7 +188,7 @@ export function SyncSourceTile({
           history, and those stay level with the row-mates' at the tile's foot. */}
       <div className="mt-auto flex flex-col gap-2 pointer-coarse:[&_[data-slot=button]]:h-11 [&_[data-slot=button]]:w-full">
         {actions ? <div className="grid gap-2">{actions}</div> : null}
-        <div className="grid @[13rem]:grid-cols-2 grid-cols-1 gap-2 [&>button:only-child]:col-span-full">
+        <div className="grid @[13rem]:grid-cols-2 grid-cols-1 gap-2 [&>[data-slot=button]:only-child]:col-span-full">
           {/* Retrying can't fix missing credentials, so no sync while unconfigured. */}
           {health?.state !== 'not_configured' ? (
             <SyncNowButton

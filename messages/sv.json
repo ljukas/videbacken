@@ -731,7 +731,7 @@
   "charging_skoda_key_expiring_body_today": "Den går ut i dag, {date}. Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om.",
   "charging_vehicle_key_expires": "Nyckeln går ut den {date}",
   "charging_vehicle_key_expired": "Nyckeln gick ut den {date}",
-  "charging_vehicle_live_heard": "Bilen hördes av {time}",
+  "charging_vehicle_live_heard": "Bilen hörde av sig {time} · {at}",
   "charging_vehicle_log_through": [
     {
       "declarations": [

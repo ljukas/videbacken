@@ -49,20 +49,23 @@ test('a failed log read shows an error with retry, never "none imported"', async
   )
   await expect.element(screen.getByText(m.charging_vehicle_log_error_title())).toBeVisible()
   expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
-  await screen.getByRole('button', { name: m.common_try_again() }).click()
+  await screen.getByRole('button', { name: m.common_try_again(), exact: false }).click()
   expect(refetch).toHaveBeenCalled()
 })
 
-test('shows when the car last reported, relative, as a <time> with the exact time on hover', async () => {
+test('shows when the car last reported, relative and exact, as a <time>', async () => {
   const capturedAt = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const { screen } = await renderWithProviders(
     <SkodaSourceDetails live={{ polledAt: new Date(), capturedAt }} coverage={undefined} />,
   )
-  await expect.element(screen.getByText(/^Bilen hördes av tre timmar sedan$/)).toBeVisible()
-  const time = screen.container.querySelector('time')
+  // The exact time is visible text, not a hover-only title (touch never shows those).
+  await expect
+    .element(screen.getByText(/^Bilen hörde av sig tre timmar sedan · \d{1,2} \w+\.? \d{2}:\d{2}$/))
+    .toBeVisible()
   // The car's own timestamp, not the poll's: a poll can succeed while the car sleeps.
-  expect(time?.getAttribute('datetime')).toBe(capturedAt.toISOString())
-  expect(time?.getAttribute('title')).toMatch(/\d{2}:\d{2}/)
+  expect(screen.container.querySelector('time')?.getAttribute('datetime')).toBe(
+    capturedAt.toISOString(),
+  )
 })
 
 test('falls back to the poll time when the car sent no timestamp', async () => {
@@ -94,10 +97,11 @@ test('an unknown last contact and log render no lines', async () => {
   const { screen } = await renderWithProviders(
     <SkodaSourceDetails live={undefined} coverage={undefined} />,
   )
-  expect(screen.container.textContent).toBe('')
+  // No lines: the wrapper stays empty, so `empty:hidden` drops its hairline.
+  expect(screen.container.querySelector('.border-t')?.childNodes).toHaveLength(0)
 })
 
-test('two failed reads each say which one their retry is for', async () => {
+test('two failed reads each name which one their retry is for', async () => {
   const { screen } = await renderWithProviders(
     <SkodaSourceDetails
       live={undefined}
@@ -106,15 +110,12 @@ test('two failed reads each say which one their retry is for', async () => {
       coverageQuery={failed()}
     />,
   )
-  const retries = screen.getByRole('button', { name: m.common_try_again() }).elements()
-  expect(retries).toHaveLength(2)
-  const descriptions = retries.map(
-    (b) => document.getElementById(b.getAttribute('aria-describedby') ?? '')?.textContent,
-  )
-  expect(descriptions).toEqual([
-    m.charging_vehicle_live_error_title(),
-    m.charging_vehicle_log_error_title(),
-  ])
+  const retry = (title: string) =>
+    screen.getByRole('button', {
+      name: m.charging_source_action_label({ action: m.common_try_again(), source: title }),
+    })
+  await expect.element(retry(m.charging_vehicle_live_error_title())).toBeVisible()
+  await expect.element(retry(m.charging_vehicle_log_error_title())).toBeVisible()
 })
 
 test('shows until when the Škoda key is valid, as the server decided', async () => {
@@ -163,7 +164,25 @@ test('a retry in flight keeps focus: soft-disabled, not disabled', async () => {
       coverageQuery={{ ...failed(), isFetching: true }}
     />,
   )
-  const retry = screen.getByRole('button', { name: m.common_try_again() })
+  const retry = screen.getByRole('button', { name: m.common_try_again(), exact: false })
   await expect.element(retry).toHaveAttribute('aria-disabled', 'true')
+  // Not natively disabled, so keyboard focus can stay on it.
   expect(retry.element().hasAttribute('disabled')).toBe(false)
+})
+
+test('a click on a retry in flight does not refetch again', async () => {
+  const refetch = vi.fn()
+  const { screen } = await renderWithProviders(
+    <SkodaSourceDetails
+      live={undefined}
+      coverage={undefined}
+      coverageQuery={{ ...failed(refetch), isFetching: true }}
+    />,
+  )
+  ;(
+    screen
+      .getByRole('button', { name: m.common_try_again(), exact: false })
+      .element() as HTMLButtonElement
+  ).click()
+  expect(refetch).not.toHaveBeenCalled()
 })

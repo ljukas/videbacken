@@ -219,7 +219,6 @@ export function SyncNowButton({
   label = m.charging_sync_now(),
   variant = 'outline',
   'aria-label': ariaLabel,
-  'aria-describedby': ariaDescribedBy,
   keepFocusWhilePending = false,
 }: {
   onSync: () => void
@@ -228,8 +227,6 @@ export function SyncNowButton({
   variant?: 'outline' | 'default'
   /** Names the button when several sit on one screen ("Synka nu, Zaptec": the visible label first, WCAG 2.5.3). */
   'aria-label'?: string
-  /** What the button acts on, when the visible label alone is ambiguous ("Försök igen" for which read). */
-  'aria-describedby'?: string
   /**
    * While pending, mark the button aria-disabled (and ignore clicks) instead of
    * `disabled`, so a keyboard user who just pressed it keeps focus there rather
@@ -246,7 +243,6 @@ export function SyncNowButton({
       disabled={pending && !keepFocusWhilePending}
       aria-disabled={softDisabled || undefined}
       aria-label={ariaLabel}
-      aria-describedby={ariaDescribedBy}
       className={cn(softDisabled && 'cursor-not-allowed opacity-50')}
     >
       <RefreshCwIcon className={cn(pending && 'animate-spin motion-reduce:animate-none')} />
