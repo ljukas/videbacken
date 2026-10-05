@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
@@ -32,6 +32,7 @@ import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog
 import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { useListTop } from '~/hooks/useListTop'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import {
@@ -166,7 +167,7 @@ function ChargingPage() {
   const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? 'ours' })
   const sessionPage = Route.useSearch({ select: (s) => s.page ?? 1 })
   const sessionPageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
-  const sessionsHeadingRef = useRef<HTMLHeadingElement>(null)
+  const sessionsTop = useListTop()
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
@@ -319,15 +320,15 @@ function ChargingPage() {
 
   // Paging pushes history, so back steps to the previous page. A clean URL is
   // page 1 at the default size. Paging from the control under a long page
-  // brings the list's heading back into view (it doesn't scroll if it's
-  // already visible), so the new page reads from its newest session.
+  // brings the list's heading (and focus) back into view, so the new page
+  // reads from its newest session.
   function setSessionPage(page: number) {
     navigate({
       to: '.',
       search: (s) => ({ ...s, page: page === 1 ? undefined : page }),
       resetScroll: false,
     })
-    sessionsHeadingRef.current?.scrollIntoView({ block: 'nearest' })
+    sessionsTop.reveal()
   }
 
   // The size is a preference, not a step to go back to: it replaces the entry,
@@ -471,7 +472,11 @@ function ChargingPage() {
       />
 
       <section className="flex flex-col gap-2">
-        <h2 ref={sessionsHeadingRef} className="scroll-mt-4 font-medium text-sm">
+        <h2
+          ref={sessionsTop.ref}
+          tabIndex={-1}
+          className="scroll-mt-4 font-medium text-sm outline-none"
+        >
           {m.charging_sessions_heading()}
         </h2>
         {/* An error must never read as "no sessions" (ADR-0016). A page that

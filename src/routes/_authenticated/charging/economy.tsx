@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { PiggyBankIcon } from 'lucide-react'
-import { useCallback, useId, useRef } from 'react'
+import { useCallback, useId, useState } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
@@ -19,6 +19,7 @@ import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
+import { useListTop } from '~/hooks/useListTop'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import {
   DEFAULT_SESSION_PAGE_SIZE,
@@ -27,7 +28,7 @@ import {
   sessionPagingSearch,
 } from '~/lib/evCharging/paging'
 import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
-import { orpc } from '~/lib/orpc/client'
+import { orpc, type RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
@@ -79,12 +80,13 @@ function EconomyPage() {
   const { data: pricesHealth } = useSuspenseQuery(pricesHealthQuery)
   const sekHeadingId = useId()
   const spotHeadingId = useId()
-  const sessionsHeadingId = useId()
   const navigate = Route.useNavigate()
-  const search = Route.useSearch()
-  const vehicle: VehicleScope = search.vehicle ?? 'ours'
+  // Per-key selects: a page click in the session table re-renders only its card.
+  const year = Route.useSearch({ select: (s) => s.year })
+  const vehicleParam = Route.useSearch({ select: (s) => s.vehicle })
+  const vehicle: VehicleScope = vehicleParam ?? 'ours'
   const result = useQuery({
-    ...economyQuery(search.year, vehicle),
+    ...economyQuery(year, vehicle),
     placeholderData: keepPreviousData,
   })
   const { data: economy, isPlaceholderData: stale } = result
@@ -109,37 +111,6 @@ function EconomyPage() {
       }),
     [navigate],
   )
-  // As on /charging: paging pushes history and brings the table's heading back
-  // into view; a new size replaces the entry and starts at its first page.
-  const sessionsHeadingRef = useRef<HTMLHeadingElement>(null)
-  const pageSize = search.size ?? DEFAULT_SESSION_PAGE_SIZE
-  const setPage = useCallback(
-    (page: number) => {
-      navigate({
-        to: '.',
-        search: (s) => ({ ...s, page: page === 1 ? undefined : page }),
-        resetScroll: false,
-      })
-      sessionsHeadingRef.current?.scrollIntoView({ block: 'nearest' })
-    },
-    [navigate],
-  )
-  const setPageSize = useCallback(
-    (size: SessionPageSize) =>
-      navigate({
-        to: '.',
-        search: (s) => ({
-          ...s,
-          page: undefined,
-          size: size === DEFAULT_SESSION_PAGE_SIZE ? undefined : size,
-        }),
-        replace: true,
-        resetScroll: false,
-      }),
-    [navigate],
-  )
-  // The year's sessions, newest first, one page at a time (a page past the end shows the last).
-  const sessionsPage = economy ? pageSlice(economy.sessions, search.page ?? 1, pageSize) : undefined
   return (
     <PageContainer>
       <ChargingHeading
@@ -171,7 +142,7 @@ function EconomyPage() {
           dims on a switch; the controls stay right-aligned without it. */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
-          <EconomyGridOnlyLead year={economy.year} vehicle={search.vehicle} />
+          <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
         ) : null}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
@@ -212,32 +183,7 @@ function EconomyPage() {
                   </CardContent>
                 </Card>
               </section>
-              <section aria-labelledby={sessionsHeadingId}>
-                <Card>
-                  <CardHeader>
-                    <h2
-                      id={sessionsHeadingId}
-                      ref={sessionsHeadingRef}
-                      className="scroll-mt-4 font-medium text-sm"
-                    >
-                      {m.charging_economy_sessions_title()}
-                    </h2>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    <EconomySessionTable
-                      sessions={sessionsPage?.rows ?? []}
-                      labelledBy={sessionsHeadingId}
-                    />
-                    <SessionPagination
-                      page={sessionsPage?.page ?? 1}
-                      pageSize={pageSize}
-                      total={economy.sessions.length}
-                      onPageChange={setPage}
-                      onPageSizeChange={setPageSize}
-                    />
-                  </CardContent>
-                </Card>
-              </section>
+              <EconomySessionsCard sessions={economy.sessions} stale={stale} />
               <EconomyFootnote excluded={economy.tiles.excluded} />
             </div>
           ) : (
@@ -264,5 +210,81 @@ function EconomyPage() {
         <LoadErrorAlert title={m.charging_economy_error_title()} query={result} />
       )}
     </PageContainer>
+  )
+}
+
+type EconomyRow = RouterOutputs['evCharging']['economy']['sessions'][number]
+
+// The year's sessions, newest first, one page at a time, sliced from the year
+// the page already loaded (a page past the end shows the last). Its own
+// component, reading only its own params, so a page click re-renders this card
+// and not the charts. While another year or scope loads (`stale`, the old
+// payload dimmed) it keeps slicing at the page it showed: the URL has already
+// gone back to page 1, and slicing the old year there would flash its first
+// page before the new year lands.
+function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stale: boolean }) {
+  const headingId = useId()
+  const top = useListTop()
+  const navigate = Route.useNavigate()
+  const requestedPage = Route.useSearch({ select: (s) => s.page ?? 1 })
+  const pageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
+  // Set during render: React's pattern for state derived from a changing value.
+  const [shownPage, setShownPage] = useState(requestedPage)
+  if (!stale && shownPage !== requestedPage) setShownPage(requestedPage)
+  const page = pageSlice(sessions, stale ? shownPage : requestedPage, pageSize)
+
+  // As on /charging: paging pushes history and brings the heading (and focus)
+  // back into view; a new size replaces the entry and starts at its first page.
+  const setPage = useCallback(
+    (next: number) => {
+      navigate({
+        to: '.',
+        search: (s) => ({ ...s, page: next === 1 ? undefined : next }),
+        resetScroll: false,
+      })
+      top.reveal()
+    },
+    [navigate, top.reveal],
+  )
+  const setPageSize = useCallback(
+    (size: SessionPageSize) =>
+      navigate({
+        to: '.',
+        search: (s) => ({
+          ...s,
+          page: undefined,
+          size: size === DEFAULT_SESSION_PAGE_SIZE ? undefined : size,
+        }),
+        replace: true,
+        resetScroll: false,
+      }),
+    [navigate],
+  )
+
+  return (
+    <section aria-labelledby={headingId}>
+      <Card>
+        <CardHeader>
+          <h2
+            id={headingId}
+            ref={top.ref}
+            tabIndex={-1}
+            className="scroll-mt-4 font-medium text-sm outline-none"
+          >
+            {m.charging_economy_sessions_title()}
+          </h2>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <EconomySessionTable sessions={page.rows} labelledBy={headingId} />
+          <SessionPagination
+            page={page.page}
+            pageSize={pageSize}
+            total={sessions.length}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        </CardContent>
+      </Card>
+    </section>
   )
 }

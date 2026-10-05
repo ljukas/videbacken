@@ -53,8 +53,10 @@ export function SessionPagination({
 
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-      {/* A status, so a page change is announced while focus stays on the control. */}
-      <p role="status" className="mr-auto text-muted-foreground text-sm tabular-nums">
+      {/* A status, so a page change is announced while focus stays on the control.
+          Its width is reserved for the longest range ("Showing 101–110 of 287"),
+          so the row doesn't re-wrap as the numbers grow while you page. */}
+      <p role="status" className="mr-auto min-w-[22ch] text-muted-foreground text-sm tabular-nums">
         {m.charging_sessions_pagination_range({
           from: formatCount(from),
           to: formatCount(to),
