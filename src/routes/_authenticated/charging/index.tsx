@@ -175,7 +175,6 @@ function ChargingPage() {
   const vehicle = Route.useSearch({ select: (s) => s.vehicle ?? DEFAULT_VEHICLE_SCOPE })
   const sessionPage = Route.useSearch({ select: (s) => s.page ?? 1 })
   const sessionPageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
-  const paging = useSessionPaging<ChargingSearch>(navigate)
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
@@ -241,6 +240,7 @@ function ChargingPage() {
   // Once the read has failed (retries included), only this scope's last page:
   // the placeholder may be another scope's rows.
   const shownSessions = loadFailed(sessions) ? lastInScope : (sessions.data ?? lastInScope)
+  const paging = useSessionPaging<ChargingSearch>(navigate)
   // Rows that aren't this URL's (another page still loading, or one that failed) are dimmed.
   const sessionsStale = sessions.data === undefined || sessions.isPlaceholderData
   const { data: cost, isPlaceholderData: costIsStale } = useQuery({
@@ -444,7 +444,7 @@ function ChargingPage() {
         <h2
           ref={paging.headingRef}
           tabIndex={-1}
-          className="scroll-mt-4 font-medium text-sm outline-none"
+          className="scroll-mt-4 rounded-sm font-medium text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {m.charging_sessions_heading()}
         </h2>

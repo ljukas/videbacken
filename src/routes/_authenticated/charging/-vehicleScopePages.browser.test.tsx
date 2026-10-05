@@ -1070,3 +1070,22 @@ test('Ekonomi: back steps to the previous page of the table', async () => {
   await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
   expect(router.state.location.search).toMatchObject({ page: 2 })
 })
+
+test('Översikt: after a page fails, stepping to it again from the control retries it', async () => {
+  const { screen, qc } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedOverview(qc, 'all', [])
+    seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
+    qc.setQueryDefaults(sessionsKey(2), { retry: false })
+  })
+  await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  const failures = () => qc.getQueryState(sessionsKey(2))?.errorUpdateCount ?? 0
+  await vi.waitFor(() => expect(qc.getQueryState(sessionsKey(2))?.fetchStatus).toBe('idle'))
+  const before = failures()
+  // The control still shows page 1 (the last that loaded): "next" asks for page 2
+  // again, which the URL already holds. That must still fetch it, not no-op.
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
+  await vi.waitFor(() => expect(failures()).toBeGreaterThan(before))
+})

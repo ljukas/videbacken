@@ -52,99 +52,108 @@ export function SessionPagination({
   const to = Math.min(current * pageSize, total)
 
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-      {/* A status, so a page change is announced while focus stays on the control.
+    // Sized by its own width (a container query), not the viewport's: the same
+    // control sits in a full-width section and in a card beside a sidebar. Wide
+    // enough, it's one row: the range, then rows-per-page beside the page links
+    // on the right. Narrower, the links take their own row, right-aligned.
+    <div className="@container">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {/* A status, so a page change is announced while focus stays on the control.
           Its width is reserved for the longest range ("Showing 101–110 of 287"),
           so the row doesn't re-wrap as the numbers grow while you page. */}
-      <p role="status" className="mr-auto min-w-[22ch] text-muted-foreground text-sm tabular-nums">
-        {m.charging_sessions_pagination_range({
-          from: formatCount(from),
-          to: formatCount(to),
-          total: formatCount(total),
-        })}
-      </p>
-      <div className="flex items-center gap-2">
-        <Label htmlFor={sizeId} className="whitespace-nowrap font-normal text-muted-foreground">
-          {m.charging_sessions_pagination_page_size()}
-        </Label>
-        <Select
-          value={String(pageSize)}
-          onValueChange={(v) => {
-            const size = SESSION_PAGE_SIZES.find((s) => String(s) === v)
-            if (size) onPageSizeChange(size)
-          }}
+        <p
+          role="status"
+          className="mr-auto min-w-[22ch] text-muted-foreground text-sm tabular-nums"
         >
-          {/* A 44 px target under a finger (the size variant would win without the !). */}
-          <SelectTrigger id={sizeId} size="sm" className="pointer-coarse:h-11! w-auto">
-            {/* Rendered explicitly so SSR already shows the size (Radix fills it in
+          {m.charging_sessions_pagination_range({
+            from: formatCount(from),
+            to: formatCount(to),
+            total: formatCount(total),
+          })}
+        </p>
+        <div className="flex items-center gap-2">
+          <Label htmlFor={sizeId} className="whitespace-nowrap font-normal text-muted-foreground">
+            {m.charging_sessions_pagination_page_size()}
+          </Label>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => {
+              const size = SESSION_PAGE_SIZES.find((s) => String(s) === v)
+              if (size) onPageSizeChange(size)
+            }}
+          >
+            {/* A 44 px target under a finger (the size variant would win without the !). */}
+            <SelectTrigger id={sizeId} size="sm" className="pointer-coarse:h-11! w-auto">
+              {/* Rendered explicitly so SSR already shows the size (Radix fills it in
                 only after hydration). */}
-            <SelectValue>{pageSize}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {SESSION_PAGE_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </div>
-      <Pagination
-        aria-label={m.charging_sessions_pagination_label()}
-        className="mx-0 ml-auto max-sm:w-full sm:w-auto"
-      >
-        <PaginationContent className="max-sm:w-full max-sm:justify-between">
-          <PaginationItem>
-            <StepButton
-              label={m.charging_sessions_pagination_previous()}
-              unavailable={current <= 1}
-              onClick={() => onPageChange(current - 1)}
-            >
-              <ChevronLeftIcon />
-            </StepButton>
-          </PaginationItem>
-          {pageItems(current, count).map((item, i) =>
-            item === 'ellipsis' ? (
-              // At most one ellipsis per side: right after page 1, or right before the last.
-              <PaginationItem
-                key={i === 1 ? 'gap-start' : 'gap-end'}
-                aria-hidden
-                className="hidden sm:list-item"
+              <SelectValue>{pageSize}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {SESSION_PAGE_SIZES.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+        <Pagination
+          aria-label={m.charging_sessions_pagination_label()}
+          className="mx-0 @min-[44rem]:w-auto w-full justify-end"
+        >
+          <PaginationContent className="max-sm:w-full max-sm:justify-between">
+            <PaginationItem>
+              <StepButton
+                label={m.charging_sessions_pagination_previous()}
+                unavailable={current <= 1}
+                onClick={() => onPageChange(current - 1)}
               >
-                <PaginationEllipsis />
-              </PaginationItem>
-            ) : (
-              <PaginationItem key={item} className="hidden sm:list-item">
-                {/* Named by its number alone; the nav's label says what it pages. */}
-                <Button
-                  variant={item === current ? 'outline' : 'ghost'}
-                  size="icon"
-                  className="pointer-coarse:size-11 tabular-nums"
-                  aria-current={item === current ? 'page' : undefined}
-                  onClick={item === current ? undefined : () => onPageChange(item)}
+                <ChevronLeftIcon />
+              </StepButton>
+            </PaginationItem>
+            {pageItems(current, count).map((item, i) =>
+              item === 'ellipsis' ? (
+                // At most one ellipsis per side: right after page 1, or right before the last.
+                <PaginationItem
+                  key={i === 1 ? 'gap-start' : 'gap-end'}
+                  aria-hidden
+                  className="hidden sm:list-item"
                 >
-                  {item}
-                </Button>
-              </PaginationItem>
-            ),
-          )}
-          {/* A fixed width, so the arrows don't shift between "Sida 9" and "Sida 10". */}
-          <PaginationItem className="min-w-28 px-2 text-center text-sm tabular-nums sm:hidden">
-            {m.charging_sessions_pagination_position({ page: current, count })}
-          </PaginationItem>
-          <PaginationItem>
-            <StepButton
-              label={m.charging_sessions_pagination_next()}
-              unavailable={current >= count}
-              onClick={() => onPageChange(current + 1)}
-            >
-              <ChevronRightIcon />
-            </StepButton>
-          </PaginationItem>
-        </PaginationContent>
-      </Pagination>
+                  <PaginationEllipsis />
+                </PaginationItem>
+              ) : (
+                <PaginationItem key={item} className="hidden sm:list-item">
+                  {/* Named by its number alone; the nav's label says what it pages. */}
+                  <Button
+                    variant={item === current ? 'outline' : 'ghost'}
+                    size="icon"
+                    className="pointer-coarse:size-11 tabular-nums"
+                    aria-current={item === current ? 'page' : undefined}
+                    onClick={item === current ? undefined : () => onPageChange(item)}
+                  >
+                    {item}
+                  </Button>
+                </PaginationItem>
+              ),
+            )}
+            {/* A fixed width, so the arrows don't shift between "Sida 9" and "Sida 10". */}
+            <PaginationItem className="min-w-28 px-2 text-center text-sm tabular-nums sm:hidden">
+              {m.charging_sessions_pagination_position({ page: current, count })}
+            </PaginationItem>
+            <PaginationItem>
+              <StepButton
+                label={m.charging_sessions_pagination_next()}
+                unavailable={current >= count}
+                onClick={() => onPageChange(current + 1)}
+              >
+                <ChevronRightIcon />
+              </StepButton>
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      </div>
     </div>
   )
 }

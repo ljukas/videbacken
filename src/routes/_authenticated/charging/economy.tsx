@@ -225,13 +225,13 @@ type EconomyRow = RouterOutputs['evCharging']['economy']['sessions'][number]
 function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stale: boolean }) {
   const headingId = useId()
   // The same URL conventions as /charging's list.
-  const paging = useSessionPaging<z.infer<typeof searchSchema>>(Route.useNavigate())
   const requestedPage = Route.useSearch({ select: (s) => s.page ?? 1 })
   const pageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
   // Set during render: React's pattern for state derived from a changing value.
   const [shownPage, setShownPage] = useState(requestedPage)
   if (!stale && shownPage !== requestedPage) setShownPage(requestedPage)
   const page = pageSlice(sessions, stale ? shownPage : requestedPage, pageSize)
+  const paging = useSessionPaging<z.infer<typeof searchSchema>>(Route.useNavigate())
 
   return (
     <section aria-labelledby={headingId}>
@@ -241,20 +241,24 @@ function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stal
             id={headingId}
             ref={paging.headingRef}
             tabIndex={-1}
-            className="scroll-mt-4 font-medium text-sm outline-none"
+            className="scroll-mt-4 rounded-sm font-medium text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             {m.charging_economy_sessions_title()}
           </h2>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <EconomySessionTable sessions={page.rows} labelledBy={headingId} />
-          <SessionPagination
-            page={page.page}
-            pageSize={pageSize}
-            total={sessions.length}
-            onPageChange={paging.setPage}
-            onPageSizeChange={paging.setPageSize}
-          />
+          {/* Inert while another year or scope loads: a page picked in the old
+              year's table would carry into the new one's. */}
+          <div inert={stale}>
+            <SessionPagination
+              page={page.page}
+              pageSize={pageSize}
+              total={sessions.length}
+              onPageChange={paging.setPage}
+              onPageSizeChange={paging.setPageSize}
+            />
+          </div>
         </CardContent>
       </Card>
     </section>
