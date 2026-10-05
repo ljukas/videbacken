@@ -139,7 +139,9 @@ export const Route = createFileRoute('/_authenticated/charging/')({
         }),
         orpc.tariff.list.queryOptions(),
         orpc.evCharging.syncStatus.queryOptions(),
-        // The sources' health drives the alerts at the top: awaited, so they don't jump in.
+        // The sources' health drives the alerts at the top: awaited on the server,
+        // so a first load renders them in place. On a client navigation a failing
+        // source's alert can appear a moment later (rare, and it needs attention).
         admin && pricesHealthQuery,
         admin && skodaHealthQuery,
         admin && emaldoHealthQuery,
@@ -219,8 +221,6 @@ function ChargingPage() {
   const { isPlaceholderData: overviewStale } = overviewResult
   // Placeholder data is the previous key's, so a failed read doesn't show it.
   const overview = loadFailed(overviewResult) ? undefined : overviewResult.data
-  // Nothing to show yet, not even the previous key's: the sections' skeletons.
-  const overviewPending = firstLoadPending(overviewResult)
   const sessions = useQuery({
     ...sessionsQuery(sessionPage, sessionPageSize, vehicle),
     // Never flash the empty state while another scope or page loads: the
@@ -246,10 +246,20 @@ function ChargingPage() {
   const paging = useSessionPaging<ChargingSearch>(navigate)
   // Rows that aren't this URL's (another page still loading, or one that failed) are dimmed.
   const sessionsStale = sessions.data === undefined || sessions.isPlaceholderData
-  const { data: cost, isPlaceholderData: costIsStale } = useQuery({
+  const costResult = useQuery({
     ...orpc.evCharging.costOverview.queryOptions({ input: { year, vehicle } }),
     placeholderData: keepPreviousData,
   })
+  const { data: cost, isPlaceholderData: costIsStale } = costResult
+  // The totals and the chart keep their skeletons until every read that changes
+  // their shape is in (ADR-0024 §3): the overview, and the cost and tariffs that
+  // add the kr readout, the metric toggle, the notice and the footnote. On a
+  // client navigation those land separately. A failed read isn't pending, so the
+  // page then shows the grid-only figures and that read's alert.
+  const shapePending =
+    firstLoadPending(overviewResult) ||
+    firstLoadPending(costResult) ||
+    firstLoadPending(tariffsResult)
   // Cost is shown once anything at all is priced in the chosen scope (all-time,
   // so a year switch doesn't flicker the kr toggle away; a scope with nothing
   // priced, e.g. guests, shows the notice instead); until then one notice says why.
@@ -383,13 +393,13 @@ function ChargingPage() {
           and it stays when a scoped read fails, so the user can switch back. */}
       <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
 
-      {overview && costNotice ? (
+      {overview && costNotice && !shapePending ? (
         <CostNotice
           reason={costNotice}
           onAddTariff={isAdmin ? () => open('tariffNew') : undefined}
         />
       ) : null}
-      <SectionSkeleton name="charging-totals" loading={overviewPending} fallbackHeight="7rem">
+      <SectionSkeleton name="charging-totals" loading={shapePending} fallbackHeight="7rem">
         {overview ? (
           <section className="flex flex-col gap-2">
             <h2 className="sr-only">{m.charging_totals_heading()}</h2>
@@ -406,7 +416,7 @@ function ChargingPage() {
           </section>
         ) : null}
       </SectionSkeleton>
-      <SectionSkeleton name="charging-chart" loading={overviewPending} fallbackHeight="20rem">
+      <SectionSkeleton name="charging-chart" loading={shapePending} fallbackHeight="20rem">
         {overview ? (
           <section className="@container flex flex-col gap-2">
             {/* Wide: title left, controls grouped right. Narrow: the title on its

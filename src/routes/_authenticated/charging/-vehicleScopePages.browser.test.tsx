@@ -95,6 +95,9 @@ const overviewKey = orpc.evCharging.overview.queryOptions({
   input: { year: undefined, vehicle: 'all' },
 }).queryKey
 const tariffsKey = orpc.tariff.list.queryOptions().queryKey
+const costKey = orpc.evCharging.costOverview.queryOptions({
+  input: { year: undefined, vehicle: 'all' },
+}).queryKey
 
 test.each([
   ['patterns', Patterns, '/charging/patterns'],
@@ -542,6 +545,8 @@ test('Översikt: before any house data the note says all charging counts as boug
 
 // --- Översikt: deferred loading (ADR-0024) ------------------------------------
 
+const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)
+
 test('Översikt, overview still loading: totals and chart show skeletons, the scope toggle is usable', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverview(qc, 'all', [session('s1', 5)])
@@ -549,10 +554,45 @@ test('Översikt, overview still loading: totals and chart show skeletons, the sc
     pendingForever(qc, overviewKey)
   })
   await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
-  expect(document.querySelector('[data-boneyard="charging-totals"]')).not.toBeNull()
-  expect(document.querySelector('[data-boneyard="charging-chart"]')).not.toBeNull()
+  // The skeletons mount once hydrated: wait for them, don't race the first render.
+  await expect.poll(() => skeleton('charging-totals')).not.toBeNull()
+  await expect.poll(() => skeleton('charging-chart')).not.toBeNull()
   // Loading is not an error (ADR-0016).
   expect(screen.getByText(m.charging_overview_error_title()).elements()).toHaveLength(0)
+})
+
+test('Översikt, cost still loading: the totals and chart hold their skeletons, so the kr readout cannot jump in', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, gridKwh: 10, fullKwh: 10, totalSek: 20, avgOre: 200 }, null)
+    qc.setQueryData(
+      orpc.evCharging.sessions.queryOptions({ input: { limit: 20, vehicle: 'all' } }).queryKey,
+      { sessions: [session('s1', 7.7)], hasMore: false } as never,
+    )
+    pendingForever(qc, costKey)
+  })
+  // The sessions are in (a positive signal the page has rendered past its loader).
+  await expect.element(screen.getByText('7,7', { exact: false })).toBeVisible()
+  await expect.poll(() => skeleton('charging-totals')).not.toBeNull()
+  expect(skeleton('charging-chart')).not.toBeNull()
+  expect(
+    screen.getByRole('heading', { name: m.charging_totals_heading() }).elements(),
+  ).toHaveLength(0)
+  // Nor does the notice show before the cost has settled.
+  expect(screen.getByText(m.charging_cost_notice_unpriced()).elements()).toHaveLength(0)
+})
+
+test('Översikt, overview, cost and tariffs in: no skeleton above the fold', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedOverviewShell(qc)
+    seedCost(qc, { kwh: 10, gridKwh: 10, fullKwh: 10, totalSek: 20, avgOre: 200 }, null)
+  })
+  await expect
+    .element(screen.getByRole('heading', { name: m.charging_totals_heading() }))
+    .toBeInTheDocument()
+  await expect.element(screen.getByText(m.charging_cost_note_all_grid())).toBeVisible()
+  expect(skeleton('charging-totals')).toBeNull()
+  expect(skeleton('charging-chart')).toBeNull()
 })
 
 test('Översikt, tariffs still loading: no "set up a tariff" notice, and the edit dialog stays in the URL', async () => {
@@ -568,11 +608,13 @@ test('Översikt, tariffs still loading: no "set up a tariff" notice, and the edi
     },
   )
   await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
-  await expect
-    .element(screen.getByText(m.charging_cost_notice_setup_admin()))
-    .not.toBeInTheDocument()
+  // Positive signals first: the tariffs' skeleton (hydrated, tariffs pending) and the
+  // sessions' empty state (the page rendered past its reads), then the URL.
+  await expect.poll(() => skeleton('charging-tariffs')).not.toBeNull()
+  await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
+  await expect.poll(() => router.history.location.search).toBe('?dialog=tariffEdit&tariffId=t1')
   expect(router.state.location.search).toMatchObject({ dialog: 'tariffEdit', tariffId: 't1' })
-  expect(document.querySelector('[data-boneyard="charging-tariffs"]')).not.toBeNull()
+  expect(screen.getByText(m.charging_cost_notice_setup_admin()).elements()).toHaveLength(0)
 })
 
 // --- Ekonomi: the grid-only lead ------------------------------------------------
