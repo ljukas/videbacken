@@ -4,7 +4,8 @@
 - **Date**: 2026-10-05
 - **Deciders**: Lukas
 - **Decision in one line**: A client-side navigation never waits on the network. Route loaders await their data on the
-  server only (so a first load or refresh is still complete HTML) and on the client just start the fetches and return.
+  server only (so a first load or refresh is still complete HTML for the critical sections; deferred ones load after
+  hydration) and on the client just start the fetches and return.
   Each section shows a boneyard-js skeleton while its query is pending, and the session guard reads a cached session
   instead of calling the server on every navigation.
 
@@ -106,9 +107,19 @@ app at fixed viewport widths and replays it while loading.
 - **Capture is an explicit command, not the always-on Vite plugin.** `bun run bones:capture` signs a Playwright
   browser in through the local Mailpit magic link, then runs the boneyard CLI with that session's `better-auth.*`
   cookies (`--cookie`). The plugin's own headless browser has no session (every authed route would capture
-  `/login`), and it would re-crawl on every HMR save.
-- **Widths** 375 / 768 / 1280 px: our mobile / tablet / desktop rule. `select: 'viewport'`, because the sidebar makes
-  the content area narrower than the window.
+  `/login`), and it would re-crawl on every HMR save. The CLI skips a skeleton whose DOM is unchanged, even when the
+  breakpoints or the CSS changed, so after changing either run `bun run bones:capture --force`.
+- **Widths** 375 / 768 / 800 / 1000 / 1100 / 1280 px (`boneyard.config.json`). A capture serves every viewport from
+  its width up to the next one, so the keys sit where the charging pages' layouts switch, measured on 2026-10-05:
+  - **768:** the sidebar appears (the content drops to 440 px).
+  - **800:** Datakällor, economy and patterns reflow (content past ~448 px; sources ~1127 → ~765 px tall, patterns
+    ~3700 → ~3080).
+  - **1000:** patterns and its timeline reflow (~2900 → ~2150 and ~1140 → ~770).
+  - **1100:** `/charging`'s totals switch from the tabbed card to three cards (`@3xl`, content 768 px; first seen at a
+    1096 px viewport).
+  - **1280:** wide desktop.
+
+  `select: 'viewport'`, because the sidebar makes the content area narrower than the window.
 - **Bones are committed** (`src/bones/`). `SectionSkeleton` imports the generated registry, so the bones and the
   boneyard runtime load with the first route that shows a skeleton, not with the entry chunk. The registry is a
   side-effect-only import, so `package.json`'s `sideEffects` lists it; without that a production build drops it and
@@ -152,10 +163,12 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
   bars on the page background.
 - **Graphics become slabs.** A chart, the patterns heatmap and the day-by-day calendars are each one solid block, and
   a table's middle columns read as one block.
-- **Three widths, one layout per range.** The 768 capture serves viewports 768–1279. `/charging`'s totals switch to
-  three cards when the content is 768 px wide (a ~1100 px viewport beside the sidebar), so from there to 1279 the
-  skeleton shows the narrow layout. A fourth breakpoint would fix it.
-- **Size.** The eight skeletons add ~21 KB gz to every charging page (economy and patterns are ~9 KB each).
+- **One layout per range.** Between two keys a section can still reflow, and its skeleton then shows the layout at
+  the lower key. The 375 capture serves 375–767, where Datakällor, economy and patterns reflow several times (around
+  487, 511, 647 and 711 px), so a wide phone or a small tablet sees taller bones than its content. 768–775 and
+  776–799 differ too, but only by 24 px of viewport.
+- **Size.** Six widths × eight skeletons add ~39 KB gz to every charging page (economy and patterns are ~14 KB each).
+  The 800 and 1000 keys cost ~13 KB gz of that.
 
 ---
 
@@ -185,8 +198,8 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
   queries in one hop instead of 15 in two, which also eases the pool queueing behind the inflated `findActiveById`.
 - **A new step in UI work:** re-run `bones:capture` after changing a section's layout. Stale bones look slightly wrong
   but never break anything.
-- **The bones cost bytes.** All eight skeletons (~21 KB gz) load with the first charging page, whichever it is. A
-  per-route registry would split them if this grows.
+- **The bones cost bytes.** All eight skeletons at six widths (~39 KB gz) load with the first charging page,
+  whichever it is. A per-route registry would split them.
 - **`useSuspenseQuery` is now rare.** Reviewers should flag it on data a client navigation defers.
 - **Role changes reach the client guard within about 5–10 min** (§2: up to ~2× the cookie cache's 5 min), or on
   the next navigation after the tab regains focus.
