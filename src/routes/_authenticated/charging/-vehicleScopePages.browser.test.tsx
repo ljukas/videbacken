@@ -605,6 +605,21 @@ test('Översikt: the scope filter sits above the totals; the sessions above the 
   expect(precedes(sessions, tariff)).toBe(true)
   // The chart's toolbar holds only chart controls.
   expect(chartTitle.closest('section')?.contains(scopeEl)).toBe(false)
+  // The live line sits in the page heading, not in the scoped content.
+  const banner = screen.getByRole('banner').element()
+  const liveName = screen.getByText(m.charging_live_title(), { exact: false }).element()
+  expect(banner.contains(liveName)).toBe(true)
+  expect(precedes(liveName, scopeEl)).toBe(true)
+})
+
+test.each([
+  ['patterns', Patterns, '/charging/patterns'],
+  ['economy', Economy, '/charging/economy'],
+] as const)('%s: a clean URL shows Alla checked', async (_n, route, path) => {
+  const { screen } = await renderPage(route, path, '', () => {})
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_all()))
+    .toHaveAttribute('aria-checked', 'true')
 })
 
 test('Översikt: Vår bil from a clean URL is checked and written to the URL', async () => {

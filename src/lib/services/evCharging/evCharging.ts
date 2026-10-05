@@ -34,7 +34,7 @@ export async function listChargers(): Promise<
     .orderBy(evCharger.name)
 }
 
-// The charger the live-status tile reads: the one with the newest session,
+// The charger the overview's live status line reads: the one with the newest session,
 // i.e. the charger actually in use. A stub (see `importSessions`) or a
 // decommissioned charger only has older sessions, so it never wins over the
 // active one; with no sessions at all, the first by name.
