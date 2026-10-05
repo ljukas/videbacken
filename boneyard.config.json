@@ -1,5 +1,5 @@
 {
-  "breakpoints": [375, 768, 800, 1000, 1100, 1280],
+  "breakpoints": [375, 768, 1100, 1280],
   "out": "./src/bones",
   "wait": 1500,
   "animate": "pulse",
