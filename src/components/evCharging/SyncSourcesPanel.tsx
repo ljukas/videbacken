@@ -15,8 +15,9 @@ export type SourceEntry = {
   actions?: ReactNode
 }
 
-// Admin-only "Datakällor": every integration the page reads, at a glance, with
-// its own sync and history. Failures still interrupt at the top of the page
+// Admin-only "Datakällor" on the charging settings page (/charging/settings):
+// every integration the charging pages read, at a glance, with its own sync and
+// history. Failures still interrupt at the top of /charging
 // (SyncHealthAlert); this is the calm overview + diagnostics. One history
 // overlay, driven by the route's URL dialog state (ADR-0013).
 export function SyncSourcesPanel({

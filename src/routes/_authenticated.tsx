@@ -59,7 +59,7 @@ function AuthenticatedLayout() {
     <CommandPaletteProvider>
       <TooltipProvider>
         <SidebarProvider className="h-svh overflow-hidden">
-          <AppSidebar />
+          <AppSidebar role={user.role} />
           <SidebarInset className="min-h-0 overflow-hidden bg-surface-page">
             <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b bg-surface-page px-4 md:hidden">
               <SidebarTrigger />

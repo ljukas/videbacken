@@ -23,11 +23,24 @@ import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { m } from '~/paraglide/messages'
 
 // label is a message function rather than a string: module scope evaluates
-// once per process, but the active locale is per request/render.
+// once per process, but the active locale is per request/render. `scoped`
+// views share the page filter (year, vehicle); settings is admin-only and
+// unscoped. Every item carries both flags, so the array keeps one shape.
 const chargingSubItems = linkOptions([
-  { to: '/charging', label: m.nav_charging_overview },
-  { to: '/charging/patterns', label: m.nav_charging_patterns_short },
-  { to: '/charging/economy', label: m.nav_charging_economy_short },
+  { to: '/charging', label: m.nav_charging_overview, scoped: true, adminOnly: false },
+  {
+    to: '/charging/patterns',
+    label: m.nav_charging_patterns_short,
+    scoped: true,
+    adminOnly: false,
+  },
+  { to: '/charging/economy', label: m.nav_charging_economy_short, scoped: true, adminOnly: false },
+  {
+    to: '/charging/settings',
+    label: m.nav_charging_settings_short,
+    scoped: false,
+    adminOnly: true,
+  },
 ])
 
 const mainNavItems = linkOptions([
@@ -55,7 +68,15 @@ const sectionLinkProps = {
   activeOptions: { exact: true, includeSearch: false },
 } as const
 
-export function AppSidebar() {
+// Settings: matched exactly like the views, but it starts from a clean URL.
+const unscopedLinkProps = {
+  search: () => ({}),
+  activeOptions: { exact: true, includeSearch: false },
+} as const
+
+export function AppSidebar({ role }: { role?: string | null } = {}) {
+  // UX-only filter, like the palette's; the route enforces access.
+  const isAdmin = role === 'admin'
   const matchRoute = useMatchRoute()
   const { setOpenMobile } = useSidebar()
   const { setOpen: setCommandOpen } = useCommandPalette()
@@ -76,7 +97,9 @@ export function AppSidebar() {
           </Link>
         </SidebarMenuButton>
         {'subItems' in item ? (
-          <SidebarMenuSub>{item.subItems.map(renderSubItem)}</SidebarMenuSub>
+          <SidebarMenuSub>
+            {item.subItems.filter((s) => isAdmin || !s.adminOnly).map(renderSubItem)}
+          </SidebarMenuSub>
         ) : null}
       </SidebarMenuItem>
     )
@@ -89,7 +112,11 @@ export function AppSidebar() {
     return (
       <SidebarMenuSubItem key={item.to}>
         <SidebarMenuSubButton asChild isActive={isActive}>
-          <Link to={item.to} {...sectionLinkProps} onClick={() => setOpenMobile(false)}>
+          <Link
+            to={item.to}
+            {...(item.scoped ? sectionLinkProps : unscopedLinkProps)}
+            onClick={() => setOpenMobile(false)}
+          >
             <span>{item.label()}</span>
           </Link>
         </SidebarMenuSubButton>

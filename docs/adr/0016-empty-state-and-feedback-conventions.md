@@ -53,10 +53,11 @@ rather than restating them.
 - **Role-gating.** The CTA is gated on the viewer's capability, not just the presence of a handler:
   - Charging sessions (empty) → **admins** see "Sync now" (`SyncNowButton`; `onSync` is passed only for
     admins); users see icon + title + description only.
-  - Tariffs (empty) → **admins** see "New period" (`charging_tariff_new` → `open('tariffNew')`); users see an
-    icon + title + a description saying an administrator adds them.
+  - Tariffs (empty) → **admins** see "New period" (`charging_tariff_new` → `open('tariffNew')`); users never
+    reach the tariff card (it lives on the admin-only `/charging/settings`); their counterpart is the
+    overview's `CostNotice` ("Kostnaden visas när en administratör har lagt in avgifterna.").
 - **No CTA on filtered / sub-scope / terminal empties.** The reference is a sub-scope view: `RecentRunsTable`
-  (an admin's empty sync-run history, in the Datakällor overlay on `/charging`) opens from a source tile
+  (an admin's empty sync-run history, in the Datakällor overlay on `/charging/settings`) opens from a source tile
   that already carries its own sync button, so the history adds no CTA of its own — icon + title +
   description, nothing more. The
   template has no truly filtered or terminal empty today; the rule stands for when one arrives.
@@ -111,7 +112,7 @@ No new component is introduced. The convention lives in this ADR and in how each
 - `SessionList` — when `sessions.length === 0`, return `Empty` instead of the `Table`; it receives an
   `onSync?` prop (threaded from `charging.tsx`, admins only) and renders the admin-gated CTA.
 - `TariffCard` — renders `Empty` instead of the `Table` when there are no tariffs; the `admin` prop's `onNew`
-  (`open('tariffNew')` in `charging.tsx`) adds the CTA.
+  (`open('tariffNew')` in `src/routes/_authenticated/charging/settings.tsx`) adds the CTA.
 - `RecentRunsTable` — the reference sub-scope empty (no CTA; its Datakällor tile carries the sync).
 - `src/routes/_authenticated/sensors.tsx` and `src/routes/_authenticated/index.tsx` — top-level zero-states
   (`brand-wash`), no CTA: there is no in-app next action.
@@ -139,7 +140,7 @@ appear in an empty state.
 - `src/components/ui/empty.tsx` — the shared `Empty` composition (the seam).
 - `src/components/evCharging/SessionList.tsx` — `Empty` + admin CTA in place of the table.
 - `src/components/evCharging/TariffCard.tsx` — `Empty` + admin CTA inside the card.
-- `src/routes/_authenticated/charging.tsx` — threads `onSync` / `admin.onNew` (admins only).
+- `src/routes/_authenticated/charging.tsx` — threads `onSync` (admins only); `charging/settings.tsx` threads the tariff `admin.onNew`.
 - `src/components/evCharging/RecentRunsTable.tsx` — reference sub-scope empty (no CTA).
 - `messages/{sv,en}.json` — empty-state titles/descriptions and CTA labels.
 - `docs/adr/0015-visual-identity-and-design-language.md` — owns the brand token, logo mark, and illustration art

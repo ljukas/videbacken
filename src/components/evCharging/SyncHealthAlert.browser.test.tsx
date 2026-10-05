@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { integrationErrorMessage, integrationHealthTitle } from '~/lib/integrationHealthMessage'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { renderWithProviders } from '~test/browser/render'
+import { renderWithProviders, renderWithRouter } from '~test/browser/render'
 import { SyncHealthAlert } from './SyncHealthAlert'
 
 type Health = RouterOutputs['evCharging']['syncStatus']
@@ -246,4 +246,44 @@ test('an unexpected Emaldo answer says the app key may have changed', async () =
       screen.getByText(m.integration_health_error_unexpected_response_emaldo(), { exact: false }),
     )
     .toBeVisible()
+})
+
+test.each([
+  ['failing', { state: 'failing', code: 'auth_failed' }],
+  ['not configured', { state: 'not_configured' }],
+  ['stale', { state: 'stale' }],
+  ['never synced', { state: 'never_synced' }],
+] as const)('%s (admin, settingsLink): links to the settings page', async (_n, patch) => {
+  const { screen } = await renderWithRouter(
+    <SyncHealthAlert
+      health={{ ...base, ...patch } as Health}
+      isAdmin
+      settingsLink
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_settings_link() }))
+    .toHaveAttribute('href', '/charging/settings')
+})
+
+test('no settings link for a member, or without the prop', async () => {
+  const member = await renderWithRouter(
+    <SyncHealthAlert
+      health={failing}
+      isAdmin={false}
+      settingsLink
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect.element(member.screen.getByRole('alert')).toBeVisible()
+  expect(member.screen.getByRole('link').elements()).toHaveLength(0)
+  await member.screen.unmount()
+  const noProp = await renderWithRouter(
+    <SyncHealthAlert health={failing} isAdmin onRetry={() => {}} retrying={false} />,
+  )
+  await expect.element(noProp.screen.getByRole('alert')).toBeVisible()
+  expect(noProp.screen.getByRole('link').elements()).toHaveLength(0)
 })

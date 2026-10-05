@@ -55,7 +55,7 @@ src/
     api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), emaldo-sync.ts hourly at :45, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
-    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging, sensors
+    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging/{index,patterns,economy,settings (admin-only: Datakällor + tariffs)}, sensors
   lib/
     auth.ts / authClient.ts     betterAuth() (drizzleAdapter + google + magicLink + admin; allowlist gate) / createAuthClient()
     getSession.ts               server fn wrapping auth.api.getSession()
@@ -148,6 +148,7 @@ drizzle/, compose.yaml, vite.config.ts (Nitro: plugins, region, crons, queue tri
 | Solar-aware charging cost (Emaldo energy mix, battery pool, cash + solar value) | **0023** |
 | House energy pages (on-read monthly aggregates, loss + self-sufficiency definitions) | **0024** |
 | Deferred route loading (loaders await on server only, cached session guard, boneyard-js section skeletons) | **0025** |
+| Integration credential store (GUI-set, encrypted in Postgres, per-field over env; charging settings page) | **0026** |
 
 ---
 

@@ -170,7 +170,7 @@
   --share-h: oklch(0.83 0.11 183);
   --share-i: oklch(0.905 0.058 350);
   --share-j: oklch(0.83 0.09 296);
-  /* Integration source tones (the Datakällor tiles on /charging): categorical
+  /* Integration source tones (the Datakällor tiles on /charging/settings): categorical
      identity, not accents (ADR-0015 amendment). One hue per company, spread in
      lightness too so red-orange and yellow stay apart under deuteranopia; each
      icon ≥3:1 on its own wash; in sRGB gamut. Keep both themes in sync. */

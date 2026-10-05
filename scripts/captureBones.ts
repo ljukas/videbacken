@@ -22,7 +22,14 @@ import './loadEnv'
 
 const ORIGIN = process.env.BONES_ORIGIN ?? 'http://localhost:14610'
 const MAILPIT = 'http://localhost:14602'
-const DEFAULT_PATHS = ['/charging', '/charging/economy', '/charging/patterns', '/energy']
+// Signs in as the first admin, so /charging/settings (Datakällor, the tariff card) captures too.
+const DEFAULT_PATHS = [
+  '/charging',
+  '/charging/economy',
+  '/charging/patterns',
+  '/charging/settings',
+  '/energy',
+]
 
 const email = process.env.INITIAL_ADMIN_EMAILS?.split(',')[0]?.trim()
 if (!email) {

@@ -64,12 +64,12 @@ beforeEach(async () => {
   await page.viewport(1280, 800)
 })
 
-const renderSidebar = () =>
+const renderSidebar = (role: string | null = 'user') =>
   renderWithProviders(
     <CommandPaletteProvider>
       <TooltipProvider>
         <SidebarProvider>
-          <AppSidebar />
+          <AppSidebar role={role} />
         </SidebarProvider>
       </TooltipProvider>
     </CommandPaletteProvider>,
@@ -128,6 +128,42 @@ test("charging links match exactly, ignoring the views' own params, and keep the
   }
   // Other sections keep the router's default matching.
   expect(linkProps.get(m.nav_sensors())?.activeOptions).toBeUndefined()
+})
+
+test('admins get Inställningar under Laddning', async () => {
+  const { screen } = await renderSidebar('admin')
+  await expect
+    .element(screen.getByRole('link', { name: m.nav_charging_settings_short(), exact: true }))
+    .toHaveAttribute('href', '/charging/settings')
+})
+
+test('members do not see Inställningar', async () => {
+  const { screen } = await renderSidebar('user')
+  await expect
+    .element(screen.getByRole('link', { name: m.nav_charging_overview(), exact: true }))
+    .toBeVisible()
+  expect(
+    screen.getByRole('link', { name: m.nav_charging_settings_short(), exact: true }).elements(),
+  ).toHaveLength(0)
+})
+
+test('the settings link is exact and carries no page filter', async () => {
+  current.path = '/charging'
+  await renderSidebar('admin')
+  const props = linkProps.get(m.nav_charging_settings_short())
+  expect(props?.activeOptions).toEqual({ exact: true, includeSearch: false })
+  // A clean URL: the year and vehicle scope belong to the views, not to settings.
+  const search = props?.search as (prev: object) => object
+  expect(search({ year: 2025, vehicle: 'other' })).toEqual({})
+})
+
+test('on /charging/settings only Inställningar (and Laddning) is active', async () => {
+  current.path = '/charging/settings'
+  const { screen } = await renderSidebar('admin')
+  const link = (name: string) => screen.getByRole('link', { name, exact: true }).element()
+  expect(active(link(m.nav_charging_settings_short()))).toBe(true)
+  expect(active(link(m.nav_charging_overview()))).toBe(false)
+  expect(active(link(m.nav_charging()))).toBe(true)
 })
 
 test('lists Energi after Laddning, linking to /energy, active on /energy', async () => {

@@ -302,3 +302,11 @@ buttons, focus rings or surfaces, so `--brand` stays the one accent. The tones d
 well as hue (so they stay apart under red-green color blindness), and the icon and name always carry
 the identity, never the color alone. They are deliberately not `--chart-*`, whose dark palette
 changes hue (chart-1 is orange in light, blue in dark).
+
+## Amendment 2026-10-05: charging settings sub-item
+
+The charging section gets a fourth sub-item, "Inställningar" (`/charging/settings`, admin-only), because it is a
+peer destination holding the data sources and tariffs, not an in-page subpage of one view. The `Collapsible`
+revisit from the 2026-09-30 amendment is consciously deferred while the section stays at four items; members
+still see three. See [ADR-0026](0026-integration-credential-store.md) and the
+[charging settings design](../superpowers/specs/2026-10-05-charging-settings-design.md).
