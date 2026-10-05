@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { PiggyBankIcon } from 'lucide-react'
-import { useCallback, useId } from 'react'
+import { useCallback, useId, useRef } from 'react'
 import { z } from 'zod'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
@@ -10,6 +10,7 @@ import { EconomyMonthlyChart } from '~/components/evCharging/EconomyMonthlyChart
 import { EconomySessionTable } from '~/components/evCharging/EconomySessionTable'
 import { EconomyTiles } from '~/components/evCharging/EconomyTiles'
 import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
+import { SessionPagination } from '~/components/evCharging/SessionPagination'
 import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
@@ -19,6 +20,12 @@ import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
+import {
+  DEFAULT_SESSION_PAGE_SIZE,
+  pageSlice,
+  type SessionPageSize,
+  sessionPagingSearch,
+} from '~/lib/evCharging/paging'
 import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
@@ -29,6 +36,10 @@ const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
   // Whose charging: a clean URL means our car.
   vehicle: vehicleScope.optional().catch(undefined),
+  // The session table's page and rows per page: a clean URL is its first 10.
+  // Not loader deps: the page loads the whole year (the tiles and charts need
+  // all of it) and the table shows a slice of it.
+  ...sessionPagingSearch.shape,
 })
 
 const economyQuery = (year: number | undefined, vehicle: VehicleScope) =>
@@ -77,21 +88,58 @@ function EconomyPage() {
     placeholderData: keepPreviousData,
   })
   const { data: economy, isPlaceholderData: stale } = result
+  // Another year or scope is another table: back to its first page.
   const setYear = useCallback(
     (year: number) =>
-      navigate({ to: '.', search: (s) => ({ ...s, year }), replace: true, resetScroll: false }),
+      navigate({
+        to: '.',
+        search: (s) => ({ ...s, year, page: undefined }),
+        replace: true,
+        resetScroll: false,
+      }),
     [navigate],
   )
   const setVehicle = useCallback(
     (v: VehicleScope) =>
       navigate({
         to: '.',
-        search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v }),
+        search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v, page: undefined }),
         replace: true,
         resetScroll: false,
       }),
     [navigate],
   )
+  // As on /charging: paging pushes history and brings the table's heading back
+  // into view; a new size replaces the entry and starts at its first page.
+  const sessionsHeadingRef = useRef<HTMLHeadingElement>(null)
+  const pageSize = search.size ?? DEFAULT_SESSION_PAGE_SIZE
+  const setPage = useCallback(
+    (page: number) => {
+      navigate({
+        to: '.',
+        search: (s) => ({ ...s, page: page === 1 ? undefined : page }),
+        resetScroll: false,
+      })
+      sessionsHeadingRef.current?.scrollIntoView({ block: 'nearest' })
+    },
+    [navigate],
+  )
+  const setPageSize = useCallback(
+    (size: SessionPageSize) =>
+      navigate({
+        to: '.',
+        search: (s) => ({
+          ...s,
+          page: undefined,
+          size: size === DEFAULT_SESSION_PAGE_SIZE ? undefined : size,
+        }),
+        replace: true,
+        resetScroll: false,
+      }),
+    [navigate],
+  )
+  // The year's sessions, newest first, one page at a time (a page past the end shows the last).
+  const sessionsPage = economy ? pageSlice(economy.sessions, search.page ?? 1, pageSize) : undefined
   return (
     <PageContainer>
       <ChargingHeading
@@ -167,14 +215,25 @@ function EconomyPage() {
               <section aria-labelledby={sessionsHeadingId}>
                 <Card>
                   <CardHeader>
-                    <h2 id={sessionsHeadingId} className="font-medium text-sm">
+                    <h2
+                      id={sessionsHeadingId}
+                      ref={sessionsHeadingRef}
+                      className="scroll-mt-4 font-medium text-sm"
+                    >
                       {m.charging_economy_sessions_title()}
                     </h2>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="flex flex-col gap-3">
                     <EconomySessionTable
-                      sessions={economy.sessions}
+                      sessions={sessionsPage?.rows ?? []}
                       labelledBy={sessionsHeadingId}
+                    />
+                    <SessionPagination
+                      page={sessionsPage?.page ?? 1}
+                      pageSize={pageSize}
+                      total={economy.sessions.length}
+                      onPageChange={setPage}
+                      onPageSizeChange={setPageSize}
                     />
                   </CardContent>
                 </Card>

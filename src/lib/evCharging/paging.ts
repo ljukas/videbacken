@@ -45,3 +45,17 @@ export function pageItems(page: number, count: number): PageItem[] {
   if (current >= count - edge + 2) return [1, 'ellipsis', ...range(count - edge + 1, count)]
   return [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', count]
 }
+
+/**
+ * One page of rows already in hand (a list the page loaded whole), clamped like
+ * the `sessions` procedure: a page past the end is the last page, and `page`
+ * says which one was served.
+ */
+export function pageSlice<T>(
+  rows: readonly T[],
+  page: number,
+  pageSize: number,
+): { rows: T[]; page: number } {
+  const served = Math.min(Math.max(page, 1), pageCount(rows.length, pageSize))
+  return { rows: rows.slice((served - 1) * pageSize, served * pageSize), page: served }
+}

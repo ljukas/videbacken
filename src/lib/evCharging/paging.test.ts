@@ -4,6 +4,7 @@ import {
   MAX_SESSION_PAGE,
   pageCount,
   pageItems,
+  pageSlice,
   SESSION_PAGE_SIZES,
   sessionPageSize,
   sessionPagingSearch,
@@ -93,4 +94,14 @@ test('the URL paging params fall back to defaults instead of erroring', () => {
 test('a bad URL paging param falls back on its own, keeping the other', () => {
   expect(sessionPagingSearch.parse({ page: 3, size: 7 })).toEqual({ page: 3, size: undefined })
   expect(sessionPagingSearch.parse({ page: 0, size: 25 })).toEqual({ page: undefined, size: 25 })
+})
+
+test('pageSlice serves one page of rows, clamping a page past the end like the server', () => {
+  const rows = Array.from({ length: 23 }, (_, i) => i + 1)
+  expect(pageSlice(rows, 1, 10)).toEqual({ rows: rows.slice(0, 10), page: 1 })
+  expect(pageSlice(rows, 3, 10)).toEqual({ rows: [21, 22, 23], page: 3 })
+  expect(pageSlice(rows, 9, 10)).toEqual({ rows: [21, 22, 23], page: 3 })
+  expect(pageSlice(rows, 0, 10)).toEqual({ rows: rows.slice(0, 10), page: 1 })
+  expect(pageSlice(rows, 1, 25)).toEqual({ rows, page: 1 })
+  expect(pageSlice([], 4, 10)).toEqual({ rows: [], page: 1 })
 })

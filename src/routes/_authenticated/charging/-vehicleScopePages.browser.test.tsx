@@ -802,3 +802,113 @@ test('Översikt: a page that fails to load keeps the last page, dimmed, under th
   expect(list?.getAttribute('aria-busy')).toBe('false')
   expect(list?.className).toContain('opacity-60')
 })
+
+// --- Ekonomi: the session table's pages ----------------------------------------
+
+// The year's sessions, newest first: row n (1-based) charged 100 + n + 0.1 kWh,
+// so "101,1" is the newest and each row's kWh names it.
+function seedEconomyRows(qc: QueryClient, count: number, years = [2026]) {
+  const cost = (totalSek: number) => ({ ...emptyTotals(), kwh: 10, gridKwh: 10, totalSek })
+  const rows = Array.from({ length: count }, (_, i) => ({
+    sessionId: `e${i + 1}`,
+    startAt: new Date(Date.UTC(2026, 8, 30 - i, 18)),
+    endAt: new Date(Date.UTC(2026, 8, 30 - i, 20)),
+    kwh: 100 + i + 1 + 0.1,
+    actual: cost(20),
+    actualComplete: true,
+    paidSpotOre: 40,
+    windowAvgSpotOre: 55,
+    vehicle: 'ours',
+    excluded: null,
+    counterfactual: {
+      immediate: cost(25),
+      optimal: cost(15),
+      dearest: cost(30),
+      score: 0.5,
+      savedVsImmediateSek: 5,
+      leftOnTableSek: 5,
+    },
+  }))
+  qc.setQueryData(
+    orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle: 'ours' } }).queryKey,
+    {
+      year: 2026,
+      years,
+      tiles: economyTotals(count),
+      months: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...economyTotals(0) })),
+      sessions: rows,
+    } as never,
+  )
+}
+
+const kwhCell = (n: number) => `${100 + n},1`
+
+test('Ekonomi: the session table shows its newest 10, then pages through the year', async () => {
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '', (qc) =>
+    seedEconomyRows(qc, 23),
+  )
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await expect.element(screen.getByText(kwhCell(10), { exact: false })).toBeVisible()
+  expect(screen.getByText(kwhCell(11), { exact: false }).elements()).toHaveLength(0)
+  await expect
+    .element(screen.getByRole('status'))
+    .toHaveTextContent(m.charging_sessions_pagination_range({ from: 1, to: 10, total: 23 }))
+  await screen.getByRole('button', { name: '3', exact: true }).click()
+  await expect.element(screen.getByText(kwhCell(23), { exact: false })).toBeVisible()
+  expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0)
+  expect(router.state.location.search).toMatchObject({ page: 3 })
+})
+
+test('Ekonomi: 25 rows per page shows the whole year on one page', async () => {
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) =>
+    seedEconomyRows(qc, 23),
+  )
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '25' }).click()
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await expect.element(screen.getByText(kwhCell(23), { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ size: 25 })
+  expect(router.state.location.search).not.toHaveProperty('page')
+})
+
+test('Ekonomi: a page past the end shows the last page', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '?page=9', (qc) =>
+    seedEconomyRows(qc, 23),
+  )
+  await expect.element(screen.getByText(kwhCell(21), { exact: false })).toBeVisible()
+  await expect
+    .element(screen.getByRole('button', { name: '3', exact: true }))
+    .toHaveAttribute('aria-current', 'page')
+})
+
+test('Ekonomi: another year starts the table at its first page', async () => {
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) =>
+    seedEconomyRows(qc, 23, [2026, 2025]),
+  )
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
+  await screen.getByRole('option', { name: '2025' }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
+  expect(router.state.location.search).not.toHaveProperty('page')
+})
+
+test('Ekonomi: another vehicle scope starts the table at its first page', async () => {
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) =>
+    seedEconomyRows(qc, 23),
+  )
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  await radio(screen, m.charging_vehicle_scope_other()).click()
+  await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ vehicle: 'other' }))
+  expect(router.state.location.search).not.toHaveProperty('page')
+})
+
+test('Ekonomi: ten sessions or fewer need no pagination', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) =>
+    seedEconomyRows(qc, 10),
+  )
+  await expect.element(screen.getByText(kwhCell(10), { exact: false })).toBeVisible()
+  expect(
+    screen.getByRole('navigation', { name: m.charging_sessions_pagination_label() }).elements(),
+  ).toHaveLength(0)
+})
