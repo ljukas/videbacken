@@ -39,15 +39,43 @@ const pool = new Pool({
 // already discarded that client, so logging is all that's left to do.
 pool.on('error', (error) => logger.warn('idle postgres client error', { error }))
 
-// The pool's state for the `rpc timing` line (ADR-0025 §5): at a request's
-// start, how many connections are open, idle, and how many checkouts wait.
-// A burst that opens connections (total < 10, idle 0) and one that queues
-// (waiting > 0) need different fixes. Counters only — not a query.
+// The pool's state for the `rpc timing` line (ADR-0025 §5), at a request's
+// start: open connections (connecting ones included), idle ones, and waiting
+// checkouts. Counters only — not a query.
 export const poolStats = () => ({
   poolTotal: pool.totalCount,
   poolIdle: pool.idleCount,
   poolWaiting: pool.waitingCount,
 })
+
+// What the pool did while a request was in flight: new physical connections
+// opened, and the longest checkout queue seen. A start-of-request sample can't
+// see either — a burst's requests all start before any of them queries — and
+// they tell the two fixes apart: opening connections (keep them warm) vs
+// queueing (pool size). Instance-wide: a request also counts its neighbours'
+// activity, which is the burst it shares the pool with. The pool emits
+// `release` before it hands the client to the next waiter, so a queue shows.
+type PoolWatch = { opened: number; peakWaiting: number }
+const watches = new Set<PoolWatch>()
+const sampleWaiting = () => {
+  for (const watch of watches) watch.peakWaiting = Math.max(watch.peakWaiting, pool.waitingCount)
+}
+pool.on('connect', () => {
+  for (const watch of watches) watch.opened += 1
+  sampleWaiting()
+})
+pool.on('acquire', sampleWaiting)
+pool.on('release', sampleWaiting)
+
+/** Starts watching the pool; the returned function stops and reports. */
+export function watchPool(): () => { poolOpened: number; poolPeakWaiting: number } {
+  const watch: PoolWatch = { opened: 0, peakWaiting: pool.waitingCount }
+  watches.add(watch)
+  return () => {
+    watches.delete(watch)
+    return { poolOpened: watch.opened, poolPeakWaiting: watch.peakWaiting }
+  }
+}
 // Deliberately no `attachDatabasePool` (@vercel/functions): it `waitUntil`s
 // idleTimeoutMillis + 100 ms (~10 s) after every query, so each ~100 ms poll
 // would keep its Fluid instance billed ~100x longer (ADR-0018). Connections
