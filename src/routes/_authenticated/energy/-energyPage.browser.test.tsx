@@ -6,7 +6,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { emaldoHealthQuery, energyOverviewQuery } from '~/components/energy/energyQueries'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
@@ -184,7 +184,12 @@ test.each([
 test('Nät switches the chart to the grid series', async () => {
   const { screen } = await renderPage(Overview, '/energy', seedOverview(withData))
   await screen.getByRole('radio', { name: m.energy_metric_grid() }).click()
-  await expect.element(screen.getByText(m.energy_series_import_direct())).toBeVisible()
+  // From the legend: a tooltip under a stray pointer would repeat the label.
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('.recharts-legend-wrapper')?.textContent ?? '').toContain(
+      m.energy_series_import_direct(),
+    ),
+  )
 })
 
 const with2025 = { ...withData, year: 2025, availableYears: [2026, 2025] }

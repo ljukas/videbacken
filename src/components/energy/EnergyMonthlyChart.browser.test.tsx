@@ -31,30 +31,6 @@ const render = (metric: EnergyMetric, data: (PeriodSums | null)[] = months) =>
     </div>,
   )
 
-test('solar: three stacked series, one bar per month with data', async () => {
-  const { screen } = await render('solar')
-  await vi.waitFor(() => {
-    // 9 months × 3 series.
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(27)
-  })
-  await expect.element(screen.getByText(m.energy_series_solar_direct())).toBeVisible()
-  await expect.element(screen.getByText(m.energy_series_solar_battery())).toBeVisible()
-  await expect.element(screen.getByText(m.energy_series_solar_exported())).toBeVisible()
-})
-
-test('grid metric names its series in the legend', async () => {
-  const { screen } = await render('grid')
-  await expect.element(screen.getByText(m.energy_series_import_direct())).toBeVisible()
-  await expect.element(screen.getByText(m.energy_series_import_battery())).toBeVisible()
-  await expect.element(screen.getByText(m.energy_series_export())).toBeVisible()
-})
-
-test('load metric names its series in the legend', async () => {
-  const { screen } = await render('load')
-  await expect.element(screen.getByText(m.energy_series_car())).toBeVisible()
-  await expect.element(screen.getByText(m.energy_series_house())).toBeVisible()
-})
-
 const legendText = (container: Element) =>
   container.querySelector('.recharts-legend-wrapper')?.textContent ?? ''
 const inOrder = (text: string, labels: string[]) => {
@@ -62,6 +38,40 @@ const inOrder = (text: string, labels: string[]) => {
   expect(at.every((i) => i >= 0)).toBe(true)
   expect(at).toEqual([...at].sort((a, b) => a - b))
 }
+
+// Series names are read from the legend only: a tooltip (opened by a pointer
+// left over the chart's spot) repeats them, so a page-wide getByText can match twice.
+const expectLegend = (container: Element, labels: string[]) =>
+  vi.waitFor(() => {
+    for (const label of labels) expect(legendText(container)).toContain(label)
+  })
+
+test('solar: three stacked series, one bar per month with data', async () => {
+  const { screen } = await render('solar')
+  await vi.waitFor(() => {
+    // 9 months × 3 series.
+    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(27)
+  })
+  await expectLegend(screen.container, [
+    m.energy_series_solar_direct(),
+    m.energy_series_solar_battery(),
+    m.energy_series_solar_exported(),
+  ])
+})
+
+test('grid metric names its series in the legend', async () => {
+  const { screen } = await render('grid')
+  await expectLegend(screen.container, [
+    m.energy_series_import_direct(),
+    m.energy_series_import_battery(),
+    m.energy_series_export(),
+  ])
+})
+
+test('load metric names its series in the legend', async () => {
+  const { screen } = await render('load')
+  await expectLegend(screen.container, [m.energy_series_car(), m.energy_series_house()])
+})
 
 test('the legend follows the stack order on Solel', async () => {
   const { screen } = await render('solar')
