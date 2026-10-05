@@ -13,7 +13,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | [#89](https://github.com/ljukas/videbacken/pull/89) | checkpoint passed | 2026-10-05: the owner confirmed the drag is gone on the phone. Prod logs show 0 `/_serverFn` calls since the #89 deploy (230 in the 6 h before), across `/charging`, economy, patterns, `/sensors` and `/users`. Small layout shifts seen, now step 7. |
 | 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | PR_LINK | PR open | — |
 | 3 | Fewer requests per `/charging` load: one procedure for the Datakällor panel *or* app-wide oRPC batching (decided in its session; see [notes](#step-3-notes)) | — | — | needs shaping | — |
-| 4 | Bundle: phone fields out of the global form hook; lazy-load the admin-only dialogs on `/charging` | — | — | not started | — |
+| 4 | Bundle: phone fields out of the global form hook; lazy-load the admin-only dialogs on `/charging`; one bones registry per page group (since step 2, `/sensors` and `/users` load ~23 KB gz of charging bones) | — | — | not started | — |
 | 5 | Replace recharts with visx (refactor-workflow) | — | — | not started | — |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font | — | — | not started | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
@@ -42,7 +42,7 @@ the step needs a short brainstorm before its plan.
    and `findActiveById` within that load stays under ~20 ms.
 4. **After step 4 (build).** The form chunk no longer contains `country-flag-icons` or `libphonenumber-js` except on
    pages with a phone field. `/charging` adds at most ~245 KB gz beyond the entry (from ~361 after step 1, which
-   added ~27 KB gz of skeleton bones).
+   added ~27 KB gz of skeleton bones). `/sensors` and `/users` load only their own bones.
 5. **After step 5 (prod).** Owner reviews every converted chart live. recharts, redux, immer and decimal.js-light are
    gone from the build.
 6. **After step 6 (build).** The upload chunk shrinks, and the font preload shows in the SSR `<head>`.
