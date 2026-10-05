@@ -285,6 +285,10 @@ describe('priceIntervals with an energy mix (ADR-0023)', () => {
       noHouseDataKwh: 0.5,
       solarKwh: 0,
       batteryKwh: 0,
+      // Neither part is solar-origin, so none of it has a solar value to show.
+      solarPricedKwh: 0,
+      solarUnpricedKwh: 0,
+      solarValueSek: 0,
     })
     expect(t.spotSek).toBeCloseTo(1.5 * 4.0 * 1.25)
     expect(t.feesSek).toBeCloseTo(1.5 * FEES_SEK)
@@ -542,6 +546,33 @@ describe('priceIntervals with an energy mix: overlap, coverage and days', () => 
       [],
     )
     expect(t).toMatchObject({ gridKwh: 3, noTariffKwh: 3, fullKwh: 0, noPriceKwh: 0, totalSek: 0 })
+  })
+
+  test('without a tariff own solar is still valued: its value needs only spot, never fees', () => {
+    const t = priceIntervals(
+      [piece(AT, { solarKwh: 1, batterySolarKwh: 1, batterySolarSpotSek: 0.7 })],
+      day,
+      [],
+    )
+    expect(t).toMatchObject({ solarPricedKwh: 2, solarUnpricedKwh: 0 })
+    expect(t.solarValueSek).toBeCloseTo(4.0 + 0.7)
+  })
+
+  test('grid, battery-from-grid and unpriced battery parts are never solar-origin', () => {
+    const t = priceIntervals(
+      [
+        piece(AT, {
+          gridKwh: 1,
+          noHouseDataKwh: 1,
+          batteryGridKwh: 1,
+          batteryGridSpotSek: 0.3,
+          batteryUnpricedKwh: 1,
+        }),
+      ],
+      day,
+      [TARIFF],
+    )
+    expect(t).toMatchObject({ solarPricedKwh: 0, solarUnpricedKwh: 0, solarValueSek: 0 })
   })
 
   test('negative stored battery spots are real prices', () => {
