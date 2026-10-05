@@ -35,6 +35,17 @@ test('shows this month by default with all five readouts', async () => {
     .element(screen.getByText(m.energy_tile_import_to_battery({ kwh: '68,0' })))
     .toBeVisible()
   await expect.element(screen.getByText(m.energy_tile_load_car({ kwh: '312,0' }))).toBeVisible()
+  await expect
+    .element(
+      screen.getByText(
+        m.energy_tile_solar_split({
+          direct: '44\u00a0%',
+          battery: '34\u00a0%',
+          exported: '22\u00a0%',
+        }),
+      ),
+    )
+    .toBeVisible()
   // 1 − 561 / 947 ≈ 41 %
   await expect.element(screen.getByText(/^41\s%$/)).toBeVisible()
 })
@@ -53,6 +64,8 @@ test('a period without data says so', async () => {
   const { screen } = await renderWithProviders(
     <EnergyTiles tiles={{ thisMonth: null, thisYear: sums(), allTime: sums() }} />,
   )
+  // Opens on the first period with data; the empty month says so when picked.
+  await userEvent.click(screen.getByRole('tab', { name: m.charging_tile_this_month() }))
   await expect.element(screen.getByText(m.energy_period_no_data())).toBeVisible()
 })
 
@@ -82,6 +95,52 @@ test('no solar means no split line; no grid charging means no "varav" line', asy
       }}
     />,
   )
+  await expect.element(screen.getByText('561,0 kWh')).toBeVisible()
   expect(screen.getByText(/^Direkt /).elements()).toHaveLength(0)
   expect(screen.getByText(/till batteriet/).elements()).toHaveLength(0)
+})
+
+test('an overshooting battery-from-solar never shows above 100 %', async () => {
+  const { screen } = await renderWithProviders(
+    <EnergyTiles
+      tiles={{
+        thisMonth: sums({ solarKwh: 100, batteryChargeSolarKwh: 130, gridExportKwh: 0 }),
+        thisYear: null,
+        allTime: null,
+      }}
+    />,
+  )
+  await expect
+    .element(
+      screen.getByText(
+        m.energy_tile_solar_split({
+          direct: '0\u00a0%',
+          battery: '100\u00a0%',
+          exported: '0\u00a0%',
+        }),
+      ),
+    )
+    .toBeVisible()
+})
+
+test('no consumption shows a dash and no self-sufficiency detail', async () => {
+  const { screen } = await renderWithProviders(
+    <EnergyTiles
+      tiles={{ thisMonth: sums({ loadKwh: 0, carKwh: 0 }), thisYear: null, allTime: null }}
+    />,
+  )
+  await expect.element(screen.getByText('—')).toBeVisible()
+  expect(screen.getByText(m.energy_tile_self_sufficiency_detail()).elements()).toHaveLength(0)
+})
+
+test('opens on the first period with data', async () => {
+  const { screen } = await renderWithProviders(
+    <EnergyTiles
+      tiles={{ thisMonth: null, thisYear: sums({ solarKwh: 5000 }), allTime: sums() }}
+    />,
+  )
+  await expect
+    .element(screen.getByRole('tab', { name: m.charging_tile_this_year() }))
+    .toHaveAttribute('aria-selected', 'true')
+  await expect.element(screen.getByText(/^5\s000,0 kWh$/)).toBeVisible()
 })

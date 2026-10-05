@@ -25,8 +25,10 @@ export function PeriodTabs({
   tiles: EnergyTilesData
   children: (sums: PeriodSums) => ReactNode
 }) {
+  // The first period with data: the new month's first hour has none yet.
+  const initial = PERIODS.find(({ key }) => tiles[key])?.key ?? 'thisMonth'
   return (
-    <Tabs defaultValue="thisMonth">
+    <Tabs defaultValue={initial}>
       <Card>
         <CardHeader className="pb-2">
           <TabsList

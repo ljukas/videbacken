@@ -24,7 +24,10 @@ const kwh = (value: number) => formatOneDecimal(value)
 function PeriodReadouts({ sums }: { sums: PeriodSums }) {
   const f = energyFigures(sums)
   const gap = gapHours(f)
-  const share = (part: number) => formatShare(part / sums.solarKwh)
+  // Normalised so an overshoot (more solar into the battery than was produced)
+  // never reads above 100 %; in the normal case the denominator is solarKwh.
+  const splitTotal = Math.max(sums.solarKwh, f.solarDirect + f.solarToBattery + f.solarExported)
+  const share = (part: number) => formatShare(part / splitTotal)
   return (
     <div className="@container flex flex-col gap-3">
       <div className="grid @4xl:grid-cols-5 @sm:grid-cols-2 gap-4">
