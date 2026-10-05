@@ -65,7 +65,7 @@ export const Route = createFileRoute('/_authenticated/charging/economy')({
     year: search.year,
     vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
-  // ADR-0024: awaited on the server only; the client shows the skeleton. A
+  // ADR-0025: awaited on the server only; the client shows the skeleton. A
   // failed economy read shows its own alert under a working heading.
   loader: ({ context: { queryClient }, deps }) =>
     loadRouteData(queryClient, {

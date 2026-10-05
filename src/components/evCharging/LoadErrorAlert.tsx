@@ -24,7 +24,7 @@ export type LoadErrorQuery = {
 export const loadFailed = (query: LoadErrorQuery) =>
   (query.data === undefined || query.isPlaceholderData) && query.errorUpdateCount > 0
 
-// Whether a section has nothing to show yet and is still loading (ADR-0024 §3):
+// Whether a section has nothing to show yet and is still loading (ADR-0025 §3):
 // no data of its own or placeholder, and no failure. A failed read shows the
 // alert instead, and the previous key's placeholder data stays on screen dimmed.
 export const firstLoadPending = (query: LoadErrorQuery) =>

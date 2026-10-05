@@ -111,7 +111,7 @@ export const Route = createFileRoute('/_authenticated/charging/')({
     year: search.year,
     vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
-  // ADR-0024: the server waits for what renders at the top; the client waits
+  // ADR-0025: the server waits for what renders at the top; the client waits
   // for nothing (sections show skeletons). Datakällor's histories, the car's
   // latest state and the log coverage sit at the bottom, so they're deferred.
   loader: async ({ context: { queryClient, user }, deps, location }) => {
@@ -254,7 +254,7 @@ function ChargingPage() {
   })
   const { data: cost, isPlaceholderData: costIsStale } = costResult
   // The totals and the chart keep their skeletons until every read that changes
-  // their shape is in (ADR-0024 §3): the overview, and the cost and tariffs that
+  // their shape is in (ADR-0025 §3): the overview, and the cost and tariffs that
   // add the kr readout, the metric toggle, the notice and the footnote. On a
   // client navigation those land separately. A failed read isn't pending, so the
   // page then shows the grid-only figures and that read's alert.

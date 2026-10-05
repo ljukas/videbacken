@@ -1,7 +1,7 @@
 # Roadmap — client performance
 
 Control document for the client-performance work that came out of the 2026-10-05 audit (below). The navigation
-design is [ADR-0024](../../adr/0024-deferred-route-loading.md). **One step = one session = one PR.**
+design is [ADR-0025](../../adr/0025-deferred-route-loading.md). **One step = one session = one PR.**
 
 Unlike earlier roadmaps, only step 1's plan is written up front. Each later step writes its own plan, and any short
 design it needs, at the start of its session, because steps 3–6 depend on what the earlier ones measure.
@@ -10,7 +10,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Deferred route loading on the charging pages (ADR-0024: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | — | in progress | — |
+| 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | — | in progress | — |
 | 2 | Same pattern on `/sensors` and `/users` | — | — | not started | — |
 | 3 | Fewer requests per `/charging` load: one procedure for the Datakällor panel *or* app-wide oRPC batching (decided in its session; see [notes](#step-3-notes)) | — | — | needs shaping | — |
 | 4 | Bundle: phone fields out of the global form hook; lazy-load the admin-only dialogs on `/charging` | — | — | not started | — |
@@ -22,7 +22,7 @@ the step needs a short brainstorm before its plan.
 
 ## How a session runs a step
 
-1. Read this roadmap and ADR-0024. Find the first step whose status isn't `checkpoint passed`.
+1. Read this roadmap and ADR-0025. Find the first step whose status isn't `checkpoint passed`.
    - If it is `merged` but its checkpoint hasn't passed, **run the checkpoint, don't start the next step**. Record the
      result here (in a small `docs(perf): …` PR, or in the next step's PR if the owner says so).
 2. No plan yet? Write it first (`superpowers:writing-plans`), starting with a task that re-measures the step's

@@ -15,7 +15,7 @@ const capturing = () =>
   (window as { __BONEYARD_BUILD?: boolean }).__BONEYARD_BUILD === true
 
 /**
- * A section's loading state (ADR-0024 §3–4), the only place pages meet boneyard.
+ * A section's loading state (ADR-0025 §3–4), the only place pages meet boneyard.
  * Loading shows the bones captured for `name` (`bun run bones:capture`), or a
  * plain block if none are captured yet. Only after hydration: a server-rendered
  * failed read has no skeleton, so the first client render mustn't have one either.

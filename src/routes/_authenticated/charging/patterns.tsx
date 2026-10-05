@@ -72,7 +72,7 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
     month: search.month,
     vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
-  // ADR-0024: awaited on the server only; the client shows the skeletons. A
+  // ADR-0025: awaited on the server only; the client shows the skeletons. A
   // failed read shows its own alert with a retry instead of taking down the page.
   loader: ({ context: { queryClient }, deps }) =>
     loadRouteData(queryClient, {

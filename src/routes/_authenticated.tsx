@@ -46,7 +46,7 @@ function AuthenticatedLayout() {
   const queryClient = useQueryClient()
 
   // Returning to the tab re-checks the session on the next navigation, so a
-  // sign-out in another tab is noticed then (ADR-0024 §2).
+  // sign-out in another tab is noticed then (ADR-0025 §2).
   useEffect(
     () =>
       focusManager.subscribe((focused) => {

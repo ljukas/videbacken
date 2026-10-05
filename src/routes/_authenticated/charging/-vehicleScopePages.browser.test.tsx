@@ -543,7 +543,7 @@ test('Översikt: before any house data the note says all charging counts as boug
   expect(screen.getByText(/Sol och batteri räknas in/).elements()).toHaveLength(0)
 })
 
-// --- Översikt: deferred loading (ADR-0024) ------------------------------------
+// --- Översikt: deferred loading (ADR-0025) ------------------------------------
 
 const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)
 
@@ -630,7 +630,7 @@ test('Översikt, one source state still loading: Datakällor is a skeleton, neve
   expect(screen.getByText(m.charging_source_state_unknown()).elements()).toHaveLength(0)
 })
 
-// --- Ekonomi and Mönster: deferred loading (ADR-0024) -------------------------
+// --- Ekonomi and Mönster: deferred loading (ADR-0025) -------------------------
 
 const economyKey = orpc.evCharging.economy.queryOptions({
   input: { year: undefined, vehicle: 'all' },

@@ -4,7 +4,7 @@
 // capture /login. This signs a Playwright browser in through the local magic
 // link (Mailpit), then runs the boneyard CLI with the session cookies.
 //
-// Usage (dev stack up, realistic local data, ADR-0024):
+// Usage (dev stack up, realistic local data, ADR-0025):
 //   BETTER_AUTH_URL=http://localhost:14610 bunx vite dev --port 14610 --strictPort   # one terminal
 //   bun run bones:capture                       # the default pages
 //   bun run bones:capture /charging/economy     # just these paths

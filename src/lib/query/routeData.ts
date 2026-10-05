@@ -9,7 +9,7 @@ export type MaybeRouteQuery = RouteQuery | null | false
 const present = (q: MaybeRouteQuery): q is RouteQuery => Boolean(q)
 
 /**
- * A route loader's data (ADR-0024 §1). The one place that decides what a
+ * A route loader's data (ADR-0025 §1). The one place that decides what a
  * navigation waits for:
  * - server (first load, refresh): awaits `critical` so the HTML is complete,
  *   and doesn't start `deferred` at all. A deferred query streamed to the

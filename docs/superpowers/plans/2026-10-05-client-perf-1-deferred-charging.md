@@ -16,7 +16,7 @@ section skeletons filling in, instead of freezing the old page for a second or m
 **Tech Stack:** TanStack Start/Router 1.170 + TanStack Query 5.104, oRPC, boneyard-js 1.10 (React), Vitest
 (node + browser projects), Playwright (capture script).
 
-**Spec:** [ADR-0024](../../adr/0024-deferred-route-loading.md). Read it first. Roadmap:
+**Spec:** [ADR-0025](../../adr/0025-deferred-route-loading.md). Read it first. Roadmap:
 [client performance](../roadmaps/2026-10-05-client-performance.md), step 1 (baseline numbers there).
 
 ## Global Constraints
@@ -30,7 +30,7 @@ section skeletons filling in, instead of freezing the old page for a second or m
 - Reduced motion: no skeleton animation under `prefers-reduced-motion: reduce` (ADR-0015).
 - Session cache lifetime = Better Auth `session.cookieCache.maxAge` (5 min), via one shared constant.
 - The cached session holds `{ user }` or `null`, never the session or its token.
-- No `useSuspenseQuery` for data a client navigation defers (ADR-0024 §3). It stays only for `user.me`.
+- No `useSuspenseQuery` for data a client navigation defers (ADR-0025 §3). It stays only for `user.me`.
 - Conventional Commits, one hat per commit; reviewers must **not** run vitest (shared local DB, see memory).
 
 ## Review Focus
@@ -66,7 +66,7 @@ section skeletons filling in, instead of freezing the old page for a second or m
 | `src/components/evCharging/ChargingHeading.tsx` | `lastSuccessAt` may be `undefined` (unknown yet) |
 
 The session page (`charging/sessions/$sessionId.tsx`) is **not** changed: its loader awaits on purpose (not-found
-decision, ADR-0024 §1 exception), and it gains the cached guard for free.
+decision, ADR-0025 §1 exception), and it gains the cached guard for free.
 
 ---
 
@@ -93,7 +93,7 @@ sessions, get data first: run the dev server with `ZAPTEC_ADAPTER=fake` and pres
 
 ### Task 1: Spike — can boneyard-js capture and replay a signed-in section?
 
-This is the ADR-0024 gate. **Outcome:** `go` (keep boneyard) or `no-go` (switch `SectionSkeleton`'s internals to
+This is the ADR-0025 gate. **Outcome:** `go` (keep boneyard) or `no-go` (switch `SectionSkeleton`'s internals to
 react-loading-skeleton in Task 4), recorded in the ADR in Task 7.
 
 **Files:**
@@ -148,7 +148,7 @@ JSON files are generated.
 // capture /login. This signs a Playwright browser in through the local magic
 // link (Mailpit), then runs the boneyard CLI with the session cookies.
 //
-// Usage (dev stack up, realistic local data, ADR-0024):
+// Usage (dev stack up, realistic local data, ADR-0025):
 //   BETTER_AUTH_URL=http://localhost:14610 bunx vite dev --port 14610 --strictPort   # one terminal
 //   bun run bones:capture                       # the default pages
 //   bun run bones:capture /charging/economy     # just these paths
@@ -351,7 +351,7 @@ test('reuses the session for the cookie-cache lifetime, then asks the server aga
 
 ```ts
 // Better Auth's session cookie cache lifetime (auth.ts `session.cookieCache`).
-// The client guard caches the session for exactly as long (ADR-0024 §2): the
+// The client guard caches the session for exactly as long (ADR-0025 §2): the
 // server-side getSession() could already answer from a cookie this old, so the
 // guard is no staler than before. Client-safe: no auth/db imports.
 export const SESSION_COOKIE_CACHE_MAX_AGE_S = 5 * 60
@@ -368,7 +368,7 @@ import { SESSION_COOKIE_CACHE_MAX_AGE_S } from './authConfig'
 import { getSession } from './getSession'
 
 // The `_authenticated` guard's session, cached so a client navigation doesn't
-// call the server function every time (ADR-0024 §2). Holds only the user: the
+// call the server function every time (ADR-0025 §2). Holds only the user: the
 // SSR query integration serializes the cache into the HTML, and the session
 // token must never be in it. Sign-out clears it (useSignOut → queryClient.clear()).
 export const sessionQueryOptions = queryOptions({
@@ -503,7 +503,7 @@ export type MaybeRouteQuery = RouteQuery | null | false
 const present = (q: MaybeRouteQuery): q is RouteQuery => Boolean(q)
 
 /**
- * A route loader's data (ADR-0024 §1). The one place that decides what a
+ * A route loader's data (ADR-0025 §1). The one place that decides what a
  * navigation waits for:
  * - server (first load, refresh): awaits `critical` so the HTML is complete;
  *   `deferred` starts without awaiting and streams to the client.
@@ -630,7 +630,7 @@ Expected: FAIL, `firstLoadPending` is not exported and `./SectionSkeleton` can't
 `LoadErrorAlert.tsx`, below `loadFailed`:
 
 ```tsx
-// Whether a section has nothing to show yet and is still loading (ADR-0024 §3):
+// Whether a section has nothing to show yet and is still loading (ADR-0025 §3):
 // no data of its own or placeholder, and no failure. A failed read shows the
 // alert instead, and the previous key's placeholder data stays on screen dimmed.
 export const firstLoadPending = (query: LoadErrorQuery) =>
@@ -651,7 +651,7 @@ const capturing = () =>
   (window as { __BONEYARD_BUILD?: boolean }).__BONEYARD_BUILD === true
 
 /**
- * A section's loading state (ADR-0024 §3–4), the only place pages meet boneyard.
+ * A section's loading state (ADR-0025 §3–4), the only place pages meet boneyard.
  * Loading shows the bones captured for `name` (`bun run bones:capture`), or a
  * plain block if none are captured yet. Only after hydration: a server-rendered
  * failed read has no skeleton, so the first client render mustn't have one either.
@@ -841,7 +841,7 @@ Update the doc comment: "`lastSuccessAt` is `undefined` while the sync status is
 Replace the `loader` in `charging/index.tsx` with:
 
 ```tsx
-  // ADR-0024: the server waits for what renders at the top; the client waits
+  // ADR-0025: the server waits for what renders at the top; the client waits
   // for nothing (sections show skeletons). Datakällor's histories, the car's
   // latest state and the log coverage sit at the bottom, so they're deferred.
   loader: async ({ context: { queryClient, user }, deps }) => {
@@ -1027,7 +1027,7 @@ test('patterns loaded, timeline still loading: only the timeline is a skeleton',
 Loader:
 
 ```tsx
-  // ADR-0024: awaited on the server only; the client shows the skeleton.
+  // ADR-0025: awaited on the server only; the client shows the skeleton.
   loader: ({ context: { queryClient }, deps }) =>
     loadRouteData(queryClient, {
       critical: [
@@ -1087,7 +1087,7 @@ git commit -m "perf(charging): defer the economy and patterns pages' data"
 
 **Files:**
 - Create (generated): `src/bones/*.bones.json`, `src/bones/registry.js`
-- Modify: `docs/adr/0024-deferred-route-loading.md` (spike outcome), `CLAUDE.md`,
+- Modify: `docs/adr/0025-deferred-route-loading.md` (spike outcome), `CLAUDE.md`,
   `docs/superpowers/roadmaps/2026-10-05-client-performance.md`
 
 - [ ] **Step 1: Capture** (go only)
@@ -1118,13 +1118,13 @@ Paste the request logs and screenshots into the PR's Verification section.
 
 - [ ] **Step 3: Docs**
 
-- **ADR-0024:** set the spike outcome. Change the Status line to "Accepted", and under Decision 4 add
+- **ADR-0025:** set the spike outcome. Change the Status line to "Accepted", and under Decision 4 add
   "**Spike (2026-10-05): go.** …what was captured, widths, themes…" (or the no-go amendment with the reason, if Task
   1 said no-go).
-- **CLAUDE.md**, *Commands* table: add `| bun run bones:capture | Capture section skeletons from the signed-in dev app (ADR-0024); re-run after changing a skeleton-wrapped section's layout |`.
+- **CLAUDE.md**, *Commands* table: add `| bun run bones:capture | Capture section skeletons from the signed-in dev app (ADR-0025); re-run after changing a skeleton-wrapped section's layout |`.
 - **CLAUDE.md**, *Recipes*: add "**Add a route loader:** `loadRouteData(queryClient, { critical, deferred })` (never
   `await prefetchQuery` directly); read deferred data with `useQuery` and wrap the section in
-  `<SectionSkeleton name loading={firstLoadPending(query)}>`, then `bun run bones:capture`. See **ADR-0024**."
+  `<SectionSkeleton name loading={firstLoadPending(query)}>`, then `bun run bones:capture`. See **ADR-0025**."
 - **CLAUDE.md**, *Code map*: add `src/bones/` (generated, committed) and `src/lib/query/` to the `lib/` line.
 - **CLAUDE.md**, *Gotchas*: "`src/bones/` is generated by `bun run bones:capture` — re-capture, never hand-edit."
 - **Roadmap:** step 1 row: PR link, status `PR open`.

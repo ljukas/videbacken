@@ -1,4 +1,4 @@
-# ADR 0024 — Deferred Route Loading and Section Skeletons
+# ADR 0025 — Deferred Route Loading and Section Skeletons
 
 - **Status**: Accepted (the boneyard-js spike passed on 2026-10-05, see [Decision 4](#4-boneyard-js-is-the-loading-state-primitive-spike-gated))
 - **Date**: 2026-10-05
