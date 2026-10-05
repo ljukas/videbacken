@@ -337,7 +337,7 @@ function statusError(op: EmaldoOp, status: number): EmaldoError {
 function refused(op: EmaldoOp, status: number): EmaldoError {
   if (op === 'login') {
     return new EmaldoError('auth_failed', op, undefined, {
-      message: `Emaldo login was refused (Status ${status}): check EMALDO_USER / EMALDO_PASSWORD, or the app id/secret may have rotated`,
+      message: `Emaldo login was refused (Status ${status}): check the stored or env Emaldo credentials, or the app id/secret may have rotated`,
     })
   }
   return new EmaldoError('unexpected_response', op, undefined, {

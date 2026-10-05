@@ -119,6 +119,9 @@ migration-time or insert-time error, never a silent value nobody validates). `no
 **code**, not a separate boolean — a row with `errorCode = 'not_configured'` is structurally the same
 shape as any other failing row, it's just never alerted on (below) and maps to its own `HealthState`.
 
+`credentials_unreadable` (a stored credential row that can't be decrypted; fails closed, alerted like `auth_failed`)
+was added later: see [ADR-0026](./0026-integration-credential-store.md).
+
 Responses are parsed with zod (`src/lib/effects/zaptec/`); a parse failure becomes
 `unexpected_response` with a message that lists field paths only, never the payload. Sessions are
 parsed **one by one**: a single session that doesn't match the schema (a `null` energy, a missing

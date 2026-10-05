@@ -127,6 +127,13 @@
       "when": 1791137332394,
       "tag": "0017_energy_mix_and_battery_pool",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791202159016,
+      "tag": "0018_integration_credential",
+      "breakpoints": true
     }
   ]
 }

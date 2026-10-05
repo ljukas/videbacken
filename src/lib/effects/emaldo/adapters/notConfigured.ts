@@ -1,13 +1,23 @@
+import type { UnavailableCode } from '../../keyedAdapter'
 import type { EmaldoClient } from '../emaldo'
 import { EmaldoError } from '../errors'
 
-// Selected when any EMALDO_* variable is unset (and under VITEST): fails
-// closed so health shows "not configured", never a fake healthy sync.
-export const notConfigured: EmaldoClient = {
-  async fetchDay() {
-    throw new EmaldoError('not_configured', 'stats', undefined, {
-      message:
-        'Emaldo client is not configured (EMALDO_USER / EMALDO_PASSWORD / EMALDO_APP_ID / EMALDO_APP_SECRET unset)',
-    })
-  },
+const MESSAGES: Record<UnavailableCode, string> = {
+  not_configured:
+    'Emaldo client is not configured (set it under Charging → Settings or as EMALDO_USER / EMALDO_PASSWORD / EMALDO_APP_ID / EMALDO_APP_SECRET)',
+  credentials_unreadable:
+    'Stored Emaldo credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings',
 }
+
+// `not_configured` when any of the four fields is missing (and under VITEST),
+// `credentials_unreadable` when the stored row can't be decrypted: fails
+// closed so health shows the reason, never a fake healthy sync.
+export function unavailable(code: UnavailableCode): EmaldoClient {
+  return {
+    async fetchDay() {
+      throw new EmaldoError(code, 'stats', undefined, { message: MESSAGES[code] })
+    },
+  }
+}
+
+export const notConfigured: EmaldoClient = unavailable('not_configured')

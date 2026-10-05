@@ -149,12 +149,17 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
 | Column | Type | Notes |
 |---|---|---|
 | `source` | `text` PK | CHECK `IN (CREDENTIAL_SOURCES)` |
-| `ciphertext` | `text not null` | `v1.<iv>.<tag>.<ct>`, base64url parts; CHECK `LIKE 'v1.%'` |
+| `ciphertext` | `text not null` | `v1.<iv>.<tag>.<ct>`, base64url parts; CHECK `^v[1-9][0-9]*[.]` + three base64url parts, and `char_length <= 16384` |
 | `fields_set` | `text[] not null` | names only; CHECK non-empty |
 | `updated_at` | `timestamptz not null default now()` | `$onUpdate` |
-| `updated_by` | `text` FK → `user.id` `on delete set null` | |
+| `updated_by` | `uuid` FK → `user.id` `on delete set null` | no index (at most 4 rows) |
 
-- The table ends with `.enableRLS()`.
+- `updated_by` is `uuid`, because `user.id` is a uuid.
+- The ciphertext CHECK is version-agnostic, so a `v2` envelope needs no schema change.
+- `fields_set` is display-only metadata. The service validates it (no per-element CHECK), and resolution never
+  trusts it.
+- The table ends with `.enableRLS()`, with no policies; the app connects as the owner. Revoking the `anon` and
+  `authenticated` grants was considered and skipped, since the values are encrypted anyway.
 - `integration_sync` and `integration_sync_run` gain `credentials_unreadable` in their error-code CHECKs, by adding
   it to `INTEGRATION_ERROR_CODES`. Both are migrations, and both get `migration-guard` plus the schema-design
   review.
@@ -165,29 +170,35 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
   and `AAD = source`.
 - The key comes from `CREDENTIALS_ENCRYPTION_KEY`, which must decode from base64 to exactly 32 bytes; anything else
   counts as missing.
-- `decrypt` throws a typed `CredentialsUnreadable` error on any failure. It never returns partial data.
+- `decrypt` throws a typed `CredentialsUnreadableError` on any failure. It never returns partial data.
 
 ### Service — `src/lib/services/integrationCredential/`
 - `status()`: per source, per field `{ origin }`, plus the row's `updatedAt` and `unreadable: boolean`.
   `encryptionKeyConfigured: boolean` is also returned. The `env` origin is computed from `process.env` presence.
   Values are never returned.
-- `set(source, fields, userId)`, in one transaction (`SELECT … FOR UPDATE`):
+- `set(source, fields, userId)`, in one transaction (default READ COMMITTED):
   1. Validate every non-blank field (see below) and reject unknown fields.
-  2. Decrypt the existing row, if any.
-  3. Merge the new fields over it, then encrypt and upsert.
+  2. Take `pg_advisory_xact_lock(hashtext('videbacken.integration_credential:' || source))` as the first statement,
+     then read the row with `SELECT … FOR UPDATE`. `FOR UPDATE` alone can't lock a row that doesn't exist yet, so
+     two concurrent first saves would each merge over nothing and the later upsert would drop the earlier fields.
+  3. Decrypt the existing row, if any.
+  4. Merge the new fields over it, then encrypt and upsert.
+
+  The cache invalidation runs in a `finally`, so a COMMIT that errored on the client still drops the cached read.
 
   If the existing row is unreadable, the new fields **replace** it; the old values are lost anyway. Blank or omitted
   fields are unchanged.
 - `clear(source)` deletes the row. It is idempotent.
 - `readStored(source)`, for the resolver: the decrypted values, or `null` when there is no row. It throws
-  `CredentialsUnreadable`.
-- **Validation** (trimmed; at most 512 characters each):
+  `CredentialsUnreadableError`.
+- **Validation** (trimmed; at most 512 characters each; ASCII control characters are rejected):
   - `vin`: `^[A-HJ-NPR-Z0-9]{17}$`, after upper-casing.
   - `homeCoordinates`: must parse with `parseHomePoint`.
   - `facilityId`: must parse with `parseFacilityId`.
   - Every other field: non-empty.
 - **Domain errors** (`IntegrationCredentialDomainError`):
-  - `INVALID_FIELD`: carries the field name. The message never contains the value.
+  - `INVALID_FIELD`: carries the field name. The message never contains the value. An unknown field name is echoed
+    only if it matches `/^[A-Za-z]{1,32}$/`; otherwise it is `unknown`.
   - `NOTHING_TO_SAVE`.
   - `ENCRYPTION_KEY_MISSING`.
 
@@ -195,23 +206,39 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
 - `resolveCredentials(source)` returns `{ values: Partial<Record<field, string>>, fingerprint }`:
   - each field's value is the stored value, else `process.env[ENV]`;
   - `fingerprint` is the SHA-256 of the canonical JSON of the values.
+  The fingerprint is an unsalted hash: an in-memory cache key only, never logged or returned.
 - A missing key with no stored row resolves from env, with no error. A stored row that can't be decrypted throws
-  `CredentialsUnreadable`.
-- Results are cached in memory for 60 s per source. `invalidateCredentials(source)` drops the entry; the service's
-  `set` and `clear` call it after commit.
+  `CredentialsUnreadableError`.
+- Only the **stored read** is cached in memory, for 60 s per source; a rejected read is not cached. Env is merged on
+  every call, which is free and keeps test env stubs live. `invalidateCredentials(source)` drops the entry; the
+  service's `set` and `clear` call it in a `finally`. `setupDatabase()` clears the cache before each test, because
+  each test gets a fresh schema.
+- Removing or renaming a field in `CREDENTIAL_FIELDS` makes existing rows with it unreadable (fail closed). It needs
+  re-entry or a data migration.
 
 ### Adapter wiring
-- **Facades.** `zaptec.ts`, `skoda.ts` and `emaldo.ts` replace `lazy()` with `keyedAdapter(source, build)`. On each
-  call it runs the following, in order:
-  1. Under VITEST, return `notConfigured` **before any DB read**. This preserves today's short-circuit.
+- **Facades.** `zaptec.ts`, `skoda.ts` and `emaldo.ts` replace `lazy()` with `keyedAdapter` (in
+  `src/lib/effects/keyedAdapter.ts`). On each call it runs the following, in order:
+  1. Under VITEST, return `notConfigured` **before importing the resolver**. The import is dynamic, which keeps `db`
+     out of the facades' module graph.
   2. Resolve the credentials.
   3. If the fingerprint is unchanged, reuse the cached client. This keeps the Zaptec and Emaldo token caches.
   4. Otherwise build a new client through the existing `select*Adapter`. The selector now takes the resolved values
      instead of `process.env`; Zaptec's `ZAPTEC_ADAPTER=fake` and the production guard still read env.
-- **`CredentialsUnreadable`** is mapped to the source's `IntegrationError` subclass with code
-  `credentials_unreadable`. The run fails closed and is health-tracked.
-- **Home point.** `vehicleState/sync.ts` resolves `homeCoordinates` through `resolveCredentials('skoda')`; the
-  injected `deps.homePoint` still wins. If the Škoda credentials can't be read, the client call has already failed.
+
+  The cache holds one entry. A resolve still in flight from before a save can finish last. That one call then uses
+  the just-superseded credentials: one more vendor call with a revoked secret (for Emaldo, a refused login that
+  sets the stale client's `loginBlock`). Its client also overwrites the newer entry, costing one extra rebuild
+  (for Emaldo, one extra login). The next call resolves the new values and settles it. Accepted.
+- **`CredentialsUnreadableError`** is a plain error from the crypto layer. `keyedAdapter` maps it to the source's
+  own `IntegrationError` subclass with code `credentials_unreadable`; otherwise `runPulledSync` would record
+  `internal_error` and rethrow. The run fails closed and is health-tracked.
+- Effects reach the credential service only through the resolver (an ADR-0001 note).
+- **Home point.** `vehicleState/sync.ts` resolves `homeCoordinates` through `resolveCredentials('skoda')` inside the
+  run (`execute`, before the client call); the injected `deps.homePoint` still wins. One run is one log line: the
+  cron handler doesn't log, so a resolve error before the run (DB down) would be a 500 with no line. Inside, it is
+  recorded as `internal_error`. An unreadable Škoda row makes the home point `null` (geofence off), while the client
+  call fails the run as `credentials_unreadable`.
 - **Grid.** `gridTariff/catalogueCheck.ts` replaces its `env` injection with a `facilityId` resolver injection that
   defaults to `resolveCredentials('gridTariff')`. An unreadable row logs an error and returns outcome
   `failed` / `credentials_unreadable`. The watcher isn't health-tracked, so nothing else changes.
@@ -236,6 +263,11 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
 - **Facades:**
   - same fingerprint → same client instance; a changed value → a new client;
   - `credentials_unreadable` surfaces as the source's error code.
+
+### Scope additions (as built)
+- `.env.example` and the CLAUDE.md code map and env list were updated in step 2, not step 3.
+- Rollback: after the new code has recorded `credentials_unreadable`, an instant rollback to older code shows that
+  row's code without copy (display-only).
 
 ## Step 3 — credentials UI
 
@@ -294,10 +326,8 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
   matching en keys say "klistra in den nya nyckeln under Laddning → Inställningar" instead of "byt SKODA_API_KEY i
   Vercel och gör en ny deploy". The email test's `SKODA_API_KEY` assertion changes with them.
 - **Runbook** `docs/runbooks/skoda-api-key.md`: the GUI is the primary path, and env is the fallback.
-- **Config docs:**
-  - `.env.example` adds `CREDENTIALS_ENCRYPTION_KEY` and notes the GUI override.
-  - The CLAUDE.md env list and code map are updated.
-  - ADR-0019 gets a short pointer to ADR-0026.
+- **Config docs** landed in step 2 (`.env.example` with `CREDENTIALS_ENCRYPTION_KEY` and the GUI override, the
+  CLAUDE.md env list and code map, the ADR-0019 pointer to ADR-0026). Step 3 updates them only for what its UI adds.
 
 ### Tests
 - **Browser, `CredentialsDialog`:**

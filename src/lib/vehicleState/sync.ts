@@ -1,3 +1,5 @@
+import { CredentialsUnreadableError } from '~/lib/credentials/crypto'
+import { resolveCredentials } from '~/lib/credentials/resolve'
 import { queue } from '~/lib/effects'
 import { type LatLon, newCallStats, type SkodaClient, SkodaError, skoda } from '~/lib/effects/skoda'
 import type { SyncTrigger } from '~/lib/integrationHealth'
@@ -28,7 +30,7 @@ export type SkodaSyncRun = RunBase & {
   retries: number
   /** The poll was written to vehicle_state_snapshot. */
   stored: boolean
-  /** Whether a valid home point was configured for this run. */
+  /** Whether a valid home point was resolved for this run ('off' until execute resolves it). */
   geofence: 'on' | 'off'
   missingParts: number
   invalidParts: number
@@ -61,10 +63,10 @@ export async function runSkodaSync(opts: {
 }): Promise<SkodaSyncRun> {
   const client = opts.deps?.skoda ?? skoda
   const stats = newCallStats()
-  const homePoint =
-    opts.deps && 'homePoint' in opts.deps
-      ? (opts.deps.homePoint ?? null)
-      : parseHomePoint(process.env.SKODA_HOME_COORDINATES)
+  // An injected home point (tests) wins; otherwise it is resolved inside the run,
+  // so a failed resolve is recorded and logged like any other run error.
+  const injected = opts.deps && 'homePoint' in opts.deps
+  const injectedHomePoint = injected ? (opts.deps?.homePoint ?? null) : null
   return runPulledSync<SkodaSyncRun>({
     source: SOURCE,
     trigger: opts.trigger,
@@ -79,7 +81,7 @@ export async function runSkodaSync(opts: {
       requests: 0,
       retries: 0,
       stored: false,
-      geofence: homePoint ? 'on' : 'off',
+      geofence: injectedHomePoint ? 'on' : 'off',
       missingParts: 0,
       invalidParts: 0,
       reattributeMs: 0,
@@ -87,6 +89,8 @@ export async function runSkodaSync(opts: {
       reminderMs: 0,
     }),
     execute: async ({ run, signal, now, log }) => {
+      const homePoint = injected ? injectedHomePoint : await resolveHomePoint()
+      run.geofence = homePoint ? 'on' : 'off'
       const { state, keyExpiresAt } = await withDeadline(
         client.vehicleState({ signal, stats }),
         signal,
@@ -206,6 +210,18 @@ export async function runSkodaSync(opts: {
       reminderMs: run.reminderMs,
     }),
   })
+}
+
+// Stored over env (ADR-0026). An unreadable row means the Škoda client call fails
+// with credentials_unreadable right after, so the point is just off here. Any
+// other error is the run's (internal_error, one run line).
+async function resolveHomePoint(): Promise<LatLon | null> {
+  try {
+    return parseHomePoint((await resolveCredentials('skoda')).values.homeCoordinates)
+  } catch (error) {
+    if (error instanceof CredentialsUnreadableError) return null
+    throw error
+  }
 }
 
 async function sendReminder(

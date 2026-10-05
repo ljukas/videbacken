@@ -303,6 +303,7 @@
   "integration_health_error_auth_failed": "Login to {source} no longer works. An admin needs to update the credentials.",
   "integration_health_error_auth_failed_skoda": "The Škoda key no longer works (has it expired?). An admin needs to create a new one in the MyŠkoda app.",
   "integration_health_error_auth_failed_emaldo": "Emaldo refused the login. Check the Emaldo account's credentials – or the Emaldo app's key may have changed. An admin needs to look into it.",
+  "integration_health_error_credentials_unreadable": "The stored credentials for {source} can't be read – the encryption key is missing or has changed. An admin needs to enter them again under Charging → Settings.",
   "integration_health_error_forbidden": "{source} is denying access. An admin needs to check the permissions.",
   "integration_health_error_internal_error": "An internal error occurred during the sync. An admin needs to check the logs.",
   "integration_health_error_not_configured": "The connection to {source} isn't configured in this installation.",

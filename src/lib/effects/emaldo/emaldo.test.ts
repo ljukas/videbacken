@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { type FakeRoute, fakeFetch, jsonResponse } from '../testing/fakeFetch'
 import {
   createEmaldoClient,
-  type EmaldoError,
+  EmaldoError,
   emaldo as emaldoSingleton,
   newCallStats,
   selectEmaldoAdapter,
 } from '.'
+import { notConfigured, unavailable } from './adapters/notConfigured'
 import {
   DEVICE_ID,
   EMPTY_HOME_ID,
@@ -120,15 +121,35 @@ const leaksNothing = (err: EmaldoError) => {
 }
 
 describe('adapter selection', () => {
-  const all = { EMALDO_USER: 'u', EMALDO_PASSWORD: 'p', EMALDO_APP_ID: 'i', EMALDO_APP_SECRET: 's' }
+  const all = { user: 'u', password: 'p', appId: 'i', appSecret: 's' }
 
-  test('http only with all four variables, never under VITEST', () => {
+  test('http only with all four fields', () => {
     expect(selectEmaldoAdapter(all)).toBe('http')
     for (const key of Object.keys(all)) {
       expect(selectEmaldoAdapter({ ...all, [key]: '' })).toBe('notConfigured')
       expect(selectEmaldoAdapter({ ...all, [key]: undefined })).toBe('notConfigured')
     }
-    expect(selectEmaldoAdapter({ ...all, VITEST: 'true' })).toBe('notConfigured')
+    expect(selectEmaldoAdapter({})).toBe('notConfigured')
+  })
+
+  test('unavailable(code) throws EmaldoError op stats with an admin message naming no value', async () => {
+    const cases = [
+      [
+        'not_configured',
+        'Emaldo client is not configured (set it under Charging → Settings or as EMALDO_USER / EMALDO_PASSWORD / EMALDO_APP_ID / EMALDO_APP_SECRET)',
+      ],
+      [
+        'credentials_unreadable',
+        'Stored Emaldo credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings',
+      ],
+    ] as const
+    for (const [code, message] of cases) {
+      const err = await caught(unavailable(code).fetchDay(-1))
+      expect(err).toBeInstanceOf(EmaldoError)
+      expect(err).toMatchObject({ name: 'EmaldoError', code, op: 'stats', message })
+      leaksNothing(err)
+    }
+    await expect(notConfigured.fetchDay(-1)).rejects.toMatchObject({ code: 'not_configured' })
   })
 
   test('the exported singleton fails closed as not_configured under VITEST', async () => {
@@ -140,25 +161,39 @@ describe('adapter selection', () => {
   })
 })
 
-describe('the singleton with all four variables set', () => {
+describe('the singleton with resolved credentials', () => {
+  type Resolved = { values: Record<string, string>; fingerprint: string }
+  const allFields = {
+    user: TEST_USER,
+    password: TEST_PASSWORD,
+    appId: TEST_APP_ID,
+    appSecret: TEST_APP_SECRET,
+  }
+  let resolved: () => Promise<Resolved>
+
+  async function freshEmaldo(fetch: typeof globalThis.fetch) {
+    vi.resetModules()
+    vi.stubEnv('VITEST', '')
+    vi.stubGlobal('fetch', fetch)
+    vi.doMock('~/lib/credentials/resolve', () => ({ resolveCredentials: () => resolved() }))
+    return (await import('./emaldo')).emaldo
+  }
+
+  beforeEach(() => {
+    resolved = async () => ({ values: allFields, fingerprint: 'f' })
+  })
   afterEach(() => {
+    vi.doUnmock('~/lib/credentials/resolve')
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
     vi.resetModules()
   })
 
-  test('maps each variable to the right option and forwards the call options', async () => {
+  test('maps each resolved field to the right option and forwards the call options', async () => {
     const { f } = server()
-    vi.resetModules()
-    vi.stubEnv('EMALDO_USER', TEST_USER)
-    vi.stubEnv('EMALDO_PASSWORD', TEST_PASSWORD)
-    vi.stubEnv('EMALDO_APP_ID', TEST_APP_ID)
-    vi.stubEnv('EMALDO_APP_SECRET', TEST_APP_SECRET)
-    vi.stubEnv('VITEST', '')
-    vi.stubGlobal('fetch', f.fetch)
-    const fresh = await import('./emaldo')
+    const emaldo = await freshEmaldo(f.fetch)
     const stats = newCallStats()
-    const day = await fresh.emaldo.fetchDay(-2, { stats })
+    const day = await emaldo.fetchDay(-2, { stats })
     expect(day.buckets).toHaveLength(288)
     const [login] = f.callsTo(LOGIN)
     expect(new URL(login.url).pathname.endsWith(TEST_APP_ID)).toBe(true)
@@ -167,6 +202,35 @@ describe('the singleton with all four variables set', () => {
     const { json } = await openRequest(f.callsTo(STATS.grid)[0])
     expect(json).toContain('"offset":-2')
     expect(stats.logins).toBe(1)
+  })
+
+  test('an unchanged fingerprint keeps the logged-in client; a changed one logs in again', async () => {
+    const { f } = server()
+    const emaldo = await freshEmaldo(f.fetch)
+    await emaldo.fetchDay(-1)
+    await emaldo.fetchDay(-2)
+    // A fresh login would end the account's other sessions.
+    expect(f.callsTo(LOGIN)).toHaveLength(1)
+
+    resolved = async () => ({ values: allFields, fingerprint: 'g' })
+    await emaldo.fetchDay(-1)
+    expect(f.callsTo(LOGIN)).toHaveLength(2)
+  })
+
+  test('unreadable stored credentials fail closed as credentials_unreadable, without a request', async () => {
+    const { f } = server()
+    const emaldo = await freshEmaldo(f.fetch)
+    // After resetModules: the class keyedAdapter's instanceof sees.
+    const { CredentialsUnreadableError } = await import('~/lib/credentials/crypto')
+    resolved = async () => {
+      throw new CredentialsUnreadableError('emaldo', 'invalid')
+    }
+    await expect(emaldo.fetchDay(-1)).rejects.toMatchObject({
+      name: 'EmaldoError',
+      code: 'credentials_unreadable',
+      op: 'stats',
+    })
+    expect(f.calls).toHaveLength(0)
   })
 })
 
