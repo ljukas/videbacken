@@ -9,7 +9,6 @@ import { replaceDay } from './houseEnergy'
 
 setupDatabase()
 
-const FIVE_MIN = 300_000
 const dayOf = (day: string) => {
   const { startMs, endMs } = stockholmDayBounds(day)
   return { dayStart: new Date(startMs), dayEnd: new Date(endMs) }
@@ -137,6 +136,8 @@ test('tiles are the current periods whatever year the chart shows; all time span
   expect(o.tiles.thisYear?.gridImportKwh).toBeCloseTo(57.6, 9)
   expect(o.tiles.allTime?.gridImportKwh).toBeCloseTo(86.4, 9)
   expect(o.tiles.allTime?.buckets).toBe(576)
+  expect(o.tiles.allTime?.expectedBuckets).toBe(576)
+  expect(o.tiles.thisMonth?.expectedBuckets).toBe(288)
 })
 
 test('year fallback: a year without readings shows the current year', async () => {
@@ -152,4 +153,68 @@ test('the current month without a reading yet is null, the year tile still sums'
   const o = await getEnergyOverview({ now: new Date('2026-03-01T00:30:00Z') })
   expect(o.tiles.thisMonth).toBeNull()
   expect(o.tiles.thisYear?.gridImportKwh).toBeCloseTo(28.8, 9)
+})
+
+test('tile coverage counts months without readings as missing', async () => {
+  for (let d = 20; d <= 31; d++) await storeDay(`2026-01-${String(d).padStart(2, '0')}`)
+  for (let d = 1; d <= 31; d++) await storeDay(`2026-03-${String(d).padStart(2, '0')}`)
+  const o = await getEnergyOverview({ year: 2026, now: new Date('2026-04-02T12:00:00Z') })
+  const year = o.tiles.thisYear
+  expect(year && year.expectedBuckets - year.buckets).toBe(28 * 288)
+  const all = o.tiles.allTime
+  expect(all && all.expectedBuckets - all.buckets).toBe(28 * 288)
+})
+
+test('the newest month, current or not, ends its expected buckets at the newest reading', async () => {
+  await storeDay('2026-09-10', {}, 145) // newest bucket 12:00 local - 5 min... 145 buckets = 12:05 end
+  const o = await getEnergyOverview({ year: 2026, now: new Date('2026-10-15T12:00:00Z') })
+  expect(o.months[8]?.buckets).toBe(145)
+  expect(o.months[8]?.expectedBuckets).toBe(145)
+})
+
+test('car kWh: chart year follows the chart, tiles follow the current periods', async () => {
+  await storeDay('2025-05-10')
+  await storeDay('2026-05-10')
+  const chargerId = await insertCharger()
+  const mk = async (start: string, end: string, kwh: number) => {
+    const id = await insertSession({
+      chargerId,
+      startAt: new Date(start),
+      endAt: new Date(end),
+      energyKwh: kwh,
+    })
+    await insertInterval(id, new Date(start), new Date(end), kwh)
+  }
+  await mk('2025-05-10T10:00:00Z', '2025-05-10T11:00:00Z', 4)
+  await mk('2026-05-10T10:00:00Z', '2026-05-10T11:00:00Z', 6)
+  const o = await getEnergyOverview({ year: 2025, now: new Date('2026-05-20T12:00:00Z') })
+  expect(o.months[4]?.carKwh).toBe(4)
+  expect(o.tiles.thisMonth?.carKwh).toBe(6)
+  expect(o.tiles.thisYear?.carKwh).toBe(6)
+  expect(o.tiles.allTime?.carKwh).toBe(10)
+})
+
+test('car kWh follows the interval month, not the session start month', async () => {
+  await storeDay('2026-03-31')
+  await storeDay('2026-04-01')
+  const chargerId = await insertCharger()
+  // Starts 2026-03-31 22:30 UTC+... (00:30 local on 1 April is 22:30Z): use 21:30Z = 23:30 local 31 March.
+  const id = await insertSession({
+    chargerId,
+    startAt: new Date('2026-03-31T21:30:00Z'),
+    endAt: new Date('2026-04-01T00:30:00Z'),
+    energyKwh: 5,
+  })
+  await insertInterval(id, new Date('2026-03-31T22:30:00Z'), new Date('2026-04-01T00:30:00Z'), 5)
+  const o = await getEnergyOverview({ year: 2026, now: new Date('2026-04-02T12:00:00Z') })
+  expect(o.months[2]?.carKwh).toBe(0)
+  expect(o.months[3]?.carKwh).toBe(5)
+})
+
+test('records the house scan and car timings', async () => {
+  await storeDay('2026-02-10')
+  const timings: { houseScanMs?: number; carMs?: number } = {}
+  await getEnergyOverview({ now: new Date('2026-02-11T12:00:00Z'), timings })
+  expect(typeof timings.houseScanMs).toBe('number')
+  expect(typeof timings.carMs).toBe('number')
 })

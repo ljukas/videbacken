@@ -8,6 +8,7 @@ import {
   stockholmDayBounds,
   stockholmDayOf,
   stockholmMonthBounds,
+  stockholmYearBounds,
   stockholmYearMonth,
 } from '~/lib/time/stockholm'
 
@@ -97,11 +98,18 @@ async function monthRows(): Promise<MonthRow[]> {
  * always agree.
  */
 export async function getEnergyOverview(
-  input: { year?: number; now?: Date } = {},
+  input: {
+    year?: number
+    now?: Date
+    /** Filled with sub-timings (ms) when passed, for the RPC's `context.timings`. */
+    timings?: { houseScanMs?: number; carMs?: number }
+  } = {},
 ): Promise<EnergyOverview> {
   const now = input.now ?? new Date()
   const current = stockholmYearMonth(now.getTime())
+  const scanStartedAt = performance.now()
   const rows = await monthRows()
+  if (input.timings) input.timings.houseScanMs = Math.round(performance.now() - scanStartedAt)
   if (rows.length === 0) {
     return {
       year: current.year,
@@ -121,7 +129,9 @@ export async function getEnergyOverview(
   const year =
     input.year !== undefined && availableYears.includes(input.year) ? input.year : current.year
 
+  const carStartedAt = performance.now()
   const car = await getChargingOverview({ year, now, vehicle: 'all' })
+  if (input.timings) input.timings.carMs = Math.round(performance.now() - carStartedAt)
 
   const withExpected = (row: MonthRow): PeriodSums => {
     const bounds = stockholmMonthBounds(row.year, row.month)
@@ -130,8 +140,21 @@ export async function getEnergyOverview(
     const expected = Math.round((endMs - startMs) / BUCKET_MS)
     return { ...row.sums, carKwh: 0, expectedBuckets: Math.max(expected, row.sums.buckets) }
   }
-  const total = (selected: MonthRow[]): PeriodSums | null =>
-    selected.length === 0 ? null : selected.map(withExpected).reduce(addPeriodSums)
+  const newestEndMs = newest.lastBucket.getTime() + BUCKET_MS
+  // A tile's expected buckets come from its period bounds, so a month without
+  // readings inside it counts as missing (the chart's per-month rule can't see it).
+  const total = (
+    selected: MonthRow[],
+    period: { startMs: number; endMs: number },
+  ): PeriodSums | null => {
+    if (selected.length === 0) return null
+    const sums = selected.map(withExpected).reduce(addPeriodSums)
+    const startMs = Math.max(period.startMs, coverageStartMs)
+    const endMs = Math.min(period.endMs, newestEndMs)
+    const expected = Math.round((endMs - startMs) / BUCKET_MS)
+    return { ...sums, expectedBuckets: Math.max(expected, sums.buckets) }
+  }
+  // Car kWh is the /charging 'Alla' figure, deliberately not clipped to the house-data window.
   const withCar = (sums: PeriodSums | null, carKwh: number) => (sums ? { ...sums, carKwh } : null)
 
   const months: (PeriodSums | null)[] = Array(12).fill(null)
@@ -146,14 +169,23 @@ export async function getEnergyOverview(
     firstReadingDay,
     tiles: {
       thisMonth: withCar(
-        total(rows.filter((row) => row.year === current.year && row.month === current.month)),
+        total(
+          rows.filter((row) => row.year === current.year && row.month === current.month),
+          stockholmMonthBounds(current.year, current.month),
+        ),
         car.tiles.thisMonth.kwh,
       ),
       thisYear: withCar(
-        total(rows.filter((row) => row.year === current.year)),
+        total(
+          rows.filter((row) => row.year === current.year),
+          stockholmYearBounds(current.year),
+        ),
         car.tiles.thisYear.kwh,
       ),
-      allTime: withCar(total(rows), car.tiles.allTime.kwh),
+      allTime: withCar(
+        total(rows, { startMs: coverageStartMs, endMs: newestEndMs }),
+        car.tiles.allTime.kwh,
+      ),
     },
     months,
   }
