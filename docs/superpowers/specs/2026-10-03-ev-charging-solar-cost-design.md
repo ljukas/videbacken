@@ -278,7 +278,10 @@ orchestrates it through services.
   `economy.actual`, whose range marker reads "Denna laddning" (not "Faktiskt", which would contradict the hero).
 - The source bar has its own colour tokens (`--energy-grid/solar/battery`; green and amber mean timing verdicts on
   the same card), leaves out a source under 0.05 kWh, and is a captioned figure whose legend carries the figures.
-- The economy page opens with a grid-only lead pointing to the overview for the cash cost.
+- The economy page opens with a grid-only lead pointing to the overview for the cash cost. After checkpoint 4 its
+  grid-only figures were renamed so none reads as the cash cost: series "Faktisk tajming" (was "Faktiskt") and "Vid
+  laddning" (was "Betalt"), tile "Spotpris vid laddning" (was "Betalt spotpris"), session-table column "Kostnad som
+  köpt el" (was "Kostnad").
 - `CostTotals` also carries `solarPricedKwh` / `solarUnpricedKwh` (solar-origin kWh with and without a spot to value
   it), for step 5's solar value.
 
