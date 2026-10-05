@@ -108,28 +108,34 @@ function Users() {
       ) : null}
 
       <LoadErrorAlert title={m.users_list_error_title()} query={usersResult} />
-      <SectionSkeleton
-        name="users-table"
-        loading={firstLoadPending(usersResult)}
-        fallbackHeight="20rem"
-      >
-        {users ? (
-          <UsersTable
-            users={users}
-            currentUserId={currentUser.id}
-            isAdmin={isAdmin}
-            onEdit={(id) => open('edit', { userId: id })}
-            onRevoke={(targetEmail) => open('revoke', { email: targetEmail })}
-            onResendInvite={
-              isAdmin
-                ? (targetEmail) => {
-                    if (!resendInvite.isPending) resendInvite.mutate({ email: targetEmail })
-                  }
-                : undefined
-            }
-          />
-        ) : null}
-      </SectionSkeleton>
+      {/* The table bleeds md:-mx-4 past the content column, so its cell padding
+          lines up with the heading. The bleed sits outside the skeleton, so the
+          bones are captured, and replayed, at the table's full width. */}
+      <div className="flex min-h-0 flex-col md:-mx-4">
+        <SectionSkeleton
+          name="users-table"
+          loading={firstLoadPending(usersResult)}
+          fallbackHeight="20rem"
+          excludeSelectors={['[data-no-skeleton]']}
+        >
+          {users ? (
+            <UsersTable
+              users={users}
+              currentUserId={currentUser.id}
+              isAdmin={isAdmin}
+              onEdit={(id) => open('edit', { userId: id })}
+              onRevoke={(targetEmail) => open('revoke', { email: targetEmail })}
+              onResendInvite={
+                isAdmin
+                  ? (targetEmail) => {
+                      if (!resendInvite.isPending) resendInvite.mutate({ email: targetEmail })
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
+        </SectionSkeleton>
+      </div>
 
       {isAdmin ? (
         <>
