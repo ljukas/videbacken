@@ -226,3 +226,49 @@ test('the caption is singular for one day', async () => {
   )
   await expect.element(screen.getByText('1 av 1 dag', { exact: true })).toBeVisible()
 })
+
+test('a source’s own details show under its state', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, source: 'skoda' }, { details: <p>Bilen hördes av nyss</p> }),
+  )
+  await expect.element(screen.getByText('Bilen hördes av nyss')).toBeVisible()
+})
+
+test('a source’s own actions sit beside sync and history', async () => {
+  const onImport = vi.fn()
+  const { screen } = await renderWithProviders(
+    tile(
+      { ...ok, source: 'skoda' },
+      {
+        actions: (
+          <button type="button" onClick={onImport}>
+            Importera
+          </button>
+        ),
+      },
+    ),
+  )
+  await expect.element(screen.getByRole('button', syncButton('Škoda'))).toBeVisible()
+  await expect.element(screen.getByRole('button', historyButton('Škoda'))).toBeVisible()
+  await screen.getByRole('button', { name: 'Importera' }).click()
+  expect(onImport).toHaveBeenCalledOnce()
+})
+
+test('a source’s own actions stay when it is not configured', async () => {
+  // The car's log import needs no API key: only the sync goes.
+  const { screen } = await renderWithProviders(
+    tile(
+      { ...ok, source: 'skoda', state: 'not_configured', lastSuccessAt: null },
+      {
+        actions: (
+          <button type="button" onClick={() => {}}>
+            Importera
+          </button>
+        ),
+      },
+    ),
+  )
+  expect(screen.getByRole('button').elements()).toHaveLength(2)
+  await expect.element(screen.getByRole('button', historyButton('Škoda'))).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: 'Importera' })).toBeVisible()
+})
