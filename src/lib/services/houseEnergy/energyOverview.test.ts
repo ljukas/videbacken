@@ -63,6 +63,40 @@ test('first and last SoC of a month come from its first and last buckets with a 
   expect(o.months[4]?.lastSocPct).toBe(86) // bucket 287 has none, bucket 286 → 86
 })
 
+test('first and last SoC stay inside their own month at a month edge', async () => {
+  // 31 March's last bucket and 1 April's first lack a SoC; the neighbours across the
+  // edge (CEST: 21:55Z / 22:00Z) must not stand in for them.
+  const withSoc = (day: string, base: number, skip: number) =>
+    replaceDay(
+      dayOf(day),
+      syntheticDay(day, (_t, i) => ({ batterySocPct: i === skip ? null : base + (i % 10) })),
+    )
+  await withSoc('2026-03-31', 10, 287)
+  await withSoc('2026-04-01', 50, 0)
+  const o = await getEnergyOverview({ year: 2026, now: new Date('2026-04-02T12:00:00Z') })
+  expect(o.months[2]?.firstSocPct).toBe(10) // bucket 0 of 31 March
+  expect(o.months[2]?.lastSocPct).toBe(16) // bucket 286 → 10 + 6
+  expect(o.months[3]?.firstSocPct).toBe(51) // bucket 1 of 1 April
+  expect(o.months[3]?.lastSocPct).toBe(57) // bucket 287 → 50 + 7
+})
+
+test('a month with readings but no SoC has no first or last SoC, even between months that do', async () => {
+  const withSoc = (day: string, soc: number | null) =>
+    replaceDay(
+      dayOf(day),
+      syntheticDay(day, () => ({ batterySocPct: soc })),
+    )
+  await withSoc('2026-02-28', 30)
+  await withSoc('2026-03-15', null)
+  await withSoc('2026-04-01', 70)
+  const o = await getEnergyOverview({ year: 2026, now: new Date('2026-04-02T12:00:00Z') })
+  expect(o.months[2]?.buckets).toBe(288)
+  expect(o.months[2]?.firstSocPct).toBeNull()
+  expect(o.months[2]?.lastSocPct).toBeNull()
+  expect(o.months[1]?.lastSocPct).toBe(30)
+  expect(o.months[3]?.firstSocPct).toBe(70)
+})
+
 test('spring-forward: a full March is complete', async () => {
   // Every day of March 2026 stored (743 h); now is in April so March isn't the newest month… plus one April day.
   for (let d = 1; d <= 31; d++) await storeDay(`2026-03-${String(d).padStart(2, '0')}`)
