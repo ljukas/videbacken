@@ -48,7 +48,8 @@ type EnergyPeriod =
   (`src/lib/houseEnergy/period.ts`: `parsePeriod`, `formatPeriod`, `stepPeriod`, `defaultPeriod`). An invalid or
   missing value means the default. The step-1 `?year=Y` still works: it reads as `?period=Y`.
 - **Default**: the current Stockholm month; when it has no readings yet (the first hour of a new month), the newest
-  month with readings; with no readings at all, the empty state as today.
+  month with readings this year; with none this year yet (a new year's first hour), Totalt. With no readings at all,
+  the empty state as today.
 - **A period without readings** (a hand-typed URL) falls back to the default, like step 1's year fallback.
 - **The chart's year** = the period's year; for `all`, the current Stockholm year.
 - **Stepping** uses `monthsWithReadings` (below): month steps skip months without readings; year steps go through
@@ -174,7 +175,7 @@ until the owner decides on an app-wide type scale (a separate ADR-0015 amendment
 |---|---|
 | `?period=` invalid, or a period without readings | The default period. |
 | `?year=2026` (step-1 links) | Read as `?period=2026`. |
-| Current month without readings yet | Default = the newest month with readings. |
+| Current month without readings yet | Default = the newest month with readings this year, else Totalt. |
 | Year switch while loading | Old figures and chart stay, dimmed, until the new year lands. |
 | Year read fails | The period control stays usable (step 1's `lastShown` rule); the alert explains. |
 | Only one year with readings | The year arrows in the stepper and the picker are disabled. |
