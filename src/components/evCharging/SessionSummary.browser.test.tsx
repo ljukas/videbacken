@@ -5,6 +5,7 @@ import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { formatSek } from './format'
 import { SessionSummary } from './SessionSummary'
+import type { SolarValueInput } from './solarValue'
 
 type Detail = RouterOutputs['evCharging']['session']
 type Economy = Detail['economy']
@@ -491,4 +492,78 @@ test('a cash cost with a missing price is "—", even beside a complete grid-onl
   const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
   await expect.element(card.getByText(m.charging_sessions_cost_unknown())).toBeInTheDocument()
   expect(card.getByText(/61,20/).elements()).toHaveLength(0)
+})
+
+// The session's cash cost with solar on it (ADR-0023 decision 7).
+const withSolar = (solar: SolarValueInput, over: { estimated?: boolean } = {}) =>
+  detail({ ...over, cost: cash(95.13, solar) })
+
+describe('value of own solar', () => {
+  test('shows under the cash cost, to the öre', async () => {
+    const { screen } = await render(
+      withSolar({ solarPricedKwh: 6, solarUnpricedKwh: 0, solarValueSek: 4.62 }),
+    )
+    await expect
+      .element(
+        screen.getByText(m.charging_solar_value({ value: formatSek(4.62, 2) }), { exact: true }),
+      )
+      .toBeVisible()
+  })
+
+  test('a session without solar has no line', async () => {
+    const { screen } = await render(
+      withSolar({ solarPricedKwh: 0, solarUnpricedKwh: 0, solarValueSek: 0 }),
+    )
+    expect(screen.getByText(/Värde av egen sol/).elements()).toHaveLength(0)
+  })
+
+  test('a negative value (export would have cost money) keeps its sign', async () => {
+    const { screen } = await render(
+      withSolar({ solarPricedKwh: 6, solarUnpricedKwh: 0, solarValueSek: -0.37 }),
+    )
+    await expect.element(screen.getByText(/Värde av egen sol: −0,37\skr/)).toBeVisible()
+  })
+
+  test('an estimated session marks the value "≈", with the reason for screen readers', async () => {
+    const { screen } = await render(
+      withSolar(
+        { solarPricedKwh: 6, solarUnpricedKwh: 0, solarValueSek: 4.62 },
+        { estimated: true },
+      ),
+    )
+    const line = screen.getByText(/Värde av egen sol: ≈\s4,62\skr/)
+    await expect.element(line).toBeVisible()
+    // The hero's own Estimated also has this sr-only text, so check inside the solar line itself.
+    expect(line.element().textContent).toContain(`(${m.charging_sessions_cost_estimated()})`)
+  })
+
+  test('solar with no spot price at all reads "okänt"', async () => {
+    const { screen } = await render(
+      withSolar({ solarPricedKwh: 0, solarUnpricedKwh: 6, solarValueSek: 0 }),
+    )
+    await expect
+      .element(screen.getByText(m.charging_solar_value_unknown(), { exact: true }))
+      .toBeVisible()
+  })
+
+  test('the line shows even when the cash cost is unknown', async () => {
+    const { screen } = await render(
+      detail({
+        cost: cash(0, {
+          fullKwh: 0,
+          noPriceKwh: 56,
+          avgOre: null,
+          complete: false,
+          solarPricedKwh: 6,
+          solarUnpricedKwh: 0,
+          solarValueSek: 4.62,
+        }),
+      }),
+    )
+    await expect
+      .element(
+        screen.getByText(m.charging_solar_value({ value: formatSek(4.62, 2) }), { exact: true }),
+      )
+      .toBeVisible()
+  })
 })

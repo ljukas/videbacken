@@ -33,6 +33,7 @@ import {
   formatTime,
   scheduleWindows,
 } from './format'
+import { SolarValueLine } from './SolarValueLine'
 import { Unknown } from './Unknown'
 
 type Detail = RouterOutputs['evCharging']['session']
@@ -131,6 +132,7 @@ export function SessionSummary({
 // kronor; a cost priced from the total alone is "≈". The cash per charged kWh
 // shows beside a complete cost of a non-excluded session only (an estimated
 // session is always excluded, so the line never shows an unmarked estimate).
+// Under it, the value of own solar used, to the öre, when there was any.
 function Hero({ session, economy, cost }: Pick<Detail, 'session' | 'economy' | 'cost'>) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -150,6 +152,8 @@ function Hero({ session, economy, cost }: Pick<Detail, 'session' | 'economy' | '
           {m.charging_session_kwh_unit_price({ price: formatKronor(cost.avgOre / 100, 2) })}
         </span>
       ) : null}
+      {/* The value of own solar used: a separate figure, never part of the cost (ADR-0023). */}
+      <SolarValueLine cost={cost} fractionDigits={2} estimated={session.estimated} />
     </div>
   )
 }
