@@ -95,6 +95,7 @@ grep -n "export function stockholmYearMonth\|export function stockholmYearBounds
 grep -n '"recharts"' package.json        # 3.x: onClick gets { activeIndex }, useActiveTooltipLabel exists
 ls src/components/ui/popover.tsx
 grep -n "energy-tiles\|energy-chart" src/routes/_authenticated/energy/index.tsx
+grep -n "syncHealthQuery" src/routes/_authenticated/energy/index.tsx   # the shared health read since #98 (client-perf step 3)
 ```
 
 Expected: every grep prints a line; `EnergyOverview` still has `tiles.{thisMonth,thisYear,allTime}` and
@@ -1418,7 +1419,7 @@ const searchSchema = z.object({
 
 loader: ({ context: { queryClient }, location }) => {
   const year = periodQueryYear(periodFromSearch(searchSchema.parse(location.search)))
-  return loadRouteData(queryClient, { critical: [energyOverviewQuery(year), emaldoHealthQuery] })
+  return loadRouteData(queryClient, { critical: [energyOverviewQuery(year), syncHealthQuery] })
 },
 ```
 
