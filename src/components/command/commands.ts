@@ -4,6 +4,7 @@ import {
   HomeIcon,
   PiggyBankIcon,
   SettingsIcon,
+  SunIcon,
   ThermometerIcon,
   UserIcon,
   UsersIcon,
@@ -66,6 +67,13 @@ export const NAVIGATE_COMMANDS = linkOptions([
     keywords: m.cmd_kw_charging_settings,
     icon: SettingsIcon,
     adminOnly: true,
+  },
+  {
+    to: '/energy',
+    label: m.nav_energy,
+    keywords: m.cmd_kw_energy,
+    icon: SunIcon,
+    adminOnly: false,
   },
   {
     to: '/users',

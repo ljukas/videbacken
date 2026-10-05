@@ -8,7 +8,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | — | not started | — |
+| 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92) | PR open | — |
 | 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
@@ -51,3 +51,14 @@ Each must pass, with the result recorded in the table, before the next step star
 
 - 2026-10-05: shaped in a brainstorm (owner decisions in the spec's table); ADR-0024, spec and this roadmap written.
   Measured locally: a year aggregates in ≈40 ms; February in − out ≈117 kWh of which only ≈18 kWh is idle SoC drop.
+- 2026-10-05: step 1 built (branch `feat/energy-overview`), task by task with two adversarial reviewers each plus a
+  whole-branch review. Review-driven changes, recorded in the spec: tile coverage counts months with no readings as
+  missing; any newest month ends at its newest reading; `year` read from `location.search` (not `loaderDeps`) so the
+  chart dims while another year loads; car figure capped at load; export got its own `--energy-export` token (the
+  solar tint failed contrast); house share uses `--chart-2`. Live check on the local full history (desktop 1440,
+  tablet 820, phone 390, light + dark): no horizontal overflow, console clean; 2026-02, 2026-08 and 2026-10 tooltip
+  sums match SQL; August shows "Data saknas för 14 h" locally; the current month says "(hittills)". `rpc timing` for
+  `energy.overview` locally: `totalMs` 77, `getEnergyOverviewMs` 75 (`houseScanMs` 68, `carMs` 5). Prod check
+  (read-only): no house reading before 2026-01-20 and no counted charging before 2026-01-27.
+  Rebased onto #89 mid-review: the page adopts ADR-0025 (`loadRouteData`, `useQuery` for health, `energy-tiles` /
+  `energy-chart` skeletons captured with `bones:capture`); a failed read of another year keeps the year selector.
