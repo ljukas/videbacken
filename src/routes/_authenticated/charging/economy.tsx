@@ -151,7 +151,7 @@ function EconomyPage() {
       {/* The page filter, outside the load branches: a failed read for one
           scope must not take the control away, or the user can't switch back.
           Same row as Mönster's: scope left, year right. */}
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
         <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
         {economy && !loadFailed(result) ? (
           <YearSelector years={economy.years} value={economy.year} onChange={setYear} />

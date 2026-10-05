@@ -160,7 +160,7 @@ function PatternsPage() {
 
       {/* Outside the load branches: a failed read for one scope must not take
           the control away, or the user can't switch back. */}
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
         <VehicleScopeToggle
           value={vehicle}
           // A scope change clears the month, like a year change does.
