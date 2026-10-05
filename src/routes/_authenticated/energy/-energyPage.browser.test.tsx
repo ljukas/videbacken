@@ -51,6 +51,8 @@ const empty = {
 const seedOverview = (data: unknown) => (qc: QueryClient) =>
   qc.setQueryData(energyOverviewQuery(undefined).queryKey, data as never)
 
+// Anything unseeded fails (the test server has no /api/rpc), which is how a
+// failed read is staged. The health is seeded unless `prepare` removes it.
 async function renderPage(route: AnyRoute, path: string, prepare: (qc: QueryClient) => void) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY, retry: false } })
@@ -83,10 +85,20 @@ async function renderPage(route: AnyRoute, path: string, prepare: (qc: QueryClie
   return { screen, router, qc }
 }
 
+// A query whose fetch never settles stays `pending`. The seeded copy goes first:
+// prefetchQuery won't refetch fresh seeded data under `staleTime: Infinity`.
+const pendingForever = (qc: QueryClient, queryKey: readonly unknown[]) => {
+  qc.removeQueries({ queryKey, exact: true })
+  void qc.prefetchQuery({ queryKey, queryFn: () => new Promise(() => {}) })
+}
+const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)
+
 test('no readings yet: the empty state, no tiles', async () => {
   const { screen } = await renderPage(Overview, '/energy', seedOverview(empty))
   await expect.element(screen.getByText(m.energy_empty_title())).toBeVisible()
   expect(screen.getByRole('tablist').elements()).toHaveLength(0)
+  expect(skeleton('energy-tiles')).toBeNull()
+  expect(skeleton('energy-chart')).toBeNull()
 })
 
 test('with data: tiles, the chart with its metric toggle and year', async () => {
@@ -104,6 +116,40 @@ test('with data: tiles, the chart with its metric toggle and year', async () => 
     .toBeVisible()
   await expect.element(screen.getByRole('radio', { name: m.energy_metric_solar() })).toBeChecked()
   await expect.element(screen.getByRole('region', { name: m.energy_tiles_heading() })).toBeVisible()
+  expect(skeleton('energy-tiles')).toBeNull()
+  expect(skeleton('energy-chart')).toBeNull()
+})
+
+// --- Deferred loading (ADR-0025) ----------------------------------------------
+
+test('overview still loading: tiles and chart show skeletons, never the empty state or the error', async () => {
+  const { screen } = await renderPage(Overview, '/energy', (qc) => {
+    pendingForever(qc, energyOverviewQuery(undefined).queryKey)
+  })
+  await expect.element(screen.getByRole('heading', { name: m.energy_title() })).toBeVisible()
+  // The skeletons mount once hydrated: wait for them, don't race the first render.
+  await expect.poll(() => skeleton('energy-tiles')).not.toBeNull()
+  await expect.poll(() => skeleton('energy-chart')).not.toBeNull()
+  expect(screen.getByText(m.energy_empty_title()).elements()).toHaveLength(0)
+  // Loading is not an error (ADR-0016).
+  expect(screen.getByText(m.energy_error_title()).elements()).toHaveLength(0)
+  expect(screen.getByRole('tablist').elements()).toHaveLength(0)
+})
+
+test.each([
+  ['still loading', (qc: QueryClient) => pendingForever(qc, emaldoHealthQuery.queryKey)],
+  ['failed', (qc: QueryClient) => qc.removeQueries({ queryKey: emaldoHealthQuery.queryKey })],
+] as const)('Emaldo health %s: the page renders, with no "never synced" line and no health alert', async (_n, health) => {
+  const { screen } = await renderPage(Overview, '/energy', (qc) => {
+    seedOverview(withData)(qc)
+    health(qc)
+  })
+  await expect.element(screen.getByRole('heading', { name: m.energy_title() })).toBeVisible()
+  await expect
+    .element(screen.getByRole('tablist', { name: m.energy_tiles_heading() }))
+    .toBeVisible()
+  expect(screen.getByText(m.charging_never_synced()).elements()).toHaveLength(0)
+  expect(document.querySelector('[role="alert"]')).toBeNull()
 })
 
 test('Nät switches the chart to the grid series', async () => {
@@ -159,8 +205,11 @@ test('another year loading: the old chart stays, dimmed; the tiles do not', asyn
   await expect.poll(() => busy.querySelector('[aria-busy="true"]')).toBeNull()
 })
 
-test('a failed read: the error under a working heading', async () => {
+test('a failed read: the error under a working heading, no skeleton', async () => {
   const { screen } = await renderPage(Overview, '/energy', () => {})
   await expect.element(screen.getByRole('heading', { name: m.energy_title() })).toBeVisible()
   await expect.element(screen.getByText(m.energy_error_title())).toBeVisible()
+  expect(skeleton('energy-tiles')).toBeNull()
+  expect(skeleton('energy-chart')).toBeNull()
+  expect(screen.getByText(m.energy_empty_title()).elements()).toHaveLength(0)
 })
