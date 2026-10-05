@@ -108,7 +108,8 @@ export function UsersTable({
   const rows = table.getRowModel().rows
 
   return (
-    <Table containerClassName="min-h-0 md:-mx-4">
+    // The page bleeds the table md:-mx-4 past the content column (/users).
+    <Table containerClassName="min-h-0">
       <TableHeader className="sticky top-0 z-10 bg-surface-page">
         <TableRow>
           <SortableHead column={table.getColumn('name')} label={m.user_field_name()} />
@@ -122,10 +123,18 @@ export function UsersTable({
             label={m.user_field_status()}
             className={STATUS_CELL}
           />
-          <TableHead className={EMAIL_CELL}>{m.user_field_email()}</TableHead>
-          <TableHead className={PHONE_CELL}>{m.user_field_phone()}</TableHead>
+          {/* inline-block cell contents: the skeleton capture (boneyard) bones an
+              all-inline cell as the whole cell, and neighbouring cells merge into
+              one slab. A block gets a bone its own size. */}
+          <TableHead className={EMAIL_CELL}>
+            <span className="inline-block">{m.user_field_email()}</span>
+          </TableHead>
+          <TableHead className={PHONE_CELL}>
+            <span className="inline-block">{m.user_field_phone()}</span>
+          </TableHead>
           {isAdmin ? (
-            <TableHead className="w-10">
+            // Admin-only and hover-revealed: left out of the skeleton.
+            <TableHead className="w-10" data-no-skeleton>
               <span className="sr-only">{m.common_actions()}</span>
             </TableHead>
           ) : null}
@@ -234,14 +243,16 @@ function UserTableRow({
             {m.user_status_pending()}
           </Badge>
         ) : (
-          <span className="text-muted-foreground text-sm">{m.user_status_active()}</span>
+          <span className="inline-block text-muted-foreground text-sm">
+            {m.user_status_active()}
+          </span>
         )}
       </TableCell>
 
       <TableCell className={EMAIL_CELL}>
         <a
           href={`mailto:${row.email}`}
-          className="text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-block text-muted-foreground transition-colors hover:text-foreground"
           title={row.email}
         >
           {row.email}
@@ -250,16 +261,19 @@ function UserTableRow({
 
       <TableCell className={cn(PHONE_CELL, 'text-muted-foreground tabular-nums')}>
         {formattedPhone ? (
-          <a href={`tel:${row.phone}`} className="transition-colors hover:text-foreground">
+          <a
+            href={`tel:${row.phone}`}
+            className="inline-block transition-colors hover:text-foreground"
+          >
             {formattedPhone}
           </a>
         ) : (
-          '—'
+          <span className="inline-block">—</span>
         )}
       </TableCell>
 
       {isAdmin ? (
-        <TableCell className="text-right">
+        <TableCell className="text-right" data-no-skeleton>
           <RowActions>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -334,12 +348,13 @@ function RoleLabel({ role }: { role: string }) {
   return role === 'admin' ? (
     <span className="inline-flex items-center gap-1 font-medium text-primary text-sm">
       <ShieldIcon className="size-3.5 fill-current" aria-hidden="true" />
-      {m.user_role_admin()}
+      {/* An element, so the skeleton capture gives the text a bone too. */}
+      <span>{m.user_role_admin()}</span>
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
       <UserIcon className="size-3.5" aria-hidden="true" />
-      {m.user_role_user()}
+      <span>{m.user_role_user()}</span>
     </span>
   )
 }

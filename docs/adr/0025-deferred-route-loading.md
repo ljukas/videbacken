@@ -159,7 +159,11 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
 - **Bones are sparse.** Text next to an icon gets no bone, and card outlines aren't drawn, so a tile reads as a few
   bars on the page background.
 - **Graphics become slabs.** A chart, the patterns heatmap and the day-by-day calendars are each one solid block, and
-  a table's middle columns read as one block.
+  a table's middle columns read as one block. The table part has a known cause and fix (step 2, `/users`): boneyard
+  bones a `td`/`th` holding only inline children as the whole cell, and neighbouring cell bones merge. Give each
+  cell's content an `inline-block` (or another non-inline element), and leave hover-only or admin-only cells out with
+  `SectionSkeleton`'s `excludeSelectors`. Bones are also clipped to the skeleton's wrapper, so a section that bleeds
+  past the content column (`-mx-*`) must bleed from a wrapper outside `SectionSkeleton`.
 - **One layout per range.** Between two keys a section can still reflow, and its skeleton then shows the layout at
   the lower key, so the content ends up shorter than its bones and the page moves up once:
   - **375 covers 375–767.** Datakällor, economy and patterns reflow around 487, 511, 647 and 711 px (economy's bones
@@ -167,6 +171,9 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
   - **768 covers 768–1095.** Datakällor, economy and patterns reflow at 776/800 (Datakällor 1127 → ~650–830, economy
     6816 → ~6500, patterns 3717 → ~3080), and patterns and its timeline again at 1000 (~2900 → ~2150, ~1140 → ~770).
 - **Size.** Four widths × eight skeletons add ~27 KB gz to every charging page (economy and patterns are ~10 KB each).
+  Step 2 added the `/sensors` and `/users` skeletons to the same registry: twelve skeletons, ~26 KB gz in the shared
+  `SectionSkeleton` chunk, which every page with a skeleton loads. About 23 KB of that is charging bones that `/sensors`
+  and `/users` never use. Accepted for step 2. Splitting the registry per page group is part of step 4.
 
 ---
 
@@ -196,8 +203,8 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
   queries in one hop instead of 15 in two, which also eases the pool queueing behind the inflated `findActiveById`.
 - **A new step in UI work:** re-run `bones:capture` after changing a section's layout. Stale bones look slightly wrong
   but never break anything.
-- **The bones cost bytes.** All eight skeletons at four widths (~27 KB gz) load with the first charging page,
-  whichever it is. A per-route registry would split them.
+- **The bones cost bytes.** Every skeleton at four widths (twelve after step 2, ~26 KB gz) loads with the first page
+  that shows one, whichever page it is. One registry per page group (roadmap step 4) would split them.
 - **`useSuspenseQuery` is now rare.** Reviewers should flag it on data a client navigation defers.
 - **Role changes reach the client guard within about 5–10 min** (§2: up to ~2× the cookie cache's 5 min), or on
   the next navigation after the tab regains focus.

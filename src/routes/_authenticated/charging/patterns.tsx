@@ -6,11 +6,6 @@ import { z } from 'zod'
 import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
-import {
-  firstLoadPending,
-  LoadErrorAlert,
-  loadFailed,
-} from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { PatternLegend } from '~/components/evCharging/PatternLegend'
 import {
@@ -25,6 +20,7 @@ import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
 import { YearSelector } from '~/components/evCharging/YearSelector'
+import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
