@@ -10,6 +10,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { formatDate } from '~/components/evCharging/format'
 import { emptyTotals } from '~/lib/evCharging/cost'
+import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
@@ -87,14 +88,14 @@ const radio = (screen: Awaited<ReturnType<typeof renderPage>>['screen'], name: s
 test.each([
   ['patterns', Patterns, '/charging/patterns'],
   ['economy', Economy, '/charging/economy'],
-] as const)('%s: a failed read keeps the scope toggle, and Vår bil gives a clean URL', async (_n, route, path) => {
+] as const)('%s: a failed read keeps the scope toggle, and Alla gives a clean URL', async (_n, route, path) => {
   const { screen, router } = await renderPage(route, path, '?vehicle=other', () => {})
   await expect
     .element(radio(screen, m.charging_vehicle_scope_other()))
     .toHaveAttribute('aria-checked', 'true')
-  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await radio(screen, m.charging_vehicle_scope_all()).click()
   await expect
-    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .element(radio(screen, m.charging_vehicle_scope_all()))
     .toHaveAttribute('aria-checked', 'true')
   expect(router.state.location.search).not.toHaveProperty('vehicle')
 })
@@ -115,7 +116,7 @@ const session = (id: string, kwh: number) =>
     vehicle: 'ours',
   }) as never
 
-function seedOverview(qc: QueryClient, vehicle: 'ours' | 'other', sessions: unknown[]) {
+function seedOverview(qc: QueryClient, vehicle: VehicleScope, sessions: unknown[]) {
   qc.setQueryData(
     orpc.evCharging.overview.queryOptions({ input: { year: undefined, vehicle } }).queryKey,
     { year: 2026, years: [2026], months: [], tiles } as never,
@@ -172,10 +173,10 @@ test('Översikt, guests with nothing: guest copy, no sync button, even for an ad
   expect(screen.getByText(m.charging_sessions_empty_description()).elements()).toHaveLength(0)
 })
 
-test('Översikt, our car with nothing: the empty state still offers the admin a sync', async () => {
+test('Översikt, everyone with nothing: the empty state still offers the admin a sync', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverviewShell(qc)
-    seedOverview(qc, 'ours', [])
+    seedOverview(qc, 'all', [])
   })
   await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
   expect(
@@ -196,7 +197,7 @@ test('Översikt: the component reads the same query keys the loader fetched for 
 test('Översikt: switching scope never shows the sessions empty state mid-switch', async () => {
   const { screen, qc } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverviewShell(qc)
-    seedOverview(qc, 'ours', [session('s-ours', 3.3)])
+    seedOverview(qc, 'all', [session('s-all', 3.3)])
     seedOverview(qc, 'other', [])
     // The guests' sessions are the slow read; the rest is cached.
     qc.removeQueries({
@@ -239,7 +240,7 @@ test('Översikt: a sessions read still pending shows no empty state or sync offe
   // so the client mounts the query unseeded and its read stays pending (an in-flight
   // fetch is joined by the page's own observer).
   const key = orpc.evCharging.sessions.queryOptions({
-    input: { page: 1, pageSize: 10, vehicle: 'ours' },
+    input: { page: 1, pageSize: 10, vehicle: 'all' },
   }).queryKey
   const { screen } = await renderPage(
     Overview,
@@ -247,7 +248,7 @@ test('Översikt: a sessions read still pending shows no empty state or sync offe
     '',
     (qc) => {
       seedOverviewShell(qc)
-      seedOverview(qc, 'ours', [])
+      seedOverview(qc, 'all', [])
       qc.removeQueries({ queryKey: key })
     },
     'admin',
@@ -266,7 +267,7 @@ test('Översikt: a sessions read still pending shows no empty state or sync offe
   ).toHaveLength(1)
 })
 
-test('Översikt: a failed overview read shows the alert and the toggle; Vår bil gives a clean URL', async () => {
+test('Översikt: a failed overview read shows the alert and the toggle; Alla gives a clean URL', async () => {
   // Nothing seeded for the overview: the loader's prefetch and the page's read both fail.
   const { screen, router } = await renderPage(Overview, '/charging', '?vehicle=other', (qc) => {
     seedOverviewShell(qc)
@@ -279,12 +280,15 @@ test('Översikt: a failed overview read shows the alert and the toggle; Vår bil
   await expect
     .element(screen.getByRole('alert'))
     .toHaveTextContent(m.charging_overview_error_title())
+  expect(
+    screen.getByRole('radiogroup', { name: m.charging_vehicle_scope_label() }).elements(),
+  ).toHaveLength(1)
   await expect
     .element(radio(screen, m.charging_vehicle_scope_other()))
     .toHaveAttribute('aria-checked', 'true')
-  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await radio(screen, m.charging_vehicle_scope_all()).click()
   await expect
-    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .element(radio(screen, m.charging_vehicle_scope_all()))
     .toHaveAttribute('aria-checked', 'true')
   expect(router.state.location.search).not.toHaveProperty('vehicle')
 })
@@ -292,10 +296,10 @@ test('Översikt: a failed overview read shows the alert and the toggle; Vår bil
 test('Översikt: a failed sessions read shows an error, never the empty list or a sync offer', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverviewShell(qc)
-    seedOverview(qc, 'ours', [])
+    seedOverview(qc, 'all', [])
     qc.removeQueries({
       queryKey: orpc.evCharging.sessions.queryOptions({
-        input: { page: 1, pageSize: 10, vehicle: 'ours' },
+        input: { page: 1, pageSize: 10, vehicle: 'all' },
       }).queryKey,
     })
   })
@@ -313,7 +317,7 @@ test('Översikt: a failed sessions read shows an error, never the empty list or 
 test('Översikt: an admin sees the car log on the Škoda tile, and ?dialog=vehicleImport opens the import', async () => {
   const { screen } = await renderPage(Overview, '/charging', '?dialog=vehicleImport', (qc) => {
     seedOverviewShell(qc)
-    seedOverview(qc, 'ours', [])
+    seedOverview(qc, 'all', [])
   })
   await expect.element(screen.getByText(m.charging_vehicle_log_none())).toBeVisible()
   await expect.element(screen.getByText(m.charging_vehicle_import_title())).toBeVisible()
@@ -322,7 +326,7 @@ test('Översikt: an admin sees the car log on the Škoda tile, and ?dialog=vehic
 test('Översikt: a failed coverage read shows an error on the Škoda tile, not "no log imported"', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverviewShell(qc, { coverage: false })
-    seedOverview(qc, 'ours', [])
+    seedOverview(qc, 'all', [])
   })
   await expect.element(screen.getByText(m.charging_vehicle_log_error_title())).toBeVisible()
   expect(screen.getByText(m.charging_vehicle_log_none()).elements()).toHaveLength(0)
@@ -335,7 +339,7 @@ test('Översikt: a non-admin gets no car log, no import, no dialog, and the para
     '?dialog=vehicleImport',
     (qc) => {
       seedOverviewShell(qc)
-      seedOverview(qc, 'ours', [])
+      seedOverview(qc, 'all', [])
     },
     'user',
   )
@@ -359,9 +363,9 @@ test.each([
   await expect
     .element(radio(screen, m.charging_vehicle_scope_other()))
     .toHaveAttribute('aria-checked', 'true')
-  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await radio(screen, m.charging_vehicle_scope_all()).click()
   await expect
-    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .element(radio(screen, m.charging_vehicle_scope_all()))
     .toHaveAttribute('aria-checked', 'true')
   expect(router.state.location.search).toMatchObject({ year: 2025 })
   expect(router.state.location.search).not.toHaveProperty('vehicle')
@@ -374,9 +378,9 @@ test('patterns: switching scope clears the month', async () => {
     '?year=2025&month=3&vehicle=other',
     () => {},
   )
-  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await radio(screen, m.charging_vehicle_scope_all()).click()
   await expect
-    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .element(radio(screen, m.charging_vehicle_scope_all()))
     .toHaveAttribute('aria-checked', 'true')
   expect(router.state.location.search).toMatchObject({ year: 2025 })
   expect(router.state.location.search).not.toHaveProperty('month')
@@ -386,7 +390,7 @@ test('patterns: switching scope clears the month', async () => {
 
 const seedEmptyOverview = (qc: QueryClient) => {
   seedOverviewShell(qc)
-  seedOverview(qc, 'ours', [])
+  seedOverview(qc, 'all', [])
 }
 const sourcesHeading = { name: m.charging_sources_heading(), level: 2 } as const
 const historyTitle = (source: string) => m.charging_source_dialog_title({ source })
@@ -470,7 +474,7 @@ function seedCost(qc: QueryClient, allTime: Record<string, unknown>, houseDataFr
   const t = summary(allTime)
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF_ROW] as never)
   qc.setQueryData(
-    orpc.evCharging.overview.queryOptions({ input: { year: undefined, vehicle: 'ours' } }).queryKey,
+    orpc.evCharging.overview.queryOptions({ input: { year: undefined, vehicle: 'all' } }).queryKey,
     {
       year: 2026,
       years: [2026],
@@ -479,7 +483,7 @@ function seedCost(qc: QueryClient, allTime: Record<string, unknown>, houseDataFr
     } as never,
   )
   qc.setQueryData(
-    orpc.evCharging.costOverview.queryOptions({ input: { year: undefined, vehicle: 'ours' } })
+    orpc.evCharging.costOverview.queryOptions({ input: { year: undefined, vehicle: 'all' } })
       .queryKey,
     {
       year: 2026,
@@ -489,7 +493,7 @@ function seedCost(qc: QueryClient, allTime: Record<string, unknown>, houseDataFr
     } as never,
   )
   qc.setQueryData(
-    orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'ours' } })
+    orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
       .queryKey,
     { sessions: [], total: 0, page: 1, pageSize: 10 } as never,
   )
@@ -543,7 +547,7 @@ const economyTotals = (sessions: number) => ({
   avgSpotOre: sessions > 0 ? 110 : null,
 })
 
-function seedEconomy(qc: QueryClient, vehicle: 'ours' | 'other', sessions: number) {
+function seedEconomy(qc: QueryClient, vehicle: VehicleScope, sessions: number) {
   qc.setQueryData(
     orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle } }).queryKey,
     {
@@ -557,7 +561,8 @@ function seedEconomy(qc: QueryClient, vehicle: 'ours' | 'other', sessions: numbe
 }
 
 test.each([
-  ['our car', '', 'ours', '/charging?year=2026'],
+  ['everyone', '', 'all', '/charging?year=2026'],
+  ['our car', '?vehicle=ours', 'ours', '/charging?year=2026&vehicle=ours'],
   ['guests', '?vehicle=other', 'other', '/charging?year=2026&vehicle=other'],
 ] as const)('Ekonomi, %s: the grid-only lead links the overview for the same year and scope', async (_n, search, vehicle, href) => {
   const { screen } = await renderPage(Economy, '/charging/economy', search, (qc) =>
@@ -570,7 +575,7 @@ test.each([
 
 test('Ekonomi: no lead without sessions or when the read fails; the scope toggle stays', async () => {
   const empty = await renderPage(Economy, '/charging/economy', '', (qc) =>
-    seedEconomy(qc, 'ours', 0),
+    seedEconomy(qc, 'all', 0),
   )
   await expect
     .element(empty.screen.getByText(m.charging_economy_empty_title({ year: 2026 })))
@@ -582,7 +587,7 @@ test('Ekonomi: no lead without sessions or when the read fails; the scope toggle
 
   const failed = await renderPage(Economy, '/charging/economy', '', () => {})
   await expect
-    .element(radio(failed.screen, m.charging_vehicle_scope_ours()))
+    .element(radio(failed.screen, m.charging_vehicle_scope_all()))
     .toHaveAttribute('aria-checked', 'true')
   expect(
     failed.screen.getByText(m.charging_economy_grid_only_heading(), { exact: false }).elements(),
@@ -595,20 +600,20 @@ test('Ekonomi: no lead without sessions or when the read fails; the scope toggle
 // the page the server says it served (the requested one unless it clamped).
 function seedSessionsPage(
   qc: QueryClient,
-  input: { page: number; pageSize: 10 | 25 | 50; vehicle?: 'ours' | 'other' },
+  input: { page: number; pageSize: 10 | 25 | 50; vehicle?: VehicleScope },
   rows: unknown[],
   total: number,
   served = input.page,
 ) {
   qc.setQueryData(
-    orpc.evCharging.sessions.queryOptions({ input: { vehicle: 'ours', ...input } }).queryKey,
+    orpc.evCharging.sessions.queryOptions({ input: { vehicle: 'all', ...input } }).queryKey,
     { sessions: rows, total, page: served, pageSize: input.pageSize } as never,
   )
 }
 
 function seedPagedOverview(qc: QueryClient) {
   seedOverviewShell(qc)
-  seedOverview(qc, 'ours', [])
+  seedOverview(qc, 'all', [])
   seedOverview(qc, 'other', [])
   seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
   seedSessionsPage(qc, { page: 2, pageSize: 10 }, [session('p2', 2.2)], 25)
@@ -706,13 +711,13 @@ test('Översikt: the loader prefetches the page and size in the URL, then that p
   const key = (input: unknown) => JSON.stringify(input)
   expect(keys).toContain(
     key(
-      orpc.evCharging.sessions.queryOptions({ input: { page: 2, pageSize: 25, vehicle: 'ours' } })
+      orpc.evCharging.sessions.queryOptions({ input: { page: 2, pageSize: 25, vehicle: 'all' } })
         .queryKey,
     ),
   )
   expect(keys).not.toContain(
     key(
-      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'ours' } })
+      orpc.evCharging.sessions.queryOptions({ input: { page: 1, pageSize: 10, vehicle: 'all' } })
         .queryKey,
     ),
   )
@@ -736,7 +741,7 @@ test('Översikt: another year keeps the page (the list is all-time)', async () =
   const { screen, router } = await renderPage(Overview, '/charging', '?page=2', (qc) => {
     seedPagedOverview(qc)
     qc.setQueryData(
-      orpc.evCharging.overview.queryOptions({ input: { year: undefined, vehicle: 'ours' } })
+      orpc.evCharging.overview.queryOptions({ input: { year: undefined, vehicle: 'all' } })
         .queryKey,
       { year: 2026, years: [2026, 2025], months: [], tiles } as never,
     )
@@ -787,7 +792,7 @@ test('Översikt: a page that fails to load keeps the last page, dimmed, under th
   // Page 2 is unseeded, so its read fails (no /api/rpc in the test server).
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverviewShell(qc)
-    seedOverview(qc, 'ours', [])
+    seedOverview(qc, 'all', [])
     seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
   })
   await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
@@ -830,7 +835,7 @@ function seedEconomyRows(qc: QueryClient, count: number, years = [2026]) {
     },
   }))
   qc.setQueryData(
-    orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle: 'ours' } }).queryKey,
+    orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle: 'all' } }).queryKey,
     {
       year: 2026,
       years,
@@ -911,4 +916,53 @@ test('Ekonomi: ten sessions or fewer need no pagination', async () => {
   expect(
     screen.getByRole('navigation', { name: m.charging_sessions_pagination_label() }).elements(),
   ).toHaveLength(0)
+})
+
+// --- Översikt: the scope is a page filter --------------------------------------
+
+/** a precedes b in document order */
+const precedes = (a: Element, b: Element) =>
+  (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+
+test('Översikt: the scope filter sits above the totals; the sessions above the tariff card', async () => {
+  const { screen } = await renderPage(Overview, '/charging', '', seedEmptyOverview)
+  const scope = screen.getByRole('radiogroup', { name: m.charging_vehicle_scope_label() })
+  await expect.element(scope).toBeVisible()
+  const scopeEl = scope.element()
+  const totals = screen.getByRole('heading', { name: m.charging_totals_heading() }).element()
+  const chartTitle = screen.getByRole('heading', { name: m.charging_chart_title() }).element()
+  const sessions = screen.getByRole('heading', { name: m.charging_sessions_heading() }).element()
+  const tariff = screen.getByRole('heading', { name: m.charging_tariff_title() }).element()
+  expect(precedes(scopeEl, totals)).toBe(true)
+  expect(precedes(chartTitle, sessions)).toBe(true)
+  expect(precedes(sessions, tariff)).toBe(true)
+  // The chart's toolbar holds only chart controls.
+  expect(chartTitle.closest('section')?.contains(scopeEl)).toBe(false)
+  // The live line sits in the page heading, not in the scoped content.
+  const banner = screen.getByRole('banner').element()
+  const liveName = screen.getByText(m.charging_live_title(), { exact: false }).element()
+  expect(banner.contains(liveName)).toBe(true)
+  expect(precedes(liveName, scopeEl)).toBe(true)
+})
+
+test.each([
+  ['patterns', Patterns, '/charging/patterns'],
+  ['economy', Economy, '/charging/economy'],
+] as const)('%s: a clean URL shows Alla checked', async (_n, route, path) => {
+  const { screen } = await renderPage(route, path, '', () => {})
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_all()))
+    .toHaveAttribute('aria-checked', 'true')
+})
+
+test('Översikt: Vår bil from a clean URL is checked and written to the URL', async () => {
+  const { screen, router } = await renderPage(Overview, '/charging', '', (qc) => {
+    seedEmptyOverview(qc)
+    seedOverview(qc, 'ours', [])
+  })
+  await radio(screen, m.charging_vehicle_scope_ours()).click()
+  await expect
+    .element(radio(screen, m.charging_vehicle_scope_ours()))
+    .toHaveAttribute('aria-checked', 'true')
+  expect(router.state.location.search).toMatchObject({ vehicle: 'ours' })
 })

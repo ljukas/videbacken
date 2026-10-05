@@ -14,7 +14,7 @@ import { SessionPagination } from '~/components/evCharging/SessionPagination'
 import { SpotComparisonChart } from '~/components/evCharging/SpotComparisonChart'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton'
-import { scopeNote, VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
+import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
@@ -27,7 +27,12 @@ import {
   type SessionPageSize,
   sessionPagingSearch,
 } from '~/lib/evCharging/paging'
-import { type VehicleScope, vehicleScope } from '~/lib/evCharging/vehicle'
+import {
+  DEFAULT_VEHICLE_SCOPE,
+  type VehicleScope,
+  vehicleScope,
+  vehicleScopeParam,
+} from '~/lib/evCharging/vehicle'
 import { orpc, type RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
@@ -35,7 +40,7 @@ import { seo } from '~/utils/seo'
 
 const searchSchema = z.object({
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
-  // Whose charging: a clean URL means our car.
+  // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
   // The session table's page and rows per page: a clean URL is its first 10.
   // Not loader deps: the page loads the whole year (the tiles and charts need
@@ -55,7 +60,10 @@ export const Route = createFileRoute('/_authenticated/charging/economy')({
     }),
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ year: search.year, vehicle: search.vehicle ?? 'ours' }),
+  loaderDeps: ({ search }) => ({
+    year: search.year,
+    vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
+  }),
   // Prefetched, not ensured: a failed economy read shows its own alert under a
   // working heading and sync health, like /charging/patterns.
   loader: async ({ context: { queryClient }, deps }) => {
@@ -84,7 +92,7 @@ function EconomyPage() {
   // Per-key selects: a page click in the session table re-renders only its card.
   const year = Route.useSearch({ select: (s) => s.year })
   const vehicleParam = Route.useSearch({ select: (s) => s.vehicle })
-  const vehicle: VehicleScope = vehicleParam ?? 'ours'
+  const vehicle: VehicleScope = vehicleParam ?? DEFAULT_VEHICLE_SCOPE
   const result = useQuery({
     ...economyQuery(year, vehicle),
     placeholderData: keepPreviousData,
@@ -105,7 +113,7 @@ function EconomyPage() {
     (v: VehicleScope) =>
       navigate({
         to: '.',
-        search: (s) => ({ ...s, vehicle: v === 'ours' ? undefined : v, page: undefined }),
+        search: (s) => ({ ...s, vehicle: vehicleScopeParam(v), page: undefined }),
         replace: true,
         resetScroll: false,
       }),
@@ -115,7 +123,6 @@ function EconomyPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_economy_title()}
-        note={scopeNote(vehicle) ?? ''}
         lastSuccessAt={health.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
@@ -135,22 +142,20 @@ function EconomyPage() {
         onRetry={() => syncNow.syncSource('elpris')}
         retrying={syncNow.isPendingFor('elpris')}
       />
-      {/* Outside the load branches: a failed read for one scope must not take
-          the control away, or the user can't switch back. */}
-      {/* The grid-only lead frames the whole page, so it sits beside the
-          controls (wrapping above them on mobile), outside the content that
-          dims on a switch; the controls stay right-aligned without it. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
-          <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
+      {/* The page filter, outside the load branches: a failed read for one
+          scope must not take the control away, or the user can't switch back.
+          Same row as Mönster's: scope left, year right. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
+        {economy && !loadFailed(result) ? (
+          <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
         ) : null}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          <VehicleScopeToggle value={vehicle} onChange={setVehicle} />
-          {economy && !loadFailed(result) ? (
-            <YearSelector years={economy.years} value={economy.year} onChange={setYear} />
-          ) : null}
-        </div>
       </div>
+      {/* The grid-only lead frames the whole page's figures, so it sits right
+          under the filter, outside the content that dims on a switch. */}
+      {economy && !loadFailed(result) && economy.tiles.sessions > 0 ? (
+        <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
+      ) : null}
       {economy && !loadFailed(result) ? (
         <>
           {economy.tiles.sessions > 0 ? (

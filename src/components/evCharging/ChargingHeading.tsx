@@ -4,20 +4,20 @@ import { m } from '~/paraglide/messages'
 import { formatAgo, formatThreshold } from './format'
 
 // Page heading: title, what the page counts (the noise threshold is the same
-// constant the service filters on), and when data last synced successfully.
-// `title` names the view (defaults to the section title); `action` is the
-// admin-only "Synka nu" slot.
+// constant the service filters on), the live charger line (`live`, overview
+// only) and when data last synced successfully. `title` names the view
+// (defaults to the section title); `action` is the admin-only "Synka nu" slot.
 export function ChargingHeading({
   title = m.charging_title(),
   lastSuccessAt,
+  live,
   action,
-  note,
 }: {
   title?: string
   lastSuccessAt: Date | null
+  /** The charger right now (overview only), between the description and the sync time. */
+  live?: React.ReactNode
   action?: React.ReactNode
-  /** A state line under the description, e.g. which vehicles the page covers; '' keeps its space. */
-  note?: string
 }) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -27,13 +27,7 @@ export function ChargingHeading({
           {m.charging_description()}{' '}
           {m.charging_noise_note({ threshold: formatThreshold(NOISE_THRESHOLD_KWH) })}
         </p>
-        {/* Always mounted once a page passes a note (empty for "all"), so the
-            layout doesn't shift and a screen reader hears the scope change. */}
-        {note !== undefined ? (
-          <p aria-live="polite" className="min-h-4 text-muted-foreground text-xs">
-            {note}
-          </p>
-        ) : null}
+        {live}
         {/* The relative time is measured against `new Date()`, which differs
             slightly between SSR and hydration — a benign mismatch, suppressed
             the same way as CurrentReadingTiles' "last seen". */}

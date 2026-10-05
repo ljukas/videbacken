@@ -2,18 +2,20 @@ import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 
 export type MetricOption<T extends string> = { value: T; label: string; ariaLabel?: string }
 
+/** The group's accessible name: a string, or the id of a visible label. */
+type GroupLabel = { 'aria-label': string } | { 'aria-labelledby': string }
+
 /** A single-choice switch between a chart's metrics (kWh ↔ kr, kWh ↔ plugged in). */
 export function MetricToggle<T extends string>({
   value,
   options,
   onChange,
-  'aria-label': ariaLabel,
+  ...label
 }: {
   value: T
   options: MetricOption<T>[]
   onChange: (value: T) => void
-  'aria-label': string
-}) {
+} & GroupLabel) {
   return (
     <ToggleGroup
       type="single"
@@ -25,7 +27,7 @@ export function MetricToggle<T extends string>({
       }}
       variant="outline"
       size="sm"
-      aria-label={ariaLabel}
+      {...label}
     >
       {options.map((o) => (
         <ToggleGroupItem key={o.value} value={o.value} aria-label={o.ariaLabel}>
