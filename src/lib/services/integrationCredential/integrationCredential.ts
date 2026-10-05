@@ -44,8 +44,10 @@ export type CredentialStatus = {
 
 const MAX_VALUE_LENGTH = 512
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
-// Real credentials never contain them, and JSON escapes each as six characters,
-// which could push the envelope past the 16384-char ciphertext CHECK.
+// Real credentials never contain control characters or lone surrogates (a value
+// that isn't well-formed UTF-16). JSON escapes each as six characters, which
+// could push the envelope past the 16384-char ciphertext CHECK, and a lone
+// surrogate would not survive UTF-8 encryption unchanged. `normalize` rejects both.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
 const SAFE_FIELD_NAME = /^[A-Za-z]{1,32}$/
@@ -142,6 +144,7 @@ function normalize(source: CredentialSource, field: string, raw: unknown): strin
   const valid =
     value.length <= MAX_VALUE_LENGTH &&
     !CONTROL_CHARACTER.test(value) &&
+    value.isWellFormed() &&
     (source === 'skoda' && field === 'vin'
       ? VIN_PATTERN.test(value)
       : source === 'skoda' && field === 'homeCoordinates'

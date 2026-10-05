@@ -139,6 +139,21 @@ describe('set', () => {
       expect(await rows()).toEqual([])
     })
 
+    it('rejects a value that is not well-formed UTF-16 (lone surrogates)', async () => {
+      // 512 lone high surrogates: within the length limit, but JSON escapes each as six
+      // characters, so four such Emaldo fields would overflow the ciphertext CHECK.
+      const err = await domainError(() => set('emaldo', { password: '\ud800'.repeat(512) }, null))
+      expect(err.code).toBe('INVALID_FIELD')
+      expect(err.field).toBe('password')
+      for (const value of ['a\udc00b', 'x\ud83d']) {
+        expect((await domainError(() => set('emaldo', { user: value }, null))).field).toBe('user')
+      }
+      expect(await rows()).toEqual([])
+      // A well-formed surrogate pair (an emoji) is still a valid value.
+      await set('emaldo', { user: 'u😀' }, null)
+      expect(await readStored('emaldo')).toEqual({ user: 'u😀' })
+    })
+
     it('rejects a non-string value', async () => {
       const err = await domainError(() => set('skoda', { apiKey: 7 as never }, null))
       expect(err.code).toBe('INVALID_FIELD')
