@@ -9,7 +9,7 @@ edits. A step starts only when the previous step's checkpoint has passed.
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Settings page: move the tariff card and Datakällor to `/charging/settings` (admin-only), with nav, links and emails | [plan](../plans/2026-10-05-charging-settings-1-move.md) | — | PR open | — |
+| 1 | Settings page: move the tariff card and Datakällor to `/charging/settings` (admin-only), with nav, links and emails | [plan](../plans/2026-10-05-charging-settings-1-move.md) | [#90](https://github.com/ljukas/videbacken/pull/90) | PR open | — |
 | 2 | Credential store and resolver (table, crypto, service, per-field resolver, adapters; no UI) | written when step 2 starts | — | not started | — |
 | 3 | Credentials UI (dialog per source, grid card, save → sync, remove; copy, runbook, env docs) | written when step 3 starts | — | not started | — |
 
