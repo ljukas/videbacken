@@ -102,7 +102,7 @@ export function SyncSourceTile({
   historyRef?: React.Ref<HTMLButtonElement>
   /** Source-specific lines under the state (the car's last contact, its log). */
   details?: React.ReactNode
-  /** Source-specific buttons, each on its own full-width row under sync + history. */
+  /** Source-specific `<Button>`s (the rows size them by data-slot), each on its own full-width row above sync + history; pass undefined for none. */
   actions?: React.ReactNode
 }) {
   const name = integrationSourceName(source)
@@ -184,9 +184,10 @@ export function SyncSourceTile({
       </div>
       {/* Even full-width buttons: stacked in a narrow tile, side by side from
           13rem; 44px tall on touch input, whatever the viewport. A source's own
-          actions follow on full-width rows, so they never pair up with (or
-          shift) sync + history, whichever of those show. */}
-      <div className="mt-auto flex flex-col gap-2 pointer-coarse:[&_button]:h-11 [&_button]:w-full">
+          actions sit on full-width rows above, so they never pair up with sync +
+          history, and those stay level with the row-mates' at the tile's foot. */}
+      <div className="mt-auto flex flex-col gap-2 pointer-coarse:[&_[data-slot=button]]:h-11 [&_[data-slot=button]]:w-full">
+        {actions ? <div className="grid gap-2">{actions}</div> : null}
         <div className="grid @[13rem]:grid-cols-2 grid-cols-1 gap-2 [&>button:only-child]:col-span-full">
           {/* Retrying can't fix missing credentials, so no sync while unconfigured. */}
           {health?.state !== 'not_configured' ? (
@@ -212,7 +213,6 @@ export function SyncSourceTile({
             {m.charging_source_history()}
           </Button>
         </div>
-        {actions ? <div className="grid gap-2">{actions}</div> : null}
       </div>
     </Card>
   )

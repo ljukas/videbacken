@@ -234,7 +234,7 @@ test('a source’s own details show under its state', async () => {
   await expect.element(screen.getByText('Bilen hördes av nyss')).toBeVisible()
 })
 
-test('a source’s own actions sit beside sync and history', async () => {
+test('a source’s own actions get their own row, never paired with sync or history', async () => {
   const onImport = vi.fn()
   const { screen } = await renderWithProviders(
     tile(
@@ -250,6 +250,12 @@ test('a source’s own actions sit beside sync and history', async () => {
   )
   await expect.element(screen.getByRole('button', syncButton('Škoda'))).toBeVisible()
   await expect.element(screen.getByRole('button', historyButton('Škoda'))).toBeVisible()
+  // Not in sync + history's two-column grid: a row of its own above it, so
+  // sync + history stay level with the row-mates' at the tile's foot.
+  const sync = screen.getByRole('button', syncButton('Škoda')).element()
+  const action = screen.getByRole('button', { name: 'Importera' }).element()
+  expect(action.parentElement).not.toBe(sync.parentElement)
+  expect(sync.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
   await screen.getByRole('button', { name: 'Importera' }).click()
   expect(onImport).toHaveBeenCalledOnce()
 })
