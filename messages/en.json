@@ -651,6 +651,7 @@
   "charging_vehicle_chart_empty_other": "No guest charging in {year}.",
   "charging_overview_error_title": "The charging overview couldn't be loaded",
   "charging_sessions_error_title": "The charging sessions couldn't be loaded",
+  "charging_tariff_error_title": "Markup, grid and tax couldn't be loaded",
   "charging_vehicle_sessions_empty_other": "No guest charging yet",
   "charging_vehicle_guest_badge": "Guest",
   "charging_vehicle_who_label": "Who charged?",

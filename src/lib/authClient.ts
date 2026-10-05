@@ -3,6 +3,7 @@ import { useRouter } from '@tanstack/react-router'
 import { adminClient, magicLinkClient } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/react'
 import { useCallback } from 'react'
+import { sessionQueryOptions } from './sessionQuery'
 
 // `signIn.social` (Google) is built in from the server's socialProviders config
 // — no client plugin needed. `signIn.magicLink` comes from magicLinkClient().
@@ -16,7 +17,11 @@ export function useSignOut() {
 
   return useCallback(async () => {
     await authClient.signOut()
-    await router.navigate({ to: '/login' })
-    queryClient.clear()
+    queryClient.removeQueries({ queryKey: sessionQueryOptions.queryKey })
+    try {
+      await router.navigate({ to: '/login' })
+    } finally {
+      queryClient.clear()
+    }
   }, [router, queryClient])
 }

@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { CalendarXIcon } from 'lucide-react'
 import { useCallback, useId, useMemo, useRef } from 'react'
@@ -6,7 +6,11 @@ import { z } from 'zod'
 import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
-import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
+import {
+  firstLoadPending,
+  LoadErrorAlert,
+  loadFailed,
+} from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { PatternLegend } from '~/components/evCharging/PatternLegend'
 import {
@@ -22,6 +26,7 @@ import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { WeekdayHourHeatmap } from '~/components/evCharging/WeekdayHourHeatmap'
 import { YearSelector } from '~/components/evCharging/YearSelector'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
@@ -32,6 +37,7 @@ import {
   vehicleScopeParam,
 } from '~/lib/evCharging/vehicle'
 import { orpc } from '~/lib/orpc/client'
+import { loadRouteData } from '~/lib/query/routeData'
 import { stockholmDayOf } from '~/lib/time/stockholm'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
@@ -66,16 +72,16 @@ export const Route = createFileRoute('/_authenticated/charging/patterns')({
     month: search.month,
     vehicle: search.vehicle ?? DEFAULT_VEHICLE_SCOPE,
   }),
-  // The pattern and timeline reads are prefetched, not ensured: a failure
-  // there must not take down the page (heading, sync health) — each
-  // section shows its own error Alert with a retry instead.
-  loader: async ({ context: { queryClient }, deps }) => {
-    await Promise.all([
-      queryClient.prefetchQuery(patternsQuery(deps.year, deps.vehicle)),
-      queryClient.prefetchQuery(timelineQuery(deps.year, deps.month, deps.vehicle)),
-      queryClient.ensureQueryData(orpc.evCharging.syncStatus.queryOptions()),
-    ])
-  },
+  // ADR-0025: awaited on the server only; the client shows the skeletons. A
+  // failed read shows its own alert with a retry instead of taking down the page.
+  loader: ({ context: { queryClient }, deps }) =>
+    loadRouteData(queryClient, {
+      critical: [
+        patternsQuery(deps.year, deps.vehicle),
+        timelineQuery(deps.year, deps.month, deps.vehicle),
+        orpc.evCharging.syncStatus.queryOptions(),
+      ],
+    }),
   component: PatternsPage,
 })
 
@@ -83,7 +89,7 @@ function PatternsPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   const syncNow = useSyncNow()
-  const { data: health } = useSuspenseQuery({
+  const { data: health } = useQuery({
     ...orpc.evCharging.syncStatus.queryOptions(),
     refetchInterval: 60_000,
   })
@@ -138,21 +144,23 @@ function PatternsPage() {
     <PageContainer>
       <ChargingHeading
         title={m.charging_patterns_title()}
-        lastSuccessAt={health.lastSuccessAt}
+        lastSuccessAt={health?.lastSuccessAt}
         action={
           isAdmin ? <SyncNowButton onSync={syncNow.syncAll} pending={syncNow.isPending} /> : null
         }
       />
-      <SyncHealthAlert
-        health={health}
-        isAdmin={isAdmin}
-        onRetry={() => syncNow.syncSource('zaptec')}
-        retrying={syncNow.isPendingFor('zaptec')}
-      />
+      {health ? (
+        <SyncHealthAlert
+          health={health}
+          isAdmin={isAdmin}
+          onRetry={() => syncNow.syncSource('zaptec')}
+          retrying={syncNow.isPendingFor('zaptec')}
+        />
+      ) : null}
 
       {/* Outside the load branches: a failed read for one scope must not take
           the control away, or the user can't switch back. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
         <VehicleScopeToggle
           value={vehicle}
           // A scope change clears the month, like a year change does.
@@ -167,144 +175,158 @@ function PatternsPage() {
         ) : null}
       </div>
 
-      {patterns && !loadFailed(patternsResult) ? (
-        <>
-          {hasData ? (
-            <div className="flex flex-col gap-4">
-              <section
-                aria-labelledby={ids[0]}
-                aria-busy={patternsStale}
-                className={dim(patternsStale)}
-              >
-                <Card>
-                  <CardHeader className="gap-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h2 id={ids[0]} className="font-medium text-sm">
+      <SectionSkeleton
+        name="charging-patterns"
+        loading={firstLoadPending(patternsResult)}
+        fallbackHeight="48rem"
+      >
+        {patterns && !loadFailed(patternsResult) ? (
+          <>
+            {hasData ? (
+              <div className="flex flex-col gap-4">
+                <section
+                  aria-labelledby={ids[0]}
+                  aria-busy={patternsStale}
+                  className={dim(patternsStale)}
+                >
+                  <Card>
+                    <CardHeader className="gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h2 id={ids[0]} className="font-medium text-sm">
+                          {metric === 'kwh'
+                            ? m.charging_patterns_heatmap_title_kwh()
+                            : m.charging_patterns_heatmap_title_plugged()}
+                        </h2>
+                        <MetricToggle
+                          value={metric}
+                          options={[
+                            { value: 'kwh', label: m.charging_patterns_metric_kwh() },
+                            { value: 'plugged', label: m.charging_patterns_metric_plugged() },
+                          ]}
+                          onChange={(v) => set({ metric: v })}
+                          aria-label={m.charging_patterns_metric_label()}
+                        />
+                      </div>
+                      {heatmapScale ? <PatternLegend scale={heatmapScale} metric={metric} /> : null}
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3">
+                      <WeekdayHourHeatmap grid={patterns.weekdayHour} metric={metric} />
+                      {/* Interval-less sessions do count in the plugged-in view. */}
+                      {metric === 'kwh' && patterns.unhourlySessions > 0 ? (
+                        <p className="text-muted-foreground text-xs">
+                          {m.charging_patterns_unhourly_note({ count: patterns.unhourlySessions })}
+                        </p>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </section>
+
+                <section
+                  aria-labelledby={ids[1]}
+                  aria-busy={patternsStale}
+                  className={dim(patternsStale)}
+                >
+                  <Card>
+                    <CardHeader>
+                      <h2 id={ids[1]} className="font-medium text-sm">
                         {metric === 'kwh'
-                          ? m.charging_patterns_heatmap_title_kwh()
-                          : m.charging_patterns_heatmap_title_plugged()}
+                          ? m.charging_patterns_hour_title_kwh()
+                          : m.charging_patterns_hour_title_plugged()}
                       </h2>
-                      <MetricToggle
-                        value={metric}
-                        options={[
-                          { value: 'kwh', label: m.charging_patterns_metric_kwh() },
-                          { value: 'plugged', label: m.charging_patterns_metric_plugged() },
-                        ]}
-                        onChange={(v) => set({ metric: v })}
-                        aria-label={m.charging_patterns_metric_label()}
-                      />
-                    </div>
-                    {heatmapScale ? <PatternLegend scale={heatmapScale} metric={metric} /> : null}
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    <WeekdayHourHeatmap grid={patterns.weekdayHour} metric={metric} />
-                    {/* Interval-less sessions do count in the plugged-in view. */}
-                    {metric === 'kwh' && patterns.unhourlySessions > 0 ? (
-                      <p className="text-muted-foreground text-xs">
-                        {m.charging_patterns_unhourly_note({ count: patterns.unhourlySessions })}
-                      </p>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              </section>
+                    </CardHeader>
+                    <CardContent>
+                      <HourOfDayChart hours={patterns.hourOfDay} metric={metric} />
+                    </CardContent>
+                  </Card>
+                </section>
 
-              <section
-                aria-labelledby={ids[1]}
+                <section
+                  aria-labelledby={ids[2]}
+                  aria-busy={patternsStale}
+                  className={dim(patternsStale)}
+                >
+                  <Card>
+                    <CardHeader className="gap-2">
+                      <h2 id={ids[2]} className="font-medium text-sm">
+                        {m.charging_patterns_calendar_title()}
+                      </h2>
+                      {calendarScale ? <PatternLegend scale={calendarScale} metric="kwh" /> : null}
+                    </CardHeader>
+                    <CardContent>
+                      <ChargingCalendar
+                        year={patterns.year}
+                        daily={patterns.daily}
+                        months={patterns.months}
+                        today={today}
+                        onPickMonth={pickMonth}
+                      />
+                    </CardContent>
+                  </Card>
+                </section>
+
+                <section
+                  ref={timelineRef}
+                  aria-labelledby={ids[3]}
+                  aria-busy={timelineStale}
+                  className={dim(timelineStale)}
+                >
+                  <Card>
+                    <CardHeader>
+                      <h2 id={ids[3]} className="font-medium text-sm">
+                        {m.charging_patterns_timeline_title()}
+                      </h2>
+                    </CardHeader>
+                    <CardContent>
+                      <SectionSkeleton
+                        name="charging-timeline"
+                        loading={firstLoadPending(timelineResult)}
+                        fallbackHeight="16rem"
+                      >
+                        {timeline && !loadFailed(timelineResult) ? (
+                          <SessionTimeline
+                            sessions={timeline.sessions}
+                            year={timeline.year}
+                            month={timeline.month}
+                            months={timeline.months}
+                            onMonth={stepMonth}
+                          />
+                        ) : (
+                          <LoadErrorAlert
+                            title={m.charging_patterns_timeline_error_title()}
+                            query={timelineResult}
+                          />
+                        )}
+                      </SectionSkeleton>
+                    </CardContent>
+                  </Card>
+                </section>
+              </div>
+            ) : (
+              <Empty
+                className={cn('brand-wash rounded-lg border', dim(patternsStale))}
                 aria-busy={patternsStale}
-                className={dim(patternsStale)}
               >
-                <Card>
-                  <CardHeader>
-                    <h2 id={ids[1]} className="font-medium text-sm">
-                      {metric === 'kwh'
-                        ? m.charging_patterns_hour_title_kwh()
-                        : m.charging_patterns_hour_title_plugged()}
-                    </h2>
-                  </CardHeader>
-                  <CardContent>
-                    <HourOfDayChart hours={patterns.hourOfDay} metric={metric} />
-                  </CardContent>
-                </Card>
-              </section>
-
-              <section
-                aria-labelledby={ids[2]}
-                aria-busy={patternsStale}
-                className={dim(patternsStale)}
-              >
-                <Card>
-                  <CardHeader className="gap-2">
-                    <h2 id={ids[2]} className="font-medium text-sm">
-                      {m.charging_patterns_calendar_title()}
-                    </h2>
-                    {calendarScale ? <PatternLegend scale={calendarScale} metric="kwh" /> : null}
-                  </CardHeader>
-                  <CardContent>
-                    <ChargingCalendar
-                      year={patterns.year}
-                      daily={patterns.daily}
-                      months={patterns.months}
-                      today={today}
-                      onPickMonth={pickMonth}
-                    />
-                  </CardContent>
-                </Card>
-              </section>
-
-              <section
-                ref={timelineRef}
-                aria-labelledby={ids[3]}
-                aria-busy={timelineStale}
-                className={dim(timelineStale)}
-              >
-                <Card>
-                  <CardHeader>
-                    <h2 id={ids[3]} className="font-medium text-sm">
-                      {m.charging_patterns_timeline_title()}
-                    </h2>
-                  </CardHeader>
-                  <CardContent>
-                    {timeline && !loadFailed(timelineResult) ? (
-                      <SessionTimeline
-                        sessions={timeline.sessions}
-                        year={timeline.year}
-                        month={timeline.month}
-                        months={timeline.months}
-                        onMonth={stepMonth}
-                      />
-                    ) : (
-                      <LoadErrorAlert
-                        title={m.charging_patterns_timeline_error_title()}
-                        query={timelineResult}
-                      />
-                    )}
-                  </CardContent>
-                </Card>
-              </section>
-            </div>
-          ) : (
-            <Empty className="brand-wash rounded-lg border">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <CalendarXIcon />
-                </EmptyMedia>
-                <EmptyTitle>
-                  {vehicle === 'other'
-                    ? m.charging_vehicle_empty_other_title({ year: patterns.year })
-                    : m.charging_patterns_empty_title({ year: patterns.year })}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {vehicle === 'other'
-                    ? m.charging_vehicle_empty_other_description()
-                    : m.charging_patterns_empty_description()}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          )}
-        </>
-      ) : (
-        <LoadErrorAlert title={m.charging_patterns_error_title()} query={patternsResult} />
-      )}
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <CalendarXIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>
+                    {vehicle === 'other'
+                      ? m.charging_vehicle_empty_other_title({ year: patterns.year })
+                      : m.charging_patterns_empty_title({ year: patterns.year })}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {vehicle === 'other'
+                      ? m.charging_vehicle_empty_other_description()
+                      : m.charging_patterns_empty_description()}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </>
+        ) : null}
+      </SectionSkeleton>
+      <LoadErrorAlert title={m.charging_patterns_error_title()} query={patternsResult} />
     </PageContainer>
   )
 }
