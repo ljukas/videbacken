@@ -10,7 +10,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | — | in progress | — |
+| 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | [#89](https://github.com/ljukas/videbacken/pull/89) | PR open | — |
 | 2 | Same pattern on `/sensors` and `/users` | — | — | not started | — |
 | 3 | Fewer requests per `/charging` load: one procedure for the Datakällor panel *or* app-wide oRPC batching (decided in its session; see [notes](#step-3-notes)) | — | — | needs shaping | — |
 | 4 | Bundle: phone fields out of the global form hook; lazy-load the admin-only dialogs on `/charging` | — | — | not started | — |
