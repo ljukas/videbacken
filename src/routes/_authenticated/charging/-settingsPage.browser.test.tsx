@@ -60,11 +60,18 @@ function seed(qc: QueryClient, opts: { coverage?: boolean; adminReads?: boolean 
 
 async function renderSettings(
   search: string,
-  opts: { role?: 'admin' | 'user'; coverage?: boolean; adminReads?: boolean } = {},
+  opts: {
+    role?: 'admin' | 'user'
+    coverage?: boolean
+    adminReads?: boolean
+    // Runs after the seed, before the loader: e.g. hold a read pending.
+    prepare?: (qc: QueryClient) => void
+  } = {},
 ) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
   seed(qc, opts)
+  opts.prepare?.(qc)
   const root = createRootRouteWithContext<{ queryClient: QueryClient; user: unknown }>()({
     component: Outlet,
   })
@@ -188,4 +195,44 @@ test.each([
   expect(router.state.location.search).not.toHaveProperty('source')
   expect(router.state.location.search).not.toHaveProperty('tariffId')
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+})
+
+// --- Deferred loading (ADR-0025) ----------------------------------------------
+
+const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)
+
+// A query whose fetch never settles stays `pending`. The seeded copy goes first:
+// prefetchQuery won't refetch fresh seeded data under `staleTime: Infinity`.
+const pendingForever = (qc: QueryClient, queryKey: readonly unknown[]) => {
+  qc.removeQueries({ queryKey, exact: true })
+  void qc.prefetchQuery({ queryKey, queryFn: () => new Promise(() => {}) })
+}
+
+test('one source state still loading: Datakällor is a skeleton, never "Okänd status"', async () => {
+  const { screen } = await renderSettings('', {
+    prepare: (qc) => pendingForever(qc, orpc.evCharging.syncStatus.queryOptions().queryKey),
+  })
+  // Positive signals first: the page rendered past its reads, and the panel's skeleton mounted.
+  await expect
+    .element(screen.getByRole('heading', { name: m.charging_tariff_title() }))
+    .toBeVisible()
+  await expect.poll(() => skeleton('charging-sources')).not.toBeNull()
+  expect(screen.getByText(m.charging_source_state_unknown()).elements()).toHaveLength(0)
+})
+
+test('tariffs still loading: the tariff card is a skeleton, and the edit dialog stays in the URL', async () => {
+  const { screen, router } = await renderSettings(`?dialog=tariffEdit&tariffId=${TARIFF.id}`, {
+    prepare: (qc) => pendingForever(qc, orpc.tariff.list.queryOptions().queryKey),
+  })
+  // Positive signals first: Datakällor rendered (the page got past its reads) and
+  // the tariffs' skeleton mounted (hydrated, tariffs pending); then the URL.
+  await expect.element(screen.getByRole('heading', sourcesHeading)).toBeVisible()
+  await expect.poll(() => skeleton('charging-tariffs')).not.toBeNull()
+  await expect
+    .poll(() => router.history.location.search)
+    .toBe(`?dialog=tariffEdit&tariffId=${TARIFF.id}`)
+  expect(router.state.location.search).toMatchObject({ dialog: 'tariffEdit', tariffId: TARIFF.id })
+  // Not opened on a guess, and not an error (ADR-0016).
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_tariff_error_title()).elements()).toHaveLength(0)
 })

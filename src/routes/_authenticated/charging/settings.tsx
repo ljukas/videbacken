@@ -1,9 +1,10 @@
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { z } from 'zod'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { healthPoll } from '~/components/evCharging/healthPoll'
+import { firstLoadPending, LoadErrorAlert } from '~/components/evCharging/LoadErrorAlert'
 import {
   SkodaSourceDetails,
   VehicleLogImportButton,
@@ -14,9 +15,11 @@ import { TariffCard } from '~/components/evCharging/TariffCard'
 import { TariffDialog } from '~/components/evCharging/TariffDialog'
 import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { INTEGRATION_SOURCES, type IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
+import { loadRouteData } from '~/lib/query/routeData'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
@@ -75,17 +78,18 @@ export const Route = createFileRoute('/_authenticated/charging/settings')({
     if (context.user.role !== 'admin') throw redirect({ to: '/charging', replace: true })
   },
   validateSearch: searchSchema,
+  // ADR-0025: the server waits for what the first paint shows; the client waits
+  // for nothing (sections show skeletons). Critical: each source's state (the
+  // tiles at the top) and the tariff periods (the card, and a tariff dialog's
+  // deep link). Deferred: the diagnostics inside the tiles, the sync histories,
+  // the car's latest state and the log coverage. A failed read never throws
+  // here: it shows on its tile, in its history overlay or as the tariff card's
+  // alert, each with a retry.
   loader: async ({ context: { queryClient } }) => {
-    await Promise.all([
-      // The tariff card reads the list with suspense.
-      queryClient.ensureQueryData(orpc.tariff.list.queryOptions()),
-      // Everything else is prefetched, not ensured: a failed read shows on its
-      // tile (or in its history overlay, with a retry) and never takes the page down.
-      ...Object.values(healthQueries).map((q) => queryClient.prefetchQuery(q)),
-      ...Object.values(runsQueries).map((q) => queryClient.prefetchQuery(q)),
-      queryClient.prefetchQuery(vehicleCoverageQuery),
-      queryClient.prefetchQuery(vehicleLatestQuery),
-    ])
+    await loadRouteData(queryClient, {
+      critical: [...Object.values(healthQueries), orpc.tariff.list.queryOptions()],
+      deferred: [...Object.values(runsQueries), vehicleCoverageQuery, vehicleLatestQuery],
+    })
   },
   component: ChargingSettingsPage,
 })
@@ -101,15 +105,20 @@ function ChargingSettingsPage() {
     navigate,
     clearKeys: ['tariffId', 'source'],
   })
-  const { data: tariffs } = useSuspenseQuery(orpc.tariff.list.queryOptions())
-  const selectedTariff = tariffs.find((t) => t.id === tariffId)
+  const tariffsResult = useQuery(orpc.tariff.list.queryOptions())
+  const tariffs = tariffsResult.data
+  const selectedTariff = tariffs?.find((t) => t.id === tariffId)
   // A dialog that can't show (a tariffId that no longer exists; a sync history
   // without a valid source) is cleared from the URL instead of lingering there.
+  // A tariff dialog is only judged once the tariffs are known.
   const dialogUnavailable =
     dialog !== undefined &&
     (dialog === 'syncRuns'
       ? runsSource === undefined
-      : dialog !== 'tariffNew' && dialog !== 'vehicleImport' && !selectedTariff)
+      : dialog !== 'tariffNew' &&
+        dialog !== 'vehicleImport' &&
+        tariffs !== undefined && // still loading: not "gone" yet
+        !selectedTariff)
   useEffect(() => {
     // `replace`, so Back doesn't return to the bad URL (and bounce again).
     if (dialogUnavailable) {
@@ -122,26 +131,37 @@ function ChargingSettingsPage() {
     }
   }, [dialogUnavailable, navigate])
   // "Ny period" starts from the newest period's amounts (the list is oldest first).
-  const latestTariff = tariffs.at(-1)
+  const latestTariff = tariffs?.at(-1)
 
   // Polled, so a tile's "running" state (a cron run seen mid-flight) clears on
   // its own instead of waiting for a focus refetch (ADR-0018: polled).
-  const { data: zaptecHealth } = useQuery({
+  const zaptecHealthResult = useQuery({
     ...healthQueries.zaptec,
     refetchInterval: healthPoll(syncNow.isPendingFor('zaptec')),
   })
-  const { data: pricesHealth } = useQuery({
+  const pricesHealthResult = useQuery({
     ...healthQueries.elpris,
     refetchInterval: healthPoll(syncNow.isPendingFor('elpris')),
   })
-  const { data: skodaHealth } = useQuery({
+  const skodaHealthResult = useQuery({
     ...healthQueries.skoda,
     refetchInterval: healthPoll(syncNow.isPendingFor('skoda')),
   })
-  const { data: emaldoHealth } = useQuery({
+  const emaldoHealthResult = useQuery({
     ...healthQueries.emaldo,
     refetchInterval: healthPoll(syncNow.isPendingFor('emaldo')),
   })
+  const zaptecHealth = zaptecHealthResult.data
+  const pricesHealth = pricesHealthResult.data
+  const skodaHealth = skodaHealthResult.data
+  const emaldoHealth = emaldoHealthResult.data
+  // Datakällor waits for every source's state: a tile without one would read
+  // "Okänd status", which is not the same as still loading (ADR-0016).
+  const sourcesPending =
+    firstLoadPending(zaptecHealthResult) ||
+    firstLoadPending(pricesHealthResult) ||
+    firstLoadPending(skodaHealthResult) ||
+    firstLoadPending(emaldoHealthResult)
   const zaptecRuns = useQuery(runsQueries.zaptec)
   const pricesRuns = useQuery(runsQueries.elpris)
   const skodaRuns = useQuery(runsQueries.skoda)
@@ -165,52 +185,68 @@ function ChargingSettingsPage() {
         </div>
       </header>
 
-      <SyncSourcesPanel
-        entries={[
-          { source: 'zaptec', health: zaptecHealth, runs: zaptecRuns },
-          { source: 'elpris', health: pricesHealth, runs: pricesRuns },
-          {
-            source: 'skoda',
-            health: skodaHealth,
-            runs: skodaRuns,
-            // The car's log and live poll are one source to the admin: its last
-            // contact, key expiry and log (+ import) live on its tile. A failed
-            // read shows an error there, never "none".
-            details: (
-              <SkodaSourceDetails
-                live={vehicleLatest.data}
-                liveQuery={vehicleLatest}
-                keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
-                coverage={vehicleCoverage.data}
-                coverageQuery={vehicleCoverage}
-              />
-            ),
-            actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
-          },
-          { source: 'emaldo', health: emaldoHealth, runs: emaldoRuns },
-        ]}
-        onSync={syncNow.syncSource}
-        isPendingFor={syncNow.isPendingFor}
-        openSource={isOpen('syncRuns') ? runsSource : undefined}
-        onOpenHistory={(source: IntegrationSource) => open('syncRuns', { source })}
-        onCloseHistory={close}
-      />
+      <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
+        <SyncSourcesPanel
+          entries={[
+            { source: 'zaptec', health: zaptecHealth, runs: zaptecRuns },
+            { source: 'elpris', health: pricesHealth, runs: pricesRuns },
+            {
+              source: 'skoda',
+              health: skodaHealth,
+              runs: skodaRuns,
+              // The car's log and live poll are one source to the admin: its last
+              // contact, key expiry and log (+ import) live on its tile. A failed
+              // read shows an error there, never "none".
+              details: (
+                <SkodaSourceDetails
+                  live={vehicleLatest.data}
+                  liveQuery={vehicleLatest}
+                  keyExpiry={skodaHealth?.adminDetail?.credentialExpiry ?? null}
+                  coverage={vehicleCoverage.data}
+                  coverageQuery={vehicleCoverage}
+                />
+              ),
+              actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
+            },
+            { source: 'emaldo', health: emaldoHealth, runs: emaldoRuns },
+          ]}
+          onSync={syncNow.syncSource}
+          isPendingFor={syncNow.isPendingFor}
+          openSource={isOpen('syncRuns') ? runsSource : undefined}
+          onOpenHistory={(source: IntegrationSource) => open('syncRuns', { source })}
+          onCloseHistory={close}
+        />
+      </SectionSkeleton>
 
-      <TariffCard
-        tariffs={tariffs}
-        admin={{
-          onNew: () => open('tariffNew'),
-          onEdit: (id) => open('tariffEdit', { tariffId: id }),
-          onDelete: (id) => open('tariffDelete', { tariffId: id }),
-        }}
-      />
+      <SectionSkeleton
+        name="charging-tariffs"
+        loading={firstLoadPending(tariffsResult)}
+        fallbackHeight="10rem"
+      >
+        {tariffs ? (
+          <TariffCard
+            tariffs={tariffs}
+            admin={{
+              onNew: () => open('tariffNew'),
+              onEdit: (id) => open('tariffEdit', { tariffId: id }),
+              onDelete: (id) => open('tariffDelete', { tariffId: id }),
+            }}
+          />
+        ) : null}
+      </SectionSkeleton>
+      <LoadErrorAlert title={m.charging_tariff_error_title()} query={tariffsResult} />
 
+      {/* Waits for the tariffs: "new" starts from the newest period's
+          amounts, and the form keeps the defaults it mounted with. */}
       <TariffDialog
-        open={isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined)}
+        open={
+          tariffs !== undefined &&
+          (isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined))
+        }
         mode={
           isOpen('tariffEdit') && selectedTariff
             ? { kind: 'edit', tariff: selectedTariff }
-            : isOpen('tariffNew')
+            : isOpen('tariffNew') && tariffs !== undefined
               ? { kind: 'new', from: latestTariff }
               : undefined
         }
