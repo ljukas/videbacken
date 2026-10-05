@@ -1,5 +1,5 @@
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
-import { useId } from 'react'
+import { type ReactNode, useId } from 'react'
 import { Button } from '~/components/ui/button'
 import { Label } from '~/components/ui/label'
 import {
@@ -26,10 +26,10 @@ import { m } from '~/paraglide/messages'
 import { formatCount } from './format'
 
 // Paging for a session list: which rows are on screen, rows per page, and the
-// page links. The parent owns the page (in the URL) and passes the page it
-// actually shows. Hidden while every session fits on the smallest page, since
-// there is nothing to page or resize then. The pieces wrap onto their own rows
-// on a phone, where the numbered links give way to "Sida 3 av 22".
+// page links. The parent owns the page (in the URL); a page past the end is
+// shown as the last one. Hidden while every session fits on the smallest page,
+// since there is nothing to page or resize then. The pieces wrap onto their own
+// rows on a phone, where the numbered links give way to "Sida 3 av 22".
 export function SessionPagination({
   page,
   pageSize,
@@ -47,12 +47,14 @@ export function SessionPagination({
   if (total <= SESSION_PAGE_SIZES[0]) return null
 
   const count = pageCount(total, pageSize)
-  const from = (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, total)
+  const current = Math.min(Math.max(page, 1), count)
+  const from = (current - 1) * pageSize + 1
+  const to = Math.min(current * pageSize, total)
 
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-      <p className="mr-auto text-muted-foreground text-sm tabular-nums">
+      {/* A status, so a page change is announced while focus stays on the control. */}
+      <p role="status" className="mr-auto text-muted-foreground text-sm tabular-nums">
         {m.charging_sessions_pagination_range({
           from: formatCount(from),
           to: formatCount(to),
@@ -65,9 +67,13 @@ export function SessionPagination({
         </Label>
         <Select
           value={String(pageSize)}
-          onValueChange={(v) => onPageSizeChange(Number(v) as SessionPageSize)}
+          onValueChange={(v) => {
+            const size = SESSION_PAGE_SIZES.find((s) => String(s) === v)
+            if (size) onPageSizeChange(size)
+          }}
         >
-          <SelectTrigger id={sizeId} size="sm" className="w-auto">
+          {/* Full height on a phone, where it's a touch target. */}
+          <SelectTrigger id={sizeId} size="sm" className="w-auto max-sm:h-9">
             {/* Rendered explicitly so SSR already shows the size (Radix fills it in
                 only after hydration). */}
             <SelectValue>{pageSize}</SelectValue>
@@ -85,60 +91,87 @@ export function SessionPagination({
       </div>
       <Pagination
         aria-label={m.charging_sessions_pagination_label()}
-        className="mx-0 ml-auto w-auto"
+        className="mx-0 ml-auto max-sm:w-full sm:w-auto"
       >
-        <PaginationContent>
+        <PaginationContent className="max-sm:w-full max-sm:justify-between">
           <PaginationItem>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={m.charging_sessions_pagination_previous()}
-              disabled={page <= 1}
-              onClick={() => onPageChange(page - 1)}
+            <StepButton
+              label={m.charging_sessions_pagination_previous()}
+              unavailable={current <= 1}
+              onClick={() => onPageChange(current - 1)}
             >
               <ChevronLeftIcon />
-            </Button>
+            </StepButton>
           </PaginationItem>
-          {pageItems(page, count).map((item, i) =>
+          {pageItems(current, count).map((item, i) =>
             item === 'ellipsis' ? (
               // At most one ellipsis per side: right after page 1, or right before the last.
               <PaginationItem
                 key={i === 1 ? 'gap-start' : 'gap-end'}
+                aria-hidden
                 className="hidden sm:list-item"
               >
                 <PaginationEllipsis />
               </PaginationItem>
             ) : (
               <PaginationItem key={item} className="hidden sm:list-item">
+                {/* Named by its number alone; the nav's label says what it pages. */}
                 <Button
-                  variant={item === page ? 'outline' : 'ghost'}
+                  variant={item === current ? 'outline' : 'ghost'}
                   size="icon"
                   className="tabular-nums"
-                  aria-label={m.charging_sessions_pagination_page({ page: item })}
-                  aria-current={item === page ? 'page' : undefined}
-                  onClick={item === page ? undefined : () => onPageChange(item)}
+                  aria-current={item === current ? 'page' : undefined}
+                  onClick={item === current ? undefined : () => onPageChange(item)}
                 >
                   {item}
                 </Button>
               </PaginationItem>
             ),
           )}
-          <PaginationItem className="px-2 text-sm tabular-nums sm:hidden">
-            {m.charging_sessions_pagination_position({ page, count })}
+          {/* A fixed width, so the arrows don't shift between "Sida 9" and "Sida 10". */}
+          <PaginationItem className="min-w-28 px-2 text-center text-sm tabular-nums sm:hidden">
+            {m.charging_sessions_pagination_position({ page: current, count })}
           </PaginationItem>
           <PaginationItem>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={m.charging_sessions_pagination_next()}
-              disabled={page >= count}
-              onClick={() => onPageChange(page + 1)}
+            <StepButton
+              label={m.charging_sessions_pagination_next()}
+              unavailable={current >= count}
+              onClick={() => onPageChange(current + 1)}
             >
               <ChevronRightIcon />
-            </Button>
+            </StepButton>
           </PaginationItem>
         </PaginationContent>
       </Pagination>
     </div>
+  )
+}
+
+// Previous/next. At either end it is aria-disabled rather than disabled: a
+// focused button that turns `disabled` drops focus to <body>, so stepping onto
+// the last page would lose a keyboard user's place. Larger on a phone, where
+// these are the only page controls.
+function StepButton({
+  label,
+  unavailable,
+  onClick,
+  children,
+}: {
+  label: string
+  unavailable: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="aria-disabled:pointer-events-none aria-disabled:opacity-50 max-sm:size-10"
+      aria-label={label}
+      aria-disabled={unavailable || undefined}
+      onClick={unavailable ? undefined : onClick}
+    >
+      {children}
+    </Button>
   )
 }

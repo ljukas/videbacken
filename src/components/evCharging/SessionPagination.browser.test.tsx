@@ -5,10 +5,8 @@ import { SessionPagination } from './SessionPagination'
 
 const noop = () => {}
 
-const page = (n: number) => ({
-  name: m.charging_sessions_pagination_page({ page: n }),
-  exact: true,
-})
+// A page button is named by its visible number (WCAG 2.5.3 label in name).
+const page = (n: number) => ({ name: String(n), exact: true })
 
 test('hidden when every session fits on the smallest page', async () => {
   const { container } = await render(
@@ -111,25 +109,55 @@ test('page links, previous and next ask for their page', async () => {
   expect(onPageChange).toHaveBeenCalledTimes(4)
 })
 
-test('previous is disabled on the first page, next on the last', async () => {
+test('previous is unavailable on the first page, next on the last, and neither asks for a page', async () => {
+  const onPageChange = vi.fn()
   const first = await render(
     <SessionPagination
       page={1}
+      pageSize={10}
+      total={30}
+      onPageChange={onPageChange}
+      onPageSizeChange={noop}
+    />,
+  )
+  const previous = first.getByRole('button', { name: m.charging_sessions_pagination_previous() })
+  await expect.element(previous).toHaveAttribute('aria-disabled', 'true')
+  await expect
+    .element(first.getByRole('button', { name: m.charging_sessions_pagination_next() }))
+    .not.toHaveAttribute('aria-disabled')
+  // Keyboard activation still reaches an aria-disabled button: it must do nothing.
+  ;(previous.element() as HTMLButtonElement).click()
+  expect(onPageChange).not.toHaveBeenCalled()
+  await first.unmount()
+
+  const last = await render(
+    <SessionPagination
+      page={3}
+      pageSize={10}
+      total={30}
+      onPageChange={onPageChange}
+      onPageSizeChange={noop}
+    />,
+  )
+  const next = last.getByRole('button', { name: m.charging_sessions_pagination_next() })
+  await expect.element(next).toHaveAttribute('aria-disabled', 'true')
+  ;(next.element() as HTMLButtonElement).click()
+  expect(onPageChange).not.toHaveBeenCalled()
+})
+
+test('stepping onto the last page keeps focus on next', async () => {
+  const screen = await render(
+    <SessionPagination
+      page={2}
       pageSize={10}
       total={30}
       onPageChange={noop}
       onPageSizeChange={noop}
     />,
   )
-  await expect
-    .element(first.getByRole('button', { name: m.charging_sessions_pagination_previous() }))
-    .toBeDisabled()
-  await expect
-    .element(first.getByRole('button', { name: m.charging_sessions_pagination_next() }))
-    .toBeEnabled()
-  await first.unmount()
-
-  const last = await render(
+  const next = screen.getByRole('button', { name: m.charging_sessions_pagination_next() })
+  ;(next.element() as HTMLButtonElement).focus()
+  await screen.rerender(
     <SessionPagination
       page={3}
       pageSize={10}
@@ -138,12 +166,30 @@ test('previous is disabled on the first page, next on the last', async () => {
       onPageSizeChange={noop}
     />,
   )
+  await expect.element(next).toHaveAttribute('aria-disabled', 'true')
+  expect(document.activeElement).toBe(next.element())
+})
+
+test('a page past the end is shown as the last page', async () => {
+  const onPageChange = vi.fn()
+  const screen = await render(
+    <SessionPagination
+      page={30}
+      pageSize={10}
+      total={214}
+      onPageChange={onPageChange}
+      onPageSizeChange={noop}
+    />,
+  )
   await expect
-    .element(last.getByRole('button', { name: m.charging_sessions_pagination_next() }))
-    .toBeDisabled()
+    .element(screen.getByRole('status'))
+    .toHaveTextContent(m.charging_sessions_pagination_range({ from: 211, to: 214, total: 214 }))
   await expect
-    .element(last.getByRole('button', { name: m.charging_sessions_pagination_previous() }))
-    .toBeEnabled()
+    .element(screen.getByText(m.charging_sessions_pagination_position({ page: 22, count: 22 })))
+    .toBeInTheDocument()
+  await expect.element(screen.getByRole('button', page(22))).toHaveAttribute('aria-current', 'page')
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_previous() }).click()
+  expect(onPageChange).toHaveBeenCalledWith(21)
 })
 
 test('the size selector offers 10, 25 and 50 and reports the chosen size', async () => {
