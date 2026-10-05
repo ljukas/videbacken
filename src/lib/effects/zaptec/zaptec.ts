@@ -1,16 +1,22 @@
 import type { ZaptecCharger, ZaptecLiveState, ZaptecSession } from '~/lib/evCharging/types'
-import { lazy } from '../lazy'
+import type { CredentialValues } from '~/lib/integrationCredentials'
+import { keyedAdapter } from '../keyedAdapter'
 
 /**
  * Zaptec EV-charger API, backed by one of three adapters:
  *   - `http` — the real REST client (`createZaptecClient` in `./client`).
- *     Selected when `ZAPTEC_USERNAME` + `ZAPTEC_PASSWORD` are set.
+ *     Selected when a username and password resolve.
  *   - `fake` — synthetic chargers/sessions/state for local UI work. Selected
  *     by `ZAPTEC_ADAPTER=fake`, which is ignored in production.
  *   - `notConfigured` — throws `ZaptecError('not_configured')` from every
  *     method. Used in tests (VITEST short-circuit) and whenever credentials
  *     are missing. Deliberately **no devLog adapter**: a silent no-op would
  *     read as a healthy sync.
+ *
+ * Credentials come from the resolver (ADR-0026: stored under Inställningar,
+ * else the ZAPTEC_* env vars), checked on every call; the client — and with
+ * it the cached token — is rebuilt only when they change. An unreadable
+ * stored row fails every call as `credentials_unreadable`.
  *
  * The client never logs. Callers pass a `stats` sink and log it themselves;
  * errors surface as `ZaptecError` with an integration-health `code`.
@@ -52,28 +58,34 @@ export interface ZaptecClient {
 type Env = Record<string, string | undefined>
 
 /**
- * Which adapter the env selects. `ZAPTEC_ADAPTER=fake` is a dev-only escape
- * hatch: in production it is ignored (silently) and selection falls through to
- * the real credentials check, so a stray env var can never fake prod data.
+ * Which adapter the resolved credentials select. `env` only carries the
+ * `ZAPTEC_ADAPTER=fake` dev-only escape hatch and the production guard: in
+ * production `fake` is ignored (silently) and selection falls through to the
+ * real credentials check, so a stray env var can never fake prod data.
  */
-export function selectZaptecAdapter(env: Env): 'notConfigured' | 'fake' | 'http' {
-  if (env.VITEST === 'true') return 'notConfigured'
+export function selectZaptecAdapter(
+  values: CredentialValues<'zaptec'>,
+  env: Env,
+): 'notConfigured' | 'fake' | 'http' {
   const production = env.VERCEL_ENV === 'production' || env.NODE_ENV === 'production'
   if (env.ZAPTEC_ADAPTER === 'fake' && !production) return 'fake'
-  if (env.ZAPTEC_USERNAME && env.ZAPTEC_PASSWORD) return 'http'
+  if (values.username && values.password) return 'http'
   return 'notConfigured'
 }
 
-const getAdapter = lazy(async (): Promise<ZaptecClient> => {
-  const kind = selectZaptecAdapter(process.env)
-  if (kind === 'fake') return (await import('./adapters/fake')).fake
-  const username = process.env.ZAPTEC_USERNAME
-  const password = process.env.ZAPTEC_PASSWORD
-  if (kind === 'http' && username && password) {
-    const { createZaptecClient } = await import('./client')
-    return createZaptecClient({ fetch: globalThis.fetch, creds: { username, password } })
-  }
-  return (await import('./adapters/notConfigured')).notConfigured
+const getAdapter = keyedAdapter({
+  source: 'zaptec',
+  unavailable: async (code) => (await import('./adapters/notConfigured')).unavailable(code),
+  build: async (values): Promise<ZaptecClient> => {
+    const kind = selectZaptecAdapter(values, process.env)
+    if (kind === 'fake') return (await import('./adapters/fake')).fake
+    const { username, password } = values
+    if (kind === 'http' && username && password) {
+      const { createZaptecClient } = await import('./client')
+      return createZaptecClient({ fetch: globalThis.fetch, creds: { username, password } })
+    }
+    return (await import('./adapters/notConfigured')).notConfigured
+  },
 })
 
 export const zaptec: ZaptecClient = {

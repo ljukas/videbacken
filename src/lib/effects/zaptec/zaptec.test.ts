@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
 import { fake } from './adapters/fake'
-import { notConfigured } from './adapters/notConfigured'
+import { notConfigured, unavailable } from './adapters/notConfigured'
 import { createZaptecClient } from './client'
 import { ZaptecError } from './errors'
 import {
@@ -1170,12 +1170,17 @@ describe('secrets', () => {
 })
 
 describe('adapter selection', () => {
-  const credsEnv = { ZAPTEC_USERNAME: 'u', ZAPTEC_PASSWORD: 'p' }
+  const creds = { username: 'u', password: 'p' }
+  const NOT_CONFIGURED =
+    'Zaptec client is not configured (set it under Inställningar or as ZAPTEC_USERNAME / ZAPTEC_PASSWORD)'
+  const UNREADABLE =
+    'Stored Zaptec credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Inställningar'
 
   test('notConfigured throws not_configured from every method', async () => {
     expect(await caught(notConfigured.chargers())).toMatchObject({
       code: 'not_configured',
       op: 'chargers',
+      message: NOT_CONFIGURED,
     })
     expect(await caught(notConfigured.liveState(CHARGER_ID))).toMatchObject({
       code: 'not_configured',
@@ -1188,27 +1193,83 @@ describe('adapter selection', () => {
     ).toMatchObject({ code: 'not_configured', op: 'sessions' })
   })
 
-  test.each([
-    [{ VITEST: 'true', ZAPTEC_ADAPTER: 'fake' }, 'notConfigured'],
-    [{ ZAPTEC_ADAPTER: 'fake' }, 'fake'],
-    [{ ZAPTEC_ADAPTER: 'fake', NODE_ENV: 'development', VERCEL_ENV: 'preview' }, 'fake'],
-    [{ ZAPTEC_ADAPTER: 'fake', VERCEL_ENV: 'production' }, 'notConfigured'],
-    [{ ZAPTEC_ADAPTER: 'fake', NODE_ENV: 'production' }, 'notConfigured'],
-    [{ ZAPTEC_ADAPTER: 'fake', VERCEL_ENV: 'production', ...credsEnv }, 'http'],
-    [credsEnv, 'http'],
-    [{ ZAPTEC_USERNAME: 'u' }, 'notConfigured'],
-    [{}, 'notConfigured'],
-  ] as const)('selects the adapter from env %o → %s', (env, kind) => {
-    expect(selectZaptecAdapter(env)).toBe(kind)
+  test('unavailable(credentials_unreadable) throws that code from every method, naming no value', async () => {
+    const client = unavailable('credentials_unreadable')
+    const errors = [
+      await caught(client.chargers()),
+      await caught(client.liveState(CHARGER_ID)),
+      await caught(
+        collect(client.sessionsEndedSince(new Date(), { installationId: INSTALLATION_ID })),
+      ),
+    ]
+    expect(errors.map((e) => [e.name, e.code, e.op])).toEqual([
+      ['ZaptecError', 'credentials_unreadable', 'chargers'],
+      ['ZaptecError', 'credentials_unreadable', 'state'],
+      ['ZaptecError', 'credentials_unreadable', 'sessions'],
+    ])
+    for (const err of errors) {
+      expect(err).toBeInstanceOf(ZaptecError)
+      expect(err.message).toBe(UNREADABLE)
+      for (const secret of Object.values(TEST_CREDS)) expect(err.message).not.toContain(secret)
+    }
   })
 
-  test('under Vitest the lazily selected client is notConfigured', async () => {
+  test.each([
+    [{}, { ZAPTEC_ADAPTER: 'fake' }, 'fake'],
+    [{}, { ZAPTEC_ADAPTER: 'fake', NODE_ENV: 'development', VERCEL_ENV: 'preview' }, 'fake'],
+    [{}, { ZAPTEC_ADAPTER: 'fake', VERCEL_ENV: 'production' }, 'notConfigured'],
+    [{}, { ZAPTEC_ADAPTER: 'fake', NODE_ENV: 'production' }, 'notConfigured'],
+    [creds, { ZAPTEC_ADAPTER: 'fake', VERCEL_ENV: 'production' }, 'http'],
+    [creds, {}, 'http'],
+    [{ username: 'u' }, {}, 'notConfigured'],
+    [{ password: 'p' }, {}, 'notConfigured'],
+    // The resolver already merged env into `values`: env credentials alone select nothing.
+    [{}, { ZAPTEC_USERNAME: 'u', ZAPTEC_PASSWORD: 'p' }, 'notConfigured'],
+    [{}, {}, 'notConfigured'],
+  ] as const)('selects the adapter from values %o and env %o → %s', (values, env, kind) => {
+    expect(selectZaptecAdapter(values, env)).toBe(kind)
+  })
+
+  test('under Vitest the selected client is notConfigured', async () => {
     expect(await caught(zaptec.chargers())).toMatchObject({ code: 'not_configured' })
     expect(
       await caught(
         collect(zaptec.sessionsEndedSince(new Date(), { installationId: INSTALLATION_ID })),
       ),
     ).toMatchObject({ code: 'not_configured', op: 'sessions' })
+  })
+})
+
+describe('the singleton outside Vitest', () => {
+  afterEach(() => {
+    vi.doUnmock('~/lib/credentials/resolve')
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  test('unreadable stored credentials fail every call as credentials_unreadable', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITEST', '')
+    const { CredentialsUnreadableError } = await import('~/lib/credentials/crypto')
+    vi.doMock('~/lib/credentials/resolve', () => ({
+      resolveCredentials: async () => {
+        throw new CredentialsUnreadableError('zaptec', 'key_missing')
+      },
+    }))
+    // The fresh module graph has its own ZaptecError class: match by name, not instanceof.
+    const fresh = await import('./zaptec')
+    await expect(fresh.zaptec.chargers()).rejects.toMatchObject({
+      name: 'ZaptecError',
+      code: 'credentials_unreadable',
+      op: 'chargers',
+    })
+    await expect(
+      collect(fresh.zaptec.sessionsEndedSince(new Date(), { installationId: INSTALLATION_ID })),
+    ).rejects.toMatchObject({ name: 'ZaptecError', code: 'credentials_unreadable', op: 'sessions' })
+    await expect(fresh.zaptec.liveState(CHARGER_ID)).rejects.toMatchObject({
+      code: 'credentials_unreadable',
+      op: 'state',
+    })
   })
 })
 

@@ -7,6 +7,7 @@ import {
   selectSkodaAdapter,
   skoda as skodaSingleton,
 } from '.'
+import { notConfigured, unavailable } from './adapters/notConfigured'
 import {
   chargingAtHome,
   chargingUnavailable,
@@ -58,13 +59,58 @@ const noVin = (thrown: unknown) => {
   expect(JSON.stringify(err.cause ?? null)).not.toContain(TEST_VIN)
 }
 
-test('selects http only with both key and VIN, never under VITEST', () => {
-  expect(selectSkodaAdapter({ SKODA_API_KEY: 'k', SKODA_VIN: 'v' })).toBe('http')
-  expect(selectSkodaAdapter({ SKODA_API_KEY: 'k' })).toBe('notConfigured')
-  expect(selectSkodaAdapter({ SKODA_VIN: 'v' })).toBe('notConfigured')
-  expect(selectSkodaAdapter({ VITEST: 'true', SKODA_API_KEY: 'k', SKODA_VIN: 'v' })).toBe(
-    'notConfigured',
-  )
+test('selects http only with both key and VIN', () => {
+  expect(selectSkodaAdapter({ apiKey: 'k', vin: 'v' })).toBe('http')
+  expect(selectSkodaAdapter({ apiKey: 'k', vin: 'v', homeCoordinates: '59,18' })).toBe('http')
+  expect(selectSkodaAdapter({ apiKey: 'k' })).toBe('notConfigured')
+  expect(selectSkodaAdapter({ vin: 'v' })).toBe('notConfigured')
+  expect(selectSkodaAdapter({})).toBe('notConfigured')
+})
+
+test('unavailable(code) throws SkodaError op vehicle with an admin message naming no value', async () => {
+  const cases = [
+    [
+      'not_configured',
+      'Škoda client is not configured (set it under Inställningar or as SKODA_API_KEY / SKODA_VIN)',
+    ],
+    [
+      'credentials_unreadable',
+      'Stored Škoda credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Inställningar',
+    ],
+  ] as const
+  for (const [code, message] of cases) {
+    const err = await unavailable(code)
+      .vehicleState()
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(SkodaError)
+    expect(err).toMatchObject({ name: 'SkodaError', code, op: 'vehicle', message })
+    noVin(err)
+    expect((err as SkodaError).message).not.toContain(TEST_KEY)
+  }
+  await expect(notConfigured.vehicleState()).rejects.toMatchObject({ code: 'not_configured' })
+})
+
+test('outside Vitest, unreadable stored credentials fail the poll as credentials_unreadable', async () => {
+  vi.resetModules()
+  vi.stubEnv('VITEST', '')
+  try {
+    const { CredentialsUnreadableError } = await import('~/lib/credentials/crypto')
+    vi.doMock('~/lib/credentials/resolve', () => ({
+      resolveCredentials: async () => {
+        throw new CredentialsUnreadableError('skoda', 'invalid')
+      },
+    }))
+    const fresh = await import('./skoda')
+    await expect(fresh.skoda.vehicleState()).rejects.toMatchObject({
+      name: 'SkodaError',
+      code: 'credentials_unreadable',
+      op: 'vehicle',
+    })
+  } finally {
+    vi.doUnmock('~/lib/credentials/resolve')
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  }
 })
 
 test('sends the key header and asks for charging, odometer and parking position', async () => {

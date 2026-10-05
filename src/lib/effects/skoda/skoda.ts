@@ -1,13 +1,19 @@
-import { lazy } from '../lazy'
+import type { CredentialValues } from '~/lib/integrationCredentials'
+import { keyedAdapter } from '../keyedAdapter'
 
 /**
  * The car's current state from the official MyŠkoda Public API (ADR-0022),
  * backed by one of two adapters:
- *   - `http` — the real client (`createSkodaClient`), when `SKODA_API_KEY` and
- *     `SKODA_VIN` are both set.
+ *   - `http` — the real client (`createSkodaClient`), when an API key and a
+ *     VIN both resolve.
  *   - `notConfigured` — throws `SkodaError('not_configured')`. Selected when
- *     either is unset, and always under VITEST. Deliberately **no devLog or
+ *     either is missing, and always under VITEST. Deliberately **no devLog or
  *     fake adapter** (ADR-0019): a silent no-op would read as a healthy sync.
+ *
+ * Credentials come from the resolver (ADR-0026: stored under Inställningar,
+ * else SKODA_API_KEY / SKODA_VIN), checked on every call; the client is rebuilt
+ * only when they change. An unreadable stored row fails the call as
+ * `credentials_unreadable`.
  *
  * The client never logs; callers pass a `stats` sink. The parked position is
  * returned only so the caller can run the geofence — never store or log it.
@@ -52,21 +58,21 @@ export interface SkodaClient {
   vehicleState(o?: CallOpts): Promise<SkodaReading>
 }
 
-type Env = Record<string, string | undefined>
-
-export function selectSkodaAdapter(env: Env): 'notConfigured' | 'http' {
-  if (env.VITEST === 'true') return 'notConfigured'
-  return env.SKODA_API_KEY && env.SKODA_VIN ? 'http' : 'notConfigured'
+export function selectSkodaAdapter(values: CredentialValues<'skoda'>): 'notConfigured' | 'http' {
+  return values.apiKey && values.vin ? 'http' : 'notConfigured'
 }
 
-const getAdapter = lazy(async (): Promise<SkodaClient> => {
-  const apiKey = process.env.SKODA_API_KEY
-  const vin = process.env.SKODA_VIN
-  if (selectSkodaAdapter(process.env) === 'http' && apiKey && vin) {
-    const { createSkodaClient } = await import('./client')
-    return createSkodaClient({ fetch: globalThis.fetch, apiKey, vin })
-  }
-  return (await import('./adapters/notConfigured')).notConfigured
+const getAdapter = keyedAdapter({
+  source: 'skoda',
+  unavailable: async (code) => (await import('./adapters/notConfigured')).unavailable(code),
+  build: async (values): Promise<SkodaClient> => {
+    const { apiKey, vin } = values
+    if (selectSkodaAdapter(values) === 'http' && apiKey && vin) {
+      const { createSkodaClient } = await import('./client')
+      return createSkodaClient({ fetch: globalThis.fetch, apiKey, vin })
+    }
+    return (await import('./adapters/notConfigured')).notConfigured
+  },
 })
 
 export const skoda: SkodaClient = {

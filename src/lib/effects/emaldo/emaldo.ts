@@ -1,9 +1,16 @@
-import { lazy } from '../lazy'
+import type { CredentialValues } from '~/lib/integrationCredentials'
+import { keyedAdapter } from '../keyedAdapter'
 
 /**
  * The house's 5-minute energy flows from the Emaldo cloud (ADR-0023). The
  * client never logs; callers pass a `stats` sink. Readings are a household
  * load profile: never log or echo them.
+ *
+ * Credentials come from the resolver (ADR-0026: stored under Inställningar,
+ * else the EMALDO_* env vars), checked on every call. The client — and its
+ * session — is rebuilt only when they change: an Emaldo login ends the
+ * account's other sessions. An unreadable stored row fails the call as
+ * `credentials_unreadable`; under VITEST every call is `not_configured`.
  */
 export type HouseBucket = {
   /** start_time + minute × 60 s (a UTC instant). */
@@ -59,35 +66,24 @@ export interface EmaldoClient {
   fetchDay(offset: number, o?: CallOpts): Promise<EmaldoDay>
 }
 
-type Env = Record<string, string | undefined>
-
-/** `http` only when all four EMALDO_* variables are set — never under VITEST. */
-export function selectEmaldoAdapter(env: Env): 'notConfigured' | 'http' {
-  if (env.VITEST === 'true') return 'notConfigured'
-  return env.EMALDO_USER && env.EMALDO_PASSWORD && env.EMALDO_APP_ID && env.EMALDO_APP_SECRET
+/** `http` only when all four fields resolve. */
+export function selectEmaldoAdapter(values: CredentialValues<'emaldo'>): 'notConfigured' | 'http' {
+  return values.user && values.password && values.appId && values.appSecret
     ? 'http'
     : 'notConfigured'
 }
 
-const getAdapter = lazy(async (): Promise<EmaldoClient> => {
-  const { EMALDO_USER, EMALDO_PASSWORD, EMALDO_APP_ID, EMALDO_APP_SECRET } = process.env
-  if (
-    selectEmaldoAdapter(process.env) === 'http' &&
-    EMALDO_USER &&
-    EMALDO_PASSWORD &&
-    EMALDO_APP_ID &&
-    EMALDO_APP_SECRET
-  ) {
-    const { createEmaldoClient } = await import('./client')
-    return createEmaldoClient({
-      fetch: globalThis.fetch,
-      user: EMALDO_USER,
-      password: EMALDO_PASSWORD,
-      appId: EMALDO_APP_ID,
-      appSecret: EMALDO_APP_SECRET,
-    })
-  }
-  return (await import('./adapters/notConfigured')).notConfigured
+const getAdapter = keyedAdapter({
+  source: 'emaldo',
+  unavailable: async (code) => (await import('./adapters/notConfigured')).unavailable(code),
+  build: async (values): Promise<EmaldoClient> => {
+    const { user, password, appId, appSecret } = values
+    if (selectEmaldoAdapter(values) === 'http' && user && password && appId && appSecret) {
+      const { createEmaldoClient } = await import('./client')
+      return createEmaldoClient({ fetch: globalThis.fetch, user, password, appId, appSecret })
+    }
+    return (await import('./adapters/notConfigured')).notConfigured
+  },
 })
 
 export const emaldo: EmaldoClient = {
