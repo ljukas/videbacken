@@ -1,6 +1,10 @@
 import { useHydrated } from '@tanstack/react-router'
 import { Skeleton } from 'boneyard-js/react'
 import type * as React from 'react'
+import { m } from '~/paraglide/messages'
+// The captured bones (and the boneyard runtime) load with the first route that
+// shows a skeleton, not with the entry chunk.
+import '~/bones/registry'
 
 // Set by the boneyard CLI while it captures; the section must be wrapped then
 // so the CLI finds it by name, even though it isn't loading.
@@ -33,21 +37,30 @@ export function SectionSkeleton({
   const hydrated = useHydrated()
   const showLoading = loading && hydrated
   if (!showLoading && !capturing()) return <>{children}</>
+  // The loading -> loaded flip remounts the children; fine, since firstLoadPending
+  // only goes false once data exists, so it is one-way per key.
   return (
-    <Skeleton
-      name={name}
-      loading={showLoading}
-      select="viewport"
-      className={className}
-      fallback={
-        <div
-          data-section-skeleton-fallback
-          className="rounded-lg bg-muted"
-          style={{ height: fallbackHeight }}
-        />
-      }
-    >
-      {children}
-    </Skeleton>
+    <>
+      <Skeleton
+        name={name}
+        loading={showLoading}
+        select="viewport"
+        className={className}
+        fallback={
+          <div
+            data-section-skeleton-fallback
+            className="rounded-lg bg-foreground/8 motion-safe:animate-pulse"
+            style={{ height: fallbackHeight }}
+          />
+        }
+      >
+        {children}
+      </Skeleton>
+      {showLoading && (
+        <span role="status" className="sr-only">
+          {m.common_loading()}
+        </span>
+      )}
+    </>
   )
 }

@@ -31,3 +31,20 @@ test('loading, no captured bones: a busy fallback block instead of the children'
   await expect.element(screen.getByText('content')).not.toBeInTheDocument()
   expect(document.querySelector('[data-section-skeleton-fallback]')).not.toBeNull()
 })
+
+test('loading announces a status; not loading has none', async () => {
+  const loading = await renderWithRouter(
+    <SectionSkeleton name="status-a" loading>
+      <p>content</p>
+    </SectionSkeleton>,
+  )
+  await expect.element(loading.screen.getByRole('status')).toHaveTextContent('Laddar')
+  await loading.screen.unmount()
+  const idle = await renderWithRouter(
+    <SectionSkeleton name="status-b" loading={false}>
+      <p>content</p>
+    </SectionSkeleton>,
+  )
+  await expect.element(idle.screen.getByText('content')).toBeVisible()
+  expect(document.querySelector('[role="status"]')).toBeNull()
+})
