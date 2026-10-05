@@ -8,12 +8,14 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/s
 import { TooltipProvider } from '~/components/ui/tooltip'
 import { HeaderUserMenu } from '~/components/user/UserMenu'
 import { rememberBrowserUser } from '~/lib/browserSessionFns'
-import { getSession } from '~/lib/getSession'
 import { orpc } from '~/lib/orpc/client'
+import { sessionQueryOptions } from '~/lib/sessionQuery'
 
 export const Route = createFileRoute('/_authenticated')({
-  beforeLoad: async ({ location }) => {
-    const session = await getSession()
+  beforeLoad: async ({ location, context: { queryClient } }) => {
+    // fetchQuery: cached for the cookie-cache lifetime, re-checked after it
+    // (ensureQueryData would keep returning a stale session forever).
+    const session = await queryClient.fetchQuery(sessionQueryOptions)
     if (!session || session.user.deletedAt) {
       throw redirect({ to: '/login', search: { redirect: location.href } })
     }

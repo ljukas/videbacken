@@ -6,6 +6,7 @@ import { admin, lastLoginMethod, magicLink } from 'better-auth/plugins'
 import { tanstackStartCookies } from 'better-auth/tanstack-start'
 import { m } from '~/paraglide/messages'
 import { getLocale } from '~/paraglide/runtime'
+import { SESSION_COOKIE_CACHE_MAX_AGE_S } from './authConfig'
 import { rememberUser } from './browserSession'
 import { db } from './db'
 import * as schema from './db/schema'
@@ -74,7 +75,7 @@ export const auth = betterAuth({
     freshAge: 60 * 60,
     cookieCache: {
       enabled: true,
-      maxAge: 5 * 60,
+      maxAge: SESSION_COOKIE_CACHE_MAX_AGE_S,
     },
   },
   user: {
