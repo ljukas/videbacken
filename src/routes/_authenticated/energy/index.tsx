@@ -71,6 +71,16 @@ function EnergyOverviewPage() {
   const overview = data && !loadFailed(result) ? data : undefined
   // Nothing to show yet and nothing failed: the sections' skeletons.
   const pending = firstLoadPending(result)
+  // The last overview with readings that the page showed. A failed read of
+  // another year drops the placeholder, and with it the chart card's year
+  // selector: this keeps a selector (and the tiles, which are the current
+  // periods whatever the year), so the user can switch back. Set during render:
+  // React's pattern for state derived from a changing value.
+  const [lastShown, setLastShown] = useState(overview)
+  if (overview && overview.firstReadingDay !== null && overview !== lastShown) {
+    setLastShown(overview)
+  }
+  const tiles = overview ?? lastShown
   const navigate = Route.useNavigate()
   const [metric, setMetric] = useState<EnergyMetric>('solar')
   const chartHeadingId = useId()
@@ -108,16 +118,17 @@ function EnergyOverviewPage() {
       ) : (
         // The same element whatever the state, so the server HTML and the first
         // client render agree (the skeletons and the alert appear only once
-        // hydrated). A failed read leaves just the alert in it.
+        // hydrated). A failed read leaves the alert in it, below the last tiles
+        // and a year selector once the page has shown a year.
         <div className="flex flex-col gap-4">
           <SectionSkeleton name="energy-tiles" loading={pending} fallbackHeight="12rem">
-            {overview ? (
+            {tiles ? (
               // Tiles are always the current periods: they don't dim on a year switch.
               <section aria-labelledby={tilesHeadingId}>
                 <h2 id={tilesHeadingId} className="sr-only">
                   {m.energy_tiles_heading()}
                 </h2>
-                <EnergyTiles tiles={overview.tiles} />
+                <EnergyTiles tiles={tiles.tiles} />
               </section>
             ) : null}
           </SectionSkeleton>
@@ -158,6 +169,17 @@ function EnergyOverviewPage() {
               </section>
             ) : null}
           </SectionSkeleton>
+          {/* The failed year's chart is gone; its selector stays, where the
+              card header had it, so another year is one pick away. */}
+          {loadFailed(result) && lastShown ? (
+            <div className="flex justify-end">
+              <YearSelector
+                years={lastShown.availableYears}
+                value={year ?? lastShown.year}
+                onChange={setYear}
+              />
+            </div>
+          ) : null}
           <LoadErrorAlert title={m.energy_error_title()} query={result} />
         </div>
       )}

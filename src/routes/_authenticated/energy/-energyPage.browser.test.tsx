@@ -136,10 +136,34 @@ test('overview still loading: tiles and chart show skeletons, never the empty st
   expect(screen.getByRole('tablist').elements()).toHaveLength(0)
 })
 
+const failingHealth = {
+  source: 'emaldo',
+  state: 'failing',
+  running: false,
+  progress: null,
+  lastAttemptAt: new Date('2026-09-28T10:00:00Z'),
+  lastSuccessAt: null,
+  failingSince: new Date('2026-09-28T08:00:00Z'),
+  consecutiveFailures: 3,
+  code: 'auth_failed',
+  adminDetail: null,
+}
+
+// The failing case is the control: the same page does show the health alert
+// once a health that warrants one is in.
 test.each([
-  ['still loading', (qc: QueryClient) => pendingForever(qc, emaldoHealthQuery.queryKey)],
-  ['failed', (qc: QueryClient) => qc.removeQueries({ queryKey: emaldoHealthQuery.queryKey })],
-] as const)('Emaldo health %s: the page renders, with no "never synced" line and no health alert', async (_n, health) => {
+  [
+    'failing',
+    (qc: QueryClient) => qc.setQueryData(emaldoHealthQuery.queryKey, failingHealth as never),
+    true,
+  ],
+  ['still loading', (qc: QueryClient) => pendingForever(qc, emaldoHealthQuery.queryKey), false],
+  [
+    'failed',
+    (qc: QueryClient) => qc.removeQueries({ queryKey: emaldoHealthQuery.queryKey }),
+    false,
+  ],
+] as const)('Emaldo health %s: the page renders; the health alert only for a failing source', async (_n, health, alerted) => {
   const { screen } = await renderPage(Overview, '/energy', (qc) => {
     seedOverview(withData)(qc)
     health(qc)
@@ -148,8 +172,13 @@ test.each([
   await expect
     .element(screen.getByRole('tablist', { name: m.energy_tiles_heading() }))
     .toBeVisible()
-  expect(screen.getByText(m.charging_never_synced()).elements()).toHaveLength(0)
-  expect(document.querySelector('[role="alert"]')).toBeNull()
+  if (alerted) {
+    await expect.element(screen.getByRole('alert')).toBeVisible()
+    await expect.element(screen.getByText(m.charging_never_synced())).toBeVisible()
+  } else {
+    expect(screen.getByText(m.charging_never_synced()).elements()).toHaveLength(0)
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+  }
 })
 
 test('Nät switches the chart to the grid series', async () => {
@@ -203,6 +232,28 @@ test('another year loading: the old chart stays, dimmed; the tiles do not', asyn
   release({ ...with2025, year: 2025, availableYears: [2026, 2025] })
   await held
   await expect.poll(() => busy.querySelector('[aria-busy="true"]')).toBeNull()
+})
+
+test('a failed read of another year keeps the year selector, so the user can switch back', async () => {
+  const { screen } = await renderPage(Overview, '/energy', (qc) => {
+    seedOverview({ ...withData, availableYears: [2026, 2025] })(qc)
+    // 2026 picked back is its own key; 2025 stays unseeded, so its read fails.
+    qc.setQueryData(energyOverviewQuery(2026).queryKey, {
+      ...withData,
+      availableYears: [2026, 2025],
+    } as never)
+  })
+  await pickYear(screen, 2025)
+  await expect.element(screen.getByText(m.energy_error_title())).toBeVisible()
+  const selector = screen.getByRole('combobox', { name: m.charging_year_label() })
+  await expect.element(selector).toBeVisible()
+  await expect.element(selector).toHaveTextContent('2025')
+  // The tiles are the current periods, whatever the year: the last ones stay.
+  await expect.element(screen.getByRole('region', { name: m.energy_tiles_heading() })).toBeVisible()
+  await pickYear(screen, 2026)
+  await expect.element(screen.getByRole('heading', { name: m.energy_chart_title() })).toBeVisible()
+  await expect.element(selector).toHaveTextContent('2026')
+  expect(screen.getByText(m.energy_error_title()).elements()).toHaveLength(0)
 })
 
 test('a failed read: the error under a working heading, no skeleton', async () => {
