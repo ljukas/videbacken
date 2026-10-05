@@ -2,7 +2,7 @@ import { useHydrated } from '@tanstack/react-router'
 import { AlertTriangleIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert'
 import { m } from '~/paraglide/messages'
-import { SyncNowButton } from './SyncNowButton'
+import { RefreshButton } from './RefreshButton'
 
 // The slice of a `useQuery` result the alert reads.
 export type LoadErrorQuery = {
@@ -47,10 +47,10 @@ export function LoadErrorAlert({ title, query }: { title: string; query: LoadErr
       <AlertTitle>{title}</AlertTitle>
       {/* Children are divs, not <p>: AlertDescription adds a large bottom margin between paragraphs. */}
       <AlertDescription className="flex flex-col gap-2">
-        <div>{m.charging_patterns_error_description()}</div>
+        <div>{m.common_load_error_description()}</div>
         <div>
-          <SyncNowButton
-            onSync={() => void query.refetch()}
+          <RefreshButton
+            onClick={() => void query.refetch()}
             pending={query.isFetching}
             label={m.common_try_again()}
           />
@@ -74,8 +74,8 @@ export function LoadErrorLine({ title, query }: { title: string; query: LoadErro
     <div className="flex flex-col items-start gap-1.5 pointer-coarse:[&_[data-slot=button]]:h-11">
       <p className="text-destructive text-xs">{title}</p>
       {/* Keeps focus while retrying: a disabled button would drop it to <body>. */}
-      <SyncNowButton
-        onSync={() => void query.refetch()}
+      <RefreshButton
+        onClick={() => void query.refetch()}
         pending={query.isFetching}
         label={m.common_try_again()}
         aria-label={m.charging_source_action_label({ action: m.common_try_again(), source: title })}

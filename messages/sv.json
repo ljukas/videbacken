@@ -511,7 +511,7 @@
   "charging_patterns_empty_description": "När bilen har laddats visas mönstren här.",
   "charging_patterns_error_title": "Laddmönstren kunde inte hämtas",
   "charging_patterns_timeline_error_title": "Sessionerna kunde inte hämtas",
-  "charging_patterns_error_description": "Kontrollera anslutningen och försök igen.",
+  "common_load_error_description": "Kontrollera anslutningen och försök igen.",
   "nav_charging_economy_short": "Ekonomi",
   "nav_charging_economy": "Laddekonomi",
   "cmd_kw_charging_economy": "ekonomi spotpris besparing smart laddning pristajming",

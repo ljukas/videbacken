@@ -511,7 +511,7 @@
   "charging_patterns_empty_description": "Patterns show up here once the car has charged.",
   "charging_patterns_error_title": "Couldn't load the charging patterns",
   "charging_patterns_timeline_error_title": "Couldn't load the sessions",
-  "charging_patterns_error_description": "Check your connection and try again.",
+  "common_load_error_description": "Check your connection and try again.",
   "nav_charging_economy_short": "Economy",
   "nav_charging_economy": "Charging economy",
   "cmd_kw_charging_economy": "economy spot price savings smart charging price timing",

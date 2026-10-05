@@ -7,11 +7,6 @@ import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostN
 import { CredentialExpiryAlert } from '~/components/evCharging/CredentialExpiryAlert'
 import { healthPoll } from '~/components/evCharging/healthPoll'
 import { LiveStatusLine, useLiveStatus } from '~/components/evCharging/LiveStatusLine'
-import {
-  firstLoadPending,
-  LoadErrorAlert,
-  loadFailed,
-} from '~/components/evCharging/LoadErrorAlert'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import {
   type ChartMetric,
@@ -26,6 +21,7 @@ import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton
 import { TotalsTiles } from '~/components/evCharging/TotalsTiles'
 import { VehicleScopeToggle } from '~/components/evCharging/VehicleScopeToggle'
 import { YearSelector } from '~/components/evCharging/YearSelector'
+import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { useSessionPaging } from '~/hooks/useSessionPaging'

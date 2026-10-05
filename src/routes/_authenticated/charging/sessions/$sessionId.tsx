@@ -16,10 +16,10 @@ import {
   formatSessionTimeRange,
 } from '~/components/evCharging/format'
 import { GuestBadge } from '~/components/evCharging/GuestBadge'
-import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
 import { SessionPriceChart } from '~/components/evCharging/SessionPriceChart'
 import { SessionSummary } from '~/components/evCharging/SessionSummary'
 import { SessionVehicle } from '~/components/evCharging/SessionVehicle'
+import { LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { Button } from '~/components/ui/button'
 import { isSessionNotFound } from '~/lib/evCharging/sessionNotFound'

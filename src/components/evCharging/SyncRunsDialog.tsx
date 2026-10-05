@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { LoadErrorAlert, type LoadErrorQuery, loadFailed } from '~/components/layout/LoadErrorAlert'
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -13,7 +14,6 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { formatDateTime } from './format'
-import { LoadErrorAlert, type LoadErrorQuery, loadFailed } from './LoadErrorAlert'
 import { RecentRunsTable, type Run } from './RecentRunsTable'
 import { syncHealthMessage } from './SyncHealthAlert'
 import { SyncSourceMark } from './SyncSourceMark'
