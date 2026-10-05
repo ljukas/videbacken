@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { asc, desc, eq } from 'drizzle-orm'
 import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
@@ -6,6 +7,7 @@ import { queue } from '~/lib/effects'
 import { type SkodaClient, SkodaError, type SkodaReading } from '~/lib/effects/skoda'
 import { createServerLogger } from '~/lib/logger/server'
 import * as evChargingService from '~/lib/services/evCharging'
+import * as integrationCredentialService from '~/lib/services/integrationCredential'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { getHealth } from '~/lib/services/integrationSync'
 import * as userService from '~/lib/services/user'
@@ -99,6 +101,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 
 test('stores the poll with the geofence result and no coordinates', async () => {
@@ -140,7 +143,42 @@ test('the home point is read from SKODA_HOME_COORDINATES when not injected', asy
   }
   expect((await withEnv('59.3293,18.0686')).geofence).toBe('on')
   expect((await withEnv('0x10,18')).geofence).toBe('off')
-  vi.unstubAllEnvs()
+})
+
+const newKey = () => randomBytes(32).toString('base64')
+const runResolved = (now = NOW) =>
+  runSkodaSync({
+    trigger: 'cron',
+    now: () => now,
+    deps: { skoda: fakeSkoda(async () => reading()), log: capturingLogger().log },
+  })
+
+test('a stored home point beats SKODA_HOME_COORDINATES', async () => {
+  vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+  // Env points 0.05° north of the car; the stored point is where it is parked.
+  vi.stubEnv('SKODA_HOME_COORDINATES', `${HOME.latitude + 0.05},${HOME.longitude}`)
+  await integrationCredentialService.set(
+    'skoda',
+    { homeCoordinates: `${HOME.latitude},${HOME.longitude}` },
+    null,
+  )
+  expect((await runResolved()).geofence).toBe('on')
+  expect((await snapshots()).map((r) => r.atHome)).toEqual([true])
+})
+
+test('an unreadable Škoda row turns the geofence off', async () => {
+  vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+  vi.stubEnv('SKODA_HOME_COORDINATES', `${HOME.latitude},${HOME.longitude}`)
+  await integrationCredentialService.set(
+    'skoda',
+    { homeCoordinates: `${HOME.latitude},${HOME.longitude}` },
+    null,
+  )
+  // Another key: the row no longer decrypts, and env must not stand in for it.
+  vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+  const result = await runResolved()
+  expect(result).toMatchObject({ outcome: 'ok', geofence: 'off' })
+  expect((await snapshots()).map((r) => r.atHome)).toEqual([null])
 })
 
 test('missing parts log only their count at info, invalid parts at warn, a clean poll neither', async () => {

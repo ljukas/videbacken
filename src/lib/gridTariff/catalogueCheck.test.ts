@@ -1,10 +1,13 @@
+import { randomBytes } from 'node:crypto'
 import { afterEach, beforeEach, expect, type MockInstance, test, vi } from 'vitest'
+import { CredentialsUnreadableError } from '~/lib/credentials/crypto'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import type { Catalogue, EltariffClient } from '~/lib/effects/eltariff'
 import { EltariffError } from '~/lib/effects/eltariff'
 import { createServerLogger } from '~/lib/logger/server'
+import * as integrationCredentialService from '~/lib/services/integrationCredential'
 import * as userService from '~/lib/services/user'
 import { setupDatabase } from '~test/setup'
 import { runCatalogueCheck } from './catalogueCheck'
@@ -13,7 +16,7 @@ setupDatabase()
 
 // Synthetic ID and ranges (never the real facility).
 const FACILITY = '735999144123456789'
-const ENV = { GRID_FACILITY_ID: FACILITY }
+const id = (v?: string) => async () => v
 const covering = {
   meteringPointIdFrom: '735999144000000000',
   meteringPointIdTo: '735999144999999999',
@@ -65,6 +68,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 
 async function seedAdmins() {
@@ -81,7 +85,7 @@ test('covered: emails each active admin the company name, and logs one info line
   const { log, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [elsewhere, covering], invalidEntries: 0 })
 
-  const result = await runCatalogueCheck({ log, client, env: ENV })
+  const result = await runCatalogueCheck({ log, client, facilityId: id(FACILITY) })
 
   expect(result).toEqual({
     outcome: 'covered',
@@ -108,7 +112,11 @@ test('covered: emails each active admin the company name, and logs one info line
 test('covered by an unnamed entry still notifies, with a null name', async () => {
   await seedAdmins()
   const client = fakeClient({ entries: [{ ...covering, companyName: null }], invalidEntries: 0 })
-  const result = await runCatalogueCheck({ log: capturingLogger().log, client, env: ENV })
+  const result = await runCatalogueCheck({
+    log: capturingLogger().log,
+    client,
+    facilityId: id(FACILITY),
+  })
   expect(result.outcome).toBe('covered')
   expect(publish).toHaveBeenCalledWith(
     'email_grid_tariff_available',
@@ -122,7 +130,7 @@ test('a failed publish is warned and not counted; the other admins still get the
   const { log, entries, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [covering], invalidEntries: 0 })
 
-  const result = await runCatalogueCheck({ log, client, env: ENV })
+  const result = await runCatalogueCheck({ log, client, facilityId: id(FACILITY) })
 
   expect(result).toMatchObject({ outcome: 'covered', notified: 1 })
   expect(publish).toHaveBeenCalledTimes(2)
@@ -141,7 +149,7 @@ test('covered but every publish failed: notified 0, warned', async () => {
   const { log, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [covering], invalidEntries: 0 })
 
-  const result = await runCatalogueCheck({ log, client, env: ENV })
+  const result = await runCatalogueCheck({ log, client, facilityId: id(FACILITY) })
 
   expect(result).toMatchObject({ outcome: 'covered', notified: 0 })
   expect(checkLines()).toEqual([
@@ -152,7 +160,7 @@ test('covered but every publish failed: notified 0, warned', async () => {
 test('covered with no active admin notifies nobody, warned', async () => {
   const { log, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [covering], invalidEntries: 0 })
-  const result = await runCatalogueCheck({ log, client, env: ENV })
+  const result = await runCatalogueCheck({ log, client, facilityId: id(FACILITY) })
   expect(result).toMatchObject({ outcome: 'covered', notified: 0 })
   expect(publish).not.toHaveBeenCalled()
   expect(checkLines()).toEqual([expect.objectContaining({ level: WARN, outcome: 'covered' })])
@@ -165,7 +173,7 @@ test('an admin lookup failure is rethrown (a 500) and logged as error, not cover
   const { log, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [covering], invalidEntries: 0 })
 
-  await expect(runCatalogueCheck({ log, client, env: ENV })).rejects.toBe(dbDown)
+  await expect(runCatalogueCheck({ log, client, facilityId: id(FACILITY) })).rejects.toBe(dbDown)
   expect(publish).not.toHaveBeenCalled()
   expect(checkLines()).toEqual([
     expect.objectContaining({ level: ERROR, outcome: 'error', error: expect.anything() }),
@@ -177,7 +185,7 @@ test('not covered: no email, one info line', async () => {
   const { log, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [elsewhere], invalidEntries: 0 })
 
-  const result = await runCatalogueCheck({ log, client, env: ENV })
+  const result = await runCatalogueCheck({ log, client, facilityId: id(FACILITY) })
 
   expect(result).toEqual({
     outcome: 'not_covered',
@@ -197,7 +205,7 @@ test('no match with dropped entries is inconclusive and warned, not "not covered
   const { log, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [elsewhere], invalidEntries: 2 })
 
-  const result = await runCatalogueCheck({ log, client, env: ENV })
+  const result = await runCatalogueCheck({ log, client, facilityId: id(FACILITY) })
 
   expect(result).toMatchObject({ outcome: 'inconclusive', invalidEntries: 2, notified: 0 })
   expect(publish).not.toHaveBeenCalled()
@@ -207,20 +215,24 @@ test('no match with dropped entries is inconclusive and warned, not "not covered
 test('a match despite dropped entries is still covered', async () => {
   await seedAdmins()
   const client = fakeClient({ entries: [covering], invalidEntries: 3 })
-  const result = await runCatalogueCheck({ log: capturingLogger().log, client, env: ENV })
+  const result = await runCatalogueCheck({
+    log: capturingLogger().log,
+    client,
+    facilityId: id(FACILITY),
+  })
   expect(result).toMatchObject({ outcome: 'covered', invalidEntries: 3, notified: 2 })
 })
 
 test.each([
-  ['unset', {}],
-  ['blank', { GRID_FACILITY_ID: ' ' }],
-  ['malformed', { GRID_FACILITY_ID: '12345' }],
-])('a %s GRID_FACILITY_ID is not_configured: nothing fetched or sent, warned', async (_label, env) => {
+  ['unset', undefined],
+  ['blank', ' '],
+  ['malformed', '12345'],
+])('a %s facility ID is not_configured: nothing fetched or sent, warned', async (_label, value) => {
   await seedAdmins()
   const { log, checkLines } = capturingLogger()
   const client = fakeClient({ entries: [covering], invalidEntries: 0 })
 
-  const result = await runCatalogueCheck({ log, client, env })
+  const result = await runCatalogueCheck({ log, client, facilityId: id(value) })
 
   expect(result).toMatchObject({ outcome: 'not_configured', code: 'not_configured' })
   expect(client.calls).toBe(0)
@@ -230,12 +242,56 @@ test.each([
   ])
 })
 
+test('an unreadable stored ID is failed / credentials_unreadable: nothing fetched, logged at error', async () => {
+  await seedAdmins()
+  const { log, checkLines } = capturingLogger()
+  const client = fakeClient({ entries: [covering], invalidEntries: 0 })
+  const facilityId = async () => {
+    throw new CredentialsUnreadableError('gridTariff', 'invalid')
+  }
+
+  const result = await runCatalogueCheck({ log, client, facilityId })
+
+  expect(result).toEqual({
+    outcome: 'failed',
+    code: 'credentials_unreadable',
+    entries: 0,
+    invalidEntries: 0,
+    notified: 0,
+  })
+  expect(client.calls).toBe(0)
+  expect(publish).not.toHaveBeenCalled()
+  expect(checkLines()).toEqual([
+    expect.objectContaining({ level: ERROR, outcome: 'failed', code: 'credentials_unreadable' }),
+  ])
+})
+
+test('the default reads the stored ID over GRID_FACILITY_ID', async () => {
+  await seedAdmins()
+  vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', randomBytes(32).toString('base64'))
+  // A valid env ID in the other range: only the stored one may be matched.
+  vi.stubEnv('GRID_FACILITY_ID', '735999169123456789')
+  await integrationCredentialService.set('gridTariff', { facilityId: FACILITY }, null)
+
+  const covered = await runCatalogueCheck({
+    log: capturingLogger().log,
+    client: fakeClient({ entries: [covering], invalidEntries: 0 }),
+  })
+  const elsewhereOnly = await runCatalogueCheck({
+    log: capturingLogger().log,
+    client: fakeClient({ entries: [elsewhere], invalidEntries: 0 }),
+  })
+
+  expect(covered).toMatchObject({ outcome: 'covered', notified: 2 })
+  expect(elsewhereOnly).toMatchObject({ outcome: 'not_covered' })
+})
+
 test('an unreadable catalogue is failed with its code: no email, warned', async () => {
   await seedAdmins()
   const { log, checkLines } = capturingLogger()
   const client = fakeClient(new EltariffError('unexpected_response', 'catalogue', 200))
 
-  const result = await runCatalogueCheck({ log, client, env: ENV })
+  const result = await runCatalogueCheck({ log, client, facilityId: id(FACILITY) })
 
   expect(result).toEqual({
     outcome: 'failed',
@@ -257,7 +313,11 @@ test.each([
 ] as const)('a %s catalogue read is failed with that code', async (code) => {
   await seedAdmins()
   const client = fakeClient(new EltariffError(code, 'catalogue'))
-  const result = await runCatalogueCheck({ log: capturingLogger().log, client, env: ENV })
+  const result = await runCatalogueCheck({
+    log: capturingLogger().log,
+    client,
+    facilityId: id(FACILITY),
+  })
   expect(result).toMatchObject({ outcome: 'failed', code, notified: 0 })
   expect(publish).not.toHaveBeenCalled()
 })
@@ -267,7 +327,7 @@ test('an unexpected error is rethrown and logged once at error level', async () 
   const boom = new Error('bug')
   const client = fakeClient(boom)
 
-  await expect(runCatalogueCheck({ log, client, env: ENV })).rejects.toBe(boom)
+  await expect(runCatalogueCheck({ log, client, facilityId: id(FACILITY) })).rejects.toBe(boom)
   expect(checkLines()).toEqual([
     expect.objectContaining({ level: ERROR, outcome: 'error', error: expect.anything() }),
   ])
@@ -282,17 +342,21 @@ test('the facility ID never appears in the log output, on any path', async () =>
     fakeClient({ entries: [elsewhere], invalidEntries: 1 }),
     fakeClient(new EltariffError('unreachable', 'catalogue')),
   ]
-  for (const client of runs) await runCatalogueCheck({ log, client, env: ENV })
+  for (const client of runs) await runCatalogueCheck({ log, client, facilityId: id(FACILITY) })
   // A publish failure and an unexpected throw both log their error objects.
   publish.mockRejectedValueOnce(new Error('queue down'))
-  await runCatalogueCheck({ log, client: runs[0], env: ENV })
-  await runCatalogueCheck({ log, client: fakeClient(new Error('bug')), env: ENV }).catch(() => {})
+  await runCatalogueCheck({ log, client: runs[0], facilityId: id(FACILITY) })
+  await runCatalogueCheck({
+    log,
+    client: fakeClient(new Error('bug')),
+    facilityId: id(FACILITY),
+  }).catch(() => {})
 
   expect(lines.length).toBeGreaterThan(0)
   expect(lines.join('')).not.toContain(FACILITY)
 })
 
 test('the default client under VITEST fails closed as not_configured', async () => {
-  const result = await runCatalogueCheck({ log: capturingLogger().log, env: ENV })
+  const result = await runCatalogueCheck({ log: capturingLogger().log, facilityId: id(FACILITY) })
   expect(result).toMatchObject({ outcome: 'failed', code: 'not_configured' })
 })

@@ -16,6 +16,15 @@ vi.mock('./catalogueCheck', async (importOriginal) => {
   }
 })
 
+// This file has no setupDatabase(): stand the resolver in for env only (no
+// stored row), so the check reads GRID_FACILITY_ID without touching the DB.
+vi.mock('~/lib/credentials/resolve', () => ({
+  resolveCredentials: async () => ({
+    values: { facilityId: process.env.GRID_FACILITY_ID?.trim() || undefined },
+    fingerprint: 'f',
+  }),
+}))
+
 import { handleCatalogueCheckCron } from './catalogueCheckCron'
 
 const SECRET = 'test-cron-secret'

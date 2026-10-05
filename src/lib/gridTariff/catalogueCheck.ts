@@ -1,3 +1,5 @@
+import { CredentialsUnreadableError } from '~/lib/credentials/crypto'
+import { resolveCredentials } from '~/lib/credentials/resolve'
 import { eltariff, queue } from '~/lib/effects'
 import { type EltariffClient, EltariffError, newCallStats } from '~/lib/effects/eltariff'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
@@ -11,8 +13,10 @@ import { findCoveringEntry, parseFacilityId } from './coverage'
  * `not_covered` — every entry read cleanly and none covers us.
  * `inconclusive` — no match, but some entries were dropped as malformed, so a
  *   match may have been missed; warned, never read as "not covered".
- * `not_configured` — `GRID_FACILITY_ID` unset or malformed; nothing fetched.
- * `failed` — the catalogue couldn't be read (`code` says why).
+ * `not_configured` — no facility ID stored or in `GRID_FACILITY_ID`, or it is
+ *   malformed; nothing fetched.
+ * `failed` — the catalogue couldn't be read (`code` says why), or the stored
+ *   ID is unreadable (`credentials_unreadable`, ADR-0026; nothing fetched).
  */
 export type CatalogueCheckOutcome =
   | 'covered'
@@ -30,8 +34,6 @@ export type CatalogueCheckResult = {
   notified: number
 }
 
-type Env = Record<string, string | undefined>
-
 /**
  * The monthly grid-tariff watcher: is our facility covered by a grid company
  * publishing machine-readable tariffs (Eltariff-API)? If so, email every active
@@ -47,9 +49,10 @@ type Env = Record<string, string | undefined>
 export async function runCatalogueCheck(deps: {
   log: Logger
   client?: EltariffClient
-  env?: Env
+  /** The raw facility ID; defaults to the stored one over `GRID_FACILITY_ID` (ADR-0026). */
+  facilityId?: () => Promise<string | undefined>
 }): Promise<CatalogueCheckResult> {
-  const { log, client = eltariff, env = process.env } = deps
+  const { log, client = eltariff, facilityId: readFacilityId = defaultFacilityId } = deps
   const started = performance.now()
   const stats = newCallStats()
   const result: CatalogueCheckResult = {
@@ -64,7 +67,16 @@ export async function runCatalogueCheck(deps: {
   let thrown: unknown
 
   try {
-    const facilityId = parseFacilityId(env.GRID_FACILITY_ID)
+    let rawId: string | undefined
+    try {
+      rawId = await readFacilityId()
+    } catch (error) {
+      if (!(error instanceof CredentialsUnreadableError)) throw error
+      result.outcome = 'failed'
+      result.code = 'credentials_unreadable'
+      return result
+    }
+    const facilityId = parseFacilityId(rawId)
     if (facilityId === null) {
       result.code = 'not_configured'
       return result
@@ -129,7 +141,14 @@ export async function runCatalogueCheck(deps: {
       result.outcome === 'not_covered' ||
       (result.outcome === 'covered' && result.notified > 0 && publishFailures === 0)
     if (thrown !== undefined) log.error('grid tariff catalogue check', { ...fields, error: thrown })
+    // A stored ID that won't decrypt needs an admin to re-enter it (or the key back).
+    else if (result.code === 'credentials_unreadable')
+      log.error('grid tariff catalogue check', fields)
     else if (clean) log.info('grid tariff catalogue check', fields)
     else log.warn('grid tariff catalogue check', fields)
   }
+}
+
+async function defaultFacilityId(): Promise<string | undefined> {
+  return (await resolveCredentials('gridTariff')).values.facilityId
 }

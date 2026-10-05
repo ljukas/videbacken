@@ -1,3 +1,5 @@
+import { CredentialsUnreadableError } from '~/lib/credentials/crypto'
+import { resolveCredentials } from '~/lib/credentials/resolve'
 import { queue } from '~/lib/effects'
 import { type LatLon, newCallStats, type SkodaClient, SkodaError, skoda } from '~/lib/effects/skoda'
 import type { SyncTrigger } from '~/lib/integrationHealth'
@@ -62,9 +64,7 @@ export async function runSkodaSync(opts: {
   const client = opts.deps?.skoda ?? skoda
   const stats = newCallStats()
   const homePoint =
-    opts.deps && 'homePoint' in opts.deps
-      ? (opts.deps.homePoint ?? null)
-      : parseHomePoint(process.env.SKODA_HOME_COORDINATES)
+    opts.deps && 'homePoint' in opts.deps ? (opts.deps.homePoint ?? null) : await resolveHomePoint()
   return runPulledSync<SkodaSyncRun>({
     source: SOURCE,
     trigger: opts.trigger,
@@ -206,6 +206,17 @@ export async function runSkodaSync(opts: {
       reminderMs: run.reminderMs,
     }),
   })
+}
+
+// Stored over env (ADR-0026). An unreadable row means the Škoda client call fails
+// with credentials_unreadable inside the run, so the point is just off here.
+async function resolveHomePoint(): Promise<LatLon | null> {
+  try {
+    return parseHomePoint((await resolveCredentials('skoda')).values.homeCoordinates)
+  } catch (error) {
+    if (error instanceof CredentialsUnreadableError) return null
+    throw error
+  }
 }
 
 async function sendReminder(
