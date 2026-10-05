@@ -43,7 +43,8 @@ A route loader names the queries its page needs. It goes through one shared help
 of calling `prefetchQuery` / `ensureQueryData` directly:
 
 - **On the server** (first load, refresh, opened link) it awaits the page's *critical* queries, as today, so the
-  HTML is complete. Queries for sections below the fold (the Datakällor diagnostics, `sessionCosts`) are *deferred*:
+  HTML is complete. Queries for sections below the fold (the Datakällor diagnostics; `sessionCosts` until §5 merged it
+  into `sessions`) are *deferred*:
   the server doesn't start them at all. The HTML renders those sections pending, and each section's own `useQuery`
   fetches its data after hydration.
 - **On the client** it starts every query and awaits none. The navigation commits at once: URL, sidebar and page
@@ -174,6 +175,38 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
   Step 2 added the `/sensors` and `/users` skeletons to the same registry: twelve skeletons, ~26 KB gz in the shared
   `SectionSkeleton` chunk, which every page with a skeleton loads. About 23 KB of that is charging bones that `/sensors`
   and `/users` never use. Accepted for step 2. Splitting the registry per page group is part of step 4.
+
+### 5. Many reads per page: merge per concern, not per transport
+
+*Amendment, 2026-10-05 (roadmap step 3; design in
+[the step 3 spec](../superpowers/specs/2026-10-05-client-perf-3-fewer-reads-design.md)).*
+
+A page made of many reads keeps **one query per thing a section shows**: cached, invalidated, polled and failing on
+its own. Where several reads are really **one concern**, the server returns them as one procedure, and each section
+picks its part with `select`. Examples: the sources' health statuses, each source's recent runs, and a session page
+plus its costs.
+
+**Requests are not batched at the transport.** Every request goes through the auth middleware, and the auth lookup
+is memoized **per HTTP request**: once per SSR render, and once per RPC.
+
+**Why:**
+- **HTTP/2 makes the request count cheap for the browser.** The cost of a request is on the server: an auth check
+  and a pooled connection each. Merging per concern removes both, and it removes waterfalls (Query's own
+  "restructure your API" advice).
+- **Batching was rejected.**
+  - In buffered mode the slowest call holds every result (`liveStatus` takes up to 6 s).
+  - Streaming mode is unverified on Vercel, and needs per-call timing logs plus a shared auth lookup to pay off.
+  - Its saving overlaps with the merges above. The memo is the hook it would use, if a later measurement says
+    it's worth it.
+- **The memo keeps ADR-0017's guarantee.** It never outlives one HTTP request, so a revoked user is still rejected
+  on the next request. A short cross-request cache of the user lookup was rejected because it would delay revocation.
+- **The pool's state goes in the `rpc timing` line** (`poolTotal`, `poolIdle`, `poolWaiting`). The remaining burst
+  cost (§Context 3) can then be fixed from evidence.
+
+**Where the line is.** Merge reads that share a source table and a refresh rhythm. Don't merge across concerns
+whose failures should stay apart: `overview` and `costOverview` stay separate so a price problem blanks only the
+cost figures (ADR-0020). When a merged read has a part that may fail independently, it returns that part as `null`
+rather than failing the whole read (`sessions`' `costs`).
 
 ---
 
