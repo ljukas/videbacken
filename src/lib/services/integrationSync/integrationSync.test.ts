@@ -500,3 +500,21 @@ test('listRecentRunsBySource returns each source’s newest runs, at most `limit
   // Same row shape as the single-source read.
   expect(runs.zaptec[0]).toEqual((await listRecentRuns('zaptec', { limit: 1 }))[0])
 })
+
+test('listRecentRunsBySource keeps a failed run’s error fields, as listRecentRuns does', async () => {
+  const lease = await beginAttempt('elpris', { now: T0 })
+  if (!lease.acquired) throw new Error('expected the lease')
+  await recordOutcome('elpris', failed, {
+    attemptId: lease.attemptId,
+    trigger: 'admin',
+    startedAt: T0,
+    now: at(500),
+  })
+  const runs = await listRecentRunsBySource({ limit: 5 })
+  expect(runs.elpris).toEqual(await listRecentRuns('elpris', { limit: 5 }))
+  expect(runs.elpris[0]).toMatchObject({
+    outcome: 'failed',
+    errorCode: 'unreachable',
+    errorMessage: 'connect ECONNREFUSED',
+  })
+})

@@ -8,6 +8,7 @@ import {
   evCharger,
   evChargeSession,
   integrationSync,
+  integrationSyncRun,
   user,
   vehicleChargeRecord,
 } from '~/lib/db/schema'
@@ -337,6 +338,27 @@ test('recentRuns returns every source’s (empty) run history for an admin', asy
   await signIn('admin')
   const runs = await call(evChargingRouter.recentRuns, {}, { context: baseContext() })
   expect(runs).toEqual({ zaptec: [], elpris: [], skoda: [], emaldo: [] })
+})
+
+test('recentRuns takes a limit of 1–50 and defaults to 20 runs per source', async () => {
+  await signIn('admin')
+  await db.insert(integrationSync).values({ source: 'zaptec', updatedAt: new Date() })
+  await db.insert(integrationSyncRun).values(
+    Array.from({ length: 21 }, (_, i) => ({
+      source: 'zaptec',
+      trigger: 'cron',
+      startedAt: new Date(Date.UTC(2026, 9, 1, 0, i)),
+      finishedAt: new Date(Date.UTC(2026, 9, 1, 0, i, 1)),
+      durationMs: 1000,
+      outcome: 'ok',
+    })),
+  )
+  const byDefault = await call(evChargingRouter.recentRuns, {}, { context: baseContext() })
+  expect(byDefault.zaptec).toHaveLength(20)
+  for (const limit of [1, 50]) {
+    const runs = await call(evChargingRouter.recentRuns, { limit }, { context: baseContext() })
+    expect(runs.zaptec).toHaveLength(Math.min(limit, 21))
+  }
 })
 
 test('recentRuns rejects a limit outside 1–50', async () => {

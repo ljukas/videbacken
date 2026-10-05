@@ -10,6 +10,7 @@ import {
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
+import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
@@ -157,6 +158,59 @@ test('Historik opens that source in the URL, and closing clears it', async () =>
 test('a deep link opens that source’s history', async () => {
   const { screen } = await renderSettings('?dialog=syncRuns&source=skoda')
   await expect.element(screen.getByRole('dialog', { name: historyTitle('Škoda') })).toBeVisible()
+})
+
+// One distinct error code per source, so a history showing another source's runs is caught.
+const RUN_CODE = {
+  zaptec: 'unreachable',
+  elpris: 'rate_limited',
+  skoda: 'auth_failed',
+  emaldo: 'forbidden',
+} as const
+const failedRun = (source: keyof typeof RUN_CODE) => ({
+  id: `00000000-0000-4000-8000-00000000000${Object.keys(RUN_CODE).indexOf(source)}`,
+  trigger: 'cron',
+  startedAt: new Date('2026-10-05T10:00:00Z'),
+  finishedAt: new Date('2026-10-05T10:00:01Z'),
+  durationMs: 1000,
+  outcome: 'failed',
+  errorCode: RUN_CODE[source],
+  errorMessage: null,
+  upserted: 0,
+  sessionsSeen: 0,
+  pages: 0,
+})
+
+test.each(
+  Object.keys(RUN_CODE) as (keyof typeof RUN_CODE)[],
+)('%s’s history shows its own runs, not another source’s', async (source) => {
+  const { screen } = await renderSettings(`?dialog=syncRuns&source=${source}`, {
+    prepare: (qc) =>
+      qc.setQueryData(runsKey, {
+        zaptec: [failedRun('zaptec')],
+        elpris: [failedRun('elpris')],
+        skoda: [failedRun('skoda')],
+        emaldo: [failedRun('emaldo')],
+      } as never),
+  })
+  const dialog = screen.getByRole('dialog', {
+    name: historyTitle(integrationSourceName(source)),
+  })
+  await expect.element(dialog.getByText(RUN_CODE[source], { exact: true })).toBeVisible()
+  for (const other of Object.keys(RUN_CODE) as (keyof typeof RUN_CODE)[]) {
+    if (other !== source)
+      expect(dialog.getByText(RUN_CODE[other], { exact: true }).elements()).toHaveLength(0)
+  }
+})
+
+test('a failed runs read shows an error with a retry in the history', async () => {
+  const { screen } = await renderSettings('?dialog=syncRuns&source=elpris', {
+    // Unseeded: the test server has no /api/rpc, so the read fails.
+    prepare: (qc) => qc.removeQueries({ queryKey: runsKey }),
+  })
+  const dialog = screen.getByRole('dialog', { name: historyTitle('elprisetjustnu.se') })
+  await expect.element(dialog.getByText(m.charging_runs_error_title())).toBeVisible()
+  await expect.element(dialog.getByRole('button', { name: m.common_try_again() })).toBeVisible()
 })
 
 test('?dialog=tariffNew opens the new-period dialog', async () => {

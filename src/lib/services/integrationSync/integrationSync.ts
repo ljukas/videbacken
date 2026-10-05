@@ -301,7 +301,7 @@ export async function listRecentRuns(
     .select(runColumns)
     .from(integrationSyncRun)
     .where(eq(integrationSyncRun.source, source))
-    .orderBy(desc(integrationSyncRun.startedAt))
+    .orderBy(desc(integrationSyncRun.startedAt), desc(integrationSyncRun.id))
     .limit(limit)
   return rows.map(toRunRow)
 }
@@ -319,7 +319,7 @@ export async function listRecentRunsBySource({
     .select(runColumns)
     .from(integrationSyncRun)
     .where(eq(integrationSyncRun.source, integrationSync.source))
-    .orderBy(desc(integrationSyncRun.startedAt))
+    .orderBy(desc(integrationSyncRun.startedAt), desc(integrationSyncRun.id))
     .limit(limit)
     .as('recent')
   const rows = await db
@@ -339,13 +339,13 @@ export async function listRecentRunsBySource({
     })
     .from(integrationSync)
     .innerJoinLateral(recent, sql`true`)
+    // The join keeps no order of its own: newest first within each source,
+    // tie-broken like `listRecentRuns`.
+    .orderBy(integrationSync.source, desc(recent.startedAt), desc(recent.id))
   const bySource = Object.fromEntries(
     INTEGRATION_SOURCES.map((source) => [source, [] as RunRow[]]),
   ) as Record<IntegrationSource, RunRow[]>
   for (const { source, ...run } of rows) bySource[source as IntegrationSource]?.push(toRunRow(run))
-  // The join's row order isn't guaranteed: newest first within each source.
-  for (const runs of Object.values(bySource))
-    runs.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
   return bySource
 }
 
