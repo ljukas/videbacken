@@ -1,9 +1,11 @@
-import { keepPreviousData, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
+import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
+import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { ClimateChart } from '~/components/sensor/ClimateChart'
 import { CurrentReadingTiles } from '~/components/sensor/CurrentReadingTiles'
 import { DeviceToggles } from '~/components/sensor/DeviceToggles'
@@ -13,6 +15,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { getIntlLocale } from '~/lib/i18n/format'
 import { orpc } from '~/lib/orpc/client'
+import { loadRouteData } from '~/lib/query/routeData'
 import { colorForIndex, type DeviceSeries, toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS, SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
 import { makeTickFormatter } from '~/lib/sensor/tickFormat'
@@ -36,15 +39,16 @@ export const Route = createFileRoute('/_authenticated/sensors')({
     meta: seo({ title: m.meta_sensors_title(), description: m.meta_sensors_description() }),
   }),
   validateSearch: searchSchema,
+  // The range is a dep so the server renders the linked range's series; on the
+  // client nothing is awaited (loadRouteData), so a range switch never blocks.
   loaderDeps: ({ search }) => ({ range: search.range }),
-  loader: async ({ context: { queryClient }, deps }) => {
-    await Promise.all([
-      queryClient.ensureQueryData(orpc.sensor.listDevices.queryOptions()),
-      queryClient.ensureQueryData(
+  loader: ({ context: { queryClient }, deps }) =>
+    loadRouteData(queryClient, {
+      critical: [
+        orpc.sensor.listDevices.queryOptions(),
         orpc.sensor.series.queryOptions({ input: { range: deps.range } }),
-      ),
-    ])
-  },
+      ],
+    }),
   component: SensorsPage,
 })
 
@@ -61,17 +65,26 @@ function SensorsPage() {
     clearKeys: ['deviceId'],
   })
 
-  const { data: devices } = useSuspenseQuery({
+  const devicesResult = useQuery({
     ...orpc.sensor.listDevices.queryOptions(),
     // The tiles show live latest/battery/last-seen, so poll on the same cadence
     // as the short-range charts (spec §7).
     refetchInterval: 60_000,
   })
-  const { data: series } = useQuery({
+  const seriesResult = useQuery({
     ...orpc.sensor.series.queryOptions({ input: { range } }),
     refetchInterval: POLLED_RANGES.includes(range) ? 60_000 : false,
     placeholderData: keepPreviousData, // keep the old chart while a new range loads
   })
+  // Each section owns its loading state (ADR-0025 §3): nothing to show yet is a
+  // skeleton, a failed read the alert (ADR-0016), never the empty state.
+  const devicesFailed = loadFailed(devicesResult)
+  const devicesPending = firstLoadPending(devicesResult)
+  const devices = devicesFailed ? undefined : devicesResult.data
+  const roster = useMemo(() => devices ?? [], [devices])
+  const seriesFailed = loadFailed(seriesResult)
+  const seriesPending = firstLoadPending(seriesResult)
+  const series = seriesFailed ? undefined : seriesResult.data
 
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   function toggle(id: string) {
@@ -97,7 +110,7 @@ function SensorsPage() {
   const tempDevices = useMemo(
     () =>
       toChartDevices(
-        devices,
+        roster,
         hidden,
         toDeviceSeries(buckets, 'temp', {
           bucketSec,
@@ -105,12 +118,12 @@ function SensorsPage() {
           cadenceSec: CADENCE_SEC,
         }),
       ),
-    [devices, hidden, buckets, bucketSec],
+    [roster, hidden, buckets, bucketSec],
   )
   const humDevices = useMemo(
     () =>
       toChartDevices(
-        devices,
+        roster,
         hidden,
         toDeviceSeries(buckets, 'hum', {
           bucketSec,
@@ -118,17 +131,27 @@ function SensorsPage() {
           cadenceSec: CADENCE_SEC,
         }),
       ),
-    [devices, hidden, buckets, bucketSec],
+    [roster, hidden, buckets, bucketSec],
   )
 
-  const toggleDevices = devices.map((d, i) => ({
+  const toggleDevices = roster.map((d, i) => ({
     id: d.id,
     displayName: d.displayName,
     color: colorForIndex(i),
   }))
-  const editingDevice = deviceId ? devices.find((d) => d.id === deviceId) : undefined
+  const editingDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
 
-  if (devices.length === 0) {
+  // The toggles, the tiles and the charts' colours all need the roster.
+  if (devicesFailed) {
+    return (
+      <PageContainer>
+        <SensorsHeading />
+        <LoadErrorAlert title={m.sensors_devices_error_title()} query={devicesResult} />
+      </PageContainer>
+    )
+  }
+
+  if (devices?.length === 0) {
     return (
       <PageContainer>
         <SensorsHeading />
@@ -153,25 +176,43 @@ function SensorsPage() {
 
       <div className="flex flex-col gap-3">
         <RangeSelector value={range} onChange={setRange} />
-        <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
+        <SectionSkeleton name="sensors-tiles" loading={devicesPending} fallbackHeight="10rem">
+          <div className="flex flex-col gap-6">
+            <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
+            <section className="flex flex-col gap-2">
+              <h2 className="sr-only">{m.sensors_current_heading()}</h2>
+              <CurrentReadingTiles
+                devices={roster}
+                isAdmin={isAdmin}
+                onEdit={(id) => open('edit', { deviceId: id })}
+              />
+            </section>
+          </div>
+        </SectionSkeleton>
       </div>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="sr-only">{m.sensors_current_heading()}</h2>
-        <CurrentReadingTiles
-          devices={devices}
-          isAdmin={isAdmin}
-          onEdit={(id) => open('edit', { deviceId: id })}
-        />
-      </section>
+      <LoadErrorAlert title={m.sensors_series_error_title()} query={seriesResult} />
+      {seriesFailed ? null : (
+        <>
+          <ChartSection
+            title={m.sensors_temp_chart_title()}
+            name="sensors-temp-chart"
+            loading={seriesPending || devicesPending}
+            hasData={hasData}
+          >
+            <ClimateChart devices={tempDevices} unit="°C" formatTick={formatTick} />
+          </ChartSection>
 
-      <ChartSection title={m.sensors_temp_chart_title()} hasData={hasData}>
-        <ClimateChart devices={tempDevices} unit="°C" formatTick={formatTick} />
-      </ChartSection>
-
-      <ChartSection title={m.sensors_humidity_chart_title()} hasData={hasData}>
-        <ClimateChart devices={humDevices} unit="%" formatTick={formatTick} />
-      </ChartSection>
+          <ChartSection
+            title={m.sensors_humidity_chart_title()}
+            name="sensors-hum-chart"
+            loading={seriesPending || devicesPending}
+            hasData={hasData}
+          >
+            <ClimateChart devices={humDevices} unit="%" formatTick={formatTick} />
+          </ChartSection>
+        </>
+      )}
 
       {isAdmin ? (
         <EditDeviceDialog
@@ -197,25 +238,32 @@ function SensorsHeading() {
   )
 }
 
+// The title stays real text; only the chart area is a skeleton while loading.
 function ChartSection({
   title,
+  name,
+  loading,
   hasData,
   children,
 }: {
   title: string
+  name: string
+  loading: boolean
   hasData: boolean
   children: React.ReactNode
 }) {
   return (
     <section className="flex flex-col gap-2">
       <h2 className="font-medium text-sm">{title}</h2>
-      {hasData ? (
-        children
-      ) : (
-        <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
-          {m.sensors_chart_empty()}
-        </div>
-      )}
+      <SectionSkeleton name={name} loading={loading} fallbackHeight="260px">
+        {hasData ? (
+          children
+        ) : (
+          <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
+            {m.sensors_chart_empty()}
+          </div>
+        )}
+      </SectionSkeleton>
     </section>
   )
 }
