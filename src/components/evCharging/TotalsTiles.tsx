@@ -17,6 +17,7 @@ import type { RouterOutputs } from '~/lib/orpc/client'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { formatKronor, formatOneDecimal, formatOrePrecise, formatSek, formatShare } from './format'
+import { SolarValueLine } from './SolarValueLine'
 
 type Tiles = RouterOutputs['evCharging']['overview']['tiles']
 type Period = keyof Tiles
@@ -129,6 +130,8 @@ function PeriodIcon({ period, className }: { period: Period; className?: string 
 // partly priced total is qualified "minst" with the share that lacks a price;
 // bought energy with no price at all reads "—". No energy, or energy that was
 // all own solar, is a true 0 kr — so "no price" is judged on the bought energy.
+// Under both readouts, the value of own solar used when there was any (a
+// separate figure, never part of the cost).
 function TileReadouts({
   totals,
   cost,
@@ -194,6 +197,8 @@ function TileReadouts({
           )}
         </div>
       </div>
+      {/* Full width: in the cost column of a third-width tile it wrapped to five lines. */}
+      <SolarValueLine cost={cost} />
       {footer.length > 0 ? (
         <div className="mt-auto flex flex-col gap-1.5 border-t pt-3 text-muted-foreground text-xs">
           {footer.map((line) => (

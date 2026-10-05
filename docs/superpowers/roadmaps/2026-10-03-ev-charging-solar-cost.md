@@ -13,7 +13,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 | 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | checkpoint passed | 2026-10-04: re-fetch 258/258 days in 9 runs, all `ok`; SoC on 73,955/73,955 buckets, 0 days with nulls; 4 probe days exact; energy sums unchanged |
 | 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | [#77](https://github.com/ljukas/videbacken/pull/77) | checkpoint passed | 2026-10-04: history rebuilt by the first cron derive (258 pool days, 98/98 counted sessions, mix kWh = session kWh); prod `C` 7.57 vs 7.58 in code; pool never above SoC; probe sessions within 1–6 pts of P |
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | [#79](https://github.com/ljukas/videbacken/pull/79) | checkpoint passed | 2026-10-05: sunny midday sessions 68–76 % cheaper (08-17 54.4 → 12.8 kr), no-house-data sessions unchanged; owner reviewed `/charging` live; economy series/column labels renamed grid-only |
-| 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
+| 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | [#85](https://github.com/ljukas/videbacken/pull/85) | PR open | — |
 | — | *Later phase:* solar-aware economy page (own brainstorm) | — | — | — | — |
 | — | *Later phase, needs shaping:* house battery page (monthly in / out / loss, efficiency, grid-charged share) — see [Later phases](#later-phases) | — | — | needs shaping | — |
 
@@ -220,3 +220,10 @@ Open questions:
     session table's "Kostnad" → "Kostnad som köpt el").
   - Added the house battery page as a later phase that needs shaping (owner request). Next: step 5 (value of own
     solar) in a new session.
+- 2026-10-05: step 5 (value of own solar) built on step 4's `solarPricedKwh` / `solarUnpricedKwh`: one line under
+  the cash cost on the tiles, in the monthly kr tooltip and on the session page, with "minst" / "okänt" states and a
+  0.05 kWh hide threshold (spec "Step 5"). Task 0 found the plan's assumptions held: step 4 had already put the cash
+  `cost` on the session page and stopped drawing an all-solar month as a "Pris saknas" stub. Reviews set the line as
+  a note (small, muted) rather than a second price, and made the tooltip say in words why a value is unknown.
+  **Next phase, the solar-aware economy page, needs its own brainstorm** (`superpowers:brainstorming`, then a spec
+  and its own roadmap) before any plan. The stored mix is its input; this roadmap ends at checkpoint 5.
