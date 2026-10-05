@@ -106,7 +106,7 @@ test('elsewhere no charging item is active', async () => {
   expect(active(link(m.nav_charging_patterns_short()))).toBe(false)
 })
 
-test("charging links match exactly, ignoring the views' own params, and keep the year", async () => {
+test("charging links match exactly, ignoring the views' own params, and keep the year and vehicle scope", async () => {
   current.path = '/charging/patterns'
   await renderSidebar()
   for (const label of [
@@ -118,6 +118,12 @@ test("charging links match exactly, ignoring the views' own params, and keep the
     expect(props?.activeOptions, label).toEqual({ exact: true, includeSearch: false })
     const search = props?.search as (prev: object) => object
     expect(search({ year: 2025, month: 3, metric: 'plugged' })).toEqual({ year: 2025 })
+    expect(search({ year: 2025, vehicle: 'other', month: 3 })).toEqual({
+      year: 2025,
+      vehicle: 'other',
+    })
+    // From a page without the params (a session page, another section): a clean URL.
+    expect(Object.entries(search({})).filter(([, v]) => v !== undefined)).toEqual([])
     expect(search({ range: '7d' })).toEqual({ year: undefined })
   }
   // Other sections keep the router's default matching.
