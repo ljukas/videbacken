@@ -159,7 +159,11 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
 - **Bones are sparse.** Text next to an icon gets no bone, and card outlines aren't drawn, so a tile reads as a few
   bars on the page background.
 - **Graphics become slabs.** A chart, the patterns heatmap and the day-by-day calendars are each one solid block, and
-  a table's middle columns read as one block.
+  a table's middle columns read as one block. The table part has a known cause and fix (step 2, `/users`): boneyard
+  bones a `td`/`th` holding only inline children as the whole cell, and neighbouring cell bones merge. Give each
+  cell's content an `inline-block` (or another non-inline element), and leave hover-only or admin-only cells out with
+  `SectionSkeleton`'s `excludeSelectors`. Bones are also clipped to the skeleton's wrapper, so a section that bleeds
+  past the content column (`-mx-*`) must bleed from a wrapper outside `SectionSkeleton`.
 - **One layout per range.** Between two keys a section can still reflow, and its skeleton then shows the layout at
   the lower key, so the content ends up shorter than its bones and the page moves up once:
   - **375 covers 375–767.** Datakällor, economy and patterns reflow around 487, 511, 647 and 711 px (economy's bones

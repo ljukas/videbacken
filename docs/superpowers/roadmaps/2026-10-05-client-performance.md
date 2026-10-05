@@ -110,7 +110,7 @@ candidates, for comparison only:
 - **Skeletons between capture widths.** A section that reflows between two capture keys replays the lower key's
   layout, so the page moves once when the data lands (ADR-0025 §4 known limits, measured for Datakällor, economy and
   patterns).
-- **`users-table` at md and up.** `UsersTable` bleeds `md:-mx-4` past the content column, while `SectionSkeleton`'s
-  wrapper clips at the column. The first column's bones are cropped by 16 px, and the middle columns read as one slab.
+- **Sensor tiles by count.** The `sensors-tiles` bones were captured with two sensors. With a different number of
+  sensors, the tiles reflow once on load.
 - **Alerts on a client navigation.** A failing source's alert can appear a moment after the page and push the
   content down once (ADR-0025 §1, accepted).
