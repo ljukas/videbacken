@@ -6,6 +6,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
+import { renderToString } from 'react-dom/server'
 import { expect, test } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { orpc, type RouterOutputs } from '~/lib/orpc/client'
@@ -40,7 +41,7 @@ const pendingForever = (qc: QueryClient, queryKey: readonly unknown[]) => {
   void qc.prefetchQuery({ queryKey, queryFn: () => new Promise(() => {}) })
 }
 
-async function renderSensors(search: string, prepare: (qc: QueryClient) => void) {
+async function loadSensors(search: string, prepare: (qc: QueryClient) => void) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY } })
   prepare(qc)
@@ -58,13 +59,30 @@ async function renderSensors(search: string, prepare: (qc: QueryClient) => void)
     history: createMemoryHistory({ initialEntries: [`/sensors${search}`] }),
   })
   await router.load()
-  const screen = await render(
+  const ui = (
     <QueryClientProvider client={qc}>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  return { ui, router, qc }
+}
+
+async function renderSensors(search: string, prepare: (qc: QueryClient) => void) {
+  const { ui, router, qc } = await loadSensors(search, prepare)
+  const screen = await render(ui)
   return { screen, router, qc }
 }
+
+// What the server renders after a failed prefetch (the error isn't dehydrated, so
+// the client hydrates with the query missing) must equal the hydrating client's
+// first render: both pre-hydration, so renderToString on each side.
+const failedOnServer = (qc: QueryClient, queryKey: readonly unknown[]) =>
+  qc
+    .getQueryCache()
+    .build(qc, { queryKey })
+    .setState({ status: 'error', error: new Error('x'), errorUpdateCount: 1, fetchStatus: 'idle' })
+const firstHtml = async (prepare: (qc: QueryClient) => void) =>
+  renderToString((await loadSensors('', prepare)).ui)
 
 test('devices still loading: skeletons, never the "no sensors" empty state', async () => {
   const { screen } = await renderSensors('', (qc) => {
@@ -146,4 +164,20 @@ test('an edit deep link opens once the devices are in', async () => {
     qc.setQueryData(seriesKey, noSeries)
   })
   await expect.element(screen.getByRole('dialog')).toBeVisible()
+})
+
+test.each([
+  ['devices', devicesKey, seriesKey],
+  ['series', seriesKey, devicesKey],
+] as const)('%s failed on the server: the HTML matches the hydrating client, no "no data"', async (_n, failedKey, okKey) => {
+  const seedOk = (qc: QueryClient) =>
+    qc.setQueryData(okKey, okKey === devicesKey ? [device] : noSeries)
+  const server = await firstHtml((qc) => {
+    seedOk(qc)
+    failedOnServer(qc, failedKey)
+  })
+  const client = await firstHtml(seedOk)
+  expect(server).toBe(client)
+  expect(server).not.toContain(m.sensors_chart_empty())
+  expect(server).not.toContain(m.sensors_empty_title())
 })

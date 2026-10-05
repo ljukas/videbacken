@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useHydrated } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
@@ -77,14 +77,18 @@ function SensorsPage() {
     placeholderData: keepPreviousData, // keep the old chart while a new range loads
   })
   // Each section owns its loading state (ADR-0025 §3): nothing to show yet is a
-  // skeleton, a failed read the alert (ADR-0016), never the empty state.
-  const devicesFailed = loadFailed(devicesResult)
+  // skeleton, a failed read the alert (ADR-0016), never the empty state. A
+  // failure reshapes the page only once hydrated: a read that failed on the
+  // server isn't dehydrated, so the hydrating client sees it missing, and both
+  // must render it alike (no content, no "no data").
+  const hydrated = useHydrated()
   const devicesPending = firstLoadPending(devicesResult)
-  const devices = devicesFailed ? undefined : devicesResult.data
+  const devices = loadFailed(devicesResult) ? undefined : devicesResult.data
+  const devicesFailed = hydrated && loadFailed(devicesResult)
   const roster = useMemo(() => devices ?? [], [devices])
-  const seriesFailed = loadFailed(seriesResult)
   const seriesPending = firstLoadPending(seriesResult)
-  const series = seriesFailed ? undefined : seriesResult.data
+  const series = loadFailed(seriesResult) ? undefined : seriesResult.data
+  const seriesFailed = hydrated && loadFailed(seriesResult)
 
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   function toggle(id: string) {
@@ -177,17 +181,19 @@ function SensorsPage() {
       <div className="flex flex-col gap-3">
         <RangeSelector value={range} onChange={setRange} />
         <SectionSkeleton name="sensors-tiles" loading={devicesPending} fallbackHeight="10rem">
-          <div className="flex flex-col gap-6">
-            <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
-            <section className="flex flex-col gap-2">
-              <h2 className="sr-only">{m.sensors_current_heading()}</h2>
-              <CurrentReadingTiles
-                devices={roster}
-                isAdmin={isAdmin}
-                onEdit={(id) => open('edit', { deviceId: id })}
-              />
-            </section>
-          </div>
+          {devices ? (
+            <div className="flex flex-col gap-6">
+              <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
+              <section className="flex flex-col gap-2">
+                <h2 className="sr-only">{m.sensors_current_heading()}</h2>
+                <CurrentReadingTiles
+                  devices={roster}
+                  isAdmin={isAdmin}
+                  onEdit={(id) => open('edit', { deviceId: id })}
+                />
+              </section>
+            </div>
+          ) : null}
         </SectionSkeleton>
       </div>
 
@@ -198,6 +204,7 @@ function SensorsPage() {
             title={m.sensors_temp_chart_title()}
             name="sensors-temp-chart"
             loading={seriesPending || devicesPending}
+            ready={series !== undefined && devices !== undefined}
             hasData={hasData}
           >
             <ClimateChart devices={tempDevices} unit="°C" formatTick={formatTick} />
@@ -207,6 +214,7 @@ function SensorsPage() {
             title={m.sensors_humidity_chart_title()}
             name="sensors-hum-chart"
             loading={seriesPending || devicesPending}
+            ready={series !== undefined && devices !== undefined}
             hasData={hasData}
           >
             <ClimateChart devices={humDevices} unit="%" formatTick={formatTick} />
@@ -239,16 +247,20 @@ function SensorsHeading() {
 }
 
 // The title stays real text; only the chart area is a skeleton while loading.
+// Not `ready` (nothing to show, before the skeleton or the alert takes over):
+// an empty area, never "no data".
 function ChartSection({
   title,
   name,
   loading,
+  ready,
   hasData,
   children,
 }: {
   title: string
   name: string
   loading: boolean
+  ready: boolean
   hasData: boolean
   children: React.ReactNode
 }) {
@@ -256,7 +268,7 @@ function ChartSection({
     <section className="flex flex-col gap-2">
       <h2 className="font-medium text-sm">{title}</h2>
       <SectionSkeleton name={name} loading={loading} fallbackHeight="260px">
-        {hasData ? (
+        {!ready ? null : hasData ? (
           children
         ) : (
           <div className="flex h-[260px] items-center justify-center rounded-lg border text-muted-foreground text-sm">
