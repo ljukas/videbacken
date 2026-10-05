@@ -286,6 +286,24 @@ together, sources are set independently, and if one source fails, the others mus
   - Over a readable row, a blank field still keeps its stored value.
 - **A missing or rotated `CREDENTIALS_ENCRYPTION_KEY` makes every stored source unreadable at once.** They share one
   key, so this is a key event, not one source failing. The fix is to restore the key or re-enter the sources.
+- **Name the wrong field when we can tell** (owner, same day). For example "the VIN is invalid", while the other
+  fields show as fine.
+  - **At save:** validation reports every invalid field at once, not just the first. `INVALID_FIELD` carries a
+    list of field names. Each name shows on its own input.
+  - **At sync:** the run maps a vendor's answer to the field it points at, where the answer allows it. The dialog
+    and tile flag that field.
+
+    | Source | Answer | Flags |
+    |---|---|---|
+    | Škoda | 401 | `apiKey` (expired or wrong) |
+    | Škoda | 404 | `vin` (no car for that VIN) |
+    | Škoda | 403 | `apiKey` + `vin` together (the key isn't authorized for that car); can't tell which |
+    | Zaptec | refused login | `username` + `password` together (Zaptec doesn't say which) |
+    | Emaldo | refused login | `user` + `password` |
+    | Emaldo | answer we can't decode (often a rotated app key) | `appId` + `appSecret` |
+
+    Step 3 checks these mappings against the current client code and the vendors' documented error bodies before
+    relying on them. It stores the suspect fields with the run, by name only, never a value.
 
 ## Step 3 — credentials UI
 
