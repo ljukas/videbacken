@@ -29,9 +29,8 @@ TanStack's own Router + Query guidance names this pattern as the wrong one: `awa
 "blocks navigation, no streaming benefit". The documented pattern is to start non-critical fetches without awaiting
 and let the component show a loading state.
 
-The app is already most of the way there. `setupRouterSsrQueryIntegration` dehydrates pending queries (so a fetch
-started on the server and not awaited streams to the client), and most sections already branch on "has data /
-failed" rather than throwing.
+The app is already most of the way there: most sections already branch on "has data / failed" rather than
+throwing.
 
 ---
 
@@ -44,7 +43,8 @@ of calling `prefetchQuery` / `ensureQueryData` directly:
 
 - **On the server** (first load, refresh, opened link) it awaits the page's *critical* queries, as today, so the
   HTML is complete. Queries for sections below the fold (the Datakällor diagnostics, `sessionCosts`) are *deferred*:
-  started without awaiting, so they stream into the client's cache instead of holding the response.
+  the server doesn't start them at all. The HTML renders those sections pending, and each section's own `useQuery`
+  fetches its data after hydration.
 - **On the client** it starts every query and awaits none. The navigation commits at once: URL, sidebar and page
   heading change immediately, and sections fill in as their queries land.
 - **Cached data renders straight away.** A query already in the cache (even stale) shows its data while TanStack
@@ -54,9 +54,12 @@ of calling `prefetchQuery` / `ensureQueryData` directly:
 - **Critical means "in the first HTML", not "never late".** The sources' health statuses are critical, so a first
   load renders their alerts in place. On a client navigation nothing is awaited, so a failing source's alert can
   appear a moment after the page, pushing the content down once. We accept that: it's rare and needs attention.
-- **Deferred queries must be bounded.** A deferred query started on the server keeps the SSR stream open until it
-  settles (its result streams into the client's cache). Every deferred query today is a DB read; one that calls an
-  external service needs a timeout first, or it holds the response open (ADR-0018).
+- **Why deferred queries don't stream.** `setupRouterSsrQueryIntegration` can stream a query started on the server
+  into the client's cache. But our sections read with a plain `useQuery` (§3), and a streamed result that lands before
+  hydration makes the hydrating render show data where the server rendered "pending": a hydration mismatch, and React
+  re-renders the page from scratch. That happened on every `/charging` load with `sessionCosts` (2026-10-05).
+  Starting deferred queries on the client only means both sides render them pending. The cost is that a first load
+  fetches them after the JS runs instead of in parallel with the HTML.
 
 **One exception:** a loader may await on the client when the result decides *routing*: a `redirect` or a
 `notFound`. Today that is `_authenticated`'s `user.me` (the onboarding redirect) and the session page's not-found
@@ -143,8 +146,8 @@ outcome is recorded as an amendment here.
 375, 768 and 1280 px (13, 13 and 42 bones: one tabbed card when narrow, three cards when wide). Replayed in light and
 dark, every bone sat inside its real tile and the skeleton was exactly the content's height. Under reduced motion the
 bones stayed static. A second capture was byte-identical apart from `_hash`, which changes on every capture. Step 1
-then captured all seven skeletons (`charging-totals`, `-chart`, `-sessions`, `-tariffs`, `-economy`, `-patterns`,
-`-timeline`). Known limits, accepted for step 1:
+then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tariffs`, `-sources`, `-economy`,
+`-patterns`, `-timeline`). Known limits, accepted for step 1:
 - **Bones are sparse.** Text next to an icon gets no bone, and card outlines aren't drawn, so a tile reads as a few
   bars on the page background.
 - **Graphics become slabs.** A chart, the patterns heatmap and the day-by-day calendars are each one solid block, and
@@ -152,7 +155,7 @@ then captured all seven skeletons (`charging-totals`, `-chart`, `-sessions`, `-t
 - **Three widths, one layout per range.** The 768 capture serves viewports 768–1279. `/charging`'s totals switch to
   three cards when the content is 768 px wide (a ~1100 px viewport beside the sidebar), so from there to 1279 the
   skeleton shows the narrow layout. A fourth breakpoint would fix it.
-- **Size.** The seven skeletons add ~20 KB gz to every charging page (economy and patterns are ~9 KB each).
+- **Size.** The eight skeletons add ~21 KB gz to every charging page (economy and patterns are ~9 KB each).
 
 ---
 
@@ -182,7 +185,7 @@ then captured all seven skeletons (`charging-totals`, `-chart`, `-sessions`, `-t
   queries in one hop instead of 15 in two, which also eases the pool queueing behind the inflated `findActiveById`.
 - **A new step in UI work:** re-run `bones:capture` after changing a section's layout. Stale bones look slightly wrong
   but never break anything.
-- **The bones cost bytes.** All seven skeletons (~20 KB gz) load with the first charging page, whichever it is. A
+- **The bones cost bytes.** All eight skeletons (~21 KB gz) load with the first charging page, whichever it is. A
   per-route registry would split them if this grows.
 - **`useSuspenseQuery` is now rare.** Reviewers should flag it on data a client navigation defers.
 - **Role changes reach the client guard within about 5–10 min** (§2: up to ~2× the cookie cache's 5 min), or on
