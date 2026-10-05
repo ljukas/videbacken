@@ -15,7 +15,7 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 | 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | [#79](https://github.com/ljukas/videbacken/pull/79) | checkpoint passed | 2026-10-05: sunny midday sessions 68–76 % cheaper (08-17 54.4 → 12.8 kr), no-house-data sessions unchanged; owner reviewed `/charging` live; economy series/column labels renamed grid-only |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | [#85](https://github.com/ljukas/videbacken/pull/85) | PR open | — |
 | — | *Later phase:* solar-aware economy page (own brainstorm) | — | — | — | — |
-| — | *Later phase, needs shaping:* house battery page (monthly in / out / loss, efficiency, grid-charged share) — see [Later phases](#later-phases) | — | — | needs shaping | — |
+| — | *Later phase, shaped:* house energy pages incl. the battery — own [roadmap](./2026-10-05-house-energy-pages.md) | — | — | shaped | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. A later phase is
 `needs shaping` until its own brainstorm has produced a spec and plan.
@@ -88,26 +88,11 @@ Each must pass, with the result recorded in the table, before the next step star
 
 Not part of this roadmap's steps; each needs its own brainstorm (`/feature-workflow`) before a spec or plan is written.
 
-### House battery page (needs shaping)
+### House energy pages (shaped 2026-10-05)
 
-Owner request (2026-10-05): show the home battery on its own, e.g. energy in and out per month and how much is lost.
-**Not ready to build:** the questions below must be settled in a brainstorm first.
-
-What's already there (no new sync needed for a first version):
-- `house_energy_reading` has every 5-minute bucket since 2026-01-20: `battery_charge_solar_kwh`,
-  `battery_charge_grid_kwh`, `battery_discharge_kwh` and `battery_soc_pct` (`battery_charge_ac_kwh` is unused here).
-- `battery_pool_day` has the derived pool per day (stored kWh, grid / solar parts, capacity `C`).
-- Known so far: only ≈ 57 % comes back out in January–February (standby and battery heating, not the round trip)
-  against ≈ 92–99 % from March; Emaldo's price-based charging sometimes fills the battery from the grid at night.
-
-Open questions:
-- Scope: a battery-only page, or a house-energy page (production, self-use vs export, battery) with the battery as
-  one part? Where it sits in the navigation, and whether members see it.
-- How loss is defined: in − out − ΔSoC × `C` per month (and per day?), and whether standby/heating can be told
-  apart from round-trip loss with the data we have.
-- Money: is lost grid-charged energy shown in kronor (at its pool price), and lost solar at its export value?
-- How Emaldo's gaps (e.g. 2026-08-06) and the first, partial month are shown.
-- Charts and tables: which period views (month, year), and which figures belong on the overview.
+The house battery page grew into an *Energi* section (overview + battery) in its brainstorm. It has its own
+[ADR-0024](../../adr/0024-house-energy-pages.md), [spec](../specs/2026-10-05-house-energy-pages-design.md) and
+[roadmap](./2026-10-05-house-energy-pages.md); it is no longer tracked here.
 
 ## Log
 
