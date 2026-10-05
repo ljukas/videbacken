@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CREDENTIAL_FIELDS, CREDENTIAL_SOURCES } from '~/lib/integrationCredentials'
 import { CREDENTIAL_ENV, envCredential } from './env'
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('credential env map', () => {
   it('names an env var for every vocabulary field', () => {
@@ -41,10 +45,9 @@ describe('credential env map', () => {
   })
 
   it('reads process.env on every call by default', () => {
-    process.env.GRID_FACILITY_ID = 'a'
+    vi.stubEnv('GRID_FACILITY_ID', 'a')
     expect(envCredential('gridTariff', 'facilityId')).toBe('a')
-    process.env.GRID_FACILITY_ID = 'b'
+    vi.stubEnv('GRID_FACILITY_ID', 'b')
     expect(envCredential('gridTariff', 'facilityId')).toBe('b')
-    delete process.env.GRID_FACILITY_ID
   })
 })
