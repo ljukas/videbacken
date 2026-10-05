@@ -762,5 +762,5 @@
   ],
   "nav_charging_settings_short": "Inställningar",
   "nav_charging_settings": "Laddningsinställningar",
-  "cmd_kw_charging_settings": "inställningar datakällor synk historik tariff avgifter påslag elnät nyckel zaptec skoda emaldo elpris"
+  "cmd_kw_charging_settings": "datakällor synk synkronisering historik integrationer tariff avgifter påslag elnät kostnad nyckel zaptec skoda emaldo elpris"
 }

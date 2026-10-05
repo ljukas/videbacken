@@ -762,5 +762,5 @@
   ],
   "nav_charging_settings_short": "Settings",
   "nav_charging_settings": "Charging settings",
-  "cmd_kw_charging_settings": "settings data sources sync history tariff fees markup grid key zaptec skoda emaldo elpris"
+  "cmd_kw_charging_settings": "data sources sync synchronization history integrations tariff fees markup grid cost api key zaptec skoda emaldo elpris"
 }
