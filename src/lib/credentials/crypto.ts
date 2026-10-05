@@ -69,8 +69,9 @@ export function decrypt(
 ): string {
   const key = encryptionKey(env)
   if (!key) throw new CredentialsUnreadableError(source, 'key_missing')
-  const parts = envelope.split('.')
   try {
+    // Inside the try: a non-string envelope (a corrupt row) is unreadable too.
+    const parts = envelope.split('.')
     if (parts.length !== 4 || parts[0] !== VERSION) throw new Error('envelope')
     const [iv, tag, ct] = parts.slice(1).map((p) => Buffer.from(p, 'base64url'))
     if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) throw new Error('envelope')

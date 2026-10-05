@@ -66,6 +66,11 @@ describe('credential crypto', () => {
     it('three parts', () => {
       unreadable(() => decrypt('zaptec', [v, iv, tag].join('.'), env), 'invalid')
     })
+    it('a non-string envelope (a corrupt row), not a TypeError', () => {
+      for (const envelope of [null, undefined, 42, { v1: true }]) {
+        unreadable(() => decrypt('zaptec', envelope as never, env), 'invalid')
+      }
+    })
   })
 
   it('decrypt without a key is key_missing; encrypt without a key is a plain Error', () => {
