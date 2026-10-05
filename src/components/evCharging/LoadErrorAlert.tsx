@@ -24,6 +24,12 @@ export type LoadErrorQuery = {
 export const loadFailed = (query: LoadErrorQuery) =>
   (query.data === undefined || query.isPlaceholderData) && query.errorUpdateCount > 0
 
+// Whether a section has nothing to show yet and is still loading (ADR-0025 §3):
+// no data of its own or placeholder, and no failure. A failed read shows the
+// alert instead, and the previous key's placeholder data stays on screen dimmed.
+export const firstLoadPending = (query: LoadErrorQuery) =>
+  query.data === undefined && !loadFailed(query)
+
 // A query that failed with nothing to show (ADR-0016): the shared destructive
 // Alert with a retry, instead of a blank section. It gates itself; the caller
 // must gate its content on `!loadFailed(query)` too, not on `data` alone, since

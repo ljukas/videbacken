@@ -1,7 +1,10 @@
 {
   "name": "videbacken",
   "private": true,
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/lib/zodLocale.ts",
+    "./src/bones/*"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -21,6 +24,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "auth:schema": "bunx @better-auth/cli@1.4.21 generate --yes --output src/lib/db/schema/betterAuth.ts && node scripts/patchBetterAuthSchema.mjs",
+    "bones:capture": "bun scripts/captureBones.ts",
     "queue:up": "docker compose up -d --wait queue",
     "queue:down": "docker compose down queue",
     "queue:studio": "docker compose --profile studio up -d queue-studio",
@@ -80,6 +84,7 @@
     "@visx/tooltip": "4.0.0",
     "better-auth": "^1.6.23",
     "blurhash": "^2.0.5",
+    "boneyard-js": "1.10.0",
     "bowser": "^2.14.1",
     "bullmq": "^5.79.3",
     "class-variance-authority": "^0.7.1",

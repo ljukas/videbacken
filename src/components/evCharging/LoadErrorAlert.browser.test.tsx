@@ -2,7 +2,7 @@ import { keepPreviousData, QueryClientProvider, useQuery } from '@tanstack/react
 import { renderToString } from 'react-dom/server'
 import { expect, test, vi } from 'vitest'
 import { renderWithProviders } from '~test/browser/render'
-import { LoadErrorAlert, type LoadErrorQuery, loadFailed } from './LoadErrorAlert'
+import { firstLoadPending, LoadErrorAlert, type LoadErrorQuery, loadFailed } from './LoadErrorAlert'
 
 // The retry's queryFn call is synchronous but its re-render is not; let it land.
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
@@ -113,4 +113,24 @@ test('a retry after a failed key switch keeps the alert, not the previous key', 
 // hydrates with no error; the server must render nothing too.
 test('renders nothing on the server, so hydration matches the client', () => {
   expect(renderToString(<LoadErrorAlert title="x" query={failed({ isFetching: true })} />)).toBe('')
+})
+
+const pendingBase = {
+  isPlaceholderData: false,
+  errorUpdateCount: 0,
+  isFetching: true,
+  refetch: () => {},
+}
+
+test('firstLoadPending: nothing yet and nothing failed', () => {
+  expect(firstLoadPending({ ...pendingBase, data: undefined })).toBe(true)
+})
+test('firstLoadPending: own data is not pending', () => {
+  expect(firstLoadPending({ ...pendingBase, data: { x: 1 } })).toBe(false)
+})
+test("firstLoadPending: the previous key's placeholder keeps showing (dimmed), no skeleton", () => {
+  expect(firstLoadPending({ ...pendingBase, data: { x: 1 }, isPlaceholderData: true })).toBe(false)
+})
+test('firstLoadPending: a failure shows the alert, not a skeleton', () => {
+  expect(firstLoadPending({ ...pendingBase, data: undefined, errorUpdateCount: 1 })).toBe(false)
 })

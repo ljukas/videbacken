@@ -22,6 +22,12 @@ test('says "not synced yet" before the first successful sync', async () => {
   await expect.element(screen.getByText(m.charging_never_synced())).toBeVisible()
 })
 
+test('sync time not known yet: no "never synced" claim, the line keeps its height', async () => {
+  const { screen } = await renderWithProviders(<ChargingHeading lastSuccessAt={undefined} />)
+  await expect.element(screen.getByText(m.charging_never_synced())).not.toBeInTheDocument()
+  expect(document.querySelector('[data-sync-line]')?.textContent).toBe('\u00a0')
+})
+
 test('renders the action slot', async () => {
   const { screen } = await renderWithProviders(
     <ChargingHeading lastSuccessAt={null} action={<button type="button">act</button>} />,

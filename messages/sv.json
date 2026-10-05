@@ -656,6 +656,7 @@
   "charging_vehicle_chart_empty_other": "Inga gästladdningar under {year}.",
   "charging_overview_error_title": "Laddningsöversikten kunde inte hämtas",
   "charging_sessions_error_title": "Laddsessionerna kunde inte hämtas",
+  "charging_tariff_error_title": "Påslag, elnät och skatt kunde inte hämtas",
   "charging_vehicle_sessions_empty_other": "Inga gästladdningar ännu",
   "charging_vehicle_guest_badge": "Gäst",
   "charging_vehicle_who_label": "Vem laddade?",

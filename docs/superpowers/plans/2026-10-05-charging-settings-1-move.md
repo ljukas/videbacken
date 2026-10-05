@@ -16,7 +16,7 @@ alerts and cost display read. A small shared `SettingsLink` component gives the 
 Paraglide messages, shadcn `Button` + `Alert`, React Email, Vitest browser mode.
 
 **Spec:** [`docs/superpowers/specs/2026-10-05-charging-settings-design.md`](../specs/2026-10-05-charging-settings-design.md)
-(section "Step 1"). [ADR-0025](../../adr/0025-integration-credential-store.md) covers steps 2 and 3, not this
+(section "Step 1"). [ADR-0026](../../adr/0026-integration-credential-store.md) covers steps 2 and 3, not this
 step. Roadmap: [`docs/superpowers/roadmaps/2026-10-05-charging-settings.md`](../roadmaps/2026-10-05-charging-settings.md).
 
 **Worktree:** `.claude/worktrees/charging-settings`, branch `feat/charging-settings`, based on `origin/main` @
@@ -1412,4 +1412,4 @@ git commit -m "docs(charging): map the settings page and point the runbook at it
   - The overview ends with the sessions.
   - As a member, the item is hidden and the URL redirects.
 - **PR** (Phase 7): title `feat(charging): move data sources and tariffs to a settings page`, with the body from
-  `.github/PULL_REQUEST_TEMPLATE.md` linking the spec, ADR-0025 and the roadmap.
+  `.github/PULL_REQUEST_TEMPLATE.md` linking the spec, ADR-0026 and the roadmap.

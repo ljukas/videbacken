@@ -266,12 +266,16 @@
   h3 {
     @apply font-heading tracking-tight;
   }
-  /* Honour OS "Reduce Motion": near-instant overlays (dialog/alert-dialog/sheet). */
+  /* Honour OS "Reduce Motion": near-instant overlays (dialog/alert-dialog/sheet),
+     and still skeleton bones (boneyard sets their pulse as an inline style). */
   @media (prefers-reduced-motion: reduce) {
     [data-slot$='-overlay'],
     [data-slot$='-content'] {
       animation-duration: 0.01ms !important;
       transition-duration: 0.01ms !important;
+    }
+    [data-boneyard-bone] {
+      animation: none !important;
     }
   }
 }
