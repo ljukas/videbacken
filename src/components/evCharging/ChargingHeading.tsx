@@ -7,6 +7,7 @@ import { formatAgo, formatThreshold } from './format'
 // constant the service filters on), the live charger line (`live`, overview
 // only) and when data last synced successfully. `title` names the view
 // (defaults to the section title); `action` is the admin-only "Synka nu" slot.
+// `lastSuccessAt` is `undefined` while the sync status is still loading.
 export function ChargingHeading({
   title = m.charging_title(),
   lastSuccessAt,
@@ -14,7 +15,8 @@ export function ChargingHeading({
   action,
 }: {
   title?: string
-  lastSuccessAt: Date | null
+  /** `undefined`: the sync status is still loading. `null`: never synced. */
+  lastSuccessAt: Date | null | undefined
   /** The charger right now (overview only), between the description and the sync time. */
   live?: React.ReactNode
   action?: React.ReactNode
@@ -31,10 +33,12 @@ export function ChargingHeading({
         {/* The relative time is measured against `new Date()`, which differs
             slightly between SSR and hydration — a benign mismatch, suppressed
             the same way as CurrentReadingTiles' "last seen". */}
-        <p className="text-muted-foreground text-xs" suppressHydrationWarning>
-          {lastSuccessAt
-            ? m.charging_last_synced({ time: formatAgo(lastSuccessAt) })
-            : m.charging_never_synced()}
+        <p data-sync-line className="text-muted-foreground text-xs" suppressHydrationWarning>
+          {lastSuccessAt === undefined
+            ? '\u00a0' // not known yet: hold the line's height, claim nothing
+            : lastSuccessAt
+              ? m.charging_last_synced({ time: formatAgo(lastSuccessAt) })
+              : m.charging_never_synced()}
         </p>
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
