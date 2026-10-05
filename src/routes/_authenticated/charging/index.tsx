@@ -136,7 +136,7 @@ export const Route = createFileRoute('/_authenticated/charging/')({
           )
         : null,
       user.role === 'admin' ? queryClient.prefetchQuery(pricesRunsQuery) : null,
-      // Prefetched: a failed read shows in its card, it must not take the page down.
+      // Prefetched: a failed read shows on the Škoda tile, it must not take the page down.
       user.role === 'admin' ? queryClient.prefetchQuery(vehicleCoverageQuery) : null,
       // Prefetched too: a failed car read must not take the page down.
       user.role === 'admin' ? queryClient.prefetchQuery(skodaHealthQuery) : null,
