@@ -96,9 +96,14 @@ test('with data: tiles, the chart with its metric toggle and year', async () => 
     .toBeVisible()
   await expect.element(screen.getByRole('heading', { name: m.energy_chart_title() })).toBeVisible()
   await expect.element(screen.getByRole('radio', { name: m.energy_metric_solar() })).toBeVisible()
+  const year = screen.getByRole('combobox', { name: m.charging_year_label() })
+  await expect.element(year).toBeVisible()
+  await expect.element(year).toHaveTextContent('2026')
   await expect
-    .element(screen.getByRole('combobox', { name: m.charging_year_label() }))
+    .element(screen.getByRole('radiogroup', { name: m.energy_metric_label() }))
     .toBeVisible()
+  await expect.element(screen.getByRole('radio', { name: m.energy_metric_solar() })).toBeChecked()
+  await expect.element(screen.getByRole('region', { name: m.energy_tiles_heading() })).toBeVisible()
 })
 
 test('Nät switches the chart to the grid series', async () => {
