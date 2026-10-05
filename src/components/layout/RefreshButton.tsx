@@ -2,8 +2,8 @@ import { RefreshCwIcon } from 'lucide-react'
 import { Button } from '~/components/ui/button'
 import { cn } from '~/lib/utils'
 
-// A small button with a refresh icon that spins while `pending`: the "Synka nu"
-// syncs and every failed read's "Försök igen".
+// A small button with a refresh icon that spins while `pending`, for anything
+// that re-runs a fetch or a sync (e.g. a failed read's "Försök igen").
 export function RefreshButton({
   onClick,
   pending,
@@ -16,7 +16,7 @@ export function RefreshButton({
   pending: boolean
   label: string
   variant?: 'outline' | 'default'
-  /** Names the button when several sit on one screen ("Synka nu, Zaptec": the visible label first, WCAG 2.5.3). */
+  /** Names the button when several sit on one screen (the visible label first, WCAG 2.5.3). */
   'aria-label'?: string
   /**
    * While pending, mark the button aria-disabled (and ignore clicks) instead of

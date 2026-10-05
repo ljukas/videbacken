@@ -1102,7 +1102,7 @@ import { SunIcon } from 'lucide-react'
 import { z } from 'zod'
 import { EnergyHeading } from '~/components/energy/EnergyHeading'
 import { emaldoHealthQuery, energyOverviewQuery } from '~/components/energy/energyQueries'
-import { LoadErrorAlert, loadFailed } from '~/components/evCharging/LoadErrorAlert'
+import { LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { PageContainer } from '~/components/layout/PageContainer'
@@ -1172,7 +1172,7 @@ function EnergyOverviewPage() {
 ```
 
 Check `LoadErrorAlert` renders nothing while the query is still pending (read `loadFailed` and
-`LoadErrorAlert` in `src/components/evCharging/LoadErrorAlert.tsx`; economy uses the same ternary). Run
+`LoadErrorAlert` in `src/components/layout/LoadErrorAlert.tsx`; economy uses the same ternary). Run
 `bun run dev` once (or `bun run build`) so the router plugin regenerates `src/routeTree.gen.ts`; commit the
 regenerated file.
 

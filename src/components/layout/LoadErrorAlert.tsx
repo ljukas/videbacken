@@ -60,12 +60,13 @@ export function LoadErrorAlert({ title, query }: { title: string; query: LoadErr
   )
 }
 
-// The same failure as one line, for a spot too tight for the Alert box (a
+// The same failure as one line, for a spot too tight for the Alert box (e.g. a
 // Datakällor tile): the title in red and a small retry. Client-only and
 // self-gating, like the Alert. Not a live region: it mounts on hydration with
-// its text in place, and the page-top health alert already announces a failing
-// source. The retry's name says which read it retries (visible label first,
-// WCAG 2.5.3), so two failed lines in one tile are told apart.
+// its text in place, so use it only where a page-level alert already announces
+// the failure (on /charging, the health alert above). The retry's name says
+// which read it retries (visible label first, WCAG 2.5.3), so two failed lines
+// in one tile are told apart.
 export function LoadErrorLine({ title, query }: { title: string; query: LoadErrorQuery }) {
   const hydrated = useHydrated()
   if (!hydrated || !loadFailed(query)) return null
