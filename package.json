@@ -2,7 +2,8 @@
   "name": "videbacken",
   "private": true,
   "sideEffects": [
-    "./src/bones/registry.ts"
+    "./src/lib/zodLocale.ts",
+    "./src/bones/*"
   ],
   "type": "module",
   "scripts": {

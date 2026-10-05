@@ -2,6 +2,7 @@ import { useHydrated } from '@tanstack/react-router'
 import { Skeleton } from 'boneyard-js/react'
 import type * as React from 'react'
 import { useLayoutEffect, useState } from 'react'
+import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 // The captured bones (and the boneyard runtime) load with the first route that
 // shows a skeleton, not with the entry chunk.
@@ -51,7 +52,8 @@ export function SectionSkeleton({
         name={name}
         loading={showLoading}
         select="viewport"
-        className={className}
+        // Clipped: a capture's bones can run a few px past the section's edge.
+        className={cn('overflow-hidden', className)}
         fallback={<FallbackBlock height={fallbackHeight} />}
       >
         {content}

@@ -8,6 +8,10 @@
 //   BETTER_AUTH_URL=http://localhost:14610 bunx vite dev --port 14610 --strictPort   # one terminal
 //   bun run bones:capture                       # the default pages
 //   bun run bones:capture /charging/economy     # just these paths
+//   bun run bones:capture --force               # recapture everything (see below)
+//
+// The CLI skips a skeleton whose DOM hash is unchanged, even if the breakpoints
+// or the CSS changed. After changing either, pass --force.
 //
 // Re-run after changing a skeleton-wrapped section's layout, then commit src/bones/.
 import { spawnSync } from 'node:child_process'
@@ -23,7 +27,10 @@ if (!email) {
   console.error('INITIAL_ADMIN_EMAILS is unset (.env); the first address signs in.')
   process.exit(1)
 }
-const paths = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT_PATHS
+const args = process.argv.slice(2)
+const flags = args.filter((a) => a === '--force')
+const given = args.filter((a) => !a.startsWith('--'))
+const paths = given.length ? given : DEFAULT_PATHS
 
 type MailpitList = { messages: { ID: string; To: { Address: string }[]; Created: string }[] }
 
@@ -73,6 +80,7 @@ const result = spawnSync(
     'build',
     ...paths.map((p) => `${ORIGIN}${p}`),
     '--no-scan',
+    ...flags,
     ...cookies.flatMap((c) => ['--cookie', `${c.name}=${c.value}`]),
   ],
   { stdio: 'inherit' },
