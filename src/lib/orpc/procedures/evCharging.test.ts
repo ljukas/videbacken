@@ -1007,3 +1007,25 @@ test('syncStatus and recentRuns take emaldo', async () => {
   expect(runs).toHaveLength(1)
   expect(runs[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
 })
+
+test('syncStatuses rejects an unauthenticated caller', async () => {
+  await expect(
+    call(evChargingRouter.syncStatuses, undefined, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+})
+
+test('syncStatuses hides every source’s adminDetail from a member', async () => {
+  await signIn('user')
+  const all = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(Object.keys(all).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  for (const health of Object.values(all)) expect(health.adminDetail).toBeNull()
+})
+
+test('syncStatuses gives an admin each source’s own state and detail', async () => {
+  await signIn('admin')
+  await call(evChargingRouter.syncNow, { source: 'elpris' }, { context: baseContext() })
+  const all = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(all.elpris).toMatchObject({ source: 'elpris', state: 'not_configured' })
+  expect(all.zaptec).toMatchObject({ source: 'zaptec', state: 'never_synced' })
+  expect(all.skoda.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
+})

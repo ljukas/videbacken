@@ -179,6 +179,16 @@ export const evChargingRouter = {
     }),
   ),
 
+  // Every source's health in one read: the pages show several sources' alerts
+  // and tiles, and poll them together (ADR-0025 §5). Same rule as `syncStatus`:
+  // `adminDetail` follows the caller's own role, never client input.
+  syncStatuses: protectedProcedure.handler(({ context }) =>
+    integrationSyncService.getAllHealth({
+      now: new Date(),
+      includeAdminDetail: context.user.role === 'admin',
+    }),
+  ),
+
   // Live charger power/mode for the overview's live status line. Deliberately independent
   // of the sync health snapshot: a `ZaptecError` here (including
   // `not_configured`) just means "no live reading", not a health transition.

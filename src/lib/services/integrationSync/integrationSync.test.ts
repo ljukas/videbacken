@@ -6,6 +6,7 @@ import type { Logger } from '~/lib/logger'
 import { setupDatabase } from '~test/setup'
 import {
   beginAttempt,
+  getAllHealth,
   getHealth,
   getLastSuccessStartedAt,
   listRecentRuns,
@@ -415,4 +416,24 @@ test('reportProgress after the lease expired (not yet taken over) writes nothing
   const [row] = await db.select().from(integrationSync)
   expect(row.progressDone).toBeNull()
   expect(row.progressTotal).toBeNull()
+})
+
+test('getAllHealth reads every source at once; a source with no row is never_synced', async () => {
+  await acquire(T0) // Zaptec has a row, with a live lease
+  const all = await getAllHealth({ now: at(1000), includeAdminDetail: false })
+  expect(Object.keys(all).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  expect(all.zaptec).toEqual(
+    await getHealth('zaptec', { now: at(1000), includeAdminDetail: false }),
+  )
+  expect(all.zaptec.running).toBe(true)
+  for (const source of ['elpris', 'skoda', 'emaldo'] as const)
+    expect(all[source]).toMatchObject({ source, state: 'never_synced', running: false })
+})
+
+test('getAllHealth includes adminDetail only when asked', async () => {
+  const member = await getAllHealth({ now: T0, includeAdminDetail: false })
+  const admin = await getAllHealth({ now: T0, includeAdminDetail: true })
+  for (const health of Object.values(member)) expect(health.adminDetail).toBeNull()
+  for (const health of Object.values(admin))
+    expect(health.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
 })

@@ -1,12 +1,13 @@
 import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun } from '~/lib/db/schema'
-import type {
-  HealthState,
-  HealthTransition,
-  IntegrationErrorCode,
-  IntegrationSource,
-  SyncTrigger,
+import {
+  type HealthState,
+  type HealthTransition,
+  INTEGRATION_SOURCES,
+  type IntegrationErrorCode,
+  type IntegrationSource,
+  type SyncTrigger,
 } from '~/lib/integrationHealth'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
@@ -233,6 +234,26 @@ export async function getHealth(
 ): Promise<IntegrationHealth> {
   const [row] = await db.select().from(integrationSync).where(eq(integrationSync.source, source))
   return toHealth(source, row, now, includeAdminDetail)
+}
+
+// Every source's health in one read (≤ 4 rows): the pages show several sources
+// at once and poll them together (ADR-0025 §5). A source without a row yet
+// reads as never synced, as in `getHealth`.
+export async function getAllHealth({
+  now,
+  includeAdminDetail,
+}: {
+  now: Date
+  includeAdminDetail: boolean
+}): Promise<Record<IntegrationSource, IntegrationHealth>> {
+  const rows = await db.select().from(integrationSync)
+  const bySource = new Map(rows.map((row) => [row.source, row]))
+  return Object.fromEntries(
+    INTEGRATION_SOURCES.map((source) => [
+      source,
+      toHealth(source, bySource.get(source), now, includeAdminDetail),
+    ]),
+  ) as Record<IntegrationSource, IntegrationHealth>
 }
 
 // The sync run's watermark: the next fetch window starts from here.
