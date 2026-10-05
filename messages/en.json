@@ -759,5 +759,8 @@
         "countPlural=other": "Charging log: {countFormatted} sessions through {to}"
       }
     }
-  ]
+  ],
+  "nav_charging_settings_short": "Settings",
+  "nav_charging_settings": "Charging settings",
+  "cmd_kw_charging_settings": "settings data sources sync history tariff fees markup grid key zaptec skoda emaldo elpris"
 }
