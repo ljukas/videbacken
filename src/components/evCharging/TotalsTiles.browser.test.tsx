@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
-import { formatShare } from './format'
+import { formatSek, formatShare } from './format'
 import { type Cost, TotalsTiles } from './TotalsTiles'
 
 // No app.css in browser tests, so both layouts render: scope each assertion to one.
@@ -362,6 +362,102 @@ test('a partly priced share counts against all charged energy', async () => {
     .element(
       grid(page)
         .getByText(m.charging_cost_partial_hint({ share: '10 %' }))
+        .first(),
+    )
+    .toBeVisible()
+})
+
+// The value of own solar used (ADR-0023 decision 7): a line under the cash cost.
+const sunny: Cost = { ...priced, solarPricedKwh: 300, solarUnpricedKwh: 0, solarValueSek: 212 }
+
+test('a tile with solar shows its value under the cash cost', async () => {
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(sunny)} />,
+  )
+  const line = grid(page).getByText(m.charging_solar_value({ value: formatSek(212) }), {
+    exact: true,
+  })
+  expect(line.elements()).toHaveLength(3)
+  await expect.element(line.first()).toBeVisible()
+})
+
+test('no solar, no line', async () => {
+  const { screen } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(priced)} />,
+  )
+  expect(screen.getByText(/Värde av egen sol/).elements()).toHaveLength(0)
+})
+
+test('solar partly without a spot price reads "minst"; wholly without, "okänt"', async () => {
+  const partly: Cost = { ...sunny, solarPricedKwh: 250, solarUnpricedKwh: 50 }
+  const none: Cost = { ...sunny, solarPricedKwh: 0, solarUnpricedKwh: 300, solarValueSek: 0 }
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={{ thisMonth: none, thisYear: partly, allTime: sunny }} />,
+  )
+  const screen = grid(page)
+  await expect
+    .element(
+      screen.getByText(
+        m.charging_solar_value({ value: m.charging_cost_min({ total: formatSek(212) }) }),
+        { exact: true },
+      ),
+    )
+    .toBeVisible()
+  await expect
+    .element(screen.getByText(m.charging_solar_value_unknown(), { exact: true }))
+    .toBeVisible()
+  // Never a bare 0 kr of solar.
+  expect(
+    page.getByText(m.charging_solar_value({ value: formatSek(0) }), { exact: true }).elements(),
+  ).toHaveLength(0)
+})
+
+test('the solar line also shows when the cash cost is unknown', async () => {
+  const unpricedSunny: Cost = {
+    ...sunny,
+    fullKwh: 0,
+    noTariffKwh: 100,
+    spotSek: 0,
+    feesSek: 0,
+    totalSek: 0,
+    avgOre: null,
+    complete: false,
+  }
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles
+      tiles={zeroTiles}
+      cost={{ thisMonth: unpricedSunny, thisYear: priced, allTime: priced }}
+    />,
+  )
+  const screen = grid(page)
+  await expect.element(screen.getByText(m.charging_cost_unknown(), { exact: true })).toBeVisible()
+  await expect
+    .element(screen.getByText(m.charging_solar_value({ value: formatSek(212) }), { exact: true }))
+    .toBeVisible()
+})
+
+test('the narrow layout shows the line in the open period', async () => {
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(sunny)} />,
+  )
+  await expect
+    .element(
+      page
+        .getByTestId('totals-tabs')
+        .getByText(m.charging_solar_value({ value: formatSek(212) }), { exact: true }),
+    )
+    .toBeVisible()
+})
+
+test('a negative solar value (export would have cost money) keeps its sign', async () => {
+  const negative: Cost = { ...sunny, solarValueSek: -3.4 }
+  const { screen: page } = await renderWithProviders(
+    <TotalsTiles tiles={zeroTiles} cost={allTiles(negative)} />,
+  )
+  await expect
+    .element(
+      grid(page)
+        .getByText(/^Värde av egen sol: −3\skr/)
         .first(),
     )
     .toBeVisible()
