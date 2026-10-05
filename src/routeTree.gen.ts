@@ -24,6 +24,7 @@ import { Route as AuthenticatedAccountProfileRouteImport } from './routes/_authe
 import { Route as AuthenticatedChargingIndexRouteImport } from './routes/_authenticated/charging/index'
 import { Route as AuthenticatedChargingEconomyRouteImport } from './routes/_authenticated/charging/economy'
 import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_authenticated/charging/patterns'
+import { Route as AuthenticatedChargingSettingsRouteImport } from './routes/_authenticated/charging/settings'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
 import { Route as ApiCronEmaldoSyncRouteImport } from './routes/api/cron/emaldo-sync'
@@ -113,6 +114,12 @@ const AuthenticatedChargingPatternsRoute =
     path: '/charging/patterns',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedChargingSettingsRoute =
+  AuthenticatedChargingSettingsRouteImport.update({
+    id: '/charging/settings',
+    path: '/charging/settings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -174,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/charging/economy': typeof AuthenticatedChargingEconomyRoute
   '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
+  '/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
@@ -198,6 +206,7 @@ export interface FileRoutesByTo {
   '/account/profile': typeof AuthenticatedAccountProfileRoute
   '/charging/economy': typeof AuthenticatedChargingEconomyRoute
   '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
+  '/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
@@ -225,6 +234,7 @@ export interface FileRoutesById {
   '/_authenticated/account/profile': typeof AuthenticatedAccountProfileRoute
   '/_authenticated/charging/economy': typeof AuthenticatedChargingEconomyRoute
   '/_authenticated/charging/patterns': typeof AuthenticatedChargingPatternsRoute
+  '/_authenticated/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
@@ -252,6 +262,7 @@ export interface FileRouteTypes {
     | '/account/profile'
     | '/charging/economy'
     | '/charging/patterns'
+    | '/charging/settings'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
@@ -276,6 +287,7 @@ export interface FileRouteTypes {
     | '/account/profile'
     | '/charging/economy'
     | '/charging/patterns'
+    | '/charging/settings'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
@@ -302,6 +314,7 @@ export interface FileRouteTypes {
     | '/_authenticated/account/profile'
     | '/_authenticated/charging/economy'
     | '/_authenticated/charging/patterns'
+    | '/_authenticated/charging/settings'
     | '/api/auth/$'
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
@@ -438,6 +451,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChargingPatternsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/charging/settings': {
+      id: '/_authenticated/charging/settings'
+      path: '/charging/settings'
+      fullPath: '/charging/settings'
+      preLoaderRoute: typeof AuthenticatedChargingSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -525,6 +545,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedChargingEconomyRoute: typeof AuthenticatedChargingEconomyRoute
   AuthenticatedChargingPatternsRoute: typeof AuthenticatedChargingPatternsRoute
+  AuthenticatedChargingSettingsRoute: typeof AuthenticatedChargingSettingsRoute
   AuthenticatedChargingIndexRoute: typeof AuthenticatedChargingIndexRoute
   AuthenticatedChargingSessionsSessionIdRoute: typeof AuthenticatedChargingSessionsSessionIdRoute
 }
@@ -537,6 +558,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedChargingEconomyRoute: AuthenticatedChargingEconomyRoute,
   AuthenticatedChargingPatternsRoute: AuthenticatedChargingPatternsRoute,
+  AuthenticatedChargingSettingsRoute: AuthenticatedChargingSettingsRoute,
   AuthenticatedChargingIndexRoute: AuthenticatedChargingIndexRoute,
   AuthenticatedChargingSessionsSessionIdRoute:
     AuthenticatedChargingSessionsSessionIdRoute,
