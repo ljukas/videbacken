@@ -12,11 +12,13 @@ own self-contained plan. A step starts only when the previous step's checkpoint 
 | 2 | Raw readings sync (table, service, source, cron, backfill, health) | [plan](../plans/2026-10-03-solar-cost-2-readings-sync.md) | [#70](https://github.com/ljukas/videbacken/pull/70) | checkpoint passed | 2026-10-04: backfill 2026-01-20 → yesterday (258/258 days), health `ok`, cron listed; balance ±2 % on 225/257 days (monthly ≤1.5 %), `charge_ac` = 0 (unused) |
 | 2b | Battery state of charge (SoC series, column, history re-fetch) | [plan](../plans/2026-10-04-solar-cost-2b-battery-soc.md) | [#74](https://github.com/ljukas/videbacken/pull/74) | checkpoint passed | 2026-10-04: re-fetch 258/258 days in 9 runs, all `ok`; SoC on 73,955/73,955 buckets, 0 days with nulls; 4 probe days exact; energy sums unchanged |
 | 3 | Energy-mix derivation (mix + pool tables, pure modules, triggers; not shown) | [plan](../plans/2026-10-03-solar-cost-3-mix-derivation.md) | [#77](https://github.com/ljukas/videbacken/pull/77) | checkpoint passed | 2026-10-04: history rebuilt by the first cron derive (258 pool days, 98/98 counted sessions, mix kWh = session kWh); prod `C` 7.57 vs 7.58 in code; pool never above SoC; probe sessions within 1–6 pts of P |
-| 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | [#79](https://github.com/ljukas/videbacken/pull/79) | PR open | — |
+| 4 | Cash cost uses the mix (cost math, overview, session page; economy labelled grid-only) | [plan](../plans/2026-10-03-solar-cost-4-cash-cost.md) | [#79](https://github.com/ljukas/videbacken/pull/79) | checkpoint passed | 2026-10-05: sunny midday sessions 68–76 % cheaper (08-17 54.4 → 12.8 kr), no-house-data sessions unchanged; owner reviewed `/charging` live; economy series/column labels renamed grid-only |
 | 5 | Value of own solar (line on tiles, popover, session page) | [plan](../plans/2026-10-03-solar-cost-5-solar-value.md) | — | not started | — |
 | — | *Later phase:* solar-aware economy page (own brainstorm) | — | — | — | — |
+| — | *Later phase, needs shaping:* house battery page (monthly in / out / loss, efficiency, grid-charged share) — see [Later phases](#later-phases) | — | — | needs shaping | — |
 
-Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
+Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. A later phase is
+`needs shaping` until its own brainstorm has produced a spec and plan.
 
 ## Owner prerequisites
 
@@ -81,6 +83,31 @@ Each must pass, with the result recorded in the table, before the next step star
    - The notice and the grid-only economy label read right.
    - Responsive at mobile, tablet and desktop.
 5. **After step 5 (prod, live).** The owner reviews the solar-value copy and figures.
+
+## Later phases
+
+Not part of this roadmap's steps; each needs its own brainstorm (`/feature-workflow`) before a spec or plan is written.
+
+### House battery page (needs shaping)
+
+Owner request (2026-10-05): show the home battery on its own, e.g. energy in and out per month and how much is lost.
+**Not ready to build:** the questions below must be settled in a brainstorm first.
+
+What's already there (no new sync needed for a first version):
+- `house_energy_reading` has every 5-minute bucket since 2026-01-20: `battery_charge_solar_kwh`,
+  `battery_charge_grid_kwh`, `battery_discharge_kwh` and `battery_soc_pct` (`battery_charge_ac_kwh` is unused here).
+- `battery_pool_day` has the derived pool per day (stored kWh, grid / solar parts, capacity `C`).
+- Known so far: only ≈ 57 % comes back out in January–February (standby and battery heating, not the round trip)
+  against ≈ 92–99 % from March; Emaldo's price-based charging sometimes fills the battery from the grid at night.
+
+Open questions:
+- Scope: a battery-only page, or a house-energy page (production, self-use vs export, battery) with the battery as
+  one part? Where it sits in the navigation, and whether members see it.
+- How loss is defined: in − out − ΔSoC × `C` per month (and per day?), and whether standby/heating can be told
+  apart from round-trip loss with the data we have.
+- Money: is lost grid-charged energy shown in kronor (at its pool price), and lost solar at its export value?
+- How Emaldo's gaps (e.g. 2026-08-06) and the first, partial month are shown.
+- Charts and tables: which period views (month, year), and which figures belong on the overview.
 
 ## Log
 
@@ -177,3 +204,19 @@ Each must pass, with the result recorded in the table, before the next step star
   - the economy lead sits beside its controls and links the overview;
   - an all-solar scope or year shows 0 kr, never "nothing priced".
   Checked live on the local DB at 360 / 820 / 1600 px in both themes. Checkpoint 4 (prod, the owner's review) is next.
+- 2026-10-05: #80 (ClimateChart pointer fix) merged first; #79 was updated with main, passed CI, and merged at
+  06:59 CEST, clear of the `:45` window; the production deployment was ready at 07:00. Checkpoint 4 passed:
+  - Prod runtime log after the deploy: no warnings or errors (so no stale-mix fallback); `costOverview` ≈ 47 ms and
+    `sessionCosts` ≈ 50 ms, including `costMixMs` ≈ 5 ms.
+  - Re-pricing the stored mix with a read-only SELECT (SE3 spot + tariff, the read model's formula): sunny midday
+    sessions are much cheaper (08-17 54.4 → 12.8 kr, 09-23 26.8 → 8.1 kr, 09-14 44.0 → 13.9 kr); the 08-06 session
+    without house data is unchanged (6.3 kr).
+  - "A winter night is roughly unchanged" can't be checked: the first tariff starts 2026-08-01, so every earlier
+    session has no price. The closest, an overnight session 08-09 → 08-10 with 2.6 kWh of grid-charged battery,
+    went 55.8 → 49.8 kr (−11 %).
+  - The owner reviewed `/charging` live and accepted it.
+  - Follow-up done in the checkpoint PR: the economy page's grid-only figures no longer read as the cash cost
+    ("Faktiskt" → "Faktisk tajming", "Betalt" → "Vid laddning", "Betalt spotpris" → "Spotpris vid laddning", the
+    session table's "Kostnad" → "Kostnad som köpt el").
+  - Added the house battery page as a later phase that needs shaping (owner request). Next: step 5 (value of own
+    solar) in a new session.
