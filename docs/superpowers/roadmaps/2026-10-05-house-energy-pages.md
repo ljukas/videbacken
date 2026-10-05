@@ -60,3 +60,5 @@ Each must pass, with the result recorded in the table, before the next step star
   sums match SQL; August shows "Data saknas för 14 h" locally; the current month says "(hittills)". `rpc timing` for
   `energy.overview` locally: `totalMs` 77, `getEnergyOverviewMs` 75 (`houseScanMs` 68, `carMs` 5). Prod check
   (read-only): no house reading before 2026-01-20 and no counted charging before 2026-01-27.
+  Rebased onto #89 mid-review: the page adopts ADR-0025 (`loadRouteData`, `useQuery` for health, `energy-tiles` /
+  `energy-chart` skeletons captured with `bones:capture`); a failed read of another year keeps the year selector.
