@@ -122,35 +122,159 @@ test('coverage, missing hours and the gap note', () => {
   expect(energyFigures(sums()).coverage).toBeNull()
 })
 
-test('addPeriodSums adds flows and buckets and keeps the outer SoCs', () => {
+test('addPeriodSums adds flows and buckets and keeps the outer SoCs (distinct values)', () => {
+  // Each numeric field has a distinct nonzero value per operand to catch copy-paste bugs.
   const jan = sums({
     gridImportKwh: 1,
-    buckets: 2,
-    expectedBuckets: 3,
+    gridExportKwh: 2,
+    solarKwh: 4,
+    loadKwh: 8,
+    batteryDischargeKwh: 16,
+    batteryChargeSolarKwh: 32,
+    batteryChargeGridKwh: 64,
+    carKwh: 128,
+    buckets: 256,
+    expectedBuckets: 512,
     firstSocPct: 10,
     lastSocPct: 20,
-    carKwh: 1,
   })
   const feb = sums({
-    gridImportKwh: 2,
-    buckets: 4,
-    expectedBuckets: 4,
+    gridImportKwh: 3,
+    gridExportKwh: 6,
+    solarKwh: 12,
+    loadKwh: 24,
+    batteryDischargeKwh: 48,
+    batteryChargeSolarKwh: 96,
+    batteryChargeGridKwh: 192,
+    carKwh: 384,
+    buckets: 768,
+    expectedBuckets: 1024,
     firstSocPct: 30,
     lastSocPct: 40,
-    carKwh: 2,
   })
   expect(addPeriodSums(jan, feb)).toEqual(
     sums({
-      gridImportKwh: 3,
-      buckets: 6,
-      expectedBuckets: 7,
+      gridImportKwh: 4,
+      gridExportKwh: 8,
+      solarKwh: 16,
+      loadKwh: 32,
+      batteryDischargeKwh: 64,
+      batteryChargeSolarKwh: 128,
+      batteryChargeGridKwh: 256,
+      carKwh: 512,
+      buckets: 1024,
+      expectedBuckets: 1536,
       firstSocPct: 10,
       lastSocPct: 40,
-      carKwh: 3,
     }),
   )
   // A month without SoC doesn't erase the other's.
   const noSoc = sums({ gridImportKwh: 1 })
   expect(addPeriodSums(jan, noSoc).lastSocPct).toBe(20)
   expect(addPeriodSums(noSoc, feb).firstSocPct).toBe(30)
+})
+
+test('addPeriodSums keeps earlier.firstSocPct when both are present (guards ?? vs ||)', () => {
+  // Ensure `earlier.firstSocPct ?? later.firstSocPct` works correctly when earlier is 0.
+  const earlier = sums({ firstSocPct: 0, gridImportKwh: 1 })
+  const later = sums({ firstSocPct: 30, gridImportKwh: 2 })
+  expect(addPeriodSums(earlier, later).firstSocPct).toBe(0)
+})
+
+test('efficiency floor: netIn >= 1 (SoC-corrected charge)', () => {
+  // charge 10 kWh, SoC goes 0 → 100: deltaStored = 10 × (capacity default ~7.58)
+  // netIn = 10 - 7.58 ≈ 2.42 >= 1, so efficiency is non-null.
+  const f = energyFigures(
+    sums({
+      batteryChargeGridKwh: 10,
+      batteryDischargeKwh: 0,
+      firstSocPct: 0,
+      lastSocPct: 100,
+    }),
+  )
+  expect(f.batteryIn).toBe(10)
+  expect(f.deltaStored).toBeCloseTo((100 / 100) * BATTERY_CAPACITY_KWH, 12)
+  expect(f.efficiency).not.toBeNull()
+})
+
+test('efficiency null when netIn < 1 but batteryIn >= 1 (SoC rise absorbs charge)', () => {
+  // charge 5 kWh, SoC goes 10 → 75: deltaStored = (65/100) × capacity ≈ 4.93
+  // netIn = 5 - 4.93 ≈ 0.07 < 1, so efficiency is null.
+  // gridChargedShare = 5 / 5 = 1, batteryIn >= 1, so it's non-null.
+  const f = energyFigures(
+    sums({
+      batteryChargeGridKwh: 5,
+      batteryDischargeKwh: 0,
+      firstSocPct: 10,
+      lastSocPct: 75,
+    }),
+  )
+  expect(f.batteryIn).toBe(5)
+  expect(f.deltaStored).toBeCloseTo((65 / 100) * BATTERY_CAPACITY_KWH, 12)
+  expect(f.efficiency).toBeNull()
+  expect(f.gridChargedShare).not.toBeNull()
+})
+
+test('exactly 1 kWh in: efficiency and grid share non-null', () => {
+  const f = energyFigures(
+    sums({
+      batteryChargeGridKwh: 1,
+      batteryDischargeKwh: 0.5,
+    }),
+  )
+  expect(f.batteryIn).toBe(1)
+  expect(f.efficiency).not.toBeNull()
+  expect(f.gridChargedShare).not.toBeNull()
+})
+
+test('0.99 kWh in: efficiency and grid share null', () => {
+  const f = energyFigures(
+    sums({
+      batteryChargeGridKwh: 0.99,
+      batteryDischargeKwh: 0.5,
+    }),
+  )
+  expect(f.batteryIn).toBe(0.99)
+  expect(f.efficiency).toBeNull()
+  expect(f.gridChargedShare).toBeNull()
+})
+
+test('a missing firstSocPct with lastSocPct set means no SoC correction', () => {
+  const f = energyFigures(
+    sums({ batteryChargeSolarKwh: 10, batteryDischargeKwh: 8, lastSocPct: 60 }),
+  )
+  expect(f.deltaStored).toBe(0)
+  expect(f.loss).toBe(2)
+})
+
+test('gapHours rounds ≥0.5 hours up', () => {
+  // 90 missing buckets × 5 min/bucket × 1 h/60 min = 7.5 h → rounds to 8.
+  const f = energyFigures(sums({ buckets: 288 * 30 - 90, expectedBuckets: 288 * 30 }))
+  expect(f.missingHours).toBeCloseTo(7.5, 12)
+  expect(gapHours(f)).toBe(8)
+})
+
+test('buckets more than expected gives 0 missing hours', () => {
+  const f = energyFigures(sums({ buckets: 100, expectedBuckets: 50 }))
+  expect(f.missingHours).toBe(0)
+  expect(gapHours(f)).toBeNull()
+})
+
+test('falling SoC: battery emptied, deltaStored negative', () => {
+  // Battery goes from 80% to 10%: loses 70% of capacity, so deltaStored is negative.
+  // Discharge 15, no charge: batteryIn = 0, out = 15, delta ≈ -5.306.
+  // loss = in - out - delta = 0 - 15 - (-5.306) ≈ -9.694.
+  const f = energyFigures(
+    sums({
+      batteryDischargeKwh: 15,
+      firstSocPct: 80,
+      lastSocPct: 10,
+    }),
+  )
+  const expectedDelta = -((80 - 10) / 100) * BATTERY_CAPACITY_KWH
+  expect(f.deltaStored).toBeCloseTo(expectedDelta, 12)
+  expect(f.batteryIn).toBe(0)
+  expect(f.batteryOut).toBe(15)
+  // loss = in - out - delta = 0 - 15 - expectedDelta
+  expect(f.loss).toBeCloseTo(0 - 15 - expectedDelta, 12)
 })
