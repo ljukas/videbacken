@@ -131,7 +131,10 @@ mockup's numbers are the starting point:
 - **Arrows**: a cubic Bézier from a port on the source's side to just outside the target's port, each end leaving
   along its side's normal; the control distance is a share of the distance along that axis (0.5 by default;
   Solel → Förbrukning on the narrow layout 0.9 / 0.25 so it passes under the battery). A 9 px triangle arrowhead
-  sits on the target's edge. No two arrows cross, and no arrow passes through a node, at 324, 754 and 1006 px.
+  sits on the target's edge. No arrow passes through a node, and no two arrows cross, at 324, 754 and 1006 px, with
+  one exception: Batteri → Såld el crosses Solel → Förbrukning. With the in nodes on one side and the out nodes on
+  the other, Solel → Förbrukning separates the battery from Såld el, so no routing inside the box avoids it. That
+  arrow exists only when export exceeds the solar surplus, which is zero in every 2026 month so far.
 - **Width**: linear in kWh, max(2, 20 × v ÷ the period's largest arrow) (16 on narrow). The loss stub uses the same
   scale with a 4 px minimum. Widths stay linear: in winter the bought arrow sets the scale and the battery's arrows
   are thin, which is true.
@@ -149,8 +152,8 @@ mockup's numbers are the starting point:
   so they double as the colour key. That brings back the swatches the 1b build lost. The out nodes' tiles are
   neutral.
 - **Wide**: the tile sits left of the text; the text block (label cap top to figure baseline: 14 px label, 28 px figure,
-  14 px muted unit) is **centred on the tile**, not on the font's line box. The battery's three rows (label, "Förlust
-  X kWh" with a 20 px figure, 13 px "laddnivå") are centred on its tile the same way. Förbrukning's car lines hang
+  14 px muted unit) is **centred on the tile**, not on the font's line box (cap height ≈ 0.7 em). The battery's three rows (label, "Förlust
+  X kWh" with a 20 px figure, 13 px "laddnivå") are centred on its tile the same way (2 px higher than mockup version 4, which sat 2 px low by that measure). Förbrukning's car lines hang
   below the top row.
 - **Narrow**: the tile and the label share the first row (label centred on the tile); the figure (24 px) runs the
   node's full width below. The battery drops the charge level (it moves to the loss tooltip).
