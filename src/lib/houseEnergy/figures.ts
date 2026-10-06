@@ -6,6 +6,8 @@ import { BATTERY_CAPACITY_KWH } from './mix/pool'
 
 /** Below this many kWh into the battery, efficiency and grid share mean nothing. */
 export const MIN_BATTERY_IN_KWH = 1
+/** Above this share of what went in, a period's battery loss reads as winter heating (the tooltip's hint). */
+export const WINTER_LOSS_SHARE = 0.25
 /** At or above this share of expected buckets a period counts as complete. */
 export const COVERAGE_COMPLETE = 0.99
 const BUCKET_HOURS = 5 / 60
@@ -48,6 +50,8 @@ export type EnergyFigures = {
   loss: number
   /** 0–1, or null below MIN_BATTERY_IN_KWH. */
   efficiency: number | null
+  /** The loss as a share of what stayed in the battery (in − Δstored); null when `efficiency` is. */
+  lossShare: number | null
   /** 0–1, or null below MIN_BATTERY_IN_KWH. */
   gridChargedShare: number | null
   /** 0–1, or null when no bucket was expected. */
@@ -90,6 +94,7 @@ export function energyFigures(p: PeriodSums, capacityKwh = BATTERY_CAPACITY_KWH)
       : 0
   const netIn = batteryIn - deltaStored
   const enough = batteryIn >= MIN_BATTERY_IN_KWH && netIn >= MIN_BATTERY_IN_KWH
+  const loss = batteryIn - p.batteryDischargeKwh - deltaStored
   // The car cannot have drawn more than the house measured as load.
   const car = Math.min(p.carKwh, p.loadKwh)
   return {
@@ -104,8 +109,9 @@ export function energyFigures(p: PeriodSums, capacityKwh = BATTERY_CAPACITY_KWH)
     batteryIn,
     batteryOut: p.batteryDischargeKwh,
     deltaStored,
-    loss: batteryIn - p.batteryDischargeKwh - deltaStored,
+    loss,
     efficiency: enough ? Math.min(1, p.batteryDischargeKwh / netIn) : null,
+    lossShare: enough ? loss / netIn : null,
     gridChargedShare: batteryIn >= MIN_BATTERY_IN_KWH ? p.batteryChargeGridKwh / batteryIn : null,
     coverage: p.expectedBuckets > 0 ? p.buckets / p.expectedBuckets : null,
     missingHours: Math.max(0, p.expectedBuckets - p.buckets) * BUCKET_HOURS,

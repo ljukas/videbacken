@@ -11,7 +11,7 @@ import type * as React from 'react'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
 import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
-import type { EnergyFigures, PeriodSums } from '~/lib/houseEnergy/figures'
+import { type EnergyFigures, type PeriodSums, WINTER_LOSS_SHARE } from '~/lib/houseEnergy/figures'
 import {
   arrowHead,
   drawnFlows,
@@ -251,13 +251,11 @@ export function EnergyFlowDiagram({
                   id: 'loss',
                   kwh: f.loss,
                   share:
-                    f.efficiency !== null
-                      ? m.energy_flow_loss_share({
-                          share: formatShare(f.loss / (f.batteryIn - f.deltaStored)),
-                        })
+                    f.lossShare !== null
+                      ? m.energy_flow_loss_share({ share: formatShare(f.lossShare) })
                       : null,
                   charge,
-                  winter: f.efficiency !== null && f.loss / (f.batteryIn - f.deltaStored) > 0.25,
+                  winter: f.lossShare !== null && f.lossShare > WINTER_LOSS_SHARE,
                 },
                 stub.x + stub.width / 2,
                 stub.y + stub.height / 2,
