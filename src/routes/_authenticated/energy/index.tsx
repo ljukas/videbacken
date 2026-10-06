@@ -3,6 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { SunIcon } from 'lucide-react'
 import { useCallback, useId, useState } from 'react'
 import { z } from 'zod'
+import energyChartBones from '~/bones/energy-chart.bones.json'
+import energyTilesBones from '~/bones/energy-tiles.bones.json'
 import { EnergyHeading } from '~/components/energy/EnergyHeading'
 import {
   type EnergyMetric,
@@ -120,7 +122,7 @@ function EnergyOverviewPage() {
         // hydrated). A failed read leaves the alert in it, below the last tiles
         // and a year selector once the page has shown a year.
         <div className="flex flex-col gap-4">
-          <SectionSkeleton name="energy-tiles" loading={pending} fallbackHeight="12rem">
+          <SectionSkeleton bones={energyTilesBones} loading={pending} fallbackHeight="12rem">
             {tiles ? (
               // Tiles are always the current periods: they don't dim on a year switch.
               <section aria-labelledby={tilesHeadingId}>
@@ -131,7 +133,7 @@ function EnergyOverviewPage() {
               </section>
             ) : null}
           </SectionSkeleton>
-          <SectionSkeleton name="energy-chart" loading={pending} fallbackHeight="22rem">
+          <SectionSkeleton bones={energyChartBones} loading={pending} fallbackHeight="22rem">
             {overview ? (
               <section aria-labelledby={chartHeadingId}>
                 <Card>

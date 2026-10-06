@@ -3,6 +3,9 @@ import { createFileRoute, useHydrated } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
 import { lazy, useMemo, useState } from 'react'
 import { z } from 'zod'
+import sensorsHumChartBones from '~/bones/sensors-hum-chart.bones.json'
+import sensorsTempChartBones from '~/bones/sensors-temp-chart.bones.json'
+import sensorsTilesBones from '~/bones/sensors-tiles.bones.json'
 import { LazyDialogMount } from '~/components/layout/LazyDialogMount'
 import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
@@ -202,7 +205,7 @@ function SensorsPage() {
 
       <div className="flex flex-col gap-3">
         <RangeSelector value={range} onChange={setRange} />
-        <SectionSkeleton name="sensors-tiles" loading={devicesPending} fallbackHeight="13rem">
+        <SectionSkeleton bones={sensorsTilesBones} loading={devicesPending} fallbackHeight="13rem">
           {devices ? (
             <div className="flex flex-col gap-6">
               <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
@@ -224,7 +227,7 @@ function SensorsPage() {
         <>
           <ChartSection title={m.sensors_temp_chart_title()}>
             <SectionSkeleton
-              name="sensors-temp-chart"
+              bones={sensorsTempChartBones}
               loading={chartsPending}
               fallbackHeight="260px"
             >
@@ -236,7 +239,7 @@ function SensorsPage() {
 
           <ChartSection title={m.sensors_humidity_chart_title()}>
             <SectionSkeleton
-              name="sensors-hum-chart"
+              bones={sensorsHumChartBones}
               loading={chartsPending}
               fallbackHeight="260px"
             >

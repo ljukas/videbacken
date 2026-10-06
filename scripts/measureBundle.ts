@@ -4,8 +4,9 @@
 //
 // A page's cost is the gzipped size of its route chunk's *static* import closure,
 // minus the entry's closure and the signed-in shell's. Dynamic imports
-// (`React.lazy`, route preloads) are excluded: they load on demand. Packages and
-// bones files are read from each chunk's source map.
+// (`React.lazy`, route preloads) are excluded: they load on demand. Packages are
+// read from each chunk's source map; bones from its code (the source map can
+// omit an inlined JSON module).
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -24,6 +25,10 @@ const PAGES: Record<string, string> = {
   '/account/profile': 'profile',
 }
 const WATCHED = ['libphonenumber-js', 'country-flag-icons', '@tanstack/form-core', 'boneyard-js']
+const CAPTURED = readdirSync('src/bones')
+  .filter((f) => f.endsWith('.bones.json'))
+  .map((f) => f.slice(0, -'.bones.json'.length))
+  .sort()
 
 export function staticClosure(deps: Map<string, string[]>, root: string): Set<string> {
   const seen = new Set<string>()
@@ -43,10 +48,12 @@ function main() {
   const gz = new Map<string, number>()
   const deps = new Map<string, string[]>()
   const sources = new Map<string, string[]>()
+  const code = new Map<string, string>()
   for (const file of files) {
-    const code = readFileSync(join(ASSETS, file), 'utf8')
-    gz.set(file, gzipSync(code).length)
-    const imports = [...code.matchAll(/(?:import|from)\s*["']\.\/([^"']+\.js)["']/g)].map(
+    const text = readFileSync(join(ASSETS, file), 'utf8')
+    code.set(file, text)
+    gz.set(file, gzipSync(text).length)
+    const imports = [...text.matchAll(/(?:import|from)\s*["']\.\/([^"']+\.js)["']/g)].map(
       (x) => x[1],
     )
     deps.set(file, [...new Set(imports)])
@@ -79,9 +86,11 @@ function main() {
     for (const f of base) own.delete(f)
     const all = [...own].flatMap((f) => sources.get(f) ?? [])
     const packages = WATCHED.filter((p) => all.some((s) => s.includes(`node_modules/${p}/`)))
-    const bones = [
-      ...new Set(all.flatMap((s) => s.match(/src\/bones\/([^/]+)\.bones\.json$/)?.[1] ?? [])),
-    ]
+    // Every breakpoint of a capture is named after it (test/sectionSkeletonBones.test.ts):
+    // `name:"x"` as an object literal, `"name":"x"` inside a big one's JSON.parse string.
+    const bones = CAPTURED.filter((name) =>
+      [...own].some((f) => new RegExp(`\\bname"?:["'\`]${name}["'\`]`).test(code.get(f) ?? '')),
+    )
     const top = [...own]
       .sort((a, b) => (gz.get(b) ?? 0) - (gz.get(a) ?? 0))
       .slice(0, 5)

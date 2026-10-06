@@ -2,6 +2,9 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
+import chargingChartBones from '~/bones/charging-chart.bones.json'
+import chargingSessionsBones from '~/bones/charging-sessions.bones.json'
+import chargingTotalsBones from '~/bones/charging-totals.bones.json'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { CostNotice, type CostNoticeReason } from '~/components/evCharging/CostNotice'
 import { CredentialExpiryAlert } from '~/components/evCharging/CredentialExpiryAlert'
@@ -285,7 +288,7 @@ function ChargingPage() {
       {overview && costNotice && !shapePending ? (
         <CostNotice reason={costNotice} canAddTariff={isAdmin} />
       ) : null}
-      <SectionSkeleton name="charging-totals" loading={shapePending} fallbackHeight="7rem">
+      <SectionSkeleton bones={chargingTotalsBones} loading={shapePending} fallbackHeight="7rem">
         {overview ? (
           <section className="flex flex-col gap-2">
             <h2 className="sr-only">{m.charging_totals_heading()}</h2>
@@ -302,7 +305,7 @@ function ChargingPage() {
           </section>
         ) : null}
       </SectionSkeleton>
-      <SectionSkeleton name="charging-chart" loading={shapePending} fallbackHeight="20rem">
+      <SectionSkeleton bones={chargingChartBones} loading={shapePending} fallbackHeight="20rem">
         {overview ? (
           <section className="@container flex flex-col gap-2">
             {/* Wide: title left, controls grouped right. Narrow: the title on its
@@ -370,7 +373,7 @@ function ChargingPage() {
         {/* The skeleton only while nothing has loaded yet: another page or scope
             keeps the current rows on screen, dimmed (placeholder data). */}
         <SectionSkeleton
-          name="charging-sessions"
+          bones={chargingSessionsBones}
           loading={firstLoadPending(sessions)}
           fallbackHeight="24rem"
         >

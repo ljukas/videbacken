@@ -4,6 +4,7 @@ import { UserPlusIcon } from 'lucide-react'
 import { lazy } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import usersTableBones from '~/bones/users-table.bones.json'
 import { LazyDialogMount } from '~/components/layout/LazyDialogMount'
 import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
@@ -128,7 +129,7 @@ function Users() {
           bones are captured, and replayed, at the table's full width. */}
       <div className="flex min-h-0 w-full flex-col md:-mx-4">
         <SectionSkeleton
-          name="users-table"
+          bones={usersTableBones}
           loading={firstLoadPending(usersResult)}
           fallbackHeight="20rem"
           excludeSelectors={['[data-no-skeleton]']}

@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { lazy, useEffect } from 'react'
 import { z } from 'zod'
+import chargingSourcesBones from '~/bones/charging-sources.bones.json'
+import chargingTariffsBones from '~/bones/charging-tariffs.bones.json'
 import { healthPoll } from '~/components/evCharging/healthPoll'
 import {
   SkodaSourceDetails,
@@ -171,7 +173,7 @@ function ChargingSettingsPage() {
       {/* One read covers every source: when it fails, say so with a retry,
           above the tiles that then read "Okänd status" (ADR-0016). */}
       <LoadErrorAlert title={m.charging_sources_error_title()} query={healthResult} />
-      <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
+      <SectionSkeleton bones={chargingSourcesBones} loading={sourcesPending} fallbackHeight="20rem">
         <SyncSourcesPanel
           entries={[
             { source: 'zaptec', health: sourcesHealth?.zaptec, runs: zaptecRuns },
@@ -205,7 +207,7 @@ function ChargingSettingsPage() {
       </SectionSkeleton>
 
       <SectionSkeleton
-        name="charging-tariffs"
+        bones={chargingTariffsBones}
         loading={firstLoadPending(tariffsResult)}
         fallbackHeight="10rem"
       >

@@ -7,17 +7,19 @@
 // Usage (dev stack up, realistic local data, ADR-0025):
 //   BETTER_AUTH_URL=http://localhost:14610 bunx vite dev --port 14610 --strictPort   # one terminal
 //   bun run bones:capture                       # the default pages
-//   bun run bones:capture /charging/economy     # just these paths (the registry still covers
-//                                               # every captured skeleton, see bonesRegistry.ts)
+//   bun run bones:capture /charging/economy     # just these paths (other pages' bones stay)
 //   bun run bones:capture --force               # recapture everything (see below)
 //
 // The CLI skips a skeleton whose DOM hash is unchanged, even if the breakpoints
 // or the CSS changed. After changing either, pass --force.
 //
 // Re-run after changing a skeleton-wrapped section's layout, then commit src/bones/.
+// A newly captured section: switch its <SectionSkeleton name="x"> to bones={xBones},
+// imported from ~/bones/x.bones.json (test/sectionSkeletonBones.test.ts enforces it).
 import { spawnSync } from 'node:child_process'
+import { readdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { chromium } from 'playwright'
-import { writeBonesRegistry } from './bonesRegistry'
 import './loadEnv'
 
 const ORIGIN = process.env.BONES_ORIGIN ?? 'http://localhost:14610'
@@ -97,7 +99,8 @@ const result = spawnSync(
   { stdio: 'inherit' },
 )
 if (result.status !== 0) process.exit(result.status ?? 1)
-// The CLI just wrote the registry from this run's skeletons only; a subset
-// capture would drop the rest. Rebuild it from every committed bones file.
-const registered = writeBonesRegistry()
-console.log(`  registry.ts rebuilt from every bones file (${registered.length} skeletons)`)
+// The CLI always writes a registry of this run's skeletons. Pages import their own
+// bones (ADR-0025 §4), so nothing reads it: drop it.
+for (const f of readdirSync('src/bones'))
+  if (/^registry\.[jt]sx?$/.test(f)) rmSync(join('src/bones', f))
+console.log('  pages import their own bones; the CLI registry was removed')
