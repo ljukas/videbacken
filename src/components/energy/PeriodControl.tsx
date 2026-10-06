@@ -44,11 +44,18 @@ export function PeriodControl({
   const years = [...new Set(monthsWithReadings.map((k) => Number(k.slice(0, 4))))].sort(
     (a, b) => a - b,
   )
-  const all: EnergyPeriod[] = [
-    ...monthsWithReadings.map((k) => parsePeriod(k) as EnergyPeriod),
+  const stacked: EnergyPeriod[] = [
+    ...monthsWithReadings.flatMap((k) => {
+      const p = parsePeriod(k)
+      return p ? [p] : []
+    }),
     ...years.map((year) => ({ kind: 'year', year }) as const),
     { kind: 'all' },
   ]
+  // The shown period must always have a label, even if it has no readings.
+  const all = stacked.some((p) => formatPeriod(p) === formatPeriod(period))
+    ? stacked
+    : [...stacked, period]
   const prev = stepPeriod(period, -1, monthsWithReadings)
   const next = stepPeriod(period, 1, monthsWithReadings)
   const unit = period.kind === 'year' ? 'year' : 'month'
@@ -63,8 +70,8 @@ export function PeriodControl({
       <Button
         variant="ghost"
         size="icon"
-        className="size-10 text-muted-foreground"
-        disabled={!prev}
+        className="size-10 shrink-0 text-muted-foreground aria-disabled:opacity-50"
+        aria-disabled={!prev}
         onClick={() => prev && onChange(prev)}
         aria-label={unit === 'year' ? m.energy_period_prev_year() : m.energy_period_prev_month()}
       >
@@ -74,12 +81,12 @@ export function PeriodControl({
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
-            className="h-10 flex-1 px-3 font-semibold text-base sm:flex-none"
+            className="h-10 min-w-0 flex-1 px-3 font-semibold text-base sm:flex-none"
             aria-label={m.energy_period_choose({
-              period: `${shown.main}${shown.soFar ? ` ${m.energy_chart_so_far()}` : ''}`,
+              period: `${shown.main}${shown.soFar ? ` (${m.energy_chart_so_far()})` : ''}`,
             })}
           >
-            <span data-slot="period-labels" className="grid justify-items-center">
+            <span data-slot="period-labels" className="grid min-w-0 justify-items-center">
               {all.map((p) => {
                 const l = labelOf(p, current)
                 const isShown = formatPeriod(p) === formatPeriod(period)
@@ -88,7 +95,7 @@ export function PeriodControl({
                     key={formatPeriod(p)}
                     aria-hidden={isShown ? undefined : true}
                     className={cn(
-                      'col-start-1 row-start-1 whitespace-nowrap',
+                      'col-start-1 row-start-1 min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap',
                       !isShown && 'invisible',
                     )}
                   >
@@ -102,12 +109,22 @@ export function PeriodControl({
                 )
               })}
             </span>
-            <ChevronDownIcon aria-hidden className="size-[18px] text-muted-foreground" />
+            <ChevronDownIcon aria-hidden className="size-[18px] shrink-0 text-muted-foreground" />
           </Button>
         </PopoverTrigger>
         <PopoverContent
           align="end"
-          className="w-[min(20rem,calc(100vw-2rem))] gap-2 p-2.5"
+          collisionPadding={16}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            const root = e.currentTarget as HTMLElement
+            const target =
+              root.querySelector<HTMLElement>('[data-month][aria-current]:not([disabled])') ??
+              root.querySelector<HTMLElement>('[data-month]:not([disabled])') ??
+              root
+            target.focus()
+          }}
+          className="max-h-(--radix-popover-content-available-height) w-[min(20rem,calc(100vw-2rem))] gap-2 overflow-y-auto p-2.5"
           aria-label={m.energy_period_picker()}
         >
           <Picker
@@ -122,8 +139,8 @@ export function PeriodControl({
       <Button
         variant="ghost"
         size="icon"
-        className="size-10 text-muted-foreground"
-        disabled={!next}
+        className="size-10 shrink-0 text-muted-foreground aria-disabled:opacity-50"
+        aria-disabled={!next}
         onClick={() => next && onChange(next)}
         aria-label={unit === 'year' ? m.energy_period_next_year() : m.energy_period_next_month()}
       >
@@ -153,7 +170,7 @@ function Picker({
   const selected = formatPeriod(period)
   const choice = (p: EnergyPeriod) =>
     cn(
-      'min-h-11 rounded-md border border-transparent text-[15px] hover:bg-muted disabled:pointer-events-none disabled:opacity-40',
+      'min-h-11 rounded-md border border-transparent text-[15px] outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50',
       formatPeriod(p) === selected && 'border-brand bg-brand/10 font-semibold text-brand',
     )
   return (
@@ -163,7 +180,7 @@ function Picker({
         <Button
           variant="ghost"
           size="icon"
-          className="size-10"
+          className="size-11"
           disabled={i <= 0}
           onClick={() => setYear(years[i - 1])}
           aria-label={m.energy_period_prev_year()}
@@ -174,7 +191,7 @@ function Picker({
         <Button
           variant="ghost"
           size="icon"
-          className="size-10"
+          className="size-11"
           disabled={i === -1 || i >= years.length - 1}
           onClick={() => setYear(years[i + 1])}
           aria-label={m.energy_period_next_year()}
@@ -191,6 +208,7 @@ function Picker({
             <button
               key={month}
               type="button"
+              data-month
               disabled={!monthsWithReadings.includes(monthKey(year, month))}
               onClick={() => onPick(p)}
               aria-current={formatPeriod(p) === selected ? 'true' : undefined}
@@ -209,6 +227,7 @@ function Picker({
         <button
           type="button"
           disabled={!years.includes(year)}
+          aria-current={selected === formatPeriod({ kind: 'year', year }) ? 'true' : undefined}
           onClick={() => onPick({ kind: 'year', year })}
           className={cn(choice({ kind: 'year', year }), 'border-border')}
         >
@@ -216,6 +235,7 @@ function Picker({
         </button>
         <button
           type="button"
+          aria-current={period.kind === 'all' ? 'true' : undefined}
           onClick={() => onPick({ kind: 'all' })}
           className={cn(choice({ kind: 'all' }), 'border-border')}
         >

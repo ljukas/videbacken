@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import type { EnergyPeriod } from '~/lib/houseEnergy/period'
@@ -30,16 +31,50 @@ test('the arrows step to the neighbouring months with readings', async () => {
   expect(onChange).toHaveBeenLastCalledWith({ kind: 'month', year: 2026, month: 1 })
 })
 
-test('the previous arrow disables at the first month', async () => {
-  const { screen } = await setup({ kind: 'month', year: 2025, month: 12 })
-  await expect
-    .element(screen.getByRole('button', { name: m.energy_period_prev_month() }))
-    .toBeDisabled()
+test('the previous arrow is aria-disabled at the first month and does nothing', async () => {
+  const { screen, onChange } = await setup({ kind: 'month', year: 2025, month: 12 })
+  const prev = screen.getByRole('button', { name: m.energy_period_prev_month() })
+  await expect.element(prev).toHaveAttribute('aria-disabled', 'true')
+  // Playwright refuses to click aria-disabled controls; a DOM click is what a user's tap does.
+  ;(prev.element() as HTMLElement).click()
+  expect(onChange).not.toHaveBeenCalled()
 })
 
-test('both arrows disable for Totalt', async () => {
+test('both arrows are aria-disabled for Totalt', async () => {
   await setup({ kind: 'all' })
-  expect(document.querySelectorAll('button[disabled]')).toHaveLength(2)
+  expect(document.querySelectorAll('button[aria-disabled="true"]')).toHaveLength(2)
+})
+
+test('focus stays on the arrow when stepping to the end', async () => {
+  const onChange = vi.fn()
+  function Host() {
+    const [p, setP] = useState<EnergyPeriod>({ kind: 'month', year: 2026, month: 4 })
+    return (
+      <PeriodControl
+        period={p}
+        monthsWithReadings={MONTHS}
+        current={CURRENT}
+        onChange={(x) => {
+          onChange(x)
+          setP(x)
+        }}
+      />
+    )
+  }
+  const { screen } = await renderWithProviders(<Host />)
+  const next = screen.getByRole('button', { name: m.energy_period_next_month() })
+  ;(next.element() as HTMLElement).focus()
+  await userEvent.keyboard('{Enter}')
+  expect(onChange).toHaveBeenLastCalledWith({ kind: 'month', year: 2026, month: 10 })
+  await expect.element(next).toHaveAttribute('aria-disabled', 'true')
+  await expect.element(next).toHaveFocus()
+})
+
+test('a period without readings still has a visible label', async () => {
+  await setup({ kind: 'month', year: 2026, month: 3 })
+  const cell = document.querySelector('[data-slot="period-labels"]')
+  expect(cell?.children).toHaveLength(9)
+  expect(cell?.querySelectorAll('[aria-hidden="true"]')).toHaveLength(8)
 })
 
 test('every possible label is stacked in the label cell, only the current one visible', async () => {
@@ -79,11 +114,33 @@ test('the picker picks the whole year and Totalt, and changes year without closi
   expect(onChange).toHaveBeenLastCalledWith({ kind: 'all' })
 })
 
-test('the current month says hittills; Escape closes the picker and returns focus', async () => {
+test('the current month says hittills in its name; the picker opens on the selected month', async () => {
   const { screen } = await setup({ kind: 'month', year: 2026, month: 10 })
   const trigger = screen.getByRole('button', { name: /Välj period|Choose period/ })
-  await expect.element(trigger).toHaveTextContent(m.energy_chart_so_far())
+  await expect
+    .element(trigger)
+    .toHaveAttribute('aria-label', expect.stringContaining(`(${m.energy_chart_so_far()})`))
+  await userEvent.click(trigger)
+  const dialog = screen.getByRole('dialog', { name: m.energy_period_picker() })
+  await expect.element(dialog).toBeVisible()
+  expect(document.activeElement?.getAttribute('aria-current')).toBe('true')
+  expect(document.activeElement?.hasAttribute('data-month')).toBe(true)
+})
+
+test('Escape closes the picker and returns focus', async () => {
+  const { screen } = await setup()
+  const trigger = screen.getByRole('button', { name: /Välj period|Choose period/ })
   await userEvent.click(trigger)
   await userEvent.keyboard('{Escape}')
+  await expect.element(screen.getByRole('dialog')).not.toBeInTheDocument()
+  await expect.element(trigger).toHaveFocus()
+})
+
+test('picking a month closes the picker and returns focus', async () => {
+  const { screen } = await setup()
+  const trigger = screen.getByRole('button', { name: /Välj period|Choose period/ })
+  await userEvent.click(trigger)
+  await userEvent.click(screen.getByRole('dialog').getByRole('button', { name: /^apr/i }))
+  await expect.element(screen.getByRole('dialog')).not.toBeInTheDocument()
   await expect.element(trigger).toHaveFocus()
 })
