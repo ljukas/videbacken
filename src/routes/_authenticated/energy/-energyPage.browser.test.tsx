@@ -163,6 +163,11 @@ test('with data: the tiles card with its period control, the chart with its metr
     .element(screen.getByRole('radiogroup', { name: m.energy_metric_label() }))
     .toBeVisible()
   await expect.element(screen.getByRole('radio', { name: m.energy_metric_solar() })).toBeChecked()
+  // The toggle is sized for reading: 14 px text, 40 px tap target.
+  const toggleItem = screen.getByRole('radio', { name: m.energy_metric_solar() }).element()
+  expect(toggleItem.className).toContain('h-10')
+  expect(toggleItem.className).toContain('text-sm')
+  expect(toggleItem.className).not.toContain('text-[0.8rem]')
   // The chart lost its own year selector: the period's year is the chart's.
   expect(screen.getByRole('combobox').elements()).toHaveLength(0)
   expect(skeleton('energy-tiles')).toBeNull()

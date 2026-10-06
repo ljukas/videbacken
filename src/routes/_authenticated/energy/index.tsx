@@ -243,6 +243,7 @@ function EnergyOverviewPage() {
                       options={energyMetricOptions()}
                       onChange={setMetric}
                       aria-label={m.energy_metric_label()}
+                      itemClassName="h-10 px-4 text-sm"
                     />
                   </CardHeader>
                   <CardContent

@@ -10,11 +10,14 @@ export function MetricToggle<T extends string>({
   value,
   options,
   onChange,
+  itemClassName,
   ...label
 }: {
   value: T
   options: MetricOption<T>[]
   onChange: (value: T) => void
+  /** Opt-in item styling (e.g. a larger size); the default stays the compact `sm`. */
+  itemClassName?: string
 } & GroupLabel) {
   return (
     <ToggleGroup
@@ -30,7 +33,12 @@ export function MetricToggle<T extends string>({
       {...label}
     >
       {options.map((o) => (
-        <ToggleGroupItem key={o.value} value={o.value} aria-label={o.ariaLabel}>
+        <ToggleGroupItem
+          key={o.value}
+          value={o.value}
+          aria-label={o.ariaLabel}
+          className={itemClassName}
+        >
           {o.label}
         </ToggleGroupItem>
       ))}
