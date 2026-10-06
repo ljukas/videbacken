@@ -21,5 +21,24 @@ export function credentialLink(health: SourceHealth): CredentialLink | null {
   return credentialCode || suspects ? { source, kind: 'update' } : null
 }
 
+type SuspectFields = NonNullable<NonNullable<SourceHealth['adminDetail']>['suspectFields']>
+
+/**
+ * The fields the last failed sync blamed, while they still describe what is saved: a save newer than
+ * that attempt replaced the blamed values, so they no longer count — until the next attempt (the
+ * post-save sync can be skipped by the lease, or read the old values on a warm instance's 60 s cache,
+ * ADR-0026). `updatedAt` is the source's `credentials.status` save time: null (nothing stored) or
+ * undefined (status not known) keeps them.
+ */
+export function currentSuspectFields(
+  health: SourceHealth | undefined,
+  updatedAt: Date | null | undefined,
+): SuspectFields {
+  const fields = health?.adminDetail?.suspectFields ?? []
+  if (!updatedAt) return fields
+  const attempt = health?.lastAttemptAt
+  return attempt && attempt.getTime() >= updatedAt.getTime() ? fields : []
+}
+
 /** The key button's id, so a dialog opened from a link or URL can return focus to it. */
 export const credentialsButtonId = (source: CredentialSource) => `credentials-${source}`

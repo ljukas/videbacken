@@ -183,7 +183,7 @@
   "charging_credentials_origin_unreadable": "Går inte att läsa",
   "charging_credentials_field_suspect": "Fungerade inte vid senaste synken",
   "charging_credentials_key_missing": "Appen saknar CREDENTIALS_ENCRYPTION_KEY – uppgifter kan inte sparas.",
-  "charging_credentials_unreadable": "De sparade uppgifterna går inte att läsa. Fyll i alla fält igen.",
+  "charging_credentials_unreadable": "De sparade uppgifterna går inte att läsa. Fyll i alla fält igen, eller ta bort dem.",
   "charging_credentials_reenter_field": "Fyll i det här fältet också – de sparade uppgifterna går inte att läsa.",
   "charging_credentials_nothing_to_save": "Fyll i minst ett fält.",
   "charging_credentials_saved": "Sparat",

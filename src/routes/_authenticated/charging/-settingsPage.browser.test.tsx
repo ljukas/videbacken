@@ -339,6 +339,44 @@ test('closing the credentials dialog clears the URL and returns focus to its key
   await expect.element(button).toHaveFocus()
 })
 
+// Škoda's last attempt (10:00) blamed the VIN; the status says when Škoda's credentials were saved.
+const skodaBlamedVin = (savedAt: Date | null) => (qc: QueryClient) => {
+  seedSourcesHealth(qc, {
+    skoda: {
+      state: 'failing',
+      code: 'forbidden',
+      lastAttemptAt: new Date('2026-10-06T10:00:00Z'),
+      adminDetail: { lastErrorMessage: null, credentialExpiry: null, suspectFields: ['vin'] },
+    },
+  })
+  qc.setQueryData(credentialsKey, {
+    ...STATUS,
+    sources: { ...STATUS.sources, skoda: { ...STATUS.sources.skoda, updatedAt: savedAt } },
+  } as never)
+}
+const tileSuspect = () => m.charging_credentials_suspect({ fields: 'VIN' })
+
+test('a failed attempt after the last save marks its suspects on the tile and in the dialog', async () => {
+  const { screen } = await renderSettings('?dialog=credentials&source=skoda', {
+    prepare: skodaBlamedVin(new Date('2026-10-06T09:00:00Z')),
+  })
+  const dialog = screen.getByRole('dialog', { name: credentialsTitle('skoda') })
+  await expect.element(dialog.getByText(m.charging_credentials_field_suspect())).toBeVisible()
+  expect(document.body.textContent).toContain(tileSuspect())
+})
+
+test('credentials saved after the failed attempt clear its suspects from the tile and the dialog', async () => {
+  const { screen } = await renderSettings('?dialog=credentials&source=skoda', {
+    prepare: skodaBlamedVin(new Date('2026-10-06T10:05:00Z')),
+  })
+  const dialog = screen.getByRole('dialog', { name: credentialsTitle('skoda') })
+  await expect.element(dialog).toBeVisible()
+  // The link stays: the health still blames the credentials until the next run.
+  expect(dialog.getByText(m.charging_credentials_field_suspect()).elements()).toHaveLength(0)
+  expect(document.body.textContent).not.toContain(tileSuspect())
+  expect(document.body.textContent).toContain(m.charging_credentials_update())
+})
+
 // --- Deferred loading (ADR-0025) ----------------------------------------------
 
 const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)

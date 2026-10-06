@@ -3,7 +3,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useEffect, useRef } from 'react'
 import { z } from 'zod'
 import { CredentialsDialog } from '~/components/evCharging/CredentialsDialog'
-import { credentialsButtonId } from '~/components/evCharging/credentialLink'
+import { credentialsButtonId, currentSuspectFields } from '~/components/evCharging/credentialLink'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { GridTariffCard } from '~/components/evCharging/GridTariffCard'
 import { healthPoll } from '~/components/evCharging/healthPoll'
@@ -156,6 +156,9 @@ function ChargingSettingsPage() {
   const vehicleCoverage = useQuery(vehicleCoverageQuery)
   const vehicleLatest = useQuery(vehicleLatestQuery)
   const credentialsResult = useQuery(credentialsStatusQuery)
+  // Each source's last save (`updatedAt`): the fields a sync blamed before it no
+  // longer count, on the tiles or in the dialog. Unknown (undefined): they do.
+  const savedCredentials = credentialsResult.data?.sources
   const credentialsSource =
     isOpen('credentials') && source && isCredentialSource(source) ? source : undefined
   // Opens once the origins are known, or their read failed (the dialog then has
@@ -193,12 +196,18 @@ function ChargingSettingsPage() {
       <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
         <SyncSourcesPanel
           entries={[
-            { source: 'zaptec', health: sourcesHealth?.zaptec, runs: zaptecRuns },
+            {
+              source: 'zaptec',
+              health: sourcesHealth?.zaptec,
+              runs: zaptecRuns,
+              credentialsUpdatedAt: savedCredentials?.zaptec.updatedAt,
+            },
             { source: 'elpris', health: sourcesHealth?.elpris, runs: pricesRuns },
             {
               source: 'skoda',
               health: sourcesHealth?.skoda,
               runs: skodaRuns,
+              credentialsUpdatedAt: savedCredentials?.skoda.updatedAt,
               // The car's log and live poll are one source to the admin: its last
               // contact, key expiry and log (+ import) live on its tile. A failed
               // read shows an error there, never "none".
@@ -213,7 +222,12 @@ function ChargingSettingsPage() {
               ),
               actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
             },
-            { source: 'emaldo', health: sourcesHealth?.emaldo, runs: emaldoRuns },
+            {
+              source: 'emaldo',
+              health: sourcesHealth?.emaldo,
+              runs: emaldoRuns,
+              credentialsUpdatedAt: savedCredentials?.emaldo.updatedAt,
+            },
           ]}
           onSync={syncNow.syncSource}
           isPendingFor={syncNow.isPendingFor}
@@ -290,7 +304,10 @@ function ChargingSettingsPage() {
         status={credentialsResult.data}
         suspectFields={
           credentialsSource && isIntegrationSource(credentialsSource)
-            ? sourcesHealth?.[credentialsSource]?.adminDetail?.suspectFields
+            ? currentSuspectFields(
+                sourcesHealth?.[credentialsSource],
+                savedCredentials?.[credentialsSource].updatedAt,
+              )
             : null
         }
         // The grid facility has no sync to run: the monthly catalogue check reads it.

@@ -366,7 +366,10 @@ test('the header keeps room for the key button', async () => {
   expect(heading.closest('[data-credentials-room]')).not.toBeNull()
 })
 
-const skodaSuspect = (over: Partial<Health>) =>
+const skodaSuspect = (
+  over: Partial<Health>,
+  extra: Partial<Parameters<typeof SyncSourceTile>[0]> = {},
+) =>
   tile(
     {
       ...ok,
@@ -380,7 +383,7 @@ const skodaSuspect = (over: Partial<Health>) =>
       } as never,
       ...over,
     },
-    { onOpenCredentials: () => {} },
+    { onOpenCredentials: () => {}, ...extra },
   )
 const suspectText = () => m.charging_credentials_suspect({ fields: 'VIN' })
 
@@ -401,4 +404,22 @@ test('no suspect line when the sync blamed no fields', async () => {
     }),
   )
   expect(screen.getByText(suspectText()).elements()).toHaveLength(0)
+})
+
+// `ok.lastAttemptAt` is 2026-10-04T08:00Z: the failed attempt that blamed the VIN.
+test('credentials saved after the failed attempt hide the suspect line, not the link', async () => {
+  const { screen } = await renderWithProviders(
+    skodaSuspect({}, { credentialsUpdatedAt: new Date('2026-10-04T08:05:00Z') }),
+  )
+  await expect
+    .element(screen.getByRole('button', credLink(m.charging_credentials_update(), 'Škoda')))
+    .toBeVisible()
+  expect(screen.getByText(suspectText()).elements()).toHaveLength(0)
+})
+
+test('an attempt after the save keeps the suspect line', async () => {
+  const { screen } = await renderWithProviders(
+    skodaSuspect({}, { credentialsUpdatedAt: new Date('2026-10-04T07:55:00Z') }),
+  )
+  await expect.element(screen.getByText(suspectText())).toBeVisible()
 })

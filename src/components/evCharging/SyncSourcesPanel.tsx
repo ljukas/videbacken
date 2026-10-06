@@ -10,6 +10,8 @@ export type SourceEntry = {
   source: IntegrationSource
   health: Health | undefined
   runs: RunsQuery | undefined
+  /** When its credentials were last saved (see SyncSourceTile); undefined while unknown. */
+  credentialsUpdatedAt?: Date | null
   /** Source-specific lines and buttons for its tile (see SyncSourceTile). */
   details?: ReactNode
   actions?: ReactNode
@@ -83,6 +85,7 @@ export function SyncSourcesPanel({
                 onOpenHistory={() => onOpenHistory(e.source)}
                 details={e.details}
                 actions={e.actions}
+                credentialsUpdatedAt={e.credentialsUpdatedAt}
                 onOpenCredentials={
                   credentialSource ? () => onOpenCredentials(credentialSource) : undefined
                 }

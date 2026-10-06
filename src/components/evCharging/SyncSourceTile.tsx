@@ -12,7 +12,7 @@ import { integrationHealthTitle, integrationSourceName } from '~/lib/integration
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { CredentialsButton } from './CredentialsButton'
-import { credentialLink } from './credentialLink'
+import { credentialLink, currentSuspectFields } from './credentialLink'
 import { formatAgo } from './format'
 import { syncHealthMessage } from './SyncHealthAlert'
 import { SyncNowButton } from './SyncNowButton'
@@ -95,6 +95,7 @@ export function SyncSourceTile({
   details,
   actions,
   onOpenCredentials,
+  credentialsUpdatedAt,
 }: {
   source: IntegrationSource
   health: Health | undefined
@@ -109,6 +110,8 @@ export function SyncSourceTile({
   actions?: React.ReactNode
   /** Opens this source's credentials dialog; absent (or a source without credentials) → no key button, no link. */
   onOpenCredentials?: () => void
+  /** When this source's credentials were last saved (`credentials.status`): null when none are stored, undefined while unknown. */
+  credentialsUpdatedAt?: Date | null
 }) {
   const name = integrationSourceName(source)
   const message = health ? syncHealthMessage(health) : null
@@ -132,9 +135,11 @@ export function SyncSourceTile({
     link?.kind === 'configure'
       ? m.charging_credentials_configure()
       : m.charging_credentials_update()
+  // Not the fields a save has since replaced (see currentSuspectFields); the link stays.
+  const suspectFields = currentSuspectFields(health, credentialsUpdatedAt)
   const suspect =
-    cred?.kind === 'update' && health?.adminDetail?.suspectFields
-      ? suspectFieldsMessage(cred.source, health.adminDetail.suspectFields)
+    cred?.kind === 'update' && suspectFields.length > 0
+      ? suspectFieldsMessage(cred.source, suspectFields)
       : null
   return (
     <Card className="@container relative h-full min-w-0 px-5 py-5">

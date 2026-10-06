@@ -1,5 +1,5 @@
-import { expect, test } from 'vitest'
-import { credentialLink } from './credentialLink'
+import { describe, expect, test } from 'vitest'
+import { credentialLink, currentSuspectFields } from './credentialLink'
 import type { SourceHealth } from './syncHealth'
 
 const base: SourceHealth = {
@@ -58,4 +58,28 @@ test('elpris never links; ok and plain outages never link', () => {
   expect(credentialLink({ ...base, state: 'ok' })).toBeNull()
   expect(credentialLink({ ...base, state: 'ok', adminDetail: detail(['vin']) })).toBeNull()
   expect(credentialLink({ ...base, code: 'unreachable' })).toBeNull()
+})
+
+describe('currentSuspectFields', () => {
+  const attempt = new Date('2026-10-06T10:00:00Z')
+  const blamed: SourceHealth = { ...base, lastAttemptAt: attempt, adminDetail: detail(['vin']) }
+
+  test('a save after the last attempt hides them: the values they blame are gone', () => {
+    expect(currentSuspectFields(blamed, new Date('2026-10-06T10:00:01Z'))).toEqual([])
+  })
+  test('an attempt at or after the save keeps them', () => {
+    expect(currentSuspectFields(blamed, attempt)).toEqual(['vin'])
+    expect(currentSuspectFields(blamed, new Date('2026-10-06T09:59:59Z'))).toEqual(['vin'])
+  })
+  test('no stored row keeps them', () => {
+    expect(currentSuspectFields(blamed, null)).toEqual(['vin'])
+  })
+  test('an unknown status (not read yet, or failed) keeps them', () => {
+    expect(currentSuspectFields(blamed, undefined)).toEqual(['vin'])
+  })
+  test('none without health or blamed fields', () => {
+    expect(currentSuspectFields(undefined, null)).toEqual([])
+    expect(currentSuspectFields({ ...blamed, adminDetail: null }, null)).toEqual([])
+    expect(currentSuspectFields({ ...blamed, adminDetail: detail(null) }, null)).toEqual([])
+  })
 })

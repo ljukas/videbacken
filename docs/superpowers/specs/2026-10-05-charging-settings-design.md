@@ -415,7 +415,7 @@ its own schema review. The checkpoint runs after 3b.
 - **When the encryption key is missing** (`encryptionKeyConfigured: false`), the inputs are disabled and the dialog
   shows an alert: "Appen saknar CREDENTIALS_ENCRYPTION_KEY – uppgifter kan inte sparas."
 - **When the stored row is unreadable**, an alert says: "De sparade uppgifterna går inte att läsa. Fyll i alla
-  fält igen." `REENTER_ALL_FIELDS` puts an error on each empty field.
+  fält igen, eller ta bort dem." `REENTER_ALL_FIELDS` puts an error on each empty field.
 - **"Spara":**
   1. Call `credentials.set`.
   2. On success, show the toast "Sparat", close the dialog, invalidate `credentials` and `evCharging`, and run
@@ -436,6 +436,10 @@ its own schema review. The checkpoint runs after 3b.
 - **Focus:** closing returns focus to the key button `#credentials-<source>`. The dialog can't be dismissed while a
   save or remove is in flight. With the key missing, focus starts on "Avbryt".
 - **The stored date shows the year:** "Sparad i appen · 5 okt. 2026".
+- **Stale suspect fields are hidden:** they count (tile line, dialog field line) only while the health's
+  `lastAttemptAt` is not older than the source's `credentials.status` `updatedAt` (no stored row or status unknown →
+  they count), so a save whose sync was skipped or read the 60 s cache never blames the new values; the "Uppdatera
+  inloggning" link is unchanged (`currentSuspectFields` in `credentialLink.ts`).
 
 ### Overview links
 `SyncHealthAlert` for `auth_failed` / `credentials_unreadable` / Škoda `forbidden`, and `CredentialExpiryAlert`,

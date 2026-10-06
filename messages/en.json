@@ -183,7 +183,7 @@
   "charging_credentials_origin_unreadable": "Can't be read",
   "charging_credentials_field_suspect": "Didn't work at the last sync",
   "charging_credentials_key_missing": "The app has no CREDENTIALS_ENCRYPTION_KEY – credentials can't be saved.",
-  "charging_credentials_unreadable": "The saved credentials can't be read. Fill in every field again.",
+  "charging_credentials_unreadable": "The saved credentials can't be read. Fill in every field again, or remove them.",
   "charging_credentials_reenter_field": "Fill in this field too – the saved credentials can't be read.",
   "charging_credentials_nothing_to_save": "Fill in at least one field.",
   "charging_credentials_saved": "Saved",
