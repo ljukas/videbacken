@@ -884,5 +884,12 @@
   "energy_flow_loss_title": "Förlust i batteriet",
   "energy_flow_loss_share": "{share} av det som laddades in",
   "energy_flow_winter_hint": "Det mesta är batteriets egen uppvärmning och standby när det är kallt.",
-  "energy_flow_description": "Energiflöden för perioden. Värdena finns också i tabellen under diagrammet."
+  "energy_flow_description": "Energiflöden för perioden. Värdena finns också i tabellen under diagrammet.",
+  "energy_flow_hint": "Pilens bredd visar mängden energi. Färgen visar var den kom ifrån.",
+  "energy_flow_show_values": "Visa värden",
+  "energy_flow_table_toggle": "Visa som tabell",
+  "energy_flow_table_flow": "Flöde",
+  "energy_flow_row_battery_in": "Batteri in",
+  "energy_flow_row_battery_out": "Batteri ut",
+  "energy_flow_row_stored": "Förändrad laddning"
 }

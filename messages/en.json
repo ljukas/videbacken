@@ -884,5 +884,12 @@
   "energy_flow_loss_title": "Battery loss",
   "energy_flow_loss_share": "{share} of what was charged",
   "energy_flow_winter_hint": "Mostly the battery heating itself and standing by in the cold.",
-  "energy_flow_description": "Energy flows for the period. The values are also in the table below the diagram."
+  "energy_flow_description": "Energy flows for the period. The values are also in the table below the diagram.",
+  "energy_flow_hint": "An arrow's width shows the amount of energy. Its colour shows where it came from.",
+  "energy_flow_show_values": "Show values",
+  "energy_flow_table_toggle": "Show as a table",
+  "energy_flow_table_flow": "Flow",
+  "energy_flow_row_battery_in": "Battery in",
+  "energy_flow_row_battery_out": "Battery out",
+  "energy_flow_row_stored": "Change in stored energy"
 }
