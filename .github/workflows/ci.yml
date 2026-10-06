@@ -50,9 +50,16 @@ jobs:
   # Postgres but no browser, the browser project needs Chromium but no
   # database. Run in one job they ran back to back.
   test-node:
-    name: Test (node)
+    name: Test (node ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The node project is the slowest leg, so it is split over two runners.
+    # Vitest shards by test file (an even file count, not even duration);
+    # each leg gets its own Postgres service.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     # Self-contained Postgres service. Mirrors local dev: plain
     # postgres:17-alpine, same videbacken creds as compose.yaml, no SSL.
     services:
@@ -94,7 +101,7 @@ jobs:
       - name: Apply migrations
         run: bun run db:migrate
       - name: Run node tests
-        run: bun run test --project node
+        run: bun run test --project node --shard=${{ matrix.shard }}/2
 
   test-browser:
     name: Test (browser)
