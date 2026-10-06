@@ -1023,7 +1023,11 @@ test('syncStatuses gives an admin each source’s own state and detail', async (
   const all = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
   expect(all.elpris).toMatchObject({ source: 'elpris', state: 'not_configured' })
   expect(all.zaptec).toMatchObject({ source: 'zaptec', state: 'never_synced' })
-  expect(all.skoda.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
+  expect(all.skoda.adminDetail).toEqual({
+    lastErrorMessage: null,
+    credentialExpiry: null,
+    suspectFields: null,
+  })
 })
 
 test('syncStatuses never shows a member a stored error message; an admin sees it', async () => {

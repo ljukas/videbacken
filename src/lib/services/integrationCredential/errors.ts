@@ -1,18 +1,21 @@
 export type IntegrationCredentialDomainErrorCode =
-  // An unknown field name for the source, or a value that fails its field's validation.
+  // Unknown field names for the source, or values that fail their field's validation; `fields` lists them all.
   | 'INVALID_FIELD'
   // Every provided field was blank: nothing would change.
   | 'NOTHING_TO_SAVE'
   // CREDENTIALS_ENCRYPTION_KEY is unset or malformed, so nothing can be encrypted.
   | 'ENCRYPTION_KEY_MISSING'
+  // The stored row can't be read and the save left fields blank (`fields`): they would
+  // silently fall back to env, so every field of the source must be entered again.
+  | 'REENTER_ALL_FIELDS'
 
 export class IntegrationCredentialDomainError extends Error {
   constructor(
     readonly code: IntegrationCredentialDomainErrorCode,
-    readonly field?: string,
+    readonly fields: readonly string[] = [],
   ) {
-    // The field name only — never its value.
-    super(code === 'INVALID_FIELD' && field ? `${code} (${field})` : code)
+    // Field names only — never a value.
+    super(fields.length > 0 ? `${code} (${fields.join(', ')})` : code)
     this.name = 'IntegrationCredentialDomainError'
   }
 }

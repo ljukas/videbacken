@@ -148,6 +148,7 @@ export function createEmaldoClient(deps: {
     if (!decoded.ok) {
       throw new EmaldoError('unexpected_response', op, undefined, {
         message: `Emaldo ${op} result could not be decoded; the app id/secret may have rotated`,
+        suspectFields: ['appId', 'appSecret'],
       })
     }
     return { expired: false, result: decoded.value }
@@ -338,6 +339,7 @@ function refused(op: EmaldoOp, status: number): EmaldoError {
   if (op === 'login') {
     return new EmaldoError('auth_failed', op, undefined, {
       message: `Emaldo login was refused (Status ${status}): check the stored or env Emaldo credentials, or the app id/secret may have rotated`,
+      suspectFields: ['user', 'password'],
     })
   }
   return new EmaldoError('unexpected_response', op, undefined, {

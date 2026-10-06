@@ -1,3 +1,4 @@
+import type { CredentialField } from '~/lib/integrationCredentials'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
 import { IntegrationError } from '../integrationError'
 
@@ -20,12 +21,17 @@ export class ZaptecError extends IntegrationError {
     readonly code: IntegrationErrorCode,
     readonly op: ZaptecOp,
     readonly status?: number,
-    options?: { cause?: unknown; message?: string },
+    options?: {
+      cause?: unknown
+      message?: string
+      /** The Zaptec credential fields this answer points at (names only). */
+      suspectFields?: readonly CredentialField<'zaptec'>[]
+    },
   ) {
     super(
       options?.message ??
         `Zaptec ${op} failed: ${code}${status === undefined ? '' : ` (HTTP ${status})`}`,
-      options?.cause === undefined ? undefined : { cause: options.cause },
+      { cause: options?.cause, suspectFields: options?.suspectFields },
     )
   }
 }

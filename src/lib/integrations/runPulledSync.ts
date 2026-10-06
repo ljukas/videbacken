@@ -148,6 +148,7 @@ export async function runPulledSync<R extends RunBase>(spec: PulledSyncSpec<R>):
         message: failed ? error.message : internalErrorMessage(error),
         stats: spec.toRunStats(run),
         syncedUntil: run.syncedUntil,
+        suspectFields: failed ? (error.suspectFields ?? null) : null,
       }
     }
 

@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
+  type AnyPgColumn,
   check,
   index,
   integer,
@@ -10,6 +11,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core'
+import { CREDENTIAL_FIELD_NAMES } from '../../integrationCredentials'
 import {
   CREDENTIAL_REMINDER_DAYS,
   INTEGRATION_ERROR_CODES,
@@ -18,6 +20,10 @@ import {
   SYNC_TRIGGERS,
 } from '../../integrationHealth'
 import { sqlList } from '../sqlList'
+
+// Non-empty and drawn from the credential vocabulary (names only, never a value — ADR-0026).
+const suspectFieldsCheck = (column: AnyPgColumn) =>
+  sql`${column} IS NULL OR (cardinality(${column}) > 0 AND ${column} <@ ARRAY[${sqlList(CREDENTIAL_FIELD_NAMES)}]::text[])`
 
 // Current health snapshot + sync lease, one row per integration source. Updated
 // in place by every sync run (never appended); `integration_sync_run` below is
@@ -58,6 +64,11 @@ export const integrationSync = pgTable(
     // The smallest reminder threshold already emailed for this expiry; reset to
     // null whenever credential_expires_at changes (a renewed key).
     credentialReminderDays: smallint('credential_reminder_days'),
+    // The credential fields the current failure points at (Škoda 404 → vin), set by the
+    // client from the vendor's answer; null when it points at none. Read only while
+    // `error_code` is set: no CHECK ties the two, because older code (an instant
+    // rollback) clears `error_code` on success and leaves this column.
+    suspectFields: text('suspect_fields').array(),
     // The in-flight run's progress ("12 of 30 days"), both null until it
     // reports. Overwritten in place under the run's lease token, cleared when a
     // lease is acquired and when the outcome is recorded. Read only while the
@@ -128,6 +139,7 @@ export const integrationSync = pgTable(
       'integration_sync_progress_range_check',
       sql`${table.progressTotal} IS NULL OR (${table.progressTotal} > 0 AND ${table.progressDone} BETWEEN 0 AND ${table.progressTotal})`,
     ),
+    check('integration_sync_suspect_fields_check', suspectFieldsCheck(table.suspectFields)),
   ],
 ).enableRLS()
 
@@ -145,6 +157,8 @@ export const integrationSyncRun = pgTable(
     outcome: text('outcome').notNull(),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
+    // The run's suspect credential fields (see integration_sync.suspect_fields).
+    suspectFields: text('suspect_fields').array(),
     since: timestamp('since', { withTimezone: true }),
     pages: integer('pages').notNull().default(0),
     sessionsSeen: integer('sessions_seen').notNull().default(0),
@@ -178,6 +192,11 @@ export const integrationSyncRun = pgTable(
     check(
       'integration_sync_run_outcome_error_code_check',
       sql`(${table.outcome} = 'ok') = (${table.errorCode} IS NULL)`,
+    ),
+    check('integration_sync_run_suspect_fields_check', suspectFieldsCheck(table.suspectFields)),
+    check(
+      'integration_sync_run_suspect_fields_outcome_check',
+      sql`${table.suspectFields} IS NULL OR ${table.outcome} <> 'ok'`,
     ),
   ],
 ).enableRLS()

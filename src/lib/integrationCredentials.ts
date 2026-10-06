@@ -14,7 +14,22 @@ export const CREDENTIAL_FIELDS = {
   gridTariff: ['facilityId'],
 } as const satisfies Record<CredentialSource, readonly string[]>
 
+/**
+ * Every field name across sources, deduplicated, in vocabulary order: the allowed values of the sync tables'
+ * `suspect_fields` (names only). Changing it changes the rendered DB CHECK text.
+ * Adding a name: `bun run db:generate`. Renaming or removing one: the re-added CHECK rejects rows still
+ * holding the old name, so hand-add to the generated migration, before the new CHECKs, on both
+ * `integration_sync` and `integration_sync_run`: `UPDATE <t> SET suspect_fields = array_replace(suspect_fields,
+ * 'old', 'new')` (removal: `array_remove`, then `NULLIF(…, '{}')`). A rename already needs a data migration
+ * for the stored credential JSON keys and `fields_set` (ADR-0026); this is one more line in it.
+ */
+export const CREDENTIAL_FIELD_NAMES: readonly string[] = [
+  ...new Set(Object.values(CREDENTIAL_FIELDS).flat()),
+]
+
 export type CredentialField<S extends CredentialSource> = (typeof CREDENTIAL_FIELDS)[S][number]
+/** Every credential field name, across sources. */
+export type CredentialFieldName = CredentialField<CredentialSource>
 export type CredentialValues<S extends CredentialSource> = Partial<
   Record<CredentialField<S>, string>
 >
