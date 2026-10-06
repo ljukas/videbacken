@@ -123,6 +123,7 @@ test('an edit deep link waits for the list, then opens', async () => {
   expect(router.state.location.search).toMatchObject({ dialog: 'edit', userId: 'u2' })
   qc.setQueryData(listKey, [row()])
   await expect.element(screen.getByRole('dialog')).toBeVisible()
+  await expect.element(screen.getByLabelText(m.user_field_phone())).toBeVisible()
 })
 
 test('an edit deep link with a failed list shows the alert, not an error page', async () => {
