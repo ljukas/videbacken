@@ -37,12 +37,16 @@ export const SHELLY_NAME_MAX = 80
 // The device's name from the Shelly app (`${config.sys.device.name}`). An
 // unnamed device sends `null`, an empty value, or — when Shelly can't evaluate
 // the token — the token itself, copied verbatim; all of those, and an
-// over-long value, mean "no name". Never a reason to reject the reading.
+// over-long value, mean "no name". So does any C0 control character or DEL
+// (Postgres text rejects NUL; we drop such a name rather than strip it). Never
+// a reason to reject the reading.
 function nameParam(raw: string | null): string | null {
   const trimmed = raw?.trim()
   if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed.startsWith('${')) {
     return null
   }
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting control characters is the point
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null
   return trimmed.length > SHELLY_NAME_MAX ? null : trimmed
 }
 

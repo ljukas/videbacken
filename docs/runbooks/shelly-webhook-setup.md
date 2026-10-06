@@ -69,7 +69,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 |---|---|
 | `204` | Stored. |
 | `401` | Missing/wrong `token`. |
-| `400` | Missing/malformed `mac`, or a value out of range (temp -60..100, humidity 0..100, battery 0..100). |
+| `400` | Missing/malformed `mac`, or a value out of range (temp -60..100, humidity 0..100, battery 0..100). Never because of `name`. |
 
 - The battery placeholder path (`${status["devicepower:0"].battery.percent}`) is
   best-effort — if battery never populates, open the device's live status JSON
@@ -79,3 +79,5 @@ curl -s -o /dev/null -w '%{http_code}\n' \
   If readings are sparse, lower the change thresholds so it reports more often.
 - `t`/`h`/`batt` are each optional — a bare wake (mac only) still records a row
   (with nulls), and an empty value (e.g. `t=`) is treated as absent, not `0`.
+- `name` is optional and never causes a `400` or a lost reading: absent, blank, `null`, `undefined`, an
+  unevaluated `${…}`, a control character, or more than 80 characters all mean "no name".

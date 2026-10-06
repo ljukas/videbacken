@@ -158,6 +158,8 @@ describe('parseShellyQuery', () => {
     ['null (an unnamed device)', 'mac=AABBCCDDEEFF&t=20&name=null'],
     ['undefined', 'mac=AABBCCDDEEFF&t=20&name=undefined'],
     ['the token copied verbatim', 'mac=AABBCCDDEEFF&t=20&name=%24%7Bconfig.sys.device.name%7D'],
+    ['a control character', 'mac=AABBCCDDEEFF&t=20&name=a%00b'],
+    ['a newline', 'mac=AABBCCDDEEFF&t=20&name=a%0Ab'],
     ['81 characters', `mac=AABBCCDDEEFF&t=20&name=${'a'.repeat(81)}`],
   ])('a %s name is no name, and the reading still parses', (_case, query) => {
     const parsed = parseShellyQuery(q(query))
@@ -261,5 +263,15 @@ describe('handleShellyWebhook', () => {
     expect(res2.status).toBe(204)
     expect(await db.select().from(sensorDevice)).toHaveLength(1)
     expect(await db.select().from(sensorReading)).toHaveLength(2)
+  })
+
+  test('a name with a NUL byte still stores its reading, with no name', async () => {
+    const res = await handleShellyWebhook(
+      new Request(shellyUrl(`token=${TOKEN}&mac=AABBCCDDEEFF&t=20&name=K%00b`)),
+    )
+    expect(res.status).toBe(204)
+    const [device] = await db.select().from(sensorDevice)
+    expect(device.shellyName).toBeNull()
+    expect(await db.select().from(sensorReading)).toHaveLength(1)
   })
 })
