@@ -24,7 +24,14 @@ const PAGES: Record<string, string> = {
   '/users': 'users',
   '/account/profile': 'profile',
 }
-const WATCHED = ['libphonenumber-js', 'country-flag-icons', '@tanstack/form-core', 'boneyard-js']
+const WATCHED = [
+  'libphonenumber-js',
+  'country-flag-icons',
+  '@tanstack/form-core',
+  'boneyard-js',
+  'maplibre-gl',
+  '@vis.gl/react-maplibre',
+]
 
 export function staticClosure(deps: Map<string, string[]>, root: string): Set<string> {
   const seen = new Set<string>()

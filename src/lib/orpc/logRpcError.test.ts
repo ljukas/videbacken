@@ -37,6 +37,24 @@ describe('logRpcError', () => {
     expect(log.error).not.toHaveBeenCalled()
   })
 
+  test('logs a defined 5xx typed error at info, never error', () => {
+    const log = spyLogger()
+    logRpcError(log, new ORPCError('GEOCODER_UNAVAILABLE', { status: 503, defined: true }))
+    expect(log.info).toHaveBeenCalledWith('rpc rejected', {
+      code: 'GEOCODER_UNAVAILABLE',
+      status: 503,
+      defined: true,
+    })
+    expect(log.error).not.toHaveBeenCalled()
+  })
+
+  test('still logs an undefined 5xx ORPCError at error', () => {
+    const log = spyLogger()
+    logRpcError(log, new ORPCError('SERVICE_UNAVAILABLE', { status: 503 }))
+    expect(log.error).toHaveBeenCalled()
+    expect(log.info).not.toHaveBeenCalled()
+  })
+
   test('logs an input-validation BAD_REQUEST at warn with issue paths, not the input', () => {
     const log = spyLogger()
     const error = new ORPCError('BAD_REQUEST', {

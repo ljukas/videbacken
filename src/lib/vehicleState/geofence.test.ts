@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { atHome, distanceMeters, HOME_RADIUS_M, parseHomePoint } from './geofence'
+import { atHome, distanceMeters, formatHomePoint, HOME_RADIUS_M, parseHomePoint } from './geofence'
 
 const HOME = { latitude: 59.3293, longitude: 18.0686 } // central Stockholm, not a real home
 
@@ -105,4 +105,26 @@ test('unknown when there is no position, no home point, or an unknown parking st
   expect(atHome({ state: 'PARKED', position: HOME }, null)).toBeNull()
   expect(atHome({ state: 'SOMETHING_NEW', position: HOME }, HOME)).toBeNull()
   expect(atHome({ state: null, position: HOME }, HOME)).toBeNull()
+})
+
+test('formatHomePoint rounds to five decimals and round-trips through parseHomePoint', () => {
+  expect(formatHomePoint({ latitude: 57.123456789, longitude: 11.987654321 })).toBe(
+    '57.12346,11.98765',
+  )
+  expect(formatHomePoint({ latitude: -0.000001, longitude: 180 })).toBe('-0.00000,180.00000')
+  expect(parseHomePoint(formatHomePoint(HOME))).toEqual(HOME)
+})
+
+test.each([
+  [90, 180],
+  [-90, -180],
+  [89.999999, 179.999999],
+  [57.123456789, 11.987654321],
+  [0, 0],
+  [-33.86882, 151.20929],
+])('formatHomePoint(%s, %s) parses back to the five-decimal point', (latitude, longitude) => {
+  expect(parseHomePoint(formatHomePoint({ latitude, longitude }))).toEqual({
+    latitude: Number(latitude.toFixed(5)),
+    longitude: Number(longitude.toFixed(5)),
+  })
 })

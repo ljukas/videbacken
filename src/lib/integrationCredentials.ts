@@ -48,9 +48,19 @@ export const CREDENTIAL_ENV_VARS = {
   gridTariff: { facilityId: 'GRID_FACILITY_ID' },
 } as const satisfies { [S in CredentialSource]: Record<CredentialField<S>, string> }
 
-/** secret → password input; text → plain input (still never pre-filled). Only the VIN is text. */
-export const credentialFieldKind = (source: CredentialSource, field: string): 'secret' | 'text' =>
-  source === 'skoda' && field === 'vin' ? 'text' : 'secret'
+/**
+ * secret → password input; text → plain input; position → the map picker (with a plain "lat,lon"
+ * input). Values are never pre-filled, except the position, which admins may read back (ADR-0026).
+ */
+export const credentialFieldKind = (
+  source: CredentialSource,
+  field: string,
+): 'secret' | 'text' | 'position' =>
+  source === 'skoda' && field === 'vin'
+    ? 'text'
+    : source === 'skoda' && field === 'homeCoordinates'
+      ? 'position'
+      : 'secret'
 
 /** Optional fields never block a source: Škoda's home position unset just turns the geofence off. */
 export const isOptionalCredentialField = (source: CredentialSource, field: string): boolean =>
