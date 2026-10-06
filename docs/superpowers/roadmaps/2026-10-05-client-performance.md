@@ -398,6 +398,10 @@ unchanged.
 - The x tick labels sit about 3.5 px lower than recharts' (the shared axis convention, as 5b noted).
 - The hover card sits above the dots, not beside the cursor.
 - The plot starts about 2 px further right, so the snap point can differ by one reading from `main`.
+- An x label that would run past the svg shifts inward just enough, and its tick mark stays on its time (recharts'
+  `preserveEnd` shifted the last label the same way). This fixes the end-label clipping the live check found (the
+  "1 okt." label cut by 2 to 3 px on all and on 1 y at 1280 px). The first label shifts the same way, and the
+  labels' spacing is judged after the shift, so a shifted label never crowds its neighbour.
 
 **Live check** (local data, 1280, 768 and 375 px, plus 320 px for 24 h, 1 w and 1 y, side by side with `main`):
 the lines, colours, legend, grid, axis lines, tick marks and y labels match, and the card rows and values match. Time
@@ -405,22 +409,20 @@ ticks are round and never crowd at 320 px. Dots, Tab and the arrow keys, Home an
 card open and the hidden-devices state behave as planned. A lifted finger keeps the card and a tap elsewhere closes it.
 
 **Follow-ups found in review and the live check (not in 5c):**
-- The last x label can be clipped by 2 to 3 px at the right edge. With `all` (and 1 y at 1280 px) the "1 okt." tick
-  sits close to the end of the domain, and the label's period is cut off. Reserve a right margin or shift the last
-  label.
 - A touch drag stops scrubbing after the first move in Chromium's touch emulation: the browser sends `pointercancel`.
-  It does the same on the `/charging` bar chart (5a), so it comes from the shared overlay (`touch-action: pan-y` on
-  the SVG `rect`), or from the emulation. Check on a real phone, then fix both charts together.
+  It does the same on the `/charging` bar chart (5a), so it comes from the shared overlay, or from the emulation.
+  The reviewer's hypothesis: `touch-action: pan-y` is set only on the SVG `<rect>`, and browsers don't reliably
+  honour `touch-action` on SVG child elements, so the gesture falls back to `auto` and Chromium sends
+  `pointercancel` after the first move. Moving `pan-y` to the HTML group div or the `<svg>` root in both charts may
+  fix it. If so, 5a's horizontal scrub never worked on real phones. Check on a real phone; the fix is a small
+  cross-chart PR.
+- `BarChart`'s mouse leave doesn't clear its keyboard announcement; `ClimateChart`'s does. Match them.
 - Cover the `makeTimeAxis` formats for 3 m, 6 m and all, and locale handling.
 - Pin the spacing tests: a tick-count assertion for the month-end spacing, a length floor for the spring-forward
   case, and an assertion beyond `< 2` for the 1-day 1 y case.
-- Tidy the tests: the all-hidden positive control remounts the chart (wrap it like the refetch tests), two hover tests
-  overlap on `toHaveLength(2)`, a `readingTimes` fixture with shared rows, a test that modifier keys pass through, and
+- Tidy the tests: two hover tests overlap on `toHaveLength(2)`, a `readingTimes` fixture with shared rows, a test that modifier keys pass through, and
   the y-tick comment that says "two decimals".
-- Stale recharts mentions: comments in the `ClimateChart` tests and `chartData.ts`, and `docs/bugfix-workflow.md:36`.
-- `SEL.gridLine` keeps a dead `line[data-grid]` alternative, and `moveAt` is an alias of `moveOverPlot`.
-- `cursor.current` keeps a stale time after the stale-card close. The re-find with `bisectCenter` can skip one reading
-  when the cursor's time dropped out of the data (rare).
+- Stale recharts mentions: comments in the `ClimateChart` tests and `docs/bugfix-workflow.md:36`.
 - A poll that changes the announced time's rows re-reads the live region (the bar chart does the same).
 - The same-time early return in `onPointer` skips `setAnnounced(null)` (harmless, the same content).
 
