@@ -3,6 +3,7 @@ import { count, max, min, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { houseEnergyReading } from '~/lib/db/schema'
 import { addPeriodSums, type PeriodSums } from '~/lib/houseEnergy/figures'
+import { monthKey } from '~/lib/houseEnergy/period'
 import { getOverview as getChargingOverview } from '~/lib/services/evCharging'
 import {
   stockholmDayBounds,
@@ -21,8 +22,11 @@ export type EnergyOverview = {
   availableYears: number[]
   /** Stockholm day of the first reading, or null with none. */
   firstReadingDay: string | null
-  /** The current month / current year / all time, whatever year the chart shows (like /charging). */
-  tiles: { thisMonth: PeriodSums | null; thisYear: PeriodSums | null; allTime: PeriodSums | null }
+  /** 'YYYY-MM' of every month with readings, every year, oldest first (the picker and the stepper). */
+  monthsWithReadings: string[]
+  /** The chart year's total (expected buckets from the year's bounds), or null without readings that year. */
+  yearTotal: PeriodSums | null
+  allTime: PeriodSums | null
   /** Jan → Dec of `year`; null = no reading that month. */
   months: (PeriodSums | null)[]
 }
@@ -155,7 +159,7 @@ async function monthRows(): Promise<MonthRow[]> {
 
 /**
  * The house-energy pages' read model (ADR-0024): monthly sums of the chart's
- * year plus the current month, current year and all time. Expected buckets
+ * year, that year's total, all time, and the list of months with readings. Expected buckets
  * count from the first reading's day, and the newest reading's month ends at
  * that reading (the sync runs hourly; the last hour isn't a gap). Car kWh is
  * the /charging overview's own figure for every vehicle, so the two pages
@@ -179,7 +183,9 @@ export async function getEnergyOverview(
       year: current.year,
       availableYears: [current.year],
       firstReadingDay: null,
-      tiles: { thisMonth: null, thisYear: null, allTime: null },
+      monthsWithReadings: [],
+      yearTotal: null,
+      allTime: null,
       months: Array(12).fill(null),
     }
   }
@@ -205,7 +211,7 @@ export async function getEnergyOverview(
     return { ...row.sums, carKwh: 0, expectedBuckets: Math.max(expected, row.sums.buckets) }
   }
   const newestEndMs = newest.lastBucket.getTime() + BUCKET_MS
-  // A tile's expected buckets come from its period bounds, so a month without
+  // A total's expected buckets come from its period bounds, so a month without
   // readings inside it counts as missing (the chart's per-month rule can't see it).
   const total = (
     selected: MonthRow[],
@@ -227,30 +233,23 @@ export async function getEnergyOverview(
     months[row.month - 1] = withCar(withExpected(row), car.months[row.month - 1]?.kwh ?? 0)
   }
 
+  const yearCarKwh = car.months.reduce((sum, mo) => sum + mo.kwh, 0)
   return {
     year,
     availableYears,
     firstReadingDay,
-    tiles: {
-      thisMonth: withCar(
-        total(
-          rows.filter((row) => row.year === current.year && row.month === current.month),
-          stockholmMonthBounds(current.year, current.month),
-        ),
-        car.tiles.thisMonth.kwh,
+    monthsWithReadings: rows.map((row) => monthKey(row.year, row.month)),
+    yearTotal: withCar(
+      total(
+        rows.filter((row) => row.year === year),
+        stockholmYearBounds(year),
       ),
-      thisYear: withCar(
-        total(
-          rows.filter((row) => row.year === current.year),
-          stockholmYearBounds(current.year),
-        ),
-        car.tiles.thisYear.kwh,
-      ),
-      allTime: withCar(
-        total(rows, { startMs: coverageStartMs, endMs: newestEndMs }),
-        car.tiles.allTime.kwh,
-      ),
-    },
+      yearCarKwh,
+    ),
+    allTime: withCar(
+      total(rows, { startMs: coverageStartMs, endMs: newestEndMs }),
+      car.tiles.allTime.kwh,
+    ),
     months,
   }
 }

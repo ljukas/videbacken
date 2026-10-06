@@ -95,20 +95,23 @@ test('privacy: the output holds period sums only, never buckets', async () => {
   await signIn('user')
   const o = await call(energyRouter.overview, { year: 2026 }, { context: context() })
   expect(Object.keys(o).sort()).toEqual([
+    'allTime',
     'availableYears',
     'firstReadingDay',
     'months',
-    'tiles',
+    'monthsWithReadings',
     'year',
+    'yearTotal',
   ])
   // The only arrays are the 12 months and the years; every period is a flat object of numbers.
   const flat = (p: unknown) =>
     p === null || Object.values(p as object).every((v) => v === null || typeof v === 'number')
   // Real sums are present, so the flatness check is not vacuous.
   expect(o.months.some((p) => p !== null)).toBe(true)
-  expect(o.tiles.allTime).not.toBeNull()
+  expect(o.allTime).not.toBeNull()
   expect(o.months.every(flat)).toBe(true)
-  expect(Object.values(o.tiles).every(flat)).toBe(true)
+  expect(flat(o.yearTotal)).toBe(true)
+  expect(flat(o.allTime)).toBe(true)
 })
 
 test('without a year it opens on the current Stockholm year', async () => {
