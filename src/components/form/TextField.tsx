@@ -10,10 +10,22 @@ import {
 } from '~/components/ui/input-group'
 import { useFieldContext } from '~/hooks/form'
 
-type Props = {
-  label: string
-  /** Hint under the input, announced with it; may hold several lines (e.g. a status and a hint). */
+type LabelProps =
+  | { label: string; labelledBy?: undefined }
+  | {
+      label?: undefined
+      /**
+       * Id of a label rendered outside the field (e.g. a row header that also holds a badge): the
+       * field renders no label of its own, so the text appears once, and the input is named by it.
+       */
+      labelledBy: string
+    }
+
+type BaseProps = {
+  /** Hint announced with the input; may hold several lines (e.g. a status and a hint). */
   description?: ReactNode
+  /** Where the hint sits: under the input (default) or between the label and the input. */
+  descriptionPlacement?: 'above' | 'below'
   type?: ComponentProps<typeof Input>['type']
   /** Soft-keyboard hint, e.g. `decimal` for a comma-friendly number field. */
   inputMode?: ComponentProps<typeof Input>['inputMode']
@@ -51,9 +63,16 @@ type Props = {
   inputData?: Record<`data-${string}`, string>
 }
 
+type Props = BaseProps & LabelProps
+
+/** TextField's props without `K`, keeping the label-or-labelledBy choice (a plain `Omit` would merge it away). */
+export type TextFieldPropsWithout<K extends keyof BaseProps> = Omit<BaseProps, K> & LabelProps
+
 export function TextField({
   label,
+  labelledBy,
   description,
+  descriptionPlacement = 'below',
   type = 'text',
   inputMode,
   autoComplete,
@@ -94,6 +113,7 @@ export function TextField({
   const sharedInputProps = {
     ...inputData,
     id,
+    'aria-labelledby': labelledBy,
     'aria-describedby': describedBy,
     name: id,
     type,
@@ -109,11 +129,25 @@ export function TextField({
     disabled: disabled || isSubmitting,
   }
 
+  // Above the input it is no longer the label's follower: drop FieldDescription's
+  // pull-up (`nth-last-2:-mt-1`), which would otherwise come and go with the error.
+  const descriptionNode = description ? (
+    <FieldDescription
+      id={descriptionId}
+      className={descriptionPlacement === 'above' ? 'nth-last-2:mt-0' : undefined}
+    >
+      {description}
+    </FieldDescription>
+  ) : null
+
   return (
     <Field data-invalid={isInvalid} orientation={orientation} className={fieldClassName}>
-      <FieldLabel htmlFor={id} className={srOnlyLabel ? 'sr-only' : undefined}>
-        {label}
-      </FieldLabel>
+      {label !== undefined ? (
+        <FieldLabel htmlFor={id} className={srOnlyLabel ? 'sr-only' : undefined}>
+          {label}
+        </FieldLabel>
+      ) : null}
+      {descriptionPlacement === 'above' ? descriptionNode : null}
       {suffix ? (
         <InputGroup>
           <InputGroupInput className={inputClassName} {...sharedInputProps} />
@@ -124,7 +158,7 @@ export function TextField({
       ) : (
         <Input size={inputSize} className={inputClassName} {...sharedInputProps} />
       )}
-      {description ? <FieldDescription id={descriptionId}>{description}</FieldDescription> : null}
+      {descriptionPlacement === 'below' ? descriptionNode : null}
       <FieldError id={errorId} errors={field.state.meta.errors} />
     </Field>
   )

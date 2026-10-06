@@ -35,9 +35,26 @@ export type CredentialValues<S extends CredentialSource> = Partial<
 >
 export type CredentialOrigin = 'stored' | 'env' | 'missing'
 
+/** The env var each field falls back to (ADR-0026). Names only — client-safe; values are read server-side. */
+export const CREDENTIAL_ENV_VARS = {
+  zaptec: { username: 'ZAPTEC_USERNAME', password: 'ZAPTEC_PASSWORD' },
+  skoda: { apiKey: 'SKODA_API_KEY', vin: 'SKODA_VIN', homeCoordinates: 'SKODA_HOME_COORDINATES' },
+  emaldo: {
+    user: 'EMALDO_USER',
+    password: 'EMALDO_PASSWORD',
+    appId: 'EMALDO_APP_ID',
+    appSecret: 'EMALDO_APP_SECRET',
+  },
+  gridTariff: { facilityId: 'GRID_FACILITY_ID' },
+} as const satisfies { [S in CredentialSource]: Record<CredentialField<S>, string> }
+
 /** secret → password input; text → plain input (still never pre-filled). Only the VIN is text. */
 export const credentialFieldKind = (source: CredentialSource, field: string): 'secret' | 'text' =>
   source === 'skoda' && field === 'vin' ? 'text' : 'secret'
+
+/** Optional fields never block a source: Škoda's home position unset just turns the geofence off. */
+export const isOptionalCredentialField = (source: CredentialSource, field: string): boolean =>
+  source === 'skoda' && field === 'homeCoordinates'
 
 export const isCredentialField = <S extends CredentialSource>(
   source: S,

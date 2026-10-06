@@ -32,7 +32,7 @@ import { IntegrationCredentialDomainError } from './errors'
 // decrypted object's keys.
 
 export type CredentialSourceStatus<S extends CredentialSource> = {
-  fields: Record<CredentialField<S>, { origin: CredentialOrigin }>
+  fields: Record<CredentialField<S>, { origin: CredentialOrigin; envSet: boolean }>
   updatedAt: Date | null
   unreadable: boolean
 }
@@ -115,12 +115,9 @@ export async function status(): Promise<CredentialStatus> {
     const stored = new Set(row?.fieldsSet ?? [])
     const fields = Object.fromEntries(
       fieldsOf(source).map((field) => {
-        const origin: CredentialOrigin = stored.has(field)
-          ? 'stored'
-          : envCredential(source, field) !== undefined
-            ? 'env'
-            : 'missing'
-        return [field, { origin }]
+        const envSet = envCredential(source, field) !== undefined
+        const origin: CredentialOrigin = stored.has(field) ? 'stored' : envSet ? 'env' : 'missing'
+        return [field, { origin, envSet }]
       }),
     ) as CredentialSourceStatus<S>['fields']
     return { fields, updatedAt: row?.updatedAt ?? null, unreadable }

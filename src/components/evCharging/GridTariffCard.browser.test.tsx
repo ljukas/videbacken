@@ -15,6 +15,13 @@ test.each([
   await expect.element(screen.getByText(m.charging_grid_cadence())).toBeVisible()
 })
 
+test('an env facility ID names its variable', async () => {
+  const { screen } = await renderWithProviders(
+    <GridTariffCard facility={{ origin: 'env' }} unreadable={false} onOpenCredentials={() => {}} />,
+  )
+  await expect.element(screen.getByText('GRID_FACILITY_ID')).toBeVisible()
+})
+
 test('an unreadable row says so', async () => {
   const { screen } = await renderWithProviders(
     <GridTariffCard facility={{ origin: 'stored' }} unreadable onOpenCredentials={() => {}} />,
