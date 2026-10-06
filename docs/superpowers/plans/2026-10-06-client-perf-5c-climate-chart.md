@@ -48,7 +48,7 @@ recharts' equal divisions, and arrow keys that step through each reading over fi
   - axis lines and tick marks #666 (6 px ticks on both axes, unlike BarChart's hidden ones), 12 px labels in
     `var(--muted-foreground)`, horizontal grid lines only (`var(--border)` at 0.5 opacity);
   - 260 px high in total (inline style), the legend inside that height, under the plot, listing **every** device,
-    hidden ones included, in roster order;
+    hidden ones included, sorted by display name (recharts' legend sorts by value);
   - hover: the pointer snaps to a reading time, a vertical cursor line (`var(--border)`), the nearest-reading card
     (`nearestReadings` within `CADENCE_SEC`): a header from `formatTick`, one row per visible device with its own
     time when it differs from the header, the value `toFixed(1)` + unit; the card's look (`text-xs`, border, shadow)
