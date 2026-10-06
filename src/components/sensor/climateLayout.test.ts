@@ -87,6 +87,26 @@ describe('pickTimeTicks', () => {
     spaced({ ticks: pickTimeTicks({ domain, x, axis, measure }), x, axis })
   })
 
+  test('a 1y chart over 3 weeks of data falls back to round days, not a blank axis', () => {
+    const r = ticksFor('1y', 21, 900)
+    expect(r.ticks.length).toBeGreaterThanOrEqual(2)
+    for (const t of r.ticks) {
+      expect([new Date(t).getHours(), new Date(t).getMinutes()]).toEqual([0, 0])
+    }
+    spaced(r)
+  })
+
+  test('a 1y chart over a single day keeps the original result, without throwing', () => {
+    const r = ticksFor('1y', 1, 900)
+    expect(r.ticks.length).toBeLessThan(2)
+  })
+
+  test('a span with month starts keeps month ticks, the fallbacks unused', () => {
+    const r = ticksFor('1y', 365, 900)
+    expect(r.ticks.length).toBe(12)
+    for (const t of r.ticks) expect(new Date(t).getDate()).toBe(1)
+  })
+
   test('the domain end is included when it falls on a tick', () => {
     const start = new Date('2026-08-02T00:00:00').getTime()
     const end = new Date('2026-08-03T00:00:00').getTime()

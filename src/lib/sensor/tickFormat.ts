@@ -28,9 +28,14 @@ export function makeTickFormatter(range: SeriesRange, locale: string): (t: numbe
   return (t: number) => fmt.format(new Date(t))
 }
 
-/** A time axis: its candidate tick intervals, finest first, and its tick label. */
+/**
+ * A time axis: its candidate tick intervals, finest first, its tick label, and
+ * the finer `fallbacks` (finest first) for data shorter than its range, used
+ * only when `intervals` leave the axis with fewer than two ticks.
+ */
 export type TimeAxis = {
   intervals: readonly TimeInterval[]
+  fallbacks: readonly TimeInterval[]
   format: (t: number) => string
 }
 
@@ -58,6 +63,18 @@ const INTERVALS: Record<SeriesRange, readonly TimeInterval[]> = {
   ],
 }
 
+// Finer intervals for a sensor whose data is shorter than the range (a new
+// sensor on 1 y): never a blank axis. Coarser ranges list more of them.
+const FALLBACKS: Record<SeriesRange, readonly TimeInterval[]> = {
+  '24h': [timeHour],
+  '1w': [],
+  '1m': [timeDay, every(timeDay, 2)],
+  '3m': [timeDay, every(timeDay, 2), timeMonday],
+  '6m': [timeDay, every(timeDay, 2), timeMonday],
+  '1y': [timeDay, every(timeDay, 2), timeMonday, halfMonth],
+  all: [timeDay, every(timeDay, 2), timeMonday, halfMonth],
+}
+
 // The axis label matches its ticks: the time of day for hours, the weekday for
 // midnights, the date beyond a week. (The card's header keeps makeTickFormatter.)
 export function makeTimeAxis(range: SeriesRange, locale: string): TimeAxis {
@@ -68,5 +85,9 @@ export function makeTimeAxis(range: SeriesRange, locale: string): TimeAxis {
         ? { weekday: 'short' }
         : { month: 'short', day: 'numeric' }
   const fmt = new Intl.DateTimeFormat(locale, options)
-  return { intervals: INTERVALS[range], format: (t) => fmt.format(new Date(t)) }
+  return {
+    intervals: INTERVALS[range],
+    fallbacks: FALLBACKS[range],
+    format: (t) => fmt.format(new Date(t)),
+  }
 }
