@@ -276,3 +276,78 @@ test('a source’s own actions stay when it is not configured', async () => {
   await expect.element(screen.getByRole('button', historyButton('Škoda'))).toBeVisible()
   await expect.element(screen.getByRole('button', { name: 'Importera' })).toBeVisible()
 })
+
+test('a credential source has a key button named for it; without the handler there is none', async () => {
+  const onOpen = vi.fn()
+  const { screen } = await renderWithProviders(tile(ok, { onOpenCredentials: onOpen }))
+  await screen
+    .getByRole('button', { name: m.charging_credentials_button({ source: 'Zaptec' }) })
+    .click()
+  expect(onOpen).toHaveBeenCalledOnce()
+})
+
+test('without the handler there is no key button and no credentials link', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, state: 'not_configured', code: 'not_configured' }),
+  )
+  expect(screen.getByRole('button', { name: /Inloggning för/ }).elements()).toHaveLength(0)
+  expect(
+    screen.getByRole('button', { name: m.charging_credentials_configure() }).elements(),
+  ).toHaveLength(0)
+})
+
+test('elpris has no credentials, so no key button even with a handler', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, source: 'elpris' }, { onOpenCredentials: () => {} }),
+  )
+  expect(screen.getByRole('button', { name: /Inloggning för/ }).elements()).toHaveLength(0)
+})
+
+test('not configured links to set it up', async () => {
+  const onOpen = vi.fn()
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, state: 'not_configured', code: 'not_configured' }, { onOpenCredentials: onOpen }),
+  )
+  await screen.getByRole('button', { name: m.charging_credentials_configure() }).click()
+  expect(onOpen).toHaveBeenCalledOnce()
+})
+
+test('a refused sign-in links to update it and names the suspect fields', async () => {
+  const { screen } = await renderWithProviders(
+    tile(
+      {
+        ...ok,
+        source: 'skoda',
+        state: 'failing',
+        code: 'forbidden',
+        adminDetail: {
+          lastErrorMessage: null,
+          credentialExpiry: null,
+          suspectFields: ['vin'],
+        } as never,
+      },
+      { onOpenCredentials: () => {} },
+    ),
+  )
+  await expect
+    .element(screen.getByRole('button', { name: m.charging_credentials_update() }))
+    .toBeVisible()
+  await expect
+    .element(screen.getByText(m.charging_credentials_suspect({ fields: 'VIN' })))
+    .toBeVisible()
+})
+
+test('an outage that is not about credentials has no credentials link', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, state: 'failing', code: 'unreachable' }, { onOpenCredentials: () => {} }),
+  )
+  expect(
+    screen.getByRole('button', { name: m.charging_credentials_update() }).elements(),
+  ).toHaveLength(0)
+})
+
+test('the header keeps room for the key button', async () => {
+  const { screen } = await renderWithProviders(tile(ok, { onOpenCredentials: () => {} }))
+  const heading = screen.getByRole('heading', { level: 3 }).element()
+  expect(heading.closest('[data-credentials-room]')).not.toBeNull()
+})
