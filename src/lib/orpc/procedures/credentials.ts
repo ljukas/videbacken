@@ -15,6 +15,8 @@ const credentialErrors = {
   REENTER_ALL_FIELDS: { status: 422, data: fieldNames },
   NOTHING_TO_SAVE: { status: 422 },
   ENCRYPTION_KEY_MISSING: { status: 409 },
+  // homePosition only: the stored Škoda row can't be read (never falls back to env).
+  UNREADABLE: { status: 409 },
 } satisfies Record<IntegrationCredentialDomainErrorCode, { status: number; data?: unknown }>
 
 // Bounds the payload only; the service enforces the real limits (512 chars, per-field
