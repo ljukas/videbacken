@@ -17,7 +17,7 @@ export function EnergyHeading({
       <h1 className="text-balance font-bold text-2xl tracking-tight md:text-3xl">{title}</h1>
       <p className="max-w-2xl text-muted-foreground text-sm">{m.energy_description()}</p>
       {/* Relative time differs slightly between SSR and hydration (as in ChargingHeading). */}
-      <p data-sync-line className="text-muted-foreground text-xs" suppressHydrationWarning>
+      <p data-sync-line className="text-muted-foreground text-sm" suppressHydrationWarning>
         {lastSuccessAt === undefined
           ? '\u00a0' // not known yet: hold the line's height, claim nothing
           : lastSuccessAt
