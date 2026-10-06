@@ -569,8 +569,7 @@ test('the keyboard reaches the chart and the arrows walk its tooltip a month at 
   await screen.getByRole('button', { name: 'before' }).click()
   await userEvent.tab()
   expect(document.activeElement).toBe(focusTarget(screen.container))
-  // recharts shows January on focus; the visx group shows it on the first →.
-  // Either way, → moves to a month, and then one month at a time.
+  // → moves to a month, and then one month at a time.
   const shown = () =>
     [...Array(12).keys()]
       .map((i) => monthLabel(i + 1))

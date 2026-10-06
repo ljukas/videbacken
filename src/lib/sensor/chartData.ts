@@ -21,9 +21,8 @@ export function colorForIndex(i: number): string {
   return DEVICE_COLORS[i % DEVICE_COLORS.length]
 }
 
-// The chart's x-axis must span EVERY device's readings, including hidden ones, so
-// toggling a device's visibility never rescales the time axis. (With per-<Line>
-// `data`, Recharts otherwise recomputes the domain from visible lines only.)
+// The chart's x-axis spans EVERY device's readings, including hidden ones, so
+// toggling a device's visibility never rescales the time axis.
 // Returns [min, max] over all points, or undefined when there are none.
 export function timeDomain(devices: { points: SeriesPoint[] }[]): [number, number] | undefined {
   let min = Number.POSITIVE_INFINITY
@@ -45,9 +44,9 @@ export type YScale = { domain: [number, number]; ticks: number[]; decimals: numb
 const FLAT_EPSILON = 1e-6
 
 // A "nice" y-axis for a value range: round bounds and evenly-spaced ticks on a
-// round step (1, 2, or 5 × 10ⁿ), via d3-scale. Recharts equal-divides a narrow
-// auto-domain into arbitrary fractional ticks (24.595, 24.49, …) that overflow a
-// fixed-width axis and read as noise; supplying round ticks keeps labels short
+// round step (1, 2, or 5 × 10ⁿ), via d3-scale. Equal-dividing a narrow domain
+// gives arbitrary fractional ticks (24.595, 24.49, …) that overflow a
+// fixed-width axis and read as noise; round ticks keep labels short
 // and aligned to sensible increments. `decimals` is the precision the step needs,
 // so ticks formatted with it are always distinct. A flat series (all readings
 // equal, or equal up to float noise) is padded to a 1-unit band so its line sits
@@ -71,8 +70,8 @@ export function niceYScale(min: number, max: number, targetCount = 5): YScale {
 }
 
 // Min/max of every visible device's own readings, for the y-axis scale. Hidden
-// devices are excluded so the axis matches what's drawn (Recharts' per-<Line>
-// auto-domain does the same). Returns undefined when nothing is visible.
+// devices are excluded so the axis matches what's drawn. Returns undefined when
+// nothing is visible.
 export function valueRange(
   devices: { id: string; hidden?: boolean; points: SeriesPoint[] }[],
 ): [number, number] | undefined {
@@ -95,9 +94,8 @@ export function valueRange(
 export type SeriesPoint = {
   t: number
   isolated?: boolean
-  // The device's value lives under its own id key (matching the <Line dataKey>),
-  // so shadcn's config-by-id (colors, legend labels) keeps working. `null` under
-  // that key is an outage break marker.
+  // The device's value lives under its own id key (the chart reads `p[device.id]`).
+  // `null` under that key is an outage break marker.
   [deviceId: string]: number | null | boolean | undefined
 }
 export type DeviceSeries = { id: string; points: SeriesPoint[] }
@@ -113,19 +111,17 @@ export type ClimateTooltipRow = {
 // Resolve a hover at time `hoverT` to one row per visible device: that device's
 // reading closest to the hover, kept only when it lands within `windowMs`.
 //
-// Why this exists: each <Line> carries its OWN points, and on the 24h range the
+// Why this exists: each device carries its OWN points, and on the 24h range the
 // 10-min bucket is far finer than the ~2h reporting cadence, so different
-// devices' readings almost never share a bucket timestamp. Recharts' axis
-// tooltip snaps to a single x tick and only reports lines that have a point at
-// exactly that x — so a hover shows just the one sensor that owns the tick.
-// Snapping each line independently to its nearest reading restores "all sensors
-// at this moment" without changing the bucket. The `windowMs` guard (≈ one
+// devices' readings almost never share a bucket timestamp. Snapping each device
+// independently to its nearest reading shows "all sensors at this moment"
+// without changing the bucket. The `windowMs` guard (≈ one
 // reporting cadence) is the "not 10h away" rule: a device silent longer than a
 // cadence is omitted rather than shown with a stale value, and on coarser ranges
 // (bucket ≥ cadence) the window is narrower than a bucket, so aligned points
 // resolve to an exact match and behaviour is unchanged. Null break markers are
-// skipped — only real readings can win. Roster order is preserved so the tooltip
-// rows match the legend regardless of which line owns the hovered tick.
+// skipped — only real readings can win. Rows keep the roster order (the
+// legend sorts by name instead).
 export function nearestReadings(
   devices: readonly {
     id: string
@@ -164,12 +160,12 @@ export function nearestReadings(
   return rows
 }
 
-// Reshape server buckets into one series per device for Recharts' per-<Line>
-// `data`. Each device carries only its OWN readings, so a null means exactly one
-// thing — a real outage — which we insert as a break marker only when a device was
-// silent longer than the threshold. The chart uses connectNulls={false}, so it
-// connects real readings and breaks at markers. A reading with no connected
-// neighbour is flagged `isolated` so the chart shows a dot instead of nothing.
+// Reshape server buckets into one series per device, one line each. Each device
+// carries only its OWN readings, so a null means exactly one thing — a real
+// outage — which we insert as a break marker only when a device was silent longer
+// than the threshold. The chart connects real readings and breaks the line at
+// markers. A reading with no connected neighbour is flagged `isolated` so the
+// chart shows a dot instead of nothing.
 export function toDeviceSeries(
   buckets: Buckets,
   metric: 'temp' | 'hum',

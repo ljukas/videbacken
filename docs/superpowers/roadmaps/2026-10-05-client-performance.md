@@ -15,8 +15,8 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-05/06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
 | 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | [#104](https://github.com/ljukas/videbacken/pull/104) | checkpoint passed | 2026-10-06, `main` at `17fb518`: every `packages:` and `bones:` criterion holds. Totals are within 1–2 KB of the bar per page; the shell is 257 against 253, all of it from #102 and #103 merging in (see [checkpoint 4 result](#checkpoint-4-result)). |
 | 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | merged | — (no checkpoint of its own; see [step 5a notes](#step-5a-notes)) |
-| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | PR open | — (no checkpoint of its own; see [step 5b notes](#step-5b-notes)) |
-| 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | — | — | not started | — |
+| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | merged | — (no checkpoint of its own; see [step 5b notes](#step-5b-notes)) |
+| 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | [#118](https://github.com/ljukas/videbacken/pull/118) | PR open | — |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) | — | — | not started | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
 | 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
@@ -337,6 +337,95 @@ recharts' (the shared axis margins from 5a).
 - The group's name repeats the section heading. It could name the metric too.
 - Bones are not recaptured in 5b (as in 5a). The recapture is in 5c.
 
+## Step 5c notes
+
+**Baseline** (`bun run bundle:measure` on `main` at `a8c684e`, KB gz each page adds beyond the entry + shell). The
+`/sensors` page carries recharts in its own chunk (`sensors` 90):
+
+| Page | Before 5c |
+|---|---:|
+| entry + shell | 258 |
+| `/charging` | 84 |
+| `/charging/settings` | 44 |
+| `/charging/economy` | 77 |
+| `/charging/patterns` | 85 |
+| `/charging/sessions/$id` | 65 |
+| `/energy` | 72 |
+| `/sensors` | 121 (sensors 90, line 9, step 5, format 4, SectionSkeleton 4) |
+| `/users` | 73 |
+| `/account/profile` | 213 |
+
+`bun.lock` lines matching `"recharts`, `"redux`, `"immer`, `"decimal.js-light` or `"@reduxjs`: 9.
+
+**Accepted differences (owner-approved 2026-10-06; state them in the PR):**
+1. Round time ticks. Ticks fall on round local times (24 h: every 3/6/12 h; 1 w: midnights; 1 m: Mondays; 3 m to 6 m:
+   the 1st and 16th or month starts; 1 y and all: month starts every 1 to 3 months, all: up to 12), the finest that
+   fits. Labels: 24 h `HH:mm`, 1 w the short weekday ("tis"), longer ranges the short date ("1 okt."). recharts
+   divided the span into five equal parts at odd times (15:20, 22:16, 05:13 ...).
+2. A dot on each card row's reading. recharts drew its 4 px active dot only on the line that owned the hovered x; now
+   each visible device listed in the card gets one, on its own nearest reading, so the dots match the rows.
+3. Every device hidden. recharts drew no tick labels but four grid lines. Now the time axis keeps its ticks (the time
+   domain spans hidden devices by design), and there is no y axis label or grid line (no value range).
+
+**After 5c** (`bun run bundle:measure` on the branch, KB gz each page adds beyond the entry + shell):
+
+| Page | Before 5c | 5c |
+|---|---:|---:|
+| entry + shell | 258 | 258 |
+| `/charging` | 84 | 84 |
+| `/charging/settings` | 44 | 44 |
+| `/charging/economy` | 77 | 77 |
+| `/charging/patterns` | 85 | 76 |
+| `/charging/sessions/$id` | 65 | 65 |
+| `/energy` | 72 | 72 |
+| `/sensors` | 121 | 48 (ChartPopover 21, sensors 9, format 4, SectionSkeleton 4, ChartParts 3) |
+| `/users` | 73 | 73 |
+| `/account/profile` | 213 | 213 |
+
+`/sensors` drops 73 KB gz (121 to 48). No page's `packages:` line lists recharts, redux, immer or
+decimal.js-light. `bun.lock` has 0 lines matching `"recharts`, `"redux`, `"immer`, `"decimal.js-light` or
+`"@reduxjs` (9 before). `/charging/patterns` is 9 KB lower than the baseline; the other pages and the shell are
+unchanged.
+
+**More differences from `main` (state them in the PR):**
+- The legend is sorted by display name, as recharts sorted it. The plan first said roster order.
+- The time axis has finer `fallbacks`, so a short span (a new sensor on 1 y or all) is never left without ticks.
+- The hover line and dots paint over the lines and axes, as recharts did.
+- A mouse pointer leaving the plot clears the announcement.
+- `touch-action: pan-y` on the plot disables pinch-zoom over it (as on the bar charts).
+- With every device hidden the y axis line goes too, and the plot widens to the left.
+- `ChartLegend` wraps and spans the full width (the 5a component), unlike shadcn's legend.
+- The x tick labels sit about 3.5 px lower than recharts' (the shared axis convention, as 5b noted).
+- The hover card sits above the dots, not beside the cursor.
+- The plot starts about 2 px further right, so the snap point can differ by one reading from `main`.
+- An x label that would run past the svg shifts inward just enough, and its tick mark stays on its time (recharts'
+  `preserveEnd` shifted the last label the same way). This fixes the end-label clipping the live check found (the
+  "1 okt." label cut by 2 to 3 px on all and on 1 y at 1280 px). The first label shifts the same way, and the
+  labels' spacing is judged after the shift, so a shifted label never crowds its neighbour.
+
+**Live check** (local data, 1280, 768 and 375 px, plus 320 px for 24 h, 1 w and 1 y, side by side with `main`):
+the lines, colours, legend, grid, axis lines, tick marks and y labels match, and the card rows and values match. Time
+ticks are round and never crowd at 320 px. Dots, Tab and the arrow keys, Home and End, Escape, a range switch with a
+card open and the hidden-devices state behave as planned. A lifted finger keeps the card and a tap elsewhere closes it.
+
+**Follow-ups found in review and the live check (not in 5c):**
+- A touch drag stops scrubbing after the first move in Chromium's touch emulation: the browser sends `pointercancel`.
+  It does the same on the `/charging` bar chart (5a), so it comes from the shared overlay, or from the emulation.
+  The reviewer's hypothesis: `touch-action: pan-y` is set only on the SVG `<rect>`, and browsers don't reliably
+  honour `touch-action` on SVG child elements, so the gesture falls back to `auto` and Chromium sends
+  `pointercancel` after the first move. Moving `pan-y` to the HTML group div or the `<svg>` root in both charts may
+  fix it. If so, 5a's horizontal scrub never worked on real phones. Check on a real phone; the fix is a small
+  cross-chart PR.
+- `BarChart`'s mouse leave doesn't clear its keyboard announcement; `ClimateChart`'s does. Match them.
+- Cover the `makeTimeAxis` formats for 3 m, 6 m and all, and locale handling.
+- Pin the spacing tests: a tick-count assertion for the month-end spacing, a length floor for the spring-forward
+  case, and an assertion beyond `< 2` for the 1-day 1 y case.
+- Tidy the tests: two hover tests overlap on `toHaveLength(2)`, a `readingTimes` fixture with shared rows, a test that modifier keys pass through, and
+  the y-tick comment that says "two decimals".
+- Stale recharts mentions: comments in the `ClimateChart` tests and `docs/bugfix-workflow.md:36`.
+- A poll that changes the announced time's rows re-reads the live region (the bar chart does the same).
+- The same-time early return in `onPointer` skips `setAnnounced(null)` (harmless, the same content).
+
 ## Step 7 notes
 
 The owner saw small layout shifts after step 1 and will show where. Start from their list, not from guesses. Known
@@ -349,3 +438,8 @@ candidates, for comparison only:
   sensors, the tiles reflow once on load.
 - **Alerts on a client navigation.** A failing source's alert can appear a moment after the page and push the
   content down once (ADR-0025 §1, accepted).
+- **Patterns timeline bones.** The recapture in 5c shrank the `charging-timeline` skeleton from 754 to 328 px at
+  desktop, because local data has fewer sessions than at the last capture. On prod the Sessioner card can be taller
+  than its skeleton, so it shifts once on load.
+- **Economy gap.** The economy section's loaded height is 24 px taller than its bones at 375 and 1280 px (the lead
+  paragraph's `gap-6`; already so at 1280 before 5c).

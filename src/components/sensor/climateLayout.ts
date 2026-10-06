@@ -1,0 +1,92 @@
+import { bisectCenter } from 'd3-array'
+import type { TimeInterval } from 'd3-time'
+import { labelsFit, thinTicks } from '~/components/chart/barLayout'
+import type { SeriesPoint } from '~/lib/sensor/chartData'
+import type { TimeAxis } from '~/lib/sensor/tickFormat'
+
+// The Klimat chart's pure geometry (step 5c). The y scale and the card's rows
+// stay in ~/lib/sensor/chartData (niceYScale, valueRange, nearestReadings).
+
+/** px kept clear between two time labels. */
+export const TIME_TICK_GAP = 16
+
+/** A time tick: its time (where the tick mark goes) and its label's shift off it, in px. */
+export type TimeTick = { t: number; dx: number }
+
+/**
+ * The axis' ticks: the finest of the axis' intervals whose labels all fit
+ * `TIME_TICK_GAP` apart; when none does, the coarsest, thinned to fit.
+ * The domain's end counts as a tick when it falls on one.
+ *
+ * A label is centred on its tick unless that would run it past `bounds` (the
+ * px, in plot coordinates, a label may span): then it shifts inward just enough
+ * (`dx`), and the tick mark stays on its time. The fit is judged on the shifted
+ * labels, so an end label moved inward can't crowd its neighbour.
+ *
+ * Data shorter than the range can leave that with fewer than two ticks (a few
+ * weeks of data on 1 y has one month start). Then the axis' `fallbacks` are
+ * tried from coarsest to finest, and the first with two or more ticks that all
+ * fit wins; when none does, the original result stands.
+ */
+export function pickTimeTicks({
+  domain,
+  x,
+  axis,
+  measure,
+  bounds,
+}: {
+  domain: readonly [number, number]
+  x: (t: number) => number
+  axis: TimeAxis
+  measure: (s: string) => number
+  bounds: readonly [number, number]
+}): TimeTick[] {
+  const [lo, hi] = bounds
+  // range() stops before its end: one ms more keeps a tick on the end itself.
+  const ticksOf = (interval: TimeInterval) =>
+    interval.range(new Date(domain[0]), new Date(domain[1] + 1)).map(Number)
+  const widthOf = (t: number) => measure(axis.format(t))
+  // The label's centre, kept `bounds` in (a label wider than them starts at lo).
+  const centreOf = (t: number) => {
+    const half = widthOf(t) / 2
+    return Math.max(lo + half, Math.min(x(t), hi - half))
+  }
+  const fits = (ticks: number[]) =>
+    labelsFit(ticks.map(centreOf), ticks.map(widthOf), TIME_TICK_GAP)
+  const withShift = (ticks: number[]) => ticks.map((t) => ({ t, dx: centreOf(t) - x(t) }))
+
+  let thinned: number[] = []
+  for (const interval of axis.intervals) {
+    const ticks = ticksOf(interval)
+    if (fits(ticks)) {
+      if (ticks.length >= 2 || axis.fallbacks.length === 0) return withShift(ticks)
+      thinned = ticks
+      break
+    }
+    thinned = thinTicks(ticks.map(centreOf), ticks.map(widthOf), TIME_TICK_GAP).map((i) => ticks[i])
+  }
+  if (thinned.length >= 2) return withShift(thinned)
+  for (let i = axis.fallbacks.length - 1; i >= 0; i--) {
+    const ticks = ticksOf(axis.fallbacks[i])
+    if (ticks.length >= 2 && fits(ticks)) return withShift(ticks)
+  }
+  return withShift(thinned)
+}
+
+/** Every real reading time of the visible devices, ascending and distinct: where hover and the keys stop. */
+export function readingTimes(
+  devices: readonly { id: string; hidden?: boolean; points: readonly SeriesPoint[] }[],
+): number[] {
+  const times = new Set<number>()
+  for (const d of devices) {
+    if (d.hidden) continue
+    // Outage markers (`<id>: null`) aren't readings.
+    for (const p of d.points) if (typeof p[d.id] === 'number') times.add(p.t)
+  }
+  return [...times].sort((a, b) => a - b)
+}
+
+/** The time in `times` (ascending) closest to `t`; null when there is none. */
+export function nearestTime(times: readonly number[], t: number): number | null {
+  return times.length === 0 ? null : times[bisectCenter(times, t)]
+}

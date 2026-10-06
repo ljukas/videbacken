@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { renderWithRouter } from '~test/browser/render'
-import { SectionSkeleton } from './SectionSkeleton'
+import { SectionSkeleton, skeletonSnapshotConfig } from './SectionSkeleton'
 
 test('not loading: the children, with no wrapper around them', async () => {
   const { screen } = await renderWithRouter(
@@ -116,4 +116,11 @@ test('bones use the configured dark colour under the .dark class', async () => {
   } finally {
     document.documentElement.classList.remove('dark')
   }
+})
+
+test('a capture always leaves screen-reader-only text out of the bones', () => {
+  expect(skeletonSnapshotConfig()).toEqual({ excludeSelectors: ['.sr-only'] })
+  expect(skeletonSnapshotConfig(['[data-no-skeleton]'])).toEqual({
+    excludeSelectors: ['.sr-only', '[data-no-skeleton]'],
+  })
 })

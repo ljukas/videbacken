@@ -3,14 +3,24 @@ import { GridRows } from '@visx/grid'
 import { Group } from '@visx/group'
 import { useParentSize } from '@visx/responsive'
 import { Bar, BarRounded, LinePath } from '@visx/shape'
-import { getStringWidth } from '@visx/text'
-import { max, range } from 'd3-array'
+import { range } from 'd3-array'
 import { scaleBand } from 'd3-scale'
 import type * as React from 'react'
 import { useId, useMemo, useRef, useState } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
+import {
+  AXIS_COLOR,
+  CHART_MARGIN as MARGIN,
+  measureAt,
+  TICK_PX,
+  TICK_SIZE,
+  X_AXIS_H,
+  X_TICK_MARGIN,
+  Y_TICK_MARGIN,
+  yAxisWidth,
+} from './axis'
 import {
   type BarSeries,
   labelsFit,
@@ -94,19 +104,7 @@ export type BarChartProps<Row> = {
   selection?: BarSelection<Row>
 }
 
-const MARGIN = { top: 8, right: 12, bottom: 0, left: 4 }
-const X_AXIS_H = 30
-// recharts' tick size: labels keep their distance from the axis even with
-// the tick lines hidden (visx places labels at tickLength too).
-const TICK_SIZE = 6
-const X_TICK_MARGIN = 8
-const Y_TICK_MARGIN = 4
-const TICK_PX = 12
-// recharts' default axis colour; our ChartContainer never restyled it.
-const AXIS = '#666'
 const DOT_R = 3
-const measureAt = (px: number) => (s: string) =>
-  getStringWidth(s, { fontSize: px }) ?? s.length * px * 0.6
 
 // One bar chart for the category charts (months, hours): visx shapes on d3
 // scales, the geometry in barLayout.ts. The SVG is visual; a labelled chart is
@@ -170,7 +168,7 @@ export function BarChart<Row>({
     const plotH = Math.max(0, plotBoxH - MARGIN.top - MARGIN.bottom - X_AXIS_H)
     const y = yScaleFor({ extent, height: plotH, integers: yIntegers, domain: yDomain })
     const yLabels = y.ticks.map(yTickFormat)
-    const yAxisW = hideYAxis ? 0 : (max(yLabels, measure) ?? 0) + TICK_SIZE + Y_TICK_MARGIN + 2
+    const yAxisW = hideYAxis ? 0 : yAxisWidth(yLabels, measure)
     const left = MARGIN.left + yAxisW
     const plotW = Math.max(0, width - left - MARGIN.right)
     const x = scaleBand<number>().domain(range(count)).range([0, plotW])
@@ -446,7 +444,7 @@ export function BarChart<Row>({
               hideTicks
               tickLength={TICK_SIZE}
               hideAxisLine={!yAxisLine}
-              stroke={AXIS}
+              stroke={AXIS_COLOR}
               tickLabelProps={() => ({
                 ...tickLabel,
                 dx: -Y_TICK_MARGIN,
@@ -464,7 +462,7 @@ export function BarChart<Row>({
             tickFormat={(i) => tickText(Number(i))}
             hideTicks
             tickLength={TICK_SIZE}
-            stroke={AXIS}
+            stroke={AXIS_COLOR}
             tickLabelProps={(v) => ({
               ...tickLabel,
               dy: X_TICK_MARGIN,
@@ -539,7 +537,7 @@ export function BarChart<Row>({
       {...popover.containerProps}
       aria-hidden={keyboard ? undefined : true}
       // The box is inline styles, not Tailwind: the plot must measure before
-      // CSS loads and in the CSS-less browser tests (as ChartFrame does).
+      // CSS loads and in the CSS-less browser tests.
       className="w-full text-xs"
       style={{ height, display: 'flex', flexDirection: 'column' }}
     >

@@ -1,8 +1,7 @@
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
-// The chart parts that don't depend on a chart library, so the visx charts
-// can use them without pulling recharts into their page's bundle.
+// The chart parts every chart shares: the height, the empty state, tooltip rows and the legend.
 
 /** One height for every economy/monthly chart and its empty state. */
 export const CHART_HEIGHT = 260
@@ -19,8 +18,8 @@ export function NoData() {
   )
 }
 
-// A custom formatter replaces the tooltip's own colour dots, so each series
-// row draws its dot here (a total row has none). `share` adds a smaller,
+// One tooltip row: a series row draws its colour dot here (a total row has
+// none). `share` adds a smaller,
 // muted column after the value (omitted: no column).
 export function TooltipRow({
   label,

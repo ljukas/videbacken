@@ -15,7 +15,6 @@ import {
   legend,
   legendLabels,
   moveAt,
-  moveOverPlot,
   outline,
   parkPointer,
   selectedTint,
@@ -101,10 +100,10 @@ test('a month whose bars draw nothing still answers a hover; a null tooltip open
   const { screen } = await render()
   await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
   const mar = bandCentre(screen.container, 2) // 0 and 0: no rect, but a tooltip
-  moveOverPlot(screen.container, mar.x, mar.y)
+  moveAt(screen.container, mar.x, mar.y)
   await vi.waitFor(() => expect(tooltipText()).toBe('marA 0 B 0'))
   const feb = bandCentre(screen.container, 1) // its tooltip render is null: no card at all
-  moveOverPlot(screen.container, feb.x, feb.y)
+  moveAt(screen.container, feb.x, feb.y)
   await vi.waitFor(() => expect(document.querySelector('[data-slot="chart-tooltip"]')).toBeNull())
 })
 
@@ -690,7 +689,7 @@ test('hovering a category that cannot be selected draws no outline and no pointe
     expect(overlay().style.cursor).toBe('pointer')
   })
   const o = overlayBox(screen.container)
-  moveOverPlot(screen.container, o.x + (o.width * 1.5) / 4, o.y + 10) // feb
+  moveAt(screen.container, o.x + (o.width * 1.5) / 4, o.y + 10) // feb
   await vi.waitFor(() => {
     expect(outline(screen.container)).toBeNull()
     expect(overlay().style.cursor).toBe('')
