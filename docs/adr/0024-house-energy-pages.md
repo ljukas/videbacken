@@ -57,6 +57,11 @@ Measured on the full local history (2026-10-05):
      the battery with its loss in the middle, consumption and sold out) instead of five tiles; the same figures, plus
      the battery's loss and two derived outflows (`batteryToGrid`, `batteryToHouse`) in `figures.ts`. Still the
      period's sums, still on-read. Design: [flow summary](../superpowers/specs/2026-10-06-energy-flow-summary-design.md).
+   - *Amended 2026-10-06 (step 2):* the Batteri page leads with the chosen period's battery as a flow diagram (solar
+     and bought in, the battery with its change in stored energy, out and the loss as its own node), its efficiency
+     in a ring, then a month chart of out with the loss stacked on top, instead of four figure tiles and a chart with a
+     metric toggle. Same figures (`figures.ts`), same read. Design:
+     [battery page](../superpowers/specs/2026-10-06-energy-battery-page-design.md).
 7. **Freshness:** no polling interval; focus refetch, and the Emaldo sync health alert shows when data is stale.
 
 ## Alternatives considered

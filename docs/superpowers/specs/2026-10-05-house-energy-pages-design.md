@@ -182,6 +182,10 @@ Shared by both pages:
 
 ### Energi › Batteri (`/energy/battery`)
 
+> **Step 2 reshaped (2026-10-06):** the sketch below is the original plan. The page is built from the
+> [battery page design](./2026-10-06-energy-battery-page-design.md): a battery flow diagram for the chosen period on
+> top, a month chart of out + loss below, the period control of step 1b.
+
 ```
 ┌ Tiles: Denna månad · I år · Totalt ─────────────────────────┐
 │ In 241 kWh (▓ sol 72 % ░ nät 28 %)   Ut 225 kWh             │
@@ -207,6 +211,7 @@ Loss % on the tile = loss ÷ (batteryIn − deltaStored), shown only with effici
   separate refactor, not part of this work.
 - **Charts**: Recharts through shadcn's `ChartContainer` (`ChartFrame`), the existing monthly-chart idiom
   (`MonthlyChart`). No new chart library.
+  *Since the client-perf roadmap the Energi charts draw with the visx `BarChart` (`src/components/chart/`).*
 - **Colours**: `--energy-solar`, `--energy-grid`, `--energy-battery` (step 4 tokens). Export: its own
   `--energy-export` token (an ochre, ≥ 3:1 against the background in both themes; a solar tint failed the contrast
   check); car: `--brand`; rest of the house: `--chart-2`.
