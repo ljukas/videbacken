@@ -41,6 +41,13 @@ const ICON: Record<FlowNodeKey, LucideIcon> = {
   load: HouseIcon,
   exp: CoinsIcon,
 }
+// The battery shows its loss instead (figures.ts).
+const FIGURE: Record<Exclude<FlowNodeKey, 'bat'>, (s: PeriodSums) => number> = {
+  sol: (s) => s.solarKwh,
+  imp: (s) => s.gridImportKwh,
+  exp: (s) => s.gridExportKwh,
+  load: (s) => s.loadKwh,
+}
 const NODE_SURFACE = 'color-mix(in oklab, var(--foreground) 3%, var(--card))'
 const label = (key: FlowNodeKey) =>
   ({
@@ -113,7 +120,7 @@ export function EnergyFlowDiagram({
       if (e.pointerType !== 'touch') hide()
     },
   }
-  const fadeId = `loss-fade-${useId().replace(/:/g, '')}`
+  const fadeId = `loss-fade-${useId()}`
   const flows = drawnFlows(layout, f)
   // flowWidth and lossStub fall back to the floor when nothing is drawn (max 0).
   const max = Math.max(0, ...flows.map((x) => x.kwh))
@@ -381,13 +388,6 @@ function FlowNodeBox({
   const t = nodeText(n, key, layout.narrow, { chargeLine: charge !== null })
   const Icon = ICON[key]
   const tint = SOURCE_COLOR[key]
-  const figure = {
-    sol: sums.solarKwh,
-    imp: sums.gridImportKwh,
-    exp: sums.gridExportKwh,
-    load: sums.loadKwh,
-    bat: 0,
-  }[key]
   return (
     <g data-flow-node={key}>
       <rect
@@ -449,7 +449,7 @@ function FlowNodeBox({
           fontWeight={600}
           className="fill-foreground tabular-nums"
         >
-          {kwh(figure)}{' '}
+          {kwh(FIGURE[key](sums))}{' '}
           <tspan fontSize={14} fontWeight={400} className="fill-muted-foreground">
             kWh
           </tspan>
