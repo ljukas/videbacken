@@ -56,6 +56,7 @@ const TICK_PX = 12
 // recharts' default axis colour; our ChartContainer never restyled it.
 const AXIS = '#666'
 const TICK_LABEL = { fill: 'var(--muted-foreground)', fontSize: TICK_PX }
+const DOT_R = 3
 const measure = (s: string) => getStringWidth(s, { fontSize: TICK_PX }) ?? s.length * 7
 
 // One bar chart for the category charts (months, hours): visx shapes on d3
@@ -136,6 +137,9 @@ export function BarChart<Row>({
   const anchor = (i: number) => {
     if (!geometry) return { left: 0, top: 0 }
     const tops = geometry.rects.filter((r) => r.index === i).map((r) => r.y)
+    // The line's dot too, so the card never covers it.
+    const dot = line ? at(i, line.key) : null
+    if (dot !== null) tops.push(geometry.y.scale(dot) - DOT_R)
     return {
       left: geometry.left + geometry.centres[i],
       top: MARGIN.top + Math.min(geometry.plotH, ...tops),
@@ -155,7 +159,8 @@ export function BarChart<Row>({
   }
   const onPointer = (e: React.PointerEvent<SVGRectElement>) => {
     const i = indexAt(e)
-    if (i === null) return
+    // Moving within the open category changes nothing: no re-render per pixel.
+    if (i === null || (i === cursor.current && popover.open)) return
     setAnnounced(null)
     open(i)
   }
@@ -166,10 +171,13 @@ export function BarChart<Row>({
     setAnnounced(null)
   }
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Browser shortcuts (Alt+← back, Cmd+Home …) pass through.
+    if (e.altKey || e.ctrlKey || e.metaKey) return
     if (e.key === 'Escape') return close()
     if (count === 0) return
     const last = count - 1
-    const current = cursor.current ?? -1
+    // Clamped: a refetch may have returned fewer categories since.
+    const current = Math.min(cursor.current ?? -1, last)
     const next =
       e.key === 'ArrowRight'
         ? current < 0
@@ -194,7 +202,8 @@ export function BarChart<Row>({
     ...series.map(({ key, label: l, color }) => ({ key, label: l, color })),
     ...(line ? [{ key: line.key, label: line.label, color: line.color }] : []),
   ]
-  const active = popover.open && popover.data !== undefined ? popover.data : null
+  const active =
+    popover.open && popover.data !== undefined && popover.data < count ? popover.data : null
   const card = (i: number) => (
     <>
       {tooltipTitle ? <div className="font-medium">{category(rows[i])}</div> : null}
@@ -273,7 +282,7 @@ export function BarChart<Row>({
                   data-line-dot
                   cx={geometry.centres[i]}
                   cy={geometry.y.scale(at(i, line.key) ?? 0)}
-                  r={3}
+                  r={DOT_R}
                   fill="#fff"
                   stroke={line.color}
                   strokeWidth={2}
@@ -321,6 +330,11 @@ export function BarChart<Row>({
           fill="transparent"
           onPointerMove={onPointer}
           onPointerDown={onPointer}
+          // Off the plot (onto an axis or the legend) the card closes, as
+          // recharts' did; a lifted finger keeps it (ChartPopover's touch rule).
+          onPointerLeave={(e) => {
+            if (e.pointerType !== 'touch') popover.hide()
+          }}
         />
       </Group>
     </svg>
@@ -356,7 +370,7 @@ export function BarChart<Row>({
         {...focusProps}
         className={cn(
           'rounded-sm',
-          keyboard && 'outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
+          keyboard && 'outline-hidden focus-visible:ring-3 focus-visible:ring-ring/50',
         )}
         style={{ flex: '1 1 0', minHeight: 0 }}
       >
@@ -368,8 +382,16 @@ export function BarChart<Row>({
           <p id={hintId} className="sr-only">
             {m.chart_keyboard_hint()}
           </p>
-          <div className="sr-only" aria-live="polite" data-chart-announce>
-            {announced === null ? null : card(announced)}
+          {/* Read whole (atomic): only the changed text would otherwise be read,
+              e.g. a new value without its series label. Always with its
+              category, even when the card shows no title. */}
+          <div className="sr-only" aria-live="polite" aria-atomic="true" data-chart-announce>
+            {announced === null || announced >= count ? null : (
+              <span key={announced}>
+                {category(rows[announced])}
+                {tooltip(rows[announced], announced)}
+              </span>
+            )}
           </div>
         </>
       ) : null}

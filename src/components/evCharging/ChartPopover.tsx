@@ -138,6 +138,11 @@ const CARD_GAP = 8
 // keepInWindow does for the pill.
 function placeCard(el: HTMLDivElement | null) {
   if (!el) return
+  // Its own width, not the space left right of the point: an absolutely
+  // placed box shrinks to fit that, so near the right edge every row would
+  // wrap. Inline, because visx drops `style` on an unstyled Tooltip.
+  el.style.width = 'max-content'
+  el.style.maxWidth = `calc(100vw - ${2 * EDGE}px)`
   el.style.transform = ''
   const r = el.getBoundingClientRect() // its top-left corner sits on the point
   let dx = -r.width / 2

@@ -1,3 +1,4 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
@@ -9,10 +10,11 @@ import {
   legendLabels,
   pointAt,
   seriesBars,
+  settle,
   tooltipText,
   xTickLabels,
 } from '~test/browser/chartDom'
-import { renderWithProviders } from '~test/browser/render'
+import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
 import { BarChart, type BarChartProps } from './BarChart'
 
 type Row = { label: string; a: number | null; b: number | null }
@@ -253,4 +255,105 @@ test('the card stays inside the window at the right edge too', async () => {
     expect(r.right).toBeLessThanOrEqual(window.innerWidth - 8)
     expect(r.left).toBeGreaterThanOrEqual(8)
   })
+})
+
+test('the card keeps its width at the right edge instead of wrapping into the space left', async () => {
+  const wide = (r: Row) => <span>{`Ett långt värde för ${r.label} som inte ska radbrytas`}</span>
+  // The chart's right edge on the window's right edge, so April's anchor is
+  // a few dozen px from it.
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 400, marginLeft: Math.max(0, window.innerWidth - 410) }}>
+      <BarChart {...base} tooltip={wide} />
+    </div>,
+  )
+  const width = async (index: number, month: string) => {
+    await hoverBar(screen.container, index)
+    await vi.waitFor(() => expect(tooltipText()).toContain(month))
+    const card = document.querySelector('[data-slot="chart-tooltip"]') as HTMLElement
+    return card.getBoundingClientRect().width
+  }
+  const first = await width(0, 'jan') // mid-window
+  const last = await width(1, 'apr') // at the window's right edge
+  expect(Math.abs(last - first)).toBeLessThan(4)
+})
+
+test('moving from the plot onto the axis or the legend closes the card', async () => {
+  const { screen } = await render()
+  await hoverBar(screen.container, 0)
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  const overlay = screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  overlay.dispatchEvent(
+    new PointerEvent('pointerout', {
+      bubbles: true,
+      pointerType: 'mouse',
+      relatedTarget: screen.container.querySelector('[data-slot="chart-legend"]'),
+    }),
+  )
+  await vi.waitFor(() => expect(tooltipText()).toBe(''))
+})
+
+test('the keyboard announcement names the category even without a visible title', async () => {
+  const { screen } = await render({ tooltipTitle: false })
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{ArrowRight}')
+  await vi.waitFor(() => expect(tooltipText()).toBe('A 10 B 5'))
+  expect(screen.container.querySelector('[data-chart-announce]')?.textContent).toBe('janA 10 B 5')
+})
+
+test('the card sits above the line dot when the line is higher than the bars', async () => {
+  const { screen } = await render({
+    series: [{ key: 'a', label: 'Serie A', color: 'red' }],
+    line: { key: 'b', label: 'Serie B', color: 'blue' },
+    value: (r, k) => (k === 'b' ? (r.b === null ? null : r.b * 10) : r[k as 'a']),
+  })
+  await hoverBar(screen.container, 0) // jan: bar 10, dot 50
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  const dot = screen.container.querySelector('[data-line-dot]') as SVGCircleElement
+  const card = document.querySelector('[data-slot="chart-tooltip"]') as HTMLElement
+  await vi.waitFor(() =>
+    expect(card.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      dot.getBoundingClientRect().top,
+    ),
+  )
+})
+
+test('the announcement is read whole, not just the text that changed', async () => {
+  const { screen } = await render()
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('[data-chart-announce]')).not.toBeNull(),
+  )
+  expect(screen.container.querySelector('[data-chart-announce]')?.getAttribute('aria-atomic')).toBe(
+    'true',
+  )
+})
+
+test('fewer rows after a refetch never leave the keyboard on a missing category', async () => {
+  const queryClient = makeTestQueryClient()
+  const ui = (shown: Row[]) => (
+    <div style={{ width: 480 }}>
+      <button type="button">before</button>
+      <BarChart {...base} rows={shown} />
+    </div>
+  )
+  const { screen } = await renderWithProviders(ui(rows), { queryClient })
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{End}')
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 30 B 10'))
+  // Same tree (provider included), so the chart keeps focus as the rows shrink.
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>{ui(rows.slice(0, 2))}</QueryClientProvider>,
+  )
+  await userEvent.keyboard('{ArrowLeft}')
+  await vi.waitFor(() => expect(tooltipText()).toBe('janA 10 B 5'))
+})
+
+test('browser shortcuts with a modifier pass through', async () => {
+  const { screen } = await render()
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{Alt>}{ArrowLeft}{/Alt}')
+  await settle()
+  expect(tooltipText()).toBe('')
 })
