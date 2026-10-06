@@ -24,11 +24,15 @@ export function credentialLink(health: SourceHealth): CredentialLink | null {
 type SuspectFields = NonNullable<NonNullable<SourceHealth['adminDetail']>['suspectFields']>
 
 /**
- * The fields the last failed sync blamed, while they still describe what is saved: a save newer than
- * that attempt replaced the blamed values, so they no longer count — until the next attempt (the
- * post-save sync can be skipped by the lease, or read the old values on a warm instance's 60 s cache,
- * ADR-0026). `updatedAt` is the source's `credentials.status` save time: null (nothing stored) or
- * undefined (status not known) keeps them.
+ * The fields the last failed sync blamed, unless the credentials were saved after that outcome was
+ * recorded: after a save they don't count until the next outcome is recorded, so a blame from before
+ * the save never shows while no newer outcome exists (the post-save sync never fired, or its lease
+ * holder died). Not a full guarantee: `lastAttemptAt` is when the outcome was recorded, not when the
+ * run started, so a run that read the old values (one already holding the lease, or a warm
+ * instance's 60 s cached row, ADR-0026) and records after the save still flags fields for one cycle.
+ * The stored row has one `updatedAt` for all fields, so a partial save (only the API key, say) also
+ * hides a blamed field it didn't touch, until the next outcome. `updatedAt` is the source's
+ * `credentials.status` save time: null (nothing stored) or undefined (status not known) keeps them.
  */
 export function currentSuspectFields(
   health: SourceHealth | undefined,

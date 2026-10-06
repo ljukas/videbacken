@@ -438,8 +438,13 @@ its own schema review. The checkpoint runs after 3b.
 - **The stored date shows the year:** "Sparad i appen · 5 okt. 2026".
 - **Stale suspect fields are hidden:** they count (tile line, dialog field line) only while the health's
   `lastAttemptAt` is not older than the source's `credentials.status` `updatedAt` (no stored row or status unknown →
-  they count), so a save whose sync was skipped or read the 60 s cache never blames the new values; the "Uppdatera
-  inloggning" link is unchanged (`currentSuspectFields` in `credentialLink.ts`).
+  they count). After a save the red lines disappear until the next sync outcome is recorded, so a blame from before
+  the save never shows while no newer outcome exists (the post-save sync never fired, or its lease holder died).
+  `lastAttemptAt` is when the outcome was recorded, not when the run started: a run that read the old values (one
+  already holding the lease, or a warm instance's 60 s cached row) and records after the save can still flag fields
+  for one cycle. The row has one `updatedAt` for all fields, so a partial save (e.g. only the API key) also hides a
+  blamed field it didn't touch, until the next outcome. The "Uppdatera inloggning" link is unchanged
+  (`currentSuspectFields` in `credentialLink.ts`).
 
 ### Overview links
 `SyncHealthAlert` for `auth_failed` / `credentials_unreadable` / Škoda `forbidden`, and `CredentialExpiryAlert`,
