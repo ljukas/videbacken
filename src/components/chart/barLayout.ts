@@ -1,4 +1,4 @@
-import { range, tickStep } from 'd3-array'
+import { range } from 'd3-array'
 import { type ScaleBand, type ScaleLinear, scaleLinear } from 'd3-scale'
 import { stack, stackOffsetDiverging, stackOffsetNone } from 'd3-shape'
 
@@ -152,6 +152,56 @@ export function stackExtent({
 
 const TICK_COUNT = 5
 
+// recharts' getDigitCount: d with 10^(d-1) <= v < 10^d (0.25 has 0, 35 has 2).
+function digitCount(v: number): number {
+  let d = Math.floor(Math.log10(v)) + 1
+  if (10 ** (d - 1) > v) d--
+  else if (10 ** d <= v) d++
+  return d
+}
+
+// recharts' getAdaptiveStep with allowDecimals false: the rough step
+// (span / 4) rounded up to a whole number of grains, plus `correction` grains,
+// then up to a whole number. A grain is a twentieth of 10^digits, or 1 when
+// the rough step has one digit. recharts computes it in decimal.js; here each
+// rounded-up value is one product or quotient of the span and a whole number,
+// so whole-number data land on the same ceilings.
+function adaptiveStep(span: number, digits: number, correction: number): number {
+  const intervals = TICK_COUNT - 1
+  if (digits <= 0) {
+    // A grain under 1: count in its reciprocal.
+    const perUnit = 20 * 10 ** -digits
+    return Math.ceil((Math.ceil((span * perUnit) / intervals) + correction) / perUnit)
+  }
+  const grain = digits === 1 ? 1 : 5 * 10 ** (digits - 2)
+  return (Math.ceil(span / (intervals * grain)) + correction) * grain
+}
+
+/**
+ * recharts 3's getNiceTickValues([lo, hi], 5, false), its y axis with
+ * allowDecimals={false}, for a range holding 0 (yScaleFor's always does, so 0
+ * is a tick). Always TICK_COUNT ticks in whole steps of at least 1: the
+ * smallest adaptive step whose ticks cover the range, the spare ticks above 0,
+ * or below it when nothing is above (one session draws a quarter-high bar, not
+ * a full one).
+ */
+function integerTicks(lo: number, hi: number): number[] {
+  // Flat (both 0): recharts' single-value ticks, which put a 0 at 0 to 4.
+  if (lo === hi) return range(TICK_COUNT)
+  const span = hi - lo
+  const digits = digitCount(span / (TICK_COUNT - 1))
+  for (let correction = 0; ; correction++) {
+    const step = adaptiveStep(span, digits, correction)
+    let below = Math.ceil((0 - lo) / step)
+    let above = Math.ceil(hi / step)
+    const count = below + above + 1
+    if (count > TICK_COUNT) continue
+    if (hi > 0) above += TICK_COUNT - count
+    else below += TICK_COUNT - count
+    return range(-below, above + 1).map((i) => i * step)
+  }
+}
+
 /** A top-down linear y scale over `extent` (0 included), made nice, and its ticks. */
 export function yScaleFor({
   extent,
@@ -171,19 +221,11 @@ export function yScaleFor({
     return { scale, ticks: scale.ticks(TICK_COUNT) }
   }
   if (integers) {
-    // recharts' allowDecimals={false}: whole steps of at least 1, and always
-    // TICK_COUNT ticks, growing away from 0 (one session draws a quarter-high
-    // bar, not a full one).
-    const step = Math.max(1, tickStep(lo, hi === lo ? lo + 1 : hi, TICK_COUNT - 1))
-    let d0 = Math.floor(lo / step) * step
-    let d1 = Math.ceil(hi / step) * step
-    const span = (TICK_COUNT - 1) * step
-    if (d1 - d0 < span) {
-      if (lo < 0 && hi <= 0) d0 = d1 - span
-      else d1 = d0 + span
-    }
-    const scale = scaleLinear().domain([d0, d1]).range([height, 0])
-    return { scale, ticks: range(d0, d1 + step / 2, step) }
+    const ticks = integerTicks(lo, hi)
+    const scale = scaleLinear()
+      .domain([ticks[0], ticks[ticks.length - 1]])
+      .range([height, 0])
+    return { scale, ticks }
   }
   const scale = scaleLinear()
     .domain([lo, hi === lo ? lo + 1 : hi])
