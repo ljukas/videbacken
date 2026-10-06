@@ -12,11 +12,12 @@ const SEARCH_URL = 'https://nominatim.openstreetmap.org/search'
 // Nominatim's policy asks for an identifying User-Agent.
 const USER_AGENT = 'videbacken/1.0 (private home dashboard; home-position address search)'
 
-// Interactive: a short timeout and one retry on a gateway hiccup. Never on 429:
-// the policy is one request per second, so back off rather than retry.
+// Interactive: a short timeout and no retries at all. Nominatim allows one request per
+// second, and a retry inside `fetchWithRetry` would go out without taking a new slot;
+// the admin can press Sök again, which does.
 const TIMEOUT_MS = 5_000
-const RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504])
-const RETRY_LIMIT = 1
+const RETRY_STATUSES: ReadonlySet<number> = new Set()
+const RETRY_LIMIT = 0
 
 /** Nominatim's usage policy: at most one request per second (here per instance). */
 export const MIN_INTERVAL_MS = 1_000
@@ -47,6 +48,9 @@ export function createNominatimClient(deps: { fetch: typeof fetch }): GeocoderCl
   // Reserves the next free one-second slot; a burst beyond MAX_QUEUE_WAIT_MS fails fast
   // rather than holding a function invocation open.
   async function waitForSlot(signal: AbortSignal | undefined): Promise<void> {
+    if (signal?.aborted) {
+      throw new GeocoderError('unreachable', undefined, { cause: networkCause(signal.reason) })
+    }
     const now = Date.now()
     const slot = Math.max(now, nextSlotAt)
     if (slot - now > MAX_QUEUE_WAIT_MS) throw new GeocoderError('rate_limited')
@@ -55,6 +59,8 @@ export function createNominatimClient(deps: { fetch: typeof fetch }): GeocoderCl
       try {
         await sleep(slot - now, signal)
       } catch (err) {
+        // Give the slot back, unless a later caller has queued behind it.
+        if (nextSlotAt === slot + MIN_INTERVAL_MS) nextSlotAt = slot
         throw new GeocoderError('unreachable', undefined, { cause: networkCause(err) })
       }
     }

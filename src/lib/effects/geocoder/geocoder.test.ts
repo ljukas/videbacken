@@ -141,17 +141,124 @@ describe('search', () => {
     expect(fake.calls).toHaveLength(4)
   })
 
-  test('a 429 is rate_limited at once; a 503 is retried once, then unreachable', async () => {
-    const limited = client({ [ROUTE]: () => new Response('slow down', { status: 429 }) })
-    expect((await rejection(limited.c.search(QUERY))).code).toBe('rate_limited')
-    expect(limited.fake.calls).toHaveLength(1)
+  test('maps each status to a code, keeps the status, and never retries', async () => {
+    const cases: [number, string][] = [
+      [429, 'rate_limited'],
+      [403, 'forbidden'],
+      [400, 'unexpected_response'],
+      [500, 'unreachable'],
+      [503, 'unreachable'],
+    ]
+    for (const [status, code] of cases) {
+      const { c, fake } = client({ [ROUTE]: () => new Response('x', { status }) })
+      const error = await rejection(c.search(QUERY))
+      expect(error.code, `status ${status}`).toBe(code)
+      expect(error.status, `status ${status}`).toBe(status)
+      expect(fake.calls, `status ${status}`).toHaveLength(1)
+    }
+  })
 
-    const down = client({ [ROUTE]: () => new Response('', { status: 503 }) })
-    expect((await rejection(down.c.search(QUERY))).code).toBe('unreachable')
-    expect(down.fake.calls).toHaveLength(2)
+  test('a failed search is not cached', async () => {
+    const { c, fake } = client({
+      [ROUTE]: (_req, call) =>
+        call === 0
+          ? new Response('', { status: 429 })
+          : jsonResponse([place('A', '57.7', '11.97')]),
+    })
+    await rejection(c.search(QUERY))
+    expect(await c.search(QUERY)).toHaveLength(1)
+    expect(fake.calls).toHaveLength(2)
+  })
 
-    const blocked = client({ [ROUTE]: () => new Response('', { status: 403 }) })
-    expect((await rejection(blocked.c.search(QUERY))).code).toBe('forbidden')
+  test('a timeout is unreachable with one request and no query in the error', async () => {
+    const { c, fake } = client({
+      [ROUTE]: (req) =>
+        new Promise<Response>((_, reject) => {
+          req.signal.addEventListener('abort', () => reject(req.signal.reason))
+        }),
+    })
+    const error = await rejection(c.search(QUERY))
+    expect(error.code).toBe('unreachable')
+    expect((error.cause as { name: string }).name).toBe('TimeoutError')
+    expect(fake.calls).toHaveLength(1)
+    expect(`${error.message} ${JSON.stringify(error.cause)}`).not.toContain('Storgatan')
+  })
+
+  test('a caller abort mid-fetch is unreachable with one request', async () => {
+    const { c, fake } = client({
+      [ROUTE]: (req) =>
+        new Promise<Response>((_, reject) => {
+          req.signal.addEventListener('abort', () => reject(req.signal.reason))
+        }),
+    })
+    const controller = new AbortController()
+    const pending = rejection(c.search(QUERY, { signal: controller.signal }))
+    await vi.advanceTimersByTimeAsync(100)
+    controller.abort()
+    const error = await pending
+    expect(error.code).toBe('unreachable')
+    expect(fake.calls).toHaveLength(1)
+    expect(`${error.message} ${JSON.stringify(error.cause)}`).not.toContain('Storgatan')
+  })
+
+  test('a pre-aborted signal fails without a request or a slot', async () => {
+    const { c, fake } = client({ [ROUTE]: () => jsonResponse([]) })
+    const controller = new AbortController()
+    controller.abort()
+    expect((await rejection(c.search('Ett', { signal: controller.signal }))).code).toBe(
+      'unreachable',
+    )
+    expect(fake.calls).toHaveLength(0)
+    const before = Date.now()
+    await c.search('Två')
+    expect(Date.now() - before).toBe(0)
+  })
+
+  test('aborting during the wait releases the slot', async () => {
+    const { c, fake, waits } = client({ [ROUTE]: () => jsonResponse([]) })
+    await c.search('Ett')
+    const controller = new AbortController()
+    const second = rejection(c.search('Två', { signal: controller.signal }))
+    await vi.advanceTimersByTimeAsync(200)
+    controller.abort()
+    expect((await second).code).toBe('unreachable')
+    expect(fake.calls).toHaveLength(1)
+
+    await c.search('Tre')
+
+    expect(fake.calls).toHaveLength(2)
+    expect(waits()).toEqual([1000])
+  })
+
+  test('a cache hit does not take a throttle slot', async () => {
+    const { c, waits } = client({ [ROUTE]: () => jsonResponse([]) })
+    await c.search('Ett')
+    await c.search('Ett')
+    await c.search('Ett')
+    await c.search('Två')
+    expect(waits()).toEqual([1000])
+  })
+
+  test('the cache holds at most 100 queries, evicting the oldest', async () => {
+    const { c, fake } = client({ [ROUTE]: () => jsonResponse([]) })
+    for (let i = 1; i <= 101; i++) await c.search(`Fråga ${i}`)
+    expect(fake.calls).toHaveLength(101)
+
+    await c.search('Fråga 101')
+    expect(fake.calls).toHaveLength(101)
+    await c.search('Fråga 1')
+    expect(fake.calls).toHaveLength(102)
+  })
+
+  test('a search rejected for the queue does not push the next slot out', async () => {
+    const { c, fake } = client({ [ROUTE]: () => jsonResponse([]) })
+    const results = await Promise.allSettled(['A1', 'B2', 'C3', 'D4', 'E5'].map((q) => c.search(q)))
+    expect(results[4].status).toBe('rejected')
+    await vi.advanceTimersByTimeAsync(4_000)
+    const before = Date.now()
+    await c.search('F6')
+    expect(Date.now() - before).toBe(0)
+    expect(fake.calls).toHaveLength(5)
   })
 
   test('non-JSON and non-array answers are unexpected_response', async () => {
@@ -162,7 +269,7 @@ describe('search', () => {
   })
 
   test('a network failure is unreachable, and no error carries the query', async () => {
-    const { c } = client({
+    const { c, fake } = client({
       [ROUTE]: () => {
         throw Object.assign(new TypeError(`fetch failed for ${QUERY}`), { code: 'ECONNRESET' })
       },
@@ -170,6 +277,7 @@ describe('search', () => {
     const error = await rejection(c.search(QUERY))
     expect(error.code).toBe('unreachable')
     expect(error.cause).toEqual({ name: 'TypeError', code: 'ECONNRESET' })
+    expect(fake.calls).toHaveLength(1)
     expect(`${error.message} ${JSON.stringify(error.cause)}`).not.toContain('Storgatan')
   })
 })
