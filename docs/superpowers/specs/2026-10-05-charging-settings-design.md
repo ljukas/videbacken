@@ -385,8 +385,10 @@ its own schema review. The checkpoint runs after 3b.
   - The footer keeps only sync and history.
 - **Inline links in the tile's health message** open the same dialog:
   - `not_configured`: "Konfigurera" (sync is already hidden in that state);
-  - `auth_failed`, `credentials_unreadable`, and Škoda's `forbidden`: "Uppdatera inloggning".
-  - With suspect fields stored, the message names them (for example "VIN fungerar inte").
+  - `auth_failed`, `credentials_unreadable`, Škoda's `forbidden`, and any failure with stored suspect fields:
+    "Uppdatera inloggning".
+  - The suspect line ("<fields> fungerade inte vid senaste synken.") shows only alongside "Uppdatera inloggning".
+  - Each link's accessible name names the source ("Uppdatera inloggning, Škoda").
 - A new **"Elnätsavtal"** card holds the facility ID.
   - Status: "Anläggnings-ID sparat i appen" / "från miljövariabel" / "saknas – månadskollen hoppas över".
   - Next to the status: "Kontrolleras den 1:a varje månad".
@@ -396,13 +398,16 @@ its own schema review. The checkpoint runs after 3b.
   other bad link.
 
 ### Credentials dialog (`CredentialsDialog.tsx`)
-- A `ResponsiveDialog` with `useAppForm` and a Zod schema built per render for locale messages, shaped like
-  `TariffDialog`.
+- A `ResponsiveDialog` with `useAppForm`, shaped like `TariffDialog`. No client-side Zod schema (as built): the
+  server's `INVALID_FIELD` is the one source of format rules, and each listed field shows its own message.
 - **Each field shows:**
   - its label;
   - its status line: "Sparad i appen · 5 okt" / "Från miljövariabel" / "Saknas";
   - a red line "Fungerade inte vid senaste synken" when it is in the source's current `suspectFields`;
-  - an input that is never pre-filled. `secret` fields use `type="password"`; all inputs use `autoComplete="off"`.
+  - an input that is never pre-filled, with a namespaced id `credential-<source>-<field>`. `secret` fields use
+    `type="password"` + `autoComplete="new-password"` (browsers ignore "off" there) and the password-manager
+    opt-outs `data-1p-ignore`, `data-lpignore`, `data-bwignore`, `data-form-type="other"`; text inputs use
+    `autoComplete="off"`.
 - **Description text:**
   - "Lämna ett fält tomt för att behålla det som är sparat."
   - For Škoda: a link to `https://go.skoda.eu/api-keys` and the line "Skapa nyckeln i MyŠkoda-appen och klistra in
@@ -421,9 +426,21 @@ its own schema review. The checkpoint runs after 3b.
 - **"Ta bort sparade uppgifter"** is shown only when something is stored. It opens a confirm (`AlertDialog`), then
   calls `credentials.clear` and runs the same sync.
 
+### As built (decided in the build)
+- **Grid card:** a fourth status, "Det sparade anläggnings-ID:t går inte att läsa"; its key button is named "Ändra
+  anläggnings-ID".
+- **Loading:** `credentials.status` is a critical read; the grid card sits in `SectionSkeleton name="charging-grid"`
+  (ADR-0025). The dialog opens once the status has loaded or failed, never on a guess.
+- **After "Ta bort sparade uppgifter"** the dialog closes. The page runs the sync (not the dialog), so the tile's
+  "Synkar…" follows it.
+- **Focus:** closing returns focus to the key button `#credentials-<source>`. The dialog can't be dismissed while a
+  save or remove is in flight. With the key missing, focus starts on "Avbryt".
+- **The stored date shows the year:** "Sparad i appen · 5 okt. 2026".
+
 ### Overview links
 `SyncHealthAlert` for `auth_failed` / `credentials_unreadable` / Škoda `forbidden`, and `CredentialExpiryAlert`,
-link straight to `/charging/settings?dialog=credentials&source=<source>`. In step 1 they link to the page.
+link straight to `/charging/settings?dialog=credentials&source=<source>`; `CredentialExpiryAlert`'s link reads
+"Byt nyckel". In step 1 they link to the page.
 
 ### Copy and docs
 - **Key-expiry email and warning.** `email_credential_expiry_body`, `charging_skoda_key_expiring_body*` and the
