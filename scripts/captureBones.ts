@@ -17,7 +17,7 @@
 // A newly captured section: switch its <SectionSkeleton name="x"> to bones={xBones},
 // imported from ~/bones/x.bones.json (test/sectionSkeletonBones.test.ts enforces it).
 import { spawnSync } from 'node:child_process'
-import { readdirSync, rmSync } from 'node:fs'
+import { readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
 import './loadEnv'
@@ -34,6 +34,10 @@ const DEFAULT_PATHS = [
   '/sensors',
   '/users',
 ]
+// Widths one page captures on top of boneyard.config.json's (ADR-0025 §4). /energy's Summering card turns
+// wide when the content reaches 860 px, at a 1220 px viewport: without its own capture, 1220–1279 replayed the
+// 1100 (narrow) bones, 125 px too tall.
+const EXTRA_BREAKPOINTS: Record<string, number[]> = { '/energy': [1220] }
 
 const email = process.env.INITIAL_ADMIN_EMAILS?.split(',')[0]?.trim()
 if (!email) {
@@ -86,19 +90,34 @@ if (!cookies.some((c) => c.name.endsWith('session_token'))) {
   process.exit(1)
 }
 
-const result = spawnSync(
-  'bunx',
-  [
-    'boneyard-js',
-    'build',
-    ...paths.map((p) => `${ORIGIN}${p}`),
-    '--no-scan',
-    ...flags,
-    ...cookies.flatMap((c) => ['--cookie', `${c.name}=${c.value}`]),
-  ],
-  { stdio: 'inherit' },
-)
-if (result.status !== 0) process.exit(result.status ?? 1)
+const capture = (urlPaths: string[], breakpoints?: number[]) => {
+  const result = spawnSync(
+    'bunx',
+    [
+      'boneyard-js',
+      'build',
+      ...urlPaths.map((p) => `${ORIGIN}${p}`),
+      '--no-scan',
+      ...(breakpoints ? ['--breakpoints', breakpoints.join(',')] : []),
+      ...flags,
+      ...cookies.flatMap((c) => ['--cookie', `${c.name}=${c.value}`]),
+    ],
+    { stdio: 'inherit' },
+  )
+  if (result.status !== 0) process.exit(result.status ?? 1)
+}
+// The pages on the shared widths in one run; each page with extra widths in its own (--breakpoints replaces the
+// config's list for that run).
+const shared = paths.filter((p) => !EXTRA_BREAKPOINTS[p])
+if (shared.length) capture(shared)
+const configured = (
+  JSON.parse(readFileSync('boneyard.config.json', 'utf8')) as { breakpoints: number[] }
+).breakpoints
+for (const p of paths.filter((x) => EXTRA_BREAKPOINTS[x]))
+  capture(
+    [p],
+    [...new Set([...configured, ...EXTRA_BREAKPOINTS[p]])].sort((a, b) => a - b),
+  )
 // The CLI always writes a registry of this run's skeletons. Pages import their own
 // bones (ADR-0025 §4), so nothing reads it: drop it.
 for (const f of readdirSync('src/bones'))
