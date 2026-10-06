@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type CredentialSource, isCredentialSource } from '~/lib/integrationCredentials'
 import type { IntegrationSource } from '~/lib/integrationHealth'
 import { m } from '~/paraglide/messages'
 import { type RunsQuery, SyncRunsDialog } from './SyncRunsDialog'
@@ -9,6 +10,8 @@ export type SourceEntry = {
   source: IntegrationSource
   health: Health | undefined
   runs: RunsQuery | undefined
+  /** When its credentials were last saved (see SyncSourceTile); undefined while unknown. */
+  credentialsUpdatedAt?: Date | null
   /** Source-specific lines and buttons for its tile (see SyncSourceTile). */
   details?: ReactNode
   actions?: ReactNode
@@ -26,6 +29,7 @@ export function SyncSourcesPanel({
   openSource,
   onOpenHistory,
   onCloseHistory,
+  onOpenCredentials,
 }: {
   entries: SourceEntry[]
   onSync: (source: IntegrationSource) => void
@@ -33,6 +37,8 @@ export function SyncSourcesPanel({
   openSource: IntegrationSource | undefined
   onOpenHistory: (source: IntegrationSource) => void
   onCloseHistory: () => void
+  /** Opens a source's credentials dialog (the tiles of credential sources get a key button). */
+  onOpenCredentials: (source: CredentialSource) => void
 }) {
   // The overlay keeps showing the last opened source after `openSource`
   // clears, so its close animation shows the content rather than an empty
@@ -67,26 +73,33 @@ export function SyncSourcesPanel({
           narrower four-column tiles get too tight for their names and messages. */}
       {/* biome-ignore lint/a11y/noRedundantRoles: list-style none makes Safari drop the list semantics */}
       <ul role="list" className="grid @4xl:grid-cols-4 @md:grid-cols-2 grid-cols-1 gap-4">
-        {entries.map((e) => (
-          <li key={e.source} className="min-w-0">
-            <SyncSourceTile
-              source={e.source}
-              health={e.health}
-              onSync={() => onSync(e.source)}
-              syncing={isPendingFor(e.source)}
-              onOpenHistory={() => onOpenHistory(e.source)}
-              details={e.details}
-              actions={e.actions}
-              historyRef={(el) => {
-                if (!el) return
-                historyButtons.set(e.source, el)
-                return () => {
-                  historyButtons.delete(e.source)
+        {entries.map((e) => {
+          const credentialSource = isCredentialSource(e.source) ? e.source : null
+          return (
+            <li key={e.source} className="min-w-0">
+              <SyncSourceTile
+                source={e.source}
+                health={e.health}
+                onSync={() => onSync(e.source)}
+                syncing={isPendingFor(e.source)}
+                onOpenHistory={() => onOpenHistory(e.source)}
+                details={e.details}
+                actions={e.actions}
+                credentialsUpdatedAt={e.credentialsUpdatedAt}
+                onOpenCredentials={
+                  credentialSource ? () => onOpenCredentials(credentialSource) : undefined
                 }
-              }}
-            />
-          </li>
-        ))}
+                historyRef={(el) => {
+                  if (!el) return
+                  historyButtons.set(e.source, el)
+                  return () => {
+                    historyButtons.delete(e.source)
+                  }
+                }}
+              />
+            </li>
+          )
+        })}
       </ul>
       <SyncRunsDialog
         source={entry?.source}

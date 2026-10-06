@@ -168,6 +168,7 @@ describe('login', () => {
     const err = await caught(client.chargers())
 
     expect(err).toMatchObject({ code: 'auth_failed', op: 'chargers', status: 401 })
+    expect(err.suspectFields).toBeUndefined()
     expect(ff.callsTo(TOKEN)).toHaveLength(2)
     expect(ff.callsTo(CHARGERS)).toHaveLength(2)
   })
@@ -210,6 +211,7 @@ describe('login', () => {
 
     expect(err).toMatchObject({ code: 'auth_failed', op: 'token', status: 400 })
     expect(err.message).not.toContain('grant retired')
+    expect(err.suspectFields).toEqual(['username', 'password'])
     expect(ff.callsTo(TOKEN)).toHaveLength(1)
     expect(waits(TOKEN)).toEqual([])
   })
@@ -263,6 +265,7 @@ describe('login', () => {
 
     expect(err.code).toBe('auth_failed')
     expect(err.message).toContain('grant retired')
+    expect(err.suspectFields).toBeUndefined()
   })
 
   test('a rejected login blocks new logins for 5 min, then logs in again', async () => {

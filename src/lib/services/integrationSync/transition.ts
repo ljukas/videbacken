@@ -1,3 +1,4 @@
+import type { CredentialFieldName } from '~/lib/integrationCredentials'
 import type {
   HealthState,
   HealthTransition,
@@ -33,6 +34,7 @@ export type SyncOutcome =
       message: string
       stats: RunStats
       syncedUntil?: Date | null
+      suspectFields?: readonly CredentialFieldName[] | null
     }
 
 // The health-bearing columns of an `integration_sync` row (lease columns are
@@ -47,6 +49,7 @@ export type HealthSnapshot = {
   alertableFailures: number
   errorCode: IntegrationErrorCode | null
   lastErrorMessage: string | null
+  suspectFields: CredentialFieldName[] | null
 }
 
 // Alert transitions: an alert opens on the `alertAfterFailures`-th consecutive
@@ -79,6 +82,7 @@ export function nextRow(
         alertableFailures: 0,
         errorCode: null,
         lastErrorMessage: null,
+        suspectFields: null,
       },
       transition: alertOpen ? 'recovered' : 'none',
     }
@@ -99,6 +103,8 @@ export function nextRow(
       alertableFailures,
       errorCode: outcome.code,
       lastErrorMessage: sanitizeErrorMessage(outcome.message),
+      // Deduped; none or empty is NULL (the column's CHECK rejects an empty array).
+      suspectFields: outcome.suspectFields?.length ? [...new Set(outcome.suspectFields)] : null,
     },
     transition: opensAlert ? 'started_failing' : 'none',
   }

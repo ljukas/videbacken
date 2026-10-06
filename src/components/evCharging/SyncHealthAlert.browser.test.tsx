@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vitest'
-import { integrationErrorMessage, integrationHealthTitle } from '~/lib/integrationHealthMessage'
+import {
+  integrationErrorMessage,
+  integrationHealthTitle,
+  integrationSourceName,
+} from '~/lib/integrationHealthMessage'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders, renderWithRouter } from '~test/browser/render'
 import { SyncHealthAlert } from './SyncHealthAlert'
@@ -24,7 +28,11 @@ const failing: Health = {
   failingSince: new Date('2026-09-28T08:00:00Z'),
   consecutiveFailures: 3,
   code: 'auth_failed',
-  adminDetail: { lastErrorMessage: 'HTTP 401 from /oauth/token', credentialExpiry: null },
+  adminDetail: {
+    lastErrorMessage: 'HTTP 401 from /oauth/token',
+    credentialExpiry: null,
+    suspectFields: null,
+  },
 }
 
 function titleFor(state: Health['state']) {
@@ -247,14 +255,49 @@ test('an unexpected Emaldo answer says the app key may have changed', async () =
 })
 
 test.each([
-  ['failing', { state: 'failing', code: 'auth_failed' }],
-  ['not configured', { state: 'not_configured' }],
+  ['failing', { state: 'failing', code: 'unreachable' }],
   ['stale', { state: 'stale' }],
   ['never synced', { state: 'never_synced' }],
 ] as const)('%s (admin, settingsLink): links to the settings page', async (_n, patch) => {
   const { screen } = await renderWithRouter(
     <SyncHealthAlert
       health={{ ...base, ...patch } as Health}
+      isAdmin
+      settingsLink
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_settings_link() }))
+    .toHaveAttribute('href', '/charging/settings')
+})
+
+test.each([
+  ['skoda', 'failing', 'auth_failed', m.charging_credentials_update()],
+  ['zaptec', 'not_configured', null, m.charging_credentials_configure()],
+] as const)('%s %s (admin): deep-links into the credentials dialog', async (source, state, code, action) => {
+  const { screen } = await renderWithRouter(
+    <SyncHealthAlert
+      health={{ ...base, source, state, code } as Health}
+      isAdmin
+      settingsLink
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  const link = screen.getByRole('link', {
+    name: m.charging_source_action_label({ action, source: integrationSourceName(source) }),
+  })
+  await expect.element(link).toHaveAttribute('href', expect.stringContaining('/charging/settings?'))
+  await expect.element(link).toHaveAttribute('href', expect.stringContaining('dialog=credentials'))
+  await expect.element(link).toHaveAttribute('href', expect.stringContaining(`source=${source}`))
+})
+
+test('elpris never deep-links', async () => {
+  const { screen } = await renderWithRouter(
+    <SyncHealthAlert
+      health={{ ...base, source: 'elpris', state: 'failing', code: 'auth_failed' }}
       isAdmin
       settingsLink
       onRetry={() => {}}

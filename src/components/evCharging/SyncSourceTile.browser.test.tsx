@@ -6,6 +6,7 @@ import {
 } from '~/lib/integrationHealthMessage'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
+import { credentialsButtonId } from './credentialLink'
 import { SyncSourceTile } from './SyncSourceTile'
 import type { SourceHealth as Health } from './syncHealth'
 
@@ -43,6 +44,7 @@ const named = (action: string, source: string) => ({
   name: m.charging_source_action_label({ action, source }),
 })
 const syncButton = (source: string, action = m.charging_sync_now()) => named(action, source)
+const credLink = (action: string, source: string) => named(action, source)
 const historyButton = (source: string) => named(m.charging_source_history(), source)
 
 test('an ok source shows its name, role, state, last sync and cadence', async () => {
@@ -275,4 +277,149 @@ test('a source’s own actions stay when it is not configured', async () => {
   expect(screen.getByRole('button').elements()).toHaveLength(2)
   await expect.element(screen.getByRole('button', historyButton('Škoda'))).toBeVisible()
   await expect.element(screen.getByRole('button', { name: 'Importera' })).toBeVisible()
+})
+
+test('a credential source has a key button named for it, with the id the dialog returns focus to', async () => {
+  const onOpen = vi.fn()
+  const { screen } = await renderWithProviders(tile(ok, { onOpenCredentials: onOpen }))
+  await screen
+    .getByRole('button', { name: m.charging_credentials_button({ source: 'Zaptec' }) })
+    .click()
+  expect(onOpen).toHaveBeenCalledOnce()
+  expect(
+    screen
+      .getByRole('button', { name: m.charging_credentials_button({ source: 'Zaptec' }) })
+      .element().id,
+  ).toBe(credentialsButtonId('zaptec'))
+})
+
+test('without the handler there is no key button and no credentials link', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, state: 'not_configured', code: 'not_configured' }),
+  )
+  expect(screen.getByRole('button', { name: /Inloggning för/ }).elements()).toHaveLength(0)
+  expect(
+    screen.getByRole('button', credLink(m.charging_credentials_configure(), 'Zaptec')).elements(),
+  ).toHaveLength(0)
+})
+
+test('elpris has no credentials, so no key button even with a handler', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, source: 'elpris' }, { onOpenCredentials: () => {} }),
+  )
+  expect(screen.getByRole('button', { name: /Inloggning för/ }).elements()).toHaveLength(0)
+})
+
+test('not configured links to set it up', async () => {
+  const onOpen = vi.fn()
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, state: 'not_configured', code: 'not_configured' }, { onOpenCredentials: onOpen }),
+  )
+  const link = screen.getByRole('button', credLink(m.charging_credentials_configure(), 'Zaptec'))
+  // Underlined at rest, so it reads as a link, not bold text (no app.css here: the class is pinned).
+  expect(link.element().classList).toContain('underline')
+  await link.click()
+  expect(onOpen).toHaveBeenCalledOnce()
+})
+
+test('a refused sign-in links to update it and names the suspect fields', async () => {
+  const { screen } = await renderWithProviders(
+    tile(
+      {
+        ...ok,
+        source: 'skoda',
+        state: 'failing',
+        code: 'forbidden',
+        adminDetail: {
+          lastErrorMessage: null,
+          credentialExpiry: null,
+          suspectFields: ['vin'],
+        } as never,
+      },
+      { onOpenCredentials: () => {} },
+    ),
+  )
+  await expect
+    .element(screen.getByRole('button', credLink(m.charging_credentials_update(), 'Škoda')))
+    .toBeVisible()
+  await expect
+    .element(screen.getByText(m.charging_credentials_suspect({ fields: 'VIN' })))
+    .toBeVisible()
+})
+
+test('an outage that is not about credentials has no credentials link', async () => {
+  const { screen } = await renderWithProviders(
+    tile({ ...ok, state: 'failing', code: 'unreachable' }, { onOpenCredentials: () => {} }),
+  )
+  expect(
+    screen.getByRole('button', credLink(m.charging_credentials_update(), 'Zaptec')).elements(),
+  ).toHaveLength(0)
+  // Source-independent: no button starts with either link text.
+  for (const text of [m.charging_credentials_update(), m.charging_credentials_configure()]) {
+    expect(screen.getByRole('button', { name: new RegExp(`^${text}`) }).elements()).toHaveLength(0)
+  }
+})
+
+test('the header keeps room for the key button', async () => {
+  const { screen } = await renderWithProviders(tile(ok, { onOpenCredentials: () => {} }))
+  const heading = screen.getByRole('heading', { level: 3 }).element()
+  expect(heading.closest('[data-credentials-room]')).not.toBeNull()
+})
+
+const skodaSuspect = (
+  over: Partial<Health>,
+  extra: Partial<Parameters<typeof SyncSourceTile>[0]> = {},
+) =>
+  tile(
+    {
+      ...ok,
+      source: 'skoda',
+      state: 'failing',
+      code: 'forbidden',
+      adminDetail: {
+        lastErrorMessage: null,
+        credentialExpiry: null,
+        suspectFields: ['vin'],
+      } as never,
+      ...over,
+    },
+    { onOpenCredentials: () => {}, ...extra },
+  )
+const suspectText = () => m.charging_credentials_suspect({ fields: 'VIN' })
+
+test('no suspect line while the state is still ok', async () => {
+  const { screen } = await renderWithProviders(skodaSuspect({ state: 'ok', code: null }))
+  expect(screen.getByText(suspectText()).elements()).toHaveLength(0)
+})
+
+test('no suspect line for a source without credentials', async () => {
+  const { screen } = await renderWithProviders(skodaSuspect({ source: 'elpris' }))
+  expect(screen.getByText(suspectText()).elements()).toHaveLength(0)
+})
+
+test('no suspect line when the sync blamed no fields', async () => {
+  const { screen } = await renderWithProviders(
+    skodaSuspect({
+      adminDetail: { lastErrorMessage: null, credentialExpiry: null, suspectFields: null } as never,
+    }),
+  )
+  expect(screen.getByText(suspectText()).elements()).toHaveLength(0)
+})
+
+// `ok.lastAttemptAt` is 2026-10-04T08:00Z: the failed attempt that blamed the VIN.
+test('credentials saved after the failed attempt hide the suspect line, not the link', async () => {
+  const { screen } = await renderWithProviders(
+    skodaSuspect({}, { credentialsUpdatedAt: new Date('2026-10-04T08:05:00Z') }),
+  )
+  await expect
+    .element(screen.getByRole('button', credLink(m.charging_credentials_update(), 'Škoda')))
+    .toBeVisible()
+  expect(screen.getByText(suspectText()).elements()).toHaveLength(0)
+})
+
+test('an attempt after the save keeps the suspect line', async () => {
+  const { screen } = await renderWithProviders(
+    skodaSuspect({}, { credentialsUpdatedAt: new Date('2026-10-04T07:55:00Z') }),
+  )
+  await expect.element(screen.getByText(suspectText())).toBeVisible()
 })

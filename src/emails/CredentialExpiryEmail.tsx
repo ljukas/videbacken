@@ -9,7 +9,7 @@ import type { Locale } from '~/paraglide/runtime'
 import { BrandEmailLayout } from './BrandEmailLayout'
 
 export interface CredentialExpiryEmailProps {
-  // Only Škoda has an expiring credential today; the copy (MyŠkoda, SKODA_API_KEY)
+  // Only Škoda has an expiring credential today; the copy (MyŠkoda, paste under Inställningar)
   // assumes it — a second source needs its own strings.
   source: ExpiringCredentialSource
   expiresAt: string // ISO

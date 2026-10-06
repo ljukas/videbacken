@@ -33,7 +33,7 @@ The page is a pure *settings and status* page for the connected sources and thei
 | Where GUI-set credentials live | **Encrypted rows in our Postgres** (AES-256-GCM, dedicated `CREDENTIALS_ENCRYPTION_KEY`). Stored values win over env, field by field; env stays the fallback. See ADR-0026. |
 | What saving does | **Save, then run that source's sync once.** The tile's health shows the result. No separate "test" path. |
 | Removing | **"Ta bort sparade uppgifter"** clears the stored row: env applies again (or `not_configured`), then a sync runs. |
-| Slicing | Three steps, one PR each: **move → store → UI** (see the roadmap). |
+| Slicing | One PR per step: **move → store → credentials server (3a) → credentials UI (3b)** (see the roadmap; the owner split step 3 on 2026-10-05). |
 | One source or all | **Per source** (owner, 2026-10-05, after checkpoint 2). A source's fields are set together (all the Škoda fields in one save), and each source is independent of the others (Škoda never with Emaldo). See [Credentials per source](#credentials-per-source-owner-decision-after-checkpoint-2). |
 | When one fails | **Only that source fails** (owner, same day). A rejected save, a refused key or an unreadable row affects that source only. |
 
@@ -199,7 +199,7 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
   - `facilityId`: must parse with `parseFacilityId`.
   - Every other field: non-empty.
 - **Domain errors** (`IntegrationCredentialDomainError`):
-  - `INVALID_FIELD`: carries the field name. The message never contains the value. An unknown field name is echoed
+  - `INVALID_FIELD`: carries the field names (a list; see Step 3a). The message never contains the value. An unknown field name is echoed
     only if it matches `/^[A-Za-z]{1,32}$/`; otherwise it is `unknown`.
   - `NOTHING_TO_SAVE`.
   - `ENCRYPTION_KEY_MISSING`.
@@ -281,7 +281,7 @@ together, sources are set independently, and if one source fails, the others mus
 - **A save over an unreadable row needs every field of the source.**
   - Today, `set` replaces an unreadable row with only the fields sent, so the unsent ones would silently fall back
     to env.
-  - Step 3 makes `set` refuse that with a new domain code (for example `REENTER_ALL_FIELDS`).
+  - Step 3a makes `set` refuse that with a new domain code, `REENTER_ALL_FIELDS`.
   - The dialog's "Fyll i alla fält igen" alert then matches the rule.
   - Over a readable row, a blank field still keeps its stored value.
 - **A missing or rotated `CREDENTIALS_ENCRYPTION_KEY` makes every stored source unreadable at once.** They share one
@@ -293,48 +293,121 @@ together, sources are set independently, and if one source fails, the others mus
   - **At sync:** the run maps a vendor's answer to the field it points at, where the answer allows it. The dialog
     and tile flag that field.
 
-    | Source | Answer | Flags |
-    |---|---|---|
-    | Škoda | 401 | `apiKey` (expired or wrong) |
-    | Škoda | 404 | `vin` (no car for that VIN) |
-    | Škoda | 403 | `apiKey` + `vin` together (the key isn't authorized for that car); can't tell which |
-    | Zaptec | refused login | `username` + `password` together (Zaptec doesn't say which) |
-    | Emaldo | refused login | `user` + `password` |
-    | Emaldo | answer we can't decode (often a rotated app key) | `appId` + `appSecret` |
+    | Source | Answer | Code | Flags |
+    |---|---|---|---|
+    | Škoda | 401 | `auth_failed` | `apiKey` (expired or wrong) |
+    | Škoda | 404 | `forbidden` | `vin` (no car for that VIN) |
+    | Škoda | 403 | `forbidden` | `apiKey` + `vin` together (the key isn't authorized for that car); can't tell which |
+    | Zaptec | 400/401 at login, credentials rejected | `auth_failed` | `username` + `password` together (Zaptec doesn't say which) |
+    | Zaptec | 400/401 at login, `unsupported_grant_type` (grant retired) | `auth_failed` | none: no field is wrong |
+    | Emaldo | refused login | `auth_failed` | `user` + `password` |
+    | Emaldo | answer we can't decode (often a rotated app key) | `unexpected_response` | `appId` + `appSecret` |
 
-    Step 3 checks these mappings against the current client code and the vendors' documented error bodies before
-    relying on them. It stores the suspect fields with the run, by name only, never a value.
+    Checked against the client code in the step 3 brainstorm (2026-10-05):
+    - Škoda's 403 and 404 both map to `forbidden` (`skoda/client.ts`). Only the stored fields tell them apart.
+    - An Emaldo login body is encrypted with the app secret, so a refused login can also mean a rotated app
+      id/secret. The owner chose to flag `user` + `password` (the common cause). The run message still names the app
+      id/secret. Flagging all four was rejected: it tells the admin nothing.
 
-## Step 3 — credentials UI
+    Step 3a stores the suspect fields with the run, by name only, never a value (see below).
+
+## Step 3 — credentials (two PRs, owner 2026-10-05)
+
+Step 3 ships as **3a (server, no UI)** then **3b (UI)**. Each is reviewable in one sitting, and 3a's migration gets
+its own schema review. The checkpoint runs after 3b.
+
+## Step 3a — save rules, suspect fields, procedures (server only)
+
+### Save rules (`services/integrationCredential`)
+- **`INVALID_FIELD` lists every invalid field.** Validation checks every input before it throws; the error carries
+  `fields: string[]` (names only, never values; an unknown name is still echoed only if it matches
+  `/^[A-Za-z]{1,32}$/`, else `unknown`). The message lists the names.
+- **New code `REENTER_ALL_FIELDS`.** Over an unreadable row, `set` requires every field of the source (non-blank).
+  Otherwise the unsent fields would silently fall back to env. Over a readable row, a blank field still keeps its
+  stored value. Checked inside the lock, after the row is read. Like `INVALID_FIELD`, it carries `data: { fields }`
+  (the blank ones).
+- **Check order:** unknown or invalid fields → `NOTHING_TO_SAVE` → `ENCRYPTION_KEY_MISSING` → (in the transaction)
+  `REENTER_ALL_FIELDS`.
+
+### Suspect fields (the run names the wrong field)
+- `IntegrationError` gains an optional `suspectFields: readonly CredentialFieldName[]`: the credential field names
+  the vendor's answer points at. `CredentialFieldName` is the union of every credential field name, so a typo fails
+  to compile; the sync outcome and the read model use it too. Each client sets it per the [mapping table](#credentials-per-source-owner-decision-after-checkpoint-2),
+  next to its existing status handling (the vendor knowledge stays in the client).
+- `runPulledSync` records them in a new **`suspect_fields text[]`** column on both tables:
+  - `integration_sync` (current health, read by the tile and dialog). It is written with every outcome and cleared
+    on success, together with `error_code`. `nextRow` dedupes the list and turns an empty one into NULL.
+  - `integration_sync_run` (history, so the history overlay can show it).
+- CHECKs, on both tables: non-empty when set, and every name drawn from `CREDENTIAL_FIELD_NAMES`.
+  - **No tie to `error_code` on `integration_sync`.** Older code (a Vercel instant rollback) clears the code on
+    success and leaves this column, so such a CHECK would make its outcome write fail. The read model (`toHealth`)
+    shows the field only while `error_code` is set.
+  - `integration_sync_run` adds `suspect_fields IS NULL OR outcome <> 'ok'`. It is append-only, and older code
+    inserts NULL.
+  - Renaming or removing a field name needs an `array_replace` / `array_remove` data fix in the migration (see the
+    comment in `src/lib/integrationCredentials.ts`).
+- A run with no field to blame writes `NULL`, never `'{}'`.
+- **Alternatives considered:** storing the HTTP status and mapping it in the UI (spreads vendor rules into the
+  client); storing on `integration_sync` only (loses the history). Rejected.
+- `suspectFields: CredentialFieldName[] | null` is in `adminDetail` (admins only), not top-level health.
+  `RunRow.suspectFields` carries it per run (`recentRuns` is admin-only).
 
 ### Procedures — `src/lib/orpc/procedures/credentials.ts` (registered as `credentials`)
 - `status`: `adminProcedure` (a read, but admin-only). Returns the service's `status()`.
 - `set({ source, fields })`: `adminProcedure`, `.errors(credentialErrors)`.
-  - Zod restricts `fields` to that source's field names.
-  - It logs `admin set integration credentials` with `{ source, fields: [names] }`.
-- `clear({ source })`: `adminProcedure`. It logs the source only.
+  - Zod restricts `fields` to that source's field names: a discriminated union on `source`.
+  - `INVALID_FIELD` and `REENTER_ALL_FIELDS` map with `data: { fields }`; `NOTHING_TO_SAVE` and
+    `ENCRYPTION_KEY_MISSING` map without data.
+  - HTTP status: `ENCRYPTION_KEY_MISSING` is 409, the other three are 422.
+  - It logs `admin set integration credentials` with `{ source, fields: [names] }` and records the
+    `credentialsSetMs` timing.
+- `clear({ source })`: `adminProcedure`. It returns `{ cleared }` and logs the source only.
+- An unexpected error is logged through `serializeError` (a `DrizzleQueryError` message carries the ciphertext
+  parameter). `readStored` / `resolveCredentials` stay out of procedures and routes.
+
+### Tests
+- **Service:** `INVALID_FIELD` lists two bad fields at once; `REENTER_ALL_FIELDS` over an unreadable row with a field
+  missing, and success with all of them; a blank field over a readable row still keeps its value.
+- **Clients:** each mapping row sets its `fields` (and the Zaptec grant-retired case sets none).
+- **Sync lifecycle:** suspect fields are written on failure, cleared on success, and recorded on the run.
+- **Procedure:** a member gets `FORBIDDEN` on all three procedures; `set` never echoes values; Zod rejects a field of
+  another source.
+
+## Step 3b — credentials UI
 
 ### Settings page additions
-- **Each credential source's tile** (Zaptec, Škoda, Emaldo; elpris has none) gets an **"Inloggning"** button in the
-  footer's actions slot.
-  - When the source is `not_configured`, the button reads **"Konfigurera"**. Sync is already hidden in that state.
-  - When the source is `auth_failed` or `credentials_unreadable`, the tile's health message adds an "Uppdatera
-    inloggning" link that opens the same dialog.
+- **A key icon button in the top-right corner** of each credential source's tile (Zaptec, Škoda, Emaldo; elpris has
+  none). Owner, 2026-10-05: instead of a footer button.
+  - A ghost icon button (`KeyRoundIcon`). Its accessible name and tooltip are "Inloggning för <source>". It is 44 px
+    tall on coarse pointers, like the tile's other buttons.
+  - The header reserves room on the right, so a long name never runs under it, in both the stacked (narrow) and the
+    row (wide) header.
+  - The footer keeps only sync and history.
+- **Inline links in the tile's health message** open the same dialog:
+  - `not_configured`: "Konfigurera" (sync is already hidden in that state);
+  - `auth_failed`, `credentials_unreadable`, Škoda's `forbidden`, and any failure with stored suspect fields:
+    "Uppdatera inloggning".
+  - The suspect line ("<fields> fungerade inte vid senaste synken.") shows only alongside "Uppdatera inloggning".
+  - Each link's accessible name names the source ("Uppdatera inloggning, Škoda").
 - A new **"Elnätsavtal"** card holds the facility ID.
   - Status: "Anläggnings-ID sparat i appen" / "från miljövariabel" / "saknas – månadskollen hoppas över".
   - Next to the status: "Kontrolleras den 1:a varje månad".
-  - An "Ändra" button opens the same dialog with `source=gridTariff`.
+  - The same key icon button in its top-right corner opens the dialog with `source=gridTariff`.
 - **URL state** (ADR-0013): `?dialog=credentials&source=<credential source>`. The settings route's `source` param
   widens to `INTEGRATION_SOURCES ∪ CREDENTIAL_SOURCES`. A `syncRuns` link with `gridTariff` is cleaned like any
   other bad link.
 
 ### Credentials dialog (`CredentialsDialog.tsx`)
-- A `ResponsiveDialog` with `useAppForm` and a Zod schema built per render for locale messages, shaped like
-  `TariffDialog`.
+- A `ResponsiveDialog` with `useAppForm`, shaped like `TariffDialog`. No client-side Zod schema (as built): the
+  server's `INVALID_FIELD` is the one source of format rules, and each listed field shows its own message.
 - **Each field shows:**
   - its label;
   - its status line: "Sparad i appen · 5 okt" / "Från miljövariabel" / "Saknas";
-  - an input that is never pre-filled. `secret` fields use `type="password"`; all inputs use `autoComplete="off"`.
+  - a red line "Fungerade inte vid senaste synken" when it is in the source's current `suspectFields`;
+  - an input that is never pre-filled, with a namespaced id `credential-<source>-<field>`. `secret` fields use
+    `type="password"` + `autoComplete="new-password"` (browsers ignore "off" there) and the password-manager
+    opt-outs `data-1p-ignore`, `data-lpignore`, `data-bwignore`, `data-form-type="other"`; text inputs use
+    `autoComplete="off"`.
 - **Description text:**
   - "Lämna ett fält tomt för att behålla det som är sparat."
   - For Škoda: a link to `https://go.skoda.eu/api-keys` and the line "Skapa nyckeln i MyŠkoda-appen och klistra in
@@ -342,20 +415,41 @@ together, sources are set independently, and if one source fails, the others mus
 - **When the encryption key is missing** (`encryptionKeyConfigured: false`), the inputs are disabled and the dialog
   shows an alert: "Appen saknar CREDENTIALS_ENCRYPTION_KEY – uppgifter kan inte sparas."
 - **When the stored row is unreadable**, an alert says: "De sparade uppgifterna går inte att läsa. Fyll i alla
-  fält igen."
+  fält igen, eller ta bort dem." `REENTER_ALL_FIELDS` puts an error on each empty field.
 - **"Spara":**
   1. Call `credentials.set`.
   2. On success, show the toast "Sparat", close the dialog, invalidate `credentials` and `evCharging`, and run
      `useSyncNow().syncSource(source)` for health-tracked sources.
   3. For `gridTariff`, nothing runs.
 
-  `INVALID_FIELD` shows on that field; other errors show as a toast and keep the dialog open.
+  `INVALID_FIELD` puts an error on each listed field; other errors show as a toast and keep the dialog open.
 - **"Ta bort sparade uppgifter"** is shown only when something is stored. It opens a confirm (`AlertDialog`), then
   calls `credentials.clear` and runs the same sync.
 
+### As built (decided in the build)
+- **Grid card:** a fourth status, "Det sparade anläggnings-ID:t går inte att läsa"; its key button is named "Ändra
+  anläggnings-ID".
+- **Loading:** `credentials.status` is a critical read; the grid card sits in `SectionSkeleton name="charging-grid"`
+  (ADR-0025). The dialog opens once the status has loaded or failed, never on a guess.
+- **After "Ta bort sparade uppgifter"** the dialog closes. The page runs the sync (not the dialog), so the tile's
+  "Synkar…" follows it.
+- **Focus:** closing returns focus to the key button `#credentials-<source>`. The dialog can't be dismissed while a
+  save or remove is in flight. With the key missing, focus starts on "Avbryt".
+- **The stored date shows the year:** "Sparad i appen · 5 okt. 2026".
+- **Stale suspect fields are hidden:** they count (tile line, dialog field line) only while the health's
+  `lastAttemptAt` is not older than the source's `credentials.status` `updatedAt` (no stored row or status unknown →
+  they count). After a save the red lines disappear until the next sync outcome is recorded, so a blame from before
+  the save never shows while no newer outcome exists (the post-save sync never fired, or its lease holder died).
+  `lastAttemptAt` is when the outcome was recorded, not when the run started: a run that read the old values (one
+  already holding the lease, or a warm instance's 60 s cached row) and records after the save can still flag fields
+  for one cycle. The row has one `updatedAt` for all fields, so a partial save (e.g. only the API key) also hides a
+  blamed field it didn't touch, until the next outcome. The "Uppdatera inloggning" link is unchanged
+  (`currentSuspectFields` in `credentialLink.ts`).
+
 ### Overview links
-`SyncHealthAlert` for `auth_failed` / `credentials_unreadable` and `CredentialExpiryAlert` link straight to
-`/charging/settings?dialog=credentials&source=<source>`. In step 1 they link to the page.
+`SyncHealthAlert` for `auth_failed` / `credentials_unreadable` / Škoda `forbidden`, and `CredentialExpiryAlert`,
+link straight to `/charging/settings?dialog=credentials&source=<source>`; `CredentialExpiryAlert`'s link reads
+"Byt nyckel". In step 1 they link to the page.
 
 ### Copy and docs
 - **Key-expiry email and warning.** `email_credential_expiry_body`, `charging_skoda_key_expiring_body*` and the
@@ -363,20 +457,19 @@ together, sources are set independently, and if one source fails, the others mus
   Vercel och gör en ny deploy". The email test's `SKODA_API_KEY` assertion changes with them.
 - **Runbook** `docs/runbooks/skoda-api-key.md`: the GUI is the primary path, and env is the fallback.
 - **Config docs** landed in step 2 (`.env.example` with `CREDENTIALS_ENCRYPTION_KEY` and the GUI override, the
-  CLAUDE.md env list and code map, the ADR-0019 pointer to ADR-0026). Step 3 updates them only for what its UI adds.
+  CLAUDE.md env list and code map, the ADR-0019 pointer to ADR-0026). Step 3 updates them only for what it adds.
 
 ### Tests
 - **Browser, `CredentialsDialog`:**
-  - statuses render;
+  - statuses render, and a suspect field shows its red line;
   - inputs are empty;
   - a blank submit is refused;
   - save then sync is called;
-  - `INVALID_FIELD` lands on its field;
+  - `INVALID_FIELD` lands on each listed field; `REENTER_ALL_FIELDS` on the empty ones;
   - the missing-key and unreadable states;
   - remove asks for confirmation.
-- **Browser, settings route:** the tile buttons, the `not_configured` "Konfigurera" label, the grid card, and the
-  `dialog=credentials` deep link and its cleanup.
-- **Procedure:** a member gets `FORBIDDEN` on all three procedures; `set` never echoes values.
+- **Browser, settings route:** the key buttons (names, none on elpris), the `not_configured` "Konfigurera" link, the
+  grid card, and the `dialog=credentials` deep link and its cleanup.
 - **Live** (Phase 6), at desktop, tablet and mobile widths.
 
 ## Error handling summary

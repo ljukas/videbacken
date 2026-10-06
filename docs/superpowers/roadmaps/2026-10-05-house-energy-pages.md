@@ -8,7 +8,8 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92) | merged | in progress: sums and car match prod; timing failed (721 ms), fixed by the hourly scan; owner review pending |
+| 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92), fix [#95](https://github.com/ljukas/videbacken/pull/95) | checkpoint passed | 2026-10-05: sums and car match prod; warm `energy.overview` query 52 ms mean over 33 calls (one cold instance 736 ms total); owner accepted, asked for a month choice → step 1b |
+| 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | — | not started | — |
 | 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
@@ -36,17 +37,28 @@ If a step changes a design decision, amend the spec and ADR-0024 in that step's 
 
 Each must pass, with the result recorded in the table, before the next step starts.
 
-1. **After step 1 (prod).**
+1. **After step 1 (prod).** *Passed 2026-10-05 (see the log).*
    - A read-only SELECT on prod of the monthly sums (import, export, solar, load, battery columns) matches the
      page's tooltips for three months, 2026-08 among them; that month shows "data saknas för 14 h" (gaps of 9.4 h on
      08-06 and 4.6 h on 08-23).
    - The car share per month equals `/charging`'s monthly kWh with the scope set to *Alla*.
    - `rpc timing` for `energy.overview` in Vercel Runtime Logs: `totalMs` < 150 ms, `getEnergyOverviewMs` logged.
    - The owner reviews `/energy` live (copy, figures, desktop + phone) and accepts it.
-2. **After step 2 (prod).**
+2. **After step 1b (prod).**
+   - `/energy?period=2026-08` shows August's figures (they match step 1's SQL) with "data saknas för 14 h"; Hela 2026
+     and Totalt match the SQL sums.
+   - Switching periods moves nothing: the live Playwright check's bounding boxes are identical at 1440, 820 and
+     390 px.
+   - `rpc timing` for a year switch: `totalMs` < 150 ms (warm).
+   - The owner reviews `/energy` live (picker, chart click, tooltip, colours, sizes; desktop + phone) and accepts it.
+3. **After step 2 (prod).**
    - Battery in / out / loss for 2026-02, 2026-05 and 2026-09 match a prod SELECT (with Δstored from first/last SoC)
      within 0.1 kWh.
    - The owner reviews `/energy/battery` live and accepts the winter note's wording.
+
+Step 2's plan predates step 1b: its Task 0 must re-check it against step 1b's `EnergyOverview` shape (`yearTotal`,
+`allTime`, `monthsWithReadings`; no `tiles.thisMonth`), the period control (no `PeriodTabs`) and the colour tokens,
+and rewrite the affected tasks before building.
 
 ## Log
 
@@ -70,3 +82,13 @@ Each must pass, with the result recorded in the table, before the next step star
   conversion + an on-disk sort for the SoC `array_agg`, `work_mem` 2 MB). Fixed in its own PR by summing per UTC hour
   first and probing first/last SoC through the primary key: 40–49 ms on prod, old vs new results identical (prod
   `EXCEPT` empty; local whole-output diff 0). Still open: `rpc timing` after the fix deploys, and the owner's live review.
+- 2026-10-05: checkpoint 1 passed. After #95 deployed, `pg_stat_statements` on prod showed the overview query
+  33 times: mean 52 ms, min 36 ms, no disk reads, no temp files; one 514 ms call matches the single logged
+  `rpc timing` (`totalMs` 736, `getSessionMs` 138), the owner's forced cold load on a fresh instance. A cold first
+  request (≈0.7 s) is a connection/instance cost, not this query; left as a follow-up. The owner accepted `/energy`
+  functionally ("looks good"; design later) and asked to choose any month.
+- 2026-10-05: step 1b shaped with the owner over a clickable mockup (<https://claude.ai/artifact/BJF8ZV8vXwH3DhsPRWVtgv>):
+  stepper + a picker that never scrolls, chart click, hover outline and tooltip with shares, no layout shift,
+  validated colours (data-viz validator), readable sizes (researched). Design:
+  [period control](../specs/2026-10-05-energy-period-control-design.md). The owner also found text too small
+  app-wide and decided the whole app follows the same scale; that pass is planned separately (ADR-0015 amendment).

@@ -80,9 +80,18 @@ export function createSkodaClient(deps: {
 }
 
 function statusError(status: number): SkodaError {
-  if (status === 401) return new SkodaError('auth_failed', 'vehicle', status) // api-key-expired
-  // 403 api-key-not-authorized (key not for this car); 404 = no vehicle for the VIN.
-  if (status === 403 || status === 404) return new SkodaError('forbidden', 'vehicle', status)
+  // 401 api-key-expired.
+  if (status === 401) {
+    return new SkodaError('auth_failed', 'vehicle', status, { suspectFields: ['apiKey'] })
+  }
+  // 403 api-key-not-authorized: the key isn't for this car, so we can't tell which is wrong.
+  if (status === 403) {
+    return new SkodaError('forbidden', 'vehicle', status, { suspectFields: ['apiKey', 'vin'] })
+  }
+  // 404: no vehicle for the VIN.
+  if (status === 404) {
+    return new SkodaError('forbidden', 'vehicle', status, { suspectFields: ['vin'] })
+  }
   if (status === 429) return new SkodaError('rate_limited', 'vehicle', status)
   if (status >= 500) return new SkodaError('unreachable', 'vehicle', status)
   return new SkodaError('unexpected_response', 'vehicle', status)

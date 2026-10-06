@@ -1,5 +1,5 @@
 import { useStore } from '@tanstack/react-form'
-import type { ComponentProps, KeyboardEventHandler } from 'react'
+import type { ComponentProps, KeyboardEventHandler, ReactNode } from 'react'
 import { Field, FieldDescription, FieldError, FieldLabel } from '~/components/ui/field'
 import { Input } from '~/components/ui/input'
 import {
@@ -12,13 +12,16 @@ import { useFieldContext } from '~/hooks/form'
 
 type Props = {
   label: string
-  description?: string
+  /** Hint under the input, announced with it; may hold several lines (e.g. a status and a hint). */
+  description?: ReactNode
   type?: ComponentProps<typeof Input>['type']
   /** Soft-keyboard hint, e.g. `decimal` for a comma-friendly number field. */
   inputMode?: ComponentProps<typeof Input>['inputMode']
   autoComplete?: string
   placeholder?: string
   autoFocus?: boolean
+  /** Disabled on top of the always-on disable while the form submits. */
+  disabled?: boolean
   inputClassName?: string
   inputSize?: ComponentProps<typeof Input>['size']
   srOnlyLabel?: boolean
@@ -37,6 +40,15 @@ type Props = {
    * such as "öre/kWh"). When set, the field renders as an input group.
    */
   suffix?: string
+  /**
+   * The input's DOM id and name, when the field name alone isn't unique on the
+   * page (default: the field name). The hint and error ids derive from it.
+   */
+  inputId?: string
+  /** Ids of elements outside the field that also describe the input, announced first. */
+  describedBy?: string
+  /** Extra `data-*` attributes on the input (e.g. password-manager opt-outs). */
+  inputData?: Record<`data-${string}`, string>
 }
 
 export function TextField({
@@ -47,6 +59,7 @@ export function TextField({
   autoComplete,
   placeholder,
   autoFocus,
+  disabled,
   inputClassName,
   inputSize,
   srOnlyLabel,
@@ -54,6 +67,9 @@ export function TextField({
   orientation = 'vertical',
   fieldClassName,
   suffix,
+  inputId,
+  describedBy: externalDescribedBy,
+  inputData,
 }: Props) {
   const field = useFieldContext<string>()
   const isSubmitting = useStore(field.form.store, (s) => s.isSubmitting)
@@ -61,18 +77,25 @@ export function TextField({
 
   // The unit suffix, hint and error are announced with the input (the suffix
   // is otherwise only visual), so "Energiskatt" reads as "… öre/kWh".
-  const suffixId = `${field.name}-suffix`
-  const descriptionId = `${field.name}-description`
-  const errorId = `${field.name}-error`
+  const id = inputId ?? field.name
+  const suffixId = `${id}-suffix`
+  const descriptionId = `${id}-description`
+  const errorId = `${id}-error`
   const describedBy =
-    [suffix ? suffixId : null, description ? descriptionId : null, isInvalid ? errorId : null]
+    [
+      externalDescribedBy ?? null,
+      suffix ? suffixId : null,
+      description ? descriptionId : null,
+      isInvalid ? errorId : null,
+    ]
       .filter(Boolean)
       .join(' ') || undefined
 
   const sharedInputProps = {
-    id: field.name,
+    ...inputData,
+    id,
     'aria-describedby': describedBy,
-    name: field.name,
+    name: id,
     type,
     inputMode,
     autoComplete,
@@ -83,12 +106,12 @@ export function TextField({
     onBlur: field.handleBlur,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => field.handleChange(e.target.value),
     'aria-invalid': isInvalid,
-    disabled: isSubmitting,
+    disabled: disabled || isSubmitting,
   }
 
   return (
     <Field data-invalid={isInvalid} orientation={orientation} className={fieldClassName}>
-      <FieldLabel htmlFor={field.name} className={srOnlyLabel ? 'sr-only' : undefined}>
+      <FieldLabel htmlFor={id} className={srOnlyLabel ? 'sr-only' : undefined}>
         {label}
       </FieldLabel>
       {suffix ? (

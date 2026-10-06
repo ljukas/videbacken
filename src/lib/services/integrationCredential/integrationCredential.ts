@@ -134,10 +134,16 @@ export async function status(): Promise<CredentialStatus> {
   }
 }
 
-/** The value to store for one field; null for a blank one (keeps the stored value). */
-function normalize(source: CredentialSource, field: string, raw: unknown): string | null {
+const INVALID = Symbol('invalid')
+
+/** The value to store for one field; null for a blank one (keeps the stored value); INVALID when it fails validation. */
+function normalize(
+  source: CredentialSource,
+  field: string,
+  raw: unknown,
+): string | null | typeof INVALID {
   if (raw === undefined) return null
-  if (typeof raw !== 'string') throw new IntegrationCredentialDomainError('INVALID_FIELD', field)
+  if (typeof raw !== 'string') return INVALID
   const trimmed = raw.trim()
   if (trimmed === '') return null
   const value = source === 'skoda' && field === 'vin' ? trimmed.toUpperCase() : trimmed
@@ -152,8 +158,7 @@ function normalize(source: CredentialSource, field: string, raw: unknown): strin
         : source === 'gridTariff' && field === 'facilityId'
           ? parseFacilityId(value) !== null
           : true)
-  if (!valid) throw new IntegrationCredentialDomainError('INVALID_FIELD', field)
-  return value
+  return valid ? value : INVALID
 }
 
 /**
@@ -163,24 +168,29 @@ function normalize(source: CredentialSource, field: string, raw: unknown): strin
  * exist yet, so two concurrent first saves would otherwise each merge over
  * nothing and the later upsert would drop the earlier one's fields. Default
  * READ COMMITTED: after the lock, the read sees a concurrent save's committed row.
+ * Over an unreadable row every field of the source must be sent (`REENTER_ALL_FIELDS`).
  */
 export async function set<S extends CredentialSource>(
   source: S,
   fields: Record<string, string | undefined>,
   userId: string | null,
 ): Promise<{ fieldsSet: CredentialField<S>[]; updatedAt: Date }> {
+  const invalid = new Set<string>()
   for (const field of Object.keys(fields)) {
+    // Echo the caller's key only when it looks like a field name.
     if (!isCredentialField(source, field)) {
-      // Echo the caller's key only when it looks like a field name.
-      const name = SAFE_FIELD_NAME.test(field) ? field : 'unknown'
-      throw new IntegrationCredentialDomainError('INVALID_FIELD', name)
+      invalid.add(SAFE_FIELD_NAME.test(field) ? field : 'unknown')
     }
   }
   const updates: CredentialValues<S> = {}
   for (const field of fieldsOf(source)) {
     if (!Object.hasOwn(fields, field)) continue
     const value = normalize(source, field, fields[field])
-    if (value !== null) updates[field] = value
+    if (value === INVALID) invalid.add(field)
+    else if (value !== null) updates[field] = value
+  }
+  if (invalid.size > 0) {
+    throw new IntegrationCredentialDomainError('INVALID_FIELD', [...invalid])
   }
   if (Object.keys(updates).length === 0) {
     throw new IntegrationCredentialDomainError('NOTHING_TO_SAVE')
@@ -208,6 +218,11 @@ export async function set<S extends CredentialSource>(
           current = parseStored(source, row.ciphertext)
         } catch (err) {
           if (!(err instanceof CredentialsUnreadableError)) throw err
+          // Unsent fields would silently fall back to env: the whole source is re-entered.
+          const missing = fieldsOf(source).filter((field) => updates[field] === undefined)
+          if (missing.length > 0) {
+            throw new IntegrationCredentialDomainError('REENTER_ALL_FIELDS', missing)
+          }
           logger.warn('integration credentials replaced unreadable row', { source })
         }
       }

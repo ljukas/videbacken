@@ -12,6 +12,7 @@ import { formatDate } from '~/components/evCharging/format'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { emptyTotals } from '~/lib/evCharging/cost'
 import type { VehicleScope } from '~/lib/evCharging/vehicle'
+import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
@@ -1046,7 +1047,7 @@ test.each([
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
 })
 
-test('Översikt: an admin’s failing Škoda alert links to the settings page', async () => {
+test('Översikt: an admin’s failing Škoda alert deep-links into its credentials dialog', async () => {
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedEmptyOverview(qc)
     seedSourcesHealth(qc, {
@@ -1054,8 +1055,15 @@ test('Översikt: an admin’s failing Škoda alert links to the settings page', 
     })
   })
   await expect
-    .element(screen.getByRole('link', { name: m.charging_settings_link() }))
-    .toHaveAttribute('href', '/charging/settings')
+    .element(
+      screen.getByRole('link', {
+        name: m.charging_source_action_label({
+          action: m.charging_credentials_update(),
+          source: integrationSourceName('skoda'),
+        }),
+      }),
+    )
+    .toHaveAttribute('href', expect.stringContaining('dialog=credentials&source=skoda'))
 })
 
 test.each([

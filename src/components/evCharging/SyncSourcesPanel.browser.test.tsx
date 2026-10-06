@@ -47,6 +47,7 @@ function panel(props: Partial<Parameters<typeof SyncSourcesPanel>[0]> = {}) {
       openSource={undefined}
       onOpenHistory={() => {}}
       onCloseHistory={() => {}}
+      onOpenCredentials={() => {}}
       {...props}
     />
   )
@@ -79,6 +80,18 @@ test('a tile routes sync and history to its own source', async () => {
   await screen.getByRole('button', named(m.charging_source_history(), 'elprisetjustnu.se')).click()
   expect(onSync).toHaveBeenCalledWith('skoda')
   expect(onOpenHistory).toHaveBeenCalledWith('elpris')
+})
+
+test('a key button opens that source’s credentials; elpris has none', async () => {
+  const onOpenCredentials = vi.fn()
+  const { screen } = await renderWithProviders(panel({ onOpenCredentials }))
+  await screen
+    .getByRole('button', { name: m.charging_credentials_button({ source: 'Škoda' }) })
+    .click()
+  expect(onOpenCredentials).toHaveBeenCalledWith('skoda')
+  expect(screen.getByRole('button', { name: /Inloggning för/ }).elements()).toHaveLength(
+    entries.filter((e) => e.source !== 'elpris').length,
+  )
 })
 
 test('only the pending source shows as syncing', async () => {
