@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LatLon } from '~/lib/effects/skoda'
 import { logger } from '~/lib/logger/browser'
 import { m } from '~/paraglide/messages'
-import type { MapView } from './mapSupport'
+import { type MapView, mapErrorLogFields } from './mapSupport'
 
 // The only module that imports maplibre (ADR-0026, step 3c-2). The picker loads
 // it with React.lazy inside <ClientOnly>, so the settings page never ships it.
@@ -140,11 +140,12 @@ export function HomePositionMap({ point, initialView, camera, onPick }: HomePosi
           onPick(toPoint(e.lngLat))
         }}
         // Tiles or style failing leaves the pin on a blank map (the text input still works).
-        // One warning per page, never the coordinates.
+        // One warning per page: the error's name and HTTP status only. Its message
+        // holds the tile URL, which pins the home to ~1 km (never log the Error).
         onError={(e) => {
           if (warned) return
           warned = true
-          logger.warn('home-position map error', { error: e.error })
+          logger.warn('home-position map error', mapErrorLogFields(e.error))
         }}
       >
         <AttributionControl compact position="bottom-right" />

@@ -25,3 +25,16 @@ export function supportsWebGL2(): boolean {
   }
   return webgl2
 }
+
+/**
+ * The only parts of a MapLibre error that may be logged. Its message carries the
+ * failing tile's URL (a z/x/y cell about 1 km around the saved home), and the
+ * browser logger forwards warnings to the server logs: never log the Error itself.
+ */
+export function mapErrorLogFields(error: unknown): { name: string; status?: number } {
+  const e = (error ?? {}) as { name?: unknown; status?: unknown }
+  const name = typeof e.name === 'string' && /^[A-Za-z]{1,40}$/.test(e.name) ? e.name : 'Error'
+  return typeof e.status === 'number' && Number.isFinite(e.status)
+    ? { name, status: e.status }
+    : { name }
+}
