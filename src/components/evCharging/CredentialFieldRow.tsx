@@ -29,6 +29,9 @@ export const credentialSuspectId = (source: CredentialSource, field: string) =>
   `${credentialInputId(source, field)}-suspect`
 export const credentialRevealId = (source: CredentialSource, field: string) =>
   `${credentialInputId(source, field)}-reveal`
+/** The state badge: announced first with the open input, so tabbing into it says where its value stands. */
+export const credentialBadgeId = (source: CredentialSource, field: string) =>
+  `${credentialInputId(source, field)}-badge`
 
 type Props = {
   source: CredentialSource
@@ -96,7 +99,7 @@ export function CredentialFieldRow({
         <Label id={credentialLabelId(source, field)} htmlFor={open ? inputId : undefined}>
           {label}
         </Label>
-        <StateBadge state={state} />
+        <StateBadge id={credentialBadgeId(source, field)} state={state} />
         {open && onClose ? (
           <Button
             type="button"
@@ -153,23 +156,23 @@ export function CredentialFieldRow({
   )
 }
 
-function StateBadge({ state }: { state: CredentialFieldState }) {
+function StateBadge({ id, state }: { id: string; state: CredentialFieldState }) {
   switch (state) {
     case 'stored':
       return (
-        <Badge variant="outline" className="text-muted-foreground">
+        <Badge id={id} variant="outline" className="text-muted-foreground">
           {m.charging_credentials_badge_stored()}
         </Badge>
       )
     case 'env':
       return (
-        <Badge variant="outline" className="text-muted-foreground">
+        <Badge id={id} variant="outline" className="text-muted-foreground">
           {m.charging_credentials_badge_env()}
         </Badge>
       )
     case 'missing':
       return (
-        <Badge variant="outline" className="border-dashed text-muted-foreground">
+        <Badge id={id} variant="outline" className="border-dashed text-muted-foreground">
           {m.charging_credentials_badge_missing()}
         </Badge>
       )
@@ -177,6 +180,7 @@ function StateBadge({ state }: { state: CredentialFieldState }) {
       // Amber, not red: red is reserved for errors on a field.
       return (
         <Badge
+          id={id}
           variant="outline"
           className="border-warning/40 bg-warning/15 text-warning-foreground dark:text-warning"
         >

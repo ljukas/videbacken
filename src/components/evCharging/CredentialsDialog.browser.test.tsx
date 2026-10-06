@@ -704,3 +704,81 @@ test('editing a rejected field forgets its server error; the others keep theirs'
     .not.toBeInTheDocument()
   await expect.element(screen.getByText(m.charging_credentials_invalid_home())).toBeVisible()
 })
+
+test('an open input is described by its badge first', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  const home = screen.getByLabelText(HOME, { exact: true })
+  await expect
+    .element(home)
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_badge_missing()))
+  expect(home.element().getAttribute('aria-describedby')?.split(' ')[0]).toBe(
+    'credential-skoda-homeCoordinates-badge',
+  )
+})
+
+test('an unreadable input says so when tabbed into', async () => {
+  const { screen } = await renderWithProviders(dialog({ status: status({}, { unreadable: true }) }))
+  await expect
+    .element(screen.getByLabelText(API_KEY, { exact: true }))
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_badge_unreadable()))
+})
+
+test('a field hidden by a status refetch never sends what was typed into it', async () => {
+  const { screen, queryClient } = await renderWithProviders(dialog())
+  const rerender = (ui: ReactNode) =>
+    screen.rerender(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+  // The API key goes missing (removed elsewhere): it opens and is typed into…
+  const apiKeyMissing = status(
+    {},
+    {
+      fields: {
+        apiKey: { origin: 'missing', envSet: false },
+        vin: { origin: 'env', envSet: true },
+        homeCoordinates: { origin: 'missing', envSet: false },
+      },
+    },
+  )
+  await rerender(dialog({ status: apiKeyMissing }))
+  await screen.getByLabelText(API_KEY, { exact: true }).fill('typed-then-hidden')
+  // …then is stored again, which closes it with the typed value still in the form.
+  await rerender(dialog())
+  await expect.element(screen.getByLabelText(API_KEY, { exact: true })).not.toBeInTheDocument()
+  await screen.getByLabelText(HOME, { exact: true }).fill('59.33,18.07')
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await vi.waitFor(() => expect(setFn).toHaveBeenCalled())
+  expect(setFn.mock.calls[0][0]).toEqual({
+    source: 'skoda',
+    fields: { homeCoordinates: '59.33,18.07' },
+  })
+})
+
+test('Avbryt clears a "fill in at least one field" refusal', async () => {
+  const { screen } = await renderWithProviders(dialog({ status: status({}, { fields: ALL_SET }) }))
+  await screen.getByRole('button', { name: REPLACE_API_KEY }).click()
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await expect
+    .element(screen.getByRole('alert'))
+    .toHaveTextContent(m.charging_credentials_nothing_to_save())
+  await screen.getByRole('button', { name: closeName(API_KEY) }).click()
+  await expect
+    .element(screen.getByText(m.charging_credentials_nothing_to_save()))
+    .not.toBeInTheDocument()
+})
+
+test('with every field closed, focus starts on the first reveal button', async () => {
+  const { screen } = await renderWithProviders(dialog({ status: status({}, { fields: ALL_SET }) }))
+  await expect.element(screen.getByRole('button', { name: REPLACE_API_KEY })).toHaveFocus()
+})
+
+test('closing a field once the key is gone sends focus to Cancel, not a disabled button', async () => {
+  const { screen, queryClient } = await renderWithProviders(dialog())
+  const rerender = (ui: ReactNode) =>
+    screen.rerender(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+  await screen.getByRole('button', { name: REPLACE_API_KEY }).click()
+  await rerender(dialog({ status: status({ encryptionKeyConfigured: false }) }))
+  await screen.getByRole('button', { name: closeName(API_KEY) }).click()
+  await expect.element(screen.getByRole('button', { name: REPLACE_API_KEY })).toBeDisabled()
+  await expect
+    .element(screen.getByRole('button', { name: m.common_cancel(), exact: true }))
+    .toHaveFocus()
+})

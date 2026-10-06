@@ -45,6 +45,7 @@ import { m } from '~/paraglide/messages'
 import {
   CredentialFieldRow,
   type CredentialFieldState,
+  credentialBadgeId,
   credentialLabelId,
   credentialRevealId,
   credentialSuspectId,
@@ -131,12 +132,22 @@ export function CredentialsDialog({
     >
       <ResponsiveDialogContent
         className="sm:max-w-md"
-        // Nothing can be saved without the key: start on Cancel, never on the
-        // destructive Remove (the first tabbable once the inputs are disabled).
         onOpenAutoFocus={(e) => {
-          if (!keyMissing || !current) return
+          if (!current) return
+          // Nothing can be saved without the key: start on Cancel, never on the
+          // destructive Remove (the first tabbable once the inputs are disabled).
+          if (keyMissing) {
+            e.preventDefault()
+            document.getElementById(cancelId(current))?.focus()
+            return
+          }
+          // Every field closed (no input to autofocus): start on the first reveal
+          // button, not on the external MyŠkoda link above it.
+          const fields = CREDENTIAL_FIELDS[current]
+          const sourceStatus = status?.sources[current]
+          if (!fields.every((f) => isClosableState(fieldState(sourceStatus, f)))) return
           e.preventDefault()
-          document.getElementById(cancelId(current))?.focus()
+          document.getElementById(credentialRevealId(current, fields[0]))?.focus()
         }}
         onCloseAutoFocus={onCloseAutoFocus}
       >
@@ -216,6 +227,12 @@ function CredentialsForm({
   const anyOpen = fields.some(isOpen)
   // The first open input takes focus when the dialog opens.
   const [autoFocusField] = useState(() => fields.find(isOpen))
+  // What a save sends: open inputs only, and blank means "keep what is there".
+  // A field hidden by a status refetch after it was typed into never sends its value.
+  const toSend = (value: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(value).filter(([f, v]) => isOpen(f as CredentialFieldName) && v.trim() !== ''),
+    )
 
   // Field errors from the server, kept as state and checked by each field's
   // validator (not written into the error map, which TanStack clears on every
@@ -291,7 +308,7 @@ function CredentialsForm({
     defaultValues: Object.fromEntries(fields.map((f) => [f, ''])) as Record<string, string>,
     validators: {
       onSubmit: ({ value }) =>
-        Object.values(value).every((v) => v.trim() === '')
+        Object.keys(toSend(value)).length === 0
           ? m.charging_credentials_nothing_to_save()
           : undefined,
     },
@@ -303,8 +320,7 @@ function CredentialsForm({
       if (first) setFocusTarget(inputId(source, first))
     },
     onSubmit: async ({ value }) => {
-      // Blank means "keep what is stored": send only what was filled in.
-      const filled = Object.fromEntries(Object.entries(value).filter(([, v]) => v.trim() !== ''))
+      const filled = toSend(value)
       try {
         await set.mutateAsync(setInput(source, filled))
       } catch {
@@ -353,15 +369,18 @@ function CredentialsForm({
   }
   // Back to "keep what is there": the typed value, its errors and its server
   // error go, and focus returns to the reveal button that replaces the input.
+  // Without the key the reveal button is disabled, so focus goes to Cancel instead.
   const closeField = (f: CredentialFieldName) => {
     form.resetField(f)
     forgetServerError(f)
+    // A "fill in at least one field" refusal is about the inputs as they were.
+    form.setErrorMap({ onSubmit: undefined })
     setOpened((prev) => {
       const next = new Set(prev)
       next.delete(f)
       return next
     })
-    setFocusTarget(credentialRevealId(source, f))
+    setFocusTarget(keyMissing ? cancelId(source) : credentialRevealId(source, f))
   }
 
   const remove = () =>
@@ -433,8 +452,10 @@ function CredentialsForm({
                 ) : null}
               </>
             ) : undefined
+          // The badge first: tabbing into the input says where its value stands.
           const describedBy =
             [
+              state === 'unknown' ? null : credentialBadgeId(source, f),
               keyMissing ? keyMissingId(source) : null,
               suspect ? credentialSuspectId(source, f) : null,
             ]
