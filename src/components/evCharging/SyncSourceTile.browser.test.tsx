@@ -349,8 +349,12 @@ test('an outage that is not about credentials has no credentials link', async ()
     tile({ ...ok, state: 'failing', code: 'unreachable' }, { onOpenCredentials: () => {} }),
   )
   expect(
-    screen.getByRole('button', credLink(m.charging_credentials_update(), 'Škoda')).elements(),
+    screen.getByRole('button', credLink(m.charging_credentials_update(), 'Zaptec')).elements(),
   ).toHaveLength(0)
+  // Source-independent: no button starts with either link text.
+  for (const text of [m.charging_credentials_update(), m.charging_credentials_configure()]) {
+    expect(screen.getByRole('button', { name: new RegExp(`^${text}`) }).elements()).toHaveLength(0)
+  }
 })
 
 test('the header keeps room for the key button', async () => {
