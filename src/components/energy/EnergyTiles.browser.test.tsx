@@ -1,9 +1,8 @@
 import { expect, test } from 'vitest'
-import { userEvent } from 'vitest/browser'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
-import { EnergyTiles } from './EnergyTiles'
+import { EnergyReadouts } from './EnergyTiles'
 
 const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   gridImportKwh: 561,
@@ -21,12 +20,8 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   ...over,
 })
 
-test('shows this month by default with all five readouts', async () => {
-  const { screen } = await renderWithProviders(
-    <EnergyTiles
-      tiles={{ thisMonth: sums(), thisYear: sums({ solarKwh: 5000 }), allTime: sums() }}
-    />,
-  )
+test('shows all five readouts', async () => {
+  const { screen } = await renderWithProviders(<EnergyReadouts sums={sums()} />)
   await expect.element(screen.getByText('509,0 kWh')).toBeVisible()
   await expect.element(screen.getByText('561,0 kWh')).toBeVisible()
   await expect.element(screen.getByText('114,0 kWh')).toBeVisible()
@@ -50,49 +45,41 @@ test('shows this month by default with all five readouts', async () => {
   await expect.element(screen.getByText(/^41\s%$/)).toBeVisible()
 })
 
-test('switching to I år shows the year', async () => {
-  const { screen } = await renderWithProviders(
-    <EnergyTiles
-      tiles={{ thisMonth: sums(), thisYear: sums({ solarKwh: 5000 }), allTime: sums() }}
-    />,
-  )
-  await userEvent.click(screen.getByRole('tab', { name: m.charging_tile_this_year() }))
-  await expect.element(screen.getByText(/^5\s000,0 kWh$/)).toBeVisible()
-})
-
-test('a period without data says so', async () => {
-  const { screen } = await renderWithProviders(
-    <EnergyTiles tiles={{ thisMonth: null, thisYear: sums(), allTime: sums() }} />,
-  )
-  // Opens on the first period with data; the empty month says so when picked.
-  await userEvent.click(screen.getByRole('tab', { name: m.charging_tile_this_month() }))
+test('a period without data says so, in the same reserved space', async () => {
+  const { screen } = await renderWithProviders(<EnergyReadouts sums={null} />)
   await expect.element(screen.getByText(m.energy_period_no_data())).toBeVisible()
 })
 
-test('a gap of 9 h is named; a complete period has no note', async () => {
+test('the gap line is always rendered, empty when the period is complete', async () => {
+  const { screen } = await renderWithProviders(<EnergyReadouts sums={sums()} />)
+  const gap = screen.container.querySelector('[data-slot="energy-gap"]')
+  expect(gap).not.toBeNull()
+  expect(gap?.textContent).toBe('')
+})
+
+test('every detail slot is rendered, even without a detail', async () => {
   const { screen } = await renderWithProviders(
-    <EnergyTiles
-      tiles={{ thisMonth: sums({ buckets: 8640 - 113 }), thisYear: sums(), allTime: sums() }}
-    />,
+    <EnergyReadouts sums={sums({ solarKwh: 0, batteryChargeGridKwh: 0, carKwh: 0 })} />,
+  )
+  expect(screen.container.querySelectorAll('[data-slot="readout-detail"]')).toHaveLength(5)
+})
+
+test('a gap of 9 h is named', async () => {
+  const { screen } = await renderWithProviders(
+    <EnergyReadouts sums={sums({ buckets: 8640 - 113 })} />,
   )
   await expect.element(screen.getByText(m.energy_missing_hours({ hours: '9' }))).toBeVisible()
-  await userEvent.click(screen.getByRole('tab', { name: m.charging_tile_this_year() }))
-  expect(screen.getByText(m.energy_missing_hours({ hours: '9' })).elements()).toHaveLength(0)
 })
 
 test('no solar means no split line; no grid charging means no "varav" line', async () => {
   const { screen } = await renderWithProviders(
-    <EnergyTiles
-      tiles={{
-        thisMonth: sums({
-          solarKwh: 0,
-          batteryChargeSolarKwh: 0,
-          gridExportKwh: 0,
-          batteryChargeGridKwh: 0,
-        }),
-        thisYear: null,
-        allTime: null,
-      }}
+    <EnergyReadouts
+      sums={sums({
+        solarKwh: 0,
+        batteryChargeSolarKwh: 0,
+        gridExportKwh: 0,
+        batteryChargeGridKwh: 0,
+      })}
     />,
   )
   await expect.element(screen.getByText('561,0 kWh')).toBeVisible()
@@ -102,13 +89,7 @@ test('no solar means no split line; no grid charging means no "varav" line', asy
 
 test('an overshooting battery-from-solar never shows above 100 %', async () => {
   const { screen } = await renderWithProviders(
-    <EnergyTiles
-      tiles={{
-        thisMonth: sums({ solarKwh: 100, batteryChargeSolarKwh: 130, gridExportKwh: 0 }),
-        thisYear: null,
-        allTime: null,
-      }}
-    />,
+    <EnergyReadouts sums={sums({ solarKwh: 100, batteryChargeSolarKwh: 130, gridExportKwh: 0 })} />,
   )
   await expect
     .element(
@@ -125,22 +106,8 @@ test('an overshooting battery-from-solar never shows above 100 %', async () => {
 
 test('no consumption shows a dash and no self-sufficiency detail', async () => {
   const { screen } = await renderWithProviders(
-    <EnergyTiles
-      tiles={{ thisMonth: sums({ loadKwh: 0, carKwh: 0 }), thisYear: null, allTime: null }}
-    />,
+    <EnergyReadouts sums={sums({ loadKwh: 0, carKwh: 0 })} />,
   )
   await expect.element(screen.getByText('—')).toBeVisible()
   expect(screen.getByText(m.energy_tile_self_sufficiency_detail()).elements()).toHaveLength(0)
-})
-
-test('opens on the first period with data', async () => {
-  const { screen } = await renderWithProviders(
-    <EnergyTiles
-      tiles={{ thisMonth: null, thisYear: sums({ solarKwh: 5000 }), allTime: sums() }}
-    />,
-  )
-  await expect
-    .element(screen.getByRole('tab', { name: m.charging_tile_this_year() }))
-    .toHaveAttribute('aria-selected', 'true')
-  await expect.element(screen.getByText(/^5\s000,0 kWh$/)).toBeVisible()
 })

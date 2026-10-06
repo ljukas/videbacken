@@ -267,6 +267,7 @@ export function Readout({
   qualifier,
   detail,
   muted = false,
+  size = 'md',
 }: {
   icon: LucideIcon
   label: string
@@ -275,11 +276,18 @@ export function Readout({
   qualifier?: string
   detail?: ReactNode
   muted?: boolean
+  size?: 'md' | 'lg'
 }) {
+  const lg = size === 'lg'
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <span className="flex items-center gap-1 text-muted-foreground text-xs">
-        <Icon aria-hidden className="size-3 shrink-0" />
+      <span
+        className={cn(
+          'flex items-center gap-1',
+          lg ? 'font-medium text-foreground text-sm' : 'text-muted-foreground text-xs',
+        )}
+      >
+        <Icon aria-hidden className={cn('shrink-0', lg ? 'size-4' : 'size-3')} />
         {label}
       </span>
       <span className="flex flex-wrap items-baseline gap-x-1 tabular-nums">
@@ -289,19 +297,33 @@ export function Readout({
           </>
         ) : null}
         <span
-          className={cn('font-semibold text-2xl leading-tight', muted && 'text-muted-foreground')}
+          className={cn(
+            'font-semibold leading-tight',
+            lg ? 'text-[28px] @[35rem]:text-4xl' : 'text-2xl',
+            muted && 'text-muted-foreground',
+          )}
         >
           {value}
         </span>
         {unit ? (
           <>
             {' '}
-            <span className="text-muted-foreground text-sm">{unit}</span>
+            <span className={cn('text-muted-foreground', lg ? 'text-base' : 'text-sm')}>
+              {unit}
+            </span>
           </>
         ) : null}
       </span>
-      {/* A two-line detail (spot share + own-supply share) stacks. */}
-      {detail ? (
+      {/* lg reserves two lines so a period without a detail doesn't shorten the card. */}
+      {lg ? (
+        <span
+          data-slot="readout-detail"
+          className="flex min-h-[3em] flex-col text-muted-foreground text-sm leading-normal"
+        >
+          {detail}
+        </span>
+      ) : detail ? (
+        // A two-line detail (spot share + own-supply share) stacks.
         <span className="flex flex-col text-muted-foreground text-sm">{detail}</span>
       ) : null}
     </div>
