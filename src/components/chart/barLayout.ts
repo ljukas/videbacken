@@ -77,7 +77,11 @@ export function layoutBars({
   const slots = slotsOf(series)
   const band = x.bandwidth()
   const offset = band * CATEGORY_GAP
-  const width = Math.max(0, (band - 2 * offset - (slots.length - 1) * barGap) / slots.length)
+  // As recharts: a band too narrow for the gaps drops them, and a bar wider
+  // than 1 px is a whole number of pixels (any remainder trails in the band).
+  const gap = band - 2 * offset - (slots.length - 1) * barGap > 0 ? barGap : 0
+  const raw = Math.max(0, (band - 2 * offset - (slots.length - 1) * gap) / slots.length)
+  const width = raw > 1 ? Math.trunc(raw) : raw
   const segments = new Map<string, { slot: number; ys: (readonly [number, number])[] }>()
   slots.forEach((keys, slot) => {
     const ys = stacked(count, keys, value)
@@ -99,7 +103,7 @@ export function layoutBars({
       rects.push({
         key: s.key,
         index: i,
-        x: (x(i) ?? 0) + offset + seg.slot * (width + barGap),
+        x: (x(i) ?? 0) + offset + seg.slot * (width + gap),
         y: top,
         width,
         height,
@@ -154,10 +158,17 @@ export function yScaleFor({
     return { scale, ticks: scale.ticks(TICK_COUNT) }
   }
   if (integers) {
-    // recharts' allowDecimals={false}: whole steps, at least 1.
+    // recharts' allowDecimals={false}: whole steps of at least 1, and always
+    // TICK_COUNT ticks, growing away from 0 (one session draws a quarter-high
+    // bar, not a full one).
     const step = Math.max(1, tickStep(lo, hi === lo ? lo + 1 : hi, TICK_COUNT - 1))
-    const d0 = Math.floor(lo / step) * step
-    const d1 = Math.max(Math.ceil(hi / step) * step, d0 + step)
+    let d0 = Math.floor(lo / step) * step
+    let d1 = Math.ceil(hi / step) * step
+    const span = (TICK_COUNT - 1) * step
+    if (d1 - d0 < span) {
+      if (lo < 0 && hi <= 0) d0 = d1 - span
+      else d1 = d0 + span
+    }
     const scale = scaleLinear().domain([d0, d1]).range([height, 0])
     return { scale, ticks: range(d0, d1 + step / 2, step) }
   }
@@ -179,13 +190,16 @@ export function thinTicks(
   gap = 5,
 ): number[] {
   const n = centres.length
-  if (n <= 2) return range(n)
+  if (n === 0) return []
+  if (n === 1) return [0]
   const left = (i: number) => centres[i] - widths[i] / 2
   const right = (i: number) => centres[i] + widths[i] / 2
   const kept = [0]
   for (let i = 1; i < n - 1; i++) {
     if (left(i) >= right(kept[kept.length - 1]) + gap && right(i) + gap <= left(n - 1)) kept.push(i)
   }
+  // The last always shows; the first gives way if the two collide.
+  if (kept.length === 1 && right(0) + gap > left(n - 1)) return [n - 1]
   kept.push(n - 1)
   return kept
 }
