@@ -30,7 +30,7 @@ export type FlowLayout = {
 type Point = { x: number; y: number }
 type Port = Point & { dx: number; dy: number }
 
-/** From this card width the in → out layout runs left to right; below it, top to bottom. */
+/** From this card content width the in → out layout runs left to right; below it, top to bottom. */
 export const WIDE_MIN_WIDTH = 860
 export const WIDE_HEIGHT = 360
 export const NARROW_HEIGHT = 490

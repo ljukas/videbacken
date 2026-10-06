@@ -15,7 +15,7 @@ import { EnergyFlowDiagram } from './EnergyFlowDiagram'
 export const SHOW_FLOW_VALUES_KEY = 'videbacken-energy-flow-values'
 
 // The Summering card's body (step 1c, spec "The card"): Självförsörjning, the flow diagram in a box whose height
-// is reserved per layout by a container query (860 px → 360 px, else 490 px) so nothing shifts before
+// is reserved per layout by a container query (content 860 px wide → 360 px, else 490 px) so nothing shifts before
 // it is measured or when the period changes, the values switch, the gap note and the table.
 export function EnergyFlow({ sums }: { sums: PeriodSums | null | 'unavailable' }) {
   const [showValues, setShowValues] = useLocalStorageFlag(SHOW_FLOW_VALUES_KEY, true)
