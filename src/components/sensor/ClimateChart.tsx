@@ -152,7 +152,16 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
     const x = scaleLinear()
       .domain(domain ?? [0, 1])
       .range([0, plotW])
-    const xTicks = domain ? pickTimeTicks({ domain, x, axis: timeAxis, measure }) : []
+    // A label may run into the y axis' band and the right margin, never past the svg.
+    const xTicks = domain
+      ? pickTimeTicks({
+          domain,
+          x,
+          axis: timeAxis,
+          measure,
+          bounds: [-left, plotW + CHART_MARGIN.right],
+        })
+      : []
     return { x, y, yTicks, yFormat, left, plotW, plotH, xTicks }
   }, [width, plotBoxH, devices, unit, timeAxis])
 
@@ -319,14 +328,16 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
           <AxisBottom
             top={geometry.plotH}
             scale={geometry.x}
-            tickValues={geometry.xTicks}
+            tickValues={geometry.xTicks.map((k) => k.t)}
             tickFormat={(t) => timeAxis.format(Number(t))}
             tickLength={TICK_SIZE}
             stroke={AXIS_COLOR}
             tickStroke={AXIS_COLOR}
-            tickLabelProps={() => ({
+            // An end label shifts inward to stay in the svg; its tick mark stays on its time.
+            tickLabelProps={(_, i) => ({
               fill: 'var(--muted-foreground)',
               fontSize: TICK_PX,
+              dx: geometry.xTicks[i]?.dx ?? 0,
               dy: X_TICK_MARGIN,
               textAnchor: 'middle' as const,
             })}

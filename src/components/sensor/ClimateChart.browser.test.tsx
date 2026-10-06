@@ -23,6 +23,7 @@ import {
   tooltipNodes,
   tooltipText,
   xTickLabels,
+  xTickTexts,
   yTickLabels,
 } from '~test/browser/chartDom'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
@@ -362,6 +363,25 @@ test('the 24 h axis labels round hours', async () => {
     expect(m).toBe(0)
     expect(h % 3).toBe(0)
   }
+})
+
+test('a label on a tick at the domain end stays inside the chart', async () => {
+  // A day ending 1 min after 21:00: the 21:00 tick sits a pixel short of the
+  // plot's end, where a centred label would run past the svg's right edge.
+  const end = new Date('2026-08-03T21:01:00').getTime()
+  const root = await renderChart([
+    device(
+      'a',
+      Array.from({ length: 25 }, (_, i) => ({ t: end - (24 - i) * HOUR, a: 20 + (i % 3) * 0.2 })),
+    ),
+  ])
+  await vi.waitFor(() => expect(xTickTexts(root).length).toBeGreaterThan(2))
+  const texts = xTickTexts(root)
+  const last = texts[texts.length - 1]
+  expect(last.textContent).toMatch(/^21[:.]00$/)
+  const svg = chartSvg(root)
+  if (!svg) throw new Error('chart not rendered')
+  expect(last.getBoundingClientRect().right).toBeLessThanOrEqual(svg.getBoundingClientRect().right)
 })
 
 test('a hover puts one dot on each card row’s reading', async () => {

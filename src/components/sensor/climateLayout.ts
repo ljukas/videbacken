@@ -10,10 +10,18 @@ import type { TimeAxis } from '~/lib/sensor/tickFormat'
 /** px kept clear between two time labels. */
 export const TIME_TICK_GAP = 16
 
+/** A time tick: its time (where the tick mark goes) and its label's shift off it, in px. */
+export type TimeTick = { t: number; dx: number }
+
 /**
- * The axis' tick times: the finest of the axis' intervals whose labels all fit
+ * The axis' ticks: the finest of the axis' intervals whose labels all fit
  * `TIME_TICK_GAP` apart; when none does, the coarsest, thinned to fit.
  * The domain's end counts as a tick when it falls on one.
+ *
+ * A label is centred on its tick unless that would run it past `bounds` (the
+ * px, in plot coordinates, a label may span): then it shifts inward just enough
+ * (`dx`), and the tick mark stays on its time. The fit is judged on the shifted
+ * labels, so an end label moved inward can't crowd its neighbour.
  *
  * Data shorter than the range can leave that with fewer than two ticks (a few
  * weeks of data on 1 y has one month start). Then the axis' `fallbacks` are
@@ -25,42 +33,44 @@ export function pickTimeTicks({
   x,
   axis,
   measure,
+  bounds,
 }: {
   domain: readonly [number, number]
   x: (t: number) => number
   axis: TimeAxis
   measure: (s: string) => number
-}): number[] {
+  bounds: readonly [number, number]
+}): TimeTick[] {
+  const [lo, hi] = bounds
   // range() stops before its end: one ms more keeps a tick on the end itself.
   const ticksOf = (interval: TimeInterval) =>
     interval.range(new Date(domain[0]), new Date(domain[1] + 1)).map(Number)
+  const widthOf = (t: number) => measure(axis.format(t))
+  // The label's centre, kept `bounds` in (a label wider than them starts at lo).
+  const centreOf = (t: number) => {
+    const half = widthOf(t) / 2
+    return Math.max(lo + half, Math.min(x(t), hi - half))
+  }
   const fits = (ticks: number[]) =>
-    labelsFit(
-      ticks.map(x),
-      ticks.map((t) => measure(axis.format(t))),
-      TIME_TICK_GAP,
-    )
+    labelsFit(ticks.map(centreOf), ticks.map(widthOf), TIME_TICK_GAP)
+  const withShift = (ticks: number[]) => ticks.map((t) => ({ t, dx: centreOf(t) - x(t) }))
 
   let thinned: number[] = []
   for (const interval of axis.intervals) {
     const ticks = ticksOf(interval)
     if (fits(ticks)) {
-      if (ticks.length >= 2 || axis.fallbacks.length === 0) return ticks
+      if (ticks.length >= 2 || axis.fallbacks.length === 0) return withShift(ticks)
       thinned = ticks
       break
     }
-    thinned = thinTicks(
-      ticks.map(x),
-      ticks.map((t) => measure(axis.format(t))),
-      TIME_TICK_GAP,
-    ).map((i) => ticks[i])
+    thinned = thinTicks(ticks.map(centreOf), ticks.map(widthOf), TIME_TICK_GAP).map((i) => ticks[i])
   }
-  if (thinned.length >= 2) return thinned
+  if (thinned.length >= 2) return withShift(thinned)
   for (let i = axis.fallbacks.length - 1; i >= 0; i--) {
     const ticks = ticksOf(axis.fallbacks[i])
-    if (ticks.length >= 2 && fits(ticks)) return ticks
+    if (ticks.length >= 2 && fits(ticks)) return withShift(ticks)
   }
-  return thinned
+  return withShift(thinned)
 }
 
 /** Every real reading time of the visible devices, ascending and distinct: where hover and the keys stop. */
