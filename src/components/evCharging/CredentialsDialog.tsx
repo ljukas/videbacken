@@ -27,6 +27,7 @@ import {
 import { useAppForm, useStore } from '~/hooks/form'
 import {
   CREDENTIAL_FIELDS,
+  type CredentialField,
   type CredentialFieldName,
   type CredentialOrigin,
   type CredentialSource,
@@ -211,6 +212,23 @@ function CredentialsForm({
     ? Object.values(sourceStatus.fields).some((f) => f.origin === 'stored') ||
       sourceStatus.unreadable
     : false
+  // What the remove confirm names: the stored fields, or every field when an
+  // unreadable row hides which ones they are.
+  const statusFields = (sourceStatus?.fields ?? {}) as Record<
+    string,
+    { origin: CredentialOrigin; envSet: boolean } | undefined
+  >
+  const removedFields = sourceStatus?.unreadable
+    ? fields
+    : fields.filter((f) => statusFields[f]?.origin === 'stored')
+  const envFallback = fields.some((f) => statusFields[f]?.envSet)
+  const afterRemove = envFallback
+    ? source === 'gridTariff'
+      ? m.charging_credentials_remove_falls_back_one()
+      : m.charging_credentials_remove_falls_back()
+    : source === 'gridTariff'
+      ? m.charging_credentials_remove_stops_grid()
+      : m.charging_credentials_remove_stops()
   const states = Object.fromEntries(fields.map((f) => [f, fieldState(sourceStatus, f)])) as Record<
     CredentialFieldName,
     CredentialFieldState
@@ -539,9 +557,13 @@ function CredentialsForm({
                       ? m.charging_credentials_remove_confirm_grid()
                       : m.charging_credentials_remove_confirm({
                           source: integrationSourceName(source),
-                          fields: credentialFieldList(source, CREDENTIAL_FIELDS[source]),
+                          fields: credentialFieldList(
+                            'skoda',
+                            removedFields as readonly CredentialField<'skoda'>[],
+                          ),
                         })}
                   </AlertDialogDescription>
+                  <p className="font-medium text-sm">{afterRemove}</p>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>{m.common_cancel()}</AlertDialogCancel>

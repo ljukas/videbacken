@@ -679,6 +679,64 @@ test('the grid remove confirm names the facility ID', async () => {
     .toHaveTextContent(m.charging_credentials_remove_confirm_grid())
 })
 
+test('the remove confirm names the saved fields and says the app falls back to env', async () => {
+  const s = status(
+    {},
+    {
+      fields: {
+        apiKey: { origin: 'stored', envSet: true },
+        vin: { origin: 'stored', envSet: false },
+        homeCoordinates: { origin: 'missing', envSet: false },
+      },
+    },
+  )
+  const { screen } = await renderWithProviders(dialog({ status: s }))
+  await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
+  const confirm = screen.getByRole('alertdialog')
+  await expect
+    .element(
+      confirm.getByText(
+        m.charging_credentials_remove_confirm({ source: 'Škoda', fields: 'API-nyckel och VIN' }),
+      ),
+    )
+    .toBeVisible()
+  await expect.element(confirm.getByText(m.charging_credentials_remove_falls_back())).toBeVisible()
+})
+
+test('with no env vars the remove confirm says the source stops syncing', async () => {
+  const s = status(
+    {},
+    {
+      fields: {
+        apiKey: { origin: 'stored', envSet: false },
+        vin: { origin: 'stored', envSet: false },
+        homeCoordinates: { origin: 'missing', envSet: false },
+      },
+    },
+  )
+  const { screen } = await renderWithProviders(dialog({ status: s }))
+  await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
+  await expect
+    .element(screen.getByRole('alertdialog').getByText(m.charging_credentials_remove_stops()))
+    .toBeVisible()
+})
+
+test('the grid remove confirm says the monthly check is skipped without env', async () => {
+  const s = status()
+  s.sources.gridTariff = {
+    fields: { facilityId: { origin: 'stored', envSet: false } },
+    updatedAt: SAVED,
+    unreadable: false,
+  }
+  const { screen } = await renderWithProviders(dialog({ source: 'gridTariff', status: s }))
+  await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
+  const confirm = screen.getByRole('alertdialog')
+  await expect
+    .element(confirm.getByText(m.charging_credentials_remove_confirm_grid()))
+    .toBeVisible()
+  await expect.element(confirm.getByText(m.charging_credentials_remove_stops_grid())).toBeVisible()
+})
+
 test('the MyŠkoda link says it opens a new tab', async () => {
   const { screen } = await renderWithProviders(dialog())
   await expect
