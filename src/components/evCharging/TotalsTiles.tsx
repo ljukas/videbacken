@@ -290,7 +290,12 @@ export function Readout({
         <Icon aria-hidden className={cn('shrink-0', lg ? 'size-4' : 'size-3')} />
         {label}
       </span>
-      <span className="flex flex-wrap items-baseline gap-x-1 tabular-nums">
+      <span
+        className={cn(
+          'flex items-baseline gap-x-1 tabular-nums',
+          lg ? 'flex-nowrap whitespace-nowrap' : 'flex-wrap',
+        )}
+      >
         {qualifier ? (
           <>
             <span className="text-muted-foreground text-sm">{qualifier}</span>{' '}
@@ -299,7 +304,10 @@ export function Readout({
         <span
           className={cn(
             'font-semibold leading-tight',
-            lg ? 'text-[28px] @[35rem]:text-4xl' : 'text-2xl',
+            lg
+              ? // Capped by the container so the widest figure ("12 345,6 kWh") fits a cell.
+                'text-[length:min(28px,calc(10.4cqi_-_8.5px))] @[35rem]:text-[length:min(36px,calc(6.94cqi_-_9.06px))] @[61.25rem]:text-[length:min(36px,calc(4.17cqi_-_9.5px))]'
+              : 'text-2xl',
             muted && 'text-muted-foreground',
           )}
         >
@@ -318,7 +326,7 @@ export function Readout({
       {lg ? (
         <span
           data-slot="readout-detail"
-          className="flex min-h-[3em] flex-col text-muted-foreground text-sm leading-normal"
+          className="flex min-h-[4.5em] @[35rem]:min-h-[3em] flex-col text-muted-foreground text-sm leading-normal"
         >
           {detail}
         </span>

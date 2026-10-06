@@ -19,10 +19,33 @@ export function EnergyReadouts({ sums }: { sums: PeriodSums | null }) {
       {sums ? (
         <PeriodReadouts sums={sums} />
       ) : (
-        <p className="min-h-[7.5rem] text-muted-foreground text-sm">{m.energy_period_no_data()}</p>
+        // The same grid, invisible, so the empty state is exactly as tall as a full one at any width.
+        <div className="relative">
+          <div aria-hidden className="invisible flex flex-col gap-3">
+            <PeriodReadouts sums={EMPTY_SUMS} />
+          </div>
+          <p className="absolute top-0 left-0 text-muted-foreground text-sm">
+            {m.energy_period_no_data()}
+          </p>
+        </div>
       )}
     </div>
   )
+}
+
+const EMPTY_SUMS: PeriodSums = {
+  gridImportKwh: 0,
+  gridExportKwh: 0,
+  solarKwh: 0,
+  loadKwh: 0,
+  batteryDischargeKwh: 0,
+  batteryChargeSolarKwh: 0,
+  batteryChargeGridKwh: 0,
+  carKwh: 0,
+  firstSocPct: null,
+  lastSocPct: null,
+  buckets: 0,
+  expectedBuckets: 0,
 }
 
 const kwh = (value: number) => formatOneDecimal(value)

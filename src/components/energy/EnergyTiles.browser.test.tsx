@@ -45,9 +45,26 @@ test('shows all five readouts', async () => {
   await expect.element(screen.getByText(/^41\s%$/)).toBeVisible()
 })
 
-test('a period without data says so, in the same reserved space', async () => {
+test('a period without data says so over an invisible grid of the same shape', async () => {
   const { screen } = await renderWithProviders(<EnergyReadouts sums={null} />)
   await expect.element(screen.getByText(m.energy_period_no_data())).toBeVisible()
+  const hidden = screen.container.querySelector('[aria-hidden="true"].invisible')
+  expect(hidden).not.toBeNull()
+  expect(hidden?.querySelectorAll('[data-slot="readout-detail"]')).toHaveLength(5)
+  expect(hidden?.querySelector('[data-slot="energy-gap"]')).not.toBeNull()
+})
+
+test('pins the layout classes that keep the height steady', async () => {
+  const { screen } = await renderWithProviders(<EnergyReadouts sums={sums()} />)
+  expect(screen.container.querySelector('.\\@container')).not.toBeNull()
+  const grid = screen.container.querySelector('.grid')
+  expect(grid?.className).toContain('grid-cols-2')
+  expect(grid?.className).toContain('@[35rem]:grid-cols-3')
+  expect(grid?.className).toContain('@[61.25rem]:grid-cols-5')
+  const detail = screen.container.querySelector('[data-slot="readout-detail"]')
+  expect(detail?.className).toContain('min-h-[4.5em]')
+  expect(detail?.className).toContain('@[35rem]:min-h-[3em]')
+  expect(screen.container.querySelector('.flex-nowrap.whitespace-nowrap')).not.toBeNull()
 })
 
 test('the gap line is always rendered, empty when the period is complete', async () => {
