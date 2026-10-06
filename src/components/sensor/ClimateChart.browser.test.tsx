@@ -61,6 +61,34 @@ async function renderChart(
   return screen.container
 }
 
+// A re-render with new data, as a poll's refetch or a device toggle does.
+// renderWithProviders wraps the first render in the provider, so the rerender
+// wraps it too: the same tree, so the chart keeps its state instead of remounting.
+async function renderRefetchable(
+  devices: ClimateChartDevice[],
+  formatTick: (t: number) => string = (t) => String(t),
+) {
+  const queryClient = makeTestQueryClient()
+  const ui = (ds: ClimateChartDevice[]) => (
+    <div style={{ width: 600, height: 300 }}>
+      <ClimateChart
+        devices={ds}
+        unit="°C"
+        formatTick={formatTick}
+        timeAxis={makeTimeAxis('24h', 'sv-SE')}
+        label="Temperatur"
+      />
+    </div>
+  )
+  const { screen } = await renderWithProviders(ui(devices), { queryClient })
+  return {
+    screen,
+    root: screen.container,
+    rerender: (ds: ClimateChartDevice[]) =>
+      screen.rerender(<QueryClientProvider client={queryClient}>{ui(ds)}</QueryClientProvider>),
+  }
+}
+
 /** Hovers the plot's centre (the visx overlay, or the element there on recharts). */
 async function hoverPlot(root: HTMLElement) {
   await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
@@ -282,25 +310,11 @@ test('with every device hidden there is no line and no card, and the legend keep
     { t: T0, [id]: v },
     { t: T0 + HOUR, [id]: v + 1 },
   ]
-  const queryClient = makeTestQueryClient()
-  const ui = (hideB: boolean) => (
-    <QueryClientProvider client={queryClient}>
-      <div style={{ width: 600, height: 300 }}>
-        <ClimateChart
-          devices={[
-            device('a', points('a', 20), { hidden: true }),
-            device('b', points('b', 30), { displayName: 'Visible one', hidden: hideB }),
-          ]}
-          unit="°C"
-          formatTick={(t) => String(t)}
-          timeAxis={makeTimeAxis('24h', 'sv-SE')}
-          label="Temperatur"
-        />
-      </div>
-    </QueryClientProvider>
-  )
-  const { screen } = await renderWithProviders(ui(true), { queryClient })
-  const root = screen.container
+  const devices = (hideB: boolean) => [
+    device('a', points('a', 20), { hidden: true }),
+    device('b', points('b', 30), { displayName: 'Visible one', hidden: hideB }),
+  ]
+  const { root, rerender } = await renderRefetchable(devices(true))
   await vi.waitFor(() => expect(legendLabels(root)).toEqual(['Visible one', 'a']))
   expect(lineCurves(root)).toHaveLength(0)
   await hoverPlot(root)
@@ -309,9 +323,10 @@ test('with every device hidden there is no line and no card, and the legend keep
   await settle()
   expect(tooltipText()).toBe('')
 
-  // Positive control: the same chart and hover, with one device visible, opens
-  // a card. Without it the "no card" above could pass on a chart nothing hovers.
-  await screen.rerender(ui(false))
+  // Positive control: the same mounted chart and hover, with one device toggled
+  // visible, opens a card. Without it the "no card" above could pass on a chart
+  // nothing hovers.
+  await rerender(devices(false))
   await vi.waitFor(() => expect(lineCurves(root)).toHaveLength(1))
   await hoverPlot(root)
   await vi.waitFor(() => expect(tooltipText()).toContain('Visible one'))
@@ -415,30 +430,6 @@ test('every device hidden: the time axis keeps its ticks, with no y labels and n
   expect(gridLines(root)).toHaveLength(0)
 })
 
-// A re-render with new data, as a poll's refetch does. renderWithProviders
-// wraps the first render in the provider, so the rerender wraps it too: the
-// same tree, so the chart keeps its state instead of remounting.
-async function renderRefetchable(devices: ClimateChartDevice[], formatTick: (t: number) => string) {
-  const queryClient = makeTestQueryClient()
-  const ui = (ds: ClimateChartDevice[]) => (
-    <div style={{ width: 600, height: 300 }}>
-      <ClimateChart
-        devices={ds}
-        unit="°C"
-        formatTick={formatTick}
-        timeAxis={makeTimeAxis('24h', 'sv-SE')}
-        label="Temperatur"
-      />
-    </div>
-  )
-  const { screen } = await renderWithProviders(ui(devices), { queryClient })
-  return {
-    root: screen.container,
-    rerender: (ds: ClimateChartDevice[]) =>
-      screen.rerender(<QueryClientProvider client={queryClient}>{ui(ds)}</QueryClientProvider>),
-  }
-}
-
 test('a refetch that adds a reading keeps the open card on its time', async () => {
   const devices = day()
   const { root, rerender } = await renderRefetchable(devices, (t) => new Date(t).toISOString())
@@ -455,9 +446,11 @@ test('a refetch that adds a reading keeps the open card on its time', async () =
 
 test('when the data moves away from an open card, no card or hover line is left', async () => {
   const devices = day()
-  const { root, rerender } = await renderRefetchable(devices, (t) => String(t))
+  const { root, rerender } = await renderRefetchable(devices)
   await hoverPlot(root)
   await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  // The same chart throughout: it updates in place, never remounts.
+  const svg = chartSvg(root)
   // A range switch: the same sensors, readings a year earlier.
   const shifted = devices.map((d) => ({
     ...d,
@@ -469,6 +462,7 @@ test('when the data moves away from an open card, no card or hover line is left'
     expect(hoverCursor(root)).toBeNull()
     expect(activeDots(root)).toHaveLength(0)
   })
+  expect(chartSvg(root)).toBe(svg)
   // A later refetch bringing that time back doesn't pop the card up unprompted.
   await rerender(devices)
   await vi.waitFor(() => expect(lineCurves(root)).toHaveLength(2))
@@ -476,4 +470,20 @@ test('when the data moves away from an open card, no card or hover line is left'
   expect(tooltipText()).toBe('')
   expect(hoverCursor(root)).toBeNull()
   expect(activeDots(root)).toHaveLength(0)
+})
+
+test('a finger can drag across the plot: it only lets the page pan vertically', async () => {
+  const root = await renderChart(day())
+  await vi.waitFor(() => expect(root.querySelector('[data-hover-overlay]')).not.toBeNull())
+  const overlay = root.querySelector('[data-hover-overlay]') as SVGRectElement
+  expect(overlay.style.touchAction).toBe('pan-y')
+})
+
+test('the chart is one named Tab stop, its svg hidden from assistive tech', async () => {
+  const { screen, root } = await renderRefetchable(day())
+  const group = screen.getByRole('group', { name: 'Temperatur' })
+  await expect.element(group).toBeInTheDocument()
+  expect(group.element().getAttribute('tabindex')).toBe('0')
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
+  expect(chartSvg(root)?.getAttribute('aria-hidden')).toBe('true')
 })
