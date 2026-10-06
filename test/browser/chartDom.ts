@@ -13,7 +13,7 @@ const SEL = {
   tooltip: '[data-slot="chart-tooltip"]',
   xTick: '[data-axis="x"] .visx-axis-tick',
   yTick: '[data-axis="y"] .visx-axis-tick',
-  gridLine: '[data-grid] line, line[data-grid]',
+  gridLine: '[data-grid] line',
   svg: 'svg[data-chart-svg]',
   focus: '[data-chart-focus]',
   // The bar module's selection hooks.
@@ -126,7 +126,7 @@ export const centre = (el: Element) => {
  * depend on the viewport, the fonts and wherever the real pointer rests (they
  * made CI differ from local runs).
  */
-export function moveOverPlot(root: ParentNode, x: number, y: number) {
+export function moveAt(root: ParentNode, x: number, y: number) {
   const overlay = root.querySelector('[data-hover-overlay]')
   if (!overlay) throw new Error('no chart hover overlay')
   overlay.dispatchEvent(
@@ -144,7 +144,7 @@ export async function hoverBar(root: ParentNode, index: number) {
   await vi.waitFor(() => expect(bars(root).length).toBeGreaterThan(index))
   const bar = bars(root)[index]
   const { x, y } = centre(bar)
-  moveOverPlot(root, x, y)
+  moveAt(root, x, y)
 }
 
 /** Hovers halfway between two bars' centres (a month that draws no rect of its own). */
@@ -152,11 +152,8 @@ export async function hoverBetween(root: ParentNode, a: number, b: number) {
   await vi.waitFor(() => expect(bars(root).length).toBeGreaterThan(Math.max(a, b)))
   const p = centre(bars(root)[a])
   const q = centre(bars(root)[b])
-  moveOverPlot(root, (p.x + q.x) / 2, p.y)
+  moveAt(root, (p.x + q.x) / 2, p.y)
 }
-
-/** A mouse move at (x, y) on the chart's hover overlay. */
-export const moveAt = moveOverPlot
 
 /**
  * A mouse click at the centre of `el` (a bar or a tick label). The
