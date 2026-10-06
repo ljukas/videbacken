@@ -10,7 +10,11 @@ import {
 import type * as React from 'react'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
-import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
+import {
+  formatOneDecimal,
+  formatShare,
+  formatSignedOneDecimal,
+} from '~/components/evCharging/format'
 import { type EnergyFigures, type PeriodSums, WINTER_LOSS_SHARE } from '~/lib/houseEnergy/figures'
 import {
   arrowHead,
@@ -50,7 +54,7 @@ const FIGURE: Record<Exclude<FlowNodeKey, 'bat'>, (s: PeriodSums) => number> = {
 }
 const NODE_SURFACE = 'color-mix(in oklab, var(--foreground) 3%, var(--card))'
 // The muted token reaches only 4.4:1 on the raised node surface in light; a touch of the foreground lifts the
-// node's secondary text (unit, "Förlust", "Lagrat", car lines) above 4.5:1 in both themes.
+// node's secondary text (unit, "Förlust", "Lager", car lines) above 4.5:1 in both themes.
 const NODE_MUTED = { fill: 'color-mix(in oklab, var(--muted-foreground) 90%, var(--foreground))' }
 const label = (key: FlowNodeKey) =>
   ({
@@ -61,12 +65,6 @@ const label = (key: FlowNodeKey) =>
     exp: m.energy_tile_export(),
   })[key]
 const kwh = (v: number) => formatOneDecimal(v)
-// The change in stored energy with its sign (+6,1 / −0,8); a change that rounds to 0,0 has none.
-const signedKwh = (v: number) => {
-  const text = kwh(Math.abs(v))
-  if (text === kwh(0)) return text
-  return `${v > 0 ? '+' : '−'}${text}`
-}
 
 type Tip =
   | {
@@ -142,7 +140,10 @@ export function EnergyFlowDiagram({
         })
       : null
   // The battery node's last line (wide only): how much more or less is stored at the end than at the start.
-  const stored = charge !== null ? m.energy_flow_stored({ kwh: signedKwh(f.deltaStored) }) : null
+  const stored =
+    sums.firstSocPct !== null && sums.lastSocPct !== null
+      ? m.energy_flow_stored({ kwh: formatSignedOneDecimal(f.deltaStored) })
+      : null
   const active = popover.open ? popover.data?.id : undefined
   const dim = (id: string) => (active !== undefined && active !== id ? 'opacity-25' : undefined)
 

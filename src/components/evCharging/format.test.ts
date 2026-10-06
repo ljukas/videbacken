@@ -10,6 +10,7 @@ import {
   formatSessionDay,
   formatSessionTimeRange,
   formatShare,
+  formatSignedOneDecimal,
   formatSignedSek,
   formatWeekdayDay,
   hourRangeLabel,
@@ -396,5 +397,22 @@ describe('formatShare', () => {
     expect(formatShare(0.996)).toMatch(/^> 99\s%$/)
     expect(formatShare(1)).toMatch(/^100\s%$/)
     expect(formatShare(0)).toMatch(/^0\s%$/)
+  })
+})
+
+describe('formatSignedOneDecimal', () => {
+  test('a change with its sign; one that rounds to zero has none', () => {
+    inLocale('sv')
+    expect(formatSignedOneDecimal(6.14)).toBe('+6,1')
+    expect(formatSignedOneDecimal(-0.834)).toBe('−0,8')
+    expect(formatSignedOneDecimal(-0.04)).toBe('0,0')
+    expect(formatSignedOneDecimal(0.04)).toBe('0,0')
+    expect(formatSignedOneDecimal(-0)).toBe('0,0')
+    expect(formatSignedOneDecimal(1234.5)).toBe('+1\u00a0234,5')
+  })
+  test('the same typographic minus in English', () => {
+    inLocale('en')
+    expect(formatSignedOneDecimal(-0.834)).toBe('−0.8')
+    expect(formatSignedOneDecimal(6.14)).toBe('+6.1')
   })
 })

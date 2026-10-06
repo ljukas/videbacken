@@ -1,6 +1,10 @@
 import { useParentSize } from '@visx/responsive'
 import { useId } from 'react'
-import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
+import {
+  formatOneDecimal,
+  formatShare,
+  formatSignedOneDecimal,
+} from '~/components/evCharging/format'
 import { Switch } from '~/components/ui/switch'
 import { useLocalStorageFlag } from '~/hooks/useLocalStorageFlag'
 import {
@@ -127,7 +131,8 @@ function FlowTable({ sums: s, f }: { sums: PeriodSums; f: EnergyFigures }) {
     [arrow(bat, exp), kwh(f.batteryToGrid)],
     [m.energy_flow_row_battery_in(), kwh(f.batteryIn)],
     [m.energy_flow_row_battery_out(), kwh(f.batteryOut)],
-    [m.energy_flow_row_stored(), kwh(f.deltaStored)],
+    // Signed like the diagram's "Lager" line.
+    [m.energy_flow_row_stored(), `${formatSignedOneDecimal(f.deltaStored)}\u00a0kWh`],
     // The real value, also when the diagram says "≈ 0".
     [m.energy_flow_loss_title(), kwh(f.loss)],
   ]
