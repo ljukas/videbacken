@@ -369,7 +369,11 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
           onPointerDown={onPointer}
           // Off the plot the card closes; a lifted finger keeps it (ChartPopover's touch rule).
           onPointerLeave={(e) => {
-            if (e.pointerType !== 'touch') popover.hide()
+            if (e.pointerType !== 'touch') {
+              popover.hide()
+              // The cursor stays (as BarChart's does); the read-out goes with the card.
+              setAnnounced(null)
+            }
           }}
         />
       </Group>

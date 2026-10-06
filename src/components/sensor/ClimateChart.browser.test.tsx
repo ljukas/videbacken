@@ -601,3 +601,24 @@ test('with every device hidden the keys do nothing', async () => {
   await settle()
   expect(tooltipText()).toBe('')
 })
+
+test('a mouse leaving the plot clears the keyboard’s announcement with the card', async () => {
+  const root = await renderChart(day())
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
+  focusChart(root)
+  await userEvent.keyboard('{ArrowRight}')
+  await settle()
+  expect(announced(root)).not.toBe('')
+  await hoverPlot(root)
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  const overlay = root.querySelector('[data-hover-overlay]') as Element
+  overlay.dispatchEvent(
+    new PointerEvent('pointerout', {
+      bubbles: true,
+      pointerType: 'mouse',
+      relatedTarget: document.body,
+    }),
+  )
+  await vi.waitFor(() => expect(tooltipText()).toBe(''))
+  expect(announced(root)).toBe('')
+})
