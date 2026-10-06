@@ -6,6 +6,7 @@ import {
   integrationSourceName,
 } from '~/lib/integrationHealthMessage'
 import { m } from '~/paraglide/messages'
+import { credentialLink } from './credentialLink'
 import { formatDateTime } from './format'
 import { SettingsLink } from './SettingsLink'
 import { SyncNowButton } from './SyncNowButton'
@@ -44,7 +45,9 @@ export function SyncHealthAlert({
       return (
         <HealthAlert variant="default" title={title}>
           <div>{message}</div>
-          {isAdmin ? <RetryRow onRetry={onRetry} retrying={retrying} link={link} /> : null}
+          {isAdmin ? (
+            <RetryRow onRetry={onRetry} retrying={retrying} health={health} link={link} />
+          ) : null}
         </HealthAlert>
       )
     case 'not_configured':
@@ -54,7 +57,7 @@ export function SyncHealthAlert({
           <div>{message}</div>
           {link ? (
             <div>
-              <SettingsLink />
+              <AlertSettingsLink health={health} />
             </div>
           ) : null}
         </HealthAlert>
@@ -178,24 +181,48 @@ function AdminDetail({
           <code className="break-all font-mono text-xs">{message}</code>
         </div>
       ) : null}
-      <RetryRow onRetry={onRetry} retrying={retrying} link={link} />
+      <RetryRow onRetry={onRetry} retrying={retrying} health={health} link={link} />
     </>
+  )
+}
+
+// The settings link, deep when the health points at the source's credentials: it opens the
+// credentials dialog there. Named with its source (several alerts can show at once).
+function AlertSettingsLink({ health }: { health: Health }) {
+  const credentials = credentialLink(health)
+  if (!credentials) return <SettingsLink />
+  const action =
+    credentials.kind === 'configure'
+      ? m.charging_credentials_configure()
+      : m.charging_credentials_update()
+  return (
+    <SettingsLink
+      search={{ dialog: 'credentials', source: credentials.source }}
+      aria-label={m.charging_source_action_label({
+        action,
+        source: integrationSourceName(health.source),
+      })}
+    >
+      {action}
+    </SettingsLink>
   )
 }
 
 function RetryRow({
   onRetry,
   retrying,
+  health,
   link,
 }: {
   onRetry: () => void
   retrying: boolean
+  health: Health
   link: boolean
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <SyncNowButton onSync={onRetry} pending={retrying} label={m.common_try_again()} />
-      {link ? <SettingsLink /> : null}
+      {link ? <AlertSettingsLink health={health} /> : null}
     </div>
   )
 }

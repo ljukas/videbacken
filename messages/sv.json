@@ -144,6 +144,7 @@
   "charging_credentials_title": "Inloggning för {source}",
   "charging_credentials_button": "Inloggning för {source}",
   "charging_credentials_configure": "Konfigurera",
+  "charging_credentials_replace_key": "Byt nyckel",
   "charging_credentials_update": "Uppdatera inloggning",
   "charging_credentials_error_title": "Inloggningsuppgifternas status kunde inte läsas",
   "charging_grid_title": "Elnätsavtal",
@@ -310,7 +311,7 @@
   "dashboard_empty_description": "Det här är din startpunkt — sidor du lägger till visas här.",
   "dashboard_empty_title": "Inget här än",
   "dashboard_welcome_heading": "Välkommen, {name}",
-  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det räknas nya laddningar som vår bil, även om en gäst laddade. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys), byt SKODA_API_KEY i Vercel (Production) och deploya om — eller be den som sköter Vercel-projektet. Verifiera med Synka nu på Škoda under Laddning → Inställningar.",
+  "email_credential_expiry_body": "API-nyckeln som Videbacken använder för att läsa bilens status går ut den {date}. Efter det räknas nya laddningar som vår bil, även om en gäst laddade. Skapa en ny nyckel i MyŠkoda-appen (https://go.skoda.eu/api-keys) och klistra in den under Laddning → Inställningar (nyckelknappen på Škoda). Synken körs direkt när du sparar.",
   "email_credential_expiry_button": "Öppna laddningsinställningarna",
   "email_credential_expiry_fallback": "Om knappen inte fungerar, kopiera och klistra in följande länk i din webbläsare:",
   "email_credential_expiry_footer": "Det här är ett automatiskt meddelande från Videbacken.",
@@ -795,12 +796,12 @@
       ],
       "selectors": ["daysPlural"],
       "match": {
-        "daysPlural=one": "Den går ut {date} (om {daysFormatted} dag). Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om.",
-        "daysPlural=other": "Den går ut {date} (om {daysFormatted} dagar). Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om."
+        "daysPlural=one": "Den går ut {date} (om {daysFormatted} dag). Skapa en ny i MyŠkoda-appen och klistra in den under Laddning → Inställningar.",
+        "daysPlural=other": "Den går ut {date} (om {daysFormatted} dagar). Skapa en ny i MyŠkoda-appen och klistra in den under Laddning → Inställningar."
       }
     }
   ],
-  "charging_skoda_key_expiring_body_today": "Den går ut i dag, {date}. Skapa en ny i MyŠkoda-appen, byt SKODA_API_KEY i Vercel och deploya om.",
+  "charging_skoda_key_expiring_body_today": "Den går ut i dag, {date}. Skapa en ny i MyŠkoda-appen och klistra in den under Laddning → Inställningar.",
   "charging_vehicle_key_expires": "Nyckeln går ut den {date}",
   "charging_vehicle_key_expired": "Nyckeln gick ut den {date}",
   "charging_vehicle_live_heard": "Bilen hörde av sig {time} · {at}",

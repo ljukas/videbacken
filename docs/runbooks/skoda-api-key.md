@@ -5,14 +5,19 @@ a warning on /charging from 30 days before, and get emails at 30 and 7 days.
 
 ## Create or renew
 1. On the phone (MyŠkoda app 8.16+), open https://go.skoda.eu/api-keys. Create a key, select the car, copy it.
-2. Vercel → videbacken → Settings → Environment Variables → **Production** only (Preview has its own database but
-   would share the car's 20 requests/h): set `SKODA_API_KEY` (on first setup also `SKODA_VIN`, and
-   `SKODA_HOME_COORDINATES` = `lat,lon` of the charger). Never commit these.
-3. Redeploy production (env changes apply only to new deployments).
-4. Laddning → Inställningar → the Škoda tile → **Synka nu**. Expect "Fungerar" and "Nyckeln går ut den …"
-   with the new date; the warning disappears.
+2. Laddning → Inställningar → the key button on the Škoda tile → paste it into "API-nyckel" (VIN and position only on
+   first setup) → **Spara**. The Škoda sync runs at once: expect "Fungerar" and "Nyckeln går ut den …" with the new
+   date; the warning disappears.
+
+**Fallback** (no `CREDENTIALS_ENCRYPTION_KEY`, or the app is down): set the env vars in Vercel → videbacken → Settings →
+Environment Variables → **Production** only (Preview has its own database but would share the car's 20 requests/h):
+`SKODA_API_KEY` (on first setup also `SKODA_VIN`, and `SKODA_HOME_COORDINATES` = `lat,lon` of the charger). Never commit
+these. Redeploy production (env changes apply only to new deployments), then Laddning → Inställningar → the Škoda tile →
+**Synka nu**. A stored value overrides its env var field by field, so remove the stored one first ("Ta bort sparade
+uppgifter") or the env change does nothing.
 
 ## Symptoms
 - "Škoda: Fungerar inte", auth_failed → the key expired or was revoked: renew. (Emails after 3 failed polls.)
-- forbidden → the key doesn't cover the VIN, or `SKODA_VIN` is wrong.
+- `credentials_unreadable` → the encryption key (`CREDENTIALS_ENCRYPTION_KEY`) is missing or changed: restore it, or re-enter every field.
+- forbidden → the key doesn't cover the VIN or the VIN is wrong; the tile names the field (VIN, or key + VIN).
 - rate_limited → over 20 requests/h for the VIN: wait an hour. The poll uses 4 requests/h, 8 at worst with gateway retries, and local testing with the same key counts too.

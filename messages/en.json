@@ -144,6 +144,7 @@
   "charging_credentials_title": "Sign-in for {source}",
   "charging_credentials_button": "Sign-in for {source}",
   "charging_credentials_configure": "Set up",
+  "charging_credentials_replace_key": "Replace key",
   "charging_credentials_update": "Update sign-in",
   "charging_credentials_error_title": "The credentials' status couldn't be read",
   "charging_grid_title": "Grid contract",
@@ -310,7 +311,7 @@
   "dashboard_empty_description": "This is your starting point — pages you add will show up here.",
   "dashboard_empty_title": "Nothing here yet",
   "dashboard_welcome_heading": "Welcome, {name}",
-  "email_credential_expiry_body": "The API key Videbacken uses to read the car's status expires on {date}. After that, new charging sessions count as our car, even if a guest charged. Create a new key in the MyŠkoda app (https://go.skoda.eu/api-keys), replace SKODA_API_KEY in Vercel (Production) and redeploy — or ask whoever manages the Vercel project. Verify with Sync now on Škoda under Charging → Settings.",
+  "email_credential_expiry_body": "The API key Videbacken uses to read the car's status expires on {date}. After that, new charging sessions count as our car, even if a guest charged. Create a new key in the MyŠkoda app (https://go.skoda.eu/api-keys) and paste it under Charging → Settings (the key button on Škoda). The sync runs as soon as you save.",
   "email_credential_expiry_button": "Open charging settings",
   "email_credential_expiry_fallback": "If the button doesn't work, copy and paste the following link into your browser:",
   "email_credential_expiry_footer": "This is an automated message from Videbacken.",
@@ -795,12 +796,12 @@
       ],
       "selectors": ["daysPlural"],
       "match": {
-        "daysPlural=one": "It expires on {date} (in {daysFormatted} day). Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy.",
-        "daysPlural=other": "It expires on {date} (in {daysFormatted} days). Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy."
+        "daysPlural=one": "It expires on {date} (in {daysFormatted} day). Create a new one in the MyŠkoda app and paste it under Charging → Settings.",
+        "daysPlural=other": "It expires on {date} (in {daysFormatted} days). Create a new one in the MyŠkoda app and paste it under Charging → Settings."
       }
     }
   ],
-  "charging_skoda_key_expiring_body_today": "It expires today, {date}. Create a new one in the MyŠkoda app, replace SKODA_API_KEY in Vercel and redeploy.",
+  "charging_skoda_key_expiring_body_today": "It expires today, {date}. Create a new one in the MyŠkoda app and paste it under Charging → Settings.",
   "charging_vehicle_key_expires": "The key expires on {date}",
   "charging_vehicle_key_expired": "The key expired on {date}",
   "charging_vehicle_live_heard": "Last heard from the car {time} · {at}",

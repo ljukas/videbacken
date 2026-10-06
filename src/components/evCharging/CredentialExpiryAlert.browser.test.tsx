@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders, renderWithRouter } from '~test/browser/render'
 import { CredentialExpiryAlert } from './CredentialExpiryAlert'
@@ -61,7 +62,7 @@ test('renders nothing before the warning window, after expiry, or without an exp
   }
 })
 
-test('with settingsLink, links to the settings page', async () => {
+test('with settingsLink, deep-links into the Škoda credentials dialog', async () => {
   const { screen } = await renderWithRouter(
     <CredentialExpiryAlert
       expiry={{ expiresAt, daysLeft: 12, warn: true, expired: false }}
@@ -69,6 +70,13 @@ test('with settingsLink, links to the settings page', async () => {
     />,
   )
   await expect
-    .element(screen.getByRole('link', { name: m.charging_settings_link() }))
-    .toHaveAttribute('href', '/charging/settings')
+    .element(
+      screen.getByRole('link', {
+        name: m.charging_source_action_label({
+          action: m.charging_credentials_replace_key(),
+          source: integrationSourceName('skoda'),
+        }),
+      }),
+    )
+    .toHaveAttribute('href', expect.stringContaining('dialog=credentials&source=skoda'))
 })
