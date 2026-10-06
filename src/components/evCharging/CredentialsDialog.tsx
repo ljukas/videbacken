@@ -247,17 +247,19 @@ function CredentialsForm({
 
   // Which fields show their input (UI state, not a value). A field without a
   // value (missing, unreadable, status unknown) is always open; one with a value
-  // opens on its reveal button or a server error. Fields open at the start stay
-  // in the set, so a status refetch never hides an input that may hold typing.
+  // opens on its reveal button or a server error. A field joins the set as soon
+  // as it has no value (on a status refetch too) and leaves only on "Avbryt", so
+  // a refetch that gives it a value never hides an input that may hold typing.
   const [opened, setOpened] = useState<ReadonlySet<CredentialFieldName>>(
     () => new Set(fields.filter((f) => !isClosableState(states[f]))),
   )
+  const newlyUnclosable = fields.filter((f) => !isClosableState(states[f]) && !opened.has(f))
+  if (newlyUnclosable.length > 0) setOpened((prev) => new Set([...prev, ...newlyUnclosable]))
   const isOpen = (f: CredentialFieldName) => opened.has(f) || !isClosableState(states[f])
   const anyOpen = fields.some(isOpen)
   // The first open input takes focus when the dialog opens.
   const [autoFocusField] = useState(() => fields.find(isOpen))
   // What a save sends: open inputs only, and blank means "keep what is there".
-  // A field hidden by a status refetch after it was typed into never sends its value.
   const toSend = (value: Record<string, string>) =>
     Object.fromEntries(
       Object.entries(value).filter(([f, v]) => isOpen(f as CredentialFieldName) && v.trim() !== ''),
@@ -392,7 +394,9 @@ function CredentialsForm({
       return next
     })
 
+  // A reveal always starts empty, whatever the form still holds for the field.
   const openField = (f: CredentialFieldName) => {
+    form.resetField(f)
     setOpened((prev) => new Set(prev).add(f))
     setFocusTarget(inputId(source, f))
   }

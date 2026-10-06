@@ -878,7 +878,7 @@ test('an unreadable input says so when tabbed into', async () => {
     .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_badge_unreadable()))
 })
 
-test('a field hidden by a status refetch never sends what was typed into it', async () => {
+test('a status refetch keeps a revealed input open; only Avbryt closes and clears it', async () => {
   const { screen, queryClient } = await renderWithProviders(dialog())
   const rerender = (ui: ReactNode) =>
     screen.rerender(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
@@ -894,10 +894,18 @@ test('a field hidden by a status refetch never sends what was typed into it', as
     },
   )
   await rerender(dialog({ status: apiKeyMissing }))
-  await screen.getByLabelText(API_KEY, { exact: true }).fill('typed-then-hidden')
-  // …then is stored again, which closes it with the typed value still in the form.
+  await screen.getByLabelText(API_KEY, { exact: true }).fill('typed-then-stored')
+  // …then is stored again: the input stays open with the typing, now closable.
   await rerender(dialog())
+  await expect
+    .element(screen.getByLabelText(API_KEY, { exact: true }))
+    .toHaveValue('typed-then-stored')
+  await screen.getByRole('button', { name: closeName(API_KEY) }).click()
   await expect.element(screen.getByLabelText(API_KEY, { exact: true })).not.toBeInTheDocument()
+  // A reveal starts empty.
+  await screen.getByRole('button', { name: REPLACE_API_KEY }).click()
+  await expect.element(screen.getByLabelText(API_KEY, { exact: true })).toHaveValue('')
+  await screen.getByRole('button', { name: closeName(API_KEY) }).click()
   await screen.getByLabelText(HOME, { exact: true }).fill('59.33,18.07')
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await vi.waitFor(() => expect(setFn).toHaveBeenCalled())
