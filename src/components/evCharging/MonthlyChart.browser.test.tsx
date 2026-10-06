@@ -1,5 +1,15 @@
 import { expect, test, vi } from 'vitest'
 import { m } from '~/paraglide/messages'
+import {
+  barHeight,
+  bars,
+  hoverBar,
+  hoverBetween,
+  legendText,
+  seriesBars,
+  tooltipText,
+  xTickLabels,
+} from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { formatSek, monthLabel } from './format'
 import { MetricToggle } from './MetricToggle'
@@ -18,7 +28,7 @@ test('renders one bar per month (12)', async () => {
     </div>,
   )
   await vi.waitFor(() => {
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(12)
+    expect(bars(screen.container)).toHaveLength(12)
   })
 })
 
@@ -32,11 +42,10 @@ test('labels the x-axis with localized short month names', async () => {
   const jan = new Intl.DateTimeFormat('sv-SE', { month: 'short', timeZone: 'UTC' }).format(
     new Date(Date.UTC(2000, 0, 15, 12)),
   )
-  // Scoped to the SVG axis ticks: a hover tooltip (the pointer can rest over the chart
+  // Scoped to the x-axis ticks: a hover tooltip (the pointer can rest over the chart
   // between tests) also renders the month label.
   await vi.waitFor(() => {
-    const ticks = [...screen.container.querySelectorAll('svg tspan')]
-    expect(ticks.map((t) => t.textContent)).toContain(jan)
+    expect(xTickLabels(screen.container)).toContain(jan)
   })
 })
 
@@ -66,9 +75,7 @@ test('the kr view stacks spot and fees: two bar series of 12', async () => {
       <MonthlyChart months={months} cost={{ year: 2026, months: costMonths }} metric="sek" />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(24),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(24))
 })
 
 test('without cost data the kr metric falls back to kWh', async () => {
@@ -77,9 +84,7 @@ test('without cost data the kr metric falls back to kWh', async () => {
       <MonthlyChart months={months} metric="sek" />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(12),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(12))
 })
 
 test('the metric toggle reports the chosen metric', async () => {
@@ -104,7 +109,7 @@ test('the kr view has a legend naming spot and fees', async () => {
   )
   // Scoped to the legend: a hover tooltip may also be open (see above).
   await vi.waitFor(() => {
-    const legend = screen.container.querySelector('.recharts-legend-wrapper')?.textContent
+    const legend = legendText(screen.container)
     expect(legend).toContain(m.charging_chart_series_spot())
     expect(legend).toContain(m.charging_chart_series_fees())
     expect(legend).not.toContain(m.charging_chart_no_price())
@@ -132,14 +137,10 @@ test('a month with energy but no price gets a stub and a "Pris saknas" legend, n
     </div>,
   )
   await vi.waitFor(() =>
-    expect(screen.container.querySelector('.recharts-legend-wrapper')?.textContent).toContain(
-      m.charging_chart_no_price(),
-    ),
+    expect(legendText(screen.container)).toContain(m.charging_chart_no_price()),
   )
   // 7 priced months × (spot + fees) + 5 stubs.
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(19),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(19))
 })
 
 test('the kr view draws from the cost data alone, whatever kWh months it is given', async () => {
@@ -148,9 +149,7 @@ test('the kr view draws from the cost data alone, whatever kWh months it is give
       <MonthlyChart months={[]} cost={{ year: 2026, months: costMonths }} metric="sek" />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(24),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(24))
 })
 
 test('a year with nothing priced says so in the kr view instead of drawing 0 kr', async () => {
@@ -170,7 +169,7 @@ test('a year with nothing priced says so in the kr view instead of drawing 0 kr'
     </div>,
   )
   await expect.element(screen.getByText(m.charging_chart_cost_empty({ year: 2023 }))).toBeVisible()
-  expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(0)
+  expect(bars(screen.container)).toHaveLength(0)
 })
 
 test('a year charged only from own solar draws its 0 kr, never "nothing priced"', async () => {
@@ -193,12 +192,7 @@ test('a year charged only from own solar draws its 0 kr, never "nothing priced"'
   expect(screen.getByText(m.charging_chart_cost_empty({ year: 2023 })).elements()).toHaveLength(0)
 })
 
-const barHeights = (container: Element, bar = 0) =>
-  [
-    ...container
-      .querySelectorAll('.recharts-bar')
-      [bar].querySelectorAll('.recharts-bar-rectangle path'),
-  ].map((p) => p.getBoundingClientRect().height)
+const barHeights = (container: Element, bar = 0) => seriesBars(container, bar).map(barHeight)
 
 test('a tiny real kWh month keeps a visible bar; a genuine 0 month stays empty', async () => {
   const sparse = months.map((mo) => ({
@@ -210,9 +204,7 @@ test('a tiny real kWh month keeps a visible bar; a genuine 0 month stays empty',
       <MonthlyChart months={sparse} />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(2),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(2))
   const heights = barHeights(screen.container)
   expect(Math.min(...heights)).toBeGreaterThanOrEqual(2)
 })
@@ -231,9 +223,7 @@ test('the kr view keeps a tiny real month visible, and invents no stub for a rea
     </div>,
   )
   // spot: months 1 + 2; fees: month 1 only (month 2's 0 fees means nothing).
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(3),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(3))
   expect(Math.min(...barHeights(screen.container, 0))).toBeGreaterThanOrEqual(2)
   expect(barHeights(screen.container, 1)).toHaveLength(1)
 })
@@ -262,20 +252,7 @@ test('a month charged only from own solar is 0 kr, not "Pris saknas"', async () 
   expect(screen.getByText(m.charging_chart_no_price()).elements()).toHaveLength(0)
 })
 
-// Moves the pointer onto the index-th bar rectangle (DOM order: all spot bars, then all fees bars).
-const hoverBar = async (container: Element, index: number) => {
-  const rects = () => [...container.querySelectorAll('.recharts-bar-rectangle')]
-  await vi.waitFor(() => expect(rects().length).toBeGreaterThan(index))
-  const box = rects()[index].getBoundingClientRect()
-  rects()[index].dispatchEvent(
-    new MouseEvent('mousemove', {
-      bubbles: true,
-      clientX: box.x + box.width / 2,
-      clientY: box.y + box.height / 2,
-    }),
-  )
-}
-const tooltipText = () => document.querySelector('.recharts-tooltip-wrapper')?.textContent ?? ''
+// hoverBar(container, i) moves the pointer onto the i-th bar (DOM order: all spot bars, then all fees bars).
 const withSolar = (
   solar: { solarPricedKwh: number; solarUnpricedKwh: number; solarValueSek: number },
   base = costMonths,
@@ -364,9 +341,7 @@ test('an unpriced stub month still shows its solar value', async () => {
     </div>,
   )
   // 11 priced months × (spot + fees) + 1 stub, last in DOM order: hover the stub.
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(23),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(23))
   await hoverBar(screen.container, 22)
   await vi.waitFor(() => {
     expect(tooltipText()).toContain(m.charging_chart_no_price())
@@ -400,17 +375,7 @@ test('a month charged only from own solar shows 0 kr and then its solar value', 
   )
   // June's 0 kr draws no rectangle (index 5 is July's spot bar): point halfway
   // between May's and July's, where June's band is.
-  const rects = () => [...screen.container.querySelectorAll('.recharts-bar-rectangle')]
-  await vi.waitFor(() => expect(rects().length).toBeGreaterThan(5))
-  const may = rects()[4].getBoundingClientRect()
-  const july = rects()[5].getBoundingClientRect()
-  rects()[4].dispatchEvent(
-    new MouseEvent('mousemove', {
-      bubbles: true,
-      clientX: (may.x + may.width / 2 + july.x + july.width / 2) / 2,
-      clientY: may.y + may.height / 2,
-    }),
-  )
+  await hoverBetween(screen.container, 4, 5)
   await vi.waitFor(() => {
     expect(tooltipText()).toContain(monthLabel(6))
     expect(tooltipText()).toContain(m.charging_chart_total())
@@ -448,9 +413,7 @@ const hoverStub = async (stubbed: ReturnType<typeof stubJune>) => {
       <MonthlyChart months={months} cost={{ year: 2026, months: stubbed }} metric="sek" />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(23),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(23))
   await hoverBar(screen.container, 22)
   await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_chart_no_price()))
 }

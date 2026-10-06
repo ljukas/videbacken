@@ -1,6 +1,15 @@
 import { expect, test, vi } from 'vitest'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
+import {
+  barHeight,
+  barSeries,
+  bars,
+  legendText,
+  lineCurve,
+  lineDots,
+  lineSeries,
+} from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { SpotComparisonChart } from './SpotComparisonChart'
 
@@ -35,14 +44,14 @@ test('draws the paid price as a bar and the month average as a line, both in the
     </div>,
   )
   await vi.waitFor(() => {
-    const legend = screen.container.querySelector('.recharts-legend-wrapper')?.textContent
+    const legend = legendText(screen.container)
     expect(legend).toContain(m.charging_economy_series_paid())
     expect(legend).toContain(m.charging_economy_series_avg())
   })
-  expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(1)
-  expect(screen.container.querySelectorAll('.recharts-line')).toHaveLength(1)
+  expect(barSeries(screen.container)).toHaveLength(1)
+  expect(lineSeries(screen.container)).toHaveLength(1)
   // Only the one month with a paid price has a bar.
-  expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(1)
+  expect(bars(screen.container)).toHaveLength(1)
 })
 
 test('a year with no spot data says so', async () => {
@@ -50,7 +59,7 @@ test('a year with no spot data says so', async () => {
     <SpotComparisonChart months={Array.from({ length: 12 }, (_, i) => month(i + 1))} />,
   )
   await expect.element(screen.getByText(m.charging_economy_chart_no_data())).toBeVisible()
-  expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(0)
+  expect(barSeries(screen.container)).toHaveLength(0)
 })
 
 test('a year where nothing was paid (all excluded) says there is no data, not an average-only chart', async () => {
@@ -60,8 +69,8 @@ test('a year where nothing was paid (all excluded) says there is no data, not an
     />,
   )
   await expect.element(screen.getByText(m.charging_economy_chart_no_data())).toBeVisible()
-  expect(screen.container.querySelectorAll('.recharts-bar')).toHaveLength(0)
-  expect(screen.container.querySelectorAll('.recharts-line')).toHaveLength(0)
+  expect(barSeries(screen.container)).toHaveLength(0)
+  expect(lineSeries(screen.container)).toHaveLength(0)
 })
 
 test('the month average is drawn only for months where the scope has a priced session', async () => {
@@ -70,11 +79,9 @@ test('the month average is drawn only for months where the scope has a priced se
       <SpotComparisonChart months={months} />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(1),
-  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(1))
   // Eleven months carry market data but no paid price: no average point for them.
-  expect(screen.container.querySelectorAll('.recharts-line-dot')).toHaveLength(1)
+  expect(lineDots(screen.container)).toHaveLength(1)
 })
 
 test('the month-average dots are solid, not dashed like the line', async () => {
@@ -89,15 +96,11 @@ test('the month-average dots are solid, not dashed like the line', async () => {
       />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-line-dot')).toHaveLength(2),
-  )
+  await vi.waitFor(() => expect(lineDots(screen.container)).toHaveLength(2))
   // The line itself stays dashed…
-  expect(
-    screen.container.querySelector('.recharts-line-curve')?.getAttribute('stroke-dasharray'),
-  ).toBe('5 4')
+  expect(lineCurve(screen.container)?.getAttribute('stroke-dasharray')).toBe('5 4')
   // …but a dot inheriting the dash pattern renders as a broken ring.
-  for (const dot of screen.container.querySelectorAll('.recharts-line-dot')) {
+  for (const dot of lineDots(screen.container)) {
     expect(dot.getAttribute('stroke-dasharray') ?? 'none').toMatch(/^(none|0)$/)
   }
 })
@@ -112,9 +115,6 @@ test('a near-zero paid price still draws a visible bar', async () => {
       />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(1),
-  )
-  const bar = screen.container.querySelector('.recharts-bar-rectangle path')
-  expect(bar?.getBoundingClientRect().height ?? 0).toBeGreaterThanOrEqual(2)
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(1))
+  expect(barHeight(bars(screen.container)[0])).toBeGreaterThanOrEqual(2)
 })
