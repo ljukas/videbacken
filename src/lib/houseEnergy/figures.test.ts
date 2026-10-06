@@ -1,5 +1,11 @@
 import { expect, test } from 'vitest'
-import { addPeriodSums, energyFigures, gapHours, type PeriodSums } from './figures'
+import {
+  addPeriodSums,
+  energyFigures,
+  gapHours,
+  type PeriodSums,
+  WINTER_LOSS_SHARE,
+} from './figures'
 import { BATTERY_CAPACITY_KWH } from './mix/pool'
 
 const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
@@ -279,4 +285,77 @@ test('falling SoC: battery emptied, deltaStored negative', () => {
   expect(f.batteryOut).toBe(15)
   // loss = in - out - delta = 0 - 15 - expectedDelta
   expect(f.loss).toBeCloseTo(0 - 15 - expectedDelta, 12)
+})
+
+test('battery to grid is the export the solar surplus cannot explain', () => {
+  // 10 kWh solar, 8 into the battery: 2 kWh of solar could be sold; the other 3 kWh came from the battery.
+  const f = energyFigures(
+    sums({ solarKwh: 10, batteryChargeSolarKwh: 8, gridExportKwh: 5, batteryDischargeKwh: 20 }),
+  )
+  expect(f.batteryToGrid).toBe(3)
+  expect(f.batteryToHouse).toBe(17)
+})
+
+test('export within the solar surplus leaves nothing from the battery to the grid', () => {
+  const f = energyFigures(
+    sums({
+      solarKwh: 500,
+      batteryChargeSolarKwh: 170,
+      gridExportKwh: 110,
+      batteryDischargeKwh: 90,
+    }),
+  )
+  expect(f.batteryToGrid).toBe(0)
+  expect(f.batteryToHouse).toBe(90)
+})
+
+test('battery to house is never negative', () => {
+  // More export beyond the surplus than the battery discharged (meter noise): the house gets 0, not −2.
+  const f = energyFigures(sums({ gridExportKwh: 5, batteryDischargeKwh: 3 }))
+  expect(f.batteryToGrid).toBe(5)
+  expect(f.batteryToHouse).toBe(0)
+})
+
+test('the loss share is the loss over what stayed in the battery, null without an efficiency', () => {
+  // February: in 274,45, out 156,97, SoC 34 → 23 %: loss ≈ 118,3 of a net 275,28 in ≈ 43 %.
+  const feb = energyFigures(
+    sums({
+      batteryChargeSolarKwh: 25.57,
+      batteryChargeGridKwh: 248.88,
+      batteryDischargeKwh: 156.97,
+      firstSocPct: 34,
+      lastSocPct: 23,
+    }),
+  )
+  expect(feb.lossShare).toBeCloseTo(feb.loss / (feb.batteryIn - feb.deltaStored), 12)
+  expect(feb.lossShare).toBeCloseTo(0.43, 2)
+  // Below 1 kWh in there is no efficiency, so no share either.
+  expect(
+    energyFigures(sums({ batteryChargeGridKwh: 0.9, batteryDischargeKwh: 0.5 })).lossShare,
+  ).toBeNull()
+})
+
+test('the winter threshold: the February loss share (43 %) is above it, the August one (5 %) is not', () => {
+  expect(WINTER_LOSS_SHARE).toBe(0.25)
+  const feb = energyFigures(
+    sums({
+      batteryChargeSolarKwh: 25.57,
+      batteryChargeGridKwh: 248.88,
+      batteryDischargeKwh: 156.97,
+      firstSocPct: 34,
+      lastSocPct: 23,
+    }),
+  )
+  // August 2026 (local): in 213,04, out 204,64, SoC 37 → 15 %: loss 10,06 of 214,70.
+  const aug = energyFigures(
+    sums({
+      batteryChargeSolarKwh: 187.8,
+      batteryChargeGridKwh: 25.24,
+      batteryDischargeKwh: 204.64,
+      firstSocPct: 37,
+      lastSocPct: 15,
+    }),
+  )
+  expect(feb.lossShare).toBeGreaterThan(WINTER_LOSS_SHARE)
+  expect(aug.lossShare).toBeLessThan(WINTER_LOSS_SHARE)
 })

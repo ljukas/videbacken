@@ -5,13 +5,13 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { z } from 'zod'
 import energyChartBones from '~/bones/energy-chart.bones.json'
 import energyTilesBones from '~/bones/energy-tiles.bones.json'
+import { EnergyFlow } from '~/components/energy/EnergyFlow'
 import { EnergyHeading } from '~/components/energy/EnergyHeading'
 import {
   type EnergyMetric,
   EnergyMonthlyChart,
   energyMetricOptions,
 } from '~/components/energy/EnergyMonthlyChart'
-import { EnergyReadouts } from '~/components/energy/EnergyTiles'
 import { energyOverviewQueryFor } from '~/components/energy/energyQueries'
 import { PeriodControl, periodLabel } from '~/components/energy/PeriodControl'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
@@ -226,7 +226,7 @@ function EnergyOverviewPage() {
                     className={cn('transition-opacity', (tilesStale || failed) && 'opacity-60')}
                     aria-busy={tilesStale || undefined}
                   >
-                    <EnergyReadouts sums={tileSums} />
+                    <EnergyFlow sums={tileSums} />
                   </CardContent>
                 </Card>
               </section>
