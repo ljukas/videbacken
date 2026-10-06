@@ -25,6 +25,9 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
+  // maplibre-gl's worker is loaded by URL (setWorkerUrl in HomePositionMap); esbuild's
+  // dep pre-bundling would rewrite it. Only the lazy map chunk imports it.
+  optimizeDeps: { exclude: ['maplibre-gl'] },
   // App build pulls in the TanStack Start + React + Tailwind + Nitro plugin chain.
   // Vitest runs server-only modules under `environment: 'node'`, so loading those
   // plugins would (a) try to evaluate React's CJS entry as ESM and (b) keep a Vite
@@ -70,7 +73,8 @@ export default defineConfig({
                 'X-Content-Type-Options': 'nosniff',
                 'X-Frame-Options': 'DENY',
                 'Referrer-Policy': 'strict-origin-when-cross-origin',
-                'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+                // geolocation=(self): "Använd min position" in the home-position picker (ADR-0026).
+                'Permissions-Policy': 'camera=(), microphone=(), geolocation=(self)',
               },
             },
           },
