@@ -10,7 +10,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 |---|---|---|---|---|---|
 | 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92), fix [#95](https://github.com/ljukas/videbacken/pull/95) | checkpoint passed | 2026-10-05: sums and car match prod; warm `energy.overview` query 52 ms mean over 33 calls (one cold instance 736 ms total); owner accepted, asked for a month choice → step 1b |
 | 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | [#103](https://github.com/ljukas/videbacken/pull/103) | checkpoint passed | 2026-10-06: August, Hela 2026 and Totalt match SQL; warm `energy/overview` 64–67 ms; no shift on prod at 500 px (3 widths only locally); owner accepted, asked for a richer summary → step 1c |
-| 1c | Summary as a flow diagram: visx, battery loss, icon tiles, arrow-value switch (replaces the five tiles) | [plan](../plans/2026-10-06-energy-1c-flow-summary.md) | — | not started | — |
+| 1c | Summary as a flow diagram: visx, battery loss, icon tiles, arrow-value switch (replaces the five tiles) | [plan](../plans/2026-10-06-energy-1c-flow-summary.md) | [#112](https://github.com/ljukas/videbacken/pull/112) | PR open | — |
 | 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
@@ -119,3 +119,13 @@ colour tokens, and step 1c (the overview already shows the battery's loss; `Ener
   mobile, self-sufficiency vs self-consumption), a flow diagram in → out with the battery's loss, big lucide icon
   tiles, values on the arrows behind a switch, one-colour battery arrow. Design:
   [flow summary](../specs/2026-10-06-energy-flow-summary-design.md).
+- 2026-10-06: step 1c built (branch `feat/energy-flow-summary`, PR #112), task by task with two adversarial
+  reviewers each, then a whole-branch ADR + correctness review and one fix wave; rulings and changes are in the
+  spec. Live check on the local full history (Playwright, 1440 / 820 / 390 px, light + dark, five periods: October,
+  August, February, Hela 2026, Totalt): the period button, the Summering card and the flow box kept identical rects;
+  node text inside its node, no pill on a node, no horizontal scroll, console clean, text centred on its tile within
+  0,1 px. Skeleton = loaded card at 1100–1440 px (an extra `/energy` bones width at 1220 px closed a 125 px jump).
+  Node muted text 5,23:1 light / 6,93:1 dark. 859 px → 490 px narrow, 860 px → 360 px wide. August table rows =
+  a plain SQL sum within 0,05 kWh; loss 213,035 − 204,644 + 1,668 = 10,059 → "10,1". Gate: `check:ci` 0 errors,
+  build passes, 226 files / 3 454 tests, sv/en keys match. Open: a 4-digit loss overflows the narrow battery node by
+  0,9 px at 360 px (prod Totalt loss ≈ 289 kWh); checkpoint 1c on prod.
