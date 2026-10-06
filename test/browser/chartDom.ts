@@ -23,6 +23,10 @@ const SEL = {
   // The Energi chart's recharts hooks, and the bar module's selection hooks.
   outline: '[data-slot="hover-month"], [data-slot="category-outline"]',
   selectedTint: '[data-slot="selected-month"], [data-slot="category-selected"]',
+  // The Klimat chart: an isolated reading's dot, the hovered readings' dots, the hover line.
+  readingDot: '.recharts-line-dots .recharts-dot, [data-reading-dot]',
+  activeDot: '.recharts-active-dot .recharts-dot, [data-active-dot]',
+  hoverCursor: '.recharts-tooltip-cursor, [data-hover-cursor]',
 } as const
 
 const all = <E extends Element = Element>(root: ParentNode, sel: string) => [
@@ -54,6 +58,12 @@ export const lineCurve = (root: ParentNode) => root.querySelector<SVGPathElement
 /** Every line path (a library may draw one path per segment, or one path of several). */
 export const lineCurves = (root: ParentNode) => all<SVGPathElement>(root, SEL.lineCurve)
 export const lineDots = (root: ParentNode) => all<SVGElement>(root, SEL.lineDot)
+/** The dots for isolated readings (a reading with no connected neighbour). */
+export const readingDots = (root: ParentNode) => all<SVGElement>(root, SEL.readingDot)
+/** The dots on the hovered readings. */
+export const activeDots = (root: ParentNode) => all<SVGElement>(root, SEL.activeDot)
+/** The vertical hover line (null: none). */
+export const hoverCursor = (root: ParentNode) => root.querySelector<SVGElement>(SEL.hoverCursor)
 export const gridLines = (root: ParentNode) => all(root, SEL.gridLine)
 export const chartSvg = (root: ParentNode) => root.querySelector<SVGSVGElement>(SEL.svg)
 /** The chart's keyboard stop (recharts' focusable svg, or the visx module's group). */

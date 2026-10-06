@@ -11,6 +11,7 @@ import { expect, test } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { orpc, type RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
+import { xTickLabels } from '~test/browser/chartDom'
 import { makeTestQueryClient } from '~test/browser/render'
 import { Route as Sensors } from './sensors'
 
@@ -206,11 +207,8 @@ test("a range switch keeps the shown range's chart, dimmed, with that range's ti
     qc.setQueryData(seriesKey, { buckets, bucketSec: 3600 })
     pendingForever(qc, yearKey)
   })
-  // The x-axis ticks: the y-axis ones carry the unit ("21.0°C", "45%").
-  const xTicks = () =>
-    [...document.querySelectorAll('.recharts-cartesian-axis-tick-value')]
-      .map((e) => e.textContent ?? '')
-      .filter((text) => !text.endsWith('°C') && !text.endsWith('%'))
+  // The x-axis ticks (the y-axis ones carry the unit and aren't x ticks).
+  const xTicks = () => xTickLabels(document)
   // The chart measures its container before drawing axes: give it time.
   await expect.poll(() => xTicks().length, { timeout: 5000 }).toBeGreaterThan(0)
   expect(document.querySelector('[aria-busy="true"]')).toBeNull()
