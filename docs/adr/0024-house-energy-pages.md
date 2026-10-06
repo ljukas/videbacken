@@ -53,6 +53,10 @@ Measured on the full local history (2026-10-05):
    - *Amended 2026-10-05 (step 1b):* the tiles show any **chosen** month, year or all time (`?period=`), picked with a
      period control or by clicking a month in the chart; the chosen period's year is the chart's year. Still monthly
      granularity, still on-read. Design: [period control](../superpowers/specs/2026-10-05-energy-period-control-design.md).
+   - *Amended 2026-10-06 (step 1c):* the overview's period figures are drawn as a flow diagram (solar and bought in,
+     the battery with its loss in the middle, consumption and sold out) instead of five tiles; the same figures, plus
+     the battery's loss and two derived outflows (`batteryToGrid`, `batteryToHouse`) in `figures.ts`. Still the
+     period's sums, still on-read. Design: [flow summary](../superpowers/specs/2026-10-06-energy-flow-summary-design.md).
 7. **Freshness:** no polling interval; focus refetch, and the Emaldo sync health alert shows when data is stale.
 
 ## Alternatives considered
