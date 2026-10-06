@@ -3,7 +3,7 @@ import { MapPinIcon } from 'lucide-react'
 import { setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { type KeyboardEvent, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { LatLon } from '~/lib/effects/skoda'
 import { logger } from '~/lib/logger/browser'
 import { m } from '~/paraglide/messages'
@@ -24,12 +24,36 @@ export type HomePositionMapProps = {
   point: LatLon | null
   /** The first view (not reactive). */
   initialView: MapView
-  /** A camera request: each new object moves the view there. */
+  /**
+   * A camera request: each new object moves the view there. The latest one is also
+   * applied once the map has loaded, so a request made before the (async) map exists
+   * is not lost.
+   */
   camera: MapView | null
   onPick: (point: LatLon) => void
 }
 
 let warned = false
+
+/** MapLibre's own UI strings (Swedish-default app); read once at mount. */
+function mapLocale() {
+  return {
+    'Map.Title': m.charging_home_map_ui_title(),
+    'Marker.Title': m.charging_home_map_ui_marker(),
+    'AttributionControl.ToggleAttribution': m.charging_home_map_ui_toggle_attribution(),
+    'AttributionControl.MapFeedback': m.charging_home_map_ui_feedback(),
+    'CooperativeGesturesHandler.MobileHelpText': m.charging_home_map_ui_gesture_mobile(),
+    'CooperativeGesturesHandler.WindowsHelpText': m.charging_home_map_ui_gesture_windows(),
+    'CooperativeGesturesHandler.MacHelpText': m.charging_home_map_ui_gesture_mac(),
+  }
+}
+
+const ARROW_DELTAS: Record<string, [number, number]> = {
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+}
 
 /** MapLibre reports unwrapped longitudes after panning past the antimeridian; wrap to ±180. */
 function toPoint(lngLat: { wrap(): { lat: number; lng: number } }): LatLon {
@@ -42,30 +66,47 @@ export function HomePositionMap({ point, initialView, camera, onPick }: HomePosi
   // Read once at mount: one finger scrolls the bottom sheet, two move the map.
   const coarse = useRef(window.matchMedia('(pointer: coarse)').matches).current
 
+  const locale = useRef(mapLocale()).current
+  const cameraRef = useRef(camera)
+  cameraRef.current = camera
+  const pinRef = useRef<HTMLButtonElement>(null)
+  const pointRef = useRef(point)
+  pointRef.current = point
+  const onPickRef = useRef(onPick)
+  onPickRef.current = onPick
+  const hasPoint = point !== null
+
   useEffect(() => {
     if (!camera) return
     // Not `essential`: with prefers-reduced-motion MapLibre jumps instead of flying.
+    // Before the map exists this is a no-op; `onLoad` applies the latest camera then.
     mapRef.current?.flyTo({
       center: [camera.center.longitude, camera.center.latitude],
       zoom: camera.zoom,
     })
   }, [camera])
 
-  const nudge = (event: KeyboardEvent<HTMLButtonElement>) => {
-    const step = (event.shiftKey ? 5 : 1) * KEY_STEP_PX
-    const delta = {
-      ArrowUp: [0, -step],
-      ArrowDown: [0, step],
-      ArrowLeft: [-step, 0],
-      ArrowRight: [step, 0],
-    }[event.key]
-    const map = mapRef.current
-    if (!delta || !map || !point) return
-    event.preventDefault()
-    event.stopPropagation() // the map's own keyboard handler would pan instead
-    const at = map.project([point.longitude, point.latitude])
-    onPick(toPoint(map.unproject([at.x + delta[0], at.y + delta[1]])))
-  }
+  // A native listener on the pin: MapLibre's keyboard handler listens on the canvas
+  // container, which a keydown reaches before React's root-level handlers run, so a
+  // React `onKeyDown` + `stopPropagation` cannot keep the map from panning.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: hasPoint mounts/unmounts the pin button
+  useEffect(() => {
+    const pin = pinRef.current
+    if (!pin) return
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      const unit = ARROW_DELTAS[event.key]
+      const map = mapRef.current
+      const at = pointRef.current
+      if (!unit || !map || !at) return
+      event.preventDefault()
+      event.stopPropagation()
+      const step = (event.shiftKey ? 5 : 1) * KEY_STEP_PX
+      const px = map.project([at.longitude, at.latitude])
+      onPickRef.current(toPoint(map.unproject([px.x + unit[0] * step, px.y + unit[1] * step])))
+    }
+    pin.addEventListener('keydown', onKeyDown)
+    return () => pin.removeEventListener('keydown', onKeyDown)
+  }, [hasPoint])
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset brings legend/min-width quirks the map frame doesn't want
@@ -84,7 +125,21 @@ export function HomePositionMap({ point, initialView, camera, onPick }: HomePosi
         mapStyle={STYLE_URL}
         cooperativeGestures={coarse}
         attributionControl={false}
-        onClick={(e) => onPick(toPoint(e.lngLat))}
+        locale={locale}
+        onLoad={() => {
+          const c = cameraRef.current
+          if (c) {
+            mapRef.current?.jumpTo({
+              center: [c.center.longitude, c.center.latitude],
+              zoom: c.zoom,
+            })
+          }
+        }}
+        onClick={(e) => {
+          // A tap or Enter/Space on the pin bubbles to the map's click listener: not a pick.
+          if ((e.originalEvent.target as Element | null)?.closest('.maplibregl-marker')) return
+          onPick(toPoint(e.lngLat))
+        }}
         // Tiles or style failing leaves the pin on a blank map (the text input still works).
         // One warning per page, never the coordinates.
         onError={(e) => {
@@ -105,7 +160,7 @@ export function HomePositionMap({ point, initialView, camera, onPick }: HomePosi
             <button
               type="button"
               aria-label={m.charging_home_pin_label()}
-              onKeyDown={nudge}
+              ref={pinRef}
               className="grid size-11 place-items-center rounded-full text-brand focus-visible:outline-2 focus-visible:outline-ring"
             >
               <MapPinIcon aria-hidden className="size-9 fill-background drop-shadow" />
