@@ -417,17 +417,10 @@ Recorded 2026-10-06, `main` at `b63da3b` (#118 merged, plus the docs-only #119).
   and no page's `packages:` line lists recharts, redux, immer or decimal.js-light. `bun.lock` has 0 lines for them, or
   for `@reduxjs`, `react-redux` and `victory-vendor`. No source map in `.output/public` points into those packages.
   A text search of the JS for "immer" matches only boneyard's `shimmer` animation.
-- **Still open:** a horizontal touch drag on a real phone (see the follow-ups below). The owner's review didn't cover
-  it.
+- **Phone: pass.** The owner checked a horizontal touch drag on a real phone: it scrubs through the readings. The
+  `pointercancel` seen in Chromium's touch emulation (on the bar charts too) is an emulation artefact, not a bug.
 
 **Follow-ups found in review and the live check (not in 5c):**
-- A touch drag stops scrubbing after the first move in Chromium's touch emulation: the browser sends `pointercancel`.
-  It does the same on the `/charging` bar chart (5a), so it comes from the shared overlay, or from the emulation.
-  The reviewer's hypothesis: `touch-action: pan-y` is set only on the SVG `<rect>`, and browsers don't reliably
-  honour `touch-action` on SVG child elements, so the gesture falls back to `auto` and Chromium sends
-  `pointercancel` after the first move. Moving `pan-y` to the HTML group div or the `<svg>` root in both charts may
-  fix it. If so, 5a's horizontal scrub never worked on real phones. Check on a real phone; the fix is a small
-  cross-chart PR.
 - `BarChart`'s mouse leave doesn't clear its keyboard announcement; `ClimateChart`'s does. Match them.
 - Cover the `makeTimeAxis` formats for 3 m, 6 m and all, and locale handling.
 - Pin the spacing tests: a tick-count assertion for the month-end spacing, a length floor for the spring-forward
