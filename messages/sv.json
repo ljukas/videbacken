@@ -145,6 +145,7 @@
   "charging_credentials_button": "Inloggning för {source}",
   "charging_credentials_configure": "Konfigurera",
   "charging_credentials_update": "Uppdatera inloggning",
+  "charging_credentials_error_title": "Inloggningsuppgifternas status kunde inte läsas",
   "charging_grid_title": "Elnätsavtal",
   "charging_grid_description": "Anläggnings-ID:t används för att se när elnätsbolaget finns i Eltariff-katalogen, så att nättariffen kan hämtas automatiskt.",
   "charging_grid_status_stored": "Anläggnings-ID sparat i appen",

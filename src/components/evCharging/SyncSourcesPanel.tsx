@@ -35,8 +35,8 @@ export function SyncSourcesPanel({
   openSource: IntegrationSource | undefined
   onOpenHistory: (source: IntegrationSource) => void
   onCloseHistory: () => void
-  /** Opens a source's credentials dialog; absent → the tiles show no key button. */
-  onOpenCredentials?: (source: CredentialSource) => void
+  /** Opens a source's credentials dialog (the tiles of credential sources get a key button). */
+  onOpenCredentials: (source: CredentialSource) => void
 }) {
   // The overlay keeps showing the last opened source after `openSource`
   // clears, so its close animation shows the content rather than an empty
@@ -84,9 +84,7 @@ export function SyncSourcesPanel({
                 details={e.details}
                 actions={e.actions}
                 onOpenCredentials={
-                  onOpenCredentials && credentialSource
-                    ? () => onOpenCredentials(credentialSource)
-                    : undefined
+                  credentialSource ? () => onOpenCredentials(credentialSource) : undefined
                 }
                 historyRef={(el) => {
                   if (!el) return

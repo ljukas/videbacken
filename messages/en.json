@@ -145,6 +145,7 @@
   "charging_credentials_button": "Sign-in for {source}",
   "charging_credentials_configure": "Set up",
   "charging_credentials_update": "Update sign-in",
+  "charging_credentials_error_title": "The credentials' status couldn't be read",
   "charging_grid_title": "Grid contract",
   "charging_grid_description": "The facility ID is used to see when the grid company is in the Eltariff catalogue, so the grid tariff can be fetched automatically.",
   "charging_grid_status_stored": "Facility ID saved in the app",

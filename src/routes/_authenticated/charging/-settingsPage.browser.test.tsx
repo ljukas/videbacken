@@ -10,6 +10,7 @@ import {
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
+import { credentialsTitle } from '~/lib/integrationCredentialsMessage'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -40,8 +41,29 @@ const TARIFF = {
 
 const runsKey = orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey
 
+// Every credential from env, so the grid card has a status line.
+const env = { origin: 'env' } as const
+const STATUS = {
+  encryptionKeyConfigured: true,
+  sources: {
+    zaptec: { fields: { username: env, password: env }, updatedAt: null, unreadable: false },
+    skoda: {
+      fields: { apiKey: env, vin: env, homeCoordinates: env },
+      updatedAt: null,
+      unreadable: false,
+    },
+    emaldo: {
+      fields: { user: env, password: env, appId: env, appSecret: env },
+      updatedAt: null,
+      unreadable: false,
+    },
+    gridTariff: { fields: { facilityId: env }, updatedAt: null, unreadable: false },
+  },
+}
+
 function seed(qc: QueryClient, opts: { coverage?: boolean; adminReads?: boolean } = {}) {
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF] as never)
+  qc.setQueryData(orpc.credentials.status.queryOptions().queryKey, STATUS as never)
   seedSourcesHealth(qc)
   if (opts.adminReads !== false)
     qc.setQueryData(runsKey, { zaptec: [], elpris: [], skoda: [], emaldo: [] } as never)
@@ -232,12 +254,85 @@ test.each([
   ['a history link with an unknown source', '?dialog=syncRuns&source=tesla'],
   ['an edit link for a tariff that no longer exists', '?dialog=tariffEdit&tariffId=gone'],
   ['a delete link for a tariff that no longer exists', '?dialog=tariffDelete&tariffId=gone'],
+  ['a history link to the grid facility (no sync history)', '?dialog=syncRuns&source=gridTariff'],
+  ['a credentials link with no source', '?dialog=credentials'],
+  ['a credentials link to a source without credentials', '?dialog=credentials&source=elpris'],
 ])('%s is cleaned from the URL', async (_case, search) => {
   const { screen, router } = await renderSettings(search)
   await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
   expect(router.state.location.search).not.toHaveProperty('source')
   expect(router.state.location.search).not.toHaveProperty('tariffId')
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+})
+
+// --- Credentials (ADR-0026) ----------------------------------------------------
+
+const credentialsButton = (source: string) => ({
+  name: m.charging_credentials_button({ source }),
+})
+
+test('the credential tiles have key buttons; elpris has none', async () => {
+  const { screen } = await renderSettings('')
+  for (const source of ['zaptec', 'skoda', 'emaldo'] as const)
+    await expect
+      .element(screen.getByRole('button', credentialsButton(integrationSourceName(source))))
+      .toBeVisible()
+  expect(
+    screen.getByRole('button', credentialsButton(integrationSourceName('elpris'))).elements(),
+  ).toHaveLength(0)
+})
+
+test('a key button opens the dialog through the URL', async () => {
+  const { screen, router } = await renderSettings('')
+  await screen.getByRole('button', credentialsButton('Škoda')).click()
+  await expect
+    .element(screen.getByRole('dialog', { name: credentialsTitle('skoda') }))
+    .toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'credentials', source: 'skoda' })
+})
+
+test('not configured offers "Konfigurera", which opens the dialog', async () => {
+  const { screen, router } = await renderSettings('', {
+    prepare: (qc) =>
+      seedSourcesHealth(qc, { zaptec: { state: 'not_configured', code: 'not_configured' } }),
+  })
+  await screen.getByRole('button', { name: m.charging_credentials_configure() }).click()
+  await expect
+    .element(screen.getByRole('dialog', { name: credentialsTitle('zaptec') }))
+    .toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'credentials', source: 'zaptec' })
+})
+
+test('the grid card shows where the facility ID comes from, and opens its dialog', async () => {
+  const { screen, router } = await renderSettings('')
+  await expect.element(screen.getByText(m.charging_grid_status_env())).toBeVisible()
+  await screen.getByRole('button', { name: m.charging_grid_button() }).click()
+  expect(router.state.location.search).toMatchObject({
+    dialog: 'credentials',
+    source: 'gridTariff',
+  })
+  await expect
+    .element(screen.getByRole('dialog', { name: credentialsTitle('gridTariff') }))
+    .toBeVisible()
+})
+
+test('a credentials deep link opens that dialog', async () => {
+  const { screen } = await renderSettings('?dialog=credentials&source=emaldo')
+  await expect
+    .element(screen.getByRole('dialog', { name: credentialsTitle('emaldo') }))
+    .toBeVisible()
+})
+
+test('closing the credentials dialog clears the URL and returns focus to its key button', async () => {
+  const { screen, router } = await renderSettings('')
+  const button = screen.getByRole('button', credentialsButton('Škoda'))
+  await button.click()
+  const dialog = screen.getByRole('dialog', { name: credentialsTitle('skoda') })
+  await expect.element(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: m.common_cancel() }).click()
+  await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
+  expect(router.state.location.search).not.toHaveProperty('source')
+  await expect.element(button).toHaveFocus()
 })
 
 // --- Deferred loading (ADR-0025) ----------------------------------------------
