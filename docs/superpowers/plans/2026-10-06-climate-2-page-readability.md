@@ -24,6 +24,8 @@ the device fixtures already carry `shellyName`.
 
 **Execution (owner, 2026-10-06):** native (`superpowers:executing-plans`): implemented inline task by task, then one reviewer on the whole branch. Its own session.
 
+**Roadmap:** [`2026-10-06-klimat-shelly-improvements.md`](../roadmaps/2026-10-06-klimat-shelly-improvements.md), step 2.
+
 ## Global Constraints
 
 - Sizes: card titles **18 px** semibold (`text-lg`); chart sub-headings **16 px** medium (`text-base`); labels,
@@ -693,6 +695,9 @@ git commit -m "chore(bones): recapture the Klimat skeletons"
     identical before and after each switch (no shift); the charts dim while loading.
   - Hover a chart: the card's text is 14 px, the row time 13 px.
   - Toggle every chip off and on: no legend appears; chips stay.
+
+- [ ] **Step 3b: Update the roadmap** in this branch: step 2's row gets the PR link and status `PR open`
+  (after merge, the merging session sets `merged`; the checkpoint result goes in the last column).
 
 - [ ] **Step 4: Open the PR** (`.github/PULL_REQUEST_TEMPLATE.md`), title
   `feat(sensor): make the Klimat page easier to read`, with the spec link, gate output, the live measurements, and

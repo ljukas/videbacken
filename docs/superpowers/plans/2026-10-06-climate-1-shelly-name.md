@@ -21,6 +21,8 @@ shadcn/Radix (`Badge`, `Label`, `Button`), Paraglide, Vitest (node + browser).
 
 **Execution (owner, 2026-10-06):** subagent-driven (`superpowers:subagent-driven-development`): a fresh implementer per task, then the task's two reviewers in parallel, then a whole-branch review. Its own session.
 
+**Roadmap:** [`2026-10-06-klimat-shelly-improvements.md`](../roadmaps/2026-10-06-klimat-shelly-improvements.md), step 1.
+
 ## Global Constraints
 
 - Display name order: **own name → Shelly name → `Sensor <last 4 of MAC>`** (`Sensor eeff` for `aabbccddeeff`).
@@ -982,6 +984,9 @@ git commit -m "feat(sensor): show the Shelly name and a reset in the sensor dial
   - `/sensors`: the named one's tile reads "Källare NV", the other "Sensor 0102" (or its MAC's last four).
   - Open each dialog at 1440, 820 and 390 px, light and dark: the Enhet box, badge changes while typing,
     Återställ (and its 44 px target on a touch emulation), helper text, Spara/Avbryt.
+
+- [ ] **Step 3b: Update the roadmap** in this branch: step 1's row gets the PR link and status `PR open`
+  (after merge, the merging session sets `merged`; the checkpoint result goes in the last column).
 
 - [ ] **Step 4: Open the PR** with `.github/PULL_REQUEST_TEMPLATE.md`. Title
   `feat(sensor): show each sensor's name from the Shelly app`. In the body: the spec link, the gate output, and

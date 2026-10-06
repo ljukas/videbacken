@@ -2,6 +2,7 @@
 
 Status: design agreed with the owner 2026-10-06 (brainstorm via `/feature-workflow`). Two PRs; the second builds on
 the visx Klimat charts (#118, client-perf step 5c, merged 2026-10-06).
+Roadmap: [`2026-10-06-klimat-shelly-improvements.md`](../roadmaps/2026-10-06-klimat-shelly-improvements.md).
 
 ## Why
 
