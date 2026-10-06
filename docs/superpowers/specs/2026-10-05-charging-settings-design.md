@@ -529,9 +529,9 @@ text, so the state never relies on colour alone.
   - "Appen använder miljövariablerna igen." / "The app falls back to the environment variables." when any of the
     source's fields has an env value;
   - otherwise "Källan slutar synka." / "This source stops syncing."
-- **VIN hint:** "17 tecken (inte I, O eller Q). Finns i MyŠkoda-appen och i registreringsbeviset." /
-  "17 characters (no I, O or Q). Shown in the MyŠkoda app and on the registration certificate." The exact place in
-  the MyŠkoda app is confirmed with the owner before the PR ships.
+- **VIN hint:** "17 tecken (inte I, O eller Q). Finns i MyŠkoda-appen under Inspect → Car details." /
+  "17 characters (no I, O or Q). In the MyŠkoda app under Inspect → Car details." (owner, 2026-10-06; the app's
+  own English menu names, kept verbatim in both languages).
 - **Tests (browser, `CredentialsDialog`):**
   - each origin renders its badge and body;
   - "Byt" reveals and focuses the input, and "Avbryt" hides it and clears it;
