@@ -333,7 +333,8 @@ test('closing the credentials dialog clears the URL and returns focus to its key
   await button.click()
   const dialog = screen.getByRole('dialog', { name: credentialsTitle('skoda') })
   await expect.element(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: m.common_cancel() }).click()
+  // Every field comes from env, so all are closed: the footer says Stäng.
+  await dialog.getByRole('button', { name: m.common_close(), exact: true }).click()
   await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
   expect(router.state.location.search).not.toHaveProperty('source')
   await expect.element(button).toHaveFocus()
@@ -470,7 +471,8 @@ test('closing the grid dialog returns focus to the grid card’s key button', as
   await screen.getByRole('button', { name: m.charging_grid_button() }).click()
   const dialog = screen.getByRole('dialog', { name: credentialsTitle('gridTariff') })
   await expect.element(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: m.common_cancel() }).click()
+  // Every field comes from env, so all are closed: the footer says Stäng.
+  await dialog.getByRole('button', { name: m.common_close(), exact: true }).click()
   await expect.poll(() => document.activeElement?.id).toBe('credentials-gridTariff')
 })
 
