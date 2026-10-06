@@ -1,8 +1,7 @@
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
-// The chart parts that don't depend on a chart library, so the visx charts
-// can use them without pulling recharts into their page's bundle.
+// The chart parts every chart shares: the height, the empty state, tooltip rows and the legend.
 
 /** One height for every economy/monthly chart and its empty state. */
 export const CHART_HEIGHT = 260

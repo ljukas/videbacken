@@ -92,7 +92,7 @@ async function renderRefetchable(
   }
 }
 
-/** Hovers the plot's centre (the visx overlay, or the element there on recharts). */
+/** Hovers the plot's centre (the visx overlay). */
 async function hoverPlot(root: HTMLElement) {
   await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
   const svg = chartSvg(root)
@@ -163,8 +163,7 @@ test('renders one line per visible device in its own colour, and a legend entry 
     expect(curves).toHaveLength(2)
     for (const curve of curves) expect(curve.getAttribute('d') ?? '').toMatch(/[CL]/)
   })
-  // Each line resolves to its own device's colour (recharts through its CSS
-  // variables, visx directly), so the colours survive the swap.
+  // Each line resolves to its own device's colour.
   expect(lineCurves(root).map((c) => getComputedStyle(c).stroke)).toEqual([
     'rgb(1, 2, 3)',
     'rgb(4, 5, 6)',

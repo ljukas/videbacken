@@ -537,7 +537,7 @@ export function BarChart<Row>({
       {...popover.containerProps}
       aria-hidden={keyboard ? undefined : true}
       // The box is inline styles, not Tailwind: the plot must measure before
-      // CSS loads and in the CSS-less browser tests (as ChartFrame does).
+      // CSS loads and in the CSS-less browser tests.
       className="w-full text-xs"
       style={{ height, display: 'flex', flexDirection: 'column' }}
     >
