@@ -1,7 +1,7 @@
 # Klimat: readable sizes, range with the charts, a clearer sensor dialog
 
-Status: design agreed with the owner 2026-10-06 (brainstorm via `/feature-workflow`). Two PRs; the second waits for
-the visx Klimat charts (#118, client-perf step 5c) to merge.
+Status: design agreed with the owner 2026-10-06 (brainstorm via `/feature-workflow`). Two PRs; the second builds on
+the visx Klimat charts (#118, client-perf step 5c, merged 2026-10-06).
 
 ## Why
 
@@ -154,11 +154,12 @@ Inner tiles are bordered blocks inside the Just nu card (not nested `Card`s).
 
 ### Charts (`ClimateChart` as merged in #118)
 
-- Axis ticks and any in-plot labels (#118's end labels) 13 px — a local tick size passed like `EnergyMonthlyChart`'s
-  `tickPx={13}`; the shared `TICK_PX` default stays for the app-wide pass.
-- Hover card 14 px (no `text-xs`); a row's own time 13 px (was 10 px); 12 px swatches.
+- Axis ticks 13 px: one local constant (`CLIMATE_TICK_PX = 13`) used for **both** `measureAt(…)` (y-axis width,
+  the x end labels' inward `dx`) and the two `tickLabelProps` `fontSize`s — measuring at 12 and drawing at 13
+  would clip the end labels. The shared `TICK_PX = 12` in `chart/axis.ts` stays for the app-wide pass.
+- Hover card 14 px: the chart wrapper's `text-xs` becomes `text-sm`; a row's own time 13 px (was `text-[10px]`).
 - The `ChartLegend` under each chart is removed; the chips are the key. The chart keeps its accessible name
-  (`label`).
+  (`label`). The chart box stays `HEIGHT = 260`, so the plot gains the legend's height and nothing around it moves.
 
 ### Bones
 
