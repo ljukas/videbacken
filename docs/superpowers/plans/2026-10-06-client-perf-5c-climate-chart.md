@@ -304,8 +304,8 @@ test('renders one line per visible device in its own colour, and a legend entry 
     'rgb(1, 2, 3)',
     'rgb(4, 5, 6)',
   ])
-  // The legend lists every device, the hidden one too, in roster order.
-  expect(legendLabels(root)).toEqual(['NW corner', 'Kitchen', 'Boiler'])
+  // The legend lists every device, the hidden one too, sorted by name (recharts' order).
+  expect(legendLabels(root)).toEqual(['Boiler', 'Kitchen', 'NW corner'])
 })
 
 test('breaks the line at an outage marker while keeping each cluster connected', async () => {
