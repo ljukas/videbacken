@@ -480,7 +480,7 @@
   "sensors_current_heading": "Nuvarande värden",
   "sensors_description": "Temperatur och luftfuktighet under huset.",
   "sensors_devices_label": "Sensorer",
-  "sensors_edit_description": "Namnet och platsen visas på Klimat-sidan.",
+  "sensors_edit_description": "Ge sensorn ett namn och en plats.",
   "sensors_edit_device": "Redigera sensor",
   "sensors_empty_description": "Utlös en sensor så dyker den upp här.",
   "sensors_empty_title": "Inga sensorer ännu",
