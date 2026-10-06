@@ -26,6 +26,14 @@ import { CHART_HEIGHT, ChartLegend } from './ChartParts'
 export type { BarSeries } from './barLayout'
 export type LineSeries = { key: string; label: string; color: string; dash?: string }
 
+export type BarSelection<Row> = {
+  /** The selected category's index, or null. An index outside the rows draws nothing. */
+  selected: number | null
+  onSelect: (index: number) => void
+  /** Whether a category can be selected (the Energi chart: it has readings). */
+  canSelect: (row: Row) => boolean
+}
+
 export type BarChartProps<Row> = {
   rows: readonly Row[]
   /** The category's x label (also the tooltip's title). */
@@ -71,6 +79,8 @@ export type BarChartProps<Row> = {
   legendClassName?: string
   /** The sr-only keyboard hint (default: the shared one). */
   keyboardHint?: string
+  /** Click / tap / Enter selects a category; adds the selected tint, the outline and the pointer cursor. */
+  selection?: BarSelection<Row>
 }
 
 const MARGIN = { top: 8, right: 12, bottom: 0, left: 4 }
@@ -118,6 +128,7 @@ export function BarChart<Row>({
   tooltipClassName,
   legendClassName,
   keyboardHint,
+  selection,
 }: BarChartProps<Row>) {
   // No debounce: a resize that wraps the legend re-lays the plot at once,
   // as recharts' ResponsiveContainer did (a stale plot would overlap it).
@@ -131,6 +142,10 @@ export function BarChart<Row>({
   // from the popover, which stays closed on a category without a tooltip: the
   // keyboard walk must step over it, not restart at the first category.
   const cursor = useRef<number | null>(null)
+  // The outlined category (selection only): where the pointer or the keys
+  // are. From the keyboard one that can't be selected is outlined dashed, so
+  // focus stays visible; the pointer outlines only selectable ones; never touch.
+  const [outline, setOutline] = useState<{ index: number; keyboard: boolean } | null>(null)
   const at = (i: number, key: string) => value(rows[i], key)
   const count = rows.length
   const tickLabel = { fill: 'var(--muted-foreground)', fontSize: tickPx }
@@ -208,7 +223,8 @@ export function BarChart<Row>({
     const { left, top } = anchor(i)
     popover.show(i, left, top)
   }
-  const indexAt = (e: React.PointerEvent<SVGRectElement>) => {
+  // A pointer event is a mouse event, so this serves the click too.
+  const indexAt = (e: React.MouseEvent<SVGRectElement>) => {
     if (!geometry || count === 0) return null
     const box = e.currentTarget.getBoundingClientRect()
     const i = Math.floor(((e.clientX - box.left) / box.width) * count)
@@ -217,22 +233,46 @@ export function BarChart<Row>({
   const onPointer = (e: React.PointerEvent<SVGRectElement>) => {
     const i = indexAt(e)
     if (i === null) return
+    if (selection && e.pointerType === 'touch') {
+      // A tap selects (onClick) and shows nothing: the page shows the selection.
+      cursor.current = i
+      if (popover.open) popover.hide()
+      if (outline !== null) setOutline(null)
+      return
+    }
+    const next = selection?.canSelect(rows[i]) ? { index: i, keyboard: false } : null
+    const sameOutline = next?.index === outline?.index && next?.keyboard === outline?.keyboard
     // Moving within the same category (open, or one without a tooltip) changes
     // nothing: no re-render per pixel.
-    if (i === cursor.current && (popover.open || tooltip(rows[i], i) === null)) return
+    if (i === cursor.current && sameOutline && (popover.open || tooltip(rows[i], i) === null))
+      return
     setAnnounced(null)
+    if (selection && !sameOutline) setOutline(next)
     open(i)
+  }
+  const onClick = (e: React.MouseEvent<SVGRectElement>) => {
+    if (!selection) return
+    const i = indexAt(e)
+    if (i !== null && selection.canSelect(rows[i])) selection.onSelect(i)
   }
 
   const close = () => {
     cursor.current = null
     popover.hide()
     setAnnounced(null)
+    setOutline(null)
   }
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     // Browser shortcuts (Alt+← back, Cmd+Home …) pass through.
     if (e.altKey || e.ctrlKey || e.metaKey) return
     if (e.key === 'Escape') return close()
+    if (selection && (e.key === 'Enter' || e.key === ' ')) {
+      // Space would scroll the page; Enter has nothing else to do here.
+      e.preventDefault()
+      const i = cursor.current
+      if (i !== null && i < count && selection.canSelect(rows[i])) selection.onSelect(i)
+      return
+    }
     if (count === 0) return
     const last = count - 1
     // Clamped: a refetch may have returned fewer categories since.
@@ -254,6 +294,7 @@ export function BarChart<Row>({
     if (next === null) return
     e.preventDefault()
     open(next)
+    if (selection) setOutline({ index: next, keyboard: true })
     setAnnounced(tooltip(rows[next], next) === null ? null : next)
   }
 
@@ -272,6 +313,13 @@ export function BarChart<Row>({
 
   const tickText = (i: number) =>
     geometry?.short && shortCategory ? shortCategory(rows[i]) : category(rows[i])
+
+  const selected =
+    selection?.selected != null && selection.selected >= 0 && selection.selected < count
+      ? selection.selected
+      : null
+  const outlined = selection && outline !== null && outline.index < count ? outline.index : null
+  const dashed = outlined !== null && !selection?.canSelect(rows[outlined])
 
   const svg = geometry ? (
     // biome-ignore lint/a11y/noSvgWithoutTitle: visual; the group (or the caller's sr-only table) is the accessible path
@@ -293,6 +341,18 @@ export function BarChart<Row>({
               strokeOpacity={0.5}
             />
           </g>
+        )}
+        {selected === null ? null : (
+          <rect
+            data-slot="category-selected"
+            x={geometry.x(selected) ?? 0}
+            y={0}
+            width={geometry.x.bandwidth()}
+            height={geometry.plotH}
+            fill="var(--brand)"
+            fillOpacity={0.12}
+            pointerEvents="none"
+          />
         )}
         {series.map((s) => (
           <g key={s.key} data-series={s.key} data-kind="bar">
@@ -390,27 +450,53 @@ export function BarChart<Row>({
             hideTicks
             tickLength={TICK_SIZE}
             stroke={AXIS}
-            tickLabelProps={() => ({
+            tickLabelProps={(v) => ({
               ...tickLabel,
               dy: X_TICK_MARGIN,
               textAnchor: 'middle' as const,
+              ...(Number(v) === selected ? { fontWeight: 600, fill: 'var(--foreground)' } : {}),
             })}
           />
         </g>
+        {outlined === null ? null : (
+          // The whole column, its label included, inset so it never clips at the chart's edges.
+          <rect
+            data-slot="category-outline"
+            x={(geometry.x(outlined) ?? 0) + 2}
+            y={-4}
+            width={Math.max(0, geometry.x.bandwidth() - 4)}
+            height={geometry.plotH + 4 + X_AXIS_H}
+            rx={6}
+            fill="none"
+            stroke="var(--muted-foreground)"
+            strokeWidth={1.5}
+            strokeDasharray={dashed ? '4 3' : undefined}
+            strokeOpacity={dashed ? 0.6 : 1}
+            pointerEvents="none"
+          />
+        )}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer surface in the aria-hidden svg; the keyboard path is the group's onKeyDown (Enter / Space) */}
         <rect
           data-hover-overlay
           width={geometry.plotW}
-          height={geometry.plotH}
+          // With selection the labels are clickable too.
+          height={geometry.plotH + (selection ? X_AXIS_H : 0)}
           fill="transparent"
           // A horizontal finger drag scrubs across the categories (pointer
           // moves keep coming); a vertical one still scrolls the page.
-          style={{ touchAction: 'pan-y' }}
+          style={{
+            touchAction: 'pan-y',
+            cursor: outlined !== null && !outline?.keyboard ? 'pointer' : undefined,
+          }}
           onPointerMove={onPointer}
           onPointerDown={onPointer}
+          onClick={onClick}
           // Off the plot (onto an axis or the legend) the card closes, as
           // recharts' did; a lifted finger keeps it (ChartPopover's touch rule).
           onPointerLeave={(e) => {
-            if (e.pointerType !== 'touch') popover.hide()
+            if (e.pointerType === 'touch') return
+            popover.hide()
+            if (outline !== null) setOutline(null)
           }}
         />
       </Group>
