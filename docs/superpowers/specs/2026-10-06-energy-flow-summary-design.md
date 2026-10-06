@@ -58,6 +58,11 @@ Two values are new there (pure, test-first):
 | `batteryToGrid` | max(0, `gridExportKwh` − `solarExported`): export the solar surplus can't explain |
 | `batteryToHouse` | max(0, `batteryOut` − `batteryToGrid`) |
 
+`batteryToHouse` is clamped at 0 (ruled in Task 1): when meter noise puts more export beyond the solar surplus than
+the battery discharged, `batteryToGrid` (Batteri → Såld el) can exceed Batteri ut, and the two outflows then add up
+to more than the discharge. Each arrow is drawn from its own figure, so a noisy period shows a battery → grid arrow
+wider than the discharge (cosmetic).
+
 What each element shows:
 
 | Element | Value |
@@ -79,8 +84,9 @@ What each element shows:
 
 - An arrow below 0.05 kWh isn't drawn (it would read "0,0").
 - **Loss display** (the house energy design's rules): |loss| < 0.5 kWh or a negative loss shows "≈ 0 kWh" and no
-  stub; the table and the tooltip keep the real value. Its share = loss ÷ (`batteryIn` − `deltaStored`), shown only
-  when `efficiency` isn't null. A share above 25 % adds the winter hint to the tooltip.
+  stub; the table and the tooltip keep the real value. Its share (`lossShare` in `figures.ts`) = loss ÷ (`batteryIn` −
+  `deltaStored`), null (not shown) when `efficiency` is. A share above `WINTER_LOSS_SHARE` (25 %) adds the winter hint
+  to the tooltip.
 - The charge-level line is left out when either SoC is null.
 
 ## UI
@@ -115,7 +121,8 @@ Data saknas för N h
 
 ### Geometry (`src/lib/houseEnergy/flowLayout.ts`, pure, client-safe)
 
-The diagram's width `W` is the card content's width (visx `ParentSize`). One function returns, for a width, the box
+The diagram's width `W` is the card content's width (visx `ParentSize`); "wide" means a card content width of 860 px
+or more. One function returns, for a width, the box
 height, the nodes, the arrows (from, to, sides, offsets, curve factors, label position) and the loss stub. The
 mockup's numbers are the starting point:
 
@@ -129,8 +136,14 @@ mockup's numbers are the starting point:
 - On the narrow layout the port offsets were tuned for a 146 px node and scale by k = nw ÷ 146, so the tablet
   layout (≈ 754 px) keeps the arrows apart.
 - **Arrows**: a cubic Bézier from a port on the source's side to just outside the target's port, each end leaving
-  along its side's normal; the control distance is a share of the distance along that axis (0.5 by default;
-  Solel → Förbrukning on the narrow layout 0.9 / 0.25 so it passes under the battery). A 9 px triangle arrowhead
+  along its side's normal; the control distance is a share of the distance along that axis (0.5 by default).
+  Solel → Förbrukning on the narrow layout leaves at −28·k, enters at −58·k and uses k1 = 1 with k2 = min(0.15,
+  max(0, 0.6 × (k − 1.2))): it runs straight down beside the battery and turns late, so it passes under it. On a
+  phone (k < 1.2) k2 is 0, so the turn comes as late as the 16 px control minimum allows; that keeps even a 16 px
+  stroke (the arrow as the period's largest) ≥ 2 px off the battery's corner at card content widths 280–859 (2.8 px
+  at 280; 1/0.15 everywhere left 1.2 px at 296 for a 13.6 px stroke and touched at 16 px). Wider cards ease back to
+  0.15. The mockup's −22·k / −52·k and 0.9 / 0.25 cut through the battery's corner at card content widths up to
+  ≈ 435 px (every phone). A 9 px triangle arrowhead
   sits on the target's edge. No arrow passes through a node, and no two arrows cross, at 324, 754 and 1006 px, with
   one exception: Batteri → Såld el crosses Solel → Förbrukning. With the in nodes on one side and the out nodes on
   the other, Solel → Förbrukning separates the battery from Såld el, so no routing inside the box avoids it. That
@@ -156,7 +169,15 @@ mockup's numbers are the starting point:
   X kWh" with a 20 px figure, 13 px "laddnivå") are centred on its tile the same way (2 px higher than mockup version 4, which sat 2 px low by that measure). Förbrukning's car lines hang
   below the top row.
 - **Narrow**: the tile and the label share the first row (label centred on the tile); the figure (24 px) runs the
-  node's full width below. The battery drops the charge level (it moves to the loss tooltip).
+  node's full width below. The battery drops the charge level (it is in the table, and the loss tooltip when there
+  is a stub).
+- **Wide battery without a charge level** (either SoC null): its label and loss move down by half the missing line,
+  so the two rows stay centred on the tile.
+- **Fit**: a node figure (or the battery's loss) that would run past 12 px inside its node steps its font size down
+  2 px at a time, to 18 px (loss 16 px), measured before paint and again once the body font has loaded. Only the size
+  changes. A four-digit loss on a 296 px card (a 360 px phone) still ends ≈ 1 px past the node at 16 px.
+- **Muted text inside a node** (unit, "Förlust", charge level, car lines) mixes 10 % foreground into
+  `--muted-foreground`: the token alone is 4.39 : 1 on the node surface in light (5.23 : 1 mixed; dark 6.93 : 1).
 
 ### Självförsörjning line
 
@@ -188,7 +209,8 @@ moment on load (no layout change). A cookie read during SSR was weighed and not 
 
 Pointer hover (or a tap) on an arrow or the loss stub shows the existing `ChartPopover` (visx tooltip): the flow
 ("Solel → Förbrukning") with its colour swatch, the kWh, and a share: of the solar ("52 % av solelen"), of the
-bought ("77 % av köpt el") or of the load ("24 % av förbrukningen"). The loss tooltip gives the loss, its share of
+bought ("77 % av köpt el") or of the load ("24 % av förbrukningen"). The tooltip sits wholly above the pointer
+(`ChartPopover placement="above"`), so it never covers the arrow's own value pill. The loss tooltip gives the loss, its share of
 what went in, the charge level, and the winter hint above 25 %. The other arrows dim while one is hovered. Hit areas
 are at least 22 px wide.
 
@@ -202,11 +224,13 @@ are at least 22 px wide.
 
 ### No layout shift
 
-- The diagram box has a fixed height per layout, reserved by a container query on the card content (360 px from
-  860 px, else 490 px), so the server HTML, the first client render and every period have the same height before
-  `ParentSize` measures.
+- The diagram box has a fixed height per layout, reserved by a container query on the card content (360 px from a
+  card content width of 860 px, else 490 px), so the server HTML, the first client render and every period have
+  the same height before `ParentSize` measures.
 - Nodes never move between periods; only arrow widths, values and the loss stub change.
-- `energy-tiles` skeleton bones are re-captured (`bun run bones:capture`) for the new card.
+- `energy-tiles` skeleton bones are re-captured (`bun run bones:capture`) for the new card. The card turns wide at a
+  1220 px viewport, between the shared 1100 and 1280 captures, so `/energy` captures an extra 1220 px width
+  (`EXTRA_BREAKPOINTS` in `scripts/captureBones.ts`, ADR-0025 §4).
 
 ### Empty and failed states
 
@@ -219,7 +243,8 @@ are at least 22 px wide.
 New `energy_flow_*` keys in `messages/sv.json` (source) and `en.json`: battery, loss ("Förlust"), charge level,
 the hint line, the switch, the table toggle and headers, the tooltip shares, the winter hint and the diagram
 description. Node labels reuse `energy_tile_solar`, `energy_tile_import`, `energy_tile_export`, `energy_tile_load`,
-`energy_tile_self_sufficiency(_detail)` and `energy_tile_load_car`. Keys only the old tiles used
+`energy_tile_self_sufficiency(_detail)`; the car line is the new `energy_flow_car` (the old `energy_tile_load_car` is
+removed). Keys only the old tiles used
 (`energy_tile_solar_split`, `energy_tile_import_to_battery`) are removed.
 
 ## Testing

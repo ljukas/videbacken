@@ -118,6 +118,10 @@ app at fixed viewport widths and replays it while loading.
   190 px short. Keys at 800 and 1000 (Datakällor, economy and patterns reflow there) were measured and dropped: they
   only refine a first visit's skeleton and cost ~13 KB gz on every charging page. `select: 'viewport'`, because the
   sidebar makes the content area narrower than the window.
+  *Amended 2026-10-06 (energy step 1c):* a page can capture extra widths of its own (`EXTRA_BREAKPOINTS` in
+  `scripts/captureBones.ts`, run as a separate CLI pass with `--breakpoints`; the runtime picks from each file's own
+  keys). `/energy` adds **1220**: its Summering card turns wide when the content reaches 860 px, at a 1220 px viewport,
+  so 1220–1279 replayed the 1100 (narrow) bones, 125 px too tall. Only `/energy`'s two bones files grow.
 - **Bones are committed** (`src/bones/`), and each route imports its own: `import xBones from
   '~/bones/x.bones.json'`, passed as `<SectionSkeleton bones={xBones}>`, which hands them to boneyard's
   `initialBones`. So a page carries only its sections' bones, and the boneyard runtime loads with the first route

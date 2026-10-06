@@ -127,6 +127,10 @@ const pendingForever = (qc: QueryClient, queryKey: readonly unknown[]) => {
   qc.removeQueries({ queryKey, exact: true })
   void qc.prefetchQuery({ queryKey, queryFn: () => new Promise(() => {}) })
 }
+// A figure on the flow diagram's node (the same number also sits in the table under "Visa som tabell").
+const figure = (screen: Awaited<ReturnType<typeof renderPage>>['screen'], text: string | RegExp) =>
+  screen.getByLabelText(m.energy_flow_description()).getByText(text)
+
 const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)
 
 const periodControl = /Välj period|Choose period/
@@ -177,16 +181,16 @@ test('with data: the tiles card with its period control, the chart with its metr
 test('defaults to the current month; its figures fill the tiles', async () => {
   const { screen } = await renderPage(Overview, '/energy', seedOverview(withData))
   await expect.element(screen.getByRole('button', { name: /september 2026/i })).toBeVisible()
-  await expect.element(screen.getByText('108,0 kWh')).toBeVisible() // months[8].solarKwh
+  await expect.element(figure(screen, '108,0 kWh')).toBeVisible() // months[8].solarKwh
 })
 
 test.each([
   ['/energy?period=2026-02', '101,0 kWh'],
   ['/energy?period=2026', /^5\s000,0 kWh$/],
   ['/energy?period=all', /^6\s000,0 kWh$/],
-] as const)('%s shows its period (February, the year, all time)', async (path, figure) => {
+] as const)('%s shows its period (February, the year, all time)', async (path, expected) => {
   const { screen } = await renderPage(Overview, path, seedOverview(withData))
-  await expect.element(screen.getByText(figure)).toBeVisible()
+  await expect.element(figure(screen, expected)).toBeVisible()
 })
 
 test('the legacy ?year=2026 reads as the year', async () => {
@@ -197,7 +201,7 @@ test('the legacy ?year=2026 reads as the year', async () => {
 test('a stale ?period= falls back to the default month', async () => {
   const { screen } = await renderPage(Overview, '/energy?period=2026-11', seedOverview(withData))
   await expect.element(screen.getByRole('button', { name: /september 2026/i })).toBeVisible()
-  await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '108,0 kWh')).toBeVisible()
 })
 
 test('stepping writes ?period= and replaces the history entry; a month switch sends no request', async () => {
@@ -206,7 +210,7 @@ test('stepping writes ?period= and replaces the history entry; a month switch se
   const { screen, router, qc } = await renderPage(Overview, '/energy', seedOverview(withData), {
     staleTime: 0,
   })
-  await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '108,0 kWh')).toBeVisible()
   // Idle for a minute: past the app's 20 s default query staleTime.
   vi.setSystemTime(new Date('2026-09-15T12:01:00Z'))
   const before = router.history.length
@@ -215,12 +219,28 @@ test('stepping writes ?period= and replaces the history entry; a month switch se
   await expect
     .poll(() => (router.state.location.search as { period?: string }).period)
     .toBe('2026-08')
-  await expect.element(screen.getByText('107,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '107,0 kWh')).toBeVisible()
   expect(router.history.length).toBe(before)
   // Settled (the loader ran, the page re-rendered on the new search): still no fetch.
   await expect.poll(() => router.state.status).toBe('idle')
   fetches.stop()
   expect(fetches.fetched).toEqual([])
+})
+
+test('the flow box keeps its reserved height and place across periods', async () => {
+  const { screen } = await renderPage(Overview, '/energy', seedOverview(withData))
+  await expect.element(figure(screen, '108,0 kWh')).toBeVisible()
+  const boxEl = () => screen.container.querySelector('[data-slot="energy-flow-box"]') as HTMLElement
+  // Browser tests carry no Tailwind, so pin the reservation classes (what holds the height in the app)...
+  expect(boxEl().className).toContain('h-[490px]')
+  expect(boxEl().className).toContain('@[860px]:h-[360px]')
+  // ...and that the box neither resizes nor moves when the period changes.
+  const before = boxEl().getBoundingClientRect()
+  await screen.getByRole('button', { name: m.energy_period_prev_month() }).click()
+  await expect.element(figure(screen, '107,0 kWh')).toBeVisible()
+  const after = boxEl().getBoundingClientRect()
+  expect(after.height).toBe(before.height)
+  expect(after.top).toBe(before.top)
 })
 
 test('stepping into a cached year and back within 5 minutes sends no request (hourly data)', async () => {
@@ -239,14 +259,14 @@ test('stepping into a cached year and back within 5 minutes sends no request (ho
     },
     { staleTime: 0 },
   )
-  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '100,0 kWh')).toBeVisible()
   vi.setSystemTime(new Date('2026-09-15T12:01:00Z'))
   const fetches = recordFetches(qc)
   await screen.getByRole('button', { name: m.energy_period_prev_month() }).click()
-  await expect.element(screen.getByText('42,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '42,0 kWh')).toBeVisible()
   vi.setSystemTime(new Date('2026-09-15T12:02:00Z'))
   await screen.getByRole('button', { name: m.energy_period_next_month() }).click()
-  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '100,0 kWh')).toBeVisible()
   fetches.stop()
   expect(fetches.fetched).toEqual([])
 })
@@ -275,7 +295,7 @@ test('clicking a month in the chart selects it', async () => {
   await expect
     .poll(() => (router.state.location.search as { period?: string }).period)
     .toBe('2026-03')
-  await expect.element(screen.getByText('102,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '102,0 kWh')).toBeVisible()
   await expect.element(screen.getByRole('button', { name: /mars 2026/i })).toBeVisible()
   await expect.poll(() => ticks().findIndex((t) => t.getAttribute('font-weight') === '600')).toBe(2)
 })
@@ -290,7 +310,7 @@ test('another year: one request; the old figures stay, dimmed, while it loads', 
   const { screen, qc } = await renderPage(Overview, '/energy?period=2026-01', (qc) => {
     qc.setQueryData(energyOverviewQuery(2026).queryKey, twoYears as never)
   })
-  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '100,0 kWh')).toBeVisible()
   let release: (v: unknown) => void = () => {}
   const gate = new Promise((r) => {
     release = r
@@ -315,7 +335,7 @@ test('another year: one request; the old figures stay, dimmed, while it loads', 
   expect(
     screen.getByRole('button', { name: periodControl }).element().closest('[aria-busy]'),
   ).toBeNull()
-  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '100,0 kWh')).toBeVisible()
   release({
     ...twoYears,
     year: 2025,
@@ -324,7 +344,7 @@ test('another year: one request; the old figures stay, dimmed, while it loads', 
   await held
   await expect.poll(() => chart.querySelector('[aria-busy="true"]')).toBeNull()
   expect(tiles.querySelector('[aria-busy="true"]')).toBeNull()
-  await expect.element(screen.getByText('42,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '42,0 kWh')).toBeVisible()
   await expect
     .element(screen.getByRole('heading', { name: m.energy_chart_title({ year: '2025' }) }))
     .toBeVisible()
@@ -337,7 +357,7 @@ test('while another year loads, the control still steps', async () => {
   const { screen, router, qc } = await renderPage(Overview, '/energy?period=2026-01', (qc) => {
     qc.setQueryData(energyOverviewQuery(2026).queryKey, twoYears as never)
   })
-  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '100,0 kWh')).toBeVisible()
   // 2025 never lands.
   void qc.prefetchQuery({
     queryKey: energyOverviewQuery(2025).queryKey,
@@ -351,7 +371,7 @@ test('while another year loads, the control still steps', async () => {
     .poll(() => (router.state.location.search as { period?: string }).period)
     .toBe('2026-01')
   await expect.poll(() => tiles.querySelector('[aria-busy="true"]')).toBeNull()
-  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '100,0 kWh')).toBeVisible()
 })
 
 test('a stale ?period= in another year with readings moves the URL to the default month', async () => {
@@ -362,7 +382,7 @@ test('a stale ?period= in another year with readings moves the URL to the defaul
   })
   await expect.poll(() => router.state.location.searchStr).toBe('?period=2026-09')
   await expect.element(screen.getByRole('button', { name: /september 2026/i })).toBeVisible()
-  await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '108,0 kWh')).toBeVisible()
   await expect
     .element(screen.getByRole('heading', { name: m.energy_chart_title({ year: '2026' }) }))
     .toBeVisible()
@@ -375,7 +395,7 @@ test('a legacy ?year= without readings moves the URL to the default month', asyn
     seedOverview(withData)(qc)
   })
   await expect.poll(() => router.state.location.searchStr).toBe('?period=2026-09')
-  await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '108,0 kWh')).toBeVisible()
 })
 
 test.each([
@@ -386,7 +406,7 @@ test.each([
   await expect.poll(() => router.state.location.searchStr).toBe('')
   expect(router.state.location.search).toEqual({})
   await expect.element(screen.getByRole('button', { name: /september 2026/i })).toBeVisible()
-  await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '108,0 kWh')).toBeVisible()
 })
 
 test('a stale but valid ?period= in the current year moves the URL to the default month', async () => {
@@ -399,7 +419,7 @@ const announcement = () =>
 
 test('each period change is announced in a polite live region', async () => {
   const { screen } = await renderPage(Overview, '/energy?period=2026-08', seedOverview(withData))
-  await expect.element(screen.getByText('107,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '107,0 kWh')).toBeVisible()
   const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
   expect(tiles.contains(announcement())).toBe(true)
   expect(announcement()?.className).toContain('sr-only')
@@ -427,7 +447,7 @@ test('switching to Totalt while its year loads shows all time at once, not dimme
     } as never)
     pendingForever(qc, energyOverviewQuery(2026).queryKey)
   })
-  await expect.element(screen.getByText('42,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '42,0 kWh')).toBeVisible()
   await screen.getByRole('button', { name: periodControl }).click()
   await screen.getByRole('button', { name: m.charging_tile_all_time(), exact: true }).click()
   const chart = screen
@@ -443,7 +463,7 @@ test('switching to Totalt while its year loads shows all time at once, not dimme
 
 test('the default leaves a bare /energy alone', async () => {
   const { screen, router } = await renderPage(Overview, '/energy', seedOverview(withData))
-  await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '108,0 kWh')).toBeVisible()
   await expect.poll(() => router.state.status).toBe('idle')
   expect(router.state.location.searchStr).toBe('')
 })
@@ -525,14 +545,14 @@ test('a failed read of another year keeps the period control, so the user can st
   // December's label, and "no data" would be a false empty claim.
   const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
   await expect.poll(() => tiles.querySelector('[aria-hidden="true"].invisible')).not.toBeNull()
-  expect(screen.getByText('100,0 kWh').elements()).toHaveLength(0)
+  expect(figure(screen, '100,0 kWh').elements()).toHaveLength(0)
   expect(screen.getByText(m.energy_period_no_data()).elements()).toHaveLength(0)
   expect(document.querySelectorAll('section')).toHaveLength(1) // the tiles; the chart is gone
   await screen.getByRole('button', { name: m.energy_period_next_month() }).click()
   await expect
     .element(screen.getByRole('heading', { name: m.energy_chart_title({ year: '2026' }) }))
     .toBeVisible()
-  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  await expect.element(figure(screen, '100,0 kWh')).toBeVisible()
   expect(screen.getByText(m.energy_error_title()).elements()).toHaveLength(0)
 })
 

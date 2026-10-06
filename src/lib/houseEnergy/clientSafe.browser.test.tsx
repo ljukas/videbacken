@@ -17,3 +17,8 @@ test('the period vocabulary is importable client-side', async () => {
   const mod = await import('~/lib/houseEnergy/period')
   expect(typeof mod.parsePeriod).toBe('function')
 })
+
+test('the flow diagram geometry is importable client-side', async () => {
+  const mod = await import('~/lib/houseEnergy/flowLayout')
+  expect(typeof mod.flowLayout).toBe('function')
+})
