@@ -45,8 +45,16 @@ test('hides the chart from assistive tech; the table carries the values', async 
   })
   const svg = chartSvg(screen.container)
   expect(focusTarget(screen.container)).toBeNull()
+  expect(svg?.hasAttribute('tabindex')).toBe(false)
   expect(svg?.getAttribute('role')).not.toBe('application')
-  expect(svg?.closest('[aria-hidden="true"]')).not.toBeNull()
+  // The chart is hidden, with nothing in it to Tab to…
+  const hidden = svg?.closest('[aria-hidden="true"]')
+  expect(hidden).not.toBeNull()
+  expect(hidden?.querySelector('[tabindex]:not([tabindex="-1"])')).toBeNull()
+  // …but the table is not: it carries the values.
+  expect(
+    screen.container.querySelector('table.sr-only')?.closest('[aria-hidden="true"]'),
+  ).toBeNull()
   expect(screen.container.querySelector('table.sr-only caption')).not.toBeNull()
 })
 
@@ -78,5 +86,7 @@ test('a tiny real hour keeps a visible bar; a genuine 0 hour stays empty', async
     </div>,
   )
   await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(2))
-  expect(Math.min(...seriesBars(screen.container, 0).map(barHeight))).toBeGreaterThanOrEqual(2)
+  const heights = seriesBars(screen.container, 0).map(barHeight)
+  expect(heights).toHaveLength(2)
+  expect(Math.min(...heights)).toBeGreaterThanOrEqual(2)
 })

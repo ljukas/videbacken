@@ -206,6 +206,7 @@ test('a tiny real kWh month keeps a visible bar; a genuine 0 month stays empty',
   )
   await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(2))
   const heights = barHeights(screen.container)
+  expect(heights).toHaveLength(2)
   expect(Math.min(...heights)).toBeGreaterThanOrEqual(2)
 })
 
@@ -224,7 +225,9 @@ test('the kr view keeps a tiny real month visible, and invents no stub for a rea
   )
   // spot: months 1 + 2; fees: month 1 only (month 2's 0 fees means nothing).
   await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(3))
-  expect(Math.min(...barHeights(screen.container, 0))).toBeGreaterThanOrEqual(2)
+  const spot = barHeights(screen.container, 0)
+  expect(spot).toHaveLength(2)
+  expect(Math.min(...spot)).toBeGreaterThanOrEqual(2)
   expect(barHeights(screen.container, 1)).toHaveLength(1)
 })
 

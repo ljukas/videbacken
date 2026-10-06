@@ -172,6 +172,8 @@ test('a real 0 or near-0 kr counterfactual in an included month is a visible bar
   // Three series in the one included month; the other eleven (null) have none.
   await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(3))
   for (const bar of [0, 1, 2]) {
-    expect(Math.min(...seriesBars(screen.container, bar).map(barHeight))).toBeGreaterThanOrEqual(2)
+    const heights = seriesBars(screen.container, bar).map(barHeight)
+    expect(heights).toHaveLength(1)
+    expect(heights[0]).toBeGreaterThanOrEqual(2)
   }
 })

@@ -16,7 +16,7 @@ const SEL = {
   // recharts 3 draws tick labels in their own layer (the tick groups hold only tick lines).
   xTick: '.recharts-xAxis-tick-labels text, [data-axis="x"] .visx-axis-tick',
   yTick: '.recharts-yAxis-tick-labels text, [data-axis="y"] .visx-axis-tick',
-  gridLine: '.recharts-cartesian-grid-horizontal line, [data-grid] line',
+  gridLine: '.recharts-cartesian-grid-horizontal line, [data-grid] line, line[data-grid]',
   svg: 'svg.recharts-surface, svg[data-chart-svg]',
   focus: 'svg.recharts-surface[tabindex], [data-chart-focus]',
 } as const
@@ -29,10 +29,17 @@ const all = <E extends Element = Element>(root: ParentNode, sel: string) => [
 export const bars = (root: ParentNode) => all<SVGElement>(root, SEL.bar)
 /** The bar series groups, in series order. */
 export const barSeries = (root: ParentNode) => all(root, SEL.barSeries)
-/** The bars of the `i`th bar series. */
-export const seriesBars = (root: ParentNode, i: number) =>
-  all<SVGElement>(barSeries(root)[i] ?? document.createDocumentFragment(), SEL.bar)
-/** A bar's drawn height in px (recharts wraps the shape; the visx bar is the shape). */
+/** The bars of the `i`th bar series. Throws when there is no such series, so a check over its bars can't pass empty. */
+export const seriesBars = (root: ParentNode, i: number) => {
+  const series = barSeries(root)[i]
+  if (!series) throw new Error(`no bar series ${i} (found ${barSeries(root).length})`)
+  return all<SVGElement>(series, SEL.bar)
+}
+/**
+ * A bar's drawn height in px. recharts wraps the shape in a group; the visx
+ * module's `[data-bar]` must be the visible shape itself, never a group with
+ * a hit area in it.
+ */
 export const barHeight = (bar: Element) =>
   (bar.matches('path, rect')
     ? bar
@@ -62,7 +69,7 @@ export const legendLabels = (root: ParentNode) => {
 export const tooltipText = () =>
   all(document, SEL.tooltip)
     .map((t) => t.textContent ?? '')
-    .join('')
+    .join('\n')
 
 export const xTickLabels = (root: ParentNode) =>
   all(root, SEL.xTick).map((t) => t.textContent ?? '')
@@ -71,7 +78,8 @@ export const yTickLabels = (root: ParentNode) =>
 
 /** Moves the pointer to (x, y): both recharts (mousemove) and the visx module (pointermove) listen. */
 export function pointAt(x: number, y: number) {
-  const target = document.elementFromPoint(x, y) ?? document.body
+  const target = document.elementFromPoint(x, y)
+  if (!target) throw new Error(`nothing at (${x}, ${y}): off the viewport?`)
   const init = { bubbles: true, clientX: x, clientY: y }
   target.dispatchEvent(new PointerEvent('pointermove', { ...init, pointerType: 'mouse' }))
   target.dispatchEvent(new MouseEvent('mousemove', init))
