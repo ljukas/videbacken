@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { afterEach, expect, test, vi } from 'vitest'
+import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-react'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { credentialsTitle } from '~/lib/integrationCredentialsMessage'
@@ -40,6 +41,7 @@ const TARIFF = {
 }
 
 const runsKey = orpc.evCharging.recentRuns.queryOptions({ input: { limit: 20 } }).queryKey
+const credentialsKey = orpc.credentials.status.queryOptions().queryKey
 
 // Every credential from env, so the grid card has a status line.
 const env = { origin: 'env' } as const
@@ -63,10 +65,11 @@ const STATUS = {
 
 function seed(qc: QueryClient, opts: { coverage?: boolean; adminReads?: boolean } = {}) {
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF] as never)
-  qc.setQueryData(orpc.credentials.status.queryOptions().queryKey, STATUS as never)
   seedSourcesHealth(qc)
-  if (opts.adminReads !== false)
+  if (opts.adminReads !== false) {
     qc.setQueryData(runsKey, { zaptec: [], elpris: [], skoda: [], emaldo: [] } as never)
+    qc.setQueryData(credentialsKey, STATUS as never)
+  }
   qc.setQueryData(orpc.evCharging.vehicleStateLatest.queryOptions().queryKey, null)
   if (opts.coverage !== false && opts.adminReads !== false)
     qc.setQueryData(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey, null)
@@ -139,6 +142,7 @@ test('a household member is redirected to the overview, with no settings UI', as
   const { screen, router, qc } = await renderSettings('', { role: 'user', adminReads: false })
   await expect.element(screen.getByText('overview stub')).toBeVisible()
   expect(qc.getQueryState(runsKey)).toBeUndefined()
+  expect(qc.getQueryState(credentialsKey)).toBeUndefined()
   expect(
     qc.getQueryState(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey),
   ).toBeUndefined()
@@ -386,4 +390,74 @@ test('tariffs still loading: the tariff card is a skeleton, and the edit dialog 
   // Not opened on a guess, and not an error (ADR-0016).
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_tariff_error_title()).elements()).toHaveLength(0)
+})
+
+// --- Credentials: loading, failure, focus (ADR-0026) ------------------------------
+
+test('credentials’ origins still loading: a deep link waits, without a dialog or an error', async () => {
+  const { screen, router } = await renderSettings('?dialog=credentials&source=emaldo', {
+    prepare: (qc) => pendingForever(qc, credentialsKey),
+  })
+  // Positive signal first: the page rendered past its reads.
+  await expect.element(screen.getByRole('heading', sourcesHeading)).toBeVisible()
+  await expect.element(screen.getByRole('heading', { name: m.charging_grid_title() })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'credentials', source: 'emaldo' })
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_credentials_error_title()).elements()).toHaveLength(0)
+})
+
+const gridStatusLines = () => [
+  m.charging_grid_status_stored(),
+  m.charging_grid_status_env(),
+  m.charging_grid_status_missing(),
+  m.charging_grid_status_unreadable(),
+]
+
+test('a failed credentials read: an alert, no grid status line, and the dialog still opens', async () => {
+  const { screen } = await renderSettings('?dialog=credentials&source=emaldo', {
+    // Unseeded: the test server has no /api/rpc, so the read fails.
+    prepare: (qc) => qc.removeQueries({ queryKey: credentialsKey }),
+  })
+  await expect.element(screen.getByText(m.charging_credentials_error_title())).toBeVisible()
+  await expect
+    .element(screen.getByRole('dialog', { name: credentialsTitle('emaldo') }))
+    .toBeVisible()
+  for (const line of gridStatusLines()) expect(screen.getByText(line).elements()).toHaveLength(0)
+})
+
+test('closing the grid dialog returns focus to the grid card’s key button', async () => {
+  const { screen } = await renderSettings('')
+  await screen.getByRole('button', { name: m.charging_grid_button() }).click()
+  const dialog = screen.getByRole('dialog', { name: credentialsTitle('gridTariff') })
+  await expect.element(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: m.common_cancel() }).click()
+  await expect.poll(() => document.activeElement?.id).toBe('credentials-gridTariff')
+})
+
+test('the dialog swapping sheet → dialog (a rotation) is not a close: focus stays in it', async () => {
+  // The default viewport is a phone: the overlay opens as a bottom sheet.
+  const { screen } = await renderSettings('')
+  const button = screen.getByRole('button', credentialsButton('Škoda'))
+  // Held as an element: the open overlay hides it from role queries.
+  const keyButton = button.element()
+  await button.click()
+  await expect
+    .element(screen.getByRole('dialog', { name: credentialsTitle('skoda') }))
+    .toBeVisible()
+  await expect.poll(() => document.querySelector('[data-slot="sheet-content"]')).not.toBeNull()
+  const focusedButton = vi.fn()
+  keyButton.addEventListener('focus', focusedButton)
+  try {
+    await page.viewport(1280, 800)
+    await expect.poll(() => document.querySelector('[data-slot="dialog-content"]')).not.toBeNull()
+    // Past the old content's unmount (Radix returns focus on a timeout).
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const dialog = screen.getByRole('dialog', { name: credentialsTitle('skoda') })
+    await expect.element(dialog).toBeVisible()
+    expect(dialog.element().contains(document.activeElement)).toBe(true)
+    expect(focusedButton).not.toHaveBeenCalled()
+  } finally {
+    keyButton.removeEventListener('focus', focusedButton)
+    await page.viewport(414, 896)
+  }
 })

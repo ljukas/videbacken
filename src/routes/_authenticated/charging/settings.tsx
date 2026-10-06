@@ -158,10 +158,16 @@ function ChargingSettingsPage() {
   const credentialsResult = useQuery(credentialsStatusQuery)
   const credentialsSource =
     isOpen('credentials') && source && isCredentialSource(source) ? source : undefined
+  // Opens once the origins are known, or their read failed (the dialog then has
+  // no origin lines): never with origins that are still loading.
+  const credentialsReady = credentialsResult.data !== undefined || credentialsResult.isError
   // The key button that opened the dialog, for focus on close: the URL (and so
-  // `credentialsSource`) clears before Radix asks where focus goes.
+  // `credentialsSource`) clears before Radix asks where focus goes. Both refs
+  // are read by onCloseAutoFocus, which can fire from a stale render's closure.
   const lastCredentialsSource = useRef<CredentialSource | undefined>(undefined)
+  const openCredentialsSource = useRef(credentialsSource)
   useEffect(() => {
+    openCredentialsSource.current = credentialsSource
     if (credentialsSource) lastCredentialsSource.current = credentialsSource
   }, [credentialsSource])
 
@@ -270,7 +276,7 @@ function ChargingSettingsPage() {
       />
       <CredentialsDialog
         source={credentialsSource}
-        open={credentialsSource !== undefined}
+        open={credentialsSource !== undefined && credentialsReady}
         onOpenChange={(o) => {
           if (!o) close()
         }}
@@ -286,6 +292,9 @@ function ChargingSettingsPage() {
         }}
         // Opened by URL state: Radix has no trigger to return focus to.
         onCloseAutoFocus={(event) => {
+          // Still open: the overlay only swapped dialog ↔ bottom sheet (a
+          // rotation, or a phone deep link hydrating) — not a close.
+          if (openCredentialsSource.current !== undefined) return
           const opener = lastCredentialsSource.current
           const el = opener ? document.getElementById(credentialsButtonId(opener)) : null
           if (!el) return
