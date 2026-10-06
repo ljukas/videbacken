@@ -497,6 +497,9 @@ Owner decisions (2026-10-06 brainstorm):
 
 ### 3c-1 — field states and copy (UI only)
 
+On phones the dialog keeps ADR-0013's bottom sheet. Whether keyboard-heavy forms like this one (and the 3c-2 map)
+should go full-screen is [issue #107](https://github.com/ljukas/videbacken/issues/107), kept out of step 3c.
+
 Each field row is its label with a neutral badge, then a body that depends on the field's origin. The badge is real
 text, so the state never relies on colour alone.
 
