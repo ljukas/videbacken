@@ -640,6 +640,19 @@ test('an empty suspect list is stored as NULL on the health row and the run', as
   expect(runRow.suspectFields).toBeNull()
 })
 
+test('duplicate suspect fields are stored once on the health row and the run', async () => {
+  const attemptId = await acquire(T0)
+  await recordOutcome('zaptec', authFailed(['vin', 'vin']), {
+    attemptId,
+    trigger: 'cron',
+    startedAt: T0,
+    now: at(1000),
+  })
+  const [row] = await db.select().from(integrationSync).where(eq(integrationSync.source, 'zaptec'))
+  expect(row.suspectFields).toEqual(['vin'])
+  expect((await listRecentRuns('zaptec', { limit: 1 }))[0].suspectFields).toEqual(['vin'])
+})
+
 test('a success clears suspect fields; its run row has none', async () => {
   let attemptId = await acquire(T0)
   await recordOutcome('zaptec', authFailed(['password']), {

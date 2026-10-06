@@ -167,11 +167,17 @@ test('an IntegrationError suspect fields are recorded with the failure', async (
 test('an internal error records no suspect fields', async () => {
   await expect(
     run(async () => {
-      throw new Error('bug')
+      throw Object.assign(new Error('bug'), { suspectFields: ['vin'] })
     }),
   ).rejects.toThrow('bug')
   const health = await getHealth('elpris', { now: T0, includeAdminDetail: true })
   expect(health.adminDetail?.suspectFields).toBeNull()
+})
+
+test('an IntegrationError has no own suspectFields key unless it has some', () => {
+  expect(Object.hasOwn(new FakeRemoteError('unreachable'), 'suspectFields')).toBe(false)
+  expect(Object.hasOwn(new FakeRemoteError('unreachable', []), 'suspectFields')).toBe(false)
+  expect(Object.hasOwn(new FakeRemoteError('auth_failed', ['vin']), 'suspectFields')).toBe(true)
 })
 
 test('any other error is internal_error: recorded, logged at error, and rethrown', async () => {

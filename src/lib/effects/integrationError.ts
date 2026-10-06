@@ -16,7 +16,7 @@ export abstract class IntegrationError extends Error {
    * The credential fields the vendor's answer points at (Skoda 404 -> `vin`), by name only
    * (ADR-0026); unset when it points at none. Recorded with the run as `suspect_fields`.
    */
-  readonly suspectFields?: readonly CredentialFieldName[]
+  declare readonly suspectFields?: readonly CredentialFieldName[]
 
   constructor(
     message: string,
