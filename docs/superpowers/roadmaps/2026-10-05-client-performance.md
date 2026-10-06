@@ -14,9 +14,9 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | [#93](https://github.com/ljukas/videbacken/pull/93) | checkpoint passed | 2026-10-05: the owner confirmed on the phone that `/sensors` (including a range switch) and `/users` no longer drag. Prod logs since the #93 deploy show one `getSession` server-function call across the session's navigations: the cached guard's refresh, not one per navigation. |
 | 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-05/06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
 | 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | [#104](https://github.com/ljukas/videbacken/pull/104) | checkpoint passed | 2026-10-06, `main` at `17fb518`: every `packages:` and `bones:` criterion holds. Totals are within 1–2 KB of the bar per page; the shell is 257 against 253, all of it from #102 and #103 merging in (see [checkpoint 4 result](#checkpoint-4-result)). |
-| 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | merged | — (no checkpoint of its own; see [step 5a notes](#step-5a-notes)) |
-| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | merged | — (no checkpoint of its own; see [step 5b notes](#step-5b-notes)) |
-| 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | [#118](https://github.com/ljukas/videbacken/pull/118) | PR open | — |
+| 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | checkpoint passed | Covered by checkpoint 5 (see [step 5a notes](#step-5a-notes)). |
+| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | checkpoint passed | Covered by checkpoint 5 (see [step 5b notes](#step-5b-notes)). |
+| 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | [#118](https://github.com/ljukas/videbacken/pull/118) | checkpoint passed | 2026-10-06: the owner reviewed the converted charts live on prod and they look good. On `main` at `b63da3b`, no page's `packages:` line lists recharts, redux, immer or decimal.js-light, and `bun.lock` has none of them. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) | — | — | not started | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
 | 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
@@ -408,14 +408,19 @@ the lines, colours, legend, grid, axis lines, tick marks and y labels match, and
 ticks are round and never crowd at 320 px. Dots, Tab and the arrow keys, Home and End, Escape, a range switch with a
 card open and the hidden-devices state behave as planned. A lifted finger keeps the card and a tap elsewhere closes it.
 
+### Checkpoint 5 result
+
+Recorded 2026-10-06, `main` at `b63da3b` (#118 merged, plus the docs-only #119).
+
+- **Live: pass.** The owner reviewed the converted charts live on prod and they look good.
+- **Build: pass.** `bun run bundle:measure` matches the branch's numbers: `/sensors` 48, patterns 76, the shell 258 KB gz,
+  and no page's `packages:` line lists recharts, redux, immer or decimal.js-light. `bun.lock` has 0 lines for them, or
+  for `@reduxjs`, `react-redux` and `victory-vendor`. No source map in `.output/public` points into those packages.
+  A text search of the JS for "immer" matches only boneyard's `shimmer` animation.
+- **Phone: pass.** The owner checked a horizontal touch drag on a real phone: it scrubs through the readings. The
+  `pointercancel` seen in Chromium's touch emulation (on the bar charts too) is an emulation artefact, not a bug.
+
 **Follow-ups found in review and the live check (not in 5c):**
-- A touch drag stops scrubbing after the first move in Chromium's touch emulation: the browser sends `pointercancel`.
-  It does the same on the `/charging` bar chart (5a), so it comes from the shared overlay, or from the emulation.
-  The reviewer's hypothesis: `touch-action: pan-y` is set only on the SVG `<rect>`, and browsers don't reliably
-  honour `touch-action` on SVG child elements, so the gesture falls back to `auto` and Chromium sends
-  `pointercancel` after the first move. Moving `pan-y` to the HTML group div or the `<svg>` root in both charts may
-  fix it. If so, 5a's horizontal scrub never worked on real phones. Check on a real phone; the fix is a small
-  cross-chart PR.
 - `BarChart`'s mouse leave doesn't clear its keyboard announcement; `ClimateChart`'s does. Match them.
 - Cover the `makeTimeAxis` formats for 3 m, 6 m and all, and locale handling.
 - Pin the spacing tests: a tick-count assertion for the month-end spacing, a length floor for the spring-forward
