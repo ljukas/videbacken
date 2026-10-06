@@ -64,7 +64,7 @@ src/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,integrationSync,integrationCredential,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
     services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, energyMix, dbPool (pool gauges for the rpc timing line) — own all DB access + domain rules (ADR-0002)
     effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023; keyedAdapter.ts rebuilds their client only when the resolved credentials change, ADR-0026), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
-    credentials/                server-only (ADR-0026): crypto (AES-256-GCM envelope, CREDENTIALS_ENCRYPTION_KEY), env (field → env var map), cache (60 s stored read), resolve (`resolveCredentials`: stored → env per field)
+    credentials/                server-only (ADR-0026): crypto (AES-256-GCM envelope, CREDENTIALS_ENCRYPTION_KEY), env (reads env values; the names live in `integrationCredentials.ts`), cache (60 s stored read), resolve (`resolveCredentials`: stored → env per field)
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
@@ -78,7 +78,7 @@ src/
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
     time/stockholm.ts           client-safe Stockholm calendar helpers (DST-aware day bounds)
     integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — ADR-0019)
-    integrationCredentials.ts   client-safe credential vocabulary (sources, fields, field kinds, origins — ADR-0026);
+    integrationCredentials.ts   client-safe credential vocabulary (sources, fields, field kinds, origins, env var names (`CREDENTIAL_ENV_VARS`), optional fields — ADR-0026);
                                 integrationCredentialsMessage.ts: client-safe credential copy
     files/, image/              upload helpers: EXIF / blurhash, HEIC transcode, sizes
     query/                      routeData.ts: `loadRouteData` — the server awaits `critical` and skips `deferred`; the client starts everything and awaits nothing (ADR-0025)

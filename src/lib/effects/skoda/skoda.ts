@@ -59,6 +59,7 @@ export interface SkodaClient {
 }
 
 export function selectSkodaAdapter(values: CredentialValues<'skoda'>): 'notConfigured' | 'http' {
+  // Must agree with isOptionalCredentialField (the remove confirm relies on it).
   return values.apiKey && values.vin ? 'http' : 'notConfigured'
 }
 
