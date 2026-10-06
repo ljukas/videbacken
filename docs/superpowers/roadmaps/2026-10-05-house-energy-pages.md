@@ -10,7 +10,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 |---|---|---|---|---|---|
 | 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92), fix [#95](https://github.com/ljukas/videbacken/pull/95) | checkpoint passed | 2026-10-05: sums and car match prod; warm `energy.overview` query 52 ms mean over 33 calls (one cold instance 736 ms total); owner accepted, asked for a month choice → step 1b |
 | 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | [#103](https://github.com/ljukas/videbacken/pull/103) | checkpoint passed | 2026-10-06: August, Hela 2026 and Totalt match SQL; warm `energy/overview` 64–67 ms; no shift on prod at 500 px (3 widths only locally); owner accepted, asked for a richer summary → step 1c |
-| 1c | Summary as a flow diagram: visx, battery loss, icon tiles, arrow-value switch (replaces the five tiles) | [plan](../plans/2026-10-06-energy-1c-flow-summary.md) | [#112](https://github.com/ljukas/videbacken/pull/112) | PR open | — |
+| 1c | Summary as a flow diagram: visx, battery loss, icon tiles, arrow-value switch (replaces the five tiles) | [plan](../plans/2026-10-06-energy-1c-flow-summary.md) | [#112](https://github.com/ljukas/videbacken/pull/112) | checkpoint passed | 2026-10-06: Feb, Aug and Oct table (57 values) = prod SQL within 0,1 kWh; no shift over 10 periods on prod at 500 px (1440 / 820 / 390 px measured locally); owner accepted live |
 | 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
@@ -52,7 +52,7 @@ Each must pass, with the result recorded in the table, before the next step star
      390 px.
    - `rpc timing` for a year switch: `totalMs` < 150 ms (warm).
    - The owner reviews `/energy` live (picker, chart click, tooltip, colours, sizes; desktop + phone) and accepts it.
-3. **After step 1c (prod).**
+3. **After step 1c (prod).** *Passed 2026-10-06 (see the log).*
    - For 2026-02, 2026-08 and 2026-10, every value in the card's table matches a prod SELECT within 0.1 kWh
      (the flows from `energyFigures`; the loss = in − out − ΔSoC × 7,58 kWh).
    - Switching periods moves nothing: the card and the diagram box keep their rects at 1440, 820 and 390 px.
@@ -129,3 +129,12 @@ colour tokens, and step 1c (the overview already shows the battery's loss; `Ener
   a plain SQL sum within 0,05 kWh; loss 213,035 − 204,644 + 1,668 = 10,059 → "10,1". Gate: `check:ci` 0 errors,
   build passes, 226 files / 3 454 tests, sv/en keys match. Open: a 4-digit loss overflows the narrow battery node by
   0,9 px at 360 px (prod Totalt loss ≈ 289 kWh); checkpoint 1c on prod.
+- 2026-10-06: checkpoint 1c run on prod after #112 deployed (read-only). Every value in the card's table for
+  February, August and October (so far) equals a prod SELECT built like `energyFigures` within 0,1 kWh, 57 values:
+  e.g. February solar 184,3 / bought 1 880,6 / load 1 908,6 / loss 118,3 kWh (SQL 184.30 / 1880.60 / 1908.59 /
+  118.31; laddnivå 34 → 23 %), August loss 10,1 (SQL 10.059) with "Data saknas för 14 h", October loss 0,7 (SQL 0.682;
+  laddnivå 19 → 100 %); Batteri → Såld el 0,0 in all three. No shift: stepping October → January (10 periods) on prod
+  kept the period button, the card and the flow box identical at 500 px, no horizontal scroll. As in 1b the owner's
+  Chrome window was minimised (resize is a no-op, the app refuses to be framed), so 1440 / 820 / 390 px stand on the
+  local measurements (step 1c log); a minimised window also pauses the ResizeObserver, so the diagram draws on first
+  show into its already-reserved box. Owner reviewed `/energy` live: "It looks good live!" Next: step 2.
