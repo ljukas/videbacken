@@ -172,6 +172,10 @@ test('yearTotal follows the chart year; allTime spans years', async () => {
   expect(o.allTime?.buckets).toBe(576)
   expect(o.allTime?.expectedBuckets).toBe(576)
   expect(o.monthsWithReadings).toEqual(['2025-12', '2026-01'])
+  // The chart year 2026: January keeps the dropped current-month coverage (first-day clip, newest month).
+  const o26 = await getEnergyOverview({ year: 2026, now: new Date('2026-01-01T20:00:00Z') })
+  expect(o26.months[0]?.gridImportKwh).toBeCloseTo(57.6, 9)
+  expect(o26.months[0]?.expectedBuckets).toBe(288)
 })
 
 test('yearTotal for a past year: its own car kWh, and a month without readings counts as missing', async () => {
@@ -205,6 +209,27 @@ test('monthsWithReadings lists every month with readings, oldest first, across y
   await storeDay('2026-02-15')
   const o = await getEnergyOverview({ now: new Date('2026-03-01T12:00:00Z') })
   expect(o.monthsWithReadings).toEqual(['2025-11', '2026-02'])
+})
+
+test('monthsWithReadings is ordered whatever the insertion order', async () => {
+  await storeDay('2026-02-10')
+  await storeDay('2025-11-10')
+  await storeDay('2026-01-10')
+  await storeDay('2025-12-10')
+  const o = await getEnergyOverview({ now: new Date('2026-03-01T12:00:00Z') })
+  expect(o.monthsWithReadings).toEqual(['2025-11', '2025-12', '2026-01', '2026-02'])
+})
+
+test("the new year's first hour: the year is 2027, empty, with 2026 still listed", async () => {
+  await storeDay('2026-10-10')
+  await storeDay('2026-12-31')
+  const o = await getEnergyOverview({ now: new Date('2026-12-31T23:30:00Z') })
+  expect(o.year).toBe(2027)
+  expect(o.availableYears).toEqual([2027, 2026])
+  expect(o.months).toEqual(Array(12).fill(null))
+  expect(o.yearTotal).toBeNull()
+  expect(o.allTime).not.toBeNull()
+  expect(o.monthsWithReadings).toEqual(['2026-10', '2026-12'])
 })
 
 test('year fallback: a year without readings shows the current year', async () => {
@@ -258,6 +283,9 @@ test('car kWh: the chart year and its total follow the chart; all time spans yea
   const o = await getEnergyOverview({ year: 2025, now: new Date('2026-05-20T12:00:00Z') })
   expect(o.months[4]?.carKwh).toBe(4)
   expect(o.yearTotal?.carKwh).toBe(4)
+  const o26 = await getEnergyOverview({ year: 2026, now: new Date('2026-05-20T12:00:00Z') })
+  expect(o26.months[4]?.carKwh).toBe(6)
+  expect(o26.yearTotal?.carKwh).toBe(6)
   expect(o.allTime?.carKwh).toBe(10)
 })
 

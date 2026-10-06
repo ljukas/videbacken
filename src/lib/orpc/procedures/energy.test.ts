@@ -103,13 +103,16 @@ test('privacy: the output holds period sums only, never buckets', async () => {
     'year',
     'yearTotal',
   ])
-  // The only arrays are the 12 months and the years; every period is a flat object of numbers.
+  // The only arrays are the 12 months, the years and the month keys; every period is a flat object of numbers.
   const flat = (p: unknown) =>
     p === null || Object.values(p as object).every((v) => v === null || typeof v === 'number')
   // Real sums are present, so the flatness check is not vacuous.
   expect(o.months.some((p) => p !== null)).toBe(true)
   expect(o.allTime).not.toBeNull()
   expect(o.months.every(flat)).toBe(true)
+  expect(o.yearTotal).not.toBeNull()
+  expect(o.monthsWithReadings).toEqual(['2026-02'])
+  expect(o.monthsWithReadings.every((k) => /^\d{4}-\d{2}$/.test(k))).toBe(true)
   expect(flat(o.yearTotal)).toBe(true)
   expect(flat(o.allTime)).toBe(true)
 })
