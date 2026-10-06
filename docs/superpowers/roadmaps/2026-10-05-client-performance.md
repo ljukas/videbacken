@@ -14,7 +14,9 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | [#93](https://github.com/ljukas/videbacken/pull/93) | checkpoint passed | 2026-10-05: the owner confirmed on the phone that `/sensors` (including a range switch) and `/users` no longer drag. Prod logs since the #93 deploy show one `getSession` server-function call across the session's navigations: the cached guard's refresh, not one per navigation. |
 | 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-05/06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
 | 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | [#104](https://github.com/ljukas/videbacken/pull/104) | checkpoint passed | 2026-10-06, `main` at `17fb518`: every `packages:` and `bones:` criterion holds. Totals are within 1–2 KB of the bar per page; the shell is 257 against 253, all of it from #102 and #103 merging in (see [checkpoint 4 result](#checkpoint-4-result)). |
-| 5 | Replace recharts with visx (refactor-workflow) | — | — | not started | — |
+| 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | PR open | — (no checkpoint of its own; see [step 5a notes](#step-5a-notes)) |
+| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | — | — | not started | — |
+| 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | — | — | not started | — |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) | — | — | not started | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
 | 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
@@ -64,7 +66,7 @@ the step needs a short brainstorm before its plan.
    - Page totals (KB gz) no higher than step 4's final measurement: entry + shell 253; `/charging` 161,
      `/charging/settings` 41, economy 159, patterns 171, `/charging/sessions/$id` 66, `/energy` 152, `/sensors` 123,
      `/users` 72, `/account/profile` 212.
-5. **After step 5 (prod).** Owner reviews every converted chart live. recharts, redux, immer and decimal.js-light are
+5. **After step 5c (prod).** Steps 5a and 5b have no checkpoint of their own; each PR is reviewed live at three widths before merge. Owner reviews every converted chart live. recharts, redux, immer and decimal.js-light are
    gone from the build.
 6. **After step 6 (build).** The upload chunk shrinks, and the font preload shows in the SSR `<head>`.
 7. **After step 7 (prod).** The owner reviews the spots they reported, live on prod, and they no longer shift.
@@ -240,6 +242,47 @@ shell closure, between step 4's final commit (`895b686`, 437 modules) and `main`
 - `src/lib/integrationCredentials.ts`, from #102: the settings route's search schema reads `CREDENTIAL_SOURCES`.
 
 Keeping search parsing out of the shell (a lighter parser, or one with no time-zone library) is added to step 6.
+
+## Step 5a notes
+
+**Bundle** (`bun run bundle:measure`, KB gz each page adds beyond the entry + shell, which stays 257):
+
+| Page | `main` (`5edaa9f`) | 5a |
+|---|---:|---:|
+| `/charging` | 160 | 83 |
+| `/charging/economy` | 158 | 76 |
+| `/charging/patterns` | 170 | 83 |
+| `/charging/sessions/$id` | 64 | 65 |
+| `/energy` | 148 | 148 (recharts until 5b) |
+| `/sensors` | 123 | 124 (recharts until 5c) |
+
+The recharts chunk (81–84 KB gz) is gone from the three charging pages. `ChartPopover` (12) is now a shared chunk with
+the visx primitives, so the session page gained 1 KB from regrouping.
+
+**What 5a changed for a viewer, on purpose (owner-approved):**
+- **Keyboard:** each chart is still one Tab stop, but as a named `role="group"` (the SessionPriceChart idiom), not
+  recharts' unnamed `role="application"`. ←/→/Home/End walk the months, Escape and Tab-out close the card, each step
+  is announced in a polite, atomic live region, and the focus ring is visible.
+- **The tooltip** keeps its card look and rows but sits above the month (ChartPopover's mechanics), not beside the
+  cursor. Focus no longer shows January by itself; the first → does.
+
+**Accepted drift, to review live:** y ticks may differ by a step (d3's nice ticks, though integer axes keep recharts'
+five), and a narrow chart's x labels thin greedily from the first while keeping the last, so the kept subset can be
+uneven (as recharts' `preserveStartEnd`).
+
+**Bones not recaptured in 5a.** The chart frames keep their heights (260 px; the hour chart 220), with the legend
+inside the frame as before, so the captured skeletons still match the page's layout. A recapture from local data
+picked up data-only drift elsewhere on the pages (the patterns timeline, the economy table rows) and turned the
+charts' sr-only nodes into dot bones, so it is left for 5c, with `.sr-only` excluded in `boneyard.config.json`.
+
+**Follow-ups found in review (not in 5a):**
+- An sr-only data table for Monthly, Economy and Spot. NVDA/JAWS in browse mode don't pass arrows to a group, and
+  mobile screen readers have no arrows. Today's recharts charts give them nothing either.
+- Announce "no data" when the keyboard lands on an empty month, and show the keyboard hint visibly on focus without a
+  layout shift.
+- Opt the pill charts (heatmap, calendar, session) into `followScroll`. Their tooltip drifts from its mark when a
+  scroll container moves (pre-existing).
+- Re-measure the axis labels once the web font loads (`getStringWidth` caches the fallback font's widths).
 
 ## Step 7 notes
 

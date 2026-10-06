@@ -1,16 +1,8 @@
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
-import {
-  type ChartConfig,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '~/components/ui/chart'
+import { BarChart } from '~/components/chart/BarChart'
+import { NoData, TooltipRow } from '~/components/chart/ChartParts'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { ChartFrame, NoData, TooltipRow } from './ChartFrame'
 import { formatSek, monthLabel } from './format'
-import { minBarFor } from './minBar'
 
 type Month = RouterOutputs['evCharging']['economy']['months'][number]
 
@@ -20,8 +12,6 @@ type Month = RouterOutputs['evCharging']['economy']['months'][number]
 //   actual     --chart-3           9.1 / 8.1
 //   optimal    --chart-2           3.7 / 7.0
 //   stub       muted-foreground @45 %, as /charging's "Pris saknas" stub
-const SERIES_ORDER = ['immediate', 'actual', 'optimal', 'stub']
-const seriesOrder = (item: { dataKey?: unknown }) => SERIES_ORDER.indexOf(String(item.dataKey))
 
 // Per month: what charging at once would have cost, what we paid and the
 // cheapest schedule — side by side, over the month's comparable sessions only.
@@ -48,7 +38,7 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
       label: m.charging_economy_series_not_comparable(),
       color: 'color-mix(in oklab, var(--muted-foreground) 45%, transparent)',
     },
-  } satisfies ChartConfig
+  }
   // Stubs are honest data: only a year with no sessions at all has nothing to show.
   if (!months.some((mo) => mo.sessions > 0)) return <NoData />
   const hasStub = months.some(allExcluded)
@@ -75,93 +65,61 @@ export function EconomyMonthlyChart({ months }: { months: Month[] }) {
     actual: mo.included > 0 ? mo.actualSek : null,
     optimal: mo.included > 0 ? mo.optimalSek : null,
   }))
+  // Side by side: immediate | actual (its stub stacked in the same slot) | optimal.
   // A real 0 or near-0 kr counterfactual in an included month is data and gets
   // a visible bar; null (excluded month) stays empty.
-  const floorFor = (key: 'immediate' | 'actual' | 'optimal' | 'stub') =>
-    minBarFor(
-      data.map((d) => d[key]),
-      { zeroIsData: true },
-    )
+  const series = [
+    { key: 'immediate', ...config.immediate, radius: 3, zeroIsData: true },
+    { key: 'actual', ...config.actual, stack: 'mid', radius: 3, zeroIsData: true },
+    { key: 'optimal', ...config.optimal, radius: 3, zeroIsData: true },
+    // Lists the rendered series, so the stub's legend entry appears only with one.
+    ...(hasStub
+      ? [{ key: 'stub', ...config.stub, stack: 'mid', radius: 3, zeroIsData: true }]
+      : []),
+  ]
   return (
-    <ChartFrame config={config}>
-      <BarChart data={data} margin={{ left: 4, right: 12, top: 8, bottom: 0 }} barGap={2}>
-        {flat ? null : <CartesianGrid vertical={false} />}
-        <XAxis dataKey="label" tickLine={false} tickMargin={8} interval="preserveStartEnd" />
-        <YAxis
-          hide={flat}
-          domain={flat ? [0, stub / 0.03] : undefined}
-          width="auto"
-          tickLine={false}
-          axisLine={false}
-          tickMargin={4}
-          tickFormatter={(v) => formatSek(Number(v))}
-        />
-        <ChartTooltip
-          cursor={false}
-          itemSorter={seriesOrder}
-          content={
-            <ChartTooltipContent
-              formatter={(value, name, item) => {
-                const series = config[name as keyof typeof config]
-                const { reason, included, sessions } = item.payload
-                // The stub has a label but no kronor value — nothing was compared.
-                if (name === 'stub') {
-                  return <TooltipRow label={reason ?? series.label} color={series.color} />
-                }
-                return (
-                  <div className="flex w-full flex-col gap-0.5">
-                    <TooltipRow label={series.label} color={series.color}>
-                      {formatSek(Number(value))}
-                    </TooltipRow>
-                    {name === 'optimal' && included < sessions ? (
-                      <span className="text-muted-foreground text-xs">
-                        {m.charging_economy_tooltip_compared({ included, sessions })}
-                      </span>
-                    ) : null}
-                  </div>
-                )
-              }}
-            />
-          }
-        />
-        <ChartLegend
-          itemSorter={seriesOrder}
-          content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
-        />
-        <Bar
-          dataKey="immediate"
-          fill="var(--color-immediate)"
-          minPointSize={floorFor('immediate')}
-          radius={3}
-          isAnimationActive={false}
-        />
-        <Bar
-          dataKey="actual"
-          stackId="mid"
-          fill="var(--color-actual)"
-          minPointSize={floorFor('actual')}
-          radius={3}
-          isAnimationActive={false}
-        />
-        <Bar
-          dataKey="optimal"
-          fill="var(--color-optimal)"
-          radius={3}
-          minPointSize={floorFor('optimal')}
-          isAnimationActive={false}
-        />
-        {/* Lists the rendered series, so the stub's legend entry appears only with one. */}
-        {hasStub ? (
-          <Bar
-            dataKey="stub"
-            stackId="mid"
-            fill="var(--color-stub)"
-            minPointSize={floorFor('stub')}
-            radius={3}
-            isAnimationActive={false}
-          />
-        ) : null}
-      </BarChart>
-    </ChartFrame>
+    <BarChart
+      rows={data}
+      category={(r) => r.label}
+      series={series}
+      value={(r, key) => r[key as 'immediate' | 'actual' | 'optimal' | 'stub']}
+      yTickFormat={(v) => formatSek(v)}
+      yAxisLine={false}
+      hideYAxis={flat}
+      yDomain={flat ? [0, stub / 0.03] : undefined}
+      barGap={2}
+      legend
+      label={m.charging_economy_chart_sek_title()}
+      tooltip={(r) => {
+        // The stub has a label but no kronor value — nothing was compared.
+        if (r.stub !== null) {
+          return <TooltipRow label={r.reason ?? config.stub.label} color={config.stub.color} />
+        }
+        if (r.immediate === null || r.actual === null || r.optimal === null) return null
+        return (
+          <>
+            <TooltipRow label={config.immediate.label} color={config.immediate.color}>
+              {formatSek(r.immediate)}
+            </TooltipRow>
+            <TooltipRow label={config.actual.label} color={config.actual.color}>
+              {formatSek(r.actual)}
+            </TooltipRow>
+            <div className="flex w-full flex-col gap-0.5">
+              <TooltipRow label={config.optimal.label} color={config.optimal.color}>
+                {formatSek(r.optimal)}
+              </TooltipRow>
+              {r.included < r.sessions ? (
+                <span className="text-muted-foreground text-xs">
+                  {m.charging_economy_tooltip_compared({
+                    included: r.included,
+                    sessions: r.sessions,
+                  })}
+                </span>
+              ) : null}
+            </div>
+          </>
+        )
+      }}
+    />
   )
 }

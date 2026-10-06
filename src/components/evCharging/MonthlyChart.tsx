@@ -1,17 +1,9 @@
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
-import {
-  type ChartConfig,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '~/components/ui/chart'
+import { BarChart } from '~/components/chart/BarChart'
+import { TooltipRow } from '~/components/chart/ChartParts'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { ChartFrame, TooltipRow } from './ChartFrame'
 import { formatCount, formatOneDecimal, formatSek, formatShare, monthLabel } from './format'
 import type { MetricOption } from './MetricToggle'
-import { minBarFor } from './minBar'
 import { formatSolarValue, type SolarValueView, solarValueView } from './solarValue'
 
 type Month = RouterOutputs['evCharging']['overview']['months'][number]
@@ -58,44 +50,27 @@ export function MonthlyChart({
   )
 }
 
-const kwhConfig = { kwh: { label: 'kWh', color: 'var(--chart-1)' } } satisfies ChartConfig
+const kwhSeries = [{ key: 'kwh', label: 'kWh', color: 'var(--chart-1)', radius: 4 }]
 
 function EnergyChart({ months }: { months: Month[] }) {
   const data = months.map((mo) => ({ label: monthLabel(mo.month), kwh: mo.kwh }))
   return (
-    <ChartFrame config={kwhConfig}>
-      <BarChart data={data} margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tickLine={false} tickMargin={8} interval="preserveStartEnd" />
-        <CountAxis />
-        <ChartTooltip
-          cursor={false}
-          content={
-            <ChartTooltipContent
-              formatter={(value) => (
-                <span className="font-medium font-mono text-foreground tabular-nums">
-                  {formatOneDecimal(Number(value))} kWh
-                </span>
-              )}
-            />
-          }
-        />
-        <Bar
-          dataKey="kwh"
-          fill="var(--color-kwh)"
-          radius={4}
-          minPointSize={minBarFor(data.map((d) => d.kwh))}
-          isAnimationActive={false}
-        />
-      </BarChart>
-    </ChartFrame>
+    <BarChart
+      rows={data}
+      category={(r) => r.label}
+      series={kwhSeries}
+      value={(r) => r.kwh}
+      yTickFormat={formatCount}
+      yIntegers
+      label={m.charging_chart_title()}
+      tooltip={(r) => (
+        <span className="font-medium font-mono text-foreground tabular-nums">
+          {formatOneDecimal(r.kwh)} kWh
+        </span>
+      )}
+    />
   )
 }
-
-const SERIES_ORDER = ['spot', 'fees', 'unpriced']
-
-/** Series in stack order — for the legend and the tooltip (Recharts sorts by name by default). */
-const seriesOrder = (item: { dataKey?: unknown }) => SERIES_ORDER.indexOf(String(item.dataKey))
 
 function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
   // Spot and fees in the two chart tokens that keep ≥3:1 against the page in
@@ -108,7 +83,7 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
       label: m.charging_chart_no_price(),
       color: 'color-mix(in oklab, var(--muted-foreground) 45%, transparent)',
     },
-  } satisfies ChartConfig
+  }
   // Bought energy with no price; a month of all own solar is a true 0 kr (ADR-0023).
   const unpriced = (c: CostMonth) => c.gridKwh > 0 && c.fullKwh === 0
   // A year with nothing priced has no kronor scale to draw stubs against —
@@ -143,88 +118,60 @@ function CostChart({ months, year }: { months: CostMonth[]; year: number }) {
   // Segments are separated by a hairline in the page colour, so the split
   // doesn't rely on the two hues alone.
   const seam = { stroke: 'var(--background)', strokeWidth: 1 }
+  // Stack order bottom → top, which is also the legend's and the tooltip's.
+  // The legend lists the rendered series, so "Pris saknas" appears only with a stub.
+  const series = [
+    { key: 'spot', ...config.spot, stack: 'sek', ...seam },
+    { key: 'fees', ...config.fees, stack: 'sek', radius: 4, roundEndOnly: true, ...seam },
+    ...(hasUnpriced
+      ? [{ key: 'unpriced', ...config.unpriced, stack: 'sek', radius: 4, roundEndOnly: true }]
+      : []),
+  ]
 
   return (
-    <ChartFrame config={config}>
-      <BarChart data={data} margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tickLine={false} tickMargin={8} interval="preserveStartEnd" />
-        <CountAxis />
-        <ChartTooltip
-          cursor={false}
-          itemSorter={seriesOrder}
-          content={
-            <ChartTooltipContent
-              formatter={(value, name, item) => {
-                const { totalSek, missingShare, solar } = item.payload
-                if (name === 'unpriced') {
-                  return (
-                    <div className="flex w-full flex-col gap-0.5">
-                      <TooltipRow label={config.unpriced.label} color={config.unpriced.color} />
-                      <SolarTooltipRows view={solar} />
-                    </div>
-                  )
-                }
-                const series = config[name as 'spot' | 'fees']
-                const total = formatSek(totalSek)
-                return (
-                  <div className="flex w-full flex-col gap-0.5">
-                    <TooltipRow label={series.label} color={series.color}>
-                      {formatSek(Number(value))}
-                    </TooltipRow>
-                    {name === 'fees' ? (
-                      <>
-                        <TooltipRow label={m.charging_chart_total()} strong>
-                          {missingShare === null ? total : m.charging_cost_min({ total })}
-                        </TooltipRow>
-                        {missingShare === null ? null : (
-                          <span className="text-muted-foreground text-xs">
-                            {m.charging_cost_partial_hint({ share: formatShare(missingShare) })}
-                          </span>
-                        )}
-                        <SolarTooltipRows view={solar} />
-                      </>
-                    ) : null}
-                  </div>
-                )
-              }}
-            />
-          }
-        />
-        {/* Lists the rendered series, so "Pris saknas" appears only with a stub. */}
-        <ChartLegend
-          itemSorter={seriesOrder}
-          content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
-        />
-        <Bar
-          dataKey="spot"
-          stackId="sek"
-          fill="var(--color-spot)"
-          minPointSize={minBarFor(data.map((d) => d.spot))}
-          {...seam}
-          isAnimationActive={false}
-        />
-        <Bar
-          dataKey="fees"
-          stackId="sek"
-          fill="var(--color-fees)"
-          radius={[4, 4, 0, 0]}
-          minPointSize={minBarFor(data.map((d) => d.fees))}
-          {...seam}
-          isAnimationActive={false}
-        />
-        {hasUnpriced ? (
-          <Bar
-            dataKey="unpriced"
-            stackId="sek"
-            fill="var(--color-unpriced)"
-            radius={[4, 4, 0, 0]}
-            minPointSize={minBarFor(data.map((d) => d.unpriced))}
-            isAnimationActive={false}
-          />
-        ) : null}
-      </BarChart>
-    </ChartFrame>
+    <BarChart
+      rows={data}
+      category={(r) => r.label}
+      series={series}
+      value={(r, key) => r[key as 'spot' | 'fees' | 'unpriced']}
+      yTickFormat={formatCount}
+      yIntegers
+      legend
+      label={m.charging_chart_title_cost()}
+      tooltip={(r) => {
+        if (r.unpriced !== null) {
+          return (
+            <div className="flex w-full flex-col gap-0.5">
+              <TooltipRow label={config.unpriced.label} color={config.unpriced.color} />
+              <SolarTooltipRows view={r.solar} />
+            </div>
+          )
+        }
+        if (r.spot === null || r.fees === null) return null
+        const total = formatSek(r.totalSek)
+        return (
+          <>
+            <TooltipRow label={config.spot.label} color={config.spot.color}>
+              {formatSek(r.spot)}
+            </TooltipRow>
+            <div className="flex w-full flex-col gap-0.5">
+              <TooltipRow label={config.fees.label} color={config.fees.color}>
+                {formatSek(r.fees)}
+              </TooltipRow>
+              <TooltipRow label={m.charging_chart_total()} strong>
+                {r.missingShare === null ? total : m.charging_cost_min({ total })}
+              </TooltipRow>
+              {r.missingShare === null ? null : (
+                <span className="text-muted-foreground text-xs">
+                  {m.charging_cost_partial_hint({ share: formatShare(r.missingShare) })}
+                </span>
+              )}
+              <SolarTooltipRows view={r.solar} />
+            </div>
+          </>
+        )
+      }}
+    />
   )
 }
 
@@ -244,17 +191,5 @@ function SolarTooltipRows({ view }: { view: SolarValueView }) {
         {unknown ? m.charging_solar_value_unknown_hint() : m.charging_solar_value_hint()}
       </span>
     </div>
-  )
-}
-
-function CountAxis() {
-  return (
-    <YAxis
-      width="auto"
-      tickLine={false}
-      tickMargin={4}
-      allowDecimals={false}
-      tickFormatter={(v) => formatCount(Number(v))}
-    />
   )
 }
