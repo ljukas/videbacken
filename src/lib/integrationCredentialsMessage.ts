@@ -1,7 +1,11 @@
 // Client-safe copy for GUI-set credentials (ADR-0026): labels, hints and what an error means, per source
 // and field. Same pattern as integrationHealthMessage.ts: Paraglide `m` plus dependency-free vocabulary only.
 import { getIntlLocale } from '~/lib/i18n/format'
-import { CREDENTIAL_FIELDS, type CredentialSource } from '~/lib/integrationCredentials'
+import {
+  CREDENTIAL_FIELDS,
+  type CredentialField,
+  type CredentialSource,
+} from '~/lib/integrationCredentials'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { m } from '~/paraglide/messages'
 
@@ -11,8 +15,17 @@ export function credentialsTitle(source: CredentialSource): string {
     : m.charging_credentials_title({ source: integrationSourceName(source) })
 }
 
-export function credentialFieldLabel(source: CredentialSource, field: string): string {
-  switch (`${source}.${field}`) {
+// `source.field` for every field of every source. The label and hint switches below have no `default`, so a
+// field added to `CREDENTIAL_FIELDS` is a compile error here until it has copy.
+type CredentialFieldKey = {
+  [S in CredentialSource]: `${S}.${CredentialField<S>}`
+}[CredentialSource]
+
+export function credentialFieldLabel<S extends CredentialSource>(
+  source: S,
+  field: CredentialField<S>,
+): string {
+  switch (`${source}.${field}` as CredentialFieldKey) {
     case 'zaptec.username':
       return m.charging_credentials_field_zaptec_username()
     case 'zaptec.password':
@@ -32,13 +45,14 @@ export function credentialFieldLabel(source: CredentialSource, field: string): s
       return m.charging_credentials_field_emaldo_appSecret()
     case 'gridTariff.facilityId':
       return m.charging_credentials_field_gridTariff_facilityId()
-    default:
-      return field
   }
 }
 
-export function credentialFieldHint(source: CredentialSource, field: string): string | undefined {
-  switch (`${source}.${field}`) {
+export function credentialFieldHint<S extends CredentialSource>(
+  source: S,
+  field: CredentialField<S>,
+): string | undefined {
+  switch (`${source}.${field}` as CredentialFieldKey) {
     case 'zaptec.username':
     case 'emaldo.user':
       return m.charging_credentials_hint_email()
@@ -51,7 +65,9 @@ export function credentialFieldHint(source: CredentialSource, field: string): st
       return m.charging_credentials_hint_emaldo_app()
     case 'gridTariff.facilityId':
       return m.charging_credentials_hint_facility()
-    default:
+    case 'zaptec.password':
+    case 'skoda.apiKey':
+    case 'emaldo.password':
       return undefined
   }
 }
@@ -78,7 +94,7 @@ export function suspectFieldsMessage(
   const known = (CREDENTIAL_FIELDS[source] as readonly string[]).filter((f) => fields.includes(f))
   if (known.length === 0) return null
   const names = new Intl.ListFormat(getIntlLocale(), { type: 'conjunction' }).format(
-    known.map((f) => credentialFieldLabel(source, f)),
+    known.map((f) => credentialFieldLabel(source, f as CredentialField<CredentialSource>)),
   )
   return m.charging_credentials_suspect({ fields: names })
 }

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { CREDENTIAL_FIELDS, CREDENTIAL_SOURCES } from '~/lib/integrationCredentials'
 import { m } from '~/paraglide/messages'
 import {
+  credentialFieldHint,
   credentialFieldLabel,
   credentialsTitle,
   invalidFieldMessage,
@@ -12,7 +13,18 @@ describe('credential copy', () => {
   test('every field of every source has a label', () => {
     for (const source of CREDENTIAL_SOURCES)
       for (const field of CREDENTIAL_FIELDS[source])
-        expect(credentialFieldLabel(source, field)).not.toBe('')
+        expect(credentialFieldLabel(source, field)).not.toBe(field)
+  })
+  test('hints exist for the fields that need explaining, not for plain secrets', () => {
+    expect(credentialFieldHint('zaptec', 'username')).toBe(m.charging_credentials_hint_email())
+    expect(credentialFieldHint('emaldo', 'appSecret')).toBe(
+      m.charging_credentials_hint_emaldo_app(),
+    )
+    expect(credentialFieldHint('skoda', 'homeCoordinates')).toBe(m.charging_credentials_hint_home())
+    expect(credentialFieldHint('gridTariff', 'facilityId')).toBe(
+      m.charging_credentials_hint_facility(),
+    )
+    expect(credentialFieldHint('zaptec', 'password')).toBeUndefined()
   })
   test('format fields get their own invalid message, the rest a shared one', () => {
     expect(invalidFieldMessage('skoda', 'vin')).toBe(m.charging_credentials_invalid_vin())
@@ -27,6 +39,9 @@ describe('credential copy', () => {
   test('suspect fields read as one sentence, in vocabulary order, unknown names dropped', () => {
     expect(suspectFieldsMessage('skoda', ['vin', 'apiKey', 'bogus'])).toBe(
       m.charging_credentials_suspect({ fields: 'API-nyckel och VIN' }),
+    )
+    expect(suspectFieldsMessage('emaldo', ['appId', 'password', 'user'])).toBe(
+      m.charging_credentials_suspect({ fields: 'Användarnamn, Lösenord och App-id' }),
     )
     expect(suspectFieldsMessage('skoda', [])).toBeNull()
     expect(suspectFieldsMessage('skoda', ['bogus'])).toBeNull()

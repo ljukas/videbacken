@@ -33,6 +33,10 @@ test('credential failures → update', () => {
     source: 'skoda',
     kind: 'update',
   })
+  expect(credentialLink({ ...base, state: 'stale', code: 'auth_failed' })).toEqual({
+    source: 'skoda',
+    kind: 'update',
+  })
 })
 test('forbidden is a credential problem only for Škoda', () => {
   expect(credentialLink({ ...base, source: 'zaptec', code: 'forbidden' })).toBeNull()
@@ -52,5 +56,6 @@ test('elpris never links; ok and plain outages never link', () => {
     credentialLink({ ...base, source: 'elpris', state: 'not_configured', code: 'not_configured' }),
   ).toBeNull()
   expect(credentialLink({ ...base, state: 'ok' })).toBeNull()
+  expect(credentialLink({ ...base, state: 'ok', adminDetail: detail(['vin']) })).toBeNull()
   expect(credentialLink({ ...base, code: 'unreachable' })).toBeNull()
 })
