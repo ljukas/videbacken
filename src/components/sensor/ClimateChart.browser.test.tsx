@@ -5,6 +5,7 @@ import { type SeriesPoint, toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS } from '~/lib/sensor/range'
 import { makeTimeAxis, type TimeAxis } from '~/lib/sensor/tickFormat'
 import type { SeriesBucket } from '~/lib/services/sensor'
+import { m } from '~/paraglide/messages'
 import {
   activeDots,
   centre,
@@ -528,6 +529,12 @@ test('the chart is one named Tab stop whose arrows walk the readings', async () 
   // Each step is announced with its card's content.
   expect(announced(root)).toContain(String(times[0]))
   expect(announced(root)).toContain('Fack 1')
+  // The hint names the group; the live region is polite and read whole.
+  const hint = document.getElementById(group.getAttribute('aria-describedby') ?? '')
+  expect(hint?.textContent).toBe(m.sensors_chart_keyboard_hint())
+  const live = root.querySelector('[data-chart-announce]')
+  expect(live?.getAttribute('aria-live')).toBe('polite')
+  expect(live?.getAttribute('aria-atomic')).toBe('true')
 })
 
 test('← from nothing starts at the last reading; Escape and Tab-out close the card', async () => {
@@ -544,7 +551,7 @@ test('← from nothing starts at the last reading; Escape and Tab-out close the 
   expect(tooltipText()).toBe('')
   await userEvent.keyboard('{ArrowRight}')
   await settle()
-  expect(tooltipText()).not.toBe('')
+  expect(header()).toBe(String(allTimes(devices)[0]))
   ;(document.activeElement as HTMLElement).blur()
   await settle()
   expect(tooltipText()).toBe('')
@@ -600,6 +607,7 @@ test('with every device hidden the keys do nothing', async () => {
   await userEvent.keyboard('{ArrowRight}{End}')
   await settle()
   expect(tooltipText()).toBe('')
+  expect(announced(root)).toBe('')
 })
 
 test('a mouse leaving the plot clears the keyboard’s announcement with the card', async () => {
@@ -621,4 +629,33 @@ test('a mouse leaving the plot clears the keyboard’s announcement with the car
   )
   await vi.waitFor(() => expect(tooltipText()).toBe(''))
   expect(announced(root)).toBe('')
+})
+
+test('→ after a hover continues from the hovered reading', async () => {
+  const devices = day()
+  const root = await renderChart(devices)
+  await hoverPlot(root)
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  const times = allTimes(devices)
+  const k = times.indexOf(Number(header()))
+  expect(k).toBeGreaterThanOrEqual(0)
+  focusChart(root)
+  await userEvent.keyboard('{ArrowRight}')
+  await settle()
+  expect(header()).toBe(String(times[k + 1]))
+})
+
+test('a mouse move after the keys shows the pointer’s time and clears the announcement', async () => {
+  const devices = day()
+  const root = await renderChart(devices)
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
+  focusChart(root)
+  await userEvent.keyboard('{Home}')
+  await settle()
+  expect(announced(root)).not.toBe('')
+  const first = header()
+  await hoverPlot(root)
+  await vi.waitFor(() => expect(header()).not.toBe(first))
+  expect(announced(root)).toBe('')
+  expect(allTimes(devices)).toContain(Number(header()))
 })
