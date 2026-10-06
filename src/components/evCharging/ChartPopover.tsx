@@ -2,6 +2,7 @@ import { Tooltip, useTooltip, useTooltipInPortal } from '@visx/tooltip'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { cn } from '~/lib/utils'
 
 // Tooltip sits above the mark so a fingertip doesn't cover it.
 const OFFSET_TOP = -34
@@ -137,10 +138,12 @@ export function ChartPopover({
   state,
   dataKey,
   children,
+  className,
 }: {
   state: { open: boolean; left?: number; top?: number; containerBounds: Bounds }
   dataKey?: string
   children: React.ReactNode
+  className?: string
 }) {
   const bounds = state.containerBounds
   // Rendered (closed) during SSR too, where there is no window.
@@ -168,7 +171,10 @@ export function ChartPopover({
       top={pageTop}
       offsetLeft={0}
       offsetTop={above ? OFFSET_TOP : OFFSET_BELOW}
-      className="pointer-events-none z-10 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-background text-xs shadow-md"
+      className={cn(
+        'pointer-events-none z-10 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-background text-xs shadow-md',
+        className,
+      )}
     >
       {children}
     </Tooltip>,

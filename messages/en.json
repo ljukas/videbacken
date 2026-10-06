@@ -871,5 +871,18 @@
   "energy_period_next_month": "Next month",
   "energy_period_prev_year": "Previous year",
   "energy_period_next_year": "Next year",
-  "energy_chart_select_hint": "Click a month to show it in the summary."
+  "energy_chart_select_hint": "Click a month to show it in the summary.",
+  "energy_flow_battery": "Battery",
+  "energy_flow_loss": "Loss",
+  "energy_flow_about_zero": "≈ 0",
+  "energy_flow_charge_level": "charge {from} → {to} %",
+  "energy_flow_car": "of which charging",
+  "energy_flow_arrow": "{from} → {to}",
+  "energy_flow_share_solar": "{share} of the solar",
+  "energy_flow_share_import": "{share} of the bought",
+  "energy_flow_share_load": "{share} of the consumption",
+  "energy_flow_loss_title": "Battery loss",
+  "energy_flow_loss_share": "{share} of what was charged",
+  "energy_flow_winter_hint": "Mostly the battery heating itself and standing by in the cold.",
+  "energy_flow_description": "Energy flows for the period. The values are also in the table below the diagram."
 }

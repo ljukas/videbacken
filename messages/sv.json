@@ -871,5 +871,18 @@
   "energy_period_next_month": "Nästa månad",
   "energy_period_prev_year": "Föregående år",
   "energy_period_next_year": "Nästa år",
-  "energy_chart_select_hint": "Klicka på en månad för att visa den i summeringen."
+  "energy_chart_select_hint": "Klicka på en månad för att visa den i summeringen.",
+  "energy_flow_battery": "Batteri",
+  "energy_flow_loss": "Förlust",
+  "energy_flow_about_zero": "≈ 0",
+  "energy_flow_charge_level": "laddnivå {from} → {to} %",
+  "energy_flow_car": "varav laddning",
+  "energy_flow_arrow": "{from} → {to}",
+  "energy_flow_share_solar": "{share} av solelen",
+  "energy_flow_share_import": "{share} av köpt el",
+  "energy_flow_share_load": "{share} av förbrukningen",
+  "energy_flow_loss_title": "Förlust i batteriet",
+  "energy_flow_loss_share": "{share} av det som laddades in",
+  "energy_flow_winter_hint": "Det mesta är batteriets egen uppvärmning och standby när det är kallt.",
+  "energy_flow_description": "Energiflöden för perioden. Värdena finns också i tabellen under diagrammet."
 }
