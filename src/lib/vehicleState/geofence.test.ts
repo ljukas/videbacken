@@ -114,3 +114,17 @@ test('formatHomePoint rounds to five decimals and round-trips through parseHomeP
   expect(formatHomePoint({ latitude: -0.000001, longitude: 180 })).toBe('-0.00000,180.00000')
   expect(parseHomePoint(formatHomePoint(HOME))).toEqual(HOME)
 })
+
+test.each([
+  [90, 180],
+  [-90, -180],
+  [89.999999, 179.999999],
+  [57.123456789, 11.987654321],
+  [0, 0],
+  [-33.86882, 151.20929],
+])('formatHomePoint(%s, %s) parses back to the five-decimal point', (latitude, longitude) => {
+  expect(parseHomePoint(formatHomePoint({ latitude, longitude }))).toEqual({
+    latitude: Number(latitude.toFixed(5)),
+    longitude: Number(longitude.toFixed(5)),
+  })
+})
