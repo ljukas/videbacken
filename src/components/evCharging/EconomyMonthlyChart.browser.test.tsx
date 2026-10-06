@@ -57,7 +57,7 @@ test('draws three bar series, a legend naming them, and no bars for months witho
     expect(text).toContain(m.charging_economy_series_actual())
     expect(text).toContain(m.charging_economy_series_optimal())
   })
-  expect(barSeries(screen.container)).toHaveLength(3)
+  await vi.waitFor(() => expect(barSeries(screen.container)).toHaveLength(3))
   // One comparable month x three series: the other eleven get no 0 kr bars.
   await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(3))
 })
@@ -75,7 +75,7 @@ test('a month whose sessions were all excluded draws one quiet stub and no krono
   await vi.waitFor(() => {
     expect(legendText(screen.container)).toContain(m.charging_economy_series_not_comparable())
   })
-  expect(barSeries(screen.container)).toHaveLength(4)
+  await vi.waitFor(() => expect(barSeries(screen.container)).toHaveLength(4))
   // Three kronor bars for September + exactly one stub for March.
   await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(4))
 })
@@ -105,7 +105,7 @@ test('a year with no stub months has no stub series or legend entry', async () =
   )
   await vi.waitFor(() => expect(legend(screen.container)).not.toBeNull())
   expect(legendText(screen.container)).not.toContain(m.charging_economy_series_not_comparable())
-  expect(barSeries(screen.container)).toHaveLength(3)
+  await vi.waitFor(() => expect(barSeries(screen.container)).toHaveLength(3))
 })
 
 test('a year with nothing comparable says so instead of an empty 0 kr chart', async () => {

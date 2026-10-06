@@ -57,7 +57,7 @@ test('draws the paid price as a bar and the month average as a line, both in the
     expect(legend).toContain(m.charging_economy_series_paid())
     expect(legend).toContain(m.charging_economy_series_avg())
   })
-  expect(barSeries(screen.container)).toHaveLength(1)
+  await vi.waitFor(() => expect(barSeries(screen.container)).toHaveLength(1))
   expect(lineSeries(screen.container)).toHaveLength(1)
   // Only the one month with a paid price has a bar.
   expect(bars(screen.container)).toHaveLength(1)
