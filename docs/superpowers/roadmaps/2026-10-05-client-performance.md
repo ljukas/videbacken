@@ -266,9 +266,11 @@ the visx primitives, so the session page gained 1 KB from regrouping.
 - **The tooltip** keeps its card look and rows but sits above the month (ChartPopover's mechanics), not beside the
   cursor. Focus no longer shows January by itself; the first → does.
 
-**Accepted drift, to review live:** y ticks may differ by a step (d3's nice ticks, though integer axes keep recharts'
-five), and a narrow chart's x labels thin greedily from the first while keeping the last, so the kept subset can be
-uneven (as recharts' `preserveStartEnd`).
+**Accepted drift, to review live:** y ticks may differ by a step (d3's nice ticks), and a narrow chart's x labels
+thin greedily from the first while keeping the last, so the kept subset can be uneven (as recharts'
+`preserveStartEnd`). 5a meant integer axes to keep recharts' five ticks, but they didn't: d3 gave them 6-7. They
+match recharts only since 5b's fix (`a517922`, see [step 5b notes](#step-5b-notes)), which also restores the
+charging charts' integer axes.
 
 **Bones not recaptured in 5a.** The chart frames keep their heights (260 px; the hour chart 220), with the legend
 inside the frame as before, so the captured skeletons still match the page's layout. A recapture from local data
@@ -286,15 +288,27 @@ charts' sr-only nodes into dot bones, so it is left for 5c, with `.sr-only` excl
 
 ## Step 5b notes
 
-**Baseline** (`bun run bundle:measure` on `main` at `3862039`, KB gz each page adds beyond the entry + shell):
+**Bundle** (`bun run bundle:measure`, KB gz each page adds beyond the entry + shell). The plan's baseline is `main` at
+`3862039`. #112 (the energy flow diagram, `2745e0f`) merged during the step and grew `/energy`'s own chunk, so the PR is
+also measured against `2745e0f`:
 
-| Page | Before 5b |
-|---|---:|
-| entry + shell | 257 |
-| `/energy` | 149 (chart 81, energy 17, line 9, step 5, TotalsTiles 5) |
-| `/sensors` | 124 (chart 81, recharts until 5c) |
+| Page | `main` (`3862039`) | `main` (`2745e0f`) | 5b |
+|---|---:|---:|---:|
+| entry + shell | 257 | 257 | 257 |
+| `/energy` | 149 (chart 81, energy 17, line 9, step 5, TotalsTiles 5) | 155 (chart 81, energy 25, line 9, step 5, format 5) | 72 (energy 16, ChartPopover 12, line 9, MetricToggle 5, format 5) |
+| `/charging` | 83 | 83 | 83 |
+| `/charging/economy` | 76 | 77 | 77 |
+| `/charging/patterns` | 83 | 84 | 85 |
+| `/charging/sessions/$id` | 65 | 65 | 65 |
+| `/sensors` | 124 (chart 81) | 124 (chart 81) | 121 (sensors 90: recharts now in the page's own chunk, until 5c) |
 
-`/energy` packages: `boneyard-js`. The target is the recharts `chart` chunk (81) leaving `/energy`.
+The recharts `chart` chunk (81) is gone from `/energy`: 155 → 72 KB gz against `2745e0f` (−83). `/energy`'s packages
+line stays `boneyard-js`. The charging pages move by at most 1 KB, from the bar module's new options.
+
+**Integer y axes reproduce recharts' ticks again.** The fix `a517922` ports recharts' nice-tick rule (five ticks, no
+decimals) for `yIntegers` axes. The Energi y ticks matched `main` live for all three metrics at 1280, 768 and 375 px:
+Solel 0-1 000 by 250, Nät −650-1 950 by 650, Förbrukning 0-2 000 by 500. The fix also restores recharts' ticks on the
+charging charts with integer axes, which 5a had changed to d3's 6-7.
 
 **Accepted differences (owner-approved 2026-10-06; state them in the PR):**
 1. Hovering a month's label now outlines the month and opens its card (the label was clickable but showed nothing).
@@ -303,6 +317,25 @@ charts' sr-only nodes into dot bones, so it is left for 5c, with `.sr-only` excl
 3. A mouse click focuses the chart group (the ring shows for keyboard focus only, `focus-visible`). The old
    `onMouseDown preventDefault` only kept recharts' keyboard mode off January.
 4. The screen-reader announcement starts with the short label ("apr.") before the card's "April ...".
+
+**Live check** (local data, 1280, 768 and 375 px, side by side with `main`): the bars, legend, colours, ticks, tick
+font (13 px), card rows and their 4 px spacing, the gap line's wrapping, Nät's export below the zero line, selection by
+click, label and Enter, and the empty-year state match. A month without readings can't be selected, and from the
+keyboard it gets the dashed outline. At 375 px the labels are initials and the first and last months' cards and
+outlines stay inside the window. The x labels sit about 4 px lower and the plot about 2 px further right than
+recharts' (the shared axis margins from 5a).
+
+**Follow-ups found in review and the live check (not in 5b):**
+- Space right after Tab scrolls the page, because nothing is outlined yet. recharts selected January there. The
+  first → outlines January, as in 5a. Decide whether Space should do nothing instead.
+- The zero line is painted over the bars. Hide it when 0 is outside a pinned `yDomain`.
+- Measure the full label widths only when `shortCategory` is set (HourOfDay measures 24 labels it never uses).
+- `X_AXIS_H` is fixed at 30 px, which fits 13 px ticks. Revisit it in the app-wide type pass.
+- An outline left over from a shrunk `rows` can reappear if the rows grow back (cosmetic).
+- Tests to add: blur clearing the outline, Enter and Space with no selection, the `e.repeat` guard, and a floored
+  negative segment in a diverging stack.
+- The group's name repeats the section heading. It could name the metric too.
+- Bones are not recaptured in 5b (as in 5a). The recapture is in 5c.
 
 ## Step 7 notes
 
