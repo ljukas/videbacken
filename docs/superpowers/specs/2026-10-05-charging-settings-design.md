@@ -508,7 +508,7 @@ text, so the state never relies on colour alone.
 | `stored` | "Sparad" / "Saved" | "Sparad i appen {date}" / "Saved in the app {date}" and a **Byt** / **Replace** button |
 | `env` | "Miljövariabel" / "Environment variable" | "Används från `{ENV_VAR}`" / "Using `{ENV_VAR}`" and an **Ange i appen** / **Set in the app** button |
 | `missing` | "Inte angiven" / "Not set" | the input, shown directly |
-| source unreadable | "Kan inte läsas" / "Can't be read" (amber, with an icon) | the input, shown directly |
+| source unreadable | "Går inte att läsa" / "Can't be read" (amber, with an icon) | the input, shown directly |
 
 - **Every `env` field names its variable**, for every source: Zaptec (`ZAPTEC_USERNAME`, `ZAPTEC_PASSWORD`), Škoda,
   Emaldo (the four `EMALDO_*`) and the grid card's facility ID (`GRID_FACILITY_ID`) (owner, 2026-10-06).
@@ -528,7 +528,7 @@ text, so the state never relies on colour alone.
   - For an `env` field, add: "Ett värde som sparas här går före miljövariabeln." / "A value saved here overrides the
     environment variable."
   - A field's format hint (VIN, coordinates, facility ID) also moves above the input.
-  - Each button has its own accessible name: "Byt VIN" / "Replace VIN".
+  - Each button has its own accessible name, "{action}, {field}": "Byt, VIN" / "Replace, VIN".
 - **Only open inputs are submitted.** A hidden field keeps its value, so the dialog-level "Lämna ett fält tomt för
   att behålla det som är sparat" line goes away. "Spara" with nothing open, or only empty open inputs, is refused as
   today ("Fyll i minst ett fält").
@@ -552,6 +552,20 @@ text, so the state never relies on colour alone.
   - the remove confirm's consequence line, with env and without;
   - the env var name shown for an `env` field.
 - **Live check:** at desktop, tablet and mobile widths.
+
+**As built (3c-1):**
+
+- Action buttons are named "{action}, {field}" (WCAG 2.5.3, label in name).
+- `status` returns `envSet` per field (a names-only boolean) and the client-safe `CREDENTIAL_ENV_VARS`.
+- The remove confirm's consequence covers the required fields (all but Škoda's optional home position) with three
+  outcomes: falls back to the environment variables; "Miljövariablerna räcker inte, så källan slutar synka."; stops
+  syncing. An unreadable source gets a source-only sentence. The consequence is part of the dialog's accessible
+  description.
+- The unreadable badge reads "Går inte att läsa" / "Can't be read".
+- The open input's description starts with its state badge. Only open inputs are sent. With every field closed,
+  focus starts on the first reveal button.
+- `TextField` gained optional `labelledBy` and `descriptionPlacement` props; other forms are unchanged.
+- The grid card's `env` status names `GRID_FACILITY_ID` in a `code` element.
 
 ### 3c-2 — the home-position map picker
 
