@@ -22,7 +22,7 @@ import { orpc } from '~/lib/orpc/client'
 import { loadRouteData } from '~/lib/query/routeData'
 import { colorForIndex, type DeviceSeries, toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS, SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
-import { makeTickFormatter } from '~/lib/sensor/tickFormat'
+import { makeTickFormatter, makeTimeAxis } from '~/lib/sensor/tickFormat'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
@@ -130,6 +130,7 @@ function SensorsPage() {
   const buckets = series?.buckets ?? []
   const bucketSec = series?.bucketSec ?? 0
   const formatTick = useMemo(() => makeTickFormatter(shownRange, getIntlLocale()), [shownRange])
+  const timeAxis = useMemo(() => makeTimeAxis(shownRange, getIntlLocale()), [shownRange])
 
   // Each metric gets its own per-device series (with outage breaks inserted by
   // toDeviceSeries). Colors derive from the FULL roster position (stable order
@@ -232,7 +233,13 @@ function SensorsPage() {
               fallbackHeight="260px"
             >
               <ChartBody ready={chartsReady} stale={seriesStale} hasData={hasData}>
-                <ClimateChart devices={tempDevices} unit="°C" formatTick={formatTick} />
+                <ClimateChart
+                  devices={tempDevices}
+                  unit="°C"
+                  formatTick={formatTick}
+                  timeAxis={timeAxis}
+                  label={m.sensors_temp_chart_title()}
+                />
               </ChartBody>
             </SectionSkeleton>
           </ChartSection>
@@ -244,7 +251,13 @@ function SensorsPage() {
               fallbackHeight="260px"
             >
               <ChartBody ready={chartsReady} stale={seriesStale} hasData={hasData}>
-                <ClimateChart devices={humDevices} unit="%" formatTick={formatTick} />
+                <ClimateChart
+                  devices={humDevices}
+                  unit="%"
+                  formatTick={formatTick}
+                  timeAxis={timeAxis}
+                  label={m.sensors_humidity_chart_title()}
+                />
               </ChartBody>
             </SectionSkeleton>
           </ChartSection>

@@ -2,11 +2,13 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { type SeriesPoint, toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS } from '~/lib/sensor/range'
+import { makeTimeAxis, type TimeAxis } from '~/lib/sensor/tickFormat'
 import type { SeriesBucket } from '~/lib/services/sensor'
 import {
   activeDots,
   centre,
   chartSvg,
+  gridLines,
   hoverCursor,
   legendLabels,
   lineCurves,
@@ -14,7 +16,10 @@ import {
   parkPointer,
   readingDots,
   settle,
+  tapOn,
+  tooltipNodes,
   tooltipText,
+  xTickLabels,
   yTickLabels,
 } from '~test/browser/chartDom'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
@@ -37,11 +42,20 @@ const device = (
 // Every test renders through here, so a prop the chart gains changes one place.
 async function renderChart(
   devices: ClimateChartDevice[],
-  { formatTick = (t: number) => String(t) }: { formatTick?: (t: number) => string } = {},
+  {
+    formatTick = (t: number) => String(t),
+    timeAxis = makeTimeAxis('24h', 'sv-SE'),
+  }: { formatTick?: (t: number) => string; timeAxis?: TimeAxis } = {},
 ) {
   const { screen } = await renderWithProviders(
     <div style={{ width: 600, height: 300 }}>
-      <ClimateChart devices={devices} unit="°C" formatTick={formatTick} />
+      <ClimateChart
+        devices={devices}
+        unit="°C"
+        formatTick={formatTick}
+        timeAxis={timeAxis}
+        label="Temperatur"
+      />
     </div>,
   )
   return screen.container
@@ -245,7 +259,8 @@ test('a single hover lists every visible sensor at its nearest reading, with the
     expect(tip).toContain('Fack 3')
     expect((tip.match(/°C/g) ?? []).length).toBe(2)
     expect(hoverCursor(root)).not.toBeNull()
-    expect(activeDots(root).length).toBeGreaterThan(0)
+    // One dot per card row (accepted difference 2).
+    expect(activeDots(root)).toHaveLength(2)
   })
 })
 
@@ -278,6 +293,8 @@ test('with every device hidden there is no line and no card, and the legend keep
           ]}
           unit="°C"
           formatTick={(t) => String(t)}
+          timeAxis={makeTimeAxis('24h', 'sv-SE')}
+          label="Temperatur"
         />
       </div>
     </QueryClientProvider>
@@ -298,4 +315,143 @@ test('with every device hidden there is no line and no card, and the legend keep
   await vi.waitFor(() => expect(lineCurves(root)).toHaveLength(1))
   await hoverPlot(root)
   await vi.waitFor(() => expect(tooltipText()).toContain('Visible one'))
+})
+
+// Two sensors a day long, reporting every 2 h on different minutes (the 24 h shape).
+const day = () => {
+  const start = new Date('2026-08-02T10:20:00').getTime()
+  return [
+    device(
+      'a',
+      Array.from({ length: 12 }, (_, i) => ({ t: start + i * 2 * HOUR, a: 20 + (i % 3) * 0.2 })),
+      { displayName: 'Fack 1' },
+    ),
+    device(
+      'b',
+      Array.from({ length: 12 }, (_, i) => ({
+        t: start + i * 2 * HOUR + 41 * MIN,
+        b: 5 - (i % 4),
+      })),
+      { displayName: 'Fack 3' },
+    ),
+  ]
+}
+
+test('the 24 h axis labels round hours', async () => {
+  const root = await renderChart(day())
+  await vi.waitFor(() => expect(xTickLabels(root).length).toBeGreaterThan(2))
+  for (const label of xTickLabels(root)) {
+    const [h, m] = label.split(/[:.]/).map(Number)
+    expect(m).toBe(0)
+    expect(h % 3).toBe(0)
+  }
+})
+
+test('a hover puts one dot on each card row’s reading', async () => {
+  const root = await renderChart(day())
+  await hoverPlot(root)
+  await vi.waitFor(() => {
+    expect(tooltipText()).toContain('Fack 1')
+    expect(tooltipText()).toContain('Fack 3')
+    expect(activeDots(root)).toHaveLength(2)
+  })
+})
+
+test('a sensor silent around the hovered time is left out of the card and gets no dot', async () => {
+  const [a, b] = day()
+  // b stops after its first four readings; the plot's centre is hours later.
+  const root = await renderChart([a, { ...b, points: b.points.slice(0, 4) }])
+  await hoverPlot(root)
+  await vi.waitFor(() => {
+    expect(tooltipText()).toContain('Fack 1')
+    expect(tooltipText()).not.toContain('Fack 3')
+    expect(activeDots(root)).toHaveLength(1)
+  })
+})
+
+test('a tap keeps the card; the mouse leaving the plot closes it', async () => {
+  const root = await renderChart(day())
+  await vi.waitFor(() => expect(root.querySelector('[data-hover-overlay]')).not.toBeNull())
+  const overlay = () => root.querySelector('[data-hover-overlay]') as Element
+  tapOn(root, overlay)
+  await vi.waitFor(() => expect(tooltipText()).toContain('Fack 1'))
+  // A lifted finger keeps it.
+  // React's onPointerLeave listens for pointerout (relatedTarget outside), not a dispatched pointerleave.
+  const leave = (pointerType: string) =>
+    overlay().dispatchEvent(
+      new PointerEvent('pointerout', { bubbles: true, pointerType, relatedTarget: document.body }),
+    )
+  leave('touch')
+  await new Promise((r) => setTimeout(r, 150))
+  expect(tooltipText()).toContain('Fack 1')
+  // A mouse leaving closes it, and the hover line goes with it.
+  await hoverPlot(root)
+  leave('mouse')
+  await vi.waitFor(() => {
+    expect(tooltipText()).toBe('')
+    expect(hoverCursor(root)).toBeNull()
+  })
+})
+
+test('every device hidden: the time axis keeps its ticks, with no y labels and no grid', async () => {
+  const root = await renderChart(day().map((d) => ({ ...d, hidden: true })))
+  await vi.waitFor(() => expect(xTickLabels(root).length).toBeGreaterThan(2))
+  expect(yTickLabels(root)).toEqual([])
+  expect(gridLines(root)).toHaveLength(0)
+})
+
+// A re-render with new data, as a poll's refetch does. renderWithProviders
+// wraps the first render in the provider, so the rerender wraps it too: the
+// same tree, so the chart keeps its state instead of remounting.
+async function renderRefetchable(devices: ClimateChartDevice[], formatTick: (t: number) => string) {
+  const queryClient = makeTestQueryClient()
+  const ui = (ds: ClimateChartDevice[]) => (
+    <div style={{ width: 600, height: 300 }}>
+      <ClimateChart
+        devices={ds}
+        unit="°C"
+        formatTick={formatTick}
+        timeAxis={makeTimeAxis('24h', 'sv-SE')}
+        label="Temperatur"
+      />
+    </div>
+  )
+  const { screen } = await renderWithProviders(ui(devices), { queryClient })
+  return {
+    root: screen.container,
+    rerender: (ds: ClimateChartDevice[]) =>
+      screen.rerender(<QueryClientProvider client={queryClient}>{ui(ds)}</QueryClientProvider>),
+  }
+}
+
+test('a refetch that adds a reading keeps the open card on its time', async () => {
+  const devices = day()
+  const { root, rerender } = await renderRefetchable(devices, (t) => new Date(t).toISOString())
+  await hoverPlot(root)
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  const header = tooltipNodes()[0]?.firstElementChild?.textContent
+  expect(header).toBeTruthy()
+  const [a, b] = devices
+  const later = a.points[a.points.length - 1].t + 2 * HOUR
+  await rerender([{ ...a, points: [...a.points, { t: later, a: 21 }] }, b])
+  await new Promise((r) => setTimeout(r, 150))
+  expect(tooltipNodes()[0]?.firstElementChild?.textContent).toBe(header)
+})
+
+test('when the data moves away from an open card, no card or hover line is left', async () => {
+  const devices = day()
+  const { root, rerender } = await renderRefetchable(devices, (t) => String(t))
+  await hoverPlot(root)
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  // A range switch: the same sensors, readings a year earlier.
+  const shifted = devices.map((d) => ({
+    ...d,
+    points: d.points.map((p) => ({ ...p, t: p.t - 365 * 24 * HOUR })),
+  }))
+  await rerender(shifted)
+  await vi.waitFor(() => {
+    expect(tooltipText()).toBe('')
+    expect(hoverCursor(root)).toBeNull()
+    expect(activeDots(root)).toHaveLength(0)
+  })
 })
