@@ -171,6 +171,22 @@
   "charging_home_search_label": "Sök adress",
   "charging_home_search": "Sök",
   "charging_home_search_hits": "Träffar",
+  "charging_home_search_hit_count": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} träff",
+        "countPlural=other": "{countFormatted} träffar"
+      }
+    }
+  ],
+  "charging_home_searching": "Söker…",
+  "charging_home_locating": "Hämtar position…",
   "charging_home_search_empty": "Inga träffar. Prova en annan stavning eller lägg till orten.",
   "charging_home_search_unavailable": "Adressökningen fungerar inte just nu. Klicka på kartan eller skriv koordinaterna.",
   "charging_home_search_attribution": "Adresser från OpenStreetMap",

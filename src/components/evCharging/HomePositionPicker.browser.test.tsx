@@ -74,6 +74,7 @@ function Harness({ initial = '', disabled = false }: { initial?: string; disable
       >
         <input aria-label="coords" value={value} onChange={(e) => setValue(e.target.value)} />
       </HomePositionPicker>
+      <button type="submit">submit</button>
     </form>
   )
 }
@@ -84,6 +85,9 @@ const deferred = <T,>() => {
   })
   return { promise, resolve }
 }
+
+// One animation frame: lets pending effects and state updates settle.
+const nextFrame = () => new Promise((r) => requestAnimationFrame(r))
 
 beforeEach(() => {
   homePositionFn.mockReset().mockResolvedValue(null)
@@ -111,11 +115,18 @@ test('opens on the saved pin', async () => {
 test('a pick before the saved pin arrives is kept', async () => {
   const saved = deferred<{ latitude: number; longitude: number }>()
   homePositionFn.mockReturnValue(saved.promise)
-  const { screen } = await renderWithProviders(<Harness />)
+  const { screen, queryClient } = await renderWithProviders(<Harness />)
   await screen.getByRole('button', { name: 'fake map click' }).click()
   saved.resolve({ latitude: 59.3293, longitude: 18.0686 })
-  await vi.waitFor(() => expect(homePositionFn).toHaveBeenCalled())
-  await new Promise((r) => setTimeout(r, 50))
+  // The saved pin has landed in the cache; give the seed effect a frame to (not) run.
+  await vi.waitFor(() =>
+    expect(queryClient.getQueryData(['credentials', 'homePosition'])).toEqual({
+      latitude: 59.3293,
+      longitude: 18.0686,
+    }),
+  )
+  await nextFrame()
+  await nextFrame()
   await expect.element(screen.getByLabelText('coords')).toHaveValue('57.12346,11.98765')
 })
 
@@ -167,11 +178,75 @@ test('Enter searches and never submits the form; picking a hit moves the pin', a
   await expect.element(search).toHaveFocus()
 })
 
+test('pressing Sök again on the same text retries after a failure', async () => {
+  searchFn.mockRejectedValueOnce(new ORPCError('GEOCODER_UNAVAILABLE', { defined: true }))
+  searchFn.mockResolvedValue([
+    { label: 'Storgatan 1, Exempelby', latitude: 57.7, longitude: 11.97 },
+  ])
+  const { screen } = await renderWithProviders(<Harness />)
+  await screen.getByLabelText(m.charging_home_search_label()).fill('Storgatan 1')
+  const search = screen.getByRole('button', { name: m.charging_home_search(), exact: true })
+  await search.click()
+  await expect.element(screen.getByText(m.charging_home_search_unavailable())).toBeVisible()
+  await search.click()
+  await expect.element(screen.getByRole('button', { name: 'Storgatan 1, Exempelby' })).toBeVisible()
+  expect(searchFn).toHaveBeenCalledTimes(2)
+})
+
+test('results and errors are announced through live regions', async () => {
+  searchFn.mockResolvedValueOnce([
+    { label: 'A', latitude: 57.7, longitude: 11.97 },
+    { label: 'B', latitude: 59.1, longitude: 17.2 },
+  ])
+  const { screen } = await renderWithProviders(<Harness />)
+  const field = screen.getByLabelText(m.charging_home_search_label())
+  const button = screen.getByRole('button', { name: m.charging_home_search(), exact: true })
+  await field.fill('Storgatan 1')
+  await button.click()
+  await expect
+    .element(
+      screen
+        .getByRole('status')
+        .filter({ hasText: m.charging_home_search_hit_count({ count: 2 }) }),
+    )
+    .toBeInTheDocument()
+
+  searchFn.mockRejectedValue(new ORPCError('GEOCODER_UNAVAILABLE', { defined: true }))
+  await field.fill('Någonstans')
+  await button.click()
+  await expect
+    .element(screen.getByRole('alert').filter({ hasText: m.charging_home_search_unavailable() }))
+    .toBeInTheDocument()
+
+  searchFn.mockResolvedValue([])
+  await field.fill('Ingenstans')
+  await button.click()
+  await expect
+    .element(screen.getByRole('status').filter({ hasText: m.charging_home_search_empty() }))
+    .toBeInTheDocument()
+})
+
+test('Sök stays enabled while a search is pending, showing a busy label', async () => {
+  const pending = deferred<never[]>()
+  searchFn.mockReturnValue(pending.promise)
+  const { screen } = await renderWithProviders(<Harness />)
+  await screen.getByLabelText(m.charging_home_search_label()).fill('Storgatan 1')
+  await screen.getByRole('button', { name: m.charging_home_search(), exact: true }).click()
+  const busy = screen.getByRole('button', { name: m.charging_home_searching() })
+  await expect.element(busy).toBeEnabled()
+  await expect.element(busy).toHaveAttribute('aria-busy', 'true')
+  await busy.click()
+  expect(searchFn).toHaveBeenCalledTimes(1)
+  pending.resolve([])
+  await expect.element(screen.getByText(m.charging_home_search_empty())).toBeVisible()
+})
+
 test('Sök with fewer than two characters does nothing', async () => {
   const { screen } = await renderWithProviders(<Harness />)
   await screen.getByLabelText(m.charging_home_search_label()).fill(' a ')
   await screen.getByRole('button', { name: m.charging_home_search(), exact: true }).click()
-  await new Promise((r) => setTimeout(r, 50))
+  await nextFrame()
+  await nextFrame()
   expect(searchFn).not.toHaveBeenCalled()
 })
 
@@ -239,11 +314,13 @@ test('a map that fails to start shows the same note', async () => {
 })
 
 test('disabled shows only the coordinates and fetches nothing', async () => {
-  const { screen } = await renderWithProviders(<Harness disabled />)
+  const { screen, queryClient } = await renderWithProviders(<Harness disabled />)
   await expect.element(screen.getByLabelText('coords')).toBeVisible()
   expect(screen.getByLabelText(m.charging_home_search_label()).elements()).toHaveLength(0)
   expect(screen.getByTestId('map').elements()).toHaveLength(0)
-  await new Promise((r) => setTimeout(r, 50))
+  await nextFrame()
+  await nextFrame()
+  expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
   expect(homePositionFn).not.toHaveBeenCalled()
 })
 

@@ -171,6 +171,22 @@
   "charging_home_search_label": "Search for an address",
   "charging_home_search": "Search",
   "charging_home_search_hits": "Matches",
+  "charging_home_search_hit_count": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{countFormatted} match",
+        "countPlural=other": "{countFormatted} matches"
+      }
+    }
+  ],
+  "charging_home_searching": "Searching…",
+  "charging_home_locating": "Finding your location…",
   "charging_home_search_empty": "No matches. Try another spelling or add the town.",
   "charging_home_search_unavailable": "Address search isn't working right now. Click the map or type the coordinates.",
   "charging_home_search_attribution": "Addresses from OpenStreetMap",

@@ -133,8 +133,10 @@ function EnabledPicker({
   })
   const runSearch = () => {
     const q = searchRef.current?.value.trim() ?? ''
-    if (q.length < 2) return
-    setQuery(q)
+    if (q.length < 2 || hits.isFetching) return
+    // The same text again is a retry: an equal query string would not re-run the query.
+    if (q === query) void hits.refetch()
+    else setQuery(q)
   }
   const pickHit = (hit: { latitude: number; longitude: number }) => {
     pick({ latitude: hit.latitude, longitude: hit.longitude }, PICK_ZOOM)
@@ -143,6 +145,7 @@ function EnabledPicker({
   }
 
   const locate = () => {
+    if (locating) return
     setLocationError(null)
     if (!('geolocation' in navigator)) {
       setLocationError('unavailable')
@@ -192,19 +195,26 @@ function EnabledPicker({
           <Button
             type="button"
             variant="outline"
-            className="shrink-0 pointer-coarse:h-11"
+            className="pointer-coarse:h-11 shrink-0"
             onClick={runSearch}
-            disabled={hits.isFetching}
+            aria-busy={hits.isFetching}
           >
             <SearchIcon aria-hidden />
-            {m.charging_home_search()}
+            {hits.isFetching ? m.charging_home_searching() : m.charging_home_search()}
           </Button>
         </div>
-        {query !== null && hits.isError ? (
-          <p className="text-muted-foreground text-sm">{m.charging_home_search_unavailable()}</p>
-        ) : query !== null && hits.data?.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{m.charging_home_search_empty()}</p>
-        ) : query !== null && hits.data ? (
+        {/* Always mounted, so a screen reader announces what appears inside. */}
+        <div role="alert" className="text-muted-foreground text-sm empty:hidden">
+          {query !== null && hits.isError ? m.charging_home_search_unavailable() : null}
+        </div>
+        <div role="status" className="text-muted-foreground text-sm empty:hidden">
+          {query !== null && !hits.isError && hits.data
+            ? hits.data.length === 0
+              ? m.charging_home_search_empty()
+              : m.charging_home_search_hit_count({ count: hits.data.length })
+            : null}
+        </div>
+        {query !== null && !hits.isError && hits.data && hits.data.length > 0 ? (
           <div className="flex flex-col gap-1">
             <ul aria-label={m.charging_home_search_hits()} className="flex flex-col">
               {hits.data.map((hit) => (
@@ -212,7 +222,7 @@ function EnabledPicker({
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-auto min-h-9 w-full justify-start whitespace-normal py-1.5 text-left pointer-coarse:min-h-11"
+                    className="h-auto min-h-9 pointer-coarse:min-h-11 w-full justify-start whitespace-normal py-1.5 text-left"
                     onClick={() => pickHit(hit)}
                   >
                     <MapPinIcon aria-hidden className="shrink-0" />
@@ -248,21 +258,21 @@ function EnabledPicker({
           size="sm"
           className="pointer-coarse:h-11"
           onClick={locate}
-          disabled={locating}
+          aria-busy={locating}
         >
           <LocateFixedIcon aria-hidden />
-          {m.charging_home_use_location()}
+          {locating ? m.charging_home_locating() : m.charging_home_use_location()}
         </Button>
-        {locationError ? (
-          <p className="text-muted-foreground text-sm">
-            {locationError === 'denied'
-              ? m.charging_home_location_denied()
-              : m.charging_home_location_unavailable()}
-          </p>
-        ) : null}
+        <div role="status" className="text-muted-foreground text-sm empty:hidden">
+          {locationError === 'denied'
+            ? m.charging_home_location_denied()
+            : locationError === 'unavailable'
+              ? m.charging_home_location_unavailable()
+              : null}
+        </div>
       </div>
       {children}
-      <p aria-live="polite" className="sr-only">
+      <p role="status" className="sr-only">
         {announcement}
       </p>
     </div>
