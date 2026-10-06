@@ -517,7 +517,7 @@ text, so the state never relies on colour alone.
   the button opens the "lat,lon" input and keeps the same label. In 3c-2 it opens the picker.
 - **Footer** (from the mockup): with no field open, the footer shows "Stäng" and a disabled "Spara"; once a field is
   open, it shows "Avbryt" and an enabled "Spara".
-- **The remove confirm names the stored fields** ("De sparade uppgifterna för Škoda (API-nyckel, VIN) tas bort.").
+- **The remove confirm names the stored fields** ("De sparade uppgifterna för Škoda (API-nyckel, VIN) tas bort."); an unreadable source is named without fields.
 - **The env var name** comes from a client-safe copy of the field → env var map (vocabulary only: names, never
   values). The server-only `src/lib/credentials/env.ts` keeps reading `process.env`. A test pins the two maps to each
   other.
@@ -536,10 +536,14 @@ text, so the state never relies on colour alone.
 - **Server field errors** (`INVALID_FIELD`, `REENTER_ALL_FIELDS`) open the named field if it is closed, then show the
   error below its input. Red text and borders stay reserved for errors.
 - **The suspect line** ("Fungerade inte vid senaste synken") stays under the badge row, in red text, as today.
-- **"Ta bort sparade uppgifter"** stays per source. Its confirm adds what happens next:
-  - "Appen använder miljövariablerna igen." / "The app falls back to the environment variables." when any of the
-    source's fields has an env value;
-  - otherwise "Källan slutar synka." / "This source stops syncing."
+- **"Ta bort sparade uppgifter"** stays per source. Its confirm adds what happens next, judged over the required
+  fields (all but Škoda's optional home position):
+  - every required field has an env value (`envSet`): "Appen använder miljövariablerna igen." / "The app falls back to
+    the environment variables." (grid: "…miljövariabeln igen.");
+  - some do: "Miljövariablerna räcker inte, så källan slutar synka." / "The environment variables are not enough, so
+    the source stops syncing.";
+  - none: "Källan slutar synka." / "This source stops syncing." (grid: "Månadskollen hoppas över.");
+  - an unreadable source gets the source-only sentence instead.
 - **VIN hint:** "17 tecken (inte I, O eller Q). Finns i MyŠkoda-appen under Inspect → Car details." /
   "17 characters (no I, O or Q). In the MyŠkoda app under Inspect → Car details." (owner, 2026-10-06; the app's
   own English menu names, kept verbatim in both languages).
@@ -549,14 +553,14 @@ text, so the state never relies on colour alone.
   - only open inputs are sent;
   - `INVALID_FIELD` opens a closed field;
   - an unreadable source opens every field;
-  - the remove confirm's consequence line, with env and without;
+  - the remove confirm's three outcomes, and the unreadable sentence;
   - the env var name shown for an `env` field.
 - **Live check:** at desktop, tablet and mobile widths.
 
 **As built (3c-1):**
 
 - Action buttons are named "{action}, {field}" (WCAG 2.5.3, label in name).
-- `status` returns `envSet` per field (a names-only boolean) and the client-safe `CREDENTIAL_ENV_VARS`.
+- `status` returns `envSet`; the client reads env var names from `CREDENTIAL_ENV_VARS`.
 - The remove confirm's consequence covers the required fields (all but Škoda's optional home position) with three
   outcomes: falls back to the environment variables; "Miljövariablerna räcker inte, så källan slutar synka."; stops
   syncing. An unreadable source gets a source-only sentence. The consequence is part of the dialog's accessible
