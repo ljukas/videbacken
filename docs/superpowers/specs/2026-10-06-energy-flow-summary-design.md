@@ -129,8 +129,10 @@ mockup's numbers are the starting point:
 - On the narrow layout the port offsets were tuned for a 146 px node and scale by k = nw ÷ 146, so the tablet
   layout (≈ 754 px) keeps the arrows apart.
 - **Arrows**: a cubic Bézier from a port on the source's side to just outside the target's port, each end leaving
-  along its side's normal; the control distance is a share of the distance along that axis (0.5 by default;
-  Solel → Förbrukning on the narrow layout 0.9 / 0.25 so it passes under the battery). A 9 px triangle arrowhead
+  along its side's normal; the control distance is a share of the distance along that axis (0.5 by default).
+  Solel → Förbrukning on the narrow layout leaves at −28·k, enters at −58·k and uses 1 / 0.15: it runs straight
+  down beside the battery and turns late, so it passes under it. The mockup's −22·k / −52·k and 0.9 / 0.25 cut
+  through the battery's corner at card widths up to ≈ 435 px (every phone). A 9 px triangle arrowhead
   sits on the target's edge. No arrow passes through a node, and no two arrows cross, at 324, 754 and 1006 px, with
   one exception: Batteri → Såld el crosses Solel → Förbrukning. With the in nodes on one side and the out nodes on
   the other, Solel → Förbrukning separates the battery from Såld el, so no routing inside the box avoids it. That
