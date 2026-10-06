@@ -10,15 +10,20 @@ import { m } from '~/paraglide/messages'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
 import { type CredentialStatus, CredentialsDialog } from './CredentialsDialog'
 import { formatDate } from './format'
+import type { HomePositionMapProps } from './HomePositionMap'
 
 // Mock the oRPC client so a save or remove records its input (or fails on
 // demand) instead of hitting the network; spreading `opts` keeps the dialog's
 // own onSettled (same idiom as TariffDialog's test). The mutation keys mirror
 // oRPC's, which `credentials.key()` partially matches (the dialog's busy check).
-const { setFn, clearFn, toastMock } = vi.hoisted(() => ({
+const { setFn, clearFn, toastMock, homePositionFn, searchFn, webgl, mapState } = vi.hoisted(() => ({
   setFn: vi.fn(),
   clearFn: vi.fn(),
   toastMock: { success: vi.fn(), error: vi.fn() },
+  homePositionFn: vi.fn(),
+  searchFn: vi.fn(),
+  webgl: { ok: true },
+  mapState: { throws: false, last: null as null | Record<string, unknown> },
 }))
 vi.mock('~/lib/orpc/client', () => ({
   orpc: {
@@ -37,12 +42,47 @@ vi.mock('~/lib/orpc/client', () => ({
           mutationFn: clearFn,
         }),
       },
+      homePosition: {
+        queryOptions: (o: Record<string, unknown> = {}) => ({
+          ...o,
+          queryKey: ['credentials', 'homePosition'],
+          queryFn: homePositionFn,
+        }),
+      },
+      searchAddress: {
+        queryOptions: (o: { input: { query: string } } & Record<string, unknown>) => ({
+          ...o,
+          queryKey: ['credentials', 'searchAddress', o.input],
+          queryFn: () => searchFn(o.input),
+        }),
+      },
       key: () => ['credentials'],
     },
     evCharging: { key: () => ['evCharging'] },
   },
 }))
 vi.mock('sonner', () => ({ toast: toastMock }))
+vi.mock('./mapSupport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./mapSupport')>()),
+  supportsWebGL2: () => webgl.ok,
+}))
+// The real map needs WebGL and tiles: a stand-in that shows its props and can pick.
+vi.mock('./HomePositionMap', () => ({
+  HomePositionMap: (props: HomePositionMapProps) => {
+    if (mapState.throws) throw new Error('GPU init failed')
+    mapState.last = props as unknown as Record<string, unknown>
+    return (
+      <div data-testid="map" data-point={JSON.stringify(props.point)}>
+        <button
+          type="button"
+          onClick={() => props.onPick({ latitude: 57.123456789, longitude: 11.987654321 })}
+        >
+          fake map click
+        </button>
+      </div>
+    )
+  },
+}))
 
 const API_KEY = credentialFieldLabel('skoda', 'apiKey')
 const VIN = credentialFieldLabel('skoda', 'vin')
@@ -54,6 +94,12 @@ const actionName = (action: string, field: string) =>
 const REPLACE_API_KEY = actionName(m.charging_credentials_replace(), API_KEY)
 const SET_VIN = actionName(m.charging_credentials_set_in_app(), VIN)
 const closeName = (field: string) => actionName(m.charging_credentials_close_field(), field)
+const CHOOSE_HOME = actionName(m.charging_credentials_choose_on_map(), HOME)
+type Screen = Awaited<ReturnType<typeof renderWithProviders>>['screen']
+/** The home field starts closed even when missing: open it on the map. */
+async function openHome(screen: Screen) {
+  await screen.getByRole('button', { name: CHOOSE_HOME }).click()
+}
 
 const SAVED = new Date('2026-10-05T10:00:00Z')
 type SkodaFields = CredentialStatus['sources']['skoda']['fields']
@@ -117,6 +163,10 @@ function dialog(props: Partial<Parameters<typeof CredentialsDialog>[0]> = {}) {
 beforeEach(() => {
   setFn.mockReset().mockResolvedValue({ source: 'skoda', fieldsSet: ['apiKey'] })
   clearFn.mockReset().mockResolvedValue({ cleared: true })
+  homePositionFn.mockReset().mockResolvedValue(null)
+  searchFn.mockReset().mockResolvedValue([])
+  webgl.ok = true
+  mapState.throws = false
   for (const f of [onChanged, onOpenChange, toastMock.success, toastMock.error]) f.mockReset()
 })
 afterEach(() => vi.restoreAllMocks())
@@ -144,13 +194,12 @@ test('stored and env fields start closed with badge, summary and a named reveal 
     .toMatchTextContent(m.charging_credentials_set_in_app())
   expect(screen.getByLabelText(API_KEY, { exact: true }).elements()).toHaveLength(0)
   expect(screen.getByLabelText(VIN, { exact: true }).elements()).toHaveLength(0)
-  // Missing: the input is shown directly, empty, with no reveal button.
-  await expect.element(screen.getByLabelText(HOME, { exact: true })).toHaveValue('')
-  expect(
-    screen
-      .getByRole('button', { name: actionName(m.charging_credentials_choose_on_map(), HOME) })
-      .elements(),
-  ).toHaveLength(0)
+  // A missing home position starts closed too: the map loads only on request.
+  await expect
+    .element(screen.getByText(m.charging_credentials_badge_missing(), { exact: true }))
+    .toBeVisible()
+  await expect.element(screen.getByRole('button', { name: CHOOSE_HOME })).toBeVisible()
+  expect(screen.getByLabelText(HOME, { exact: true }).elements()).toHaveLength(0)
 })
 
 test('secrets are password inputs; the VIN is plain text', async () => {
@@ -174,7 +223,7 @@ test('the home position reveal button speaks of the map', async () => {
     .toMatchTextContent(m.charging_credentials_choose_on_map())
 })
 
-test('a stored home position is changed on the map (the input, until 3c-2)', async () => {
+test('a stored home position is changed on the map', async () => {
   const fields = { ...ALL_SET, homeCoordinates: { origin: 'stored', envSet: false } } as const
   const { screen } = await renderWithProviders(dialog({ status: status({}, { fields }) }))
   const change = screen.getByRole('button', {
@@ -182,7 +231,10 @@ test('a stored home position is changed on the map (the input, until 3c-2)', asy
   })
   await expect.element(change).toMatchTextContent(m.charging_credentials_change_on_map())
   await change.click()
-  await expect.element(screen.getByLabelText(HOME, { exact: true })).toHaveFocus()
+  await expect.element(screen.getByLabelText(m.charging_home_search_label())).toHaveFocus()
+  await expect.element(screen.getByTestId('map')).toBeVisible()
+  const coords = screen.getByLabelText(HOME, { exact: true })
+  expect(coords.element().getAttribute('type')).toBe('text')
 })
 
 test('Byt reveals and focuses the input with its hints above it', async () => {
@@ -229,6 +281,7 @@ test('Avbryt clears what was typed, and the field is not sent', async () => {
   await screen.getByRole('button', { name: REPLACE_API_KEY }).click()
   await expect.element(screen.getByLabelText(API_KEY, { exact: true })).toHaveValue('')
   await screen.getByRole('button', { name: closeName(API_KEY) }).click()
+  await openHome(screen)
   await screen.getByLabelText(HOME, { exact: true }).fill('59.33,18.07')
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await vi.waitFor(() => expect(setFn).toHaveBeenCalled())
@@ -239,9 +292,83 @@ test('Avbryt clears what was typed, and the field is not sent', async () => {
 })
 
 test('a missing field has no Avbryt link', async () => {
+  const { screen } = await renderWithProviders(dialog({ source: 'zaptec' }))
+  const username = credentialFieldLabel('zaptec', 'username')
+  await expect.element(screen.getByLabelText(username, { exact: true })).toBeVisible()
+  expect(screen.getByRole('button', { name: closeName(username) }).elements()).toHaveLength(0)
+})
+
+test('a missing home position opened on the map can be closed again', async () => {
   const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
   await expect.element(screen.getByLabelText(HOME, { exact: true })).toBeVisible()
-  expect(screen.getByRole('button', { name: closeName(HOME) }).elements()).toHaveLength(0)
+  await screen.getByRole('button', { name: closeName(HOME) }).click()
+  await expect.element(screen.getByRole('button', { name: CHOOSE_HOME })).toHaveFocus()
+})
+
+test('a closed home field never fetches the saved pin', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  await expect.element(screen.getByRole('button', { name: CHOOSE_HOME })).toBeVisible()
+  await new Promise((r) => setTimeout(r, 50))
+  expect(homePositionFn).not.toHaveBeenCalled()
+  await openHome(screen)
+  await vi.waitFor(() => expect(homePositionFn).toHaveBeenCalledTimes(1))
+})
+
+test('a saved pin seeds the input, and Avbryt unseeds it: Spara sends no home position', async () => {
+  homePositionFn.mockResolvedValue({ latitude: 59.3293, longitude: 18.0686 })
+  const { screen } = await renderWithProviders(
+    dialog({
+      status: status(
+        {},
+        { fields: { ...ALL_SET, homeCoordinates: { origin: 'stored', envSet: false } } },
+      ),
+    }),
+  )
+  const change = actionName(m.charging_credentials_change_on_map(), HOME)
+  await screen.getByRole('button', { name: change }).click()
+  await expect
+    .element(screen.getByLabelText(HOME, { exact: true }))
+    .toHaveValue('59.32930,18.06860')
+  await screen.getByRole('button', { name: closeName(HOME) }).click()
+  await screen
+    .getByRole('button', { name: actionName(m.charging_credentials_replace(), VIN) })
+    .click()
+  await screen.getByLabelText(VIN, { exact: true }).fill('TMBJJ7NE8L0123456')
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await vi.waitFor(() => expect(setFn).toHaveBeenCalled())
+  expect(setFn.mock.calls[0][0]).toEqual({ source: 'skoda', fields: { vin: 'TMBJJ7NE8L0123456' } })
+  // Reopened, the saved pin seeds again.
+  await screen.getByRole('button', { name: change }).click()
+  await expect
+    .element(screen.getByLabelText(HOME, { exact: true }))
+    .toHaveValue('59.32930,18.06860')
+})
+
+test('a pin picked on the map is what Spara sends', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
+  await screen.getByRole('button', { name: 'fake map click' }).click()
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await vi.waitFor(() => expect(setFn).toHaveBeenCalled())
+  expect(setFn.mock.calls[0][0]).toEqual({
+    source: 'skoda',
+    fields: { homeCoordinates: '57.12346,11.98765' },
+  })
+})
+
+test('an unreadable source opens the picker with the other fields', async () => {
+  const { screen } = await renderWithProviders(dialog({ status: status({}, { unreadable: true }) }))
+  await expect.element(screen.getByLabelText(m.charging_home_search_label())).toBeVisible()
+  await expect.element(screen.getByLabelText(HOME, { exact: true })).toBeVisible()
+})
+
+test('with the encryption key missing the home field cannot be opened', async () => {
+  const { screen } = await renderWithProviders(
+    dialog({ status: status({ encryptionKeyConfigured: false }) }),
+  )
+  await expect.element(screen.getByRole('button', { name: CHOOSE_HOME })).toBeDisabled()
+  expect(homePositionFn).not.toHaveBeenCalled()
 })
 
 test('a server error opens the field it names', async () => {
@@ -249,6 +376,7 @@ test('a server error opens the field it names', async () => {
     new ORPCError('REENTER_ALL_FIELDS', { defined: true, data: { fields: ['apiKey'] } }),
   )
   const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
   await screen.getByLabelText(HOME, { exact: true }).fill('59.33,18.07')
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect.element(screen.getByLabelText(API_KEY, { exact: true })).toBeVisible()
@@ -278,9 +406,9 @@ test('with nothing open the footer says Stäng and Spara is disabled', async () 
   await expect.element(save).toBeDisabled()
 })
 
-test('unknown status opens every field without badges or Avbryt links', async () => {
+test('unknown status opens every field but the home position, without badges or Avbryt links', async () => {
   const { screen } = await renderWithProviders(dialog({ status: undefined }))
-  for (const name of [API_KEY, VIN, HOME])
+  for (const name of [API_KEY, VIN])
     await expect.element(screen.getByLabelText(name, { exact: true })).toBeVisible()
   for (const badge of [
     m.charging_credentials_badge_stored(),
@@ -291,6 +419,10 @@ test('unknown status opens every field without badges or Avbryt links', async ()
     expect(screen.getByText(badge, { exact: true }).elements()).toHaveLength(0)
   for (const name of [API_KEY, VIN, HOME])
     expect(screen.getByRole('button', { name: closeName(name) }).elements()).toHaveLength(0)
+  // The map loads only when asked for: the home field stays closed, and nothing is fetched.
+  await expect.element(screen.getByRole('button', { name: CHOOSE_HOME })).toBeVisible()
+  await new Promise((r) => setTimeout(r, 50))
+  expect(homePositionFn).not.toHaveBeenCalled()
 })
 
 test('the input keeps the field label as its accessible name', async () => {
@@ -334,6 +466,7 @@ test('Škoda links to the MyŠkoda key page', async () => {
 
 test('a blank submit is refused without calling the server', async () => {
   const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect.element(screen.getByText(m.charging_credentials_nothing_to_save())).toBeVisible()
   expect(setFn).not.toHaveBeenCalled()
@@ -341,6 +474,7 @@ test('a blank submit is refused without calling the server', async () => {
 
 test('after a blank refusal, filling a field lets the save through', async () => {
   const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect.element(screen.getByText(m.charging_credentials_nothing_to_save())).toBeVisible()
   await screen.getByRole('button', { name: SET_VIN }).click()
@@ -372,6 +506,7 @@ test('INVALID_FIELD lands on every listed field; editing one clears only its own
   const { screen } = await renderWithProviders(dialog())
   await screen.getByRole('button', { name: SET_VIN }).click()
   await screen.getByLabelText(VIN, { exact: true }).fill('x')
+  await openHome(screen)
   await screen.getByLabelText(HOME, { exact: true }).fill('y')
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect.element(screen.getByText(m.charging_credentials_invalid_vin())).toBeVisible()
@@ -436,7 +571,7 @@ test('missing key: open inputs and reveal buttons disabled, remove still offered
     dialog({ status: status({ encryptionKeyConfigured: false }) }),
   )
   await expect.element(screen.getByText(m.charging_credentials_key_missing())).toBeVisible()
-  await expect.element(screen.getByLabelText(HOME, { exact: true })).toBeDisabled()
+  await expect.element(screen.getByRole('button', { name: CHOOSE_HOME })).toBeDisabled()
   await expect.element(screen.getByRole('button', { name: REPLACE_API_KEY })).toBeDisabled()
   await expect.element(screen.getByRole('button', { name: SET_VIN })).toBeDisabled()
   await expect
@@ -575,11 +710,14 @@ test('a suspect field is described by its red line, open or closed', async () =>
 
 test('a blank submit shows an alert and focuses the first open input', async () => {
   const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect
-    .element(screen.getByRole('alert'))
-    .toMatchTextContent(m.charging_credentials_nothing_to_save())
-  // The API key and VIN are closed: the home position is the first input.
+    .element(
+      screen.getByRole('alert').filter({ hasText: m.charging_credentials_nothing_to_save() }),
+    )
+    .toBeVisible()
+  // The API key and VIN are closed: the home position, opened, is the first input.
   await expect.element(screen.getByLabelText(HOME, { exact: true })).toHaveFocus()
 })
 
@@ -600,10 +738,10 @@ test('missing key: focus starts on Cancel; inputs and reveal buttons are describ
     dialog({ status: status({ encryptionKeyConfigured: false }) }),
   )
   await expect
-    .element(screen.getByRole('button', { name: m.common_cancel(), exact: true }))
+    .element(screen.getByRole('button', { name: m.common_close(), exact: true }))
     .toHaveFocus()
   await expect
-    .element(screen.getByLabelText(HOME, { exact: true }))
+    .element(screen.getByRole('button', { name: CHOOSE_HOME }))
     .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_key_missing()))
   await expect
     .element(screen.getByRole('button', { name: REPLACE_API_KEY }))
@@ -662,6 +800,7 @@ test('unreadable: every field opens with the amber badge, never saved or env', a
 
 test('the form posts, so a native submit never puts values in the URL', async () => {
   const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
   const form = screen.getByLabelText(HOME, { exact: true }).element().closest('form')
   expect(form?.getAttribute('method')).toBe('post')
 })
@@ -848,6 +987,7 @@ test('editing a rejected field forgets its server error; the others keep theirs'
   const { screen } = await renderWithProviders(dialog())
   await screen.getByRole('button', { name: SET_VIN }).click()
   await screen.getByLabelText(VIN, { exact: true }).fill('x')
+  await openHome(screen)
   await screen.getByLabelText(HOME, { exact: true }).fill('y')
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect.element(screen.getByText(m.charging_credentials_invalid_vin())).toBeVisible()
@@ -862,6 +1002,7 @@ test('editing a rejected field forgets its server error; the others keep theirs'
 
 test('an open input is described by its badge first', async () => {
   const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
   const home = screen.getByLabelText(HOME, { exact: true })
   await expect
     .element(home)
@@ -906,6 +1047,7 @@ test('a status refetch keeps a revealed input open; only Avbryt closes and clear
   await screen.getByRole('button', { name: REPLACE_API_KEY }).click()
   await expect.element(screen.getByLabelText(API_KEY, { exact: true })).toHaveValue('')
   await screen.getByRole('button', { name: closeName(API_KEY) }).click()
+  await openHome(screen)
   await screen.getByLabelText(HOME, { exact: true }).fill('59.33,18.07')
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await vi.waitFor(() => expect(setFn).toHaveBeenCalled())
@@ -942,6 +1084,31 @@ test('closing a field once the key is gone sends focus to Cancel, not a disabled
   await screen.getByRole('button', { name: closeName(API_KEY) }).click()
   await expect.element(screen.getByRole('button', { name: REPLACE_API_KEY })).toBeDisabled()
   await expect
-    .element(screen.getByRole('button', { name: m.common_cancel(), exact: true }))
+    .element(screen.getByRole('button', { name: m.common_close(), exact: true }))
     .toHaveFocus()
+})
+
+test('a closed missing home position says what it is for', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  await expect
+    .element(screen.getByText(m.charging_credentials_home_missing_summary()))
+    .toBeVisible()
+  await expect
+    .element(screen.getByRole('button', { name: CHOOSE_HOME }))
+    .toHaveAccessibleDescription(
+      expect.stringContaining(m.charging_credentials_home_missing_summary()),
+    )
+})
+
+test('the coordinates hint follows the input, which stays described by it', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
+  const input = screen.getByLabelText(HOME, { exact: true })
+  const hint = screen.getByText(m.charging_home_coordinates_hint())
+  expect(
+    input.element().compareDocumentPosition(hint.element()) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0)
+  await expect
+    .element(input)
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_home_coordinates_hint()))
 })

@@ -9,6 +9,7 @@ import {
 import { envCredential } from '~/lib/credentials/env'
 import { db } from '~/lib/db'
 import { integrationCredential } from '~/lib/db/schema'
+import type { LatLon } from '~/lib/effects/skoda'
 import { parseFacilityId } from '~/lib/gridTariff/coverage'
 import {
   CREDENTIAL_FIELDS,
@@ -25,7 +26,7 @@ import { IntegrationCredentialDomainError } from './errors'
 
 // GUI-set integration credentials (ADR-0026): one encrypted JSON object per
 // source. Values never leave this module except through `readStored` (for the
-// resolver); `status` reports field names and origins only.
+// resolver) and `homePosition` (the admin's map picker, ADR-0026); `status` reports field names and origins only.
 //
 // `fields_set` is unauthenticated plaintext beside the ciphertext: it feeds the
 // `stored` origin in `status` and nothing else. Reads and merges use the
@@ -156,6 +157,26 @@ function normalize(
           ? parseFacilityId(value) !== null
           : true)
   return valid ? value : INVALID
+}
+
+/**
+ * The Škoda home point as the geofence would use it: the stored value, else
+ * `SKODA_HOME_COORDINATES`, parsed; null when neither parses. The one
+ * credential value that leaves this module for a client (ADR-0026, 2026-10-06
+ * amendment), for admins only. An unreadable row is `UNREADABLE`, never the
+ * env value. Uncached: an admin opening the picker reads the current row.
+ */
+export async function homePosition(): Promise<LatLon | null> {
+  let stored: CredentialValues<'skoda'> | null
+  try {
+    stored = await readStored('skoda')
+  } catch (err) {
+    if (err instanceof CredentialsUnreadableError) {
+      throw new IntegrationCredentialDomainError('UNREADABLE')
+    }
+    throw err
+  }
+  return parseHomePoint(stored?.homeCoordinates ?? envCredential('skoda', 'homeCoordinates'))
 }
 
 /**

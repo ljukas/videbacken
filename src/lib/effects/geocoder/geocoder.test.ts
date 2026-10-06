@@ -1,0 +1,294 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { type FakeRoute, fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
+import { CACHE_TTL_MS, createNominatimClient } from './client'
+import { GeocoderError } from './errors'
+import { geocoder, newGeocoderStats, selectGeocoderAdapter } from './geocoder'
+
+const ROUTE = 'GET /search'
+// Synthetic places in Nominatim's jsonv2 shape (never a real home).
+const place = (name: string, lat: string, lon: string) => ({
+  place_id: 1,
+  display_name: name,
+  lat,
+  lon,
+  category: 'place',
+  type: 'house',
+})
+const QUERY = 'Storgatan 1, Exempelby'
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: new Date('2026-10-06T10:00:00Z') })
+  vi.setTimerTickMode('nextTimerAsync')
+  vi.spyOn(Math, 'random').mockReturnValue(0.5)
+})
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+function client(routes: Record<string, FakeRoute>) {
+  const fake = fakeFetch(routes)
+  const sentAt: number[] = []
+  const c = createNominatimClient({
+    fetch: (input, init) => {
+      sentAt.push(Date.now())
+      return fake.fetch(input, init)
+    },
+  })
+  const waits = () => sentAt.slice(1).map((at, i) => at - sentAt[i])
+  return { c, fake, waits }
+}
+
+async function rejection(p: Promise<unknown>): Promise<GeocoderError> {
+  const error = await p.then(
+    () => null,
+    (e: unknown) => e,
+  )
+  expect(error).toBeInstanceOf(GeocoderError)
+  return error as GeocoderError
+}
+
+describe('search', () => {
+  test('sends the fixed parameters and an identifying User-Agent, and maps the hits', async () => {
+    const { c, fake } = client({
+      [ROUTE]: () => jsonResponse([place('Storgatan 1, Exempelby, Sverige', '57.7', '11.97')]),
+    })
+    const stats = newGeocoderStats()
+
+    const hits = await c.search(`  ${QUERY}  `, { stats })
+
+    expect(hits).toEqual([
+      { label: 'Storgatan 1, Exempelby, Sverige', latitude: 57.7, longitude: 11.97 },
+    ])
+    const url = new URL(fake.calls[0].url)
+    expect(url.origin + url.pathname).toBe('https://nominatim.openstreetmap.org/search')
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      q: QUERY,
+      format: 'jsonv2',
+      countrycodes: 'se',
+      'accept-language': 'sv',
+      limit: '5',
+      addressdetails: '0',
+    })
+    expect(fake.calls[0].headers.get('User-Agent')).toMatch(/^videbacken\//)
+    expect(stats).toMatchObject({ requests: 1, retries: 0, cached: false })
+  })
+
+  test('drops entries it can’t use and keeps at most five', async () => {
+    const good = (n: number) => place(`Plats ${n}`, `5${n}.1`, `1${n}.2`)
+    const { c } = client({
+      [ROUTE]: () =>
+        jsonResponse([
+          place('Tom latitud', '', '11.97'),
+          { lat: '57.7', lon: '11.97' }, // no display_name
+          place('Utanför', '91', '11.97'),
+          place('Hex', '0x1A', '11.97'),
+          good(1),
+          good(2),
+          good(3),
+          good(4),
+          good(5),
+          good(6),
+        ]),
+    })
+
+    const hits = await c.search(QUERY)
+
+    expect(hits.map((h) => h.label)).toEqual([
+      'Plats 1',
+      'Plats 2',
+      'Plats 3',
+      'Plats 4',
+      'Plats 5',
+    ])
+  })
+
+  test('caches by the normalized query for ten minutes', async () => {
+    const { c, fake } = client({ [ROUTE]: () => jsonResponse([place('A', '57.7', '11.97')]) })
+    await c.search('Storgatan 1')
+    const stats = newGeocoderStats()
+
+    const again = await c.search('  storgatan   1 ', { stats })
+
+    expect(again).toEqual([{ label: 'A', latitude: 57.7, longitude: 11.97 }])
+    expect(fake.calls).toHaveLength(1)
+    expect(stats).toMatchObject({ requests: 0, cached: true })
+    vi.setSystemTime(Date.now() + CACHE_TTL_MS + 1)
+    await c.search('Storgatan 1')
+    expect(fake.calls).toHaveLength(2)
+  })
+
+  test('spaces requests at least one second apart', async () => {
+    const { c, waits } = client({ [ROUTE]: () => jsonResponse([]) })
+    await Promise.all([c.search('Ett'), c.search('Två'), c.search('Tre')])
+    expect(waits().every((w) => w >= 1000)).toBe(true)
+    expect(waits()).toHaveLength(2)
+  })
+
+  test('a search that would wait more than 3 s fails without a request', async () => {
+    const { c, fake } = client({ [ROUTE]: () => jsonResponse([]) })
+    const results = await Promise.allSettled(['A1', 'B2', 'C3', 'D4', 'E5'].map((q) => c.search(q)))
+    expect(results.map((r) => r.status)).toEqual([
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+      'rejected',
+    ])
+    const last = results[4] as PromiseRejectedResult
+    expect(last.reason).toBeInstanceOf(GeocoderError)
+    expect(last.reason.code).toBe('rate_limited')
+    expect(fake.calls).toHaveLength(4)
+  })
+
+  test('maps each status to a code, keeps the status, and never retries', async () => {
+    const cases: [number, string][] = [
+      [429, 'rate_limited'],
+      [403, 'forbidden'],
+      [400, 'unexpected_response'],
+      [500, 'unreachable'],
+      [503, 'unreachable'],
+    ]
+    for (const [status, code] of cases) {
+      const { c, fake } = client({ [ROUTE]: () => new Response('x', { status }) })
+      const error = await rejection(c.search(QUERY))
+      expect(error.code, `status ${status}`).toBe(code)
+      expect(error.status, `status ${status}`).toBe(status)
+      expect(fake.calls, `status ${status}`).toHaveLength(1)
+    }
+  })
+
+  test('a failed search is not cached', async () => {
+    const { c, fake } = client({
+      [ROUTE]: (_req, call) =>
+        call === 0
+          ? new Response('', { status: 429 })
+          : jsonResponse([place('A', '57.7', '11.97')]),
+    })
+    await rejection(c.search(QUERY))
+    expect(await c.search(QUERY)).toHaveLength(1)
+    expect(fake.calls).toHaveLength(2)
+  })
+
+  test('a timeout is unreachable with one request and no query in the error', async () => {
+    const { c, fake } = client({
+      [ROUTE]: (req) =>
+        new Promise<Response>((_, reject) => {
+          req.signal.addEventListener('abort', () => reject(req.signal.reason))
+        }),
+    })
+    const error = await rejection(c.search(QUERY))
+    expect(error.code).toBe('unreachable')
+    expect((error.cause as { name: string }).name).toBe('TimeoutError')
+    expect(fake.calls).toHaveLength(1)
+    expect(`${error.message} ${JSON.stringify(error.cause)}`).not.toContain('Storgatan')
+  })
+
+  test('a caller abort mid-fetch is unreachable with one request', async () => {
+    const { c, fake } = client({
+      [ROUTE]: (req) =>
+        new Promise<Response>((_, reject) => {
+          req.signal.addEventListener('abort', () => reject(req.signal.reason))
+        }),
+    })
+    const controller = new AbortController()
+    const pending = rejection(c.search(QUERY, { signal: controller.signal }))
+    await vi.advanceTimersByTimeAsync(100)
+    controller.abort()
+    const error = await pending
+    expect(error.code).toBe('unreachable')
+    expect(fake.calls).toHaveLength(1)
+    expect(`${error.message} ${JSON.stringify(error.cause)}`).not.toContain('Storgatan')
+  })
+
+  test('a pre-aborted signal fails without a request or a slot', async () => {
+    const { c, fake } = client({ [ROUTE]: () => jsonResponse([]) })
+    const controller = new AbortController()
+    controller.abort()
+    expect((await rejection(c.search('Ett', { signal: controller.signal }))).code).toBe(
+      'unreachable',
+    )
+    expect(fake.calls).toHaveLength(0)
+    const before = Date.now()
+    await c.search('Två')
+    expect(Date.now() - before).toBe(0)
+  })
+
+  test('aborting during the wait releases the slot', async () => {
+    const { c, fake, waits } = client({ [ROUTE]: () => jsonResponse([]) })
+    await c.search('Ett')
+    const controller = new AbortController()
+    const second = rejection(c.search('Två', { signal: controller.signal }))
+    await vi.advanceTimersByTimeAsync(200)
+    controller.abort()
+    expect((await second).code).toBe('unreachable')
+    expect(fake.calls).toHaveLength(1)
+
+    await c.search('Tre')
+
+    expect(fake.calls).toHaveLength(2)
+    expect(waits()).toEqual([1000])
+  })
+
+  test('a cache hit does not take a throttle slot', async () => {
+    const { c, waits } = client({ [ROUTE]: () => jsonResponse([]) })
+    await c.search('Ett')
+    await c.search('Ett')
+    await c.search('Ett')
+    await c.search('Två')
+    expect(waits()).toEqual([1000])
+  })
+
+  test('the cache holds at most 100 queries, evicting the oldest', async () => {
+    const { c, fake } = client({ [ROUTE]: () => jsonResponse([]) })
+    for (let i = 1; i <= 101; i++) await c.search(`Fråga ${i}`)
+    expect(fake.calls).toHaveLength(101)
+
+    await c.search('Fråga 101')
+    expect(fake.calls).toHaveLength(101)
+    await c.search('Fråga 1')
+    expect(fake.calls).toHaveLength(102)
+  })
+
+  test('a search rejected for the queue does not push the next slot out', async () => {
+    const { c, fake } = client({ [ROUTE]: () => jsonResponse([]) })
+    const results = await Promise.allSettled(['A1', 'B2', 'C3', 'D4', 'E5'].map((q) => c.search(q)))
+    expect(results[4].status).toBe('rejected')
+    await vi.advanceTimersByTimeAsync(4_000)
+    const before = Date.now()
+    await c.search('F6')
+    expect(Date.now() - before).toBe(0)
+    expect(fake.calls).toHaveLength(5)
+  })
+
+  test('non-JSON and non-array answers are unexpected_response', async () => {
+    const html = client({ [ROUTE]: () => new Response('<html>', { status: 200 }) })
+    expect((await rejection(html.c.search(QUERY))).code).toBe('unexpected_response')
+    const object = client({ [ROUTE]: () => jsonResponse({ error: 'x' }) })
+    expect((await rejection(object.c.search(QUERY))).code).toBe('unexpected_response')
+  })
+
+  test('a network failure is unreachable, and no error carries the query', async () => {
+    const { c, fake } = client({
+      [ROUTE]: () => {
+        throw Object.assign(new TypeError(`fetch failed for ${QUERY}`), { code: 'ECONNRESET' })
+      },
+    })
+    const error = await rejection(c.search(QUERY))
+    expect(error.code).toBe('unreachable')
+    expect(error.cause).toEqual({ name: 'TypeError', code: 'ECONNRESET' })
+    expect(fake.calls).toHaveLength(1)
+    expect(`${error.message} ${JSON.stringify(error.cause)}`).not.toContain('Storgatan')
+  })
+})
+
+describe('adapter selection', () => {
+  test('uses Nominatim outside tests and fails closed under VITEST', () => {
+    expect(selectGeocoderAdapter({})).toBe('nominatim')
+    expect(selectGeocoderAdapter({ VITEST: 'true' })).toBe('notConfigured')
+  })
+
+  test('the default client under VITEST throws not_configured', async () => {
+    expect((await rejection(geocoder.search(QUERY))).code).toBe('not_configured')
+  })
+})

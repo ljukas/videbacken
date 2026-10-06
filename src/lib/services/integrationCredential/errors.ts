@@ -8,6 +8,9 @@ export type IntegrationCredentialDomainErrorCode =
   // The stored row can't be read and the save left fields blank (`fields`): they would
   // silently fall back to env, so every field of the source must be entered again.
   | 'REENTER_ALL_FIELDS'
+  // The stored row can't be read (key missing or wrong, tampered): a read that must not
+  // fall back to env (ADR-0026 decision 4) refuses instead.
+  | 'UNREADABLE'
 
 export class IntegrationCredentialDomainError extends Error {
   constructor(

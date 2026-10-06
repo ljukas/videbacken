@@ -50,9 +50,11 @@ import {
   credentialLabelId,
   credentialRevealId,
   credentialSuspectId,
+  hasCredentialValue,
   credentialInputId as inputId,
-  isClosableState,
+  isClosableField,
 } from './CredentialFieldRow'
+import { HomePositionPicker, homeSearchId } from './HomePositionPicker'
 
 export type CredentialStatus = RouterOutputs['credentials']['status']
 type SourceStatus = CredentialStatus['sources'][CredentialSource]
@@ -146,7 +148,7 @@ export function CredentialsDialog({
           // button, not on the external MyŠkoda link above it.
           const fields = CREDENTIAL_FIELDS[current]
           const sourceStatus = status?.sources[current]
-          if (!fields.every((f) => isClosableState(fieldState(sourceStatus, f)))) return
+          if (!fields.every((f) => isClosableField(current, f, fieldState(sourceStatus, f)))) return
           e.preventDefault()
           document.getElementById(credentialRevealId(current, fields[0]))?.focus()
         }}
@@ -251,11 +253,13 @@ function CredentialsForm({
   // as it has no value (on a status refetch too) and leaves only on "Avbryt", so
   // a refetch that gives it a value never hides an input that may hold typing.
   const [opened, setOpened] = useState<ReadonlySet<CredentialFieldName>>(
-    () => new Set(fields.filter((f) => !isClosableState(states[f]))),
+    () => new Set(fields.filter((f) => !isClosableField(source, f, states[f]))),
   )
-  const newlyUnclosable = fields.filter((f) => !isClosableState(states[f]) && !opened.has(f))
+  const newlyUnclosable = fields.filter(
+    (f) => !isClosableField(source, f, states[f]) && !opened.has(f),
+  )
   if (newlyUnclosable.length > 0) setOpened((prev) => new Set([...prev, ...newlyUnclosable]))
-  const isOpen = (f: CredentialFieldName) => opened.has(f) || !isClosableState(states[f])
+  const isOpen = (f: CredentialFieldName) => opened.has(f) || !isClosableField(source, f, states[f])
   const anyOpen = fields.some(isOpen)
   // The first open input takes focus when the dialog opens.
   const [autoFocusField] = useState(() => fields.find(isOpen))
@@ -398,7 +402,11 @@ function CredentialsForm({
   const openField = (f: CredentialFieldName) => {
     form.resetField(f)
     setOpened((prev) => new Set(prev).add(f))
-    setFocusTarget(inputId(source, f))
+    setFocusTarget(
+      credentialFieldKind(source, f) === 'position'
+        ? homeSearchId(inputId(source, f))
+        : inputId(source, f),
+    )
   }
   // Back to "keep what is there": the typed value, its errors and its server
   // error go, and focus returns to the reveal button that replaces the input.
@@ -468,16 +476,17 @@ function CredentialsForm({
         ) : null}
         {fields.map((f) => {
           const state = states[f]
-          const closable = isClosableState(state)
+          const closable = isClosableField(source, f, state)
+          const hasValue = hasCredentialValue(state)
           const suspect = suspectFields.includes(f)
           // Above the input, each on its own line: the format hint, then what
           // saving does to a value the field already has.
           const hint = credentialFieldHint(source, f)
           const description =
-            hint || closable ? (
+            hint || hasValue ? (
               <>
                 {hint ? <span className="block">{hint}</span> : null}
-                {closable ? (
+                {hasValue ? (
                   <span className="block">{m.charging_credentials_keeps_current()}</span>
                 ) : null}
                 {state === 'env' ? (
@@ -494,7 +503,6 @@ function CredentialsForm({
             ]
               .filter(Boolean)
               .join(' ') || undefined
-          const secret = credentialFieldKind(source, f) === 'secret'
           return (
             <CredentialFieldRow
               key={f}
@@ -513,22 +521,53 @@ function CredentialsForm({
                 name={f}
                 validators={{ onChange: serverError(f) }}
                 listeners={{ onChange: () => forgetServerError(f) }}
-                children={(field) => (
-                  <field.TextField
-                    labelledBy={credentialLabelId(source, f)}
-                    type={secret ? 'password' : 'text'}
-                    // Browsers ignore "off" on password inputs; "new-password" keeps
-                    // a saved login out of them.
-                    autoComplete={secret ? 'new-password' : 'off'}
-                    inputId={inputId(source, f)}
-                    inputData={NO_PASSWORD_MANAGER}
-                    autoFocus={f === autoFocusField && !keyMissing}
-                    disabled={keyMissing}
-                    describedBy={describedBy}
-                    description={description}
-                    descriptionPlacement="above"
-                  />
-                )}
+                children={(field) => {
+                  const kind = credentialFieldKind(source, f)
+                  if (kind !== 'position') {
+                    return (
+                      <field.TextField
+                        labelledBy={credentialLabelId(source, f)}
+                        type={kind === 'secret' ? 'password' : 'text'}
+                        // Browsers ignore "off" on password inputs; "new-password" keeps
+                        // a saved login out of them.
+                        autoComplete={kind === 'secret' ? 'new-password' : 'off'}
+                        inputId={inputId(source, f)}
+                        inputData={NO_PASSWORD_MANAGER}
+                        autoFocus={f === autoFocusField && !keyMissing}
+                        disabled={keyMissing}
+                        describedBy={describedBy}
+                        description={description}
+                        descriptionPlacement="above"
+                      />
+                    )
+                  }
+                  // The home position: the picker shows the field's hints first, then
+                  // search, map and location, then this "lat,lon" input as the keyboard path.
+                  const headerId = `${inputId(source, f)}-header`
+                  return (
+                    <HomePositionPicker
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                      disabled={keyMissing}
+                      header={description}
+                      headerId={headerId}
+                      idBase={inputId(source, f)}
+                    >
+                      <field.TextField
+                        labelledBy={credentialLabelId(source, f)}
+                        type="text"
+                        inputMode="text"
+                        autoComplete="off"
+                        inputId={inputId(source, f)}
+                        inputData={NO_PASSWORD_MANAGER}
+                        disabled={keyMissing}
+                        describedBy={[describedBy, headerId].filter(Boolean).join(' ')}
+                        description={m.charging_home_coordinates_hint()}
+                        descriptionPlacement="below"
+                      />
+                    </HomePositionPicker>
+                  )
+                }}
               />
             </CredentialFieldRow>
           )
