@@ -507,6 +507,14 @@ text, so the state never relies on colour alone.
 | `missing` | "Inte angiven" / "Not set" | the input, shown directly |
 | source unreadable | "Kan inte läsas" / "Can't be read" (amber, with an icon) | the input, shown directly |
 
+- **Every `env` field names its variable**, for every source: Zaptec (`ZAPTEC_USERNAME`, `ZAPTEC_PASSWORD`), Škoda,
+  Emaldo (the four `EMALDO_*`) and the grid card's facility ID (`GRID_FACILITY_ID`) (owner, 2026-10-06).
+- **The home position's button speaks of the map** (owner, 2026-10-06): "Välj på kartan" / "Choose on the map" for
+  `env` and `missing`, and "Ändra på kartan" / "Change on the map" for `stored`. In 3c-1, before the picker exists,
+  the button opens the "lat,lon" input and keeps the same label. In 3c-2 it opens the picker.
+- **Footer** (from the mockup): with no field open, the footer shows "Stäng" and a disabled "Spara"; once a field is
+  open, it shows "Avbryt" and an enabled "Spara".
+- **The remove confirm names the stored fields** ("De sparade uppgifterna för Škoda (API-nyckel, VIN) tas bort.").
 - **The env var name** comes from a client-safe copy of the field → env var map (vocabulary only: names, never
   values). The server-only `src/lib/credentials/env.ts` keeps reading `process.env`. A test pins the two maps to each
   other.
