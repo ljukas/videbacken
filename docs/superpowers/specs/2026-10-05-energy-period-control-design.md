@@ -201,3 +201,29 @@ chart labels), planned separately so it doesn't tangle with the energy steps.
 
 - Applying the scale to the rest of the app (decided; its own plan and PR, after this step).
 - Day views, kronor (unchanged from the design).
+
+## Build notes (2026-10-06)
+
+Changes the review made while building step 1b, on top of the design above:
+
+- **URL.** The page always asks for a concrete year (the period's, else the current Stockholm year), so the default
+  and a month of the same year share one cache entry (`energyOverviewQueryFor` in `energyQueries.ts`; step 2 uses it
+  too). `?period=2026` arrives as a number (the router parses search as JSON), so the schema takes both. A valid
+  period without readings is rewritten to the period shown once its year has loaded; an unparseable `?period`/`?year`
+  is rewritten to a bare `/energy`, so a bookmark keeps following the current month.
+- **No shift.** A period without data draws the same readout grid invisibly with the message on top. A readout
+  figure never wraps: its size follows the card width only (36 px, 28 px in the two-column grid, slightly smaller
+  where a "12 345,6 kWh" figure wouldn't fit). Detail lines reserve three lines in the two-column grid, two from
+  560 px.
+- **Loading and errors.** Only the figures dim while another year loads; the period control stays live. Totalt
+  needs no year, so it shows at once. A failed read of another year leaves the figures blank under the alert,
+  never "no data".
+- **Keyboard and screen readers.** At the ends, the arrows are `aria-disabled` rather than `disabled`, so keyboard
+  focus stays put. The picker opens on the selected month. A polite live region announces the period shown.
+- **Chart.** The hover/focus outline draws above the bars. A click is mapped from the pointer position, because
+  Recharts' click state lags a frame. A mouse press doesn't focus the chart, so no keyboard tooltip is left
+  behind. On touch, a tap selects with no outline or tooltip. A keyboard focus on a month without readings gets a
+  dashed outline. The tooltip's self-sufficiency row is gone (the tooltip lists the parts, the total, Såld and the
+  gap note).
+- **Sizes.** The chart's metric toggle on this page is 14 px and 40 px tall (`/charging` keeps its size until the
+  app-wide pass).

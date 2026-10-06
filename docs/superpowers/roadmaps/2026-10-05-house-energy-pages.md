@@ -9,7 +9,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92), fix [#95](https://github.com/ljukas/videbacken/pull/95) | checkpoint passed | 2026-10-05: sums and car match prod; warm `energy.overview` query 52 ms mean over 33 calls (one cold instance 736 ms total); owner accepted, asked for a month choice → step 1b |
-| 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | — | not started | — |
+| 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | branch `feat/energy-period-control` (PR to open) | in progress | — |
 | 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
@@ -92,3 +92,11 @@ and rewrite the affected tasks before building.
   validated colours (data-viz validator), readable sizes (researched). Design:
   [period control](../specs/2026-10-05-energy-period-control-design.md). The owner also found text too small
   app-wide and decided the whole app follows the same scale; that pass is planned separately (ADR-0015 amendment).
+- 2026-10-06: step 1b built (branch `feat/energy-period-control`), task by task with two adversarial reviewers each
+  plus a whole-branch review; review-driven changes are in the spec's build notes. Live check on the local full
+  history (Playwright, 1440 / 820 / 390 px, light + dark, 7 period steps each: arrows, picker, Hela 2026, Totalt):
+  the previous arrow, the period trigger, the tiles card and the chart card kept identical boxes (±0.5 px) in all
+  42 runs; readout figures 36 / 28 / 25.4 px; no text under 13 px; console clean. Figures vs a plain SQL sum over
+  the Stockholm month: August 2026 solar 715,2 / bought 436,7 / load 896,5 kWh (SQL 715.15 / 436.75 / 896.55), Hela
+  2026 4 848,2 / 5 162,0 / 7 842,7 (SQL 4848.21 / 5161.96 / 7842.70); sold and February match too; August says
+  "Data saknas för 14 h". Gate: `check:ci` clean, build passes, browser 730/730, node 2424/2424, sv/en keys match.
