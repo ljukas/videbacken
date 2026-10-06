@@ -1,3 +1,4 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { type SeriesPoint, toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS } from '~/lib/sensor/range'
@@ -12,10 +13,11 @@ import {
   moveAt,
   parkPointer,
   readingDots,
+  settle,
   tooltipText,
   yTickLabels,
 } from '~test/browser/chartDom'
-import { renderWithProviders } from '~test/browser/render'
+import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
 import { ClimateChart, type ClimateChartDevice } from './ClimateChart'
 
 // Browser mode shares one real pointer across tests and files: one left over a
@@ -230,6 +232,11 @@ test('a single hover lists every visible sensor at its nearest reading, with the
     ],
     { formatTick: (t) => new Date(t).toISOString().slice(11, 16) },
   )
+  // Idle baseline: once drawn, nothing is hovered, so no cursor, dots or card.
+  await vi.waitFor(() => expect(lineCurves(root)).toHaveLength(2))
+  expect(hoverCursor(root)).toBeNull()
+  expect(activeDots(root)).toHaveLength(0)
+  expect(tooltipText()).not.toContain('Fack')
   await hoverPlot(root)
 
   await vi.waitFor(() => {
@@ -256,28 +263,39 @@ test('renders a dot for an isolated reading so it is not invisible', async () =>
 })
 
 test('with every device hidden there is no line and no card, and the legend keeps every device', async () => {
-  const root = await renderChart([
-    device(
-      'a',
-      [
-        { t: T0, a: 20 },
-        { t: T0 + HOUR, a: 21 },
-      ],
-      { hidden: true },
-    ),
-    device(
-      'b',
-      [
-        { t: T0, b: 30 },
-        { t: T0 + HOUR, b: 31 },
-      ],
-      { hidden: true },
-    ),
-  ])
-  await vi.waitFor(() => expect(legendLabels(root)).toEqual(['a', 'b']))
+  const points = (id: string, v: number) => [
+    { t: T0, [id]: v },
+    { t: T0 + HOUR, [id]: v + 1 },
+  ]
+  const queryClient = makeTestQueryClient()
+  const ui = (hideB: boolean) => (
+    <QueryClientProvider client={queryClient}>
+      <div style={{ width: 600, height: 300 }}>
+        <ClimateChart
+          devices={[
+            device('a', points('a', 20), { hidden: true }),
+            device('b', points('b', 30), { displayName: 'Visible one', hidden: hideB }),
+          ]}
+          unit="°C"
+          formatTick={(t) => String(t)}
+        />
+      </div>
+    </QueryClientProvider>
+  )
+  const { screen } = await renderWithProviders(ui(true), { queryClient })
+  const root = screen.container
+  await vi.waitFor(() => expect(legendLabels(root)).toEqual(['Visible one', 'a']))
   expect(lineCurves(root)).toHaveLength(0)
   await hoverPlot(root)
   // Give a card the chance to appear before asserting it didn't.
-  await new Promise((r) => setTimeout(r, 200))
+  await settle()
+  await settle()
   expect(tooltipText()).toBe('')
+
+  // Positive control: the same chart and hover, with one device visible, opens
+  // a card. Without it the "no card" above could pass on a chart nothing hovers.
+  await screen.rerender(ui(false))
+  await vi.waitFor(() => expect(lineCurves(root)).toHaveLength(1))
+  await hoverPlot(root)
+  await vi.waitFor(() => expect(tooltipText()).toContain('Visible one'))
 })
