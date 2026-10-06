@@ -15,8 +15,8 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-05/06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
 | 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | [#104](https://github.com/ljukas/videbacken/pull/104) | checkpoint passed | 2026-10-06, `main` at `17fb518`: every `packages:` and `bones:` criterion holds. Totals are within 1–2 KB of the bar per page; the shell is 257 against 253, all of it from #102 and #103 merging in (see [checkpoint 4 result](#checkpoint-4-result)). |
 | 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | merged | — (no checkpoint of its own; see [step 5a notes](#step-5a-notes)) |
-| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | PR open | — (no checkpoint of its own; see [step 5b notes](#step-5b-notes)) |
-| 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | — | — | not started | — |
+| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | merged | — (no checkpoint of its own; see [step 5b notes](#step-5b-notes)) |
+| 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | — | in progress | — |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) | — | — | not started | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
 | 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
@@ -336,6 +336,36 @@ recharts' (the shared axis margins from 5a).
   negative segment in a diverging stack.
 - The group's name repeats the section heading. It could name the metric too.
 - Bones are not recaptured in 5b (as in 5a). The recapture is in 5c.
+
+## Step 5c notes
+
+**Baseline** (`bun run bundle:measure` on `main` at `a8c684e`, KB gz each page adds beyond the entry + shell). The
+`/sensors` page carries recharts in its own chunk (`sensors` 90):
+
+| Page | Before 5c |
+|---|---:|
+| entry + shell | 258 |
+| `/charging` | 84 |
+| `/charging/settings` | 44 |
+| `/charging/economy` | 77 |
+| `/charging/patterns` | 85 |
+| `/charging/sessions/$id` | 65 |
+| `/energy` | 72 |
+| `/sensors` | 121 (sensors 90, line 9, step 5, format 4, SectionSkeleton 4) |
+| `/users` | 73 |
+| `/account/profile` | 213 |
+
+`bun.lock` lines matching `"recharts`, `"redux`, `"immer`, `"decimal.js-light` or `"@reduxjs`: 9.
+
+**Accepted differences (owner-approved 2026-10-06; state them in the PR):**
+1. Round time ticks. Ticks fall on round local times (24 h: every 3/6/12 h; 1 w: midnights; 1 m: Mondays; 3 m to 6 m:
+   the 1st and 16th or month starts; 1 y and all: month starts every 1 to 3 months, all: up to 12), the finest that
+   fits. Labels: 24 h `HH:mm`, 1 w the short weekday ("tis"), longer ranges the short date ("1 okt."). recharts
+   divided the span into five equal parts at odd times (15:20, 22:16, 05:13 ...).
+2. A dot on each card row's reading. recharts drew its 4 px active dot only on the line that owned the hovered x; now
+   each visible device listed in the card gets one, on its own nearest reading, so the dots match the rows.
+3. Every device hidden. recharts drew no tick labels but four grid lines. Now the time axis keeps its ticks (the time
+   domain spans hidden devices by design), and there is no y axis label or grid line (no value range).
 
 ## Step 7 notes
 
