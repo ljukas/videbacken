@@ -1,8 +1,9 @@
 import { range } from 'd3-array'
-import { scaleBand } from 'd3-scale'
+import { scaleBand, scaleLinear } from 'd3-scale'
 import { describe, expect, test } from 'vitest'
 import {
   type BarSeries,
+  labelsFit,
   layoutBars,
   MIN_BAR_PX,
   slotsOf,
@@ -454,5 +455,94 @@ describe('review: edges a subtly wrong layout would get wrong', () => {
     expect(thinTicks([0, 20, 40, 60], [10, 30, 10, 10])).toEqual([0, 2, 3])
     // Every label wider than the whole axis: only the last shows.
     expect(thinTicks([0, 10, 20, 30], [100, 100, 100, 100])).toEqual([3])
+  })
+})
+
+describe('diverging stacks (recharts stackOffset="sign")', () => {
+  const series: BarSeries[] = [
+    { key: 'a', label: 'A', color: 'red', stack: 's' },
+    { key: 'b', label: 'B', color: 'blue', stack: 's' },
+    { key: 'c', label: 'C', color: 'green', stack: 's' },
+  ]
+  const values: Record<string, number> = { a: 10, b: 5, c: -4 }
+  const value = (_: number, key: string) => values[key]
+  const x = scaleBand<number>().domain([0]).range([0, 100])
+  // 10 px per unit; 0 is at 200 px.
+  const y = scaleLinear().domain([-10, 20]).range([300, 0])
+
+  test('positives stack up from 0, a negative hangs from 0, whatever its place in the stack', () => {
+    const rects = layoutBars({ count: 1, series, value, x, y, barGap: 4, offset: 'diverging' })
+    const at = (key: string) => rects.find((r) => r.key === key)
+    // toBeCloseTo: d3's linear scale leaves ~1e-14 float noise (300 / 30 px per unit).
+    const near = (key: string, y: number, height: number) => {
+      expect(at(key)?.y).toBeCloseTo(y)
+      expect(at(key)?.height).toBeCloseTo(height)
+    }
+    near('a', 100, 100)
+    near('b', 50, 50)
+    near('c', 200, 40)
+  })
+
+  test('the default keeps stacking a negative on the running sum (recharts "none")', () => {
+    const rects = layoutBars({ count: 1, series, value, x, y, barGap: 4 })
+    const c = rects.find((r) => r.key === 'c')
+    expect(c?.y).toBeCloseTo(50)
+    expect(c?.height).toBeCloseTo(40)
+  })
+
+  test('stackExtent: diverging spans the negatives below 0 and the positives above', () => {
+    expect(stackExtent({ count: 1, series, value, offset: 'diverging' })).toEqual([-4, 15])
+    expect(stackExtent({ count: 1, series, value })).toEqual([0, 15])
+  })
+
+  test('export larger than the purchase, and export with no purchase', () => {
+    const v: Record<string, number | null>[] = [
+      { a: 2, b: null, c: -30 },
+      { a: null, b: null, c: -12 },
+    ]
+    const val = (i: number, key: string) => v[i][key]
+    expect(stackExtent({ count: 2, series, value: val, offset: 'diverging' })).toEqual([-30, 2])
+    const xs = scaleBand<number>().domain([0, 1]).range([0, 200])
+    const ys = scaleLinear().domain([-30, 10]).range([400, 0]) // 0 at 100 px
+    const rects = layoutBars({
+      count: 2,
+      series,
+      value: val,
+      x: xs,
+      y: ys,
+      barGap: 4,
+      offset: 'diverging',
+    })
+    for (const r of rects.filter((r) => r.key === 'c')) expect(r.y).toBeCloseTo(100)
+  })
+})
+
+describe('the bar floor', () => {
+  const series: BarSeries[] = [{ key: 'a', label: 'A', color: 'red' }]
+  const x = scaleBand<number>().domain([0]).range([0, 100])
+  const y = scaleLinear().domain([0, 100]).range([100, 0])
+  const value = () => 0.2
+
+  test('minPx 0 draws a tiny value at its true height', () => {
+    const [r] = layoutBars({ count: 1, series, value, x, y, barGap: 4, minPx: 0 })
+    expect(r.height).toBeCloseTo(0.2)
+  })
+
+  test('the default floor is MIN_BAR_PX', () => {
+    const [r] = layoutBars({ count: 1, series, value, x, y, barGap: 4 })
+    expect(r.height).toBe(MIN_BAR_PX)
+  })
+})
+
+describe('labelsFit', () => {
+  test('true when every label keeps the gap to its neighbours', () => {
+    expect(labelsFit([10, 40, 70], [20, 20, 20])).toBe(true)
+  })
+  test('false when any two would come closer than the gap', () => {
+    expect(labelsFit([10, 40, 70], [28, 28, 28])).toBe(false)
+  })
+  test('none or one label always fits', () => {
+    expect(labelsFit([], [])).toBe(true)
+    expect(labelsFit([5], [500])).toBe(true)
   })
 })
