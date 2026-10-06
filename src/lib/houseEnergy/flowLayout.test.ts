@@ -13,12 +13,14 @@ import {
   lossStub,
   MIN_FLOW_KWH,
   NARROW_HEIGHT,
+  type NodeText,
   nodeText,
   WIDE_HEIGHT,
 } from './flowLayout'
 
-// Card content widths: phone (390 px viewport), tablet (820), desktop (1440, the page's max width).
-const WIDTHS = [324, 754, 1006]
+// Card content widths: phone (390 px viewport), tablet (820), desktop (1440, the page's max width), and either
+// side of the switch to the wide layout (WIDE_MIN_WIDTH).
+const WIDTHS = [324, 754, 859, 860, 1006]
 
 const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   gridImportKwh: 145.8,
@@ -155,6 +157,13 @@ test('widths are linear in kWh with a 2 px floor', () => {
   expect(flowWidth(1631.7, 1631.7, true)).toBe(16)
 })
 
+test('without a positive largest arrow the width is the floor, never NaN or Infinity', () => {
+  expect(flowWidth(0, 0, false)).toBe(2)
+  expect(flowWidth(5, 0, false)).toBe(2)
+  expect(flowWidth(5, 0, true)).toBe(2)
+  expect(flowWidth(5, -1, false)).toBe(2)
+})
+
 test('every arrow carries the figure the spec names', () => {
   const f = energyFigures(sums())
   const pairs: [FlowNodeKey, FlowNodeKey, number][] = [
@@ -169,6 +178,25 @@ test('every arrow carries the figure the spec names', () => {
   for (const [from, to, kwh] of pairs) expect(edgeKwh(f, from, to), `${from}>${to}`).toBe(kwh)
 })
 
+test('export above the solar surplus splits the discharge between sold and the house', () => {
+  // Solar 76.9 − 21.8 into the battery leaves a 55.1 surplus; 60 sold puts 4.9 of the battery's 49 on the grid.
+  const f = energyFigures(sums({ gridExportKwh: 60 }))
+  expect(f.solarDirect).toBe(0)
+  expect(edgeKwh(f, 'bat', 'exp')).toBeCloseTo(4.9)
+  expect(edgeKwh(f, 'bat', 'load')).toBeCloseTo(44.1)
+  expect(edgeKwh(f, 'sol', 'exp')).toBeCloseTo(55.1)
+  expect(edgeKwh(f, 'sol', 'load')).toBe(0)
+  const drawn = drawnFlows(flowLayout(1006), f).map((x) => `${x.spec.from}>${x.spec.to}`)
+  expect(drawn).toContain('bat>exp')
+  expect(drawn).not.toContain('sol>load')
+})
+
+test('a pair with no arrow carries nothing', () => {
+  const f = energyFigures(sums())
+  expect(edgeKwh(f, 'load', 'sol')).toBe(0)
+  expect(edgeKwh(f, 'exp', 'bat')).toBe(0)
+})
+
 test('arrows below 0.05 kWh are not drawn', () => {
   // October 2026: export within the solar surplus, so battery → sold is 0.
   const flows = drawnFlows(flowLayout(1006), energyFigures(sums()))
@@ -181,6 +209,19 @@ test('arrows below 0.05 kWh are not drawn', () => {
   expect(tiny.map((x) => `${x.spec.from}>${x.spec.to}`)).not.toContain('sol>exp')
 })
 
+test('an arrow of exactly 0.05 kWh is drawn', () => {
+  const f = energyFigures(sums())
+  const keys = (solarExported: number) =>
+    drawnFlows(flowLayout(1006), { ...f, solarExported }).map((x) => `${x.spec.from}>${x.spec.to}`)
+  expect(keys(MIN_FLOW_KWH)).toContain('sol>exp')
+  expect(keys(0.0499)).not.toContain('sol>exp')
+})
+
+test('the wide layout starts at 860 px', () => {
+  expect(flowLayout(859)).toMatchObject({ narrow: true, height: NARROW_HEIGHT })
+  expect(flowLayout(860)).toMatchObject({ narrow: false, height: WIDE_HEIGHT })
+})
+
 test('the loss stub appears from 0.5 kWh, at least 4 px wide', () => {
   const wide = flowLayout(1006)
   expect(lossStub(wide, 0.49, 100)).toBeNull()
@@ -189,6 +230,19 @@ test('the loss stub appears from 0.5 kWh, at least 4 px wide', () => {
   expect(s?.side).toBe('b')
   expect(s?.width).toBe(4)
   expect(lossStub(flowLayout(324), 118.3, 1631.7)?.side).toBe('r')
+  expect(lossStub(wide, 0.5, 100)).not.toBeNull()
+  expect(lossStub(wide, Number.NaN, 100)).toBeNull()
+})
+
+test('a loss stub with no arrows drawn (largest arrow 0) is 4 px, not Infinity', () => {
+  const s = lossStub(flowLayout(1006), 3, 0)
+  expect(s?.width).toBe(4)
+  expect(
+    Object.values(s ?? {})
+      .filter((v) => typeof v === 'number')
+      .every(Number.isFinite),
+  ).toBe(true)
+  expect(lossStub(flowLayout(324), 3, 0)?.height).toBe(4)
 })
 
 test('a loss below 0.5 kWh or negative reads "about zero"', () => {
@@ -196,10 +250,48 @@ test('a loss below 0.5 kWh or negative reads "about zero"', () => {
   expect(lossLabel(0.49)).toBe('about-zero')
   expect(lossLabel(-0.2)).toBe('about-zero')
   expect(lossLabel(-1.2)).toBe('about-zero')
+  expect(lossLabel(0)).toBe('about-zero')
+  expect(lossLabel(0.5)).toBe('value')
+  expect(lossLabel(Number.NaN)).toBe('about-zero')
+  expect(lossLabel(Number.POSITIVE_INFINITY)).toBe('about-zero')
 })
 
 test('the arrowhead is a triangle whose tip sits on the node edge', () => {
   const pts = arrowHead({ x: 100, y: 50, dx: -1, dy: 0 }, 10).split(' ')
   expect(pts).toHaveLength(3)
   expect(pts[0]).toBe('100,50')
+})
+
+test('the arrowhead runs 9 px back along the normal, max(5, width / 2 + 4) to either side', () => {
+  // Into a left side (normal −x): thin arrows get the 5 px minimum, thick ones width / 2 + 4.
+  expect(arrowHead({ x: 100, y: 50, dx: -1, dy: 0 }, 2)).toBe('100,50 91,45 91,55')
+  expect(arrowHead({ x: 100, y: 50, dx: -1, dy: 0 }, 20)).toBe('100,50 91,36 91,64')
+  // Into a top side (normal −y).
+  expect(arrowHead({ x: 10, y: 20, dx: 0, dy: -1 }, 10)).toBe('10,20 19,11 1,11')
+})
+
+test.each(WIDTHS)('at %i px each arrowhead base meets its curve end', (width) => {
+  const layout = flowLayout(width)
+  for (const e of layout.edges) {
+    const c = flowCurve(layout, e)
+    const [, b1, b2] = arrowHead(c.tip, 10)
+      .split(' ')
+      .map((p) => p.split(',').map(Number))
+    const end = c.at(1)
+    expect((b1[0] + b2[0]) / 2, `${e.from}>${e.to}`).toBeCloseTo(end.x)
+    expect((b1[1] + b2[1]) / 2, `${e.from}>${e.to}`).toBeCloseTo(end.y)
+  }
+})
+
+test.each([false, true])('which text lines a node has (narrow: %s)', (narrow) => {
+  const layout = flowLayout(narrow ? 324 : 1006)
+  const lines = (key: FlowNodeKey) => {
+    const t: NodeText = nodeText(layout.nodes[key], key, narrow)
+    return { second: t.second !== null, third: t.third !== null }
+  }
+  // The battery's loss is its value; its charge level is the third line, wide only. Förbrukning has two car lines.
+  expect(lines('bat')).toEqual({ second: false, third: !narrow })
+  expect(lines('load')).toEqual({ second: true, third: true })
+  for (const key of ['sol', 'imp', 'exp'] as const)
+    expect(lines(key), key).toEqual({ second: false, third: false })
 })

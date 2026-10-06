@@ -156,8 +156,12 @@ export function arrowHead(tip: Port, width: number): string {
   return `${tip.x},${tip.y} ${bx + px * half},${by + py * half} ${bx - px * half},${by - py * half}`
 }
 
-/** Linear in kWh (the widths are the data), with a floor so a small flow stays visible. */
+/**
+ * Linear in kWh (the widths are the data), with a floor so a small flow stays visible. Without a positive
+ * largest arrow (nothing drawn) there is no scale: the floor.
+ */
 export function flowWidth(kwh: number, max: number, narrow: boolean): number {
+  if (!(max > 0)) return 2
   return Math.max(2, ((narrow ? 16 : 20) * kwh) / max)
 }
 
@@ -188,8 +192,9 @@ export function drawnFlows(layout: FlowLayout, f: EnergyFigures) {
     .filter((x) => x.kwh >= MIN_FLOW_KWH)
 }
 
+/** A loss that isn't a finite number reads "≈ 0" too, rather than drawing a stub from it. */
 export function lossLabel(lossKwh: number): 'about-zero' | 'value' {
-  return lossKwh < MIN_LOSS_KWH ? 'about-zero' : 'value'
+  return Number.isFinite(lossKwh) && lossKwh >= MIN_LOSS_KWH ? 'value' : 'about-zero'
 }
 
 /** The stub that leaves the battery, on the arrows' width scale (4 px floor), or null when the loss reads ≈ 0. */
@@ -206,16 +211,19 @@ export function lossStub(layout: FlowLayout, lossKwh: number, max: number) {
 export type NodeText = {
   tile: { x: number; y: number; size: number; icon: number }
   label: Point
+  /** The node's figure; on the battery, its loss. */
   value: Point & { size: number }
+  /** Förbrukning's first car line; null on every other node. */
   second: Point | null
+  /** Förbrukning's second car line, or the battery's charge level (wide only); null elsewhere. */
   third: Point | null
 }
 
 /**
  * Where a node's tile and text go. Wide: the tile left of the text, the text block (label cap top to the last
  * baseline, cap height ≈ 0.7 em) centred on the tile. Narrow: the tile and the label share the first row, the
- * figure runs the node's width below. `second`/`third`: the battery's loss and charge-level lines, or
- * Förbrukning's two car lines.
+ * figure runs the node's width below. The battery's `value` is its loss; its charge level is `third` on the wide
+ * layout (narrow: it moves to the loss tooltip). Förbrukning's two car lines are `second` and `third`.
  */
 export function nodeText(node: FlowNode, key: FlowNodeKey, narrow: boolean): NodeText {
   const x0 = node.x - node.w / 2
