@@ -13,6 +13,7 @@ import {
   legend,
   legendLabels,
   legendText,
+  pressUntil,
   seriesBars,
   tooltipText,
 } from '~test/browser/chartDom'
@@ -199,6 +200,8 @@ test('the legend lists immediate, actual, optimal, then the stub', async () => {
       m.charging_economy_series_not_comparable(),
     ]),
   )
+  // The legend is the touch and screen-reader key: never hidden with the chart.
+  expect(legend(screen.container)?.closest('[aria-hidden="true"]')).toBeNull()
 })
 
 test('a month tooltip lists its three kronor rows in series order', async () => {
@@ -211,14 +214,20 @@ test('a month tooltip lists its three kronor rows in series order', async () => 
   await vi.waitFor(() => expect(tooltipText()).toContain(formatSek(70)))
   const text = tooltipText()
   expect(text).toContain(monthLabel(9))
-  const at = (label: string, sek: number) => text.indexOf(`${label}${formatSek(sek)}`)
-  expect(at(m.charging_economy_series_immediate(), 120)).toBeGreaterThanOrEqual(0)
-  expect(at(m.charging_economy_series_immediate(), 120)).toBeLessThan(
-    at(m.charging_economy_series_actual(), 90),
-  )
-  expect(at(m.charging_economy_series_actual(), 90)).toBeLessThan(
-    at(m.charging_economy_series_optimal(), 70),
-  )
+  // Each row is its label, then its value, before the next row's label.
+  const rows = [
+    [m.charging_economy_series_immediate(), formatSek(120)],
+    [m.charging_economy_series_actual(), formatSek(90)],
+    [m.charging_economy_series_optimal(), formatSek(70)],
+  ]
+  let from = 0
+  for (const [label, value] of rows) {
+    const l = text.indexOf(label, from)
+    expect(l).toBeGreaterThanOrEqual(0)
+    const v = text.indexOf(value, l + label.length)
+    expect(v).toBeGreaterThanOrEqual(0)
+    from = v + value.length
+  }
 })
 
 test('the keyboard reaches the chart and the arrows walk its tooltip', async () => {
@@ -232,15 +241,28 @@ test('the keyboard reaches the chart and the arrows walk its tooltip', async () 
   await screen.getByRole('button', { name: 'before' }).click()
   await userEvent.tab()
   expect(document.activeElement).toBe(focusTarget(screen.container))
-  // Walk right across the eight months without comparable sessions (they show
-  // no kronor rows) until September's rows appear. The walk must not restart
-  // at January on an empty month.
-  await vi.waitFor(
-    async () => {
-      if (!tooltipText().includes(formatSek(120))) await userEvent.keyboard('{ArrowRight}')
-      expect(tooltipText()).toContain(formatSek(120))
-    },
-    { timeout: 5000, interval: 100 },
-  )
+  // Walk right across the months without comparable sessions (no kronor rows)
+  // until September's rows appear.
+  await pressUntil('{ArrowRight}', () => tooltipText().includes(formatSek(120)))
   expect(tooltipText()).toContain(monthLabel(9))
+  // Escape closes it.
+  await userEvent.keyboard('{Escape}')
+  await vi.waitFor(() => expect(tooltipText()).toBe(''))
+})
+
+test('Tab leaves the chart in one step and closes its tooltip', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <button type="button">before</button>
+      <EconomyMonthlyChart months={months} />
+      <button type="button">after</button>
+    </div>,
+  )
+  await vi.waitFor(() => expect(focusTarget(screen.container)).not.toBeNull())
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await pressUntil('{ArrowRight}', () => tooltipText().includes(formatSek(120)))
+  await userEvent.tab()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'after' }).element())
+  await vi.waitFor(() => expect(tooltipText()).toBe(''))
 })

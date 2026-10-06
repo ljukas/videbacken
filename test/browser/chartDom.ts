@@ -1,4 +1,5 @@
 import { expect, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 
 // Library-neutral queries for the chart tests. Each selector matches recharts'
 // DOM and the visx bar module's own data-* hooks, so a test keeps its
@@ -47,6 +48,8 @@ export const barHeight = (bar: Element) =>
   ).getBoundingClientRect().height
 export const lineSeries = (root: ParentNode) => all(root, SEL.lineSeries)
 export const lineCurve = (root: ParentNode) => root.querySelector<SVGPathElement>(SEL.lineCurve)
+/** Every line path (a library may draw one path per segment, or one path of several). */
+export const lineCurves = (root: ParentNode) => all<SVGPathElement>(root, SEL.lineCurve)
 export const lineDots = (root: ParentNode) => all<SVGElement>(root, SEL.lineDot)
 export const gridLines = (root: ParentNode) => all(root, SEL.gridLine)
 export const chartSvg = (root: ParentNode) => root.querySelector<SVGSVGElement>(SEL.svg)
@@ -67,12 +70,15 @@ export const legendLabels = (root: ParentNode) => {
 
 /** The open tooltip's text ('' when none). Tooltips may be portalled, so this searches the document. */
 export const tooltipText = () =>
-  all(document, SEL.tooltip)
+  all<HTMLElement>(document, SEL.tooltip)
+    // recharts hides a dismissed tooltip (an inline visibility: hidden)
+    // instead of removing it, so a hidden one doesn't count.
+    .filter((t) => t.style.visibility !== 'hidden')
     .map((t) => t.textContent ?? '')
     .join('\n')
 
-export const xTickLabels = (root: ParentNode) =>
-  all(root, SEL.xTick).map((t) => t.textContent ?? '')
+export const xTickNodes = (root: ParentNode) => all(root, SEL.xTick)
+export const xTickLabels = (root: ParentNode) => xTickNodes(root).map((t) => t.textContent ?? '')
 export const yTickLabels = (root: ParentNode) =>
   all(root, SEL.yTick).map((t) => t.textContent ?? '')
 
@@ -109,4 +115,20 @@ export async function hoverBetween(root: ParentNode, a: number, b: number) {
   const p = centre(bars(root)[a])
   const q = centre(bars(root)[b])
   pointAt((p.x + q.x) / 2, p.y)
+}
+
+/** Lets a key press or pointer move render before the next read. */
+export const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
+
+/**
+ * Presses `key` until `done()` holds, one press per render, at most `max`
+ * times. Unlike pressing inside `vi.waitFor`, a slow render can't make it
+ * press twice and overshoot.
+ */
+export async function pressUntil(key: string, done: () => boolean, max = 12) {
+  for (let i = 0; i < max && !done(); i++) {
+    await userEvent.keyboard(key)
+    await settle()
+  }
+  expect(done()).toBe(true)
 }

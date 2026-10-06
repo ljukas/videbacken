@@ -7,15 +7,19 @@ import {
   focusTarget,
   hoverBar,
   hoverBetween,
+  legend,
   legendLabels,
   legendText,
+  pressUntil,
   seriesBars,
+  settle,
   tooltipText,
   xTickLabels,
+  xTickNodes,
   yTickLabels,
 } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
-import { formatOneDecimal, formatSek, monthLabel } from './format'
+import { formatOneDecimal, formatSek, formatShare, monthLabel } from './format'
 import { MetricToggle } from './MetricToggle'
 import { chartMetricOptions, MonthlyChart } from './MonthlyChart'
 
@@ -477,6 +481,8 @@ test('the kr legend and tooltip list the series in stack order', async () => {
       m.charging_chart_series_fees(),
     ]),
   )
+  // The legend is the touch and screen-reader key: never hidden with the chart.
+  expect(legend(screen.container)?.closest('[aria-hidden="true"]')).toBeNull()
   await hoverBar(screen.container, 0)
   await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_chart_total()))
   const text = tooltipText()
@@ -539,9 +545,13 @@ test('a narrow chart thins the month labels but keeps the first and the last', a
   )
   await vi.waitFor(() => expect(xTickLabels(screen.container).length).toBeGreaterThan(1))
   const labels = xTickLabels(screen.container)
-  expect(labels.length).toBeLessThan(12)
   expect(labels[0]).toBe(monthLabel(1))
   expect(labels.at(-1)).toBe(monthLabel(12))
+  // No two shown labels touch.
+  const boxes = xTickNodes(screen.container).map((t) => t.getBoundingClientRect())
+  for (let i = 1; i < boxes.length; i++) {
+    expect(boxes[i].left).toBeGreaterThan(boxes[i - 1].right)
+  }
 })
 
 test('the keyboard reaches the chart and the arrows walk its tooltip a month at a time', async () => {
@@ -556,17 +566,68 @@ test('the keyboard reaches the chart and the arrows walk its tooltip a month at 
   await userEvent.tab()
   expect(document.activeElement).toBe(focusTarget(screen.container))
   // recharts shows January on focus; the visx group shows it on the first →.
-  // Either way, two → in a row move exactly one month.
-  await userEvent.keyboard('{ArrowRight}')
-  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  // Either way, → moves to a month, and then one month at a time.
   const shown = () =>
     [...Array(12).keys()]
       .map((i) => monthLabel(i + 1))
       .findIndex((l) => tooltipText().startsWith(l))
+  await settle()
+  const initial = shown()
+  await userEvent.keyboard('{ArrowRight}')
+  await vi.waitFor(() => expect(shown()).not.toBe(initial))
   const before = shown()
   expect(before).toBeGreaterThanOrEqual(0)
   await userEvent.keyboard('{ArrowRight}')
   await vi.waitFor(() => expect(shown()).toBe(before + 1))
   await userEvent.keyboard('{ArrowLeft}')
   await vi.waitFor(() => expect(shown()).toBe(before))
+  await userEvent.keyboard('{Escape}')
+  await vi.waitFor(() => expect(tooltipText()).toBe(''))
+})
+
+test('the kr view is reachable by keyboard too', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <button type="button">before</button>
+      <MonthlyChart months={months} cost={{ year: 2026, months: costMonths }} metric="sek" />
+    </div>,
+  )
+  await vi.waitFor(() => expect(focusTarget(screen.container)).not.toBeNull())
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  expect(document.activeElement).toBe(focusTarget(screen.container))
+  await pressUntil('{ArrowRight}', () => tooltipText().includes(m.charging_chart_total()))
+})
+
+test('Tab leaves the chart in one step and closes its tooltip', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <button type="button">before</button>
+      <MonthlyChart months={months} />
+      <button type="button">after</button>
+    </div>,
+  )
+  await vi.waitFor(() => expect(focusTarget(screen.container)).not.toBeNull())
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await pressUntil('{ArrowRight}', () => tooltipText() !== '')
+  await userEvent.tab()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'after' }).element())
+  await vi.waitFor(() => expect(tooltipText()).toBe(''))
+})
+
+test('a partly priced month reads "minst" with the missing share', async () => {
+  const partly = costMonths.map((c) =>
+    c.month === 3 ? { ...c, fullKwh: c.kwh * 0.6, noPriceKwh: c.kwh * 0.4, complete: false } : c,
+  )
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: partly }} metric="sek" />
+    </div>,
+  )
+  await hoverBar(screen.container, 2) // March's spot bar
+  await vi.waitFor(() => {
+    expect(tooltipText()).toContain(m.charging_cost_min({ total: formatSek(partly[2].totalSek) }))
+    expect(tooltipText()).toContain(m.charging_cost_partial_hint({ share: formatShare(0.4) }))
+  })
 })

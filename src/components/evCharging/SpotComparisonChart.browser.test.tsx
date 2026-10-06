@@ -1,16 +1,21 @@
 import { expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import {
   barHeight,
   barSeries,
   bars,
+  focusTarget,
   hoverBar,
+  legend,
   legendLabels,
   legendText,
   lineCurve,
+  lineCurves,
   lineDots,
   lineSeries,
+  pressUntil,
   tooltipText,
 } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
@@ -101,7 +106,9 @@ test('the month-average dots are solid, not dashed like the line', async () => {
     </div>,
   )
   await vi.waitFor(() => expect(lineDots(screen.container)).toHaveLength(2))
-  // The line itself stays dashed…
+  // Two adjacent priced months are joined by a line segment…
+  expect(lineCurves(screen.container).some((c) => /L/.test(c.getAttribute('d') ?? ''))).toBe(true)
+  // …and the line itself stays dashed…
   expect(lineCurve(screen.container)?.getAttribute('stroke-dasharray')).toBe('5 4')
   // …but a dot inheriting the dash pattern renders as a broken ring.
   for (const dot of lineDots(screen.container)) {
@@ -135,6 +142,8 @@ test('the legend lists the paid price, then the month average', async () => {
       m.charging_economy_series_avg(),
     ]),
   )
+  // The legend is the touch and screen-reader key: never hidden with the chart.
+  expect(legend(screen.container)?.closest('[aria-hidden="true"]')).toBeNull()
 })
 
 test('a month tooltip shows what we paid, then the average, in öre', async () => {
@@ -165,8 +174,26 @@ test('the average line breaks across a month without a paid price', async () => 
     </div>,
   )
   await vi.waitFor(() => expect(lineDots(screen.container)).toHaveLength(2))
-  // Two separate one-point segments: no line drawn through September.
-  const d = lineCurve(screen.container)?.getAttribute('d') ?? ''
-  expect(d.match(/M/g)?.length ?? 0).not.toBe(1)
-  expect(d).not.toMatch(/L/)
+  // Two separate one-point segments, however the library splits them into
+  // paths: no line drawn through September.
+  const ds = lineCurves(screen.container).map((c) => c.getAttribute('d') ?? '')
+  expect(ds.length).toBeGreaterThan(0)
+  expect(ds.join('').match(/M/g)).toHaveLength(2)
+  for (const d of ds) expect(d).not.toMatch(/[LCQ]/)
+})
+
+test('the keyboard reaches the chart and the arrows walk its tooltip', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <button type="button">before</button>
+      <SpotComparisonChart months={months} />
+    </div>,
+  )
+  await vi.waitFor(() => expect(focusTarget(screen.container)).not.toBeNull())
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  expect(document.activeElement).toBe(focusTarget(screen.container))
+  const paid = m.charging_economy_ore({ value: formatOrePrecise(80) })
+  await pressUntil('{ArrowRight}', () => tooltipText().includes(paid))
+  expect(tooltipText()).toContain(monthLabel(9))
 })
