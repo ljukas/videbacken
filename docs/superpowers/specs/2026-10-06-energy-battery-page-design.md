@@ -248,3 +248,30 @@ table rows, the winter note; `nav_energy_overview`, `nav_energy_battery`, `nav_e
 
 - Kronor (the cost of the loss), a day view, splitting standby from round-trip loss (ADR-0024).
 - Splitting the Ut arrow by charge origin (step 1c decision 6).
+
+## Build notes (2026-10-06, step 2 build)
+
+Decided during the build, task by task with two adversarial reviewers each and a whole-branch review. These amend the
+sections above.
+
+- **Wide second lines.** Ut's "varav såld" and Förlust's share line start under the icon tile (`x0 + 12`), not beside
+  it: beside the tile there are ≈152 px, and "43 % av det som laddades in" needs ≈165 px at 13 px. On narrow nodes
+  both second lines shrink to fit (13 → 11 px).
+- **In-arrow shares** use `gridChargedShare` (Köpt el) and `1 − gridChargedShare` (Solel) from `figures.ts`, so they
+  disappear below `MIN_BATTERY_IN_KWH` like every other battery share. Their base is what went in; the loss share and
+  Verkningsgrad use what went in net of Ändrat lager (the two add up to 100 %).
+- **Loss share** (node, tooltips, table, the chart's tooltip and its winter label) shows only when the loss reads as a
+  value (≥ 0,5 kWh); the kWh figure stays real everywhere.
+- **Unknown charge level** (first or last SoC missing): the battery node reads "Lager —", Ändrat lager reads "—" in
+  the table and the chart tooltip, and the charge-level line is left out. (Översikt still shows "+0,0 kWh" there; a
+  follow-up.)
+- **Table.** The Förlust row carries its share, "15,0 kWh (6 %)", so the keyboard and screen-reader path has it on
+  narrow screens too; Översikt's charge-level row ("laddnivå 15 → 20 %") is added when both levels are known.
+- **Hint.** The battery diagram has its own hint, "… Färgen visar var den kom ifrån; rött är förlusten.", since the
+  red loss arrow isn't an origin.
+- **Chart labels** that would overlap are skipped, the tallest stack placed first (a full winter month beats a
+  partial one). On a 390 px phone only one of two adjacent winter labels shows; the tooltip has the share.
+- **The winter note** shows only with the chart card (not under a failed read of another year).
+- **Geometry** is pinned from 256 to 1006 px card width (no node overlap, no arrow crossing or passing through a
+  node). The narrow node width gets a floor: `nw` = min(220, max(124, ⌊(W − 24) ÷ 2⌋)), so a figure keeps ≥ 100 px of
+  room on the narrowest phones (below ≈ 272 px the two top nodes sit 6 px apart); nothing changes from 272 px up.
