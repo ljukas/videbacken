@@ -5,10 +5,10 @@ a warning on /charging from 30 days before, and get emails at 30 and 7 days.
 
 ## Create or renew
 1. On the phone (MyŠkoda app 8.16+), open https://go.skoda.eu/api-keys. Create a key, select the car, copy it.
-2. Laddning → Inställningar → the key button on the Škoda tile → paste it into "API-nyckel" (VIN and position only on
-   first setup) → **Spara**. The Škoda sync runs at once: expect "Fungerar" and "Nyckeln går ut den …" with the new
-   date; the warning disappears. If the sync fails right away, wait a minute and press **Synka nu**: another warm
-   instance may hold the old stored values for up to 60 s (ADR-0026).
+2. Laddning → Inställningar → the key button on the Škoda tile → **Byt** (or **Ange i appen**) on "API-nyckel" →
+   paste it (VIN and position only on first setup) → **Spara**. The Škoda sync runs at once: expect "Fungerar" and
+   "Nyckeln går ut den …" with the new date; the warning disappears. If the sync fails right away, wait a minute and
+   press **Synka nu**: another warm instance may hold the old stored values for up to 60 s (ADR-0026).
 
 **Fallback** (no `CREDENTIALS_ENCRYPTION_KEY`, or the app is down): set the env vars in Vercel → videbacken → Settings →
 Environment Variables → **Production** only (Preview has its own database but would share the car's 20 requests/h):

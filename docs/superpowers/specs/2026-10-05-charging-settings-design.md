@@ -402,14 +402,14 @@ its own schema review. The checkpoint runs after 3b.
   server's `INVALID_FIELD` is the one source of format rules, and each listed field shows its own message.
 - **Each field shows:**
   - its label;
-  - its status line: "Sparad i appen · 5 okt" / "Från miljövariabel" / "Saknas";
+  - its status line: "Sparad i appen · 5 okt" / "Från miljövariabel" / "Saknas" (superseded by Step 3c-1);
   - a red line "Fungerade inte vid senaste synken" when it is in the source's current `suspectFields`;
   - an input that is never pre-filled, with a namespaced id `credential-<source>-<field>`. `secret` fields use
     `type="password"` + `autoComplete="new-password"` (browsers ignore "off" there) and the password-manager
     opt-outs `data-1p-ignore`, `data-lpignore`, `data-bwignore`, `data-form-type="other"`; text inputs use
     `autoComplete="off"`.
 - **Description text:**
-  - "Lämna ett fält tomt för att behålla det som är sparat."
+  - "Lämna ett fält tomt för att behålla det som är sparat." (superseded by Step 3c-1)
   - For Škoda: a link to `https://go.skoda.eu/api-keys` and the line "Skapa nyckeln i MyŠkoda-appen och klistra in
     den här."
 - **When the encryption key is missing** (`encryptionKeyConfigured: false`), the inputs are disabled and the dialog
@@ -434,8 +434,9 @@ its own schema review. The checkpoint runs after 3b.
 - **After "Ta bort sparade uppgifter"** the dialog closes. The page runs the sync (not the dialog), so the tile's
   "Synkar…" follows it.
 - **Focus:** closing returns focus to the key button `#credentials-<source>`. The dialog can't be dismissed while a
-  save or remove is in flight. With the key missing, focus starts on "Avbryt".
-- **The stored date shows the year:** "Sparad i appen · 5 okt. 2026".
+  save or remove is in flight. With the key missing, focus starts on the footer's cancel ("Stäng" when every field is
+  closed, "Avbryt" otherwise).
+- **The stored date shows the year:** "Sparad i appen · 5 okt. 2026" (superseded by Step 3c-1).
 - **Stale suspect fields are hidden:** they count (tile line, dialog field line) only while the health's
   `lastAttemptAt` is not older than the source's `credentials.status` `updatedAt` (no stored row or status unknown →
   they count). After a save the red lines disappear until the next sync outcome is recorded, so a blame from before
@@ -483,7 +484,7 @@ Research behind this section (2026-10-06):
 - Write-only values in admin UIs: Grafana's `SecretInput` ("configured" + Reset), GitHub Actions secrets, Stripe
   keys, Vercel sensitive env vars. Field anatomy follows GOV.UK, Carbon and Atlassian: hint above the input, the space
   below the input is for errors, no state in placeholders.
-- Map libraries, tile hosts and geocoders: listed in "3c-2" below.
+- Map libraries, tile hosts and geocoders: the alternatives are listed under "Alternatives considered" in "3c-2" below.
 
 Owner decisions (2026-10-06 brainstorm):
 
@@ -514,13 +515,15 @@ text, so the state never relies on colour alone.
   Emaldo (the four `EMALDO_*`) and the grid card's facility ID (`GRID_FACILITY_ID`) (owner, 2026-10-06).
 - **The home position's button speaks of the map** (owner, 2026-10-06): "Välj på kartan" / "Choose on the map" for
   `env` and `missing`, and "Ändra på kartan" / "Change on the map" for `stored`. In 3c-1, before the picker exists,
-  the button opens the "lat,lon" input and keeps the same label. In 3c-2 it opens the picker.
+  the button opens the "lat,lon" input and keeps the same label. In 3c-2 it opens the picker. A *missing* home
+  position shows the input directly in 3c-1; 3c-2 decides how a missing position reaches the picker (likely the same
+  "Välj på kartan" button).
 - **Footer** (from the mockup): with no field open, the footer shows "Stäng" and a disabled "Spara"; once a field is
   open, it shows "Avbryt" and an enabled "Spara".
-- **The remove confirm names the stored fields** ("De sparade uppgifterna för Škoda (API-nyckel, VIN) tas bort."); an unreadable source is named without fields.
-- **The env var name** comes from a client-safe copy of the field → env var map (vocabulary only: names, never
-  values). The server-only `src/lib/credentials/env.ts` keeps reading `process.env`. A test pins the two maps to each
-  other.
+- **The remove confirm names the stored fields** ("De sparade uppgifterna för Škoda (API-nyckel och VIN) tas
+  bort."); an unreadable source is named without fields.
+- **The env var name** comes from one client-safe map, `CREDENTIAL_ENV_VARS` in `integrationCredentials.ts`
+  (vocabulary only: names, never values). The server-only `src/lib/credentials/env.ts` reads `process.env` through it.
 - **"Byt" / "Ange i appen"** reveals the input and focuses it, with an "Avbryt" / "Cancel" link that hides it again
   and clears what was typed.
   - The hint sits between the label and the input: "Det nuvarande värdet används tills du sparar." / "The current
@@ -543,7 +546,7 @@ text, so the state never relies on colour alone.
   - some do: "Miljövariablerna räcker inte, så källan slutar synka." / "The environment variables are not enough, so
     the source stops syncing.";
   - none: "Källan slutar synka." / "This source stops syncing." (grid: "Månadskollen hoppas över.");
-  - an unreadable source gets the source-only sentence instead.
+  - an unreadable source gets the source-only sentence, plus the consequence line.
 - **VIN hint:** "17 tecken (inte I, O eller Q). Finns i MyŠkoda-appen under Inspect → Car details." /
   "17 characters (no I, O or Q). In the MyŠkoda app under Inspect → Car details." (owner, 2026-10-06; the app's
   own English menu names, kept verbatim in both languages).
@@ -551,7 +554,7 @@ text, so the state never relies on colour alone.
   - each origin renders its badge and body;
   - "Byt" reveals and focuses the input, and "Avbryt" hides it and clears it;
   - only open inputs are sent;
-  - `INVALID_FIELD` opens a closed field;
+  - a server field error opens a closed field;
   - an unreadable source opens every field;
   - the remove confirm's three outcomes, and the unreadable sentence;
   - the env var name shown for an `env` field.
@@ -570,6 +573,10 @@ text, so the state never relies on colour alone.
   focus starts on the first reveal button.
 - `TextField` gained optional `labelledBy` and `descriptionPlacement` props; other forms are unchanged.
 - The grid card's `env` status names `GRID_FACILITY_ID` in a `code` element.
+- The dialog has a per-source description (`charging_credentials_dialog_description` / `_grid`: "Uppgifterna som
+  Videbacken använder för att hämta data från {source}."), which replaced "Lämna ett fält tomt…".
+- A field without a value (missing, unreadable) joins the open set and stays open until "Avbryt", so a status
+  refetch that gives it a value never hides its typing. A reveal ("Byt" / "Ange i appen") always starts empty.
 
 ### 3c-2 — the home-position map picker
 
@@ -631,6 +638,10 @@ The Škoda "Laddboxens position" field's "Byt" opens a picker instead of a text 
     OpenStreetMap's servers.
   - The tile host sees roughly which area is viewed, and the admin's IP.
   - There is no reverse geocoding of the chosen point.
+- **Alternatives considered** (research, 2026-10-06):
+  - map: Leaflet with OSM raster tiles, pigeon-maps;
+  - geocoder: Photon, Lantmäteriet, keyed free tiers;
+  - tiles: keyed tiers.
 
 ## Error handling summary
 

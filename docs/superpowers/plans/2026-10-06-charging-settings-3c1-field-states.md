@@ -50,6 +50,9 @@ test), Vitest (node + browser), bun.
 
 ## Copy (verbatim, sv / en)
 
+> **As built:** the `*_label` keys below were replaced by one `charging_credentials_field_action_label`
+> ("{action}, {field}", WCAG 2.5.3: the visible text starts the name). The spec's "As built (3c-1)" is the record.
+
 | key | sv | en |
 |---|---|---|
 | `charging_credentials_badge_stored` | Sparad | Saved |
