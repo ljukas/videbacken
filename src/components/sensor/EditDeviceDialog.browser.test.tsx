@@ -125,6 +125,21 @@ test('the badge follows the field: own name, then the Shelly name, then the defa
   // Spaces only clear the name server-side, so they count as empty here too.
   await input.fill('   ')
   await expect.element(screen.getByText(m.sensors_name_badge_shelly())).toBeVisible()
+  expect(
+    screen.getByRole('button', { name: m.sensors_name_reset_label() }).elements(),
+  ).toHaveLength(0)
+})
+
+test('a device that was never named opens on the Shelly name: badge, placeholder and helper', async () => {
+  const { screen } = await renderWithProviders(
+    <EditDeviceDialog open device={device({ shellyName: 'Källare NV' })} onOpenChange={() => {}} />,
+  )
+  const input = screen.getByLabelText(m.sensors_field_name(), { exact: true })
+  await expect.element(screen.getByText(m.sensors_name_badge_shelly())).toBeVisible()
+  await expect.element(input).toHaveAttribute('placeholder', 'Källare NV')
+  await expect
+    .element(screen.getByText(m.sensors_name_hint({ fallback: 'Källare NV' })))
+    .toBeVisible()
 })
 
 test('with no Shelly name an empty field shows the default badge, placeholder and helper', async () => {

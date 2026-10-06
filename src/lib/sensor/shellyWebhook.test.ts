@@ -11,6 +11,12 @@ const q = (s: string) => new URLSearchParams(s)
 const shellyUrl = (search: string) => `http://localhost/api/webhooks/shelly?${search}`
 
 describe('parseShellyQuery', () => {
+  test('keeps a Shelly name with a slash and an emoji as-is', () => {
+    const name = 'Källare NV/Ö 🌡️'
+    const parsed = parseShellyQuery(q(`mac=AABBCCDDEEFF&t=21.4&name=${encodeURIComponent(name)}`))
+    expect(parsed.ok && parsed.value.shellyName).toBe(name)
+  })
+
   test('parses mac + temp + humidity + battery', () => {
     expect(parseShellyQuery(q('mac=AABBCCDDEEFF&t=21.4&h=48.2&batt=90'))).toEqual({
       ok: true,
