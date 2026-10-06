@@ -3,7 +3,7 @@ import { MapPinIcon } from 'lucide-react'
 import { setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LatLon } from '~/lib/effects/skoda'
 import { logger } from '~/lib/logger/browser'
 import { m } from '~/paraglide/messages'
@@ -69,12 +69,13 @@ export function HomePositionMap({ point, initialView, camera, onPick }: HomePosi
   const locale = useRef(mapLocale()).current
   const cameraRef = useRef(camera)
   cameraRef.current = camera
-  const pinRef = useRef<HTMLButtonElement>(null)
+  // State, not a ref object: the pin renders only after the map instance exists (async),
+  // so the effect below must re-run when the button element actually appears.
+  const [pin, setPin] = useState<HTMLButtonElement | null>(null)
   const pointRef = useRef(point)
   pointRef.current = point
   const onPickRef = useRef(onPick)
   onPickRef.current = onPick
-  const hasPoint = point !== null
 
   useEffect(() => {
     if (!camera) return
@@ -89,9 +90,7 @@ export function HomePositionMap({ point, initialView, camera, onPick }: HomePosi
   // A native listener on the pin: MapLibre's keyboard handler listens on the canvas
   // container, which a keydown reaches before React's root-level handlers run, so a
   // React `onKeyDown` + `stopPropagation` cannot keep the map from panning.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: hasPoint mounts/unmounts the pin button
   useEffect(() => {
-    const pin = pinRef.current
     if (!pin) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       const unit = ARROW_DELTAS[event.key]
@@ -106,7 +105,7 @@ export function HomePositionMap({ point, initialView, camera, onPick }: HomePosi
     }
     pin.addEventListener('keydown', onKeyDown)
     return () => pin.removeEventListener('keydown', onKeyDown)
-  }, [hasPoint])
+  }, [pin])
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset brings legend/min-width quirks the map frame doesn't want
@@ -160,7 +159,7 @@ export function HomePositionMap({ point, initialView, camera, onPick }: HomePosi
             <button
               type="button"
               aria-label={m.charging_home_pin_label()}
-              ref={pinRef}
+              ref={setPin}
               className="grid size-11 place-items-center rounded-full text-brand focus-visible:outline-2 focus-visible:outline-ring"
             >
               <MapPinIcon aria-hidden className="size-9 fill-background drop-shadow" />
