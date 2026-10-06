@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { useEffect, useRef } from 'react'
+import { lazy, useEffect, useRef } from 'react'
 import { z } from 'zod'
-import { CredentialsDialog } from '~/components/evCharging/CredentialsDialog'
+import chargingGridBones from '~/bones/charging-grid.bones.json'
+import chargingSourcesBones from '~/bones/charging-sources.bones.json'
+import chargingTariffsBones from '~/bones/charging-tariffs.bones.json'
 import { credentialsButtonId, currentSuspectFields } from '~/components/evCharging/credentialLink'
-import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { GridTariffCard } from '~/components/evCharging/GridTariffCard'
 import { healthPoll } from '~/components/evCharging/healthPoll'
 import {
@@ -15,11 +16,11 @@ import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton
 import { SyncSourcesPanel } from '~/components/evCharging/SyncSourcesPanel'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { TariffCard } from '~/components/evCharging/TariffCard'
-import { TariffDialog } from '~/components/evCharging/TariffDialog'
-import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
+import { LazyDialogMount } from '~/components/layout/LazyDialogMount'
 import { firstLoadPending, LoadErrorAlert } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
+import { useIdlePreload } from '~/hooks/useIdlePreload'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import {
   CREDENTIAL_SOURCES,
@@ -53,6 +54,29 @@ const searchSchema = z.object({
 })
 type SettingsSearch = z.infer<typeof searchSchema>
 type SettingsDialog = NonNullable<SettingsSearch['dialog']>
+
+// Admin-only: loads on first open (LazyDialogMount), so a member never fetches the form code;
+// an admin warms the chunks once the browser is idle (useIdlePreload).
+const loadTariffDialog = () => import('~/components/evCharging/TariffDialog')
+const TariffDialog = lazy(() => loadTariffDialog().then((mod) => ({ default: mod.TariffDialog })))
+const loadVehicleImportDialog = () => import('~/components/evCharging/VehicleImportDialog')
+const VehicleImportDialog = lazy(() =>
+  loadVehicleImportDialog().then((mod) => ({ default: mod.VehicleImportDialog })),
+)
+const loadDeleteTariffDialog = () => import('~/components/evCharging/DeleteTariffDialog')
+const DeleteTariffDialog = lazy(() =>
+  loadDeleteTariffDialog().then((mod) => ({ default: mod.DeleteTariffDialog })),
+)
+const loadCredentialsDialog = () => import('~/components/evCharging/CredentialsDialog')
+const CredentialsDialog = lazy(() =>
+  loadCredentialsDialog().then((mod) => ({ default: mod.CredentialsDialog })),
+)
+const ADMIN_DIALOG_LOADERS = [
+  loadTariffDialog,
+  loadVehicleImportDialog,
+  loadDeleteTariffDialog,
+  loadCredentialsDialog,
+]
 
 const RECENT_RUNS = 20
 
@@ -95,6 +119,7 @@ export const Route = createFileRoute('/_authenticated/charging/settings')({
 })
 
 function ChargingSettingsPage() {
+  useIdlePreload(true, ADMIN_DIALOG_LOADERS)
   const navigate = Route.useNavigate()
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
@@ -136,6 +161,10 @@ function ChargingSettingsPage() {
   }, [dialogUnavailable, navigate])
   // "Ny period" starts from the newest period's amounts (the list is oldest first).
   const latestTariff = tariffs?.at(-1)
+  const tariffDialogOpen =
+    tariffs !== undefined &&
+    (isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined))
+  const deleteTariffOpen = isOpen('tariffDelete') && selectedTariff !== undefined
 
   // Every source's state in one read, polled together (ADR-0018: polled), so a
   // tile's "running" state (a cron run seen mid-flight) clears on its own.
@@ -164,6 +193,7 @@ function ChargingSettingsPage() {
   // Opens once the origins are known, or their read failed (the dialog then has
   // no origin lines): never with origins that are still loading.
   const credentialsReady = credentialsResult.data !== undefined || credentialsResult.isError
+  const credentialsDialogOpen = credentialsSource !== undefined && credentialsReady
   // The key button that opened the dialog, for focus on close: the URL (and so
   // `credentialsSource`) clears before Radix asks where focus goes. Both refs
   // are read by onCloseAutoFocus, which can fire from a stale render's closure.
@@ -193,7 +223,7 @@ function ChargingSettingsPage() {
       {/* One read covers every source: when it fails, say so with a retry,
           above the tiles that then read "Okänd status" (ADR-0016). */}
       <LoadErrorAlert title={m.charging_sources_error_title()} query={healthResult} />
-      <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
+      <SectionSkeleton bones={chargingSourcesBones} loading={sourcesPending} fallbackHeight="20rem">
         <SyncSourcesPanel
           entries={[
             {
@@ -239,7 +269,7 @@ function ChargingSettingsPage() {
       </SectionSkeleton>
 
       <SectionSkeleton
-        name="charging-tariffs"
+        bones={chargingTariffsBones}
         loading={firstLoadPending(tariffsResult)}
         fallbackHeight="10rem"
       >
@@ -260,7 +290,7 @@ function ChargingSettingsPage() {
       {/* A skeleton until the credentials' origins are known; a failed read
           leaves the card without a status line (the alert above says why). */}
       <SectionSkeleton
-        name="charging-grid"
+        bones={chargingGridBones}
         loading={firstLoadPending(credentialsResult)}
         fallbackHeight="9rem"
       >
@@ -273,66 +303,71 @@ function ChargingSettingsPage() {
 
       {/* Waits for the tariffs: "new" starts from the newest period's
           amounts, and the form keeps the defaults it mounted with. */}
-      <TariffDialog
-        open={
-          tariffs !== undefined &&
-          (isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined))
-        }
-        mode={
-          isOpen('tariffEdit') && selectedTariff
-            ? { kind: 'edit', tariff: selectedTariff }
-            : isOpen('tariffNew') && tariffs !== undefined
-              ? { kind: 'new', from: latestTariff }
-              : undefined
-        }
-        onOpenChange={(o) => {
-          if (!o) close()
-        }}
-      />
-      <VehicleImportDialog
-        open={isOpen('vehicleImport')}
-        onOpenChange={(o) => {
-          if (!o) close()
-        }}
-      />
-      <CredentialsDialog
-        source={credentialsSource}
-        open={credentialsSource !== undefined && credentialsReady}
-        onOpenChange={(o) => {
-          if (!o) close()
-        }}
-        status={credentialsResult.data}
-        suspectFields={
-          credentialsSource && isIntegrationSource(credentialsSource)
-            ? currentSuspectFields(
-                sourcesHealth?.[credentialsSource],
-                savedCredentials?.[credentialsSource].updatedAt,
-              )
-            : null
-        }
-        // The grid facility has no sync to run: the monthly catalogue check reads it.
-        onChanged={(s) => {
-          if (s !== 'gridTariff') syncNow.syncSource(s)
-        }}
-        // Opened by URL state: Radix has no trigger to return focus to.
-        onCloseAutoFocus={(event) => {
-          // Still open: the overlay only swapped dialog ↔ bottom sheet (a
-          // rotation, or a phone deep link hydrating) — not a close.
-          if (openCredentialsSource.current !== undefined) return
-          const opener = lastCredentialsSource.current
-          const el = opener ? document.getElementById(credentialsButtonId(opener)) : null
-          if (!el) return
-          event.preventDefault()
-          el.focus()
-        }}
-      />
-      <DeleteTariffDialog
-        open={isOpen('tariffDelete') && selectedTariff !== undefined}
-        tariff={selectedTariff}
-        onOpenChange={(o) => {
-          if (!o) close()
-        }}
-      />
+      <LazyDialogMount open={tariffDialogOpen}>
+        <TariffDialog
+          open={tariffDialogOpen}
+          mode={
+            isOpen('tariffEdit') && selectedTariff
+              ? { kind: 'edit', tariff: selectedTariff }
+              : isOpen('tariffNew') && tariffs !== undefined
+                ? { kind: 'new', from: latestTariff }
+                : undefined
+          }
+          onOpenChange={(o) => {
+            if (!o) close()
+          }}
+        />
+      </LazyDialogMount>
+      <LazyDialogMount open={isOpen('vehicleImport')}>
+        <VehicleImportDialog
+          open={isOpen('vehicleImport')}
+          onOpenChange={(o) => {
+            if (!o) close()
+          }}
+        />
+      </LazyDialogMount>
+      <LazyDialogMount open={credentialsDialogOpen}>
+        <CredentialsDialog
+          source={credentialsSource}
+          open={credentialsDialogOpen}
+          onOpenChange={(o) => {
+            if (!o) close()
+          }}
+          status={credentialsResult.data}
+          suspectFields={
+            credentialsSource && isIntegrationSource(credentialsSource)
+              ? currentSuspectFields(
+                  sourcesHealth?.[credentialsSource],
+                  savedCredentials?.[credentialsSource].updatedAt,
+                )
+              : null
+          }
+          // The grid facility has no sync to run: the monthly catalogue check reads it.
+          onChanged={(s) => {
+            if (s !== 'gridTariff') syncNow.syncSource(s)
+          }}
+          // Opened by URL state: Radix has no trigger to return focus to.
+          onCloseAutoFocus={(event) => {
+            // Still open: the overlay only swapped dialog ↔ bottom sheet (a
+            // rotation, or a phone deep link hydrating) — not a close.
+            if (openCredentialsSource.current !== undefined) return
+            const opener = lastCredentialsSource.current
+            const el = opener ? document.getElementById(credentialsButtonId(opener)) : null
+            if (!el) return
+            event.preventDefault()
+            el.focus()
+          }}
+        />
+      </LazyDialogMount>
+      <LazyDialogMount open={deleteTariffOpen}>
+        <DeleteTariffDialog
+          open={deleteTariffOpen}
+          tariff={selectedTariff}
+          onOpenChange={(o) => {
+            if (!o) close()
+          }}
+        />
+      </LazyDialogMount>
     </PageContainer>
   )
 }

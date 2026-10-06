@@ -170,6 +170,8 @@ test('an edit deep link waits for the devices, then opens', async () => {
     qc.setQueryData(seriesKey, noSeries)
   })
   await expect.poll(() => skeleton('sensors-tiles')).not.toBeNull()
+  // The dialogs are lazy chunks: give a would-be mount time to resolve before asserting absence.
+  await new Promise((r) => setTimeout(r, 50))
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
   qc.setQueryData(devicesKey, [device])
   await expect.element(screen.getByRole('dialog')).toBeVisible()

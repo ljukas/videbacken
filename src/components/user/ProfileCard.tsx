@@ -2,6 +2,7 @@ import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-q
 import { LockIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { PhoneField } from '~/components/form/PhoneField'
 import { Field, FieldTitle } from '~/components/ui/field'
 import { AvatarUpload } from '~/components/user/AvatarUpload'
 import { useAppForm } from '~/hooks/form'
@@ -97,8 +98,8 @@ export function ProfileCard() {
 
         <form.AppField
           name="phone"
-          children={(field) => (
-            <field.PhoneField
+          children={() => (
+            <PhoneField
               label={m.user_field_phone()}
               orientation="responsive"
               fieldClassName={ROW}

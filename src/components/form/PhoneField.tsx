@@ -1,3 +1,4 @@
+// Not in the global form hook (see src/hooks/form.ts): import it directly inside an AppField.
 import { useStore } from '@tanstack/react-form'
 import type { Country, Value } from 'react-phone-number-input'
 import { Field, FieldDescription, FieldError, FieldLabel } from '~/components/ui/field'

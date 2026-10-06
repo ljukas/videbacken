@@ -1,17 +1,21 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useHydrated } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { lazy, useMemo, useState } from 'react'
 import { z } from 'zod'
+import sensorsHumChartBones from '~/bones/sensors-hum-chart.bones.json'
+import sensorsTempChartBones from '~/bones/sensors-temp-chart.bones.json'
+import sensorsTilesBones from '~/bones/sensors-tiles.bones.json'
+import { LazyDialogMount } from '~/components/layout/LazyDialogMount'
 import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { ClimateChart } from '~/components/sensor/ClimateChart'
 import { CurrentReadingTiles } from '~/components/sensor/CurrentReadingTiles'
 import { DeviceToggles } from '~/components/sensor/DeviceToggles'
-import { EditDeviceDialog } from '~/components/sensor/EditDeviceDialog'
 import { RangeSelector } from '~/components/sensor/RangeSelector'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
+import { useIdlePreload } from '~/hooks/useIdlePreload'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { getIntlLocale } from '~/lib/i18n/format'
 import { orpc } from '~/lib/orpc/client'
@@ -29,6 +33,14 @@ const searchSchema = z.object({
 })
 type SensorsSearch = z.infer<typeof searchSchema>
 type SensorsDialog = NonNullable<SensorsSearch['dialog']>
+
+// Admin-only: loads on first open (LazyDialogMount), so a member never fetches the form code;
+// an admin warms the chunk once the browser is idle (useIdlePreload).
+const loadEditDeviceDialog = () => import('~/components/sensor/EditDeviceDialog')
+const EditDeviceDialog = lazy(() =>
+  loadEditDeviceDialog().then((mod) => ({ default: mod.EditDeviceDialog })),
+)
+const ADMIN_DIALOG_LOADERS = [loadEditDeviceDialog]
 
 // Only the shorter ranges poll — a new reading won't visibly move a 1-year daily
 // chart, so longer ranges just refetch on focus/mount.
@@ -55,6 +67,7 @@ export const Route = createFileRoute('/_authenticated/sensors')({
 function SensorsPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
+  useIdlePreload(isAdmin, ADMIN_DIALOG_LOADERS)
   const navigate = Route.useNavigate()
   const range = Route.useSearch({ select: (s) => s.range })
   const dialog = Route.useSearch({ select: (s) => s.dialog })
@@ -155,6 +168,7 @@ function SensorsPage() {
     color: colorForIndex(i),
   }))
   const editingDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
+  const editDeviceOpen = isOpen('edit') && editingDevice !== undefined
 
   // The toggles, the tiles and the charts' colours all need the roster.
   if (devicesFailed) {
@@ -191,7 +205,7 @@ function SensorsPage() {
 
       <div className="flex flex-col gap-3">
         <RangeSelector value={range} onChange={setRange} />
-        <SectionSkeleton name="sensors-tiles" loading={devicesPending} fallbackHeight="13rem">
+        <SectionSkeleton bones={sensorsTilesBones} loading={devicesPending} fallbackHeight="13rem">
           {devices ? (
             <div className="flex flex-col gap-6">
               <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
@@ -213,7 +227,7 @@ function SensorsPage() {
         <>
           <ChartSection title={m.sensors_temp_chart_title()}>
             <SectionSkeleton
-              name="sensors-temp-chart"
+              bones={sensorsTempChartBones}
               loading={chartsPending}
               fallbackHeight="260px"
             >
@@ -225,7 +239,7 @@ function SensorsPage() {
 
           <ChartSection title={m.sensors_humidity_chart_title()}>
             <SectionSkeleton
-              name="sensors-hum-chart"
+              bones={sensorsHumChartBones}
               loading={chartsPending}
               fallbackHeight="260px"
             >
@@ -238,13 +252,15 @@ function SensorsPage() {
       )}
 
       {isAdmin ? (
-        <EditDeviceDialog
-          open={isOpen('edit') && editingDevice !== undefined}
-          device={editingDevice}
-          onOpenChange={(o) => {
-            if (!o) close()
-          }}
-        />
+        <LazyDialogMount open={editDeviceOpen}>
+          <EditDeviceDialog
+            open={editDeviceOpen}
+            device={editingDevice}
+            onOpenChange={(o) => {
+              if (!o) close()
+            }}
+          />
+        </LazyDialogMount>
       ) : null}
     </PageContainer>
   )
