@@ -95,9 +95,10 @@ A thin "Credenza"-style wrapper. The root picks the primitive (`isMobile ? Sheet
 Mobile content is `<SheetContent side="bottom">`. Call sites keep the familiar Dialog-shaped JSX and
 the same `open` / `onOpenChange` plumbing.
 
-SSR posture: `useIsMobile()` returns `false` until hydration, so a *deep-linked-open* overlay renders
-as a `Dialog` for one frame then swaps to the bottom `Sheet` on mobile. Overlays are normally closed
-at first paint, so this is a non-issue in practice — no anti-flicker machinery.
+SSR posture: `useIsMobile()` returns `false` until hydration, so the first render picks the `Dialog`.
+Lazily mounted overlays (`LazyDialogMount`, ADR-0025 §6) mount fresh on their first open, so on a phone
+every first open starts as a `Dialog` and swaps to the bottom `Sheet`. No flash is visible, because
+Radix's Portal mounts in a layout effect, after the swap — no anti-flicker machinery.
 
 ### URL-driven open/close (single-entity)
 

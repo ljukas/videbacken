@@ -259,7 +259,7 @@ Measured with `bun run bundle:measure` (KB gz; each page's row is on top of the 
 **The shell grew 5 KB gz without gaining code.** Its set of modules is unchanged (437 sources). But each lazy dialog,
 and `PhoneField`'s own entry, is a new dynamic entry, and rolldown groups modules into chunks by which entries reach
 them. So modules the shell shares with those entries (Radix primitives, cmdk, `button`, `dialog`, floating-ui …) split
-into more, smaller chunks: about +3 KB gz of per-chunk overhead (the figure sums each chunk's gzip) and 9 more
+into more, smaller chunks: about +5 KB gz of per-chunk overhead (the figure sums each chunk's gzip): +1.3 KB when `PhoneField` became its own entry, +3.3 KB when the lazy dialogs did, with the same 437 modules throughout; the entry + shell parts are rounded separately, so 172 + 77 reads 248 in the tables and 9 more
 `modulepreload` requests on every signed-in page. A rolldown chunk group
 (`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up, since it
 needs its own measurement, `/login` included.

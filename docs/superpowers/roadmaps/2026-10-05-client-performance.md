@@ -12,7 +12,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 |---|---|---|---|---|---|
 | 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | [#89](https://github.com/ljukas/videbacken/pull/89) | checkpoint passed | 2026-10-05: the owner confirmed the drag is gone on the phone. Prod logs show 0 `/_serverFn` calls since the #89 deploy (230 in the 6 h before), across `/charging`, economy, patterns, `/sensors` and `/users`. Small layout shifts seen, now step 7. |
 | 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | [#93](https://github.com/ljukas/videbacken/pull/93) | checkpoint passed | 2026-10-05: the owner confirmed on the phone that `/sensors` (including a range switch) and `/users` no longer drag. Prod logs since the #93 deploy show one `getSession` server-function call across the session's navigations: the cached guard's refresh, not one per navigation. |
-| 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
+| 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-05/06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
 | 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | — | PR open | — |
 | 5 | Replace recharts with visx (refactor-workflow) | — | — | not started | — |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too) | — | — | not started | — |
@@ -158,7 +158,7 @@ bursts:
 ## Step 4 notes
 
 **Baseline, re-measured on `main` at `157dd61`** (prod build; KB gz each page adds beyond the entry, 172, and the
-signed-in shell, 77):
+signed-in shell, 77; the two parts are rounded separately, so the tables' 248 is their 249):
 
 | Page | Adds | Form chunk (123) | Bones + boneyard (26) | Bones it uses |
 |---|---|---|---|---|
@@ -200,7 +200,7 @@ This meets checkpoint 4 on the branch; the checkpoint re-runs it on `main` after
 **The shell grew 5 KB gz without gaining code** (248 → 253). Its 437 modules are unchanged. But each lazy dialog,
 and `PhoneField`'s own entry, is a new dynamic entry, and rolldown groups modules into chunks by the entries that
 reach them. So modules the shell shares with those entries (Radix primitives, cmdk, `button`, `dialog`,
-floating-ui …) split into more, smaller chunks: about +3 KB gz of per-chunk gzip overhead and 9 more `modulepreload`
+floating-ui …) split into more, smaller chunks: about +5 KB gz of per-chunk gzip overhead (+1.3 KB when `PhoneField` became its own entry, +3.3 KB when the lazy dialogs did, same 437 modules throughout) and 9 more `modulepreload`
 requests on every signed-in page. A rolldown chunk group (`codeSplitting.groups`) could merge them back. That is a
 step-6 item, since it needs its own measurement, `/login` included (ADR-0025 §6).
 

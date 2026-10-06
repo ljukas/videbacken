@@ -19,9 +19,10 @@ import { cn } from '~/lib/utils'
 // giving an identical look across breakpoints. Call sites swap `Dialog*` →
 // `ResponsiveDialog*` with no other changes (same `open`/`onOpenChange`).
 //
-// SSR: `useIsMobile()` is false until hydration, so a deep-linked-open overlay
-// renders as a Dialog for one frame then swaps to the Sheet on mobile. Overlays
-// are normally closed at first paint, so this is a non-issue in practice.
+// SSR: `useIsMobile()` is false until hydration, so the first render picks the
+// Dialog. Lazily mounted overlays (`LazyDialogMount`) mount fresh on their first
+// open, so on a phone that open always starts as a Dialog and swaps to the Sheet.
+// No flash is visible: Radix's Portal mounts in a layout effect, after the swap.
 
 const ResponsiveDialogContext = createContext(false)
 
