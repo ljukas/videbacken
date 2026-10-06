@@ -188,6 +188,8 @@
   "charging_credentials_remove_title": "Ta bort sparade uppgifter?",
   "charging_credentials_remove_confirm": "De sparade uppgifterna för {source} ({fields}) tas bort.",
   "charging_credentials_remove_confirm_grid": "Det sparade anläggnings-ID:t tas bort.",
+  "charging_credentials_remove_confirm_unreadable": "Den sparade posten för {source} går inte att läsa och tas bort.",
+  "charging_credentials_remove_env_incomplete": "Miljövariablerna räcker inte, så källan slutar synka.",
   "charging_credentials_removed": "Sparade uppgifter borttagna",
   "charging_credentials_remove_error": "Uppgifterna kunde inte tas bort.",
   "charging_credentials_badge_stored": "Sparad",

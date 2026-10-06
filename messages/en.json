@@ -188,6 +188,8 @@
   "charging_credentials_remove_title": "Remove saved credentials?",
   "charging_credentials_remove_confirm": "The saved details for {source} ({fields}) are removed.",
   "charging_credentials_remove_confirm_grid": "The saved facility ID is removed.",
+  "charging_credentials_remove_confirm_unreadable": "The saved entry for {source} can't be read and is removed.",
+  "charging_credentials_remove_env_incomplete": "The environment variables aren't enough, so this source stops syncing.",
   "charging_credentials_removed": "Saved credentials removed",
   "charging_credentials_remove_error": "The credentials couldn't be removed.",
   "charging_credentials_badge_stored": "Saved",

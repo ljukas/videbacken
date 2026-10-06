@@ -52,6 +52,10 @@ export const CREDENTIAL_ENV_VARS = {
 export const credentialFieldKind = (source: CredentialSource, field: string): 'secret' | 'text' =>
   source === 'skoda' && field === 'vin' ? 'text' : 'secret'
 
+/** Optional fields never block a source: Škoda's home position unset just turns the geofence off. */
+export const isOptionalCredentialField = (source: CredentialSource, field: string): boolean =>
+  source === 'skoda' && field === 'homeCoordinates'
+
 export const isCredentialField = <S extends CredentialSource>(
   source: S,
   field: string,

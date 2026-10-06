@@ -27,12 +27,12 @@ import {
 import { useAppForm, useStore } from '~/hooks/form'
 import {
   CREDENTIAL_FIELDS,
-  type CredentialField,
   type CredentialFieldName,
   type CredentialOrigin,
   type CredentialSource,
   credentialFieldKind,
   isCredentialField,
+  isOptionalCredentialField,
 } from '~/lib/integrationCredentials'
 import {
   credentialFieldHint,
@@ -212,23 +212,34 @@ function CredentialsForm({
     ? Object.values(sourceStatus.fields).some((f) => f.origin === 'stored') ||
       sourceStatus.unreadable
     : false
-  // What the remove confirm names: the stored fields, or every field when an
-  // unreadable row hides which ones they are.
+  // What the remove confirm says: which saved fields go (unknown for an
+  // unreadable row) and whether the env vars then cover the source's required fields.
   const statusFields = (sourceStatus?.fields ?? {}) as Record<
     string,
     { origin: CredentialOrigin; envSet: boolean } | undefined
   >
-  const removedFields = sourceStatus?.unreadable
-    ? fields
-    : fields.filter((f) => statusFields[f]?.origin === 'stored')
-  const envFallback = fields.some((f) => statusFields[f]?.envSet)
-  const afterRemove = envFallback
-    ? source === 'gridTariff'
-      ? m.charging_credentials_remove_falls_back_one()
-      : m.charging_credentials_remove_falls_back()
-    : source === 'gridTariff'
-      ? m.charging_credentials_remove_stops_grid()
-      : m.charging_credentials_remove_stops()
+  const storedFields = fields.filter((f) => statusFields[f]?.origin === 'stored')
+  const requiredFields = fields.filter((f) => !isOptionalCredentialField(source, f))
+  const envCount = requiredFields.filter((f) => statusFields[f]?.envSet).length
+  const isGrid = source === 'gridTariff'
+  const afterRemove =
+    envCount === requiredFields.length
+      ? isGrid
+        ? m.charging_credentials_remove_falls_back_one()
+        : m.charging_credentials_remove_falls_back()
+      : envCount > 0
+        ? m.charging_credentials_remove_env_incomplete()
+        : isGrid
+          ? m.charging_credentials_remove_stops_grid()
+          : m.charging_credentials_remove_stops()
+  const removeConfirm = isGrid
+    ? m.charging_credentials_remove_confirm_grid()
+    : sourceStatus?.unreadable
+      ? m.charging_credentials_remove_confirm_unreadable({ source: integrationSourceName(source) })
+      : m.charging_credentials_remove_confirm({
+          source: integrationSourceName(source),
+          fields: credentialFieldList(source, storedFields),
+        })
   const states = Object.fromEntries(fields.map((f) => [f, fieldState(sourceStatus, f)])) as Record<
     CredentialFieldName,
     CredentialFieldState
@@ -553,17 +564,9 @@ function CredentialsForm({
                 <AlertDialogHeader>
                   <AlertDialogTitle>{m.charging_credentials_remove_title()}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    {source === 'gridTariff'
-                      ? m.charging_credentials_remove_confirm_grid()
-                      : m.charging_credentials_remove_confirm({
-                          source: integrationSourceName(source),
-                          fields: credentialFieldList(
-                            source as 'skoda',
-                            removedFields as readonly CredentialField<'skoda'>[],
-                          ),
-                        })}
+                    {removeConfirm}
+                    <span className="mt-1.5 block font-medium text-foreground">{afterRemove}</span>
                   </AlertDialogDescription>
-                  <p className="font-medium text-sm">{afterRemove}</p>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>{m.common_cancel()}</AlertDialogCancel>

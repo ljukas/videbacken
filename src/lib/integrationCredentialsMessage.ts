@@ -4,6 +4,7 @@ import { getIntlLocale } from '~/lib/i18n/format'
 import {
   CREDENTIAL_FIELDS,
   type CredentialField,
+  type CredentialFieldName,
   type CredentialSource,
 } from '~/lib/integrationCredentials'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
@@ -87,9 +88,9 @@ export function invalidFieldMessage(source: CredentialSource, field: string): st
 }
 
 /** "API-nyckel och VIN": the labels in vocabulary order, joined as a list in the page locale. */
-export function credentialFieldList<S extends CredentialSource>(
-  source: S,
-  fields: readonly CredentialField<S>[],
+export function credentialFieldList(
+  source: CredentialSource,
+  fields: readonly CredentialFieldName[],
 ): string {
   const ordered = CREDENTIAL_FIELDS[source].filter((f) => fields.includes(f))
   return new Intl.ListFormat(getIntlLocale(), { type: 'conjunction' }).format(
@@ -105,6 +106,6 @@ export function suspectFieldsMessage(
   const known = (CREDENTIAL_FIELDS[source] as readonly string[]).filter((f) => fields.includes(f))
   if (known.length === 0) return null
   return m.charging_credentials_suspect({
-    fields: credentialFieldList(source, known as CredentialField<CredentialSource>[]),
+    fields: credentialFieldList(source, known as CredentialFieldName[]),
   })
 }

@@ -3,7 +3,8 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
-import { credentialFieldLabel } from '~/lib/integrationCredentialsMessage'
+import type { CredentialSource } from '~/lib/integrationCredentials'
+import { credentialFieldLabel, credentialFieldList } from '~/lib/integrationCredentialsMessage'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
@@ -679,20 +680,26 @@ test('the grid remove confirm names the facility ID', async () => {
     .toHaveTextContent(m.charging_credentials_remove_confirm_grid())
 })
 
-test('the remove confirm names the saved fields and says the app falls back to env', async () => {
-  const s = status(
-    {},
-    {
-      fields: {
-        apiKey: { origin: 'stored', envSet: true },
-        vin: { origin: 'stored', envSet: false },
-        homeCoordinates: { origin: 'missing', envSet: false },
-      },
-    },
-  )
-  const { screen } = await renderWithProviders(dialog({ status: s }))
+function skodaStatus(fields: SkodaFields) {
+  return status({}, { fields })
+}
+const MISSING = { origin: 'missing', envSet: false } as const
+
+async function openRemoveConfirm(source: CredentialSource, s: CredentialStatus) {
+  const { screen } = await renderWithProviders(dialog({ source, status: s }))
   await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
-  const confirm = screen.getByRole('alertdialog')
+  return screen.getByRole('alertdialog')
+}
+
+test('the remove confirm names the saved fields and says the app falls back to env', async () => {
+  const confirm = await openRemoveConfirm(
+    'skoda',
+    skodaStatus({
+      apiKey: { origin: 'stored', envSet: true },
+      vin: { origin: 'stored', envSet: true },
+      homeCoordinates: MISSING,
+    }),
+  )
   await expect
     .element(
       confirm.getByText(
@@ -700,25 +707,96 @@ test('the remove confirm names the saved fields and says the app falls back to e
       ),
     )
     .toBeVisible()
-  await expect.element(confirm.getByText(m.charging_credentials_remove_falls_back())).toBeVisible()
+  await expect
+    .element(confirm)
+    .toHaveAccessibleDescription(
+      expect.stringContaining(m.charging_credentials_remove_falls_back()),
+    )
+})
+
+test('a single saved field is named alone', async () => {
+  const confirm = await openRemoveConfirm(
+    'skoda',
+    skodaStatus({
+      apiKey: MISSING,
+      vin: { origin: 'stored', envSet: false },
+      homeCoordinates: MISSING,
+    }),
+  )
+  await expect
+    .element(confirm)
+    .toHaveAccessibleDescription(
+      expect.stringContaining(
+        m.charging_credentials_remove_confirm({ source: 'Škoda', fields: 'VIN' }),
+      ),
+    )
 })
 
 test('with no env vars the remove confirm says the source stops syncing', async () => {
-  const s = status(
-    {},
-    {
-      fields: {
-        apiKey: { origin: 'stored', envSet: false },
-        vin: { origin: 'stored', envSet: false },
-        homeCoordinates: { origin: 'missing', envSet: false },
-      },
-    },
+  const confirm = await openRemoveConfirm(
+    'skoda',
+    skodaStatus({
+      apiKey: { origin: 'stored', envSet: false },
+      vin: { origin: 'stored', envSet: false },
+      homeCoordinates: MISSING,
+    }),
   )
-  const { screen } = await renderWithProviders(dialog({ status: s }))
-  await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
   await expect
-    .element(screen.getByRole('alertdialog').getByText(m.charging_credentials_remove_stops()))
-    .toBeVisible()
+    .element(confirm)
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_remove_stops()))
+})
+
+test('only the optional home position in env does not count as falling back', async () => {
+  const confirm = await openRemoveConfirm(
+    'skoda',
+    skodaStatus({
+      apiKey: { origin: 'stored', envSet: false },
+      vin: { origin: 'stored', envSet: false },
+      homeCoordinates: { origin: 'env', envSet: true },
+    }),
+  )
+  await expect
+    .element(confirm)
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_remove_stops()))
+})
+
+test('a non-Škoda source names its own fields; partial env says it is not enough', async () => {
+  const s = status()
+  s.sources.emaldo = {
+    fields: {
+      user: { origin: 'stored', envSet: false },
+      password: { origin: 'stored', envSet: false },
+      appId: { origin: 'env', envSet: true },
+      appSecret: { origin: 'env', envSet: true },
+    },
+    updatedAt: SAVED,
+    unreadable: false,
+  }
+  const confirm = await openRemoveConfirm('emaldo', s)
+  await expect.element(confirm).toHaveAccessibleDescription(
+    expect.stringContaining(
+      m.charging_credentials_remove_confirm({
+        source: integrationSourceName('emaldo'),
+        fields: credentialFieldList('emaldo', ['user', 'password']),
+      }),
+    ),
+  )
+  await expect
+    .element(confirm)
+    .toHaveAccessibleDescription(
+      expect.stringContaining(m.charging_credentials_remove_env_incomplete()),
+    )
+})
+
+test('an unreadable source lists no fields', async () => {
+  const confirm = await openRemoveConfirm('skoda', status({}, { unreadable: true }))
+  await expect
+    .element(confirm)
+    .toHaveAccessibleDescription(
+      expect.stringContaining(
+        m.charging_credentials_remove_confirm_unreadable({ source: 'Škoda' }),
+      ),
+    )
 })
 
 test('the grid remove confirm says the monthly check is skipped without env', async () => {
@@ -728,13 +806,32 @@ test('the grid remove confirm says the monthly check is skipped without env', as
     updatedAt: SAVED,
     unreadable: false,
   }
-  const { screen } = await renderWithProviders(dialog({ source: 'gridTariff', status: s }))
-  await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
-  const confirm = screen.getByRole('alertdialog')
+  const confirm = await openRemoveConfirm('gridTariff', s)
   await expect
-    .element(confirm.getByText(m.charging_credentials_remove_confirm_grid()))
-    .toBeVisible()
-  await expect.element(confirm.getByText(m.charging_credentials_remove_stops_grid())).toBeVisible()
+    .element(confirm)
+    .toHaveAccessibleDescription(
+      expect.stringContaining(m.charging_credentials_remove_confirm_grid()),
+    )
+  await expect
+    .element(confirm)
+    .toHaveAccessibleDescription(
+      expect.stringContaining(m.charging_credentials_remove_stops_grid()),
+    )
+})
+
+test('the grid remove confirm says the env var is used again when it is set', async () => {
+  const s = status()
+  s.sources.gridTariff = {
+    fields: { facilityId: { origin: 'stored', envSet: true } },
+    updatedAt: SAVED,
+    unreadable: false,
+  }
+  const confirm = await openRemoveConfirm('gridTariff', s)
+  await expect
+    .element(confirm)
+    .toHaveAccessibleDescription(
+      expect.stringContaining(m.charging_credentials_remove_falls_back_one()),
+    )
 })
 
 test('the MyŠkoda link says it opens a new tab', async () => {
