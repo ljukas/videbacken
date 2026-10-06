@@ -4,6 +4,7 @@ import { db } from '~/lib/db'
 import { integrationSync, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { IntegrationError } from '~/lib/effects/integrationError'
+import type { CredentialFieldName } from '~/lib/integrationCredentials'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
 import { createServerLogger } from '~/lib/logger/server'
 import * as integrationSyncService from '~/lib/services/integrationSync'
@@ -26,8 +27,11 @@ const T0 = new Date('2026-09-20T10:00:00Z')
 
 class FakeRemoteError extends IntegrationError {
   override readonly name = 'FakeRemoteError'
-  constructor(readonly code: IntegrationErrorCode) {
-    super(`remote failed: ${code}`)
+  constructor(
+    readonly code: IntegrationErrorCode,
+    suspectFields?: readonly CredentialFieldName[],
+  ) {
+    super(`remote failed: ${code}`, { suspectFields })
   }
 }
 
@@ -150,6 +154,24 @@ test('an IntegrationError is a recorded failure: warn line, code, no throw', asy
   expect(health).toMatchObject({ state: 'failing', code: 'rate_limited' })
   expect(health.adminDetail?.lastErrorMessage).toBe('remote failed: rate_limited')
   expect(runLines()).toEqual([expect.objectContaining({ level: WARN, code: 'rate_limited' })])
+})
+
+test('an IntegrationError suspect fields are recorded with the failure', async () => {
+  await run(async () => {
+    throw new FakeRemoteError('auth_failed', ['apiKey', 'vin'])
+  })
+  const health = await getHealth('elpris', { now: T0, includeAdminDetail: true })
+  expect(health.adminDetail?.suspectFields).toEqual(['apiKey', 'vin'])
+})
+
+test('an internal error records no suspect fields', async () => {
+  await expect(
+    run(async () => {
+      throw new Error('bug')
+    }),
+  ).rejects.toThrow('bug')
+  const health = await getHealth('elpris', { now: T0, includeAdminDetail: true })
+  expect(health.adminDetail?.suspectFields).toBeNull()
 })
 
 test('any other error is internal_error: recorded, logged at error, and rethrown', async () => {

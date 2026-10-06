@@ -24,7 +24,11 @@ const failing: Health = {
   failingSince: new Date('2026-09-28T08:00:00Z'),
   consecutiveFailures: 3,
   code: 'auth_failed',
-  adminDetail: { lastErrorMessage: 'HTTP 401 from /oauth/token', credentialExpiry: null },
+  adminDetail: {
+    lastErrorMessage: 'HTTP 401 from /oauth/token',
+    credentialExpiry: null,
+    suspectFields: null,
+  },
 }
 
 function titleFor(state: Health['state']) {

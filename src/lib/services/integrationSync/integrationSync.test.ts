@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun } from '~/lib/db/schema'
+import type { CredentialFieldName } from '~/lib/integrationCredentials'
 import type { Logger } from '~/lib/logger'
 import { setupDatabase } from '~test/setup'
 import { recordCredentialExpiry } from './credential'
@@ -165,6 +166,7 @@ test('recordOutcome writes the run row with stats and updates health', async () 
       outcome: 'ok',
       errorCode: null,
       errorMessage: null,
+      suspectFields: null,
       upserted: 5,
       sessionsSeen: 7,
       pages: 2,
@@ -248,6 +250,7 @@ test('a 2 KB message with a Bearer token is stored redacted and truncated', asyn
   expect(admin.adminDetail).toEqual({
     lastErrorMessage: row.lastErrorMessage,
     credentialExpiry: null,
+    suspectFields: null,
   })
   const member = await getHealth('zaptec', { now: at(2000), includeAdminDetail: false })
   expect(member.adminDetail).toBeNull()
@@ -265,7 +268,7 @@ test('getHealth for a source with no row is never_synced', async () => {
     failingSince: null,
     consecutiveFailures: 0,
     code: null,
-    adminDetail: { lastErrorMessage: null, credentialExpiry: null },
+    adminDetail: { lastErrorMessage: null, credentialExpiry: null, suspectFields: null },
   })
 })
 
@@ -437,7 +440,11 @@ test('getAllHealth includes adminDetail only when asked', async () => {
   const admin = await getAllHealth({ now: T0, includeAdminDetail: true })
   for (const health of Object.values(member)) expect(health.adminDetail).toBeNull()
   for (const health of Object.values(admin))
-    expect(health.adminDetail).toEqual({ lastErrorMessage: null, credentialExpiry: null })
+    expect(health.adminDetail).toEqual({
+      lastErrorMessage: null,
+      credentialExpiry: null,
+      suspectFields: null,
+    })
 })
 
 test('getAllHealth gives each source its own row: state, progress and admin detail', async () => {
@@ -462,13 +469,21 @@ test('getAllHealth gives each source its own row: state, progress and admin deta
     consecutiveFailures: 1,
     running: false,
     progress: null,
-    adminDetail: { lastErrorMessage: 'connect ECONNREFUSED', credentialExpiry: null },
+    adminDetail: {
+      lastErrorMessage: 'connect ECONNREFUSED',
+      credentialExpiry: null,
+      suspectFields: null,
+    },
   })
   expect(admin.skoda).toMatchObject({
     code: null,
     running: true,
     progress: { done: 3, total: 9 },
-    adminDetail: { lastErrorMessage: null, credentialExpiry: { expiresAt: expires } },
+    adminDetail: {
+      lastErrorMessage: null,
+      credentialExpiry: { expiresAt: expires },
+      suspectFields: null,
+    },
   })
   expect(admin.elpris.state).toBe('never_synced')
   expect(admin.emaldo.state).toBe('never_synced')
@@ -575,4 +590,85 @@ test('integration_sync suspect_fields: non-empty vocabulary names; no tie to err
       .set({ suspectFields: ['token'] })
       .where(eq(integrationSync.source, 'zaptec')),
   ).rejects.toThrow()
+})
+
+const authFailed = (suspectFields: readonly CredentialFieldName[]): SyncOutcome => ({
+  ok: false,
+  kind: 'failed',
+  code: 'auth_failed',
+  message: 'refused',
+  stats,
+  suspectFields,
+})
+
+test('recordOutcome stores suspect fields on the health row and the run; admins see them', async () => {
+  const attemptId = await acquire(T0)
+  await recordOutcome('zaptec', authFailed(['username', 'password']), {
+    attemptId,
+    trigger: 'admin',
+    startedAt: T0,
+    now: at(1000),
+  })
+  const admin = await getHealth('zaptec', { now: at(2000), includeAdminDetail: true })
+  expect(admin.adminDetail?.suspectFields).toEqual(['username', 'password'])
+  const member = await getHealth('zaptec', { now: at(2000), includeAdminDetail: false })
+  expect(member.adminDetail).toBeNull()
+  expect((await listRecentRuns('zaptec', { limit: 1 }))[0].suspectFields).toEqual([
+    'username',
+    'password',
+  ])
+  expect((await listRecentRunsBySource({ limit: 1 })).zaptec[0].suspectFields).toEqual([
+    'username',
+    'password',
+  ])
+})
+
+test('an empty suspect list is stored as NULL on the health row and the run', async () => {
+  const attemptId = await acquire(T0)
+  await recordOutcome('zaptec', authFailed([]), {
+    attemptId,
+    trigger: 'cron',
+    startedAt: T0,
+    now: at(1000),
+  })
+  const [row] = await db.select().from(integrationSync).where(eq(integrationSync.source, 'zaptec'))
+  expect(row.suspectFields).toBeNull()
+  const [runRow] = await db
+    .select()
+    .from(integrationSyncRun)
+    .where(eq(integrationSyncRun.source, 'zaptec'))
+  expect(runRow.suspectFields).toBeNull()
+})
+
+test('a success clears suspect fields; its run row has none', async () => {
+  let attemptId = await acquire(T0)
+  await recordOutcome('zaptec', authFailed(['password']), {
+    attemptId,
+    trigger: 'cron',
+    startedAt: T0,
+    now: at(1000),
+  })
+  attemptId = await acquire(at(2000))
+  await recordOutcome('zaptec', ok, {
+    attemptId,
+    trigger: 'cron',
+    startedAt: at(2000),
+    now: at(3000),
+  })
+  const health = await getHealth('zaptec', { now: at(4000), includeAdminDetail: true })
+  expect(health.adminDetail?.suspectFields).toBeNull()
+  const [row] = await db.select().from(integrationSync).where(eq(integrationSync.source, 'zaptec'))
+  expect(row.suspectFields).toBeNull()
+  expect((await listRecentRuns('zaptec', { limit: 1 }))[0].suspectFields).toBeNull()
+})
+
+test('getHealth hides leftover suspect fields once error_code is null (a rollback success)', async () => {
+  const attemptId = await acquire(T0)
+  await recordOutcome('zaptec', ok, { attemptId, trigger: 'cron', startedAt: T0, now: at(1000) })
+  await db
+    .update(integrationSync)
+    .set({ suspectFields: ['password'] })
+    .where(eq(integrationSync.source, 'zaptec'))
+  const health = await getHealth('zaptec', { now: at(2000), includeAdminDetail: true })
+  expect(health.adminDetail?.suspectFields).toBeNull()
 })

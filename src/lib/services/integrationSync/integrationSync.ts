@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { integrationSync, integrationSyncRun } from '~/lib/db/schema'
+import type { CredentialFieldName } from '~/lib/integrationCredentials'
 import {
   type HealthState,
   type HealthTransition,
@@ -32,7 +33,11 @@ export type IntegrationHealth = {
   failingSince: Date | null
   consecutiveFailures: number
   code: IntegrationErrorCode | null
-  adminDetail: { lastErrorMessage: string | null; credentialExpiry: CredentialExpiry | null } | null
+  adminDetail: {
+    lastErrorMessage: string | null
+    credentialExpiry: CredentialExpiry | null
+    suspectFields: CredentialFieldName[] | null
+  } | null
 }
 
 export type RunRow = {
@@ -44,6 +49,7 @@ export type RunRow = {
   outcome: 'ok' | 'failed' | 'error'
   errorCode: IntegrationErrorCode | null
   errorMessage: string | null
+  suspectFields: CredentialFieldName[] | null
   upserted: number
   sessionsSeen: number
   pages: number
@@ -62,6 +68,7 @@ function toSnapshot(row: SyncRow): HealthSnapshot {
     alertableFailures: row.alertableFailures,
     errorCode: row.errorCode as IntegrationErrorCode | null,
     lastErrorMessage: row.lastErrorMessage,
+    suspectFields: row.suspectFields as CredentialFieldName[] | null,
   }
 }
 
@@ -91,6 +98,10 @@ function toHealth(
       ? {
           lastErrorMessage: snapshot?.lastErrorMessage ?? null,
           credentialExpiry: credentialExpiryOf(row?.credentialExpiresAt ?? null, now),
+          // Gated on error_code: a rollback's success clears the code and leaves the column.
+          // Accepted: a rollback's different failure leaves an older run's suspects in place
+          // until the next run overwrites them (self-heals within one cron cycle).
+          suspectFields: snapshot?.errorCode ? snapshot.suspectFields : null,
         }
       : null,
   }
@@ -195,6 +206,7 @@ export async function recordOutcome(
       outcome: outcome.ok ? 'ok' : outcome.kind,
       errorCode: outcome.ok ? null : outcome.code,
       errorMessage: outcome.ok ? null : sanitizeErrorMessage(outcome.message),
+      suspectFields: row.suspectFields,
       since: stats.since,
       pages: stats.pages,
       sessionsSeen: stats.sessionsSeen,
@@ -275,15 +287,17 @@ const runColumns = {
   outcome: integrationSyncRun.outcome,
   errorCode: integrationSyncRun.errorCode,
   errorMessage: integrationSyncRun.errorMessage,
+  suspectFields: integrationSyncRun.suspectFields,
   upserted: integrationSyncRun.upserted,
   sessionsSeen: integrationSyncRun.sessionsSeen,
   pages: integrationSyncRun.pages,
 }
 
-type RunSelect = Omit<RunRow, 'trigger' | 'outcome' | 'errorCode'> & {
+type RunSelect = Omit<RunRow, 'trigger' | 'outcome' | 'errorCode' | 'suspectFields'> & {
   trigger: string
   outcome: string
   errorCode: string | null
+  suspectFields: string[] | null
 }
 
 const toRunRow = (r: RunSelect): RunRow => ({
@@ -291,6 +305,7 @@ const toRunRow = (r: RunSelect): RunRow => ({
   trigger: r.trigger as SyncTrigger,
   outcome: r.outcome as RunRow['outcome'],
   errorCode: r.errorCode as IntegrationErrorCode | null,
+  suspectFields: r.suspectFields as CredentialFieldName[] | null,
 })
 
 export async function listRecentRuns(
@@ -333,6 +348,7 @@ export async function listRecentRunsBySource({
       outcome: recent.outcome,
       errorCode: recent.errorCode,
       errorMessage: recent.errorMessage,
+      suspectFields: recent.suspectFields,
       upserted: recent.upserted,
       sessionsSeen: recent.sessionsSeen,
       pages: recent.pages,

@@ -28,6 +28,8 @@ export const CREDENTIAL_FIELD_NAMES: readonly string[] = [
 ]
 
 export type CredentialField<S extends CredentialSource> = (typeof CREDENTIAL_FIELDS)[S][number]
+/** Every credential field name, across sources. */
+export type CredentialFieldName = CredentialField<CredentialSource>
 export type CredentialValues<S extends CredentialSource> = Partial<
   Record<CredentialField<S>, string>
 >
