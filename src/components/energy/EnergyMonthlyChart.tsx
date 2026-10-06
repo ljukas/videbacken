@@ -1,4 +1,16 @@
-import { Bar, BarChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from 'recharts'
+import { type RefObject, useCallback, useEffect, useRef } from 'react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  type PlotArea,
+  ReferenceArea,
+  ReferenceLine,
+  useActiveTooltipLabel,
+  usePlotArea,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { CHART_HEIGHT, ChartFrame, TooltipRow } from '~/components/evCharging/ChartFrame'
 import {
   formatCount,
@@ -60,22 +72,126 @@ const TOTAL_LABEL: Record<EnergyMetric, () => string> = {
 
 type Row = ChartRow & { label: string }
 
+/** The x-axis band under the plot (the month labels); the hover outline reaches down over it. */
+const TICK_BAND = 30
+/** Below this column width the month labels shorten to initials. */
+const NARROW_COLUMN = 36
+
+// The hovered (or keyboard-focused) month: an outline round the whole column,
+// its label included (the tick band below the plot). Months without readings
+// get none. Recharts passes the band's x/y/width/height and the tooltip payload.
+function HoverColumn(props: {
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  payload?: { payload?: Row }[]
+}) {
+  const { x = 0, y = 0, width = 0, height = 0, payload } = props
+  if (!payload?.[0]?.payload?.sums) return null
+  return (
+    <rect
+      data-slot="hover-month"
+      x={x + 2}
+      y={y}
+      width={Math.max(0, width - 4)}
+      height={height + TICK_BAND}
+      rx={6}
+      fill="none"
+      stroke="var(--muted-foreground)"
+      strokeWidth={1.5}
+      pointerEvents="none"
+    />
+  )
+}
+
+// Reads the chart's state for the handlers outside it: the month the pointer
+// or the keyboard is on (null: none, or a month without readings) for Enter
+// and the pointer cursor, and the plot area for mapping a click to a month.
+function ChartProbe({
+  data,
+  onActiveMonth,
+  plotArea,
+}: {
+  data: Row[]
+  onActiveMonth: (month: number | null) => void
+  plotArea: RefObject<PlotArea | undefined>
+}) {
+  const label = useActiveTooltipLabel()
+  const area = usePlotArea()
+  const row = label === undefined ? undefined : data.find((r) => r.label === String(label))
+  const month = row?.sums ? row.month : null
+  useEffect(() => {
+    onActiveMonth(month)
+  }, [month, onActiveMonth])
+  useEffect(() => {
+    plotArea.current = area
+  }, [area, plotArea])
+  return null
+}
+
+// A month label: bold and foreground when selected; initials when the columns
+// are narrower than NARROW_COLUMN. The fill is an inline style so it wins over
+// ChartContainer's tick-text fill class.
+function MonthTick(props: {
+  x?: number
+  y?: number
+  payload?: { value: string }
+  selectedLabel?: string
+}) {
+  const plotWidth = usePlotArea()?.width ?? 0
+  const { x = 0, y = 0, payload, selectedLabel } = props
+  if (!payload) return null
+  const narrow = plotWidth / 12 < NARROW_COLUMN
+  const selected = payload.value === selectedLabel
+  return (
+    <text
+      x={x}
+      y={y}
+      dy="0.71em"
+      textAnchor="middle"
+      fontSize={13}
+      fontWeight={selected ? 600 : 400}
+      style={{ fill: selected ? 'var(--foreground)' : 'var(--muted-foreground)' }}
+    >
+      {narrow ? payload.value.charAt(0).toUpperCase() : payload.value}
+    </text>
+  )
+}
+
 // The house's energy per month of `year` for one metric: stacked bars, export
 // below the axis on Nät, a legend (touch can't hover), and a tooltip with the
-// month's parts, its total, self-sufficiency and any gap. Months without data
-// draw no bar (never a zero bar). The page owns the metric and the year.
+// month's parts (kWh and share), its total and any gap. Months without data
+// draw no bar (never a zero bar) and can't be selected. Clicking a month (or
+// Enter / Space on the keyboard-focused one) selects it; the selected month is
+// tinted with a bold label. The page owns the metric, the year and the selection.
 export function EnergyMonthlyChart({
   year,
   months,
   metric,
   currentMonth,
+  selectedMonth,
+  onSelectMonth,
 }: {
   year: number
   months: (PeriodSums | null)[]
   metric: EnergyMetric
   /** The current Stockholm month when `year` is the current year (its tooltip says "hittills"), else null. */
   currentMonth: number | null
+  /** The month (1–12) of `year` shown in the summary, else null. */
+  selectedMonth: number | null
+  onSelectMonth: (month: number) => void
 }) {
+  // The active month lives in a ref (read on Enter) plus a data attribute (the
+  // pointer cursor): hovering never re-renders the chart.
+  const wrapper = useRef<HTMLDivElement>(null)
+  const activeMonth = useRef<number | null>(null)
+  const plotArea = useRef<PlotArea | undefined>(undefined)
+  const setActiveMonth = useCallback((month: number | null) => {
+    activeMonth.current = month
+    wrapper.current?.toggleAttribute('data-selectable', month !== null)
+  }, [])
+
   if (months.every((p) => p === null)) {
     return (
       <div
@@ -90,54 +206,107 @@ export function EnergyMonthlyChart({
   const all = seriesConfig()
   const config = Object.fromEntries(series.map((k) => [k, all[k]])) satisfies ChartConfig
   const data: Row[] = chartRows(metric, months).map((r) => ({ ...r, label: monthLabel(r.month) }))
-  const seam = { stroke: 'var(--background)', strokeWidth: 1 }
   const top = series[series.length - (metric === 'grid' ? 2 : 1)]
+  const selectedLabel = selectedMonth === null ? undefined : monthLabel(selectedMonth)
+  // A click (or a tap) on a month's column, its label included, selects it.
+  // Mapped from the pointer position, not Recharts' click state: that follows
+  // the frame-throttled hover, so a tap lands before it and reads the last month.
+  const selectAt = (e: React.MouseEvent<HTMLDivElement>) => {
+    const area = plotArea.current
+    const svg = e.currentTarget.querySelector('.recharts-surface')
+    if (!area || !svg) return
+    const box = svg.getBoundingClientRect()
+    const px = e.clientX - box.left - area.x
+    const py = e.clientY - box.top - area.y
+    if (px < 0 || px >= area.width || py < 0 || py > area.height + TICK_BAND) return
+    const row = data[Math.floor((px / area.width) * data.length)]
+    if (row?.sums) onSelectMonth(row.month)
+  }
 
   return (
-    <ChartFrame config={config}>
-      <BarChart
-        data={data}
-        stackOffset={metric === 'grid' ? 'sign' : 'none'}
-        margin={{ left: 4, right: 12, top: 8, bottom: 0 }}
+    <div>
+      {/* Clicks and Enter / Space select a month. The keys are captured here
+          so Recharts' own Enter (which toggles the tooltip off) doesn't run. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: delegates for the chart's focusable svg (role="application"); its keyboard path is onKeyDownCapture */}
+      <div
+        ref={wrapper}
+        className="[&[data-selectable]_.recharts-surface]:cursor-pointer"
+        onClick={selectAt}
+        onKeyDownCapture={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          e.stopPropagation()
+          if (activeMonth.current !== null) onSelectMonth(activeMonth.current)
+        }}
       >
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tickLine={false} tickMargin={8} interval="preserveStartEnd" />
-        <YAxis
-          width="auto"
-          tickLine={false}
-          tickMargin={4}
-          allowDecimals={false}
-          tickFormatter={(v) => formatCount(Number(v))}
-        />
-        {metric === 'grid' ? <ReferenceLine y={0} stroke="var(--border)" /> : null}
-        <ChartTooltip
-          cursor={false}
-          content={({ active, payload }) => (
-            <EnergyTooltip
-              active={active}
-              row={payload?.[0]?.payload as Row | undefined}
-              metric={metric}
-              currentMonth={currentMonth}
+        <ChartFrame config={config} className="text-[13px] [&_.recharts-legend-wrapper]:text-sm">
+          <BarChart
+            data={data}
+            stackOffset={metric === 'grid' ? 'sign' : 'none'}
+            margin={{ left: 4, right: 12, top: 8, bottom: 0 }}
+          >
+            <CartesianGrid vertical={false} />
+            {selectedLabel ? (
+              <ReferenceArea
+                data-slot="selected-month"
+                x1={selectedLabel}
+                x2={selectedLabel}
+                fill="var(--brand)"
+                fillOpacity={0.12}
+                strokeOpacity={0}
+                ifOverflow="visible"
+              />
+            ) : null}
+            <XAxis
+              dataKey="label"
+              tickLine={false}
+              tickMargin={8}
+              height={TICK_BAND}
+              interval={0}
+              tick={<MonthTick selectedLabel={selectedLabel} />}
             />
-          )}
-        />
-        <ChartLegend
-          itemSorter={seriesOrder(metric)}
-          content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
-        />
-        {series.map((key) => (
-          <Bar
-            key={key}
-            dataKey={key}
-            stackId="kwh"
-            fill={`var(--color-${key})`}
-            radius={isBelowAxis(metric, key) ? [0, 0, 4, 4] : key === top ? [4, 4, 0, 0] : 0}
-            {...seam}
-            isAnimationActive={false}
-          />
-        ))}
-      </BarChart>
-    </ChartFrame>
+            <YAxis
+              width="auto"
+              tickLine={false}
+              tickMargin={4}
+              allowDecimals={false}
+              tickFormatter={(v) => formatCount(Number(v))}
+            />
+            {metric === 'grid' ? <ReferenceLine y={0} stroke="var(--border)" /> : null}
+            <ChartTooltip
+              cursor={<HoverColumn />}
+              content={({ active, payload }) => (
+                <EnergyTooltip
+                  active={active}
+                  row={payload?.[0]?.payload as Row | undefined}
+                  metric={metric}
+                  currentMonth={currentMonth}
+                />
+              )}
+            />
+            <ChartProbe data={data} onActiveMonth={setActiveMonth} plotArea={plotArea} />
+            <ChartLegend
+              itemSorter={seriesOrder(metric)}
+              content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
+            />
+            {series.map((key) => (
+              <Bar
+                key={key}
+                dataKey={key}
+                stackId="kwh"
+                fill={`var(--color-${key})`}
+                radius={isBelowAxis(metric, key) ? [0, 0, 2, 2] : key === top ? [2, 2, 0, 0] : 0}
+                // A 2 px surface gap between stacked segments.
+                stroke="var(--card)"
+                strokeWidth={2}
+                isAnimationActive={false}
+              />
+            ))}
+          </BarChart>
+        </ChartFrame>
+      </div>
+      <p className="mt-2 text-muted-foreground text-sm">{m.energy_chart_select_hint()}</p>
+    </div>
   )
 }
 
@@ -154,33 +323,33 @@ function EnergyTooltip({
 }) {
   if (!active || !row?.sums) return null
   const { parts, totalKwh } = energyTooltipRows(metric, row.sums)
-  const f = energyFigures(row.sums)
-  const gap = gapHours(f)
+  const gap = gapHours(energyFigures(row.sums))
   const config = seriesConfig()
   // Nät's export is a separate flow: it follows the total instead of adding to it.
   const stacked = parts.filter((p) => !isBelowAxis(metric, p.key))
   const after = parts.filter((p) => isBelowAxis(metric, p.key))
-  const rowFor = ({ key, kwh }: (typeof parts)[number]) => (
-    <TooltipRow key={key} label={config[key].label} color={config[key].color}>
+  // Rows without a share keep the (empty) share column so the kWh figures line up.
+  const rowFor = ({ key, kwh, share }: (typeof parts)[number]) => (
+    <TooltipRow
+      key={key}
+      label={config[key].label}
+      color={config[key].color}
+      share={share === null ? '' : formatShare(share)}
+    >
       {formatOneDecimal(kwh)} kWh
     </TooltipRow>
   )
   return (
-    <div className="grid min-w-44 gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <div className="font-medium">
+    <div className="grid min-w-56 gap-1 rounded-lg border bg-background px-3 py-2 text-sm shadow-xl">
+      <div className="font-semibold text-[15px]">
         {monthName(row.month)}
         {row.month === currentMonth ? ` (${m.energy_chart_so_far()})` : ''}
       </div>
       {stacked.map(rowFor)}
-      <TooltipRow label={TOTAL_LABEL[metric]()} strong>
+      <TooltipRow label={TOTAL_LABEL[metric]()} strong share="">
         {formatOneDecimal(totalKwh)} kWh
       </TooltipRow>
       {after.map(rowFor)}
-      {f.selfSufficiency === null ? null : (
-        <TooltipRow label={m.energy_tile_self_sufficiency()}>
-          {formatShare(f.selfSufficiency)}
-        </TooltipRow>
-      )}
       {gap === null ? null : (
         <span className="text-muted-foreground">
           {m.energy_missing_hours({ hours: String(gap) })}
