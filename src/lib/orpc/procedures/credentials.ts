@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { GeocoderError, geocoder, newGeocoderStats } from '~/lib/effects/geocoder'
 import { CREDENTIAL_SOURCES } from '~/lib/integrationCredentials'
 import { adminProcedure } from '~/lib/orpc/context'
 import * as credentialService from '~/lib/services/integrationCredential'
@@ -85,5 +86,58 @@ export const credentialsRouter = {
       const cleared = await credentialService.clear(input.source)
       context.log.info('admin cleared integration credentials', { source: input.source, cleared })
       return { cleared }
+    }),
+
+  // The one credential value an admin can read back (ADR-0026, 2026-10-06 amendment):
+  // fetched only while the picker is open, never in a loader. Never logged.
+  homePosition: adminProcedure
+    .errors({ UNREADABLE: credentialErrors.UNREADABLE })
+    .handler(async ({ context, errors }) => {
+      const started = performance.now()
+      try {
+        return await credentialService.homePosition()
+      } catch (err) {
+        if (err instanceof IntegrationCredentialDomainError && err.code === 'UNREADABLE') {
+          throw errors.UNREADABLE()
+        }
+        throw err
+      } finally {
+        if (context.timings)
+          context.timings.homePositionMs = Math.round(performance.now() - started)
+      }
+    }),
+
+  // Address search for the picker, proxied so the admin's IP and browser stay
+  // private (the text itself still reaches OpenStreetMap). Neither the query nor
+  // a result is logged: only the hit count, the cache flag and timings.
+  searchAddress: adminProcedure
+    .errors({ GEOCODER_UNAVAILABLE: { status: 503 } })
+    .input(z.object({ query: z.string().trim().min(2).max(200) }))
+    .handler(async ({ input, context, errors }) => {
+      const stats = newGeocoderStats()
+      const started = performance.now()
+      try {
+        const hits = await geocoder.search(input.query, {
+          stats,
+          signal: AbortSignal.timeout(8_000),
+        })
+        context.log.debug('credentials: address search', {
+          hits: hits.length,
+          cached: stats.cached,
+        })
+        return hits
+      } catch (err) {
+        if (err instanceof GeocoderError) {
+          context.log.info('credentials: address search unavailable', { code: err.code })
+          throw errors.GEOCODER_UNAVAILABLE()
+        }
+        throw err
+      } finally {
+        if (context.timings) {
+          context.timings.addressSearchMs = Math.round(performance.now() - started)
+          context.timings.addressSearchRequests = stats.requests
+          context.timings.addressSearchCached = stats.cached ? 1 : 0
+        }
+      }
     }),
 }

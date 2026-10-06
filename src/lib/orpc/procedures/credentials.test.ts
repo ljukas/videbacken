@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
+import { createNominatimClient, GeocoderError, geocoder } from '~/lib/effects/geocoder'
+import { fakeFetch, jsonResponse } from '~/lib/effects/testing/fakeFetch'
 import { CREDENTIAL_FIELDS, CREDENTIAL_SOURCES } from '~/lib/integrationCredentials'
 import type { Logger } from '~/lib/logger'
 import { readStored } from '~/lib/services/integrationCredential'
@@ -81,6 +83,8 @@ test.each([
   ['status', undefined],
   ['set', { source: 'zaptec', fields: { password: SECRET } }],
   ['clear', { source: 'zaptec' }],
+  ['homePosition', undefined],
+  ['searchAddress', { query: 'Storgatan 1' }],
 ] as const)('%s is forbidden for a member and rejects anonymous callers', async (name, input) => {
   await expect(
     call(credentialsRouter[name] as never, input as never, { context: baseContext() }),
@@ -207,4 +211,99 @@ test('status reports origins without values; clear removes the row and logs the 
   expect(
     await call(credentialsRouter.clear, { source: 'zaptec' }, { context: baseContext() }),
   ).toEqual({ cleared: false })
+})
+
+const HOME = '59.3293,18.0686' // central Stockholm, not a real home
+
+test('homePosition returns the saved point to an admin and never logs it', async () => {
+  await signIn('admin')
+  await call(
+    credentialsRouter.set,
+    { source: 'skoda', fields: { homeCoordinates: HOME } },
+    { context: baseContext() },
+  )
+  const { log, text } = capturingLog()
+  const timings: Record<string, number> = {}
+
+  const point = await call(credentialsRouter.homePosition, undefined, {
+    context: { ...baseContext(), log, timings },
+  })
+
+  expect(point).toEqual({ latitude: 59.3293, longitude: 18.0686 })
+  expect(text()).not.toContain('59.3293')
+  expect(JSON.stringify(timings)).not.toContain('59.3293')
+  expect(timings.homePositionMs).toBeGreaterThanOrEqual(0)
+})
+
+test('homePosition is null with nothing set, and UNREADABLE for an unreadable row', async () => {
+  await signIn('admin')
+  vi.stubEnv('SKODA_HOME_COORDINATES', '')
+  expect(
+    await call(credentialsRouter.homePosition, undefined, { context: baseContext() }),
+  ).toBeNull()
+
+  vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
+  await call(
+    credentialsRouter.set,
+    { source: 'skoda', fields: { homeCoordinates: HOME } },
+    { context: baseContext() },
+  )
+  vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', randomBytes(32).toString('base64'))
+  const error = await call(credentialsRouter.homePosition, undefined, {
+    context: baseContext(),
+  }).catch((e: unknown) => e)
+  expect(error).toBeInstanceOf(ORPCError)
+  expect(error).toMatchObject({ code: 'UNREADABLE', status: 409, defined: true })
+  expect(JSON.stringify(error)).not.toContain('57.7')
+})
+
+test('searchAddress returns the hits and logs neither the query nor the results', async () => {
+  await signIn('admin')
+  const client = createNominatimClient({
+    fetch: fakeFetch({
+      'GET /search': () =>
+        jsonResponse([{ display_name: 'Storgatan 1, Exempelby', lat: '57.7', lon: '11.97' }]),
+    }).fetch,
+  })
+  vi.spyOn(geocoder, 'search').mockImplementation((q, o) => client.search(q, o))
+  const { log, text } = capturingLog()
+  const timings: Record<string, number> = {}
+
+  const hits = await call(
+    credentialsRouter.searchAddress,
+    { query: 'Storgatan 1' },
+    { context: { ...baseContext(), log, timings } },
+  )
+
+  expect(hits).toEqual([{ label: 'Storgatan 1, Exempelby', latitude: 57.7, longitude: 11.97 }])
+  expect(text()).not.toMatch(/Storgatan|Exempelby|57\.7/)
+  expect(timings).toMatchObject({ addressSearchRequests: 1, addressSearchCached: 0 })
+  expect(timings.addressSearchMs).toBeGreaterThanOrEqual(0)
+})
+
+test('searchAddress maps any geocoder failure to GEOCODER_UNAVAILABLE', async () => {
+  await signIn('admin')
+  // Under VITEST the default adapter is notConfigured.
+  const error = await call(
+    credentialsRouter.searchAddress,
+    { query: 'Storgatan 1' },
+    { context: baseContext() },
+  ).catch((e: unknown) => e)
+  expect(error).toMatchObject({ code: 'GEOCODER_UNAVAILABLE', status: 503, defined: true })
+
+  vi.spyOn(geocoder, 'search').mockRejectedValue(new GeocoderError('rate_limited', 429))
+  await expect(
+    call(credentialsRouter.searchAddress, { query: 'Storgatan 1' }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'GEOCODER_UNAVAILABLE' })
+})
+
+test('searchAddress rejects a query too short or too long before searching', async () => {
+  await signIn('admin')
+  const search = vi.spyOn(geocoder, 'search')
+  for (const query of ['a', ' b ', 'x'.repeat(201)]) {
+    await expect(
+      call(credentialsRouter.searchAddress, { query }, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  }
+  expect(search).not.toHaveBeenCalled()
 })
