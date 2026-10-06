@@ -324,34 +324,44 @@ its own schema review. The checkpoint runs after 3b.
   `/^[A-Za-z]{1,32}$/`, else `unknown`). The message lists the names.
 - **New code `REENTER_ALL_FIELDS`.** Over an unreadable row, `set` requires every field of the source (non-blank).
   Otherwise the unsent fields would silently fall back to env. Over a readable row, a blank field still keeps its
-  stored value. Checked inside the lock, after the row is read.
+  stored value. Checked inside the lock, after the row is read. Like `INVALID_FIELD`, it carries `data: { fields }`
+  (the blank ones).
 - **Check order:** unknown or invalid fields → `NOTHING_TO_SAVE` → `ENCRYPTION_KEY_MISSING` → (in the transaction)
   `REENTER_ALL_FIELDS`.
 
 ### Suspect fields (the run names the wrong field)
-- `IntegrationError` gains an optional `fields: readonly string[]`: the credential field names the vendor's answer
-  points at. Each client sets it per the [mapping table](#credentials-per-source-owner-decision-after-checkpoint-2),
+- `IntegrationError` gains an optional `suspectFields: readonly CredentialFieldName[]`: the credential field names
+  the vendor's answer points at. `CredentialFieldName` is the union of every credential field name, so a typo fails
+  to compile; the sync outcome and the read model use it too. Each client sets it per the [mapping table](#credentials-per-source-owner-decision-after-checkpoint-2),
   next to its existing status handling (the vendor knowledge stays in the client).
 - `runPulledSync` records them in a new **`suspect_fields text[]`** column on both tables:
   - `integration_sync` (current health, read by the tile and dialog). It is written with every outcome and cleared
-    on success, together with `error_code`.
+    on success, together with `error_code`. `nextRow` dedupes the list and turns an empty one into NULL.
   - `integration_sync_run` (history, so the history overlay can show it).
-- CHECKs on both: `suspect_fields IS NULL OR error_code IS NOT NULL`, and non-empty when set
-  (`cardinality(suspect_fields) > 0`). The schema-design review rules on more (for example an element CHECK against
-  the field vocabulary).
+- CHECKs, on both tables: non-empty when set, and every name drawn from `CREDENTIAL_FIELD_NAMES`.
+  - **No tie to `error_code` on `integration_sync`.** Older code (a Vercel instant rollback) clears the code on
+    success and leaves this column, so such a CHECK would make its outcome write fail. The read model (`toHealth`)
+    shows the field only while `error_code` is set.
+  - `integration_sync_run` adds `suspect_fields IS NULL OR outcome <> 'ok'`. It is append-only, and older code
+    inserts NULL.
+  - Renaming or removing a field name needs an `array_replace` / `array_remove` data fix in the migration (see the
+    comment in `src/lib/integrationCredentials.ts`).
 - A run with no field to blame writes `NULL`, never `'{}'`.
 - **Alternatives considered:** storing the HTTP status and mapping it in the UI (spreads vendor rules into the
   client); storing on `integration_sync` only (loses the history). Rejected.
-- The health read model (`syncStatus`) returns `suspectFields: string[] | null`; `recentRuns` returns it per run.
+- `suspectFields: CredentialFieldName[] | null` is in `adminDetail` (admins only), not top-level health.
+  `RunRow.suspectFields` carries it per run (`recentRuns` is admin-only).
 
 ### Procedures — `src/lib/orpc/procedures/credentials.ts` (registered as `credentials`)
 - `status`: `adminProcedure` (a read, but admin-only). Returns the service's `status()`.
 - `set({ source, fields })`: `adminProcedure`, `.errors(credentialErrors)`.
   - Zod restricts `fields` to that source's field names: a discriminated union on `source`.
-  - `INVALID_FIELD` maps with `data: { fields }`; `REENTER_ALL_FIELDS`, `NOTHING_TO_SAVE` and
+  - `INVALID_FIELD` and `REENTER_ALL_FIELDS` map with `data: { fields }`; `NOTHING_TO_SAVE` and
     `ENCRYPTION_KEY_MISSING` map without data.
-  - It logs `admin set integration credentials` with `{ source, fields: [names] }`.
-- `clear({ source })`: `adminProcedure`. It logs the source only.
+  - HTTP status: `ENCRYPTION_KEY_MISSING` is 409, the other three are 422.
+  - It logs `admin set integration credentials` with `{ source, fields: [names] }` and records the
+    `credentialsSetMs` timing.
+- `clear({ source })`: `adminProcedure`. It returns `{ cleared }` and logs the source only.
 - An unexpected error is logged through `serializeError` (a `DrizzleQueryError` message carries the ciphertext
   parameter). `readStored` / `resolveCredentials` stay out of procedures and routes.
 

@@ -165,6 +165,10 @@ The [spec](../superpowers/specs/2026-10-05-charging-settings-design.md) has the 
   field names the vendor's answer points at (`suspect_fields text[]` on `integration_sync` and
   `integration_sync_run`, names only). Each client sets them from its own status handling. Storing the HTTP status
   and mapping it in the UI was rejected: it spreads vendor rules into the client.
+- **`suspect_fields` has no tie to `error_code`.** Older code (a Vercel instant rollback) clears the code on success
+  and leaves the column, so such a CHECK would make its outcome write fail. The CHECKs only require non-empty names
+  from `CREDENTIAL_FIELD_NAMES` (plus `outcome <> 'ok'` on the append-only run table); the read model shows the field
+  only while `error_code` is set.
 - **A refused Emaldo login flags `user` + `password`**, even though a rotated app secret (which encrypts the login
   body) can cause it too. The run message names both causes.
 - **Step 3 ships as two PRs:** 3a (server) and 3b (UI).
