@@ -617,8 +617,8 @@ test('a mouse leaving the plot clears the keyboard’s announcement with the car
   await userEvent.keyboard('{ArrowRight}')
   await settle()
   expect(announced(root)).not.toBe('')
-  await hoverPlot(root)
-  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  expect(tooltipText()).not.toBe('')
+  // No pointer move in between: the announcement is still set when the leave fires.
   const overlay = root.querySelector('[data-hover-overlay]') as Element
   overlay.dispatchEvent(
     new PointerEvent('pointerout', {
