@@ -3,18 +3,29 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
 import {
+  barHeight,
   bars,
+  boldTickLabels,
+  centre,
+  focusChart,
   focusTarget,
   gridLines,
   hoverBar,
   hoverBetween,
+  legend,
   legendLabels,
+  moveAt,
   moveOverPlot,
+  outline,
   parkPointer,
+  selectedTint,
   seriesBars,
   settle,
+  tapOn,
   tooltipText,
+  xTick,
   xTickLabels,
+  xTickTexts,
 } from '~test/browser/chartDom'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
 import { BarChart, type BarChartProps } from './BarChart'
@@ -443,4 +454,371 @@ test('with the y axis shown, grid lines and the axis line are drawn; yAxisLine={
   const hidden = await render({ yAxisLine: false })
   await vi.waitFor(() => expect(gridLines(hidden.screen.container).length).toBeGreaterThan(1))
   expect(hidden.screen.container.querySelector('[data-axis="y"] .visx-axis-line')).toBeNull()
+})
+
+test('stackOffset="diverging" hangs a negative series from the zero line', async () => {
+  const signed = [
+    { label: 'jan', a: 10, b: -6 },
+    { label: 'feb', a: 4, b: -12 },
+  ]
+  const { screen } = await render({
+    rows: signed,
+    series: [
+      { key: 'a', label: 'A', color: 'red', stack: 's' },
+      { key: 'b', label: 'B', color: 'blue', stack: 's' },
+    ],
+    stackOffset: 'diverging',
+    zeroLine: true,
+  })
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(4))
+  const zero = screen.container.querySelector('[data-zero-line]') as SVGLineElement
+  expect(zero).not.toBeNull()
+  const zeroY = zero.getBoundingClientRect().y
+  for (const bar of seriesBars(screen.container, 1)) {
+    expect(bar.getBoundingClientRect().top).toBeCloseTo(zeroY, 0)
+  }
+  for (const bar of seriesBars(screen.container, 0)) {
+    expect(bar.getBoundingClientRect().bottom).toBeCloseTo(zeroY, 0)
+  }
+})
+
+test('no zero line unless asked for', async () => {
+  const { screen } = await render()
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  expect(screen.container.querySelector('[data-zero-line]')).toBeNull()
+})
+
+const twelve = Array.from({ length: 12 }, (_, i) => ({ label: `Långmånad${i}`, a: 5, b: 1 }))
+
+const shortProps = { rows: twelve, shortCategory: (r: Row) => r.label.slice(-1) }
+
+test('shortCategory: every label short when the full ones do not fit', async () => {
+  const { screen } = await render(shortProps, 240)
+  await vi.waitFor(() =>
+    expect(xTickLabels(screen.container)).toEqual(twelve.map((r) => r.label.slice(-1))),
+  )
+})
+
+test('shortCategory: every label in full when they fit', async () => {
+  const { screen } = await render(shortProps, 1400)
+  await vi.waitFor(() => expect(xTickLabels(screen.container)).toEqual(twelve.map((r) => r.label)))
+})
+
+test('tickPx sets the axis label size', async () => {
+  const { screen } = await render({ tickPx: 13 })
+  await vi.waitFor(() => expect(xTickTexts(screen.container).length).toBeGreaterThan(0))
+  for (const t of xTickTexts(screen.container)) expect(t.getAttribute('font-size')).toBe('13')
+})
+
+const tiny = [
+  { label: 'jan', a: 0.1, b: null },
+  { label: 'feb', a: 100, b: null },
+]
+
+test('a tiny value is floored to MIN_BAR_PX by default', async () => {
+  const { screen } = await render({ rows: tiny })
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(2))
+  expect(barHeight(bars(screen.container)[0])).toBeCloseTo(4, 0)
+})
+
+test('minBarPx 0 draws a tiny value at its true height', async () => {
+  const { screen } = await render({ rows: tiny, minBarPx: 0 })
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(2))
+  expect(barHeight(bars(screen.container)[0])).toBeLessThan(1)
+})
+
+test('tooltipClassName and legendClassName merge over the defaults', async () => {
+  const { screen } = await render({
+    tooltipClassName: 'min-w-56 text-sm',
+    legendClassName: 'text-sm',
+  })
+  expect(legend(screen.container)?.className).toContain('text-sm')
+  await hoverBar(screen.container, 0)
+  const card = await vi.waitFor(() => {
+    const el = document.querySelector('[data-slot="chart-tooltip"]')
+    expect(el).not.toBeNull()
+    return el as HTMLElement
+  })
+  expect(card.className).toContain('text-sm')
+  expect(card.className).not.toContain('text-xs')
+  expect(card.className).toContain('min-w-56')
+  expect(card.className).not.toContain('min-w-32')
+})
+
+test('keyboardHint replaces the default hint', async () => {
+  const { screen } = await render({ keyboardHint: 'Pila och välj' })
+  await expect.element(screen.getByText('Pila och välj')).toBeInTheDocument()
+  expect(screen.container.textContent).not.toContain(m.chart_keyboard_hint())
+})
+
+// jan, mar and apr can be selected; feb (null) can't.
+const selectable = (r: Row) => r.a !== null
+const withSelection = (selected: number | null, onSelect = vi.fn()) => ({
+  selection: { selected, onSelect, canSelect: selectable },
+})
+const overlayBox = (c: Element) =>
+  (c.querySelector('[data-hover-overlay]') as SVGRectElement).getBoundingClientRect()
+const clickBand = (c: Element, i: number, y?: number) => {
+  const o = overlayBox(c)
+  const at = { bubbles: true, clientX: o.x + (o.width * (i + 0.5)) / 4, clientY: y ?? o.y + 10 }
+  const overlay = c.querySelector('[data-hover-overlay]') as SVGRectElement
+  overlay.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse' }))
+  overlay.dispatchEvent(new MouseEvent('click', at))
+}
+
+test('a click selects the category under it; one that cannot be selected does nothing', async () => {
+  const onSelect = vi.fn()
+  const { screen } = await render(withSelection(null, onSelect))
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  clickBand(screen.container, 1) // feb
+  clickBand(screen.container, 3) // apr
+  await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(3))
+  expect(onSelect).toHaveBeenCalledTimes(1)
+})
+
+test('the label band under the plot is clickable too', async () => {
+  const onSelect = vi.fn()
+  const { screen } = await render(withSelection(null, onSelect))
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  const tick = xTick(screen.container, 'jan').getBoundingClientRect()
+  expect(overlayBox(screen.container).bottom).toBeGreaterThanOrEqual(tick.bottom)
+  clickBand(screen.container, 0, tick.y + tick.height / 2)
+  await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(0))
+})
+
+test('without selection the overlay stops at the plot and draws no outline', async () => {
+  const { screen } = await render()
+  await hoverBar(screen.container, 0)
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  const tick = xTick(screen.container, 'jan').getBoundingClientRect()
+  expect(overlayBox(screen.container).bottom).toBeLessThanOrEqual(tick.top)
+  expect(outline(screen.container)).toBeNull()
+})
+
+test('Enter and Space select the keyboard category; not one that cannot be selected', async () => {
+  const onSelect = vi.fn()
+  const { screen } = await render(withSelection(null, onSelect))
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{ArrowRight}{ArrowRight}{Enter}') // feb: nothing
+  await userEvent.keyboard('{ArrowRight}{ArrowRight} ') // apr
+  await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(3))
+  expect(onSelect).toHaveBeenCalledTimes(1)
+  await userEvent.keyboard('{Home}{Enter}')
+  await vi.waitFor(() => expect(onSelect).toHaveBeenLastCalledWith(0))
+})
+
+test('the selected category is tinted over its band and its label is bold', async () => {
+  const { screen } = await render(withSelection(2))
+  const tint = await vi.waitFor(() => {
+    const el = selectedTint(screen.container)
+    expect(el).not.toBeNull()
+    return el as SVGGraphicsElement
+  })
+  const band = centre(xTick(screen.container, 'apr')).x - centre(xTick(screen.container, 'mar')).x
+  expect(tint.getBoundingClientRect().width).toBeCloseTo(band, 0)
+  expect(centre(tint).x).toBeCloseTo(centre(xTick(screen.container, 'mar')).x, 0)
+  expect(boldTickLabels(screen.container)).toEqual(['mar'])
+  // Painted under the bars.
+  for (const bar of bars(screen.container))
+    expect(tint.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+// One chart per test: a second chart rendered after an unmount in the same
+// test stays empty in this setup.
+const expectNoSelectionDrawn = async (selected: number | null) => {
+  const { screen } = await render(withSelection(selected))
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  // All four labels drawn, so no bold label can't pass on an empty axis.
+  await vi.waitFor(() => expect(xTickTexts(screen.container)).toHaveLength(4))
+  expect(selectedTint(screen.container)).toBeNull()
+  expect(boldTickLabels(screen.container)).toEqual([])
+}
+
+test('no selection draws no tint and no bold label', () => expectNoSelectionDrawn(null))
+
+test('a selection past the last row draws no tint and no bold label', () =>
+  expectNoSelectionDrawn(4))
+
+test('a negative selection draws no tint and no bold label', () => expectNoSelectionDrawn(-1))
+
+test('a new selection moves the tint; the hover outline stays on the pointer', async () => {
+  const { screen, queryClient } = await render(withSelection(0))
+  await hoverBar(screen.container, 1) // apr's a
+  await vi.waitFor(() => expect(outline(screen.container)).not.toBeNull())
+  const outlineX = centre(outline(screen.container) as Element).x
+  // Same tree (provider included), so the chart keeps its state.
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>
+      <div style={{ width: 480 }}>
+        <button type="button">before</button>
+        <BarChart {...base} {...withSelection(2)} />
+      </div>
+    </QueryClientProvider>,
+  )
+  await vi.waitFor(() => expect(boldTickLabels(screen.container)).toEqual(['mar']))
+  expect(centre(outline(screen.container) as Element).x).toBeCloseTo(outlineX, 0)
+})
+
+test('hovering a selectable category outlines its column, label included, over the bars', async () => {
+  const { screen } = await render(withSelection(null))
+  await hoverBar(screen.container, 1) // apr's a
+  const o = await vi.waitFor(() => {
+    const el = outline(screen.container)
+    expect(el).not.toBeNull()
+    return el as SVGGraphicsElement
+  })
+  const box = o.getBoundingClientRect()
+  const tick = xTick(screen.container, 'apr').getBoundingClientRect()
+  expect(box.left).toBeLessThanOrEqual(tick.left)
+  expect(box.right).toBeGreaterThanOrEqual(tick.right)
+  expect(box.bottom).toBeGreaterThanOrEqual(tick.bottom)
+  expect(o.getAttribute('stroke-dasharray')).toBeNull()
+  for (const bar of bars(screen.container))
+    expect(bar.compareDocumentPosition(o) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  const overlay = screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  expect(overlay.style.cursor).toBe('pointer')
+})
+
+test('hovering a category that cannot be selected draws no outline and no pointer cursor', async () => {
+  const { screen } = await render(withSelection(null))
+  const overlay = () => screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  // First an outlined one, so the checks below can't pass on a chart that never outlines.
+  await hoverBar(screen.container, 1) // apr's a
+  await vi.waitFor(() => {
+    expect(outline(screen.container)).not.toBeNull()
+    expect(overlay().style.cursor).toBe('pointer')
+  })
+  const o = overlayBox(screen.container)
+  moveOverPlot(screen.container, o.x + (o.width * 1.5) / 4, o.y + 10) // feb
+  await vi.waitFor(() => {
+    expect(outline(screen.container)).toBeNull()
+    expect(overlay().style.cursor).toBe('')
+  })
+})
+
+test('from the keyboard a category that cannot be selected gets a dashed outline', async () => {
+  const { screen } = await render(withSelection(null))
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{ArrowRight}{ArrowRight}') // feb
+  await vi.waitFor(() =>
+    expect(outline(screen.container)?.getAttribute('stroke-dasharray')).not.toBeNull(),
+  )
+  await userEvent.keyboard('{ArrowRight}') // mar
+  await vi.waitFor(() =>
+    expect(outline(screen.container)?.getAttribute('stroke-dasharray')).toBeNull(),
+  )
+  await userEvent.keyboard('{Escape}')
+  await vi.waitFor(() => expect(outline(screen.container)).toBeNull())
+})
+
+test('a tap selects without a card or an outline; a mouse afterwards shows both', async () => {
+  const onSelect = vi.fn()
+  const { screen } = await render(withSelection(null, onSelect))
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  tapOn(screen.container, () => bars(screen.container)[1]) // apr
+  await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(3))
+  await settle()
+  expect(tooltipText()).toBe('')
+  expect(outline(screen.container)).toBeNull()
+  const c = centre(bars(screen.container)[1])
+  moveAt(screen.container, c.x + 1, c.y)
+  await vi.waitFor(() => {
+    expect(tooltipText()).toBe('aprA 30 B 10')
+    expect(outline(screen.container)).not.toBeNull()
+  })
+})
+
+test('leaving the chart with a mouse clears the outline', async () => {
+  const { screen } = await render(withSelection(null))
+  await hoverBar(screen.container, 1)
+  await vi.waitFor(() => expect(outline(screen.container)).not.toBeNull())
+  const overlay = screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  overlay.dispatchEvent(
+    new PointerEvent('pointerout', {
+      bubbles: true,
+      pointerType: 'mouse',
+      relatedTarget: document.body,
+    }),
+  )
+  await vi.waitFor(() => expect(outline(screen.container)).toBeNull())
+})
+
+test('a non-integer selection draws no tint and no bold label', () => expectNoSelectionDrawn(1.5))
+
+// Records whether each key press's default was prevented (after React's handler).
+const recordKeys = () => {
+  const seen: { key: string; prevented: boolean }[] = []
+  const listener = (e: KeyboardEvent) => seen.push({ key: e.key, prevented: e.defaultPrevented })
+  document.addEventListener('keydown', listener)
+  return { seen, stop: () => document.removeEventListener('keydown', listener) }
+}
+
+test('after the mouse leaves, Enter and Space select nothing and Space keeps its default', async () => {
+  const onSelect = vi.fn()
+  const { screen } = await render(withSelection(null, onSelect))
+  await hoverBar(screen.container, 1) // apr's a
+  await vi.waitFor(() => expect(outline(screen.container)).not.toBeNull())
+  const overlay = screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  overlay.dispatchEvent(
+    new PointerEvent('pointerout', {
+      bubbles: true,
+      pointerType: 'mouse',
+      relatedTarget: document.body,
+    }),
+  )
+  await vi.waitFor(() => expect(outline(screen.container)).toBeNull())
+  focusChart(screen.container)
+  const keys = recordKeys()
+  try {
+    await userEvent.keyboard(' ')
+    await userEvent.keyboard('{Enter}')
+    await settle()
+  } finally {
+    keys.stop()
+  }
+  expect(onSelect).not.toHaveBeenCalled()
+  expect(keys.seen.find((k) => k.key === ' ')?.prevented).toBe(false)
+})
+
+test('Space on a keyboard category selects it and keeps the page from scrolling', async () => {
+  const onSelect = vi.fn()
+  const { screen } = await render(withSelection(null, onSelect))
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{End}') // apr
+  await vi.waitFor(() => expect(outline(screen.container)).not.toBeNull())
+  const keys = recordKeys()
+  try {
+    await userEvent.keyboard(' ')
+    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(3))
+  } finally {
+    keys.stop()
+  }
+  expect(keys.seen.find((k) => k.key === ' ')?.prevented).toBe(true)
+})
+
+test('fewer rows after a refetch never let Enter select a missing category', async () => {
+  const onSelect = vi.fn()
+  const queryClient = makeTestQueryClient()
+  const ui = (shown: Row[]) => (
+    <div style={{ width: 480 }}>
+      <button type="button">before</button>
+      <BarChart {...base} {...withSelection(null, onSelect)} rows={shown} />
+    </div>
+  )
+  const { screen } = await renderWithProviders(ui(rows), { queryClient })
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{End}')
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 30 B 10'))
+  // Same tree (provider included), so the chart keeps focus as the rows shrink.
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>{ui(rows.slice(0, 2))}</QueryClientProvider>,
+  )
+  await vi.waitFor(() => expect(bars(screen.container).length).toBe(2)) // jan's a and b
+  await userEvent.keyboard('{Enter}')
+  await settle()
+  expect(onSelect).not.toHaveBeenCalled()
 })

@@ -926,6 +926,7 @@
   "energy_period_prev_year": "Föregående år",
   "energy_period_next_year": "Nästa år",
   "energy_chart_select_hint": "Klicka på en månad för att visa den i summeringen.",
+  "energy_chart_keyboard_hint": "Använd piltangenterna för att stega mellan månaderna och Enter för att välja en.",
   "energy_flow_battery": "Batteri",
   "energy_flow_loss": "Förlust",
   "energy_flow_about_zero": "≈ 0",

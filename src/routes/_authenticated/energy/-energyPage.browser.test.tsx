@@ -7,12 +7,12 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-react'
 import { energyOverviewQuery } from '~/components/energy/energyQueries'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
+import { clickOn, legendText, xTickTexts } from '~test/browser/chartDom'
 import { makeTestQueryClient } from '~test/browser/render'
 import { seedSourcesHealth } from '~test/browser/syncHealth'
 import { Route as Overview } from './index'
@@ -289,9 +289,9 @@ test('clicking a month in the chart selects it', async () => {
     .getByRole('region', { name: m.energy_chart_title({ year: '2026' }) })
     .element()
   // By position: on a narrow test page the labels shorten to initials.
-  const ticks = () => [...chart.querySelectorAll('.recharts-xAxis-tick-labels text')]
+  const ticks = () => xTickTexts(chart)
   await expect.poll(() => ticks().length, { timeout: 5000 }).toBe(12)
-  await userEvent.click(ticks()[2]) // March
+  await clickOn(chart, ticks()[2]) // March
   await expect
     .poll(() => (router.state.location.search as { period?: string }).period)
     .toBe('2026-03')
@@ -525,9 +525,7 @@ test('Nät switches the chart to the grid series', async () => {
   await screen.getByRole('radio', { name: m.energy_metric_grid() }).click()
   // From the legend: a tooltip under a stray pointer would repeat the label.
   await vi.waitFor(() =>
-    expect(screen.container.querySelector('.recharts-legend-wrapper')?.textContent ?? '').toContain(
-      m.energy_series_import_direct(),
-    ),
+    expect(legendText(screen.container)).toContain(m.energy_series_import_direct()),
   )
 })
 

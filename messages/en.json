@@ -926,6 +926,7 @@
   "energy_period_prev_year": "Previous year",
   "energy_period_next_year": "Next year",
   "energy_chart_select_hint": "Click a month to show it in the summary.",
+  "energy_chart_keyboard_hint": "Use the arrow keys to step through the months and Enter to select one.",
   "energy_flow_battery": "Battery",
   "energy_flow_loss": "Loss",
   "energy_flow_about_zero": "≈ 0",

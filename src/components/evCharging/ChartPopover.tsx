@@ -196,15 +196,16 @@ export function ChartPopover({
   state,
   dataKey,
   variant = 'pill',
-  children,
   className,
+  children,
   placement = 'over',
 }: {
   state: { open: boolean; left?: number; top?: number; containerBounds: Bounds }
   dataKey?: string
   variant?: 'pill' | 'card'
-  children: React.ReactNode
+  /** Classes merged over the tooltip's (either variant). */
   className?: string
+  children: React.ReactNode
   placement?: ChartPopoverPlacement
 }) {
   const bounds = state.containerBounds
@@ -234,7 +235,10 @@ export function ChartPopover({
         offsetLeft={0}
         offsetTop={0}
         data-slot="chart-tooltip"
-        className="pointer-events-none z-50 grid min-w-32 items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-foreground text-xs shadow-xl"
+        className={cn(
+          'pointer-events-none z-50 grid min-w-32 items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-foreground text-xs shadow-xl',
+          className,
+        )}
       >
         {children}
       </Tooltip>,
