@@ -50,6 +50,9 @@ export type BarChartProps<Row> = {
 
 const MARGIN = { top: 8, right: 12, bottom: 0, left: 4 }
 const X_AXIS_H = 30
+// recharts' tick size: labels keep their distance from the axis even with
+// the tick lines hidden (visx places labels at tickLength too).
+const TICK_SIZE = 6
 const X_TICK_MARGIN = 8
 const Y_TICK_MARGIN = 4
 const TICK_PX = 12
@@ -83,8 +86,12 @@ export function BarChart<Row>({
   tooltipTitle = true,
   label,
 }: BarChartProps<Row>) {
-  const { parentRef, width, height: plotBoxH } = useParentSize({ debounceTime: 100 })
-  const popover = useChartPopover<number>()
+  // No debounce: a resize that wraps the legend re-lays the plot at once,
+  // as recharts' ResponsiveContainer did (a stale plot would overlap it).
+  const { parentRef, width, height: plotBoxH } = useParentSize({ debounceTime: 0 })
+  // followScroll: the card is portalled, so it re-measures while a scroll
+  // container moves the chart under it.
+  const popover = useChartPopover<number>({ followScroll: true })
   const hintId = useId()
   const [announced, setAnnounced] = useState<number | null>(null)
   // The category the pointer or the keys last moved to (null: none). Kept apart
@@ -102,7 +109,7 @@ export function BarChart<Row>({
     const plotH = Math.max(0, plotBoxH - MARGIN.top - MARGIN.bottom - X_AXIS_H)
     const y = yScaleFor({ extent, height: plotH, integers: yIntegers, domain: yDomain })
     const yLabels = y.ticks.map(yTickFormat)
-    const yAxisW = hideYAxis ? 0 : (max(yLabels, measure) ?? 0) + Y_TICK_MARGIN + 2
+    const yAxisW = hideYAxis ? 0 : (max(yLabels, measure) ?? 0) + TICK_SIZE + Y_TICK_MARGIN + 2
     const left = MARGIN.left + yAxisW
     const plotW = Math.max(0, width - left - MARGIN.right)
     const x = scaleBand<number>().domain(range(count)).range([0, plotW])
@@ -297,6 +304,7 @@ export function BarChart<Row>({
               tickValues={geometry.y.ticks}
               tickFormat={(v) => yTickFormat(Number(v))}
               hideTicks
+              tickLength={TICK_SIZE}
               hideAxisLine={!yAxisLine}
               stroke={AXIS}
               tickLabelProps={() => ({
@@ -315,6 +323,7 @@ export function BarChart<Row>({
             tickValues={geometry.xTicks}
             tickFormat={(i) => category(rows[Number(i)])}
             hideTicks
+            tickLength={TICK_SIZE}
             stroke={AXIS}
             tickLabelProps={() => ({
               ...TICK_LABEL,
@@ -328,6 +337,9 @@ export function BarChart<Row>({
           width={geometry.plotW}
           height={geometry.plotH}
           fill="transparent"
+          // A horizontal finger drag scrubs across the categories (pointer
+          // moves keep coming); a vertical one still scrolls the page.
+          style={{ touchAction: 'pan-y' }}
           onPointerMove={onPointer}
           onPointerDown={onPointer}
           // Off the plot (onto an axis or the legend) the card closes, as
@@ -396,7 +408,9 @@ export function BarChart<Row>({
         </>
       ) : null}
       <ChartPopover
-        state={popover}
+        // Anchored from the current layout on every render, so a refetch or a
+        // resize moves the card with its category.
+        state={active === null ? popover : { ...popover, ...anchor(active) }}
         variant="card"
         dataKey={active === null ? undefined : String(active)}
       >

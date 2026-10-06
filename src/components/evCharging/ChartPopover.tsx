@@ -10,7 +10,7 @@ const OFFSET_BELOW = 24
 
 type Bounds = ReturnType<typeof useTooltipInPortal>['containerBounds']
 
-export function useChartPopover<T>() {
+export function useChartPopover<T>({ followScroll = false }: { followScroll?: boolean } = {}) {
   const { tooltipOpen, tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip } =
     useTooltip<T>()
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -68,6 +68,23 @@ export function useChartPopover<T>() {
 
   // The portalled tooltip is pointer-events-none, so a tap never targets it and
   // can't count as "outside" the chart.
+  // followScroll: while open, any scroll (the page or an inner container)
+  // re-measures the wrapper once a frame, so the portalled tooltip stays on
+  // its mark. Off by default: the pill charts close on scroll by design.
+  useEffect(() => {
+    if (!followScroll || !tooltipOpen) return
+    let frame = 0
+    const onScroll = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => forceRefreshBounds())
+    }
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      document.removeEventListener('scroll', onScroll, { capture: true })
+    }
+  }, [followScroll, tooltipOpen, forceRefreshBounds])
+
   useEffect(() => {
     if (!tooltipOpen) return
     const onDown = (e: PointerEvent) => {
@@ -142,7 +159,8 @@ function placeCard(el: HTMLDivElement | null) {
   // placed box shrinks to fit that, so near the right edge every row would
   // wrap. Inline, because visx drops `style` on an unstyled Tooltip.
   el.style.width = 'max-content'
-  el.style.maxWidth = `calc(100vw - ${2 * EDGE}px)`
+  // …capped at a readable width: a long hint wraps rather than spanning the page.
+  el.style.maxWidth = `min(calc(100vw - ${2 * EDGE}px), 22rem)`
   el.style.transform = ''
   const r = el.getBoundingClientRect() // its top-left corner sits on the point
   let dx = -r.width / 2

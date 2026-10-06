@@ -357,3 +357,76 @@ test('browser shortcuts with a modifier pass through', async () => {
   await settle()
   expect(tooltipText()).toBe('')
 })
+
+const cardBox = () =>
+  (document.querySelector('[data-slot="chart-tooltip"]') as HTMLElement).getBoundingClientRect()
+
+test('an open card follows its bar when a refetch changes the bar', async () => {
+  const queryClient = makeTestQueryClient()
+  const ui = (shown: Row[]) => (
+    <div style={{ width: 480 }}>
+      <BarChart {...base} rows={shown} />
+    </div>
+  )
+  const { screen } = await renderWithProviders(ui(rows), { queryClient })
+  await hoverBar(screen.container, 1) // apr: a 30 + b 10
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 30 B 10'))
+  await settle()
+  const before = cardBox().bottom
+  // April halves: its stack's top drops, so the card must drop with it.
+  const lower = rows.map((r) => (r.label === 'apr' ? { ...r, a: 15, b: 5 } : r))
+  await screen.rerender(<QueryClientProvider client={queryClient}>{ui(lower)}</QueryClientProvider>)
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 15 B 5'))
+  await vi.waitFor(() => expect(cardBox().bottom).toBeGreaterThan(before + 10))
+})
+
+test('an open card follows its bar when its scroll container scrolls', async () => {
+  const { screen } = await renderWithProviders(
+    // Room above the chart, so the card stays above its bar (no flip) after the scroll.
+    <div data-testid="scroller" style={{ height: 700, overflowY: 'auto' }}>
+      <div style={{ width: 480, paddingTop: 400, paddingBottom: 900 }}>
+        <BarChart {...base} />
+      </div>
+    </div>,
+  )
+  const scroller = screen.getByTestId('scroller').element() as HTMLElement
+  await hoverBar(screen.container, 1)
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 30 B 10'))
+  await settle()
+  const bar = () => bars(screen.container)[1].getBoundingClientRect().top
+  const gap = bar() - cardBox().bottom
+  scroller.scrollTop += 60
+  await vi.waitFor(() => expect(Math.abs(bar() - cardBox().bottom - gap)).toBeLessThan(2))
+})
+
+test('a finger can drag across the bars: the plot only lets the page pan vertically', async () => {
+  const { screen } = await render()
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('[data-hover-overlay]')).not.toBeNull(),
+  )
+  const overlay = screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  expect(overlay.style.touchAction).toBe('pan-y')
+})
+
+test('a long tooltip wraps inside a readable width', async () => {
+  const long = () => <span>{'Ett mycket långt förklarande stycke text '.repeat(6)}</span>
+  const { screen } = await render({ tooltip: long }, 480)
+  await hoverBar(screen.container, 0)
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  expect(cardBox().width).toBeLessThanOrEqual(22 * 16 + 1)
+})
+
+test('the y labels stay inside the chart', async () => {
+  const { screen } = await render({ yTickFormat: (v) => `${v} 000 kr` })
+  await vi.waitFor(() =>
+    expect(
+      screen.container.querySelectorAll('[data-axis="y"] .visx-axis-tick').length,
+    ).toBeGreaterThan(1),
+  )
+  const svg = (
+    screen.container.querySelector('svg[data-chart-svg]') as SVGSVGElement
+  ).getBoundingClientRect()
+  for (const t of screen.container.querySelectorAll('[data-axis="y"] .visx-axis-tick text')) {
+    expect(t.getBoundingClientRect().left).toBeGreaterThanOrEqual(svg.left - 0.5)
+  }
+})
