@@ -33,31 +33,42 @@ describe('pickTimeTicks', () => {
     spaced(r)
   })
 
-  test('a 320 px phone falls back to coarser hours, never crowded', () => {
+  test('a 320 px phone falls back to every 6 hours, never crowded', () => {
+    // 4 ticks 65 px apart fit 35 px labels plus the gap; 8 ticks 32 px apart don't.
     const r = ticksFor('24h', 1, 260)
-    expect(r.ticks.length).toBeLessThan(8)
-    expect(r.ticks.length).toBeGreaterThan(1)
-    for (const t of r.ticks) expect(new Date(t).getHours() % 6).toBe(0)
+    expect(r.ticks.map((t) => new Date(t).getHours())).toEqual([12, 18, 0, 6])
     spaced(r)
   })
 
   test('1w keeps a daily tick on a phone (short weekday labels)', () => {
-    const r = ticksFor('1w', 7, 300)
-    expect(r.ticks.length).toBe(7)
-    spaced(r)
+    // A fixed label, so the fit doesn't depend on ICU's weekday length.
+    const base = ticksFor('1w', 7, 300)
+    const axis = { ...base.axis, format: () => 'mån' }
+    const ticks = pickTimeTicks({
+      domain: [base.x.domain()[0], base.x.domain()[1]],
+      x: base.x,
+      axis,
+      measure,
+    })
+    expect(ticks.length).toBe(7)
+    spaced({ ticks, x: base.x, axis })
   })
 
-  test('1y on a phone thins the month starts until they fit', () => {
+  test('1y on a phone falls back to every 3 months', () => {
     const r = ticksFor('1y', 365, 260)
-    expect(r.ticks.length).toBeGreaterThan(1)
-    expect(r.ticks.length).toBeLessThan(12)
-    for (const t of r.ticks) expect(new Date(t).getDate()).toBe(1)
+    expect(r.ticks.length).toBe(4)
+    for (const t of r.ticks) {
+      expect([new Date(t).getDate(), new Date(t).getMonth() % 3]).toEqual([1, 0])
+    }
     spaced(r)
   })
 
   test('when even the coarsest interval crowds, its labels are thinned', () => {
     const r = ticksFor('24h', 1, 60)
-    expect(r.ticks.length).toBeGreaterThanOrEqual(1)
+    const coarsest = r.axis.intervals[r.axis.intervals.length - 1]
+    const start = r.x.domain()[0]
+    expect(coarsest.range(new Date(start), new Date(start + DAY + 1)).length).toBeGreaterThan(1)
+    expect(r.ticks.length).toBe(1)
     spaced(r)
   })
 
@@ -68,13 +79,22 @@ describe('pickTimeTicks', () => {
     expect(pickTimeTicks({ domain, x, axis: makeTimeAxis('24h', 'sv-SE'), measure })).toEqual([])
   })
 
+  test('a month end keeps its labels spaced at a narrow width', () => {
+    const start = new Date('2026-07-30T10:20:00').getTime()
+    const domain = [start, start + 4 * DAY] as const
+    const x = scaleLinear().domain(domain).range([0, 200])
+    const axis = makeTimeAxis('1w', 'sv-SE')
+    spaced({ ticks: pickTimeTicks({ domain, x, axis, measure }), x, axis })
+  })
+
   test('the domain end is included when it falls on a tick', () => {
     const start = new Date('2026-08-02T00:00:00').getTime()
-    const domain = [start, start + DAY] as const
+    const end = new Date('2026-08-03T00:00:00').getTime()
+    const domain = [start, end] as const
     const x = scaleLinear().domain(domain).range([0, 900])
     const ticks = pickTimeTicks({ domain, x, axis: makeTimeAxis('24h', 'sv-SE'), measure })
     expect(ticks[0]).toBe(start)
-    expect(ticks[ticks.length - 1]).toBe(start + DAY)
+    expect(ticks[ticks.length - 1]).toBe(end)
   })
 })
 
@@ -112,5 +132,15 @@ describe('readingTimes and nearestTime', () => {
     expect(nearestTime([10, 20, 50], 36)).toBe(50)
     expect(nearestTime([10, 20, 50], -100)).toBe(10)
     expect(nearestTime([], 5)).toBeNull()
+  })
+
+  test('an exact match, past the last time, and a single time', () => {
+    expect(nearestTime([10, 20, 50], 20)).toBe(20)
+    expect(nearestTime([10, 20, 50], 999)).toBe(50)
+    expect(nearestTime([42], 7)).toBe(42)
+  })
+
+  test('a tie goes to the later time', () => {
+    expect(nearestTime([10, 20], 15)).toBe(20)
   })
 })
