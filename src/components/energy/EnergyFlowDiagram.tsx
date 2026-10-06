@@ -49,6 +49,9 @@ const FIGURE: Record<Exclude<FlowNodeKey, 'bat'>, (s: PeriodSums) => number> = {
   load: (s) => s.loadKwh,
 }
 const NODE_SURFACE = 'color-mix(in oklab, var(--foreground) 3%, var(--card))'
+// The muted token reaches only 4.4:1 on the raised node surface in light; a touch of the foreground lifts the
+// node's secondary text (unit, "Förlust", charge level, car lines) above 4.5:1 in both themes.
+const NODE_MUTED = { fill: 'color-mix(in oklab, var(--muted-foreground) 90%, var(--foreground))' }
 const label = (key: FlowNodeKey) =>
   ({
     sol: m.energy_tile_solar(),
@@ -424,7 +427,7 @@ function FlowNodeBox({
       </text>
       {key === 'bat' ? (
         <>
-          <text x={t.value.x} y={t.value.y} fontSize={14} className="fill-muted-foreground">
+          <text x={t.value.x} y={t.value.y} fontSize={14} style={NODE_MUTED}>
             {m.energy_flow_loss()}{' '}
             <tspan
               fontSize={t.value.size}
@@ -436,7 +439,7 @@ function FlowNodeBox({
             kWh
           </text>
           {t.third && charge ? (
-            <text x={t.third.x} y={t.third.y} fontSize={13} className="fill-muted-foreground">
+            <text x={t.third.x} y={t.third.y} fontSize={13} style={NODE_MUTED}>
               {charge}
             </text>
           ) : null}
@@ -450,7 +453,7 @@ function FlowNodeBox({
           className="fill-foreground tabular-nums"
         >
           {kwh(FIGURE[key](sums))}{' '}
-          <tspan fontSize={14} fontWeight={400} className="fill-muted-foreground">
+          <tspan fontSize={14} fontWeight={400} style={NODE_MUTED}>
             kWh
           </tspan>
         </text>
@@ -458,14 +461,15 @@ function FlowNodeBox({
       {/* Like an arrow, a car part that would read "0,0" is left out; its lines keep their space. */}
       {key === 'load' && f.car >= MIN_FLOW_KWH && t.second && t.third ? (
         <>
-          <text x={t.second.x} y={t.second.y} fontSize={14} className="fill-muted-foreground">
+          <text x={t.second.x} y={t.second.y} fontSize={14} style={NODE_MUTED}>
             {m.energy_flow_car()}
           </text>
           <text
             x={t.third.x}
             y={t.third.y}
             fontSize={14}
-            className="fill-muted-foreground tabular-nums"
+            className="tabular-nums"
+            style={NODE_MUTED}
           >
             {kwh(f.car)} kWh
           </text>
