@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -15,12 +15,16 @@ import {
   lineCurves,
   lineDots,
   lineSeries,
+  parkPointer,
   pressUntil,
   tooltipText,
 } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { formatOrePrecise, monthLabel } from './format'
 import { SpotComparisonChart } from './SpotComparisonChart'
+
+// Keep the real pointer off the charts (see parkPointer).
+beforeEach(parkPointer)
 
 type Month = RouterOutputs['evCharging']['economy']['months'][number]
 const month = (mo: number, over: Partial<Month> = {}): Month => ({

@@ -1,10 +1,11 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import {
   barHeight,
   bars,
   chartSvg,
   focusTarget,
   hoverBar,
+  parkPointer,
   seriesBars,
   tooltipText,
   xTickLabels,
@@ -13,6 +14,9 @@ import { renderWithProviders } from '~test/browser/render'
 import { hourRangeLabel } from './format'
 import { HourOfDayChart } from './HourOfDayChart'
 import { valueLabel } from './patternChart'
+
+// Keep the real pointer off the charts (see parkPointer).
+beforeEach(parkPointer)
 
 const hours = Array.from({ length: 24 }, (_, h) => ({ kwh: h * 2, pluggedHours: h }))
 

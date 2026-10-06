@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
 import {
@@ -9,7 +9,8 @@ import {
   hoverBar,
   hoverBetween,
   legendLabels,
-  pointAt,
+  moveOverPlot,
+  parkPointer,
   seriesBars,
   settle,
   tooltipText,
@@ -17,6 +18,9 @@ import {
 } from '~test/browser/chartDom'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
 import { BarChart, type BarChartProps } from './BarChart'
+
+// Keep the real pointer off the charts (see parkPointer).
+beforeEach(parkPointer)
 
 type Row = { label: string; a: number | null; b: number | null }
 const rows: Row[] = [
@@ -86,10 +90,10 @@ test('a month whose bars draw nothing still answers a hover; a null tooltip open
   const { screen } = await render()
   await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
   const mar = bandCentre(screen.container, 2) // 0 and 0: no rect, but a tooltip
-  pointAt(mar.x, mar.y)
+  moveOverPlot(screen.container, mar.x, mar.y)
   await vi.waitFor(() => expect(tooltipText()).toBe('marA 0 B 0'))
   const feb = bandCentre(screen.container, 1) // its tooltip render is null: no card at all
-  pointAt(feb.x, feb.y)
+  moveOverPlot(screen.container, feb.x, feb.y)
   await vi.waitFor(() => expect(document.querySelector('[data-slot="chart-tooltip"]')).toBeNull())
 })
 

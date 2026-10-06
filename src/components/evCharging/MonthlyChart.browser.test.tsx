@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
 import {
@@ -10,6 +10,7 @@ import {
   legend,
   legendLabels,
   legendText,
+  parkPointer,
   pressUntil,
   seriesBars,
   settle,
@@ -22,6 +23,9 @@ import { renderWithProviders } from '~test/browser/render'
 import { formatOneDecimal, formatSek, formatShare, monthLabel } from './format'
 import { MetricToggle } from './MetricToggle'
 import { chartMetricOptions, MonthlyChart } from './MonthlyChart'
+
+// Keep the real pointer off the charts (see parkPointer).
+beforeEach(parkPointer)
 
 const months = Array.from({ length: 12 }, (_, i) => ({
   month: i + 1,

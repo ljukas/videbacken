@@ -96,25 +96,74 @@ const centre = (el: Element) => {
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
 }
 
-// elementFromPoint only sees the viewport (414 px wide by default), and tests
-// often render a wider chart: scroll the bar into view before pointing at it.
-const reveal = (el: Element) => el.scrollIntoView({ block: 'center', inline: 'center' })
+/**
+ * Moves the pointer to (x, y) over a chart. The visx module answers on its
+ * hover overlay, so the move is sent there directly: no scrolling and no
+ * hit-testing, which depend on the viewport, the fonts and wherever the real
+ * pointer rests (they made CI differ from local runs). recharts (still used by
+ * the Energi and climate charts) needs a hit-tested target in view.
+ */
+/** A mouse move at (x, y) on the visx module's hover overlay; false when there is none (recharts). */
+export function moveOverPlot(root: ParentNode, x: number, y: number) {
+  const overlay = root.querySelector('[data-hover-overlay]')
+  if (!overlay) return false
+  overlay.dispatchEvent(
+    new PointerEvent('pointermove', {
+      bubbles: true,
+      clientX: x,
+      clientY: y,
+      pointerType: 'mouse',
+    }),
+  )
+  return true
+}
 
 /** Hovers the centre of the `index`th bar (DOM order, see `bars`). */
 export async function hoverBar(root: ParentNode, index: number) {
   await vi.waitFor(() => expect(bars(root).length).toBeGreaterThan(index))
-  reveal(bars(root)[index])
-  const { x, y } = centre(bars(root)[index])
-  pointAt(x, y)
+  const bar = bars(root)[index]
+  const { x, y } = centre(bar)
+  if (moveOverPlot(root, x, y)) return
+  bar.scrollIntoView({ block: 'center', inline: 'center' })
+  const c = centre(bar)
+  pointAt(c.x, c.y)
 }
 
 /** Hovers halfway between two bars' centres (a month that draws no rect of its own). */
 export async function hoverBetween(root: ParentNode, a: number, b: number) {
   await vi.waitFor(() => expect(bars(root).length).toBeGreaterThan(Math.max(a, b)))
-  reveal(bars(root)[a])
-  const p = centre(bars(root)[a])
-  const q = centre(bars(root)[b])
-  pointAt((p.x + q.x) / 2, p.y)
+  const mid = () => {
+    const p = centre(bars(root)[a])
+    const q = centre(bars(root)[b])
+    return { x: (p.x + q.x) / 2, y: p.y }
+  }
+  const m = mid()
+  if (moveOverPlot(root, m.x, m.y)) return
+  bars(root)[a].scrollIntoView({ block: 'center', inline: 'center' })
+  const r = mid()
+  pointAt(r.x, r.y)
+}
+
+/**
+ * Parks the real pointer in the window's bottom-right corner, away from the
+ * charts, so a pointer an earlier test left over a plot can't fire real moves
+ * when the next chart renders under it (a CI-only failure). Call in beforeEach.
+ */
+export async function parkPointer() {
+  let spot = document.getElementById('chart-pointer-park')
+  if (!spot) {
+    spot = document.createElement('div')
+    spot.id = 'chart-pointer-park'
+    Object.assign(spot.style, {
+      position: 'fixed',
+      right: '0',
+      bottom: '0',
+      width: '4px',
+      height: '4px',
+    })
+    document.body.appendChild(spot)
+  }
+  await userEvent.hover(spot)
 }
 
 /** Lets a key press or pointer move render before the next read. */
