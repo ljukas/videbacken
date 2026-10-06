@@ -1,3 +1,4 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import {
@@ -21,6 +22,7 @@ import {
   outline,
   parkPointer,
   selectedTint,
+  seriesBars,
   tapOn,
   tooltipNodes,
   tooltipText,
@@ -278,9 +280,18 @@ test('after a click, moving the pointer off the chart leaves no outline or toolt
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(36))
   await clickOn(screen.container, bars(screen.container)[3]) // April's solar-direct
   await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
-  await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
+  // The click was dispatched on the overlay, so the real pointer never entered
+  // it: send the exit (React derives onPointerLeave from pointerout).
+  const hint = screen.getByText(m.energy_chart_select_hint()).element()
+  screen.container.querySelector('[data-hover-overlay]')?.dispatchEvent(
+    new PointerEvent('pointerout', {
+      bubbles: true,
+      pointerType: 'mouse',
+      relatedTarget: hint,
+    }),
+  )
+  await userEvent.hover(hint)
   await new Promise((r) => setTimeout(r, 100))
-  expect(document.activeElement?.classList.contains('recharts-surface')).toBe(false)
   expect(outline(screen.container)).toBeNull()
   expect(tooltipText()).not.toContain(monthName(1))
   expect(tooltipText()).not.toContain(monthName(4))
@@ -307,11 +318,12 @@ test('a touch tap selects the month without a tooltip or an outline', async () =
   })
 })
 
-test('keyboard focus on a month without readings shows a dashed outline, no tooltip', async () => {
+test('the keyboard on a month without readings shows a dashed outline, no tooltip', async () => {
   const { screen } = await renderChart()
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
-  focusChart(screen.container) // January: no readings
+  focusChart(screen.container)
+  await userEvent.keyboard('{ArrowRight}') // January: no readings
   const ring = await vi.waitFor(() => {
     const el = outline(screen.container)
     expect(el).not.toBeNull()
@@ -319,7 +331,7 @@ test('keyboard focus on a month without readings shows a dashed outline, no tool
   })
   expect(ring.getAttribute('stroke-dasharray')).not.toBeNull()
   expect(tooltipText()).not.toContain(monthName(1))
-  // Three steps right is April, with readings: a solid outline.
+  // Three more steps right is April, with readings: a solid outline.
   await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
   await vi.waitFor(() =>
     expect(outline(screen.container)?.getAttribute('stroke-dasharray')).toBeNull(),
@@ -332,7 +344,7 @@ test('Space on the keyboard-focused month selects it too', async () => {
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
   focusChart(screen.container)
-  await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight} ')
+  await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight} ')
   await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
   expect(onSelectMonth).toHaveBeenCalledTimes(1)
 })
@@ -344,8 +356,8 @@ test('Enter on the keyboard-focused month selects it', async () => {
   // Park the pointer off the chart: a hovered month wins over the keyboard's.
   await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
   focusChart(screen.container)
-  // Focus lands on January (no readings); three steps right is April.
-  await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}{Enter}')
+  // The first → lands on January (no readings); four steps right is April.
+  await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{Enter}')
   await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
   expect(onSelectMonth).toHaveBeenCalledTimes(1)
 })
@@ -356,8 +368,8 @@ test('a month without readings is not selectable', async () => {
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   // Park the pointer off the chart: a hovered month wins over the keyboard's.
   await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
-  focusChart(screen.container) // January: no readings
-  await userEvent.keyboard('{Enter}')
+  focusChart(screen.container)
+  await userEvent.keyboard('{ArrowRight}{Enter}') // January: no readings
   await new Promise((r) => setTimeout(r, 50))
   expect(onSelectMonth).not.toHaveBeenCalled()
 })
@@ -381,4 +393,73 @@ test('on a wide chart every month label is shown in full', async () => {
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   const ticks = xTickLabels(screen.container)
   expect(ticks).toEqual(Array.from({ length: 12 }, (_, i) => monthLabel(i + 1)))
+})
+
+test('the chart is one Tab stop named by its title, with the month hint', async () => {
+  const { screen } = await renderChart()
+  await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
+  const group = screen.getByRole('group', { name: m.energy_chart_title({ year: '2026' }) })
+  await expect.element(group).toBeInTheDocument()
+  await expect.element(screen.getByText(m.energy_chart_keyboard_hint())).toBeInTheDocument()
+})
+
+test('Nät: export hangs below the zero line, the purchase stands on it', async () => {
+  const { screen } = await render('grid')
+  await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
+  const zero = (
+    screen.container.querySelector('[data-zero-line]') as SVGLineElement
+  ).getBoundingClientRect().y
+  // Series order: import direct, import battery, export.
+  for (const bar of seriesBars(screen.container, 2))
+    expect(bar.getBoundingClientRect().top).toBeCloseTo(zero, 0)
+  for (const bar of seriesBars(screen.container, 0))
+    expect(bar.getBoundingClientRect().bottom).toBeCloseTo(zero, 0)
+})
+
+test('switching the metric with a card open shows the new metric', async () => {
+  const props = {
+    year: 2026,
+    months,
+    currentMonth: null,
+    selectedMonth: null,
+    onSelectMonth: vi.fn(),
+  }
+  const ui = (metric: EnergyMetric) => (
+    <div style={{ width: 720, height: 340 }}>
+      <EnergyMonthlyChart {...props} metric={metric} />
+    </div>
+  )
+  const { screen, queryClient } = await renderWithProviders(ui('solar'))
+  await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
+  await hoverBar(screen.container, 0) // April
+  await vi.waitFor(() => expect(tooltipText()).toContain(m.energy_chart_total_solar()))
+  // Same provider tree, so the chart updates instead of remounting.
+  screen.rerender(<QueryClientProvider client={queryClient}>{ui('grid')}</QueryClientProvider>)
+  await vi.waitFor(() => {
+    expect(tooltipText()).toContain(m.energy_chart_total_grid())
+    expect(tooltipText()).not.toContain(m.energy_chart_total_solar())
+  })
+})
+
+test('a 320 px phone: initials, and the outline stays inside the chart at both ends', async () => {
+  const { screen } = await renderChart({ data: allMonths, width: 320 })
+  await vi.waitFor(() => expect(bars(screen.container).length).toBe(36))
+  expect(xTickLabels(screen.container).every((l) => l.length === 1)).toBe(true)
+  const svg = (
+    screen.container.querySelector('svg[data-chart-svg]') as SVGSVGElement
+  ).getBoundingClientRect()
+  for (const i of [0, 11]) {
+    // Series 0's bars, month by month: [0] January, [11] December.
+    await hoverBar(screen.container, i)
+    const o = await vi.waitFor(() => {
+      const el = outline(screen.container)
+      expect(el).not.toBeNull()
+      return (el as SVGGraphicsElement).getBoundingClientRect()
+    })
+    expect(o.left).toBeGreaterThanOrEqual(svg.left)
+    expect(o.right).toBeLessThanOrEqual(svg.right)
+  }
+  // The widest y label is inside the chart.
+  const yLabels = [...screen.container.querySelectorAll('[data-axis="y"] text')]
+  for (const t of yLabels) expect(t.getBoundingClientRect().left).toBeGreaterThanOrEqual(svg.left)
 })

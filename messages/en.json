@@ -890,5 +890,6 @@
   "energy_period_next_month": "Next month",
   "energy_period_prev_year": "Previous year",
   "energy_period_next_year": "Next year",
-  "energy_chart_select_hint": "Click a month to show it in the summary."
+  "energy_chart_select_hint": "Click a month to show it in the summary.",
+  "energy_chart_keyboard_hint": "Use the arrow keys to step through the months and Enter to select one."
 }
