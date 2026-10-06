@@ -30,21 +30,21 @@ test('the arrows step to the neighbouring months with readings', async () => {
   expect(onChange).toHaveBeenLastCalledWith({ kind: 'month', year: 2026, month: 1 })
 })
 
-test('the arrows disable at the ends and for Totalt', async () => {
-  const first = await setup({ kind: 'month', year: 2025, month: 12 })
+test('the previous arrow disables at the first month', async () => {
+  const { screen } = await setup({ kind: 'month', year: 2025, month: 12 })
   await expect
-    .element(first.screen.getByRole('button', { name: m.energy_period_prev_month() }))
+    .element(screen.getByRole('button', { name: m.energy_period_prev_month() }))
     .toBeDisabled()
-  first.screen.unmount()
-  const all = await setup({ kind: 'all' })
-  const buttons = all.screen.container.querySelectorAll('button[disabled]')
-  expect(buttons.length).toBe(2)
+})
+
+test('both arrows disable for Totalt', async () => {
+  await setup({ kind: 'all' })
+  expect(document.querySelectorAll('button[disabled]')).toHaveLength(2)
 })
 
 test('every possible label is stacked in the label cell, only the current one visible', async () => {
-  const { screen } = await setup()
-  const { container } = screen
-  const cell = container.querySelector('[data-slot="period-labels"]')
+  await setup()
+  const cell = document.querySelector('[data-slot="period-labels"]')
   // 5 months + 2 years + Totalt
   expect(cell?.children).toHaveLength(8)
   expect(cell?.querySelectorAll('[aria-hidden="true"]')).toHaveLength(7)
