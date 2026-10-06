@@ -138,10 +138,10 @@ test('stored and env fields start closed with badge, summary and a named reveal 
   await expect.element(screen.getByText('SKODA_VIN', { exact: true })).toBeVisible()
   await expect
     .element(screen.getByRole('button', { name: REPLACE_API_KEY }))
-    .toHaveTextContent(m.charging_credentials_replace())
+    .toMatchTextContent(m.charging_credentials_replace())
   await expect
     .element(screen.getByRole('button', { name: SET_VIN }))
-    .toHaveTextContent(m.charging_credentials_set_in_app())
+    .toMatchTextContent(m.charging_credentials_set_in_app())
   expect(screen.getByLabelText(API_KEY, { exact: true }).elements()).toHaveLength(0)
   expect(screen.getByLabelText(VIN, { exact: true }).elements()).toHaveLength(0)
   // Missing: the input is shown directly, empty, with no reveal button.
@@ -171,7 +171,7 @@ test('the home position reveal button speaks of the map', async () => {
         name: actionName(m.charging_credentials_choose_on_map(), HOME),
       }),
     )
-    .toHaveTextContent(m.charging_credentials_choose_on_map())
+    .toMatchTextContent(m.charging_credentials_choose_on_map())
 })
 
 test('a stored home position is changed on the map (the input, until 3c-2)', async () => {
@@ -180,7 +180,7 @@ test('a stored home position is changed on the map (the input, until 3c-2)', asy
   const change = screen.getByRole('button', {
     name: actionName(m.charging_credentials_change_on_map(), HOME),
   })
-  await expect.element(change).toHaveTextContent(m.charging_credentials_change_on_map())
+  await expect.element(change).toMatchTextContent(m.charging_credentials_change_on_map())
   await change.click()
   await expect.element(screen.getByLabelText(HOME, { exact: true })).toHaveFocus()
 })
@@ -220,7 +220,7 @@ test('Avbryt clears what was typed, and the field is not sent', async () => {
   await screen.getByRole('button', { name: REPLACE_API_KEY }).click()
   await screen.getByLabelText(API_KEY, { exact: true }).fill('typed-then-abandoned')
   const close = screen.getByRole('button', { name: closeName(API_KEY) })
-  await expect.element(close).toHaveTextContent(m.charging_credentials_close_field())
+  await expect.element(close).toMatchTextContent(m.charging_credentials_close_field())
   await close.click()
   await expect.element(screen.getByLabelText(API_KEY, { exact: true })).not.toBeInTheDocument()
   // Focus lands on the reveal button that replaced the input, not on the page.
@@ -578,7 +578,7 @@ test('a blank submit shows an alert and focuses the first open input', async () 
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect
     .element(screen.getByRole('alert'))
-    .toHaveTextContent(m.charging_credentials_nothing_to_save())
+    .toMatchTextContent(m.charging_credentials_nothing_to_save())
   // The API key and VIN are closed: the home position is the first input.
   await expect.element(screen.getByLabelText(HOME, { exact: true })).toHaveFocus()
 })
@@ -677,7 +677,7 @@ test('the grid remove confirm names the facility ID', async () => {
   await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
   await expect
     .element(screen.getByRole('alertdialog'))
-    .toHaveTextContent(m.charging_credentials_remove_confirm_grid())
+    .toMatchTextContent(m.charging_credentials_remove_confirm_grid())
 })
 
 function skodaStatus(fields: SkodaFields) {
@@ -921,7 +921,7 @@ test('Avbryt clears a "fill in at least one field" refusal', async () => {
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect
     .element(screen.getByRole('alert'))
-    .toHaveTextContent(m.charging_credentials_nothing_to_save())
+    .toMatchTextContent(m.charging_credentials_nothing_to_save())
   await screen.getByRole('button', { name: closeName(API_KEY) }).click()
   await expect
     .element(screen.getByText(m.charging_credentials_nothing_to_save()))

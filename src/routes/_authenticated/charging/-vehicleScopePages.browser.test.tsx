@@ -272,7 +272,7 @@ test('Översikt: a failed overview read shows the alert and the toggle; Alla giv
   })
   await expect
     .element(screen.getByRole('alert'))
-    .toHaveTextContent(m.charging_overview_error_title())
+    .toMatchTextContent(m.charging_overview_error_title())
   expect(
     screen.getByRole('radiogroup', { name: m.charging_vehicle_scope_label() }).elements(),
   ).toHaveLength(1)
@@ -298,7 +298,7 @@ test('Översikt: a failed sessions read shows an error, never the empty list or 
   })
   await expect
     .element(screen.getByRole('alert'))
-    .toHaveTextContent(m.charging_sessions_error_title())
+    .toMatchTextContent(m.charging_sessions_error_title())
   expect(screen.getByText(m.charging_sessions_empty_title()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_sessions_empty_description()).elements()).toHaveLength(0)
   // Only the heading's "Synka nu" remains; the alert's button says "Försök igen".
@@ -716,7 +716,7 @@ test('Översikt: ?page=2 shows the second page of sessions', async () => {
   await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
   await expect
     .element(screen.getByRole('status'))
-    .toHaveTextContent(m.charging_sessions_pagination_range({ from: 11, to: 20, total: 25 }))
+    .toMatchTextContent(m.charging_sessions_pagination_range({ from: 11, to: 20, total: 25 }))
   await expect
     .element(screen.getByRole('button', { name: '2', exact: true }))
     .toHaveAttribute('aria-current', 'page')
@@ -773,7 +773,7 @@ test('Översikt: a stale page past the end shows the last page the server served
   await expect.element(screen.getByText('3,3', { exact: false })).toBeVisible()
   await expect
     .element(screen.getByRole('status'))
-    .toHaveTextContent(m.charging_sessions_pagination_range({ from: 21, to: 25, total: 25 }))
+    .toMatchTextContent(m.charging_sessions_pagination_range({ from: 21, to: 25, total: 25 }))
   await expect
     .element(screen.getByRole('button', { name: '3', exact: true }))
     .toHaveAttribute('aria-current', 'page')
@@ -784,7 +784,7 @@ test('Översikt: a garbage ?size= falls back to 10 rows', async () => {
   await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
   await expect
     .element(screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }))
-    .toHaveTextContent('10')
+    .toMatchTextContent('10')
 })
 
 test('Översikt: the loader prefetches the page and size in the URL (its costs come with it)', async () => {
@@ -944,7 +944,7 @@ test('Ekonomi: the session table shows its newest 10, then pages through the yea
   expect(screen.getByText(kwhCell(11), { exact: false }).elements()).toHaveLength(0)
   await expect
     .element(screen.getByRole('status'))
-    .toHaveTextContent(m.charging_sessions_pagination_range({ from: 1, to: 10, total: 23 }))
+    .toMatchTextContent(m.charging_sessions_pagination_range({ from: 1, to: 10, total: 23 }))
   await screen.getByRole('button', { name: '3', exact: true }).click()
   await expect.element(screen.getByText(kwhCell(23), { exact: false })).toBeVisible()
   expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0)

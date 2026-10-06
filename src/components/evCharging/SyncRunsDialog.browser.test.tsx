@@ -124,7 +124,7 @@ test('runs still loading are an announced busy status, not a table or an empty h
   const { screen } = await renderWithProviders(dialog({ runs: { ...loaded([]), data: undefined } }))
   const status = screen.getByRole('status')
   await expect.element(status).toHaveAttribute('aria-busy', 'true')
-  await expect.element(status).toHaveTextContent(m.charging_runs_loading())
+  await expect.element(status).toMatchTextContent(m.charging_runs_loading())
   expect(screen.getByText(m.charging_runs_empty()).elements()).toHaveLength(0)
   expect(screen.getByRole('table').elements()).toHaveLength(0)
 })

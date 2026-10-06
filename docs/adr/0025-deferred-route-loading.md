@@ -118,16 +118,22 @@ app at fixed viewport widths and replays it while loading.
   190 px short. Keys at 800 and 1000 (Datakällor, economy and patterns reflow there) were measured and dropped: they
   only refine a first visit's skeleton and cost ~13 KB gz on every charging page. `select: 'viewport'`, because the
   sidebar makes the content area narrower than the window.
-- **Bones are committed** (`src/bones/`). `SectionSkeleton` imports the generated registry, so the bones and the
-  boneyard runtime load with the first route that shows a skeleton, not with the entry chunk. The registry is a
-  side-effect-only import, so `package.json`'s `sideEffects` lists it; without that a production build drops it and
-  every skeleton falls back to a plain block. **Re-capture after changing a section's layout**, or its skeleton
-  stops matching.
-- **Theme and motion.** Bone geometry is theme-independent. The colours are set in `boneyard.config.json` (written
-  into the registry's `configureBoneyard`), and boneyard follows the `.dark` class `ThemeProvider` sets. The light
-  bone colour `#ebebeb` is deliberately darker than `--muted` (`#f5f5f5`): at `--muted` the bones are invisible on
-  the `#fcfcfc` page. Don't "fix" it back. boneyard doesn't honour `prefers-reduced-motion` itself, so app.css's
-  reduced-motion block stops the bones' animation (ADR-0015).
+- **Bones are committed** (`src/bones/`), and each route imports its own: `import xBones from
+  '~/bones/x.bones.json'`, passed as `<SectionSkeleton bones={xBones}>`, which hands them to boneyard's
+  `initialBones`. So a page carries only its sections' bones, and the boneyard runtime loads with the first route
+  that shows a skeleton, not with the entry chunk. A section not captured yet passes `name="x"` instead (the name
+  `bones:capture` finds it by); once captured it switches to `bones`, and `test/sectionSkeletonBones.test.ts` fails
+  until it does. **Re-capture after changing a section's layout**, or its skeleton stops matching.
+  *Amended 2026-10-05 (roadmap step 4):* this replaces the generated registry (`src/bones/registry.ts`), which
+  `SectionSkeleton` imported for its side effect. It put every page's bones (~21 KB gz) on every page with a
+  skeleton. The capture script now deletes the registry the CLI writes.
+- **Theme and motion.** Bone geometry is theme-independent. The colours are set in `boneyard.config.json`, and
+  `SectionSkeleton` passes them (and the `pulse` animation) to boneyard as props. Only those three keys reach it:
+  boneyard reads `speed`, `shimmerColor`, `darkShimmerColor` and `shimmerAngle` only from its global config, so
+  adding them to `boneyard.config.json` does nothing without a `configureBoneyard` call. boneyard follows the `.dark`
+  class `ThemeProvider` sets. The light bone colour `#ebebeb` is deliberately darker than `--muted` (`#f5f5f5`): at
+  `--muted` the bones are invisible on the `#fcfcfc` page. Don't "fix" it back. boneyard doesn't honour
+  `prefers-reduced-motion` itself, so app.css's reduced-motion block stops the bones' animation (ADR-0015).
 - **No fade-out.** boneyard can fade the skeleton out when loading ends, but `SectionSkeleton` drops boneyard's
   wrapper as soon as a section stops loading, so that fade is bypassed by design: the content replaces the bones in
   one frame.
@@ -174,7 +180,8 @@ then captured eight skeletons (`charging-totals`, `-chart`, `-sessions`, `-tarif
 - **Size.** Four widths × eight skeletons add ~27 KB gz to every charging page (economy and patterns are ~10 KB each).
   Step 2 added the `/sensors` and `/users` skeletons to the same registry: twelve skeletons, ~26 KB gz in the shared
   `SectionSkeleton` chunk, which every page with a skeleton loads. About 23 KB of that is charging bones that `/sensors`
-  and `/users` never use. Accepted for step 2. Splitting the registry per page group is part of step 4.
+  and `/users` never use. Accepted for step 2. Splitting the registry per page group is part of step 4. (Step 4 went further: each page
+  imports only its own bones, see the "Bones are committed" bullet.)
 
 ### 5. Many reads per page: merge per concern, not per transport
 
@@ -211,6 +218,52 @@ whose failures should stay apart: `overview` and `costOverview` stay separate so
 cost figures (ADR-0020). When a merged read has a part that may fail independently, it returns that part as `null`
 rather than failing the whole read (`sessions`' `costs`).
 
+### 6. Per-page bundle: a page loads only the code it renders
+
+*Amendment, 2026-10-05 (roadmap step 4).* A page's JS is its route chunk's static import closure, on top of the
+entry and the signed-in shell (~250 KB gz). `bun run bundle:measure` prints it per page. Three things inflated it
+for pages that never used them:
+
+- **Phone fields stay out of the global form hook.** Everything in `createFormHook`'s `fieldComponents`
+  (`src/hooks/form.ts`) ships in every form's chunk, and the phone input (with its number metadata and country
+  flags) is ~95 KB gz. So `PhoneField` and `FloatingPhoneField` aren't registered. A form with a phone field imports
+  `PhoneField` from `~/components/form/` and renders it inside `AppField`: it binds through `useFieldContext` like a
+  registered field (ADR-0005, amendment 2026-10-05). `/users` still loads `libphonenumber-js` for the table's number
+  formatting, imported from `react-phone-number-input/input`, the entry without flags.
+- **Admin-only dialogs load on first open.** The dialogs only an admin can open (sensor edit, user invite and edit,
+  tariff new/edit/delete, the MySkoda import) are `React.lazy`, wrapped in `LazyDialogMount`
+  (`src/components/layout/LazyDialogMount.tsx`). It mounts a dialog the first time it opens and keeps it mounted,
+  so Radix still plays its exit animation and a reopen is instant. Until then nothing renders, so a member never
+  fetches the dialog or the form code it pulls in. It mounts only after hydration (`useHydrated`): an `open` that
+  reads client-only (deferred) data must not differ between the server and the hydrating client, so a URL deep link
+  (ADR-0013) opens right after hydration. Admins prefetch the dialog chunks when the browser is idle
+  (`useIdlePreload(isAdmin, loaders)`), so their first click isn't dead. Members never fetch them.
+- **Each page imports its own bones** (§4). The registry had put all of them on every page with a skeleton.
+
+Measured with `bun run bundle:measure` (KB gz; each page's row is on top of the entry and shell):
+
+| Page | Before step 4 | Phone fields + lazy dialogs | Per-page bones |
+|---|---:|---:|---:|
+| entry + signed-in shell | 248 | 253 | 253 |
+| `/charging` | 179 | 180 | 161 |
+| `/charging/settings` | 200 | 61 | 41 |
+| `/charging/economy` | 178 | 178 | 159 |
+| `/charging/patterns` | 181 | 182 | 171 |
+| `/energy` | 172 | 173 | 152 |
+| `/sensors` | 278 | 145 | 123 |
+| `/users` | 187 | 94 | 72 |
+| `/account/profile` | 211 | 212 | 212 |
+
+`/account/profile` renders a phone field on load, so it keeps the phone input.
+
+**The shell grew 5 KB gz without gaining code.** Its set of modules is unchanged (437 sources). But each lazy dialog,
+and `PhoneField`'s own entry, is a new dynamic entry, and rolldown groups modules into chunks by which entries reach
+them. So modules the shell shares with those entries (Radix primitives, cmdk, `button`, `dialog`, floating-ui …) split
+into more, smaller chunks: about +5 KB gz of per-chunk overhead (the figure sums each chunk's gzip): +1.3 KB when `PhoneField` became its own entry, +3.3 KB when the lazy dialogs did, with the same 437 modules throughout; the entry + shell parts are rounded separately, so 172 + 77 reads 248 in the tables and 9 more
+`modulepreload` requests on every signed-in page. A rolldown chunk group
+(`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up, since it
+needs its own measurement, `/login` included.
+
 ---
 
 ## Alternatives considered
@@ -239,8 +292,8 @@ rather than failing the whole read (`sessions`' `costs`).
   queries in one hop instead of 15 in two, which also eases the pool queueing behind the inflated `findActiveById`.
 - **A new step in UI work:** re-run `bones:capture` after changing a section's layout. Stale bones look slightly wrong
   but never break anything.
-- **The bones cost bytes.** Every skeleton at four widths (twelve after step 2, ~26 KB gz) loads with the first page
-  that shows one, whichever page it is. One registry per page group (roadmap step 4) would split them.
+- **The bones cost bytes.** Each skeleton at four widths. Since step 4 a page loads only its own sections' bones
+  (before, every page with a skeleton loaded all of them, ~21 KB gz).
 - **`useSuspenseQuery` is now rare.** Reviewers should flag it on data a client navigation defers.
 - **Role changes reach the client guard within about 5–10 min** (§2: up to ~2× the cookie cache's 5 min), or on
   the next navigation after the tab regains focus.

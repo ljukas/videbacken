@@ -111,16 +111,16 @@ src/
       NumberField.tsx             decimal input; TextField preset, string-typed (added post-migration)
       DateField.tsx               native date input; TextField preset, 'YYYY-MM-DD' string
       FloatingTextField.tsx       floating-label text/email input (login; added post-migration)
-      FloatingPhoneField.tsx      floating-label phone input (added post-migration)
+      FloatingPhoneField.tsx      floating-label phone input (added post-migration; not registered, see 2026-10-05)
       SelectField.tsx             single-select dropdown
       SubmitButton.tsx            submit-gated button with Spinner
       CancelButton.tsx            submit-aware cancel/close button (added 2026-06-10)
-      PhoneField.tsx              phone input (added post-migration)
+      PhoneField.tsx              phone input (added post-migration; not registered, see 2026-10-05)
       ToggleField.tsx             segmented toggle / switch (added post-migration)
       UserSelectField.tsx         user picker (added post-migration)
 ```
 
-> **Added 2026-06-04.** The initial migration shipped three bound components (`TextField`, `SelectField`, `SubmitButton`); the inventory has since grown by four — `PhoneField`, `ToggleField`, `DateField`, `UserSelectField` — all registered in `src/hooks/form.ts` and following the same context-bound pattern. This is exactly the "add a new bound component to `src/components/form/`" path the ADR prescribes (see *How to add a form*), not a deviation. At the time `DateField` kept a local `useState` for popover open/closed — that's **UI** state, not field value, so the "never `useState` for field values" rule is intact. (It has since become a `TextField` preset over the native date input, with no local state.)
+> **Added 2026-06-04.** The initial migration shipped three bound components (`TextField`, `SelectField`, `SubmitButton`); the inventory has since grown by four — `PhoneField`, `ToggleField`, `DateField`, `UserSelectField` — all registered in `src/hooks/form.ts` (`PhoneField` until 2026-10-05, see below) and following the same context-bound pattern. This is exactly the "add a new bound component to `src/components/form/`" path the ADR prescribes (see *How to add a form*), not a deviation. At the time `DateField` kept a local `useState` for popover open/closed — that's **UI** state, not field value, so the "never `useState` for field values" rule is intact. (It has since become a `TextField` preset over the native date input, with no local state.)
 
 > **Added 2026-06-10.** Four pattern updates, verified against `src/hooks/form.ts` and all consumers.
 >
@@ -136,6 +136,8 @@ src/
 >
 > **Form inventory as of 2026-09-29** (updated 2026-09-29) — 7 `useAppForm` consumers: login (`LoginFormCard`), onboarding name (`OnboardingNameStep`), own profile (`ProfileCard`), user invite/edit (`InviteUserDialog`/`EditUserDialog`), sensor device edit (`EditDeviceDialog`), and tariff create/edit (`TariffDialog`). (On 2026-06-10 there were 12, most for features the template has since removed.)
 
+> **Amended 2026-10-05 (client-performance step 4, ADR-0025 §6).** The phone fields (`PhoneField`, `FloatingPhoneField`) are no longer registered in `src/hooks/form.ts`. Everything in `fieldComponents` ships in every form's chunk, and the phone input is ~95 KB gz, so every form paid for it whether or not it had a phone field. A form with a phone field imports `PhoneField` from `~/components/form/` directly and renders it inside `AppField` (`<group.AppField name="phone" children={() => <PhoneField label={…} />} />`); it binds through `useFieldContext` like any registered field, so the pattern is otherwise unchanged. Consumers today: `ProfileCard` and `UserFormFields`. The snippet under *`src/hooks/form.ts` — the entrypoint* was updated to match.
+
 The plural `components/form/` matches the project's existing entity-folder convention (`user/`, `sensor/`) — the form layer is the entity, the bound components are its surface. The hook lives in `src/hooks/` per project convention; the TanStack-recommended `useAppForm` name is preserved.
 
 ### `src/hooks/form.ts` — the entrypoint
@@ -150,9 +152,10 @@ export const { fieldContext, formContext, useFieldContext, useFormContext } =
 export const { useAppForm, withForm, withFieldGroup } = createFormHook({
   fieldContext,
   formContext,
+  // The phone fields aren't registered: pages import them directly (amendment 2026-10-05).
   fieldComponents: {
-    TextField, NumberField, DateField, FloatingTextField, FloatingPhoneField,
-    SelectField, PhoneField, ToggleField, UserSelectField,
+    TextField, NumberField, DateField, FloatingTextField,
+    SelectField, ToggleField, UserSelectField,
   },
   formComponents: { SubmitButton, CancelButton },
 })

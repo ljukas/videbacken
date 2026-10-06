@@ -1,4 +1,3 @@
-import { registerBones } from 'boneyard-js'
 import { expect, test } from 'vitest'
 import { renderWithRouter } from '~test/browser/render'
 import { SectionSkeleton } from './SectionSkeleton'
@@ -39,7 +38,7 @@ test('loading announces a status; not loading has none', async () => {
       <p>content</p>
     </SectionSkeleton>,
   )
-  await expect.element(loading.screen.getByRole('status')).toHaveTextContent('Laddar')
+  await expect.element(loading.screen.getByRole('status')).toMatchTextContent('Laddar')
   await loading.screen.unmount()
   const idle = await renderWithRouter(
     <SectionSkeleton name="status-b" loading={false}>
@@ -50,24 +49,26 @@ test('loading announces a status; not loading has none', async () => {
   expect(document.querySelector('[role="status"]')).toBeNull()
 })
 
-// A tiny capture: 237 px tall, two bars. Not keyed by breakpoint, so any width uses it.
-registerBones({
-  'test-sized': {
-    name: 'test-sized',
-    viewportWidth: 300,
-    width: 300,
-    height: 237,
-    bones: [
-      [0, 0, 100, 20, 4],
-      [0, 40, 50, 20, 4],
-    ],
+// A tiny capture: 237 px tall, two bars, at one breakpoint (0), so any width uses it.
+const testSized = {
+  breakpoints: {
+    0: {
+      name: 'test-sized',
+      viewportWidth: 300,
+      width: 300,
+      height: 237,
+      bones: [
+        [0, 0, 100, 20, 4],
+        [0, 40, 50, 20, 4],
+      ],
+    },
   },
-})
+}
 
 test('loading with captured bones: no children, and the wrapper reserves the captured height', async () => {
   const { screen } = await renderWithRouter(
     <div style={{ width: 300 }}>
-      <SectionSkeleton name="test-sized" loading fallbackHeight="5rem">
+      <SectionSkeleton bones={testSized} loading fallbackHeight="5rem">
         {/* A no-data render shorter than the capture: it must not set the bones' scale. */}
         <p style={{ height: 30 }}>content</p>
       </SectionSkeleton>
@@ -82,4 +83,37 @@ test('loading with captured bones: no children, and the wrapper reserves the cap
   expect(wrapper()?.style.minHeight).toBe('237px')
   const second = wrapper()?.querySelectorAll<HTMLElement>('[data-boneyard-bone]')[1]
   expect(second?.style.top).toBe('40px') // scaleY 1
+})
+
+test('bones use the configured light colour, not boneyard’s default', async () => {
+  await renderWithRouter(
+    <div style={{ width: 300 }}>
+      <SectionSkeleton bones={testSized} loading>
+        <p>content</p>
+      </SectionSkeleton>
+    </div>,
+  )
+  const bone = () =>
+    document.querySelector<HTMLElement>('[data-boneyard="test-sized"] [data-boneyard-bone]')
+  // boneyard sets the colour inline and pulses it through a keyframe, so the
+  // inline value stays the configured one.
+  await expect.poll(() => bone()?.style.backgroundColor).toBe('rgb(235, 235, 235)') // #ebebeb
+})
+
+test('bones use the configured dark colour under the .dark class', async () => {
+  document.documentElement.classList.add('dark')
+  try {
+    await renderWithRouter(
+      <div style={{ width: 300 }}>
+        <SectionSkeleton bones={testSized} loading>
+          <p>content</p>
+        </SectionSkeleton>
+      </div>,
+    )
+    const bone = () =>
+      document.querySelector<HTMLElement>('[data-boneyard="test-sized"] [data-boneyard-bone]')
+    await expect.poll(() => bone()?.style.backgroundColor).toBe('rgb(38, 38, 38)') // #262626
+  } finally {
+    document.documentElement.classList.remove('dark')
+  }
 })

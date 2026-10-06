@@ -98,7 +98,7 @@ Receive feedback with rigor: verify each finding, don't perform agreement.
 
 ## Pre-PR gate
 
-Shared by all three workflows. It mirrors CI (the `CI Success` gate over `Check (lint)`, `Check (types)`, `Check (build)` and `Test`, plus the PR-title lint) and adds the checks CI can't do:
+Shared by all three workflows. It mirrors CI (the `CI Success` gate over `Check (lint)`, `Check (types)`, `Check (build)`, `Test (node 1/2)`, `Test (node 2/2)` and `Test (browser)`, plus the PR-title lint) and adds the checks CI can't do:
 
 ```bash
 bun run check                    # Biome writes fixes; commit anything it changed

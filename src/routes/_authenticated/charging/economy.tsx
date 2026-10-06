@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { PiggyBankIcon } from 'lucide-react'
 import { useCallback, useId, useState } from 'react'
 import { z } from 'zod'
+import chargingEconomyBones from '~/bones/charging-economy.bones.json'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
 import { EconomyGridOnlyLead } from '~/components/evCharging/EconomyGridOnlyLead'
@@ -150,7 +151,7 @@ function EconomyPage() {
         ) : null}
       </div>
       <SectionSkeleton
-        name="charging-economy"
+        bones={chargingEconomyBones}
         loading={firstLoadPending(result)}
         fallbackHeight="40rem"
       >

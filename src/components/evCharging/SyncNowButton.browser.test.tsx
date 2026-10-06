@@ -194,10 +194,10 @@ test('retrying the car alone runs only skoda, confirms success and leaves the he
   const { screen } = await renderWithProviders(<CarHarness />)
   await screen.getByRole('button', { name: 'car' }).click()
   await vi.waitFor(() => expect(syncFn.mock.calls.map((c) => c[0])).toEqual([{ source: 'skoda' }]))
-  await expect.element(screen.getByTestId('state')).toHaveTextContent('false/true')
+  await expect.element(screen.getByTestId('state')).toMatchTextContent('false/true')
   release(OK)
   await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_skoda_ok()))
-  await expect.element(screen.getByTestId('state')).toHaveTextContent('false/false')
+  await expect.element(screen.getByTestId('state')).toMatchTextContent('false/false')
 })
 
 test('a failed house sync in a full sync gets its own error toast', async () => {
@@ -270,7 +270,7 @@ test('a slow house sync leaves the heading free once sessions and prices settle'
   }
   const { screen } = await renderWithProviders(<HouseHarness />)
   await screen.getByRole('button', { name: 'all' }).click()
-  await expect.element(screen.getByTestId('state')).toHaveTextContent('false/true')
+  await expect.element(screen.getByTestId('state')).toMatchTextContent('false/true')
   releaseHouse(OK)
-  await expect.element(screen.getByTestId('state')).toHaveTextContent('false/false')
+  await expect.element(screen.getByTestId('state')).toMatchTextContent('false/false')
 })

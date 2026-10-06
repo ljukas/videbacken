@@ -9,7 +9,8 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92), fix [#95](https://github.com/ljukas/videbacken/pull/95) | checkpoint passed | 2026-10-05: sums and car match prod; warm `energy.overview` query 52 ms mean over 33 calls (one cold instance 736 ms total); owner accepted, asked for a month choice → step 1b |
-| 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | [#103](https://github.com/ljukas/videbacken/pull/103) | PR open | — |
+| 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | [#103](https://github.com/ljukas/videbacken/pull/103) | checkpoint passed | 2026-10-06: August, Hela 2026 and Totalt match SQL; warm `energy/overview` 64–67 ms; no shift on prod at 500 px (3 widths only locally); owner accepted, asked for a richer summary → step 1c |
+| 1c | Summary as a flow diagram: visx, battery loss, icon tiles, arrow-value switch (replaces the five tiles) | [plan](../plans/2026-10-06-energy-1c-flow-summary.md) | — | not started | — |
 | 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
@@ -51,14 +52,20 @@ Each must pass, with the result recorded in the table, before the next step star
      390 px.
    - `rpc timing` for a year switch: `totalMs` < 150 ms (warm).
    - The owner reviews `/energy` live (picker, chart click, tooltip, colours, sizes; desktop + phone) and accepts it.
-3. **After step 2 (prod).**
+3. **After step 1c (prod).**
+   - For 2026-02, 2026-08 and 2026-10, every value in the card's table matches a prod SELECT within 0.1 kWh
+     (the flows from `energyFigures`; the loss = in − out − ΔSoC × 7,58 kWh).
+   - Switching periods moves nothing: the card and the diagram box keep their rects at 1440, 820 and 390 px.
+   - The owner reviews `/energy` live (diagram, icons, loss, switch; desktop + phone) and accepts it.
+4. **After step 2 (prod).**
    - Battery in / out / loss for 2026-02, 2026-05 and 2026-09 match a prod SELECT (with Δstored from first/last SoC)
      within 0.1 kWh.
    - The owner reviews `/energy/battery` live and accepts the winter note's wording.
 
-Step 2's plan predates step 1b: its Task 0 must re-check it against step 1b's `EnergyOverview` shape (`yearTotal`,
-`allTime`, `monthsWithReadings`; no `tiles.thisMonth`), the period control (no `PeriodTabs`) and the colour tokens,
-and rewrite the affected tasks before building.
+Step 2's plan predates steps 1b and 1c: its Task 0 must re-check it against step 1b's `EnergyOverview` shape
+(`yearTotal`, `allTime`, `monthsWithReadings`; no `tiles.thisMonth`), the period control (no `PeriodTabs`), the
+colour tokens, and step 1c (the overview already shows the battery's loss; `EnergyReadouts` is gone; `figures.ts` has
+`batteryToGrid` / `batteryToHouse`), and rewrite the affected tasks before building.
 
 ## Log
 
@@ -100,3 +107,15 @@ and rewrite the affected tasks before building.
   the Stockholm month: August 2026 solar 715,2 / bought 436,7 / load 896,5 kWh (SQL 715.15 / 436.75 / 896.55), Hela
   2026 4 848,2 / 5 162,0 / 7 842,7 (SQL 4848.21 / 5161.96 / 7842.70); sold and February match too; August says
   "Data saknas för 14 h". Gate: `check:ci` clean, build passes, browser 730/730, node 2424/2424, sv/en keys match.
+- 2026-10-06: checkpoint 1b run on prod (read-only). August 715,2 / 436,7 / 258,8 / 896,5 kWh and "Data saknas för
+  14 h" (168 missing buckets), Hela 2026 and Totalt 5 620,1 / 6 171,7 / 2 176,6 / 9 365,8 kWh: all equal a plain SQL
+  sum. Hela 2026 shows no gap note (coverage ≈ 99,8 %, at or above the 0,99 rule). `energy/overview` warm: `totalMs`
+  64–67 (`houseScanMs` ≈ 43); with new pool connections 111 and 147. No shift: 7 period steps on prod at 500 px kept
+  identical boxes; 1440 / 820 / 390 px were measured only locally (42 runs, step 1b log), because the owner's Chrome
+  window was minimised and the app refuses to be framed. Owner: "The live review looks great", but the swatches of
+  the 1b mockup were lost in the build and the five tiles should be a better illustration → step 1c.
+- 2026-10-06: step 1c shaped with the owner over a clickable mockup
+  (<https://claude.ai/artifact/EuLriFUiKZcpxnaYhXDDHB>, version 4): research (vendor period views, Sankey on
+  mobile, self-sufficiency vs self-consumption), a flow diagram in → out with the battery's loss, big lucide icon
+  tiles, values on the arrows behind a switch, one-colour battery arrow. Design:
+  [flow summary](../specs/2026-10-06-energy-flow-summary-design.md).

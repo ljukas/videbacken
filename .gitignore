@@ -25,8 +25,8 @@ yarn.lock
 .claude/plans/
 .env*.local
 
-# Vitest Browser Mode artifacts (failure screenshots + attachments)
-.vitest-attachments/
+# Vitest artifacts: attachments, failure screenshots, reports (Vitest 5: .vitest/)
+.vitest/
 **/__screenshots__/
 
 # Personal exports (e.g. the MySkoda CSV) — never commit

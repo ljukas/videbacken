@@ -45,10 +45,10 @@ const bodyRow = (screen: Awaited<ReturnType<typeof renderWithRouter>>['screen'])
 test('a comparable session shows cost, vs at once, left and timing', async () => {
   const { screen } = await renderWithRouter(<EconomySessionTable sessions={[row()]} />)
   const cells = bodyRow(screen).getByRole('cell')
-  await expect.element(cells.nth(2)).toHaveTextContent(/^41,20\s?kr$/)
-  await expect.element(cells.nth(3)).toHaveTextContent(/^12,40\s?kr$/)
-  await expect.element(cells.nth(4)).toHaveTextContent(/^3,20\s?kr$/)
-  await expect.element(cells.nth(5)).toHaveTextContent(/^90\s?%$/)
+  await expect.element(cells.nth(2)).toMatchTextContent(/^41,20\s?kr$/)
+  await expect.element(cells.nth(3)).toMatchTextContent(/^12,40\s?kr$/)
+  await expect.element(cells.nth(4)).toMatchTextContent(/^3,20\s?kr$/)
+  await expect.element(cells.nth(5)).toMatchTextContent(/^90\s?%$/)
 })
 
 test('an excluded session shows its actual cost and the reason for the rest', async () => {
@@ -56,8 +56,8 @@ test('an excluded session shows its actual cost and the reason for the rest', as
     <EconomySessionTable sessions={[row({ excluded: 'no_price', counterfactual: null })]} />,
   )
   const cells = bodyRow(screen).getByRole('cell')
-  await expect.element(cells.nth(2)).toHaveTextContent(/^41,20\s?kr$/)
-  await expect.element(cells.nth(3)).toHaveTextContent(`— ${m.charging_economy_reason_no_price()}`)
+  await expect.element(cells.nth(2)).toMatchTextContent(/^41,20\s?kr$/)
+  await expect.element(cells.nth(3)).toMatchTextContent(`— ${m.charging_economy_reason_no_price()}`)
 })
 
 test('an excluded session with a partial actual shows "—", not the partial kronor', async () => {
@@ -74,7 +74,7 @@ test('an excluded session with a partial actual shows "—", not the partial kro
     />,
   )
   const cells = bodyRow(screen).getByRole('cell')
-  await expect.element(cells.nth(2)).toHaveTextContent(/^—/)
+  await expect.element(cells.nth(2)).toMatchTextContent(/^—/)
   expect(screen.getByText(/17,50/).elements()).toHaveLength(0)
 })
 
@@ -84,7 +84,7 @@ test('an excluded no_hourly session names its reason', async () => {
   )
   await expect
     .element(bodyRow(screen).getByRole('cell').nth(3))
-    .toHaveTextContent(`— ${m.charging_economy_reason_no_hourly()}`)
+    .toMatchTextContent(`— ${m.charging_economy_reason_no_hourly()}`)
 })
 
 test('a no_hourly (estimated) session marks its cost "≈"; other rows do not', async () => {
@@ -98,10 +98,10 @@ test('a no_hourly (estimated) session marks its cost "≈"; other rows do not', 
     />,
   )
   const cost = (i: number) => screen.getByRole('row').nth(i).getByRole('cell').nth(2)
-  await expect.element(cost(1)).toHaveTextContent(/^≈\s41,20\s?kr/)
-  await expect.element(cost(1)).toHaveTextContent(m.charging_sessions_cost_estimated())
+  await expect.element(cost(1)).toMatchTextContent(/^≈\s41,20\s?kr/)
+  await expect.element(cost(1)).toMatchTextContent(m.charging_sessions_cost_estimated())
   for (const i of [2, 3]) {
-    await expect.element(cost(i)).toHaveTextContent(/^41,20\s?kr$/)
+    await expect.element(cost(i)).toMatchTextContent(/^41,20\s?kr$/)
   }
 })
 
@@ -114,9 +114,9 @@ test('a flat-price session shows "—" for timing', async () => {
       ]}
     />,
   )
-  await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toHaveTextContent(/^—/)
+  await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toMatchTextContent(/^—/)
   // The sr-only reason names the spread that was too small (row() prices 70 − 38 = 32 kr).
-  await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toHaveTextContent(
+  await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toMatchTextContent(
     new RegExp(
       m
         .charging_economy_tile_no_spread({ spread: formatSek(32, 2) })

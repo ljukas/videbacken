@@ -266,6 +266,8 @@ test.each([
   await expect.poll(() => router.state.location.search).not.toHaveProperty('dialog')
   expect(router.state.location.search).not.toHaveProperty('source')
   expect(router.state.location.search).not.toHaveProperty('tariffId')
+  // The dialogs are lazy chunks: give a would-be mount time to resolve before asserting absence.
+  await new Promise((r) => setTimeout(r, 50))
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
 })
 
@@ -427,6 +429,8 @@ test('tariffs still loading: the tariff card is a skeleton, and the edit dialog 
     .toBe(`?dialog=tariffEdit&tariffId=${TARIFF.id}`)
   expect(router.state.location.search).toMatchObject({ dialog: 'tariffEdit', tariffId: TARIFF.id })
   // Not opened on a guess, and not an error (ADR-0016).
+  // The dialogs are lazy chunks: give a would-be mount time to resolve before asserting absence.
+  await new Promise((r) => setTimeout(r, 50))
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_tariff_error_title()).elements()).toHaveLength(0)
 })

@@ -207,17 +207,17 @@ test('exposes the same data as a screen-reader table', async () => {
   // 10:00–10:15 Stockholm: a quarter of the 10 kWh hour, at 375 öre, nothing scheduled.
   await expect
     .element(table.getByRole('row', { name: /^10:00–10:15/ }))
-    .toHaveTextContent(/10:00–10:15\s*2,5\s*375\s*—/)
+    .toMatchTextContent(/10:00–10:15\s*2,5\s*375\s*—/)
   // The 0-kWh hour is 0 kWh; the cheapest schedule puts 2,5 kWh in each of its quarters.
   await expect
     .element(table.getByRole('row', { name: /^11:00–11:15/ }))
-    .toHaveTextContent(/11:00–11:15\s*0,0\s*125\s*2,5/)
+    .toMatchTextContent(/11:00–11:15\s*0,0\s*125\s*2,5/)
   // Outside every interval there's no energy figure.
-  await expect.element(table.getByRole('row', { name: /^09:00–09:15/ })).toHaveTextContent(/—/)
+  await expect.element(table.getByRole('row', { name: /^09:00–09:15/ })).toMatchTextContent(/—/)
   // A slot without a price reads "—", never 0 öre.
   await expect
     .element(table.getByRole('row', { name: /^12:30–12:45/ }))
-    .toHaveTextContent(/12:30–12:45\s*—\s*—/)
+    .toMatchTextContent(/12:30–12:45\s*—\s*—/)
 })
 
 test('a partial-hour interval spreads its energy over the slots it covers', async () => {
@@ -227,8 +227,8 @@ test('a partial-hour interval spreads its energy over the slots it covers', asyn
   })
   const table = chartTable(screen)
   // 5 of its 50 minutes in 08:00–08:15Z, then 15 of 50.
-  await expect.element(table.getByRole('row', { name: /^10:00–10:15/ })).toHaveTextContent(/0,5/)
-  await expect.element(table.getByRole('row', { name: /^10:15–10:30/ })).toHaveTextContent(/1,5/)
+  await expect.element(table.getByRole('row', { name: /^10:00–10:15/ })).toMatchTextContent(/0,5/)
+  await expect.element(table.getByRole('row', { name: /^10:15–10:30/ })).toMatchTextContent(/1,5/)
 })
 
 test('hovering shows the nearest slot with the same kWh share as the table', async () => {
@@ -366,7 +366,7 @@ test('an hour missing from the prices breaks the line but keeps its energy in th
   expect(table.getByRole('row').elements().length).toBe(1 + 12 + 1)
   await expect
     .element(table.getByRole('row', { name: /^10:00–11:00/ }))
-    .toHaveTextContent(/10:00–11:00\s*10,0\s*—/)
+    .toMatchTextContent(/10:00–11:00\s*10,0\s*—/)
 })
 
 test('without any price there is no line and no price axis, and nothing breaks', async () => {
@@ -385,7 +385,7 @@ test('without any price there is no line and no price axis, and nothing breaks',
   expect(Math.abs(axisBox('kw').top - plot.top)).toBeLessThanOrEqual(0.5)
   await expect
     .element(chartTable(screen).getByRole('row', { name: /^10:00–10:15/ }))
-    .toHaveTextContent(/10:00–10:15\s*2,5\s*—/)
+    .toMatchTextContent(/10:00–10:15\s*2,5\s*—/)
 })
 
 test('only a day with negative prices gets a zero line', async () => {
@@ -642,7 +642,7 @@ test('an idle hour of a few Wh draws no bar, not a hairline on the baseline', as
   // The table still has the idle hour's energy, rounded.
   await expect
     .element(chartTable(screen).getByRole('row', { name: /^11:00–11:15/ }))
-    .toHaveTextContent(/11:00–11:15\s*0,0\s*125/)
+    .toMatchTextContent(/11:00–11:15\s*0,0\s*125/)
 })
 
 test('an idle night logged as one long interval draws no hairline under the night', async () => {
@@ -766,7 +766,7 @@ test('an estimated session draws no bars but still the price line', async () => 
   expect(series('spot')[0]?.getAttribute('d')).toMatch(/M/)
   await expect
     .element(chartTable(screen).getByRole('row', { name: /^10:00–10:15/ }))
-    .toHaveTextContent(/—/)
+    .toMatchTextContent(/—/)
   // No "Laddat" legend entry for bars that aren't there; a note says why.
   expect(document.querySelector('[data-legend="actual"]')).toBeNull()
   await expect.element(screen.getByText(m.charging_session_chart_no_hourly())).toBeVisible()

@@ -153,7 +153,7 @@ test('an unpriced session shows a dash with the reason, never 0 kr', async () =>
   const unpriced = await renderWithCost({ ...priced, complete: false, totalSek: 0 })
   // The dash carries its reason on hover (title) and for screen readers (sr-only).
   const dash = unpriced.screen.getByTitle(m.charging_sessions_cost_unknown())
-  await expect.element(dash).toHaveTextContent(`— ${m.charging_sessions_cost_unknown()}`)
+  await expect.element(dash).toMatchTextContent(`— ${m.charging_sessions_cost_unknown()}`)
   expect(unpriced.screen.getByText(/0,00\s?kr/).elements()).toHaveLength(0)
 })
 
