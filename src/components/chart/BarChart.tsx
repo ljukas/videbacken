@@ -41,11 +41,11 @@ export type BarSelection<Row> = {
 
 export type BarChartProps<Row> = {
   rows: readonly Row[]
-  /** The category's x label (also the tooltip's title). */
+  /** The category's x label (also the tooltip's title). Keep its identity across renders (a geometry memo input). */
   category: (row: Row) => string
   /** Bars in stack, legend and tooltip order (bottom to top within a stack). */
   series: readonly BarSeries[]
-  /** A series' value for a row; null draws nothing. */
+  /** A series' value for a row; null draws nothing. Keep its identity across renders (a geometry memo input). */
   value: (row: Row, key: string) => number | null
   /** One line over the bars (Spot's month average), through its non-null points. */
   line?: LineSeries
@@ -72,7 +72,10 @@ export type BarChartProps<Row> = {
   stackOffset?: StackOffset
   /** A `var(--border)` line at 0 across the plot. */
   zeroLine?: boolean
-  /** With it every category is labelled: full labels when they fit, else every label short. */
+  /**
+   * With it every category is labelled: full labels when they fit, else every label short, and
+   * `xTickEvery` is ignored. Like `category` and `value`, keep its identity across renders.
+   */
   shortCategory?: (row: Row) => string
   /** The axis labels' font size, also used to measure them (default 12). */
   tickPx?: number

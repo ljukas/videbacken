@@ -531,7 +531,12 @@ describe('diverging stacks (recharts stackOffset="sign")', () => {
       barGap: 4,
       offset: 'diverging',
     })
-    for (const r of rects.filter((r) => r.key === 'c')) expect(r.y).toBeCloseTo(100)
+    const exports = rects.filter((r) => r.key === 'c')
+    expect(exports.map((r) => r.index)).toEqual([0, 1])
+    for (const r of exports) expect(r.y).toBeCloseTo(100)
+    // 10 px a unit: the export hangs its full size below 0, purchase or not.
+    expect(exports[0].height).toBeCloseTo(300)
+    expect(exports[1].height).toBeCloseTo(120)
   })
 })
 

@@ -44,6 +44,12 @@ function seriesConfig(): Record<SeriesKey, { label: string; color: string }> {
   }
 }
 
+// BarChart's accessors, at module level: they capture nothing, and a stable
+// identity keeps the chart's geometry memo across page re-renders.
+const monthCategory = (r: ChartRow) => monthLabel(r.month)
+const monthInitial = (r: ChartRow) => monthLabel(r.month).charAt(0).toUpperCase()
+const seriesValue = (r: ChartRow, key: string) => r[key as SeriesKey] ?? null
+
 const TOTAL_LABEL: Record<EnergyMetric, () => string> = {
   solar: m.energy_chart_total_solar,
   grid: m.energy_chart_total_grid,
@@ -75,7 +81,8 @@ export function EnergyMonthlyChart({
   onSelectMonth: (month: number) => void
 }) {
   const keys = METRIC_SERIES[metric]
-  // Memoised so the chart's geometry survives page re-renders (polls, selection).
+  // Memoised, like the rows (and with the module-level accessors), so the
+  // chart's geometry survives page re-renders (polls, selection).
   const series = useMemo<BarSeries[]>(() => {
     const config = seriesConfig()
     // The stack's top is rounded; on Nät that's the purchase's top (export hangs below).
@@ -113,10 +120,10 @@ export function EnergyMonthlyChart({
     <div>
       <BarChart
         rows={rows}
-        category={(r) => monthLabel(r.month)}
-        shortCategory={(r) => monthLabel(r.month).charAt(0).toUpperCase()}
+        category={monthCategory}
+        shortCategory={monthInitial}
         series={series}
-        value={(r, key) => r[key as SeriesKey] ?? null}
+        value={seriesValue}
         stackOffset={metric === 'grid' ? 'diverging' : 'none'}
         zeroLine={metric === 'grid'}
         yTickFormat={formatCount}
