@@ -196,7 +196,7 @@ non-local `DATABASE_URL` outside CI, because tests create and drop schemas.
 postgres 14620, redis 14621, smtp 14622, s3 14623.
 
 **CI:** `main` is PR-gated by the `protect-main` ruleset — required checks are **`CI Success`** (aggregates
-`Check (lint)`, `Check (types)`, `Check (build)`, `Test`) and **`Validate Conventional Commit title`**.
+`Check (lint)`, `Check (types)`, `Check (build)`, `Test (node)`, `Test (browser)`) and **`Validate Conventional Commit title`**.
 
 ---
 
