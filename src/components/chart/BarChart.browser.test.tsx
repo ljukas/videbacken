@@ -7,6 +7,7 @@ import {
   bars,
   boldTickLabels,
   centre,
+  focusChart,
   focusTarget,
   gridLines,
   hoverBar,
@@ -681,13 +682,19 @@ test('hovering a selectable category outlines its column, label included, over t
 
 test('hovering a category that cannot be selected draws no outline and no pointer cursor', async () => {
   const { screen } = await render(withSelection(null))
-  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  const overlay = () => screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  // First an outlined one, so the checks below can't pass on a chart that never outlines.
+  await hoverBar(screen.container, 1) // apr's a
+  await vi.waitFor(() => {
+    expect(outline(screen.container)).not.toBeNull()
+    expect(overlay().style.cursor).toBe('pointer')
+  })
   const o = overlayBox(screen.container)
   moveOverPlot(screen.container, o.x + (o.width * 1.5) / 4, o.y + 10) // feb
-  await settle()
-  expect(outline(screen.container)).toBeNull()
-  const overlay = screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
-  expect(overlay.style.cursor).toBe('')
+  await vi.waitFor(() => {
+    expect(outline(screen.container)).toBeNull()
+    expect(overlay().style.cursor).toBe('')
+  })
 })
 
 test('from the keyboard a category that cannot be selected gets a dashed outline', async () => {
@@ -736,4 +743,82 @@ test('leaving the chart with a mouse clears the outline', async () => {
     }),
   )
   await vi.waitFor(() => expect(outline(screen.container)).toBeNull())
+})
+
+test('a non-integer selection draws no tint and no bold label', () => expectNoSelectionDrawn(1.5))
+
+// Records whether each key press's default was prevented (after React's handler).
+const recordKeys = () => {
+  const seen: { key: string; prevented: boolean }[] = []
+  const listener = (e: KeyboardEvent) => seen.push({ key: e.key, prevented: e.defaultPrevented })
+  document.addEventListener('keydown', listener)
+  return { seen, stop: () => document.removeEventListener('keydown', listener) }
+}
+
+test('after the mouse leaves, Enter and Space select nothing and Space keeps its default', async () => {
+  const onSelect = vi.fn()
+  const { screen } = await render(withSelection(null, onSelect))
+  await hoverBar(screen.container, 1) // apr's a
+  await vi.waitFor(() => expect(outline(screen.container)).not.toBeNull())
+  const overlay = screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  overlay.dispatchEvent(
+    new PointerEvent('pointerout', {
+      bubbles: true,
+      pointerType: 'mouse',
+      relatedTarget: document.body,
+    }),
+  )
+  await vi.waitFor(() => expect(outline(screen.container)).toBeNull())
+  focusChart(screen.container)
+  const keys = recordKeys()
+  try {
+    await userEvent.keyboard(' ')
+    await userEvent.keyboard('{Enter}')
+    await settle()
+  } finally {
+    keys.stop()
+  }
+  expect(onSelect).not.toHaveBeenCalled()
+  expect(keys.seen.find((k) => k.key === ' ')?.prevented).toBe(false)
+})
+
+test('Space on a keyboard category selects it and keeps the page from scrolling', async () => {
+  const onSelect = vi.fn()
+  const { screen } = await render(withSelection(null, onSelect))
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{End}') // apr
+  await vi.waitFor(() => expect(outline(screen.container)).not.toBeNull())
+  const keys = recordKeys()
+  try {
+    await userEvent.keyboard(' ')
+    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(3))
+  } finally {
+    keys.stop()
+  }
+  expect(keys.seen.find((k) => k.key === ' ')?.prevented).toBe(true)
+})
+
+test('fewer rows after a refetch never let Enter select a missing category', async () => {
+  const onSelect = vi.fn()
+  const queryClient = makeTestQueryClient()
+  const ui = (shown: Row[]) => (
+    <div style={{ width: 480 }}>
+      <button type="button">before</button>
+      <BarChart {...base} {...withSelection(null, onSelect)} rows={shown} />
+    </div>
+  )
+  const { screen } = await renderWithProviders(ui(rows), { queryClient })
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{End}')
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 30 B 10'))
+  // Same tree (provider included), so the chart keeps focus as the rows shrink.
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>{ui(rows.slice(0, 2))}</QueryClientProvider>,
+  )
+  await vi.waitFor(() => expect(bars(screen.container).length).toBe(2)) // jan's a and b
+  await userEvent.keyboard('{Enter}')
+  await settle()
+  expect(onSelect).not.toHaveBeenCalled()
 })

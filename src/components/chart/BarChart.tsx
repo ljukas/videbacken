@@ -26,8 +26,13 @@ import { CHART_HEIGHT, ChartLegend } from './ChartParts'
 export type { BarSeries } from './barLayout'
 export type LineSeries = { key: string; label: string; color: string; dash?: string }
 
+/**
+ * A selectable chart must also have a `label`: the label makes it a keyboard
+ * stop, and Enter / Space on that stop are its only keyboard path. Without one
+ * the chart is aria-hidden and mouse / touch only.
+ */
 export type BarSelection<Row> = {
-  /** The selected category's index, or null. An index outside the rows draws nothing. */
+  /** The selected category's index, or null. An index outside the rows (or not a whole number) draws nothing. */
   selected: number | null
   onSelect: (index: number) => void
   /** Whether a category can be selected (the Energi chart: it has readings). */
@@ -79,7 +84,10 @@ export type BarChartProps<Row> = {
   legendClassName?: string
   /** The sr-only keyboard hint (default: the shared one). */
   keyboardHint?: string
-  /** Click / tap / Enter selects a category; adds the selected tint, the outline and the pointer cursor. */
+  /**
+   * Click / tap / Enter selects a category; adds the selected tint, the outline and the pointer cursor.
+   * Pass `label` with it: the labelled group is the selection's keyboard path (see BarSelection).
+   */
   selection?: BarSelection<Row>
 }
 
@@ -205,6 +213,16 @@ export function BarChart<Row>({
     minBarPx,
   ])
 
+  const chosen = selection?.selected
+  const selected =
+    chosen != null && Number.isInteger(chosen) && chosen >= 0 && chosen < count ? chosen : null
+  // The outline on screen (range-guarded: a refetch may have dropped its category).
+  const outlined = selection && outline !== null && outline.index < count ? outline.index : null
+  // Only a keyboard outline is ever dashed: a pointer outline stays solid even
+  // if a refetch under the mouse makes its category unselectable.
+  const dashed =
+    outlined !== null && outline?.keyboard === true && !selection?.canSelect(rows[outlined])
+
   // The card's anchor: the category's centre, at the top of its tallest bar.
   const anchor = (i: number) => {
     if (!geometry) return { left: 0, top: 0 }
@@ -266,11 +284,12 @@ export function BarChart<Row>({
     // Browser shortcuts (Alt+← back, Cmd+Home …) pass through.
     if (e.altKey || e.ctrlKey || e.metaKey) return
     if (e.key === 'Escape') return close()
-    if (selection && (e.key === 'Enter' || e.key === ' ')) {
-      // Space would scroll the page; Enter has nothing else to do here.
+    // Enter / Space act on what is shown: the outlined category. With nothing
+    // outlined (say the mouse left) they do nothing here, so Space scrolls.
+    if (selection && outlined !== null && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault()
-      const i = cursor.current
-      if (i !== null && i < count && selection.canSelect(rows[i])) selection.onSelect(i)
+      // A held key selects once.
+      if (!e.repeat && selection.canSelect(rows[outlined])) selection.onSelect(outlined)
       return
     }
     if (count === 0) return
@@ -313,13 +332,6 @@ export function BarChart<Row>({
 
   const tickText = (i: number) =>
     geometry?.short && shortCategory ? shortCategory(rows[i]) : category(rows[i])
-
-  const selected =
-    selection?.selected != null && selection.selected >= 0 && selection.selected < count
-      ? selection.selected
-      : null
-  const outlined = selection && outline !== null && outline.index < count ? outline.index : null
-  const dashed = outlined !== null && !selection?.canSelect(rows[outlined])
 
   const svg = geometry ? (
     // biome-ignore lint/a11y/noSvgWithoutTitle: visual; the group (or the caller's sr-only table) is the accessible path
@@ -475,7 +487,7 @@ export function BarChart<Row>({
             pointerEvents="none"
           />
         )}
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer surface in the aria-hidden svg; the keyboard path is the group's onKeyDown (Enter / Space) */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer surface in the aria-hidden svg; a selectable chart is labelled (BarSelection), and its group's onKeyDown (Enter / Space) is the keyboard path */}
         <rect
           data-hover-overlay
           width={geometry.plotW}
