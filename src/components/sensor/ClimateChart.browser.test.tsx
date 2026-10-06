@@ -1,5 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { type SeriesPoint, toDeviceSeries } from '~/lib/sensor/chartData'
 import { CADENCE_SEC, MAX_GAP_BUCKETS } from '~/lib/sensor/range'
 import { makeTimeAxis, type TimeAxis } from '~/lib/sensor/tickFormat'
@@ -8,6 +9,7 @@ import {
   activeDots,
   centre,
   chartSvg,
+  focusChart,
   gridLines,
   hoverCursor,
   legendLabels,
@@ -486,4 +488,116 @@ test('the chart is one named Tab stop, its svg hidden from assistive tech', asyn
   expect(group.element().getAttribute('tabindex')).toBe('0')
   await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
   expect(chartSvg(root)?.getAttribute('aria-hidden')).toBe('true')
+})
+
+const header = () => tooltipNodes()[0]?.firstElementChild?.textContent ?? null
+const announced = (root: HTMLElement) =>
+  root.querySelector('[data-chart-announce]')?.textContent ?? ''
+const allTimes = (devices: ClimateChartDevice[]) =>
+  [...new Set(devices.flatMap((d) => d.points.map((p) => p.t)))].sort((a, b) => a - b)
+
+test('the chart is one named Tab stop whose arrows walk the readings', async () => {
+  const devices = day()
+  const root = await renderChart(devices)
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
+  const group = focusChart(root)
+  expect(group.getAttribute('role')).toBe('group')
+  expect(group.getAttribute('aria-label')).toBe('Temperatur')
+  expect(tooltipText()).toBe('')
+
+  const times = allTimes(devices)
+  await userEvent.keyboard('{ArrowRight}')
+  await settle()
+  expect(header()).toBe(String(times[0]))
+  await userEvent.keyboard('{ArrowRight}')
+  await settle()
+  expect(header()).toBe(String(times[1]))
+  await userEvent.keyboard('{ArrowLeft}')
+  await settle()
+  expect(header()).toBe(String(times[0]))
+  // Clamped at the first reading.
+  await userEvent.keyboard('{ArrowLeft}')
+  await settle()
+  expect(header()).toBe(String(times[0]))
+  await userEvent.keyboard('{End}')
+  await settle()
+  expect(header()).toBe(String(times[times.length - 1]))
+  await userEvent.keyboard('{Home}')
+  await settle()
+  expect(header()).toBe(String(times[0]))
+  // Each step is announced with its card's content.
+  expect(announced(root)).toContain(String(times[0]))
+  expect(announced(root)).toContain('Fack 1')
+})
+
+test('← from nothing starts at the last reading; Escape and Tab-out close the card', async () => {
+  const devices = day()
+  const root = await renderChart(devices)
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
+  focusChart(root)
+  await userEvent.keyboard('{ArrowLeft}')
+  await settle()
+  const last = Math.max(...devices.flatMap((d) => d.points.map((p) => p.t)))
+  expect(header()).toBe(String(last))
+  await userEvent.keyboard('{Escape}')
+  await settle()
+  expect(tooltipText()).toBe('')
+  await userEvent.keyboard('{ArrowRight}')
+  await settle()
+  expect(tooltipText()).not.toBe('')
+  ;(document.activeElement as HTMLElement).blur()
+  await settle()
+  expect(tooltipText()).toBe('')
+  expect(announced(root)).toBe('')
+})
+
+test('after a refetch adds a reading, → continues from the shown time', async () => {
+  const devices = day()
+  const { root, rerender } = await renderRefetchable(devices)
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
+  focusChart(root)
+  const times = allTimes(devices)
+  for (let i = 0; i < 3; i++) {
+    await userEvent.keyboard('{ArrowRight}')
+    await settle()
+  }
+  expect(header()).toBe(String(times[2]))
+  // A new reading before the shown one shifts every index by one.
+  const [a, b] = devices
+  const earlier = times[0] - HOUR
+  await rerender([{ ...a, points: [{ t: earlier, a: 19 }, ...a.points] }, b])
+  await settle()
+  await userEvent.keyboard('{ArrowRight}')
+  await settle()
+  expect(header()).toBe(String(times[3]))
+})
+
+test('when the data moves away from a keyboard card, → starts again from the first reading', async () => {
+  const devices = day()
+  const { root, rerender } = await renderRefetchable(devices)
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
+  focusChart(root)
+  await userEvent.keyboard('{ArrowRight}{ArrowRight}')
+  await settle()
+  expect(tooltipText()).not.toBe('')
+  const shifted = devices.map((d) => ({
+    ...d,
+    points: d.points.map((p) => ({ ...p, t: p.t - 365 * 24 * HOUR })),
+  }))
+  await rerender(shifted)
+  await vi.waitFor(() => expect(tooltipText()).toBe(''))
+  // The announcement goes with the card.
+  expect(announced(root)).toBe('')
+  await userEvent.keyboard('{ArrowRight}')
+  await settle()
+  expect(header()).toBe(String(allTimes(shifted)[0]))
+})
+
+test('with every device hidden the keys do nothing', async () => {
+  const root = await renderChart(day().map((d) => ({ ...d, hidden: true })))
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
+  focusChart(root)
+  await userEvent.keyboard('{ArrowRight}{End}')
+  await settle()
+  expect(tooltipText()).toBe('')
 })

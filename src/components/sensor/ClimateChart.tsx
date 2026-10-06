@@ -4,9 +4,10 @@ import { GridRows } from '@visx/grid'
 import { Group } from '@visx/group'
 import { useParentSize } from '@visx/responsive'
 import { LinePath } from '@visx/shape'
+import { bisectCenter } from 'd3-array'
 import { scaleLinear } from 'd3-scale'
 import type * as React from 'react'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   AXIS_COLOR,
   CHART_MARGIN,
@@ -30,6 +31,7 @@ import {
 } from '~/lib/sensor/chartData'
 import { CADENCE_SEC } from '~/lib/sensor/range'
 import type { TimeAxis } from '~/lib/sensor/tickFormat'
+import { m } from '~/paraglide/messages'
 import { nearestTime, pickTimeTicks, readingTimes } from './climateLayout'
 
 export type ClimateChartDevice = {
@@ -127,6 +129,9 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
   const popover = useChartPopover<number>({ followScroll: true })
   // The reading time the pointer last moved to (Task 5's keys continue from it).
   const cursor = useRef<number | null>(null)
+  const hintId = useId()
+  // The time the keyboard last stepped to, read out by the live region; a mouse move clears it.
+  const [announced, setAnnounced] = useState<number | null>(null)
   const times = useMemo(() => readingTimes(devices), [devices])
   const visible = useMemo(() => devices.filter((d) => !d.hidden), [devices])
 
@@ -161,7 +166,12 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
   const stale = active !== null && shown === null
   const { hide } = popover
   useEffect(() => {
-    if (stale) hide()
+    if (stale) {
+      // The next → starts from the first reading, not from a time the data dropped.
+      cursor.current = null
+      setAnnounced(null)
+      hide()
+    }
   }, [stale, hide])
 
   // The card's anchor: time `t`, above the highest of its rows' dots.
@@ -190,7 +200,40 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
     )
     // Nothing visible: no reading to show. Same reading: no re-render per pixel.
     if (t === null || (popover.open && popover.data === t)) return
+    setAnnounced(null)
     open(t)
+  }
+  const close = () => {
+    cursor.current = null
+    popover.hide()
+    setAnnounced(null)
+  }
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Browser shortcuts (Alt+← back, Cmd+Home …) pass through.
+    if (e.altKey || e.ctrlKey || e.metaKey) return
+    if (e.key === 'Escape') return close()
+    if (times.length === 0) return
+    const last = times.length - 1
+    // Found again by time: a refetch may have shifted every index since.
+    const current = cursor.current === null ? null : bisectCenter(times, cursor.current)
+    const next =
+      e.key === 'ArrowRight'
+        ? current === null
+          ? 0
+          : Math.min(current + 1, last)
+        : e.key === 'ArrowLeft'
+          ? current === null
+            ? last
+            : Math.max(current - 1, 0)
+          : e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? last
+              : null
+    if (next === null) return
+    e.preventDefault()
+    open(times[next])
+    setAnnounced(times[next])
   }
 
   // The lines and isolated dots, kept across hovers: a pointer move re-renders
@@ -351,6 +394,9 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
         aria-label={label}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the chart's one named Tab stop, the keyboard path to its card
         tabIndex={0}
+        aria-describedby={hintId}
+        onKeyDown={onKeyDown}
+        onBlur={close}
         className="rounded-sm outline-hidden focus-visible:ring-3 focus-visible:ring-ring/50"
         style={{ flex: '1 1 0', minHeight: 0 }}
       >
@@ -361,6 +407,22 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
           .sort(byName)
           .map((d) => ({ key: d.id, label: d.displayName, color: d.color }))}
       />
+      <p id={hintId} className="sr-only">
+        {m.sensors_chart_keyboard_hint()}
+      </p>
+      {/* Read whole (atomic): only the changed text would otherwise be read. */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true" data-chart-announce>
+        {announced === null ? null : (
+          <span key={announced}>
+            <CardContent
+              t={announced}
+              rows={nearestReadings(devices, announced, WINDOW_MS)}
+              unit={unit}
+              formatTick={formatTick}
+            />
+          </span>
+        )}
+      </div>
       <ChartPopover
         // Anchored from the current layout on every render, so a refetch or a
         // resize moves the card with its time.
