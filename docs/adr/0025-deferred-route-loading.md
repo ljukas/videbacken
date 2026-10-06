@@ -128,10 +128,12 @@ app at fixed viewport widths and replays it while loading.
   `SectionSkeleton` imported for its side effect. It put every page's bones (~21 KB gz) on every page with a
   skeleton. The capture script now deletes the registry the CLI writes.
 - **Theme and motion.** Bone geometry is theme-independent. The colours are set in `boneyard.config.json`, and
-  `SectionSkeleton` passes them (and the `pulse` animation) to boneyard as props. boneyard follows the `.dark` class
-  `ThemeProvider` sets. The light bone colour `#ebebeb` is deliberately darker than `--muted` (`#f5f5f5`): at
-  `--muted` the bones are invisible on the `#fcfcfc` page. Don't "fix" it back. boneyard doesn't honour `prefers-reduced-motion` itself, so app.css's
-  reduced-motion block stops the bones' animation (ADR-0015).
+  `SectionSkeleton` passes them (and the `pulse` animation) to boneyard as props. Only those three keys reach it:
+  boneyard reads `speed`, `shimmerColor`, `darkShimmerColor` and `shimmerAngle` only from its global config, so
+  adding them to `boneyard.config.json` does nothing without a `configureBoneyard` call. boneyard follows the `.dark`
+  class `ThemeProvider` sets. The light bone colour `#ebebeb` is deliberately darker than `--muted` (`#f5f5f5`): at
+  `--muted` the bones are invisible on the `#fcfcfc` page. Don't "fix" it back. boneyard doesn't honour
+  `prefers-reduced-motion` itself, so app.css's reduced-motion block stops the bones' animation (ADR-0015).
 - **No fade-out.** boneyard can fade the skeleton out when loading ends, but `SectionSkeleton` drops boneyard's
   wrapper as soon as a section stops loading, so that fade is bypassed by design: the content replaces the bones in
   one frame.
@@ -238,10 +240,11 @@ for pages that never used them:
   (`useIdlePreload(isAdmin, loaders)`), so their first click isn't dead. Members never fetch them.
 - **Each page imports its own bones** (§4). The registry had put all of them on every page with a skeleton.
 
-Measured with `bun run bundle:measure` (KB gz, on top of the entry and shell):
+Measured with `bun run bundle:measure` (KB gz; each page's row is on top of the entry and shell):
 
 | Page | Before step 4 | Phone fields + lazy dialogs | Per-page bones |
 |---|---:|---:|---:|
+| entry + signed-in shell | 248 | 253 | 253 |
 | `/charging` | 179 | 180 | 161 |
 | `/charging/settings` | 200 | 61 | 41 |
 | `/charging/economy` | 178 | 178 | 159 |
@@ -252,6 +255,14 @@ Measured with `bun run bundle:measure` (KB gz, on top of the entry and shell):
 | `/account/profile` | 211 | 212 | 212 |
 
 `/account/profile` renders a phone field on load, so it keeps the phone input.
+
+**The shell grew 5 KB gz without gaining code.** Its set of modules is unchanged (437 sources). But each lazy dialog,
+and `PhoneField`'s own entry, is a new dynamic entry, and rolldown groups modules into chunks by which entries reach
+them. So modules the shell shares with those entries (Radix primitives, cmdk, `button`, `dialog`, floating-ui …) split
+into more, smaller chunks: about +3 KB gz of per-chunk overhead (the figure sums each chunk's gzip) and 9 more
+`modulepreload` requests on every signed-in page. A rolldown chunk group
+(`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up, since it
+needs its own measurement, `/login` included.
 
 ---
 

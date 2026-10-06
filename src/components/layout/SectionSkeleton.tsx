@@ -70,7 +70,10 @@ export function SectionSkeleton(
         className={cn('overflow-hidden', className)}
         fallback={<FallbackBlock height={fallbackHeight} />}
         snapshotConfig={excludeSelectors ? { excludeSelectors } : undefined}
-        // The capture config's look, here since no registry configures boneyard.
+        // The capture config's look, here since no registry configures boneyard. Only these
+        // three reach Skeleton as props: boneyard reads speed, shimmerColor, darkShimmerColor
+        // and shimmerAngle from its global config only, so adding them to boneyard.config.json
+        // does nothing without a configureBoneyard call. Change the cast if `animate` changes.
         color={boneyardConfig.color}
         darkColor={boneyardConfig.darkColor}
         animate={boneyardConfig.animate as 'pulse'}

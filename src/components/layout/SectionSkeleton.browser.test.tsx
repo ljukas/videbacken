@@ -99,3 +99,21 @@ test('bones use the configured light colour, not boneyard’s default', async ()
   // inline value stays the configured one.
   await expect.poll(() => bone()?.style.backgroundColor).toBe('rgb(235, 235, 235)') // #ebebeb
 })
+
+test('bones use the configured dark colour under the .dark class', async () => {
+  document.documentElement.classList.add('dark')
+  try {
+    await renderWithRouter(
+      <div style={{ width: 300 }}>
+        <SectionSkeleton bones={testSized} loading>
+          <p>content</p>
+        </SectionSkeleton>
+      </div>,
+    )
+    const bone = () =>
+      document.querySelector<HTMLElement>('[data-boneyard="test-sized"] [data-boneyard-bone]')
+    await expect.poll(() => bone()?.style.backgroundColor).toBe('rgb(38, 38, 38)') // #262626
+  } finally {
+    document.documentElement.classList.remove('dark')
+  }
+})

@@ -25,10 +25,6 @@ const PAGES: Record<string, string> = {
   '/account/profile': 'profile',
 }
 const WATCHED = ['libphonenumber-js', 'country-flag-icons', '@tanstack/form-core', 'boneyard-js']
-const CAPTURED = readdirSync('src/bones')
-  .filter((f) => f.endsWith('.bones.json'))
-  .map((f) => f.slice(0, -'.bones.json'.length))
-  .sort()
 
 export function staticClosure(deps: Map<string, string[]>, root: string): Set<string> {
   const seen = new Set<string>()
@@ -45,6 +41,10 @@ export function staticClosure(deps: Map<string, string[]>, root: string): Set<st
 function main() {
   if (!existsSync(ASSETS)) throw new Error(`${ASSETS} is missing: run \`bun run bundle:measure\``)
   const files = readdirSync(ASSETS).filter((f) => f.endsWith('.js'))
+  const captured = readdirSync('src/bones')
+    .filter((f) => f.endsWith('.bones.json'))
+    .map((f) => f.slice(0, -'.bones.json'.length))
+    .sort()
   const gz = new Map<string, number>()
   const deps = new Map<string, string[]>()
   const sources = new Map<string, string[]>()
@@ -88,7 +88,7 @@ function main() {
     const packages = WATCHED.filter((p) => all.some((s) => s.includes(`node_modules/${p}/`)))
     // Every breakpoint of a capture is named after it (test/sectionSkeletonBones.test.ts):
     // `name:"x"` as an object literal, `"name":"x"` inside a big one's JSON.parse string.
-    const bones = CAPTURED.filter((name) =>
+    const bones = captured.filter((name) =>
       [...own].some((f) => new RegExp(`\\bname"?:["'\`]${name}["'\`]`).test(code.get(f) ?? '')),
     )
     const top = [...own]
