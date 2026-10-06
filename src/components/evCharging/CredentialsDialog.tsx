@@ -40,12 +40,18 @@ import {
   invalidFieldMessage,
 } from '~/lib/integrationCredentialsMessage'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
-import { orpc, type RouterOutputs } from '~/lib/orpc/client'
+import { orpc, type RouterInputs, type RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { formatDate } from './format'
 
 export type CredentialStatus = RouterOutputs['credentials']['status']
 type SourceStatus = CredentialStatus['sources'][CredentialSource]
+type SetCredentialsInput = RouterInputs['credentials']['set']
+
+// The input is a union discriminated by `source`, which TypeScript can't tie to
+// a runtime `source`; the form only ever holds that source's fields.
+const setInput = (source: CredentialSource, fields: Record<string, string>) =>
+  ({ source, fields }) as SetCredentialsInput
 
 const SKODA_KEYS_URL = 'https://go.skoda.eu/api-keys'
 
@@ -156,11 +162,12 @@ export function CredentialsDialog({
 
 function originLine(sourceStatus: SourceStatus | undefined, field: string): string | null {
   if (!sourceStatus) return null // status not loaded: say nothing rather than guess
+  // An unreadable row fails the whole source closed: no field falls back to env (ADR-0026).
+  if (sourceStatus.unreadable) return m.charging_credentials_origin_unreadable()
   const origin = (sourceStatus.fields as Record<string, { origin: CredentialOrigin }>)[field]
     ?.origin
   switch (origin) {
     case 'stored':
-      if (sourceStatus.unreadable) return m.charging_credentials_origin_unreadable()
       return sourceStatus.updatedAt
         ? m.charging_credentials_origin_stored({ date: formatDate(sourceStatus.updatedAt) })
         : null
@@ -244,18 +251,26 @@ function CredentialsForm({
   }
   const set = useMutation(
     orpc.credentials.set.mutationOptions({
+      // The variables hold the plaintext values: don't keep them in the
+      // MutationCache once the mutation has settled.
+      gcTime: 0,
       onError: (err) => {
         if (
           isDefinedError(err) &&
           (err.code === 'INVALID_FIELD' || err.code === 'REENTER_ALL_FIELDS')
         )
           showFieldErrors(err.code, err.data.fields)
+        // The status read failed (so the dialog didn't know) and the key is missing.
+        else if (isDefinedError(err) && err.code === 'ENCRYPTION_KEY_MISSING')
+          toast.error(m.charging_credentials_key_missing())
         else toast.error(m.charging_credentials_save_error())
       },
       onSettled: invalidate,
     }),
   )
-  const clear = useMutation(orpc.credentials.clear.mutationOptions({ onSettled: invalidate }))
+  const clear = useMutation(
+    orpc.credentials.clear.mutationOptions({ gcTime: 0, onSettled: invalidate }),
+  )
   const busy = set.isPending || clear.isPending
 
   const form = useAppForm({
@@ -277,8 +292,7 @@ function CredentialsForm({
       // Blank means "keep what is stored": send only what was filled in.
       const filled = Object.fromEntries(Object.entries(value).filter(([, v]) => v.trim() !== ''))
       try {
-        // The input is a union discriminated by `source`; `filled` holds only its fields.
-        await set.mutateAsync({ source, fields: filled } as never)
+        await set.mutateAsync(setInput(source, filled))
       } catch {
         return // reported by onError; keep the dialog open to fix the input
       }
@@ -328,7 +342,9 @@ function CredentialsForm({
     )
 
   return (
+    // method="post": should the handler ever miss, a native submit never puts the values in a URL.
     <form
+      method="post"
       onSubmit={(e) => {
         e.preventDefault()
         form.handleSubmit()

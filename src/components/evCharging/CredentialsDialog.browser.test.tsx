@@ -193,13 +193,27 @@ test('REENTER_ALL_FIELDS marks the empty fields', async () => {
 })
 
 test('a failed save toasts, stays open and runs no sync', async () => {
-  setFn.mockRejectedValue(new ORPCError('ENCRYPTION_KEY_MISSING', { defined: true }))
+  setFn.mockRejectedValue(new Error('boom'))
   const { screen } = await renderWithProviders(dialog())
   await screen.getByLabelText(API_KEY).fill('k')
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await vi.waitFor(() =>
     expect(toastMock.error).toHaveBeenCalledWith(m.charging_credentials_save_error()),
   )
+  expect(onChanged).not.toHaveBeenCalled()
+  expect(onOpenChange).not.toHaveBeenCalledWith(false)
+})
+
+test('a save refused for the missing key says so, not the generic error', async () => {
+  // Reachable when the status read failed: the dialog opens without knowing the key is missing.
+  setFn.mockRejectedValue(new ORPCError('ENCRYPTION_KEY_MISSING', { defined: true }))
+  const { screen } = await renderWithProviders(dialog({ status: undefined }))
+  await screen.getByLabelText(API_KEY).fill('k')
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.charging_credentials_key_missing()),
+  )
+  expect(toastMock.error).not.toHaveBeenCalledWith(m.charging_credentials_save_error())
   expect(onChanged).not.toHaveBeenCalled()
   expect(onOpenChange).not.toHaveBeenCalledWith(false)
 })
@@ -378,12 +392,25 @@ test('save invalidates the credentials and charging queries', async () => {
   })
 })
 
-test('unreadable: stored fields say they cannot be read, not when they were saved', async () => {
+test('unreadable: every field says it cannot be read, never when saved or env', async () => {
+  // The source fails closed and never falls back to env (ADR-0026): the env and
+  // missing fields read unreadable too.
   const { screen } = await renderWithProviders(dialog({ status: status({}, { unreadable: true }) }))
   await expect
-    .element(screen.getByText(m.charging_credentials_origin_unreadable(), { exact: true }))
+    .element(screen.getByText(m.charging_credentials_origin_unreadable(), { exact: true }).first())
     .toBeVisible()
+  expect(
+    screen.getByText(m.charging_credentials_origin_unreadable(), { exact: true }).elements(),
+  ).toHaveLength(3)
   expect(screen.getByText(/Sparad i appen ·/).elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_credentials_origin_env()).elements()).toHaveLength(0)
+  expect(screen.getByText(m.charging_credentials_origin_missing()).elements()).toHaveLength(0)
+})
+
+test('the form posts, so a native submit never puts values in the URL', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  const form = screen.getByLabelText(API_KEY).element().closest('form')
+  expect(form?.getAttribute('method')).toBe('post')
 })
 
 test('the grid remove confirm names the facility ID', async () => {

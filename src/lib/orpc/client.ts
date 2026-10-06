@@ -1,7 +1,12 @@
 import { createORPCClient } from '@orpc/client'
 import { RPCLink } from '@orpc/client/fetch'
 import { BatchLinkPlugin } from '@orpc/client/plugins'
-import { createRouterClient, type InferRouterOutputs, type RouterClient } from '@orpc/server'
+import {
+  createRouterClient,
+  type InferRouterInputs,
+  type InferRouterOutputs,
+  type RouterClient,
+} from '@orpc/server'
 import { createTanstackQueryUtils } from '@orpc/tanstack-query'
 import { createIsomorphicFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
@@ -58,3 +63,6 @@ export const orpc = createTanstackQueryUtils(client)
  * hand-maintain row shapes. E.g. `RouterOutputs['document']['listDocuments'][number]`.
  */
 export type RouterOutputs = InferRouterOutputs<typeof appRouter>
+
+/** Procedure input types, derived the same way: `RouterInputs['credentials']['set']`. */
+export type RouterInputs = InferRouterInputs<typeof appRouter>
