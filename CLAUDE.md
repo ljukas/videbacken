@@ -55,7 +55,7 @@ src/
     api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), emaldo-sync.ts hourly at :45, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
-    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging/{index,patterns,economy,settings (admin-only: Datakällor + tariffs + credentials (key button per source, Elnätsavtal card))}, sensors
+    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging/{index,patterns,economy,settings (admin-only: Datakällor + tariffs + credentials (key button per source, Elnätsavtal card; the Škoda home position has a map picker))}, sensors
   lib/
     auth.ts / authClient.ts     betterAuth() (drizzleAdapter + google + magicLink + admin; allowlist gate) / createAuthClient()
     getSession.ts               server fn wrapping auth.api.getSession()
@@ -63,7 +63,7 @@ src/
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
     db/                         drizzle(postgres(DATABASE_URL)); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,integrationSync,integrationCredential,spotPrice,electricityTariff}.ts + index barrel; pgError (unique-violation mapping); connectionString (Supabase env bridge)
     services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, energyMix, dbPool (pool gauges for the rpc timing line) — own all DB access + domain rules (ADR-0002)
-    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023; keyedAdapter.ts rebuilds their client only when the resolved credentials change, ADR-0026), eltariff (keyless catalogue client for the gridTariff watcher); http.ts + testing/fakeFetch shared by the pulled clients
+    effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023; keyedAdapter.ts rebuilds their client only when the resolved credentials change, ADR-0026), eltariff (keyless catalogue client for the gridTariff watcher), geocoder (keyless Nominatim address search for the home-position picker: proxied, 1 req/s, 10-min cache, no retries, ADR-0026); http.ts + testing/fakeFetch shared by the pulled clients
     credentials/                server-only (ADR-0026): crypto (AES-256-GCM envelope, CREDENTIALS_ENCRYPTION_KEY), env (reads env values; the names live in `integrationCredentials.ts`), cache (60 s stored read), resolve (`resolveCredentials`: stored → env per field)
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
