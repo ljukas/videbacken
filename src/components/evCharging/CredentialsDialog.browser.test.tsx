@@ -50,7 +50,7 @@ function status(
   over: Partial<CredentialStatus> = {},
   skoda: Partial<CredentialStatus['sources']['skoda']> = {},
 ): CredentialStatus {
-  const missing = { origin: 'missing' } as const
+  const missing = { origin: 'missing', envSet: false } as const
   return {
     encryptionKeyConfigured: true,
     sources: {
@@ -60,7 +60,11 @@ function status(
         unreadable: false,
       },
       skoda: {
-        fields: { apiKey: { origin: 'stored' }, vin: { origin: 'env' }, homeCoordinates: missing },
+        fields: {
+          apiKey: { origin: 'stored', envSet: false },
+          vin: { origin: 'env', envSet: true },
+          homeCoordinates: missing,
+        },
         updatedAt: SAVED,
         unreadable: false,
         ...skoda,
@@ -416,7 +420,7 @@ test('the form posts, so a native submit never puts values in the URL', async ()
 test('the grid remove confirm names the facility ID', async () => {
   const s = status()
   s.sources.gridTariff = {
-    fields: { facilityId: { origin: 'stored' } },
+    fields: { facilityId: { origin: 'stored', envSet: false } },
     updatedAt: SAVED,
     unreadable: false,
   }

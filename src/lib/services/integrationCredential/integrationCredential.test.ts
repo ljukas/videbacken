@@ -414,6 +414,7 @@ describe('readStored', () => {
 describe('status', () => {
   it('reports stored / env / missing per field without any value', async () => {
     await set('skoda', { apiKey: 'stored-api-key' }, null)
+    vi.stubEnv('SKODA_API_KEY', '')
     vi.stubEnv('SKODA_VIN', 'ENVVIN0000000000X')
     vi.stubEnv('SKODA_HOME_COORDINATES', '  ')
     vi.stubEnv('ZAPTEC_PASSWORD', 'env-zaptec-password')
@@ -422,14 +423,17 @@ describe('status', () => {
     const result = await status()
     expect(result.encryptionKeyConfigured).toBe(true)
     expect(result.sources.skoda.fields).toEqual({
-      apiKey: { origin: 'stored' },
-      vin: { origin: 'env' },
-      homeCoordinates: { origin: 'missing' },
+      apiKey: { origin: 'stored', envSet: false },
+      vin: { origin: 'env', envSet: true },
+      homeCoordinates: { origin: 'missing', envSet: false },
     })
     expect(result.sources.skoda.unreadable).toBe(false)
     expect(result.sources.skoda.updatedAt).toBeInstanceOf(Date)
     expect(result.sources.zaptec).toEqual({
-      fields: { username: { origin: 'missing' }, password: { origin: 'env' } },
+      fields: {
+        username: { origin: 'missing', envSet: false },
+        password: { origin: 'env', envSet: true },
+      },
       updatedAt: null,
       unreadable: false,
     })
@@ -439,14 +443,27 @@ describe('status', () => {
     }
   })
 
+  it('envSet says whether an env var exists, even behind a stored value', async () => {
+    vi.stubEnv('SKODA_API_KEY', 'env-key')
+    vi.stubEnv('SKODA_VIN', '')
+    vi.stubEnv('SKODA_HOME_COORDINATES', '')
+    await set('skoda', { apiKey: 'stored-key', vin: 'TMBJJ7NE8L0123456' }, null)
+    const { sources } = await status()
+    expect(sources.skoda.fields.apiKey).toEqual({ origin: 'stored', envSet: true })
+    expect(sources.skoda.fields.vin).toEqual({ origin: 'stored', envSet: false })
+    expect(sources.skoda.fields.homeCoordinates.envSet).toBe(false)
+  })
+
   it('flags a wrong-key row unreadable while its fields stay stored', async () => {
     await set('zaptec', { username: 'u', password: 'p' }, null)
     vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+    vi.stubEnv('ZAPTEC_USERNAME', '')
+    vi.stubEnv('ZAPTEC_PASSWORD', '')
     const result = await status()
     expect(result.sources.zaptec.unreadable).toBe(true)
     expect(result.sources.zaptec.fields).toEqual({
-      username: { origin: 'stored' },
-      password: { origin: 'stored' },
+      username: { origin: 'stored', envSet: false },
+      password: { origin: 'stored', envSet: false },
     })
   })
 
