@@ -1,17 +1,18 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useHydrated } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { lazy, useMemo, useState } from 'react'
 import { z } from 'zod'
+import { LazyDialogMount } from '~/components/layout/LazyDialogMount'
 import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { ClimateChart } from '~/components/sensor/ClimateChart'
 import { CurrentReadingTiles } from '~/components/sensor/CurrentReadingTiles'
 import { DeviceToggles } from '~/components/sensor/DeviceToggles'
-import { EditDeviceDialog } from '~/components/sensor/EditDeviceDialog'
 import { RangeSelector } from '~/components/sensor/RangeSelector'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
+import { useIdlePreload } from '~/hooks/useIdlePreload'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { getIntlLocale } from '~/lib/i18n/format'
 import { orpc } from '~/lib/orpc/client'
@@ -28,6 +29,14 @@ const searchSchema = z.object({
   deviceId: z.string().optional(),
 })
 type SensorsSearch = z.infer<typeof searchSchema>
+// Admin-only: loads on first open (LazyDialogMount), so a member never fetches the form code;
+// an admin warms the chunk once the browser is idle (useIdlePreload).
+const loadEditDeviceDialog = () => import('~/components/sensor/EditDeviceDialog')
+const EditDeviceDialog = lazy(() =>
+  loadEditDeviceDialog().then((mod) => ({ default: mod.EditDeviceDialog })),
+)
+const ADMIN_DIALOG_LOADERS = [loadEditDeviceDialog]
+
 type SensorsDialog = NonNullable<SensorsSearch['dialog']>
 
 // Only the shorter ranges poll — a new reading won't visibly move a 1-year daily
@@ -55,6 +64,7 @@ export const Route = createFileRoute('/_authenticated/sensors')({
 function SensorsPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
+  useIdlePreload(isAdmin, ADMIN_DIALOG_LOADERS)
   const navigate = Route.useNavigate()
   const range = Route.useSearch({ select: (s) => s.range })
   const dialog = Route.useSearch({ select: (s) => s.dialog })
@@ -155,6 +165,7 @@ function SensorsPage() {
     color: colorForIndex(i),
   }))
   const editingDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
+  const editDeviceOpen = isOpen('edit') && editingDevice !== undefined
 
   // The toggles, the tiles and the charts' colours all need the roster.
   if (devicesFailed) {
@@ -238,13 +249,15 @@ function SensorsPage() {
       )}
 
       {isAdmin ? (
-        <EditDeviceDialog
-          open={isOpen('edit') && editingDevice !== undefined}
-          device={editingDevice}
-          onOpenChange={(o) => {
-            if (!o) close()
-          }}
-        />
+        <LazyDialogMount open={editDeviceOpen}>
+          <EditDeviceDialog
+            open={editDeviceOpen}
+            device={editingDevice}
+            onOpenChange={(o) => {
+              if (!o) close()
+            }}
+          />
+        </LazyDialogMount>
       ) : null}
     </PageContainer>
   )

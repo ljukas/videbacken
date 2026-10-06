@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { lazy, useEffect } from 'react'
 import { z } from 'zod'
-import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
 import { healthPoll } from '~/components/evCharging/healthPoll'
 import {
   SkodaSourceDetails,
@@ -12,11 +11,11 @@ import { SyncNowButton, useSyncNow } from '~/components/evCharging/SyncNowButton
 import { SyncSourcesPanel } from '~/components/evCharging/SyncSourcesPanel'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { TariffCard } from '~/components/evCharging/TariffCard'
-import { TariffDialog } from '~/components/evCharging/TariffDialog'
-import { VehicleImportDialog } from '~/components/evCharging/VehicleImportDialog'
+import { LazyDialogMount } from '~/components/layout/LazyDialogMount'
 import { firstLoadPending, LoadErrorAlert } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
+import { useIdlePreload } from '~/hooks/useIdlePreload'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { INTEGRATION_SOURCES, type IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
@@ -40,6 +39,20 @@ const searchSchema = z.object({
 })
 type SettingsSearch = z.infer<typeof searchSchema>
 type SettingsDialog = NonNullable<SettingsSearch['dialog']>
+
+// Admin-only: loads on first open (LazyDialogMount), so a member never fetches the form code;
+// an admin warms the chunks once the browser is idle (useIdlePreload).
+const loadTariffDialog = () => import('~/components/evCharging/TariffDialog')
+const TariffDialog = lazy(() => loadTariffDialog().then((mod) => ({ default: mod.TariffDialog })))
+const loadVehicleImportDialog = () => import('~/components/evCharging/VehicleImportDialog')
+const VehicleImportDialog = lazy(() =>
+  loadVehicleImportDialog().then((mod) => ({ default: mod.VehicleImportDialog })),
+)
+const loadDeleteTariffDialog = () => import('~/components/evCharging/DeleteTariffDialog')
+const DeleteTariffDialog = lazy(() =>
+  loadDeleteTariffDialog().then((mod) => ({ default: mod.DeleteTariffDialog })),
+)
+const ADMIN_DIALOG_LOADERS = [loadTariffDialog, loadVehicleImportDialog, loadDeleteTariffDialog]
 
 const RECENT_RUNS = 20
 
@@ -77,6 +90,7 @@ export const Route = createFileRoute('/_authenticated/charging/settings')({
 })
 
 function ChargingSettingsPage() {
+  useIdlePreload(true, ADMIN_DIALOG_LOADERS)
   const navigate = Route.useNavigate()
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
@@ -114,6 +128,10 @@ function ChargingSettingsPage() {
   }, [dialogUnavailable, navigate])
   // "Ny period" starts from the newest period's amounts (the list is oldest first).
   const latestTariff = tariffs?.at(-1)
+  const tariffDialogOpen =
+    tariffs !== undefined &&
+    (isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined))
+  const deleteTariffOpen = isOpen('tariffDelete') && selectedTariff !== undefined
 
   // Every source's state in one read, polled together (ADR-0018: polled), so a
   // tile's "running" state (a cron run seen mid-flight) clears on its own.
@@ -206,35 +224,38 @@ function ChargingSettingsPage() {
 
       {/* Waits for the tariffs: "new" starts from the newest period's
           amounts, and the form keeps the defaults it mounted with. */}
-      <TariffDialog
-        open={
-          tariffs !== undefined &&
-          (isOpen('tariffNew') || (isOpen('tariffEdit') && selectedTariff !== undefined))
-        }
-        mode={
-          isOpen('tariffEdit') && selectedTariff
-            ? { kind: 'edit', tariff: selectedTariff }
-            : isOpen('tariffNew') && tariffs !== undefined
-              ? { kind: 'new', from: latestTariff }
-              : undefined
-        }
-        onOpenChange={(o) => {
-          if (!o) close()
-        }}
-      />
-      <VehicleImportDialog
-        open={isOpen('vehicleImport')}
-        onOpenChange={(o) => {
-          if (!o) close()
-        }}
-      />
-      <DeleteTariffDialog
-        open={isOpen('tariffDelete') && selectedTariff !== undefined}
-        tariff={selectedTariff}
-        onOpenChange={(o) => {
-          if (!o) close()
-        }}
-      />
+      <LazyDialogMount open={tariffDialogOpen}>
+        <TariffDialog
+          open={tariffDialogOpen}
+          mode={
+            isOpen('tariffEdit') && selectedTariff
+              ? { kind: 'edit', tariff: selectedTariff }
+              : isOpen('tariffNew') && tariffs !== undefined
+                ? { kind: 'new', from: latestTariff }
+                : undefined
+          }
+          onOpenChange={(o) => {
+            if (!o) close()
+          }}
+        />
+      </LazyDialogMount>
+      <LazyDialogMount open={isOpen('vehicleImport')}>
+        <VehicleImportDialog
+          open={isOpen('vehicleImport')}
+          onOpenChange={(o) => {
+            if (!o) close()
+          }}
+        />
+      </LazyDialogMount>
+      <LazyDialogMount open={deleteTariffOpen}>
+        <DeleteTariffDialog
+          open={deleteTariffOpen}
+          tariff={selectedTariff}
+          onOpenChange={(o) => {
+            if (!o) close()
+          }}
+        />
+      </LazyDialogMount>
     </PageContainer>
   )
 }

@@ -1,16 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { UserPlusIcon } from 'lucide-react'
+import { lazy } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { LazyDialogMount } from '~/components/layout/LazyDialogMount'
 import { firstLoadPending, LoadErrorAlert, loadFailed } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Button } from '~/components/ui/button'
-import { EditUserDialog } from '~/components/user/EditUserDialog'
-import { InviteUserDialog } from '~/components/user/InviteUserDialog'
 import { type RevokeTarget, RevokeUserDialog } from '~/components/user/RevokeUserDialog'
 import { UsersTable } from '~/components/user/UsersTable'
+import { useIdlePreload } from '~/hooks/useIdlePreload'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
 import { orpc } from '~/lib/orpc/client'
 import { loadRouteData } from '~/lib/query/routeData'
@@ -22,6 +23,18 @@ const usersSearchSchema = z.object({
   userId: z.string().optional(),
   email: z.string().optional(),
 })
+
+// Admin-only: loads on first open (LazyDialogMount), so a member never fetches the form code;
+// an admin warms the chunks once the browser is idle (useIdlePreload).
+const loadInviteUserDialog = () => import('~/components/user/InviteUserDialog')
+const loadEditUserDialog = () => import('~/components/user/EditUserDialog')
+const InviteUserDialog = lazy(() =>
+  loadInviteUserDialog().then((mod) => ({ default: mod.InviteUserDialog })),
+)
+const EditUserDialog = lazy(() =>
+  loadEditUserDialog().then((mod) => ({ default: mod.EditUserDialog })),
+)
+const ADMIN_DIALOG_LOADERS = [loadInviteUserDialog, loadEditUserDialog]
 
 type UsersSearch = z.infer<typeof usersSearchSchema>
 type UsersDialog = NonNullable<UsersSearch['dialog']>
@@ -43,6 +56,7 @@ export const Route = createFileRoute('/_authenticated/users')({
 function Users() {
   const { user: currentUser } = Route.useRouteContext()
   const isAdmin = currentUser.role === 'admin'
+  useIdlePreload(isAdmin, ADMIN_DIALOG_LOADERS)
   const queryClient = useQueryClient()
 
   const navigate = Route.useNavigate()
@@ -74,6 +88,7 @@ function Users() {
   // form reads the list through suspense, which would throw a failed read to the
   // route error boundary instead of the alert.
   const editUserId = isEdit && users ? userId : undefined
+  const editUserOpen = isEdit && editUserId !== undefined
   const revokeUserRow = revokeEmail ? users?.find((u) => u.email === revokeEmail) : undefined
   const revokeTarget: RevokeTarget | undefined = revokeUserRow
     ? { email: revokeUserRow.email, name: revokeUserRow.name, status: revokeUserRow.status }
@@ -139,19 +154,23 @@ function Users() {
 
       {isAdmin ? (
         <>
-          <InviteUserDialog
-            open={isInvite}
-            onOpenChange={(open) => {
-              if (!open) close()
-            }}
-          />
-          <EditUserDialog
-            open={isEdit && editUserId !== undefined}
-            userId={editUserId}
-            onOpenChange={(open) => {
-              if (!open) close()
-            }}
-          />
+          <LazyDialogMount open={isInvite}>
+            <InviteUserDialog
+              open={isInvite}
+              onOpenChange={(open) => {
+                if (!open) close()
+              }}
+            />
+          </LazyDialogMount>
+          <LazyDialogMount open={editUserOpen}>
+            <EditUserDialog
+              open={editUserOpen}
+              userId={editUserId}
+              onOpenChange={(open) => {
+                if (!open) close()
+              }}
+            />
+          </LazyDialogMount>
           <RevokeUserDialog
             open={isRevoke && revokeTarget !== undefined}
             target={revokeTarget}
