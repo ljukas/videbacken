@@ -563,7 +563,7 @@ function CredentialsForm({
                         disabled={keyMissing}
                         describedBy={[describedBy, headerId].filter(Boolean).join(' ')}
                         description={m.charging_home_coordinates_hint()}
-                        descriptionPlacement="above"
+                        descriptionPlacement="below"
                       />
                     </HomePositionPicker>
                   )

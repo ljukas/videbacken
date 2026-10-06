@@ -1065,3 +1065,16 @@ test('a closed missing home position says what it is for', async () => {
       expect.stringContaining(m.charging_credentials_home_missing_summary()),
     )
 })
+
+test('the coordinates hint follows the input, which stays described by it', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  await openHome(screen)
+  const input = screen.getByLabelText(HOME, { exact: true })
+  const hint = screen.getByText(m.charging_home_coordinates_hint())
+  expect(
+    input.element().compareDocumentPosition(hint.element()) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0)
+  await expect
+    .element(input)
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_home_coordinates_hint()))
+})
