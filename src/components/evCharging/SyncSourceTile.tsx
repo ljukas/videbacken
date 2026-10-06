@@ -124,10 +124,16 @@ export function SyncSourceTile({
   const progress = pending ? (health?.progress ?? null) : null
   const progressText = progress ? m.charging_source_progress(progress) : null
   const credentials = onOpenCredentials && isCredentialSource(source) ? source : null
-  const link = health && credentials ? credentialLink(health) : null
+  const link = onOpenCredentials && health && credentials ? credentialLink(health) : null
+  const linkText =
+    link?.kind === 'configure'
+      ? m.charging_credentials_configure()
+      : m.charging_credentials_update()
+  // The suspect line and the link agree: both only when the health points at the credentials.
+  const credentialSource = health && isCredentialSource(source) ? credentialLink(health) : null
   const suspect =
-    credentials && health?.adminDetail?.suspectFields
-      ? suspectFieldsMessage(credentials, health.adminDetail.suspectFields)
+    credentialSource?.kind === 'update' && health?.adminDetail?.suspectFields
+      ? suspectFieldsMessage(credentialSource.source, health.adminDetail.suspectFields)
       : null
   return (
     <Card className="@container relative h-full min-w-0 px-5 py-5">
@@ -141,15 +147,6 @@ export function SyncSourceTile({
           getValueLabel={() => progressText}
           className="absolute inset-x-0 top-0 h-1 rounded-none bg-primary/15"
         />
-      ) : null}
-      {credentials && onOpenCredentials ? (
-        <div className="absolute top-3 right-3">
-          <CredentialsButton
-            source={credentials}
-            label={m.charging_credentials_button({ source: name })}
-            onClick={onOpenCredentials}
-          />
-        </div>
       ) : null}
       {/* pe-*: room for the key button, stacked or in a row. */}
       <div
@@ -171,6 +168,16 @@ export function SyncSourceTile({
           <p className="text-muted-foreground text-xs">{syncSourceRole(source)}</p>
         </div>
       </div>
+      {/* After the header in the DOM so the name is read and tabbed first; absolute, so its place is unchanged. */}
+      {credentials && onOpenCredentials ? (
+        <div className="absolute end-3 top-3">
+          <CredentialsButton
+            source={credentials}
+            label={m.charging_credentials_button({ source: name })}
+            onClick={onOpenCredentials}
+          />
+        </div>
+      ) : null}
       <div className="flex flex-col items-start gap-1.5">
         <SyncStateBadge health={health} />
         {lastSync ? (
@@ -213,11 +220,10 @@ export function SyncSourceTile({
             variant="link"
             size="xs"
             className="h-auto min-h-6 p-0"
+            aria-label={m.charging_source_action_label({ action: linkText, source: name })}
             onClick={onOpenCredentials}
           >
-            {link.kind === 'configure'
-              ? m.charging_credentials_configure()
-              : m.charging_credentials_update()}
+            {linkText}
           </Button>
         ) : null}
         {details}
