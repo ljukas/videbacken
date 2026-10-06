@@ -1,4 +1,5 @@
 import { type ChartConfig, ChartContainer } from '~/components/ui/chart'
+import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
 /** One height for every economy/monthly chart and its empty state. */
@@ -6,16 +7,23 @@ export const CHART_HEIGHT = 260
 
 export function ChartFrame({
   config,
+  className,
   children,
 }: {
   config: ChartConfig
+  /** Merged after the defaults (e.g. a page's own tick/legend sizes). */
+  className?: string
   children: React.ReactElement
 }) {
   // Inline height (not a Tailwind class) so the chart has a measurable box
   // before CSS loads and in the Tailwind-less browser-test env (same as
   // ClimateChart); width stays responsive.
   return (
-    <ChartContainer config={config} className="aspect-auto w-full" style={{ height: CHART_HEIGHT }}>
+    <ChartContainer
+      config={config}
+      className={cn('aspect-auto w-full', className)}
+      style={{ height: CHART_HEIGHT }}
+    >
       {children}
     </ChartContainer>
   )
@@ -34,16 +42,19 @@ export function NoData() {
 }
 
 // A custom formatter replaces the tooltip's own colour dots, so each series
-// row draws its dot here (a total row has none).
+// row draws its dot here (a total row has none). `share` adds a smaller,
+// muted column after the value (omitted: no column).
 export function TooltipRow({
   label,
   color,
   strong = false,
+  share,
   children,
 }: {
   label: string
   color?: string
   strong?: boolean
+  share?: string
   children?: React.ReactNode
 }) {
   return (
@@ -59,10 +70,15 @@ export function TooltipRow({
         {label}
       </span>
       <span
-        className={`font-mono text-foreground tabular-nums ${strong ? 'font-semibold' : 'font-medium'}`}
+        className={`ml-auto font-mono text-foreground tabular-nums ${strong ? 'font-semibold' : 'font-medium'}`}
       >
         {children}
       </span>
+      {share === undefined ? null : (
+        <span className="w-10 text-right text-[13px] text-muted-foreground tabular-nums">
+          {share}
+        </span>
+      )}
     </div>
   )
 }
