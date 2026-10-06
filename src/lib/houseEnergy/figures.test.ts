@@ -280,3 +280,32 @@ test('falling SoC: battery emptied, deltaStored negative', () => {
   // loss = in - out - delta = 0 - 15 - expectedDelta
   expect(f.loss).toBeCloseTo(0 - 15 - expectedDelta, 12)
 })
+
+test('battery to grid is the export the solar surplus cannot explain', () => {
+  // 10 kWh solar, 8 into the battery: 2 kWh of solar could be sold; the other 3 kWh came from the battery.
+  const f = energyFigures(
+    sums({ solarKwh: 10, batteryChargeSolarKwh: 8, gridExportKwh: 5, batteryDischargeKwh: 20 }),
+  )
+  expect(f.batteryToGrid).toBe(3)
+  expect(f.batteryToHouse).toBe(17)
+})
+
+test('export within the solar surplus leaves nothing from the battery to the grid', () => {
+  const f = energyFigures(
+    sums({
+      solarKwh: 500,
+      batteryChargeSolarKwh: 170,
+      gridExportKwh: 110,
+      batteryDischargeKwh: 90,
+    }),
+  )
+  expect(f.batteryToGrid).toBe(0)
+  expect(f.batteryToHouse).toBe(90)
+})
+
+test('battery to house is never negative', () => {
+  // More export beyond the surplus than the battery discharged (meter noise): the house gets 0, not −2.
+  const f = energyFigures(sums({ gridExportKwh: 5, batteryDischargeKwh: 3 }))
+  expect(f.batteryToGrid).toBe(5)
+  expect(f.batteryToHouse).toBe(0)
+})

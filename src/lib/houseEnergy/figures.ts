@@ -53,6 +53,10 @@ export type EnergyFigures = {
   /** 0–1, or null when no bucket was expected. */
   coverage: number | null
   missingHours: number
+  /** Export the solar surplus can't explain: it came out of the battery. */
+  batteryToGrid: number
+  /** What the battery delivered to the house: its discharge minus `batteryToGrid`. */
+  batteryToHouse: number
 }
 
 /** Two adjacent periods as one; `earlier` must precede `later`. */
@@ -78,6 +82,7 @@ export function energyFigures(p: PeriodSums, capacityKwh = BATTERY_CAPACITY_KWH)
   const solarExported = Math.min(p.gridExportKwh, Math.max(0, p.solarKwh - solarToBattery))
   const solarDirect = Math.max(0, p.solarKwh - solarToBattery - solarExported)
   const importToBattery = Math.min(p.gridImportKwh, p.batteryChargeGridKwh)
+  const batteryToGrid = Math.max(0, p.gridExportKwh - solarExported)
   const batteryIn = solarToBattery + p.batteryChargeGridKwh
   const deltaStored =
     p.firstSocPct !== null && p.lastSocPct !== null
@@ -104,6 +109,8 @@ export function energyFigures(p: PeriodSums, capacityKwh = BATTERY_CAPACITY_KWH)
     gridChargedShare: batteryIn >= MIN_BATTERY_IN_KWH ? p.batteryChargeGridKwh / batteryIn : null,
     coverage: p.expectedBuckets > 0 ? p.buckets / p.expectedBuckets : null,
     missingHours: Math.max(0, p.expectedBuckets - p.buckets) * BUCKET_HOURS,
+    batteryToGrid,
+    batteryToHouse: Math.max(0, p.batteryDischargeKwh - batteryToGrid),
   }
 }
 
