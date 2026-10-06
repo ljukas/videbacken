@@ -564,7 +564,7 @@ function CredentialsForm({
                 <AlertDialogHeader>
                   <AlertDialogTitle>{m.charging_credentials_remove_title()}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    {removeConfirm}
+                    {removeConfirm}{' '}
                     <span className="mt-1.5 block font-medium text-foreground">{afterRemove}</span>
                   </AlertDialogDescription>
                 </AlertDialogHeader>

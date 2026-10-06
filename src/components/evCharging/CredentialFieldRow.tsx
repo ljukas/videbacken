@@ -131,7 +131,7 @@ export function CredentialFieldRow({
             ) : state === 'env' ? (
               <>
                 {m.charging_credentials_using_env()}{' '}
-                <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-foreground text-xs">
+                <code className="break-words rounded bg-muted px-1 py-0.5 font-mono text-foreground text-xs">
                   {envVar}
                 </code>
               </>

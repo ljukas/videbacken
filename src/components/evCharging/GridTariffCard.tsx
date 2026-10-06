@@ -20,7 +20,7 @@ function statusText(origin: CredentialOrigin, unreadable: boolean) {
       return (
         <>
           {m.charging_grid_status_env()}{' '}
-          <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-foreground text-xs">
+          <code className="break-words rounded bg-muted px-1 py-0.5 font-mono text-foreground text-xs">
             {CREDENTIAL_ENV_VARS.gridTariff.facilityId}
           </code>
         </>
