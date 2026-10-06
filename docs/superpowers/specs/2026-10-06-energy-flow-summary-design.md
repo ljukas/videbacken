@@ -3,7 +3,7 @@
 Status: agreed 2026-10-06, from the owner's live review of step 1b (checkpoint 1b). Amends the
 [period control design](./2026-10-05-energy-period-control-design.md) ("Tiles") and the
 [house energy pages design](./2026-10-05-house-energy-pages-design.md) (decision 4, overview figures), and
-[ADR-0024](../../adr/0024-house-energy-pages.md) decision 4. Roadmap: step 1c of the
+[ADR-0024](../../adr/0024-house-energy-pages.md) decision 6. Roadmap: step 1c of the
 [house energy pages roadmap](../roadmaps/2026-10-05-house-energy-pages.md).
 Mockup the owner approved: <https://claude.ai/artifact/EuLriFUiKZcpxnaYhXDDHB> (version 4; prod's 2026 sums).
 

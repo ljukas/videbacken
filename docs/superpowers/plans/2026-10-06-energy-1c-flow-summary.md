@@ -20,7 +20,7 @@ Vitest (node + browser), Playwright for the live check.
 **Spec:** [`docs/superpowers/specs/2026-10-06-energy-flow-summary-design.md`](../specs/2026-10-06-energy-flow-summary-design.md)
 (amends [`2026-10-05-energy-period-control-design.md`](../specs/2026-10-05-energy-period-control-design.md) and
 [`2026-10-05-house-energy-pages-design.md`](../specs/2026-10-05-house-energy-pages-design.md))
-· ADR: [`0024`](../../adr/0024-house-energy-pages.md) decision 4 (amended)
+· ADR: [`0024`](../../adr/0024-house-energy-pages.md) decision 6 (amended)
 · Roadmap: [`2026-10-05-house-energy-pages.md`](../roadmaps/2026-10-05-house-energy-pages.md) (step 1c)
 · Mockup the owner approved: <https://claude.ai/artifact/EuLriFUiKZcpxnaYhXDDHB> (version 4). Its geometry is the
 reference; read it (`Artifact` tool, `action: "read"`) when a number here is unclear.
