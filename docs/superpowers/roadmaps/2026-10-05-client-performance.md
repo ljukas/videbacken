@@ -12,11 +12,12 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 |---|---|---|---|---|---|
 | 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | [#89](https://github.com/ljukas/videbacken/pull/89) | checkpoint passed | 2026-10-05: the owner confirmed the drag is gone on the phone. Prod logs show 0 `/_serverFn` calls since the #89 deploy (230 in the 6 h before), across `/charging`, economy, patterns, `/sensors` and `/users`. Small layout shifts seen, now step 7. |
 | 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | [#93](https://github.com/ljukas/videbacken/pull/93) | checkpoint passed | 2026-10-05: the owner confirmed on the phone that `/sensors` (including a range switch) and `/users` no longer drag. Prod logs since the #93 deploy show one `getSession` server-function call across the session's navigations: the cached guard's refresh, not one per navigation. |
-| 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | PR open | — |
-| 4 | Bundle: phone fields out of the global form hook; lazy-load the admin-only dialogs on `/charging`; one bones registry per page group (since step 2, `/sensors` and `/users` load ~23 KB gz of charging bones) | — | — | not started | — |
+| 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
+| 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | — | PR open | — |
 | 5 | Replace recharts with visx (refactor-workflow) | — | — | not started | — |
-| 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font | — | — | not started | — |
+| 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too) | — | — | not started | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
+| 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. `needs shaping` means
 the step needs a short brainstorm before its plan.
@@ -45,9 +46,24 @@ the step needs a short brainstorm before its plan.
    (`poolOpened`, `poolPeakWaiting`; read these). Record what a navigation's burst shows. If they point at opening
    connections (`poolOpened` > 0) or at queueing (`poolPeakWaiting` > 0), add the pool fix as a new row; otherwise the
    checkpoint passes without one. Only the app's pool shows here, not Supavisor's own queue.
-4. **After step 4 (build).** The form chunk no longer contains `country-flag-icons` or `libphonenumber-js` except on
-   pages with a phone field. `/charging` adds at most ~245 KB gz beyond the entry (from ~361 after step 1, which
-   added ~27 KB gz of skeleton bones). `/sensors` and `/users` load only their own bones.
+   A small `poolPeakWaiting` (1–2) doesn't mean a full pool: pg-pool queues a checkout for one tick whenever an idle
+   client exists (its `connect()` pushes to the pending queue and pulses on `nextTick`). Read it against `poolTotal`.
+   Result: [checkpoint 3 result](#checkpoint-3-result).
+4. **After step 4 (build).** Run `bun run bundle:measure` on `main` after the merge. Its per-page `packages:` and
+   `bones:` lines must show:
+   - `country-flag-icons` only on `/account/profile`. The `/users` invite and edit dialogs also carry it, in chunks
+     that load on first open, so no page's line lists them.
+   - `libphonenumber-js` only on `/account/profile` and `/users`. The users table formats numbers through
+     `react-phone-number-input/input`, the entry without flags.
+   - `@tanstack/form-core` on none of `/sensors`, `/users` or `/charging/settings`. Their admin dialogs load on first
+     open.
+   - Each page's `bones:` line lists only its own captures: `/charging` charging-chart, charging-sessions,
+     charging-totals; `/charging/settings` charging-sources, charging-tariffs; economy charging-economy; patterns
+     charging-patterns, charging-timeline; `/energy` energy-chart, energy-tiles; `/sensors` sensors-hum-chart,
+     sensors-temp-chart, sensors-tiles; `/users` users-table; the session page and `/account/profile` none.
+   - Page totals (KB gz) no higher than step 4's final measurement: entry + shell 253; `/charging` 161,
+     `/charging/settings` 41, economy 159, patterns 171, `/charging/sessions/$id` 66, `/energy` 152, `/sensors` 123,
+     `/users` 72, `/account/profile` 212.
 5. **After step 5 (prod).** Owner reviews every converted chart live. recharts, redux, immer and decimal.js-light are
    gone from the build.
 6. **After step 6 (build).** The upload chunk shrinks, and the font preload shows in the SSR `<head>`.
@@ -121,6 +137,76 @@ every result, and streaming mode is unverified on Vercel.
 A one-row `syncStatus` takes 8–15 ms alone and 100–144 ms inside a `/charging/settings` load. Even lone requests
 reach 30–81 ms at p90, which points at opening pooled connections after `pg`'s 10 s idle timeout. That is why
 checkpoint 3 reads the new pool gauges before any pool change.
+
+### Checkpoint 3 result
+
+Prod `rpc timing` lines since the #98 deploy (2026-10-05 18:52 UTC), de-duplicated by request id and grouped into
+bursts:
+
+| Navigation | oRPC requests | Pool |
+|---|---|---|
+| `/charging`, 2026-10-05 19:38 UTC | 6: `overview`, `sessions`, `costOverview`, `tariff/list`, `liveStatus`, plus a cached `syncStatuses`. No `sessionCosts` waterfall | `poolTotal` 0 at the start; `poolOpened` 2–4 on its bursts |
+| `/charging/settings`, 2026-10-06 04:55 and 05:00 UTC | 5 each: `syncStatuses`, `recentRuns`, `vehicleRecordCoverage`, `vehicleStateLatest`, `tariff/list` (a stale `user/me` refresh not counted) | `poolTotal` 0 at the start; `poolOpened` 1 per request |
+
+- **Request counts pass.** `/charging` went from 9 to 6 and `/charging/settings` from 11 to 5.
+- **Every burst opens connections.** Each starts from an empty pool, because pg's 10 s idle timeout closes them
+  between navigations. `poolOpened` > 0, so per the checkpoint rule the pool fix is row 8.
+- **`poolPeakWaiting` 0–2 isn't a full pool.** At most 4 of 10 connections were open. pg-pool queues a checkout for
+  one tick whenever an idle client exists: its `connect()` pushes to the pending queue when `_idle.length` is
+  non-zero, then pulses on `nextTick`.
+
+## Step 4 notes
+
+**Baseline, re-measured on `main` at `157dd61`** (prod build; KB gz each page adds beyond the entry, 172, and the
+signed-in shell, 77):
+
+| Page | Adds | Form chunk (123) | Bones + boneyard (26) | Bones it uses |
+|---|---|---|---|---|
+| `/charging` | 179 | — | ✓ | ~3.5 KB |
+| `/charging/settings` | 200 | ✓ tariff + import dialogs | ✓ | ~2.6 KB |
+| `/charging/economy` | 178 | — | ✓ | ~3 KB |
+| `/charging/patterns` | 181 | — | ✓ | ~10.6 KB |
+| `/energy` | 172 | — | ✓ | ~1.5 KB |
+| `/sensors` | 278 | ✓ admin edit dialog | ✓ | ~1.2 KB |
+| `/users` | 187 | ✓ admin invite/edit dialogs | ✓ | ~0.8 KB |
+| `/account/profile` | 211 | ✓ phone field | — | — |
+
+The form chunk, raw: country-flag-icons 227 KB, libphonenumber-js 150, @tanstack/form-core 56,
+react-phone-number-input 38. All bones together: ~21 KB gz.
+
+**The row's "admin dialogs on `/charging`" was stale.** #90 had moved them to `/charging/settings`, and `/charging`
+no longer loaded the form chunk at all. The step lazy-loaded the admin dialogs on `/charging/settings`, `/sensors`
+and `/users` instead.
+
+**Final measurement** (`bun run bundle:measure` on the step's branch, 2026-10-06; KB gz beyond the entry + shell):
+
+| Page | Before | After | Packages | Bones |
+|---|---:|---:|---|---|
+| entry + signed-in shell | 248 | 253 | | |
+| `/charging` | 179 | 161 | boneyard-js | charging-chart, charging-sessions, charging-totals |
+| `/charging/settings` | 200 | 41 | boneyard-js | charging-sources, charging-tariffs |
+| `/charging/economy` | 178 | 159 | boneyard-js | charging-economy |
+| `/charging/patterns` | 181 | 171 | boneyard-js | charging-patterns, charging-timeline |
+| `/charging/sessions/$id` | — | 66 | — | — |
+| `/energy` | 172 | 152 | boneyard-js | energy-chart, energy-tiles |
+| `/sensors` | 278 | 123 | boneyard-js | sensors-hum-chart, sensors-temp-chart, sensors-tiles |
+| `/users` | 187 | 72 | libphonenumber-js, boneyard-js | users-table |
+| `/account/profile` | 211 | 212 | libphonenumber-js, country-flag-icons, @tanstack/form-core | — |
+
+This meets checkpoint 4 on the branch; the checkpoint re-runs it on `main` after the merge. Live, a member's
+`/users` and `/sensors` fetched no form, dialog or `PhoneField` chunk at desktop, tablet and phone widths (only
+`/users`' table formatter, below). An admin fetches them when the browser goes idle.
+
+**The shell grew 5 KB gz without gaining code** (248 → 253). Its 437 modules are unchanged. But each lazy dialog,
+and `PhoneField`'s own entry, is a new dynamic entry, and rolldown groups modules into chunks by the entries that
+reach them. So modules the shell shares with those entries (Radix primitives, cmdk, `button`, `dialog`,
+floating-ui …) split into more, smaller chunks: about +3 KB gz of per-chunk gzip overhead and 9 more `modulepreload`
+requests on every signed-in page. A rolldown chunk group (`codeSplitting.groups`) could merge them back. That is a
+step-6 item, since it needs its own measurement, `/login` included (ADR-0025 §6).
+
+**`/users` keeps `libphonenumber-js`** (~39 KB gz, the `getInternationalPhoneNumberPrefix` chunk). The users table
+formats each stored number with `formatPhoneNumberIntl`, now imported from `react-phone-number-input/input`, so the
+country flags are gone but the number metadata stays. A lighter formatter would need its own change.
 
 ## Step 7 notes
 
