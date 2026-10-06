@@ -70,7 +70,8 @@ export function useChartPopover<T>({ followScroll = false }: { followScroll?: bo
   // can't count as "outside" the chart.
   // followScroll: while open, any scroll (the page or an inner container)
   // re-measures the wrapper once a frame, so the portalled tooltip stays on
-  // its mark. Off by default: the pill charts close on scroll by design.
+  // its mark. Off by default; the pill charts don't follow an inner scroll
+  // container yet (a follow-up).
   useEffect(() => {
     if (!followScroll || !tooltipOpen) return
     let frame = 0

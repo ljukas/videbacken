@@ -5,6 +5,7 @@ import { m } from '~/paraglide/messages'
 import {
   bars,
   focusTarget,
+  gridLines,
   hoverBar,
   hoverBetween,
   legendLabels,
@@ -429,4 +430,13 @@ test('the y labels stay inside the chart', async () => {
   for (const t of screen.container.querySelectorAll('[data-axis="y"] .visx-axis-tick text')) {
     expect(t.getBoundingClientRect().left).toBeGreaterThanOrEqual(svg.left - 0.5)
   }
+})
+
+test('with the y axis shown, grid lines and the axis line are drawn; yAxisLine={false} drops only the line', async () => {
+  const { screen } = await render()
+  await vi.waitFor(() => expect(gridLines(screen.container).length).toBeGreaterThan(1))
+  expect(screen.container.querySelector('[data-axis="y"] .visx-axis-line')).not.toBeNull()
+  const hidden = await render({ yAxisLine: false })
+  await vi.waitFor(() => expect(gridLines(hidden.screen.container).length).toBeGreaterThan(1))
+  expect(hidden.screen.container.querySelector('[data-axis="y"] .visx-axis-line')).toBeNull()
 })

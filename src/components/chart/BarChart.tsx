@@ -166,8 +166,10 @@ export function BarChart<Row>({
   }
   const onPointer = (e: React.PointerEvent<SVGRectElement>) => {
     const i = indexAt(e)
-    // Moving within the open category changes nothing: no re-render per pixel.
-    if (i === null || (i === cursor.current && popover.open)) return
+    if (i === null) return
+    // Moving within the same category (open, or one without a tooltip) changes
+    // nothing: no re-render per pixel.
+    if (i === cursor.current && (popover.open || tooltip(rows[i], i) === null)) return
     setAnnounced(null)
     open(i)
   }
