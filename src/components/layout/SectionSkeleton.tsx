@@ -25,6 +25,11 @@ const capturing = () =>
   typeof window !== 'undefined' &&
   (window as { __BONEYARD_BUILD?: boolean }).__BONEYARD_BUILD === true
 
+/** What a capture leaves out: screen-reader-only text (a chart's hint, its live region) and the caller's selectors. */
+export function skeletonSnapshotConfig(excludeSelectors?: string[]) {
+  return { excludeSelectors: ['.sr-only', ...(excludeSelectors ?? [])] }
+}
+
 /**
  * A section's loading state (ADR-0025 §3–4), the only place pages meet boneyard.
  * Loading shows the section's captured `bones` (`bun run bones:capture`), or, for
@@ -41,7 +46,7 @@ export function SectionSkeleton(
     className?: string
     /** The fallback block's height until bones are captured. */
     fallbackHeight?: string
-    /** Elements the capture leaves out of the bones (e.g. admin-only controls). */
+    /** Elements the capture leaves out of the bones besides `.sr-only` (e.g. admin-only controls). */
     excludeSelectors?: string[]
     children: React.ReactNode
   },
@@ -69,7 +74,7 @@ export function SectionSkeleton(
         // Clipped: a capture's bones can run a few px past the section's edge.
         className={cn('overflow-hidden', className)}
         fallback={<FallbackBlock height={fallbackHeight} />}
-        snapshotConfig={excludeSelectors ? { excludeSelectors } : undefined}
+        snapshotConfig={skeletonSnapshotConfig(excludeSelectors)}
         // The capture config's look, here since no registry configures boneyard. Only these
         // three reach Skeleton as props: boneyard reads speed, shimmerColor, darkShimmerColor
         // and shimmerAngle from its global config only, so adding them to boneyard.config.json
