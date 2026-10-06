@@ -280,6 +280,8 @@ test('after a click, moving the pointer off the chart leaves no outline or toolt
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(36))
   await clickOn(screen.container, bars(screen.container)[3]) // April's solar-direct
   await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
+  // A real click focuses the chart group; the dispatched one doesn't.
+  focusChart(screen.container)
   // The click was dispatched on the overlay, so the real pointer never entered
   // it: send the exit (React derives onPointerLeave from pointerout).
   const hint = screen.getByText(m.energy_chart_select_hint()).element()
@@ -308,8 +310,6 @@ test('a touch tap selects the month without a tooltip or an outline', async () =
   expect(outline(screen.container)).toBeNull()
   expect(tooltipText()).not.toContain(monthName(4))
   // The same spot under a mouse does show them (the check above is not vacuous).
-  // Scroll first: on recharts the move is hit-tested, so the bar must be in view.
-  bars(screen.container)[3].scrollIntoView({ block: 'center', inline: 'center' })
   const c = centre(bars(screen.container)[3])
   moveAt(screen.container, c.x + 1, c.y)
   await vi.waitFor(() => {
@@ -400,6 +400,12 @@ test('the chart is one Tab stop named by its title, with the month hint', async 
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   const group = screen.getByRole('group', { name: m.energy_chart_title({ year: '2026' }) })
   await expect.element(group).toBeInTheDocument()
+  const el = group.element() as HTMLElement
+  expect(el.tabIndex).toBe(0)
+  const stops = [...screen.container.querySelectorAll('[tabindex]')].filter(
+    (n) => (n as HTMLElement).tabIndex >= 0,
+  )
+  expect(stops).toEqual([el])
   await expect.element(screen.getByText(m.energy_chart_keyboard_hint())).toBeInTheDocument()
 })
 

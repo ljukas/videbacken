@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { BarChart, type BarSeries } from '~/components/chart/BarChart'
 import { CHART_HEIGHT, TooltipRow } from '~/components/chart/ChartParts'
 import {
@@ -73,6 +74,24 @@ export function EnergyMonthlyChart({
   selectedMonth: number | null
   onSelectMonth: (month: number) => void
 }) {
+  const keys = METRIC_SERIES[metric]
+  // Memoised so the chart's geometry survives page re-renders (polls, selection).
+  const series = useMemo<BarSeries[]>(() => {
+    const config = seriesConfig()
+    // The stack's top is rounded; on Nät that's the purchase's top (export hangs below).
+    const top = keys[keys.length - (metric === 'grid' ? 2 : 1)]
+    return keys.map((key) => ({
+      key,
+      label: config[key].label,
+      color: config[key].color,
+      stack: 'kwh',
+      ...(key === top || isBelowAxis(metric, key) ? { radius: 2, roundEndOnly: true } : {}),
+      // A 2 px surface gap between stacked segments.
+      stroke: 'var(--card)',
+      strokeWidth: 2,
+    }))
+  }, [keys, metric])
+  const rows = useMemo(() => chartRows(metric, months), [metric, months])
   if (months.every((p) => p === null)) {
     return (
       <div>
@@ -90,21 +109,6 @@ export function EnergyMonthlyChart({
       </div>
     )
   }
-  const keys = METRIC_SERIES[metric]
-  const config = seriesConfig()
-  // The stack's top is rounded; on Nät that's the purchase's top (export hangs below).
-  const top = keys[keys.length - (metric === 'grid' ? 2 : 1)]
-  const series: BarSeries[] = keys.map((key) => ({
-    key,
-    label: config[key].label,
-    color: config[key].color,
-    stack: 'kwh',
-    ...(key === top || isBelowAxis(metric, key) ? { radius: 2, roundEndOnly: true } : {}),
-    // A 2 px surface gap between stacked segments.
-    stroke: 'var(--card)',
-    strokeWidth: 2,
-  }))
-  const rows = chartRows(metric, months)
   return (
     <div>
       <BarChart
@@ -122,7 +126,7 @@ export function EnergyMonthlyChart({
         legend
         legendClassName="text-sm"
         tooltipTitle={false}
-        tooltipClassName="min-w-56 gap-1 px-3 py-2 text-sm [&>div]:gap-1"
+        tooltipClassName="min-w-56 gap-1 border-border px-3 py-2 text-sm [&>div]:gap-1"
         tooltip={(r) =>
           r.sums ? (
             <EnergyTooltip row={r} sums={r.sums} metric={metric} currentMonth={currentMonth} />
