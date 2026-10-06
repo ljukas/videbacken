@@ -36,6 +36,7 @@ import {
 import {
   credentialFieldHint,
   credentialFieldLabel,
+  credentialFieldList,
   credentialsTitle,
   invalidFieldMessage,
 } from '~/lib/integrationCredentialsMessage'
@@ -461,6 +462,7 @@ function CredentialsForm({
                       ? m.charging_credentials_remove_confirm_grid()
                       : m.charging_credentials_remove_confirm({
                           source: integrationSourceName(source),
+                          fields: credentialFieldList(source, CREDENTIAL_FIELDS[source]),
                         })}
                   </AlertDialogDescription>
                 </AlertDialogHeader>

@@ -105,7 +105,7 @@ afterEach(() => vi.restoreAllMocks())
 
 test('each field shows its origin, and every input starts empty', async () => {
   const { screen } = await renderWithProviders(dialog())
-  await expect.element(screen.getByText(/Sparad i appen ·/)).toBeVisible()
+  await expect.element(screen.getByText(/Sparad i appen /)).toBeVisible()
   await expect.element(screen.getByText(m.charging_credentials_origin_env())).toBeVisible()
   await expect.element(screen.getByText(m.charging_credentials_origin_missing())).toBeVisible()
   for (const name of [API_KEY, VIN, HOME])
@@ -406,7 +406,7 @@ test('unreadable: every field says it cannot be read, never when saved or env', 
   expect(
     screen.getByText(m.charging_credentials_origin_unreadable(), { exact: true }).elements(),
   ).toHaveLength(3)
-  expect(screen.getByText(/Sparad i appen ·/).elements()).toHaveLength(0)
+  expect(screen.getByText(/Sparad i appen /).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_credentials_origin_env()).elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_credentials_origin_missing()).elements()).toHaveLength(0)
 })
