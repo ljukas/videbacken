@@ -74,7 +74,8 @@ export function batteryEdgeKwh(f: EnergyFigures, from: BatteryNodeKey, to: Batte
     case 'sol>bat':
       return f.solarToBattery
     case 'imp>bat':
-      // batteryIn = solar + charge_grid (+ ac): the bought part of what went in.
+      // batteryIn = solar + charge_grid; batteryChargeGridKwh already sums charge_grid + charge_ac in the service
+      // (services/houseEnergy/energyOverview.ts, hourly CTE): the bought part of what went in.
       return f.batteryIn - f.solarToBattery
     case 'bat>out':
       return f.batteryOut
@@ -142,7 +143,8 @@ export function batteryNodeText(node: FlowNode, key: BatteryNodeKey, narrow: boo
     tile,
     label: { x: tx, y: tile.y + 14 },
     value: value(tx, tile.y + 44, 28),
-    second: key === 'out' || key === 'loss' ? { ...lastLine, x: tx } : null,
+    // Under the tile, not beside it: from `tx` the ~26-char share line would overflow the node.
+    second: key === 'out' || key === 'loss' ? { ...lastLine, x: x0 + NODE_PADDING } : null,
     third: null,
   }
 }
