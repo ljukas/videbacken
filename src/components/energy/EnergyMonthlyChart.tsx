@@ -1,8 +1,9 @@
-import { type RefObject, useCallback, useEffect, useRef } from 'react'
+import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  DefaultZIndexes,
   type PlotArea,
   ReferenceArea,
   ReferenceLine,
@@ -10,6 +11,7 @@ import {
   usePlotArea,
   XAxis,
   YAxis,
+  ZIndexLayer,
 } from 'recharts'
 import { CHART_HEIGHT, ChartFrame, TooltipRow } from '~/components/evCharging/ChartFrame'
 import {
@@ -77,31 +79,41 @@ const TICK_BAND = 30
 /** Below this column width the month labels shorten to initials. */
 const NARROW_COLUMN = 36
 
+/** How the chart was last used: touch taps select without a tooltip or an outline. */
+type Modality = 'mouse' | 'pen' | 'touch' | 'keyboard'
+
 // The hovered (or keyboard-focused) month: an outline round the whole column,
-// its label included (the tick band below the plot). Months without readings
-// get none. Recharts passes the band's x/y/width/height and the tooltip payload.
-function HoverColumn(props: {
-  x?: number
-  y?: number
-  width?: number
-  height?: number
-  payload?: { payload?: Row }[]
-}) {
-  const { x = 0, y = 0, width = 0, height = 0, payload } = props
-  if (!payload?.[0]?.payload?.sums) return null
+// its label included (the tick band below the plot). Drawn in a layer above
+// the bars (Recharts' own cursor sits below them), inset so it never clips at
+// the chart's edges. A month without readings gets a dashed, muted outline,
+// and only from the keyboard (so focus stays visible); none on touch.
+// The x axis is a band scale without padding: month i spans width / 12.
+function MonthOutline({ data, modality }: { data: Row[]; modality: Modality }) {
+  const label = useActiveTooltipLabel()
+  const area = usePlotArea()
+  if (!area || label === undefined || modality === 'touch') return null
+  const i = data.findIndex((r) => r.label === String(label))
+  if (i < 0) return null
+  const empty = !data[i].sums
+  if (empty && modality !== 'keyboard') return null
+  const band = area.width / data.length
   return (
-    <rect
-      data-slot="hover-month"
-      x={x + 2}
-      y={y}
-      width={Math.max(0, width - 4)}
-      height={height + TICK_BAND}
-      rx={6}
-      fill="none"
-      stroke="var(--muted-foreground)"
-      strokeWidth={1.5}
-      pointerEvents="none"
-    />
+    <ZIndexLayer zIndex={DefaultZIndexes.cursorLine}>
+      <rect
+        data-slot="hover-month"
+        x={area.x + i * band + 2}
+        y={area.y - 4}
+        width={Math.max(0, band - 4)}
+        height={area.height + 4 + TICK_BAND}
+        rx={6}
+        fill="none"
+        stroke="var(--muted-foreground)"
+        strokeWidth={1.5}
+        strokeDasharray={empty ? '4 3' : undefined}
+        strokeOpacity={empty ? 0.6 : 1}
+        pointerEvents="none"
+      />
+    </ZIndexLayer>
   )
 }
 
@@ -187,6 +199,10 @@ export function EnergyMonthlyChart({
   const wrapper = useRef<HTMLDivElement>(null)
   const activeMonth = useRef<number | null>(null)
   const plotArea = useRef<PlotArea | undefined>(undefined)
+  // Changes only when the input switches (setState bails out on the same value).
+  const [modality, setModality] = useState<Modality>('mouse')
+  const onPointer = (e: React.PointerEvent) =>
+    setModality(e.pointerType === 'touch' ? 'touch' : e.pointerType === 'pen' ? 'pen' : 'mouse')
   const setActiveMonth = useCallback((month: number | null) => {
     activeMonth.current = month
     wrapper.current?.toggleAttribute('data-selectable', month !== null)
@@ -226,13 +242,20 @@ export function EnergyMonthlyChart({
   return (
     <div>
       {/* Clicks and Enter / Space select a month. The keys are captured here
-          so Recharts' own Enter (which toggles the tooltip off) doesn't run. */}
+          so Recharts' own Enter (which toggles the tooltip off) doesn't run.
+          A pointer press doesn't focus the chart: focus would put Recharts in
+          keyboard mode on January, left showing once the pointer leaves. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: delegates for the chart's focusable svg (role="application"); its keyboard path is onKeyDownCapture */}
       <div
         ref={wrapper}
-        className="[&[data-selectable]_.recharts-surface]:cursor-pointer"
+        className="[&[data-selectable]_.recharts-surface]:cursor-pointer [&_.recharts-surface:focus-visible]:[outline-offset:2px] [&_.recharts-surface:focus-visible]:[outline:2px_solid_var(--ring)] [&_.recharts-surface]:rounded-md"
         onClick={selectAt}
+        onMouseDown={(e) => e.preventDefault()}
+        onPointerDown={onPointer}
+        onPointerMove={onPointer}
+        onFocus={() => setModality('keyboard')}
         onKeyDownCapture={(e) => {
+          setModality('keyboard')
           if (e.key !== 'Enter' && e.key !== ' ') return
           e.preventDefault()
           e.stopPropagation()
@@ -274,10 +297,10 @@ export function EnergyMonthlyChart({
             />
             {metric === 'grid' ? <ReferenceLine y={0} stroke="var(--border)" /> : null}
             <ChartTooltip
-              cursor={<HoverColumn />}
+              cursor={false}
               content={({ active, payload }) => (
                 <EnergyTooltip
-                  active={active}
+                  active={active && modality !== 'touch'}
                   row={payload?.[0]?.payload as Row | undefined}
                   metric={metric}
                   currentMonth={currentMonth}
@@ -285,6 +308,7 @@ export function EnergyMonthlyChart({
               )}
             />
             <ChartProbe data={data} onActiveMonth={setActiveMonth} plotArea={plotArea} />
+            <MonthOutline data={data} modality={modality} />
             <ChartLegend
               itemSorter={seriesOrder(metric)}
               content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
@@ -341,7 +365,7 @@ function EnergyTooltip({
   )
   return (
     <div className="grid min-w-56 gap-1 rounded-lg border bg-background px-3 py-2 text-sm shadow-xl">
-      <div className="font-semibold text-[15px]">
+      <div className="font-semibold text-sm">
         {monthName(row.month)}
         {row.month === currentMonth ? ` (${m.energy_chart_so_far()})` : ''}
       </div>

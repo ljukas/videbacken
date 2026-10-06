@@ -1,6 +1,11 @@
 import { expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
-import { monthLabel, monthName } from '~/components/evCharging/format'
+import {
+  formatOneDecimal,
+  formatShare,
+  monthLabel,
+  monthName,
+} from '~/components/evCharging/format'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
@@ -206,6 +211,12 @@ test('the selected month is marked: a tinted area and a bold tick', async () => 
   )
   expect(bold).toHaveLength(1)
   expect(bold[0].textContent).toBe(monthLabel(2))
+  // The tint spans exactly one month's band (the distance between two month labels).
+  const tint = screen.container.querySelector('[data-slot="selected-month"]') as SVGGraphicsElement
+  const band =
+    Number(tickText(screen.container, 3).getAttribute('x')) -
+    Number(tickText(screen.container, 2).getAttribute('x'))
+  expect(tint.getBBox().width).toBeCloseTo(band, 1)
 })
 
 test('no month selected: no tint, no bold tick', async () => {
@@ -221,7 +232,16 @@ test('a tooltip row shows the share of the total', async () => {
   const { screen } = await renderChart({ metric: 'solar' })
   await vi.waitFor(() => expect(barRects(screen.container).length).toBe(27))
   await userEvent.hover(barRects(screen.container)[0])
-  await expect.element(screen.getByText(/^\d+\s%$/).first()).toBeVisible()
+  // April's solar: 180 of 400 kWh used directly.
+  const row = await vi.waitFor(() => {
+    const label = [...document.querySelectorAll('.recharts-tooltip-wrapper span')].find(
+      (el) => el.textContent === m.energy_series_solar_direct(),
+    )
+    expect(label).toBeDefined()
+    return label?.parentElement as HTMLElement
+  })
+  expect(row.textContent).toContain(`${formatOneDecimal(180)} kWh`)
+  expect(row.lastElementChild?.textContent).toBe(formatShare(0.45))
 })
 
 test('hovering a month outlines its column, label included', async () => {
@@ -239,6 +259,90 @@ test('hovering a month outlines its column, label included', async () => {
   expect(o.left).toBeLessThanOrEqual(t.left)
   expect(o.right).toBeGreaterThanOrEqual(t.right)
   expect(o.bottom).toBeGreaterThanOrEqual(t.bottom)
+  // Painted above the bars (SVG paints in document order).
+  for (const bar of barRects(screen.container))
+    expect(bar.compareDocumentPosition(outline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(outline.getAttribute('stroke-dasharray')).toBeNull()
+})
+
+const allMonths = Array.from({ length: 12 }, () => sums())
+const tooltipText = () =>
+  [...document.querySelectorAll('.recharts-tooltip-wrapper')].map((w) => w.textContent).join('')
+
+test('after a click, moving the pointer off the chart leaves no outline or tooltip', async () => {
+  const onSelectMonth = vi.fn()
+  const { screen } = await renderChart({ data: allMonths, onSelectMonth })
+  await vi.waitFor(() => expect(barRects(screen.container).length).toBe(36))
+  await userEvent.click(barRects(screen.container)[3]) // April's solar-direct
+  await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
+  await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
+  await new Promise((r) => setTimeout(r, 100))
+  expect(document.activeElement?.classList.contains('recharts-surface')).toBe(false)
+  expect(screen.container.querySelector('[data-slot="hover-month"]')).toBeNull()
+  expect(tooltipText()).not.toContain(monthName(1))
+  expect(tooltipText()).not.toContain(monthName(4))
+})
+
+test('a touch tap selects the month without a tooltip or an outline', async () => {
+  const onSelectMonth = vi.fn()
+  const { screen } = await renderChart({ data: allMonths, onSelectMonth })
+  await vi.waitFor(() => expect(barRects(screen.container).length).toBe(36))
+  // Re-query each time: a re-render may replace the rectangles.
+  const bar = () => barRects(screen.container)[3]
+  const box = bar().getBoundingClientRect()
+  const at = { bubbles: true, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }
+  // A tap's sequence: the pointer events say "touch"; the browser then emulates the mouse.
+  bar().dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'touch' }))
+  bar().dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'touch' }))
+  bar().dispatchEvent(new MouseEvent('mousemove', at))
+  bar().dispatchEvent(new MouseEvent('mousedown', at))
+  bar().dispatchEvent(new MouseEvent('mouseup', at))
+  bar().dispatchEvent(new MouseEvent('click', at))
+  await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
+  await new Promise((r) => setTimeout(r, 100))
+  expect(screen.container.querySelector('[data-slot="hover-month"]')).toBeNull()
+  expect(tooltipText()).not.toContain(monthName(4))
+  // The same spot under a mouse does show them (the check above is not vacuous).
+  bar().dispatchEvent(new PointerEvent('pointermove', { ...at, pointerType: 'mouse' }))
+  bar().dispatchEvent(new MouseEvent('mousemove', { ...at, clientX: at.clientX + 1 }))
+  await vi.waitFor(() => {
+    expect(screen.container.querySelector('[data-slot="hover-month"]')).not.toBeNull()
+    expect(tooltipText()).toContain(monthName(4))
+  })
+})
+
+test('keyboard focus on a month without readings shows a dashed outline, no tooltip', async () => {
+  const { screen } = await renderChart()
+  await vi.waitFor(() => expect(barRects(screen.container).length).toBe(27))
+  await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
+  const surface = screen.container.querySelector('.recharts-surface') as HTMLElement
+  surface.focus() // January: no readings
+  const outline = await vi.waitFor(() => {
+    const el = screen.container.querySelector('[data-slot="hover-month"]')
+    expect(el).not.toBeNull()
+    return el as SVGRectElement
+  })
+  expect(outline.getAttribute('stroke-dasharray')).not.toBeNull()
+  expect(tooltipText()).not.toContain(monthName(1))
+  // Three steps right is April, with readings: a solid outline.
+  await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
+  await vi.waitFor(() =>
+    expect(
+      screen.container.querySelector('[data-slot="hover-month"]')?.getAttribute('stroke-dasharray'),
+    ).toBeNull(),
+  )
+})
+
+test('Space on the keyboard-focused month selects it too', async () => {
+  const onSelectMonth = vi.fn()
+  const { screen } = await renderChart({ onSelectMonth })
+  await vi.waitFor(() => expect(barRects(screen.container).length).toBe(27))
+  await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
+  const surface = screen.container.querySelector('.recharts-surface') as HTMLElement
+  surface.focus()
+  await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight} ')
+  await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
+  expect(onSelectMonth).toHaveBeenCalledTimes(1)
 })
 
 test('Enter on the keyboard-focused month selects it', async () => {
