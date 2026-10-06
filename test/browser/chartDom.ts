@@ -58,6 +58,14 @@ export const gridLines = (root: ParentNode) => all(root, SEL.gridLine)
 export const chartSvg = (root: ParentNode) => root.querySelector<SVGSVGElement>(SEL.svg)
 /** The chart's keyboard stop (recharts' focusable svg, or the visx module's group). */
 export const focusTarget = (root: ParentNode) => root.querySelector<HTMLElement>(SEL.focus)
+/** Focuses the chart's keyboard stop; throws when there is none or the focus didn't land. */
+export function focusChart(root: ParentNode) {
+  const target = focusTarget(root)
+  if (!target) throw new Error('no chart keyboard stop to focus')
+  target.focus()
+  expect(document.activeElement).toBe(target)
+  return target
+}
 
 export const legend = (root: ParentNode) => root.querySelector<HTMLElement>(SEL.legend)
 export const legendText = (root: ParentNode) => legend(root)?.textContent ?? ''
@@ -124,13 +132,12 @@ export const centre = (el: Element) => {
 }
 
 /**
- * Moves the pointer to (x, y) over a chart. The visx module answers on its
- * hover overlay, so the move is sent there directly: no scrolling and no
+ * A mouse move at (x, y) on the visx module's hover overlay; false when there
+ * is none (recharts). Sent to the overlay directly: no scrolling and no
  * hit-testing, which depend on the viewport, the fonts and wherever the real
- * pointer rests (they made CI differ from local runs). recharts (still used by
- * the Energi and climate charts) needs a hit-tested target in view.
+ * pointer rests (they made CI differ from local runs). recharts needs a
+ * hit-tested target in view.
  */
-/** A mouse move at (x, y) on the visx module's hover overlay; false when there is none (recharts). */
 export function moveOverPlot(root: ParentNode, x: number, y: number) {
   const overlay = root.querySelector('[data-hover-overlay]')
   if (!overlay) return false
@@ -194,18 +201,20 @@ export async function clickOn(root: ParentNode, el: Element) {
 /**
  * A finger tap at the centre of `el`: the pointer events say "touch", then
  * the browser emulates the mouse (move, down, up, click). Dispatched on the
- * visx overlay when there is one, else on `el` (recharts).
+ * visx overlay when there is one; on recharts each event goes to `el()`
+ * resolved afresh, since a re-render may replace the element mid-tap.
  */
-export function tapOn(root: ParentNode, el: Element) {
-  const target = root.querySelector('[data-hover-overlay]') ?? el
-  const { x, y } = centre(el)
+export function tapOn(root: ParentNode, el: () => Element) {
+  const overlay = root.querySelector('[data-hover-overlay]')
+  const { x, y } = centre(el())
   const at = { bubbles: true, clientX: x, clientY: y }
-  target.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'touch' }))
-  target.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'touch' }))
-  target.dispatchEvent(new MouseEvent('mousemove', at))
-  target.dispatchEvent(new MouseEvent('mousedown', at))
-  target.dispatchEvent(new MouseEvent('mouseup', at))
-  target.dispatchEvent(new MouseEvent('click', at))
+  const target = () => overlay ?? el()
+  target().dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'touch' }))
+  target().dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'touch' }))
+  target().dispatchEvent(new MouseEvent('mousemove', at))
+  target().dispatchEvent(new MouseEvent('mousedown', at))
+  target().dispatchEvent(new MouseEvent('mouseup', at))
+  target().dispatchEvent(new MouseEvent('click', at))
 }
 
 /**

@@ -13,7 +13,7 @@ import {
   boldTickLabels,
   centre,
   clickOn,
-  focusTarget,
+  focusChart,
   hoverBar,
   legend,
   legendText,
@@ -189,7 +189,7 @@ test('clicking a month selects it', async () => {
   const onSelectMonth = vi.fn()
   const { screen } = await renderChart({ onSelectMonth })
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
-  // Rectangles in DOM order: series by series, months in order; [0] is April's solar-direct.
+  // Bars in DOM order: series by series, months in order; [0] is April's solar-direct.
   await clickOn(screen.container, bars(screen.container)[0])
   await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
   expect(onSelectMonth).toHaveBeenCalledTimes(1)
@@ -222,13 +222,14 @@ test('the selected month is marked: a tinted area and a bold tick', async () => 
   expect(boldTickLabels(c)).toEqual([monthLabel(2)])
   // The tint spans exactly one month's band (the distance between two month labels).
   const band = centre(xTick(c, monthLabel(3))).x - centre(xTick(c, monthLabel(2))).x
-  expect((selectedTint(c) as SVGGraphicsElement).getBoundingClientRect().width).toBeCloseTo(band, 0)
+  expect((selectedTint(c) as SVGGraphicsElement).getBoundingClientRect().width).toBeCloseTo(band, 1)
 })
 
 test('no month selected: no tint, no bold tick', async () => {
   const { screen } = await renderChart({ selectedMonth: null })
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   expect(selectedTint(screen.container)).toBeNull()
+  expect(xTickLabels(screen.container)).toHaveLength(12)
   expect(boldTickLabels(screen.container)).toEqual([])
 })
 
@@ -289,13 +290,15 @@ test('a touch tap selects the month without a tooltip or an outline', async () =
   const onSelectMonth = vi.fn()
   const { screen } = await renderChart({ data: allMonths, onSelectMonth })
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(36))
-  // Re-query each time: a re-render may replace the bars.
-  tapOn(screen.container, bars(screen.container)[3])
+  // tapOn re-resolves the bar for each event: a re-render may replace it.
+  tapOn(screen.container, () => bars(screen.container)[3])
   await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
   await new Promise((r) => setTimeout(r, 100))
   expect(outline(screen.container)).toBeNull()
   expect(tooltipText()).not.toContain(monthName(4))
   // The same spot under a mouse does show them (the check above is not vacuous).
+  // Scroll first: on recharts the move is hit-tested, so the bar must be in view.
+  bars(screen.container)[3].scrollIntoView({ block: 'center', inline: 'center' })
   const c = centre(bars(screen.container)[3])
   moveAt(screen.container, c.x + 1, c.y)
   await vi.waitFor(() => {
@@ -308,7 +311,7 @@ test('keyboard focus on a month without readings shows a dashed outline, no tool
   const { screen } = await renderChart()
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
-  focusTarget(screen.container)?.focus() // January: no readings
+  focusChart(screen.container) // January: no readings
   const ring = await vi.waitFor(() => {
     const el = outline(screen.container)
     expect(el).not.toBeNull()
@@ -328,7 +331,7 @@ test('Space on the keyboard-focused month selects it too', async () => {
   const { screen } = await renderChart({ onSelectMonth })
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
-  focusTarget(screen.container)?.focus()
+  focusChart(screen.container)
   await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight} ')
   await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
   expect(onSelectMonth).toHaveBeenCalledTimes(1)
@@ -340,7 +343,7 @@ test('Enter on the keyboard-focused month selects it', async () => {
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   // Park the pointer off the chart: a hovered month wins over the keyboard's.
   await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
-  focusTarget(screen.container)?.focus()
+  focusChart(screen.container)
   // Focus lands on January (no readings); three steps right is April.
   await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}{Enter}')
   await vi.waitFor(() => expect(onSelectMonth).toHaveBeenCalledWith(4))
@@ -353,7 +356,7 @@ test('a month without readings is not selectable', async () => {
   await vi.waitFor(() => expect(bars(screen.container).length).toBe(27))
   // Park the pointer off the chart: a hovered month wins over the keyboard's.
   await userEvent.hover(screen.getByText(m.energy_chart_select_hint()))
-  focusTarget(screen.container)?.focus() // January: no readings
+  focusChart(screen.container) // January: no readings
   await userEvent.keyboard('{Enter}')
   await new Promise((r) => setTimeout(r, 50))
   expect(onSelectMonth).not.toHaveBeenCalled()
