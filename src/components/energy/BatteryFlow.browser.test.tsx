@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import type { PeriodSums } from '~/lib/houseEnergy/figures'
+import { energyFigures, gapHours, type PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { BatteryFlow } from './BatteryFlow'
@@ -126,6 +126,65 @@ test('no sale: no "varav såld", the table has the battery rows with units', asy
     await expect.element(screen.getByRole('rowheader', { name, exact: true })).toBeVisible()
   }
   await expect.element(screen.getByRole('cell', { name: '+0,4 kWh' })).toBeVisible()
+  // The loss row carries its share; the charge level follows the rows.
+  await expect.element(screen.getByRole('cell', { name: /^15,0\skWh \(6\s%\)$/ })).toBeVisible()
+  await expect
+    .element(screen.getByText(m.energy_flow_charge_level({ from: '15', to: '20' })))
+    .toBeVisible()
+  expect(
+    [...screen.container.querySelectorAll('th[scope="row"]')].map((t) => t.textContent),
+  ).not.toContain(m.energy_battery_row_sold())
+})
+
+test('a negative loss: the table keeps the real value', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 1100 }}>
+      <BatteryFlow
+        sums={sums({
+          batteryChargeSolarKwh: 10,
+          batteryChargeGridKwh: 0,
+          batteryDischargeKwh: 10.2,
+          firstSocPct: 50,
+          lastSocPct: 50,
+        })}
+      />
+    </div>,
+  )
+  await userEvent.click(screen.getByText(m.energy_flow_table_toggle()))
+  const row = [...screen.container.querySelectorAll('th[scope="row"]')].find(
+    (t) => t.textContent === m.energy_flow_loss_title(),
+  )
+  expect(row?.nextElementSibling?.textContent).toMatch(/^[-−]0,2\skWh/)
+})
+
+test('an unknown charge level: "Lager —" and "—" in the table', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 1100 }}>
+      <BatteryFlow sums={sums({ firstSocPct: null, lastSocPct: null })} />
+    </div>,
+  )
+  await vi.waitFor(() => expect(edges()).toHaveLength(4))
+  expect(node('bat')).toMatch(/Lager\s*—/)
+  expect(node('bat')).not.toContain('kWh')
+  await userEvent.click(screen.getByText(m.energy_flow_table_toggle()))
+  const row = [...screen.container.querySelectorAll('th[scope="row"]')].find(
+    (t) => t.textContent === m.energy_flow_row_stored(),
+  )
+  expect(row?.nextElementSibling?.textContent).toBe('—')
+})
+
+test('the gap note names the missing hours', async () => {
+  const s = sums({ buckets: 8000 })
+  const hours = gapHours(energyFigures(s))
+  expect(hours).toBeGreaterThan(0)
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 1100 }}>
+      <BatteryFlow sums={s} />
+    </div>,
+  )
+  await expect
+    .element(screen.getByText(m.energy_missing_hours({ hours: String(hours) })))
+    .toBeVisible()
 })
 
 test('the values switch hides the pills and is the same preference as Översikt', async () => {

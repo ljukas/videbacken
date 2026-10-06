@@ -28,6 +28,7 @@ import {
   flowWidth,
   lossLabel,
   MIN_FLOW_KWH,
+  NODE_PADDING,
 } from '~/lib/houseEnergy/flowLayout'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
@@ -64,11 +65,18 @@ const arrowColor = (from: BatteryNodeKey, to: BatteryNodeKey) =>
 
 type Tip = { id: string; from: BatteryNodeKey; to: BatteryNodeKey; kwh: number; lines: string[] }
 
-function tipLines(f: EnergyFigures, sums: PeriodSums, to: BatteryNodeKey, v: number): string[] {
-  if (to === 'bat')
-    return f.batteryIn > 0
-      ? [m.energy_battery_in_share({ share: formatShare(v / f.batteryIn) })]
-      : []
+function tipLines(
+  f: EnergyFigures,
+  sums: PeriodSums,
+  from: BatteryNodeKey,
+  to: BatteryNodeKey,
+): string[] {
+  if (to === 'bat') {
+    // figures.ts's definition; null (the battery barely ran) means no share.
+    if (f.gridChargedShare === null) return []
+    const share = from === 'imp' ? f.gridChargedShare : 1 - f.gridChargedShare
+    return [m.energy_battery_in_share({ share: formatShare(share) })]
+  }
   if (to === 'out')
     return [
       f.batteryToGrid >= MIN_FLOW_KWH
@@ -142,7 +150,13 @@ export function BatteryFlowDiagram({
         </Group>
         <Group>
           {(Object.keys(layout.nodes) as BatteryNodeKey[]).map((key) => (
-            <BatteryNode key={key} nodeKey={key} layout={layout} f={f} />
+            <BatteryNode
+              key={key}
+              nodeKey={key}
+              layout={layout}
+              f={f}
+              socKnown={sums.firstSocPct !== null && sums.lastSocPct !== null}
+            />
           ))}
         </Group>
         <Group>
@@ -176,7 +190,7 @@ export function BatteryFlowDiagram({
                     from: spec.from,
                     to: spec.to,
                     kwh: v,
-                    lines: tipLines(f, sums, spec.to, v),
+                    lines: tipLines(f, sums, spec.from, spec.to),
                   },
                   mid.x,
                   mid.y,
@@ -225,16 +239,20 @@ function BatteryNode({
   nodeKey: key,
   layout,
   f,
+  socKnown,
 }: {
   nodeKey: BatteryNodeKey
   layout: ReturnType<typeof batteryFlowLayout>
   f: EnergyFigures
+  socKnown: boolean
 }) {
   const n = layout.nodes[key]
   const t = batteryNodeText(n, key, layout.narrow)
   const value =
     key === 'bat'
-      ? formatSignedOneDecimal(f.deltaStored)
+      ? socKnown
+        ? formatSignedOneDecimal(f.deltaStored)
+        : '—'
       : key === 'loss'
         ? lossLabel(f.loss) === 'about-zero'
           ? m.energy_flow_about_zero()
@@ -251,6 +269,14 @@ function BatteryNode({
       : key === 'loss' && lossLabel(f.loss) === 'value' && f.lossShare !== null
         ? m.energy_flow_loss_share({ share: formatShare(f.lossShare) })
         : null
+  // The second line shrinks 13 → 11 px to stay inside the node (a phone node leaves ~114 px).
+  const secondRef = useRef<SVGTextElement>(null)
+  const secondSize = useFittedSize(secondRef, second ?? '', {
+    x: t.second?.x ?? 0,
+    size: 13,
+    minSize: 11,
+    room: t.second ? n.x + n.w / 2 - NODE_PADDING - t.second.x : 0,
+  })
   return (
     <NodeFrame
       data-flow-node={key}
@@ -266,8 +292,8 @@ function BatteryNode({
           {m.energy_battery_stored_label()}{' '}
           <tspan fontSize={size} fontWeight={600} className="fill-foreground tabular-nums">
             {value}
-          </tspan>{' '}
-          kWh
+          </tspan>
+          {socKnown ? ' kWh' : null}
         </text>
       ) : (
         <text
@@ -286,9 +312,10 @@ function BatteryNode({
       )}
       {t.second && second ? (
         <text
+          ref={secondRef}
           x={t.second.x}
           y={t.second.y}
-          fontSize={13}
+          fontSize={secondSize}
           style={NODE_MUTED}
           className="tabular-nums"
         >

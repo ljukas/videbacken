@@ -965,7 +965,7 @@
   "energy_battery_out_sold": "of which sold {kwh} kWh",
   "energy_battery_out_house": "to the house",
   "energy_battery_out_split": "{house} kWh to the house · {sold} kWh sold",
-  "energy_battery_in_share": "{share} of what went in",
+  "energy_battery_in_share": "{share} of what was charged",
   "energy_battery_flow_description": "The battery's energy flows for the period. The values are also in the table below the diagram.",
   "energy_battery_row_in_solar": "In from solar",
   "energy_battery_row_in_grid": "In from the grid",
