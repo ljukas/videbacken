@@ -44,8 +44,8 @@ function seriesConfig(): Record<SeriesKey, { label: string; color: string }> {
     importDirect: { label: m.energy_series_import_direct(), color: 'var(--energy-grid)' },
     importBattery: { label: m.energy_series_import_battery(), color: 'var(--energy-battery)' },
     exported: { label: m.energy_series_export(), color: 'var(--energy-export)' },
-    car: { label: m.energy_series_car(), color: 'var(--brand)' },
-    house: { label: m.energy_series_house(), color: 'var(--chart-2)' },
+    car: { label: m.energy_series_car(), color: 'var(--energy-car)' },
+    house: { label: m.energy_series_house(), color: 'var(--energy-house)' },
   }
 }
 

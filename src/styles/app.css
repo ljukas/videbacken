@@ -62,6 +62,8 @@
     --color-energy-solar: var(--energy-solar);
     --color-energy-export: var(--energy-export);
     --color-energy-battery: var(--energy-battery);
+    --color-energy-house: var(--energy-house);
+    --color-energy-car: var(--energy-car);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-selected-foreground: var(--selected-foreground);
@@ -128,17 +130,14 @@
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.75 0.16 75);
   --warning-foreground: oklch(0.27 0.06 75);
-  /* Where charging energy came from (ADR-0023): the session page's source bar.
-     Own hues, not the status colours (green/amber mean timing verdicts on the
-     same card), with spread lightness so neighbours differ without hue
-     (WCAG 2 contrast on --card, light / dark): grid 9.2 / 3.1, battery 3.6 /
-     6.9, solar 1.8 / 12.0; neighbouring segments ≥ 2.1 light, ≥ 1.7 dark.
-     Solar is a pale sun-yellow on light: the legend carries every figure in
-     text, so the bar needn't clear 3:1 on its own. */
-  --energy-grid: oklch(0.40 0.02 260);
-  --energy-battery: oklch(0.60 0.12 185);
-  --energy-solar: oklch(0.82 0.16 85);
-  --energy-export: oklch(0.62 0.13 70);
+  /* Energy series (ADR-0024 step 1b): one meaning per colour, validated with the
+     data-viz palette validator (--pairs all, light on #fff / dark on #1c1c1f). */
+  --energy-grid: #475569;
+  --energy-battery: #1baf7a;
+  --energy-solar: #eda100;
+  --energy-export: #2a78d6;
+  --energy-house: #eb6834;
+  --energy-car: #4a3aa7;
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -210,10 +209,12 @@
   --success-foreground: oklch(0.18 0.04 150);
   --warning: oklch(0.78 0.15 80);
   --warning-foreground: oklch(0.20 0.05 80);
-  --energy-grid: oklch(0.52 0.02 260);
-  --energy-battery: oklch(0.70 0.13 185);
-  --energy-solar: oklch(0.88 0.15 90);
-  --energy-export: oklch(0.72 0.13 70);
+  --energy-grid: #94a3b8;
+  --energy-battery: #199e70;
+  --energy-solar: #c98500;
+  --energy-export: #3987e5;
+  --energy-house: #d95926;
+  --energy-car: #9085e9;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
