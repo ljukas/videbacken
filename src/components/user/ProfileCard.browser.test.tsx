@@ -41,6 +41,12 @@ test('prefills the name field from the current user', async () => {
   await expect.element(screen.getByLabelText(m.user_field_name())).toHaveValue('Alice Svensson')
 })
 
+test('prefills the phone field from the current user', async () => {
+  const { screen } = await renderWithProviders(<ProfileCard />, { queryClient: seededClient() })
+  // react-phone-number-input formats the stored E.164 for display.
+  await expect.element(screen.getByLabelText(m.user_field_phone())).toHaveValue('+46 70 123 45 67')
+})
+
 test('shows the email read-only with the immutability hint', async () => {
   const { screen } = await renderWithProviders(<ProfileCard />, { queryClient: seededClient() })
 

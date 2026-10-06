@@ -3,6 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { CalendarXIcon } from 'lucide-react'
 import { useCallback, useId, useMemo, useRef } from 'react'
 import { z } from 'zod'
+import chargingPatternsBones from '~/bones/charging-patterns.bones.json'
+import chargingTimelineBones from '~/bones/charging-timeline.bones.json'
 import { ChargingCalendar } from '~/components/evCharging/ChargingCalendar'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { HourOfDayChart } from '~/components/evCharging/HourOfDayChart'
@@ -173,7 +175,7 @@ function PatternsPage() {
       </div>
 
       <SectionSkeleton
-        name="charging-patterns"
+        bones={chargingPatternsBones}
         loading={firstLoadPending(patternsResult)}
         fallbackHeight="48rem"
       >
@@ -275,7 +277,7 @@ function PatternsPage() {
                     </CardHeader>
                     <CardContent>
                       <SectionSkeleton
-                        name="charging-timeline"
+                        bones={chargingTimelineBones}
                         loading={firstLoadPending(timelineResult)}
                         fallbackHeight="16rem"
                       >

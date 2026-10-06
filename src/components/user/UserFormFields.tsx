@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PhoneField } from '~/components/form/PhoneField'
 import { FieldGroup } from '~/components/ui/field'
 import { withFieldGroup } from '~/hooks/form'
 import { nameField, phoneField } from '~/lib/orpc/userProfileSchema'
@@ -53,10 +54,7 @@ export const UserFormFields = withFieldGroup({
           name="name"
           children={(field) => <field.TextField label={m.user_field_name()} autoComplete="name" />}
         />
-        <group.AppField
-          name="phone"
-          children={(field) => <field.PhoneField label={m.user_field_phone()} />}
-        />
+        <group.AppField name="phone" children={() => <PhoneField label={m.user_field_phone()} />} />
         <group.AppField
           name="role"
           children={(field) => (
