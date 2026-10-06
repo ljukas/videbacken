@@ -19,6 +19,8 @@ shadcn/Radix (`Badge`, `Label`, `Button`), Paraglide, Vitest (node + browser).
 ("PR 1 — the Shelly name and the edit dialog"). PR 2 has its own plan:
 [`2026-10-06-climate-2-page-readability.md`](./2026-10-06-climate-2-page-readability.md).
 
+**Execution (owner, 2026-10-06):** subagent-driven (`superpowers:subagent-driven-development`): a fresh implementer per task, then the task's two reviewers in parallel, then a whole-branch review. Its own session.
+
 ## Global Constraints
 
 - Display name order: **own name → Shelly name → `Sensor <last 4 of MAC>`** (`Sensor eeff` for `aabbccddeeff`).

@@ -22,6 +22,8 @@ check.
 [`2026-10-06-climate-1-shelly-name.md`](./2026-10-06-climate-1-shelly-name.md) — independent; if it merged first,
 the device fixtures already carry `shellyName`.
 
+**Execution (owner, 2026-10-06):** native (`superpowers:executing-plans`): implemented inline task by task, then one reviewer on the whole branch. Its own session.
+
 ## Global Constraints
 
 - Sizes: card titles **18 px** semibold (`text-lg`); chart sub-headings **16 px** medium (`text-base`); labels,
