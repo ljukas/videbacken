@@ -20,6 +20,9 @@ const SEL = {
   gridLine: '.recharts-cartesian-grid-horizontal line, [data-grid] line, line[data-grid]',
   svg: 'svg.recharts-surface, svg[data-chart-svg]',
   focus: 'svg.recharts-surface[tabindex], [data-chart-focus]',
+  // The Energi chart's recharts hooks, and the bar module's selection hooks.
+  outline: '[data-slot="hover-month"], [data-slot="category-outline"]',
+  selectedTint: '[data-slot="selected-month"], [data-slot="category-selected"]',
 } as const
 
 const all = <E extends Element = Element>(root: ParentNode, sel: string) => [
@@ -81,6 +84,30 @@ export const xTickNodes = (root: ParentNode) => all(root, SEL.xTick)
 export const xTickLabels = (root: ParentNode) => xTickNodes(root).map((t) => t.textContent ?? '')
 export const yTickLabels = (root: ParentNode) =>
   all(root, SEL.yTick).map((t) => t.textContent ?? '')
+/** The outline round the hovered or keyboard category (null: none). */
+export const outline = (root: ParentNode) => root.querySelector<SVGGraphicsElement>(SEL.outline)
+/** The selected category's tint (null: none). */
+export const selectedTint = (root: ParentNode) =>
+  root.querySelector<SVGGraphicsElement>(SEL.selectedTint)
+/** The x tick label `<text>` elements (recharts' are the nodes; visx wraps each in a tick group). */
+export const xTickTexts = (root: ParentNode) =>
+  xTickNodes(root)
+    .map((n) => (n.matches('text') ? n : n.querySelector('text')))
+    .filter((t): t is SVGTextElement => t !== null)
+/** The x tick node showing `label` (throws when none does). */
+export const xTick = (root: ParentNode, label: string) => {
+  const tick = xTickNodes(root).find((t) => t.textContent === label)
+  if (!tick) throw new Error(`no x tick "${label}" (have ${xTickLabels(root).join(', ')})`)
+  return tick
+}
+/** The labels drawn bold (the selected category's). */
+export const boldTickLabels = (root: ParentNode) =>
+  xTickTexts(root)
+    .filter((t) => t.getAttribute('font-weight') === '600')
+    .map((t) => t.textContent ?? '')
+/** The open tooltips' elements (portalled, so searched in the document; recharts' hidden ones skipped). */
+export const tooltipNodes = () =>
+  all<HTMLElement>(document, SEL.tooltip).filter((t) => t.style.visibility !== 'hidden')
 
 /** Moves the pointer to (x, y): both recharts (mousemove) and the visx module (pointermove) listen. */
 export function pointAt(x: number, y: number) {
@@ -91,7 +118,7 @@ export function pointAt(x: number, y: number) {
   target.dispatchEvent(new MouseEvent('mousemove', init))
 }
 
-const centre = (el: Element) => {
+export const centre = (el: Element) => {
   const b = el.getBoundingClientRect()
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
 }
@@ -142,6 +169,43 @@ export async function hoverBetween(root: ParentNode, a: number, b: number) {
   bars(root)[a].scrollIntoView({ block: 'center', inline: 'center' })
   const r = mid()
   pointAt(r.x, r.y)
+}
+
+/** A mouse move at (x, y): on the visx overlay when there is one, else on the element there (recharts). */
+export function moveAt(root: ParentNode, x: number, y: number) {
+  if (!moveOverPlot(root, x, y)) pointAt(x, y)
+}
+
+/**
+ * A mouse click at the centre of `el` (a bar or a tick label). The visx
+ * overlay covers both, so the click is dispatched on it at that point;
+ * recharts gets a real click on the element.
+ */
+export async function clickOn(root: ParentNode, el: Element) {
+  const overlay = root.querySelector('[data-hover-overlay]')
+  const { x, y } = centre(el)
+  if (!overlay) return userEvent.click(el)
+  const init = { bubbles: true, clientX: x, clientY: y }
+  overlay.dispatchEvent(new PointerEvent('pointerdown', { ...init, pointerType: 'mouse' }))
+  overlay.dispatchEvent(new PointerEvent('pointerup', { ...init, pointerType: 'mouse' }))
+  overlay.dispatchEvent(new MouseEvent('click', init))
+}
+
+/**
+ * A finger tap at the centre of `el`: the pointer events say "touch", then
+ * the browser emulates the mouse (move, down, up, click). Dispatched on the
+ * visx overlay when there is one, else on `el` (recharts).
+ */
+export function tapOn(root: ParentNode, el: Element) {
+  const target = root.querySelector('[data-hover-overlay]') ?? el
+  const { x, y } = centre(el)
+  const at = { bubbles: true, clientX: x, clientY: y }
+  target.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'touch' }))
+  target.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'touch' }))
+  target.dispatchEvent(new MouseEvent('mousemove', at))
+  target.dispatchEvent(new MouseEvent('mousedown', at))
+  target.dispatchEvent(new MouseEvent('mouseup', at))
+  target.dispatchEvent(new MouseEvent('click', at))
 }
 
 /**
