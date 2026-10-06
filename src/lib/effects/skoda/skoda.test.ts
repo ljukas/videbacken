@@ -269,15 +269,17 @@ test('a missing or unparseable expiry header is null, not a failure', async () =
 })
 
 test.each([
-  [401, 'auth_failed'],
-  [403, 'forbidden'],
-  [404, 'forbidden'],
-  [429, 'rate_limited'],
-  [500, 'unreachable'],
-  [400, 'unexpected_response'],
-] as const)('HTTP %i → %s', async (status, code) => {
+  [401, 'auth_failed', ['apiKey']],
+  [403, 'forbidden', ['apiKey', 'vin']],
+  [404, 'forbidden', ['vin']],
+  [429, 'rate_limited', undefined],
+  [500, 'unreachable', undefined],
+  [400, 'unexpected_response', undefined],
+] as const)('HTTP %i → %s, suspects %j', async (status, code, suspectFields) => {
   const { skoda } = client(() => jsonResponse({ type: 'x', status }, { status }))
-  await expect(skoda.vehicleState()).rejects.toMatchObject({ name: 'SkodaError', code, status })
+  const err = await skoda.vehicleState().catch((e: unknown) => e)
+  expect(err).toMatchObject({ name: 'SkodaError', code, status })
+  expect((err as SkodaError).suspectFields).toEqual(suspectFields)
 })
 
 test('a 403 problem body naming the VIN never reaches the error', async () => {
