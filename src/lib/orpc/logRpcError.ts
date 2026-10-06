@@ -4,15 +4,16 @@ import type { Logger } from '~/lib/logger'
 
 // Grades an error thrown out of an oRPC procedure (wired as the handler's
 // `onError` interceptor in src/routes/api/rpc/$.ts). Expected rejections —
-// auth failures, typed domain errors — are client outcomes, not server faults:
+// auth failures, typed (defined) errors whatever their status — are client outcomes, not server faults:
 // logging them at error level buried real faults.
 //   - 401: debug. Polled screens (ADR-0018) hit it every tick once a session expires.
 //   - input validation (BAD_REQUEST with issues): warn, with each issue's path and
 //     message — usually a stale client or schema drift, i.e. our bug to see.
-//   - any other ORPCError < 500: info, with its code (no stack needed).
-//   - everything else (unknown throws, 5xx): error, fully serialized.
+//   - any other ORPCError < 500, or any defined (typed) ORPCError whatever its
+//     status (e.g. a 503 for an upstream outage): info, with its code (no stack needed).
+//   - everything else (unknown throws, undefined 5xx): error, fully serialized.
 export function logRpcError(log: Logger, error: unknown): void {
-  if (error instanceof ORPCError && error.status < 500) {
+  if (error instanceof ORPCError && (error.status < 500 || error.defined)) {
     const fields = { code: error.code, status: error.status, defined: error.defined }
     const issues = validationIssues(error)
     if (error.status === 401) log.debug('rpc rejected', fields)

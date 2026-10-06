@@ -284,12 +284,17 @@ test('searchAddress returns the hits and logs neither the query nor the results'
 test('searchAddress maps any geocoder failure to GEOCODER_UNAVAILABLE', async () => {
   await signIn('admin')
   // Under VITEST the default adapter is notConfigured.
+  const warn = vi.fn()
+  const log: Logger = { ...noopLog, warn, child: () => log }
   const error = await call(
     credentialsRouter.searchAddress,
     { query: 'Storgatan 1' },
-    { context: baseContext() },
+    { context: { ...baseContext(), log } },
   ).catch((e: unknown) => e)
   expect(error).toMatchObject({ code: 'GEOCODER_UNAVAILABLE', status: 503, defined: true })
+  expect(warn.mock.calls).toEqual([
+    ['credentials: address search unavailable', { code: 'not_configured' }],
+  ])
 
   vi.spyOn(geocoder, 'search').mockRejectedValue(new GeocoderError('rate_limited', 429))
   await expect(

@@ -128,7 +128,7 @@ export const credentialsRouter = {
         return hits
       } catch (err) {
         if (err instanceof GeocoderError) {
-          context.log.info('credentials: address search unavailable', { code: err.code })
+          context.log.warn('credentials: address search unavailable', { code: err.code })
           throw errors.GEOCODER_UNAVAILABLE()
         }
         throw err
