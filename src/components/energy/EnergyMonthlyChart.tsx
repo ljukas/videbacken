@@ -210,11 +210,18 @@ export function EnergyMonthlyChart({
 
   if (months.every((p) => p === null)) {
     return (
-      <div
-        className="flex items-center justify-center rounded-lg border px-4 text-center text-muted-foreground text-sm"
-        style={{ height: CHART_HEIGHT }}
-      >
-        {m.energy_chart_no_data({ year: String(year) })}
+      <div>
+        <div
+          className="flex items-center justify-center rounded-lg border px-4 text-center text-muted-foreground text-sm"
+          style={{ height: CHART_HEIGHT }}
+        >
+          {m.energy_chart_no_data({ year: String(year) })}
+        </div>
+        {/* The hint's line, reserved: the card is as tall as with data (the
+            legend sits inside CHART_HEIGHT). */}
+        <p aria-hidden className="invisible mt-2 text-muted-foreground text-sm">
+          {m.energy_chart_select_hint()}
+        </p>
       </div>
     )
   }

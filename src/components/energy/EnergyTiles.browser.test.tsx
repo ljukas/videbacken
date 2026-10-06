@@ -128,3 +128,21 @@ test('no consumption shows a dash and no self-sufficiency detail', async () => {
   await expect.element(screen.getByText('—')).toBeVisible()
   expect(screen.getByText(m.energy_tile_self_sufficiency_detail()).elements()).toHaveLength(0)
 })
+
+test('unavailable figures: the same invisible grid, blank, with no "no data" claim', async () => {
+  const { screen } = await renderWithProviders(<EnergyReadouts sums="unavailable" />)
+  const hidden = screen.container.querySelector('[aria-hidden="true"].invisible')
+  expect(hidden).not.toBeNull()
+  expect(hidden?.querySelectorAll('[data-slot="readout-detail"]')).toHaveLength(5)
+  expect(screen.getByText(m.energy_period_no_data()).elements()).toHaveLength(0)
+  // Nothing readable outside the invisible grid.
+  expect(screen.container.querySelector('p:not([aria-hidden] p)')).toBeNull()
+})
+
+test('pins the readout figure’s container-relative font sizes', async () => {
+  const { screen } = await renderWithProviders(<EnergyReadouts sums={sums()} />)
+  const value = screen.getByText('509,0', { exact: true }).element()
+  expect(value.className).toContain('text-[length:min(28px,calc(10.4cqi_-_8.5px))]')
+  expect(value.className).toContain('@[35rem]:text-[length:min(36px,calc(6.94cqi_-_9.06px))]')
+  expect(value.className).toContain('@[61.25rem]:text-[length:min(36px,calc(4.17cqi_-_9.5px))]')
+})

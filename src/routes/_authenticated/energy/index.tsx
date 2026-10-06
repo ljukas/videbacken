@@ -11,7 +11,7 @@ import {
 } from '~/components/energy/EnergyMonthlyChart'
 import { EnergyReadouts } from '~/components/energy/EnergyTiles'
 import { energyOverviewQueryFor } from '~/components/energy/energyQueries'
-import { PeriodControl } from '~/components/energy/PeriodControl'
+import { PeriodControl, periodLabel } from '~/components/energy/PeriodControl'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { useSyncNow } from '~/components/evCharging/SyncNowButton'
@@ -109,7 +109,9 @@ function EnergyOverviewPage() {
   const [metric, setMetric] = useState<EnergyMetric>('solar')
   const chartHeadingId = useId()
   const tilesHeadingId = useId()
-  // Same in the server render and the hydrating one (one request, one month).
+  // The server render and the hydrating one read the clock independently:
+  // they disagree only for a request straddling a Stockholm month (or year)
+  // boundary, which re-renders with the client's month.
   const now = stockholmYearMonth(Date.now())
   // `monthsWithReadings` spans every year, so the placeholder (the old year)
   // already resolves a month of the year that is loading.
@@ -130,27 +132,39 @@ function EnergyOverviewPage() {
           : period.year === tiles.year
             ? tiles.months[period.month - 1]
             : null
-  // While another year loads, the placeholder can't answer for a month of the
-  // new year: keep the figures the card showed last, dimmed with the chart. A
-  // failed read keeps them too (dimmed, under the alert): "no data" would be a
-  // false empty claim (ADR-0016).
+  // While another year loads, the placeholder can't answer for a month or the
+  // year of the new year: keep the figures the card showed last, dimmed with
+  // the chart. All time doesn't depend on the year, so Totalt shows at once.
+  // A failed read blanks the figures under the alert: the last ones would sit
+  // under the new period's label, "no data" would be a false empty claim
+  // (ADR-0016).
   const [lastSums, setLastSums] = useState<PeriodSums | null>(periodSums)
   if (!stale && !failed && periodSums !== lastSums) setLastSums(periodSums)
-  const tileSums = stale || failed ? lastSums : periodSums
+  const tilesStale = stale && period?.kind !== 'all'
+  const tileSums = failed ? 'unavailable' : tilesStale ? lastSums : periodSums
   // A period the data can't show (a stale link, a year without readings, a
   // legacy ?year=) resolves to the default: once its year's data is in, the URL
   // follows, so the query (and the chart) move to the shown period's year.
-  const rewrite =
-    overview && !stale && overview.firstReadingDay !== null && period
-      ? requested
-        ? formatPeriod(requested) !== formatPeriod(period)
-        : search.period !== undefined || search.year !== undefined
-      : false
-  const rewriteTo = rewrite && period ? searchValue(period) : null
+  // Nothing valid requested (an invalid ?period= or ?year=) is the default
+  // already: the URL goes back to a bare /energy.
+  // undefined: the URL stays; null: back to a bare /energy; else the period.
+  const rewriteTo: string | number | null | undefined = requested
+    ? overview && !stale && overview.firstReadingDay !== null && period
+      ? formatPeriod(requested) !== formatPeriod(period)
+        ? searchValue(period)
+        : undefined
+      : undefined
+    : search.period !== undefined || search.year !== undefined
+      ? null
+      : undefined
   useEffect(() => {
-    if (rewriteTo !== null) {
-      void navigate({ to: '.', search: { period: rewriteTo }, replace: true, resetScroll: false })
-    }
+    if (rewriteTo === undefined) return
+    void navigate({
+      to: '.',
+      search: rewriteTo === null ? {} : { period: rewriteTo },
+      replace: true,
+      resetScroll: false,
+    })
   }, [rewriteTo, navigate])
 
   return (
@@ -199,10 +213,16 @@ function EnergyOverviewPage() {
                       onChange={setPeriod}
                     />
                   </CardHeader>
+                  {/* Announces each period change (the label sits inside a
+                      button, which screen readers don't re-read). Outside the
+                      busy figures, so it isn't held back while a year loads. */}
+                  <p data-slot="period-announcement" aria-live="polite" className="sr-only">
+                    {periodLabel(period, now)}
+                  </p>
                   {/* The control stays live while a year loads: only the figures dim. */}
                   <CardContent
-                    className={cn('transition-opacity', (stale || failed) && 'opacity-60')}
-                    aria-busy={stale || undefined}
+                    className={cn('transition-opacity', (tilesStale || failed) && 'opacity-60')}
+                    aria-busy={tilesStale || undefined}
                   >
                     <EnergyReadouts sums={tileSums} />
                   </CardContent>

@@ -83,9 +83,18 @@ afterEach(() => {
 
 // Anything unseeded fails (the test server has no /api/rpc), which is how a
 // failed read is staged. The health is seeded unless `prepare` removes it.
-async function renderPage(route: AnyRoute, path: string, prepare: (qc: QueryClient) => void) {
+// `staleTime` is the client's default (Infinity: seeded data never refetches);
+// the energy overview query carries its own.
+async function renderPage(
+  route: AnyRoute,
+  path: string,
+  prepare: (qc: QueryClient) => void,
+  { staleTime = Number.POSITIVE_INFINITY }: { staleTime?: number } = {},
+) {
   const qc = makeTestQueryClient()
-  qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY, retry: false } })
+  qc.setDefaultOptions({ queries: { staleTime, retry: false } })
+  // The health never goes stale here: its refetch isn't what these tests watch.
+  qc.setQueryDefaults(syncHealthQuery.queryKey, { staleTime: Number.POSITIVE_INFINITY })
   seedSourcesHealth(qc)
   prepare(qc)
   const root = createRootRouteWithContext<{ queryClient: QueryClient; user: unknown }>()({
@@ -187,8 +196,14 @@ test('a stale ?period= falls back to the default month', async () => {
 })
 
 test('stepping writes ?period= and replaces the history entry; a month switch sends no request', async () => {
-  const { screen, router, qc } = await renderPage(Overview, '/energy', seedOverview(withData))
+  // No Infinity default here: the overview's own staleTime (5 min) is what
+  // keeps the year fresh.
+  const { screen, router, qc } = await renderPage(Overview, '/energy', seedOverview(withData), {
+    staleTime: 0,
+  })
   await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
+  // Idle for a minute: past the app's 20 s default query staleTime.
+  vi.setSystemTime(new Date('2026-09-15T12:01:00Z'))
   const before = router.history.length
   const fetches = recordFetches(qc)
   await screen.getByRole('button', { name: m.energy_period_prev_month() }).click()
@@ -199,6 +214,34 @@ test('stepping writes ?period= and replaces the history entry; a month switch se
   expect(router.history.length).toBe(before)
   // Settled (the loader ran, the page re-rendered on the new search): still no fetch.
   await expect.poll(() => router.state.status).toBe('idle')
+  fetches.stop()
+  expect(fetches.fetched).toEqual([])
+})
+
+test('stepping into a cached year and back within 5 minutes sends no request (hourly data)', async () => {
+  // Without the overview's own staleTime, the client default (0 here, 20 s in
+  // the app) would refetch each year as its query mounts again.
+  const { screen, qc } = await renderPage(
+    Overview,
+    '/energy?period=2026-01',
+    (qc) => {
+      qc.setQueryData(energyOverviewQuery(2026).queryKey, twoYears as never)
+      qc.setQueryData(energyOverviewQuery(2025).queryKey, {
+        ...twoYears,
+        year: 2025,
+        months: Array.from({ length: 12 }, (_, i) => (i === 11 ? sums({ solarKwh: 42 }) : null)),
+      } as never)
+    },
+    { staleTime: 0 },
+  )
+  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  vi.setSystemTime(new Date('2026-09-15T12:01:00Z'))
+  const fetches = recordFetches(qc)
+  await screen.getByRole('button', { name: m.energy_period_prev_month() }).click()
+  await expect.element(screen.getByText('42,0 kWh')).toBeVisible()
+  vi.setSystemTime(new Date('2026-09-15T12:02:00Z'))
+  await screen.getByRole('button', { name: m.energy_period_next_month() }).click()
+  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
   fetches.stop()
   expect(fetches.fetched).toEqual([])
 })
@@ -330,6 +373,69 @@ test('a legacy ?year= without readings moves the URL to the default month', asyn
   await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
 })
 
+test.each([
+  '/energy?period=garbage',
+  '/energy?period=2026-13',
+])('%s (nothing valid requested) goes back to a bare /energy', async (path) => {
+  const { screen, router } = await renderPage(Overview, path, seedOverview(withData))
+  await expect.poll(() => router.state.location.searchStr).toBe('')
+  expect(router.state.location.search).toEqual({})
+  await expect.element(screen.getByRole('button', { name: /september 2026/i })).toBeVisible()
+  await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
+})
+
+test('a stale but valid ?period= in the current year moves the URL to the default month', async () => {
+  const { router } = await renderPage(Overview, '/energy?period=2026-11', seedOverview(withData))
+  await expect.poll(() => router.state.location.searchStr).toBe('?period=2026-09')
+})
+
+const announcement = () =>
+  document.querySelector('[data-slot="period-announcement"][aria-live="polite"]')
+
+test('each period change is announced in a polite live region', async () => {
+  const { screen } = await renderPage(Overview, '/energy?period=2026-08', seedOverview(withData))
+  await expect.element(screen.getByText('107,0 kWh')).toBeVisible()
+  const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
+  expect(tiles.contains(announcement())).toBe(true)
+  expect(announcement()?.className).toContain('sr-only')
+  expect(announcement()?.textContent).toMatch(/^augusti 2026$/i)
+  // Outside the figures that go busy while a year loads.
+  expect(announcement()?.closest('[aria-busy]')).toBeNull()
+  await screen.getByRole('button', { name: m.energy_period_next_month() }).click()
+  await expect
+    .poll(() => announcement()?.textContent?.toLowerCase())
+    .toBe(`september 2026 (${m.energy_chart_so_far()})`)
+  await screen.getByRole('button', { name: periodControl }).click()
+  await screen.getByRole('button', { name: m.charging_tile_all_time(), exact: true }).click()
+  await expect.poll(() => announcement()?.textContent).toBe(m.charging_tile_all_time())
+})
+
+test('switching to Totalt while its year loads shows all time at once, not dimmed', async () => {
+  // On December 2025 with only 2025 cached: Totalt asks for 2026, which never
+  // lands, so the page shows 2025 as the placeholder. All time doesn't depend
+  // on the year: the placeholder's figure is the answer.
+  const { screen } = await renderPage(Overview, '/energy?period=2025-12', (qc) => {
+    qc.setQueryData(energyOverviewQuery(2025).queryKey, {
+      ...twoYears,
+      year: 2025,
+      months: Array.from({ length: 12 }, (_, i) => (i === 11 ? sums({ solarKwh: 42 }) : null)),
+    } as never)
+    pendingForever(qc, energyOverviewQuery(2026).queryKey)
+  })
+  await expect.element(screen.getByText('42,0 kWh')).toBeVisible()
+  await screen.getByRole('button', { name: periodControl }).click()
+  await screen.getByRole('button', { name: m.charging_tile_all_time(), exact: true }).click()
+  const chart = screen
+    .getByRole('region', { name: m.energy_chart_title({ year: '2025' }) })
+    .element()
+  // The chart waits for 2026, dimmed; the tiles don't.
+  await expect.poll(() => chart.querySelector('[aria-busy="true"]')).not.toBeNull()
+  await expect.element(screen.getByText(/^6\s000,0 kWh$/)).toBeVisible()
+  const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
+  expect(tiles.querySelector('[aria-busy="true"]')).toBeNull()
+  expect(tiles.querySelector('.opacity-60')).toBeNull()
+})
+
 test('the default leaves a bare /energy alone', async () => {
   const { screen, router } = await renderPage(Overview, '/energy', seedOverview(withData))
   await expect.element(screen.getByText('108,0 kWh')).toBeVisible()
@@ -410,8 +516,11 @@ test('a failed read of another year keeps the period control, so the user can st
   // The failed year's chart is gone; the tiles card and its control stay (lastShown).
   await expect.element(screen.getByRole('button', { name: /december 2025/i })).toBeVisible()
   await expect.element(screen.getByRole('region', { name: m.energy_tiles_heading() })).toBeVisible()
-  // January's figures stay (dimmed): "no data" would be a false empty claim.
-  await expect.element(screen.getByText('100,0 kWh')).toBeVisible()
+  // The readouts go blank under the alert: January's figures would sit under
+  // December's label, and "no data" would be a false empty claim.
+  const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
+  await expect.poll(() => tiles.querySelector('[aria-hidden="true"].invisible')).not.toBeNull()
+  expect(screen.getByText('100,0 kWh').elements()).toHaveLength(0)
   expect(screen.getByText(m.energy_period_no_data()).elements()).toHaveLength(0)
   expect(document.querySelectorAll('section')).toHaveLength(1) // the tiles; the chart is gone
   await screen.getByRole('button', { name: m.energy_period_next_month() }).click()

@@ -133,6 +133,16 @@ test('a year without any data shows the no-data state, not an empty chart', asyn
   expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(0)
 })
 
+test('the no-data state reserves the hint line, so the card keeps its height', async () => {
+  const { screen } = await render('solar', Array(12).fill(null))
+  await expect.element(screen.getByText(m.energy_chart_no_data({ year: '2026' }))).toBeVisible()
+  // No app.css in browser tests: pin the reserved line, not its geometry.
+  const reserved = screen.container.querySelector('p[aria-hidden="true"].invisible')
+  expect(reserved?.textContent).toBe(m.energy_chart_select_hint())
+  expect(reserved?.className).toContain('mt-2')
+  expect(reserved?.className).toContain('text-sm')
+})
+
 test('a Nät tooltip on a partial current month: parts, totals and the gap', async () => {
   const partial = months.map((p, i) => (i === 3 && p ? { ...p, buckets: 50 } : p))
   const { screen } = await renderChart({ metric: 'grid', data: partial, currentMonth: 4 })

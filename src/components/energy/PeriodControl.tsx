@@ -25,6 +25,12 @@ function labelOf(p: EnergyPeriod, current: YearMonth): { main: string; soFar: bo
   }
 }
 
+/** The period's spoken name, e.g. "oktober 2026 (hittills)": the control's and the page's announcement. */
+export function periodLabel(p: EnergyPeriod, current: YearMonth): string {
+  const { main, soFar } = labelOf(p, current)
+  return soFar ? `${main} (${m.energy_chart_so_far()})` : main
+}
+
 // The tiles card's period: ‹ label ⌄ ›. The arrows step within the kind; the
 // label opens a picker that never scrolls (spec "The period control"). Every
 // label it can show is stacked in one grid cell, so the cell is as wide as the
@@ -59,7 +65,6 @@ export function PeriodControl({
   const prev = stepPeriod(period, -1, monthsWithReadings)
   const next = stepPeriod(period, 1, monthsWithReadings)
   const unit = period.kind === 'year' ? 'year' : 'month'
-  const shown = labelOf(period, current)
   const pick = (p: EnergyPeriod) => {
     setOpen(false)
     onChange(p)
@@ -82,9 +87,7 @@ export function PeriodControl({
           <Button
             variant="ghost"
             className="h-10 min-w-0 flex-1 px-3 font-semibold text-base sm:flex-none"
-            aria-label={m.energy_period_choose({
-              period: `${shown.main}${shown.soFar ? ` (${m.energy_chart_so_far()})` : ''}`,
-            })}
+            aria-label={m.energy_period_choose({ period: periodLabel(period, current) })}
           >
             <span data-slot="period-labels" className="grid min-w-0 justify-items-center">
               {all.map((p) => {
@@ -167,7 +170,14 @@ function Picker({
     period.kind === 'all' ? (years[years.length - 1] ?? current.year) : period.year,
   )
   const i = years.indexOf(year)
+  // aria-disabled, not disabled, like the header arrows: a disabled button
+  // would drop focus out of the dialog at the first or last year.
+  const hasPrev = i > 0
+  const hasNext = i !== -1 && i < years.length - 1
   const selected = formatPeriod(period)
+  const wholeYear: EnergyPeriod = { kind: 'year', year }
+  // The selected choice's brand border; the unselected bottom row's own border
+  // is added only when not selected (tailwind-merge would let it replace the brand).
   const choice = (p: EnergyPeriod) =>
     cn(
       'min-h-11 rounded-md border border-transparent text-[15px] outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50',
@@ -180,9 +190,9 @@ function Picker({
         <Button
           variant="ghost"
           size="icon"
-          className="size-11"
-          disabled={i <= 0}
-          onClick={() => setYear(years[i - 1])}
+          className="size-11 aria-disabled:opacity-50"
+          aria-disabled={!hasPrev}
+          onClick={() => hasPrev && setYear(years[i - 1])}
           aria-label={m.energy_period_prev_year()}
         >
           <ChevronLeftIcon className="size-5" />
@@ -191,9 +201,9 @@ function Picker({
         <Button
           variant="ghost"
           size="icon"
-          className="size-11"
-          disabled={i === -1 || i >= years.length - 1}
-          onClick={() => setYear(years[i + 1])}
+          className="size-11 aria-disabled:opacity-50"
+          aria-disabled={!hasNext}
+          onClick={() => hasNext && setYear(years[i + 1])}
           aria-label={m.energy_period_next_year()}
         >
           <ChevronRightIcon className="size-5" />
@@ -227,9 +237,9 @@ function Picker({
         <button
           type="button"
           disabled={!years.includes(year)}
-          aria-current={selected === formatPeriod({ kind: 'year', year }) ? 'true' : undefined}
-          onClick={() => onPick({ kind: 'year', year })}
-          className={cn(choice({ kind: 'year', year }), 'border-border')}
+          aria-current={selected === formatPeriod(wholeYear) ? 'true' : undefined}
+          onClick={() => onPick(wholeYear)}
+          className={cn(choice(wholeYear), selected !== formatPeriod(wholeYear) && 'border-border')}
         >
           {m.energy_period_whole_year({ year: String(year) })}
         </button>
@@ -237,7 +247,7 @@ function Picker({
           type="button"
           aria-current={period.kind === 'all' ? 'true' : undefined}
           onClick={() => onPick({ kind: 'all' })}
-          className={cn(choice({ kind: 'all' }), 'border-border')}
+          className={cn(choice({ kind: 'all' }), period.kind !== 'all' && 'border-border')}
         >
           {m.charging_tile_all_time()}
         </button>

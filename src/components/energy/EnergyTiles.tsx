@@ -12,11 +12,13 @@ import { m } from '~/paraglide/messages'
 
 // The house's energy for one period: solar and where it went, bought, sold,
 // self-sufficiency and consumption with the car's part (ADR-0024). The page
-// owns the card and the period control.
-export function EnergyReadouts({ sums }: { sums: PeriodSums | null }) {
+// owns the card and the period control. `null`: the period has no readings
+// (said so); `'unavailable'`: its figures couldn't be read (blank, the page's
+// alert explains; "no data" would be a false empty claim, ADR-0016).
+export function EnergyReadouts({ sums }: { sums: PeriodSums | null | 'unavailable' }) {
   return (
     <div className="@container flex flex-col gap-3">
-      {sums ? (
+      {sums && sums !== 'unavailable' ? (
         <PeriodReadouts sums={sums} />
       ) : (
         // The same grid, invisible, so the empty state is exactly as tall as a full one at any width.
@@ -24,9 +26,11 @@ export function EnergyReadouts({ sums }: { sums: PeriodSums | null }) {
           <div aria-hidden className="invisible flex flex-col gap-3">
             <PeriodReadouts sums={EMPTY_SUMS} />
           </div>
-          <p className="absolute top-0 left-0 text-muted-foreground text-sm">
-            {m.energy_period_no_data()}
-          </p>
+          {sums === null ? (
+            <p className="absolute top-0 left-0 text-muted-foreground text-sm">
+              {m.energy_period_no_data()}
+            </p>
+          ) : null}
         </div>
       )}
     </div>

@@ -131,7 +131,12 @@
   --warning: oklch(0.75 0.16 75);
   --warning-foreground: oklch(0.27 0.06 75);
   /* Energy series (ADR-0024 step 1b): one meaning per colour, validated with the
-     data-viz palette validator (--pairs all, light on #fff / dark on #1c1c1f). */
+     data-viz palette validator (--pairs all, light on #fff / dark on #1c1c1f).
+     Shared with /charging's EnergySourceBar (ADR-0023). On white, light solar
+     (≈2.17:1) and battery (≈2.82:1) stay under 3:1 by design: the legend
+     carries identity and every figure in text. Battery green and solar amber
+     sit near --success / --warning, the timing-verdict colours on the session
+     summary: the owner reviews that pairing at the checkpoint. */
   --energy-grid: #475569;
   --energy-battery: #1baf7a;
   --energy-solar: #eda100;

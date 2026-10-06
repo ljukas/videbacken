@@ -128,6 +128,9 @@ describe('defaultPeriod', () => {
       month: 10,
     })
   })
+  test('a month after the current one never counts (clock skew): Totalt', () => {
+    expect(defaultPeriod(['2026-12'], { year: 2026, month: 10 })).toEqual({ kind: 'all' })
+  })
   test('no readings at all: Totalt (the page shows the empty state anyway)', () => {
     expect(defaultPeriod([], NOW)).toEqual({ kind: 'all' })
   })

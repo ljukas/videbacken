@@ -144,3 +144,46 @@ test('picking a month closes the picker and returns focus', async () => {
   await expect.element(screen.getByRole('dialog')).not.toBeInTheDocument()
   await expect.element(trigger).toHaveFocus()
 })
+
+test('the picker’s year arrows are aria-disabled at the ends, keep focus and do nothing', async () => {
+  const { screen } = await setup()
+  await userEvent.click(screen.getByRole('button', { name: /Välj period|Choose period/ }))
+  const dialog = screen.getByRole('dialog', { name: m.energy_period_picker() })
+  const prev = dialog.getByRole('button', { name: m.energy_period_prev_year() })
+  const next = dialog.getByRole('button', { name: m.energy_period_next_year() })
+  // 2026 is the last year with readings.
+  await expect.element(next).toHaveAttribute('aria-disabled', 'true')
+  await expect.element(prev).toHaveAttribute('aria-disabled', 'false')
+  ;(prev.element() as HTMLElement).focus()
+  await userEvent.keyboard('{Enter}')
+  await expect.element(dialog.getByText('2025', { exact: true })).toBeVisible()
+  // The first year: the arrow stays focused inside the dialog.
+  await expect.element(prev).toHaveAttribute('aria-disabled', 'true')
+  await expect.element(prev).toHaveFocus()
+  ;(prev.element() as HTMLElement).click()
+  await expect.element(dialog.getByText('2025', { exact: true })).toBeVisible()
+  await expect.element(dialog).toBeVisible()
+})
+
+test('a selected Hela {år} or Totalt keeps the brand border', async () => {
+  const { screen } = await setup({ kind: 'year', year: 2026 })
+  await userEvent.click(screen.getByRole('button', { name: /Välj period|Choose period/ }))
+  const dialog = screen.getByRole('dialog', { name: m.energy_period_picker() })
+  const whole = dialog
+    .getByRole('button', { name: m.energy_period_whole_year({ year: '2026' }) })
+    .element()
+  const total = dialog.getByRole('button', { name: m.charging_tile_all_time() }).element()
+  expect(whole.classList).toContain('border-brand')
+  expect(whole.classList).not.toContain('border-border')
+  expect(total.classList).toContain('border-border')
+  expect(total.classList).not.toContain('border-brand')
+})
+
+test('a selected Totalt keeps the brand border', async () => {
+  const { screen } = await setup({ kind: 'all' })
+  await userEvent.click(screen.getByRole('button', { name: /Välj period|Choose period/ }))
+  const dialog = screen.getByRole('dialog', { name: m.energy_period_picker() })
+  const total = dialog.getByRole('button', { name: m.charging_tile_all_time() }).element()
+  expect(total.classList).toContain('border-brand')
+  expect(total.classList).not.toContain('border-border')
+})
