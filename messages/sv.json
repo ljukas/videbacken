@@ -841,7 +841,7 @@
   "energy_tile_load": "Förbrukning",
   "energy_tile_load_car": "varav laddning {kwh} kWh",
   "energy_missing_hours": "Data saknas för {hours} h",
-  "energy_chart_title": "Per månad",
+  "energy_chart_title": "Per månad · {year}",
   "energy_metric_label": "Visa i diagrammet",
   "energy_metric_solar": "Solel",
   "energy_metric_grid": "Nät",
@@ -861,5 +861,15 @@
   "energy_chart_no_data": "Ingen energidata för {year}",
   "nav_charging_settings_short": "Inställningar",
   "nav_charging_settings": "Laddningsinställningar",
-  "cmd_kw_charging_settings": "datakällor synk synkronisering historik integrationer tariff avgifter påslag elnät kostnad nyckel zaptec skoda emaldo elpris"
+  "cmd_kw_charging_settings": "datakällor synk synkronisering historik integrationer tariff avgifter påslag elnät kostnad nyckel zaptec skoda emaldo elpris",
+  "energy_period_month": "{month} {year}",
+  "energy_period_year": "År {year}",
+  "energy_period_whole_year": "Hela {year}",
+  "energy_period_choose": "Period: {period}. Välj period",
+  "energy_period_picker": "Välj period",
+  "energy_period_prev_month": "Föregående månad",
+  "energy_period_next_month": "Nästa månad",
+  "energy_period_prev_year": "Föregående år",
+  "energy_period_next_year": "Nästa år",
+  "energy_chart_select_hint": "Klicka på en månad för att visa den i summeringen."
 }

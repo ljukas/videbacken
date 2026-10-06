@@ -21,9 +21,9 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
 test('solar rows: parts and the produced total', () => {
   expect(energyTooltipRows('solar', sums())).toEqual({
     parts: [
-      { key: 'solarDirect', kwh: 180 },
-      { key: 'solarBattery', kwh: 120 },
-      { key: 'solarExported', kwh: 100 },
+      { key: 'solarDirect', kwh: 180, share: 0.45 },
+      { key: 'solarBattery', kwh: 120, share: 0.3 },
+      { key: 'solarExported', kwh: 100, share: 0.25 },
     ],
     totalKwh: 400,
   })
@@ -32,9 +32,9 @@ test('solar rows: parts and the produced total', () => {
 test('grid rows: export as a positive part; total is what was bought', () => {
   expect(energyTooltipRows('grid', sums())).toEqual({
     parts: [
-      { key: 'importDirect', kwh: 460 },
-      { key: 'importBattery', kwh: 40 },
-      { key: 'exported', kwh: 100 },
+      { key: 'importDirect', kwh: 460, share: 0.92 },
+      { key: 'importBattery', kwh: 40, share: 0.08 },
+      { key: 'exported', kwh: 100, share: null },
     ],
     totalKwh: 500,
   })
@@ -43,8 +43,8 @@ test('grid rows: export as a positive part; total is what was bought', () => {
 test('load rows: charging and the rest of the house', () => {
   expect(energyTooltipRows('load', sums())).toEqual({
     parts: [
-      { key: 'car', kwh: 250 },
-      { key: 'house', kwh: 550 },
+      { key: 'car', kwh: 250, share: 0.3125 },
+      { key: 'house', kwh: 550, share: 0.6875 },
     ],
     totalKwh: 800,
   })
@@ -70,8 +70,8 @@ test('solar: export larger than the surplus never exceeds the produced total', (
 test('load: car above load is capped so car + house = load', () => {
   const { parts, totalKwh } = energyTooltipRows('load', sums({ loadKwh: 200, carKwh: 250 }))
   expect(parts).toEqual([
-    { key: 'car', kwh: 200 },
-    { key: 'house', kwh: 0 },
+    { key: 'car', kwh: 200, share: 1 },
+    { key: 'house', kwh: 0, share: 0 },
   ])
   expect(totalKwh).toBe(200)
 })
@@ -89,4 +89,28 @@ test('chartRows: months without data are null, never 0, for every series', () =>
     expect(Object.keys(values).length).toBeGreaterThan(0)
     for (const v of Object.values(values)) expect(v).toBeNull()
   }
+})
+
+test('stacked parts carry their share of the total; Nät export has none', () => {
+  const p = sums({
+    solarKwh: 100,
+    batteryChargeSolarKwh: 20,
+    gridExportKwh: 30,
+    gridImportKwh: 50,
+    batteryChargeGridKwh: 10,
+  })
+  const solar = energyTooltipRows('solar', p).parts
+  expect(solar.map((r) => r.share)).toEqual([0.5, 0.2, 0.3])
+  const grid = energyTooltipRows('grid', p).parts
+  expect(grid.find((r) => r.key === 'importBattery')?.share).toBeCloseTo(0.2, 9)
+  expect(grid.find((r) => r.key === 'exported')?.share).toBeNull()
+})
+
+test('a zero total gives no shares', () => {
+  expect(
+    energyTooltipRows(
+      'solar',
+      sums({ solarKwh: 0, batteryChargeSolarKwh: 0, gridExportKwh: 0 }),
+    ).parts.every((r) => r.share === null),
+  ).toBe(true)
 })

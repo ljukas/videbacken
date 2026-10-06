@@ -18,11 +18,22 @@ export const METRIC_SERIES: Record<EnergyMetric, SeriesKey[]> = {
   load: ['car', 'house'],
 }
 
-/** A month's parts (positive kWh) and the metric's total, for the bars and the tooltip. */
+/** The one series that draws below the axis: Nät's export (a separate flow, not part of the purchase). */
+export const isBelowAxis = (metric: EnergyMetric, key: SeriesKey) =>
+  metric === 'grid' && key === 'exported'
+
+export type TooltipPart = {
+  key: SeriesKey
+  kwh: number
+  /** Share of `totalKwh` for a stacked part; null for Nät's export and when the total is 0. */
+  share: number | null
+}
+
+/** A month's parts (positive kWh, each with its share of the total) and the metric's total, for the bars and the tooltip. */
 export function energyTooltipRows(
   metric: EnergyMetric,
   p: PeriodSums,
-): { parts: { key: SeriesKey; kwh: number }[]; totalKwh: number } {
+): { parts: TooltipPart[]; totalKwh: number } {
   const f = energyFigures(p)
   // The parts must add up to the total the tooltip prints: battery charging
   // from solar can overshoot the month's solar (meter noise); cap it here
@@ -39,12 +50,13 @@ export function energyTooltipRows(
     house: f.restOfHouse,
   }
   const totalKwh = metric === 'solar' ? p.solarKwh : metric === 'grid' ? p.gridImportKwh : p.loadKwh
-  return { parts: METRIC_SERIES[metric].map((key) => ({ key, kwh: value[key] })), totalKwh }
+  const parts = METRIC_SERIES[metric].map((key) => ({
+    key,
+    kwh: value[key],
+    share: totalKwh > 0 && !isBelowAxis(metric, key) ? value[key] / totalKwh : null,
+  }))
+  return { parts, totalKwh }
 }
-
-/** The one series that draws below the axis: Nät's export (a separate flow, not part of the purchase). */
-export const isBelowAxis = (metric: EnergyMetric, key: SeriesKey) =>
-  metric === 'grid' && key === 'exported'
 
 export type ChartRow = { month: number; sums: PeriodSums | null } & Partial<
   Record<SeriesKey, number | null>

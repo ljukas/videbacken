@@ -841,7 +841,7 @@
   "energy_tile_load": "Consumption",
   "energy_tile_load_car": "of which charging {kwh} kWh",
   "energy_missing_hours": "Data missing for {hours} h",
-  "energy_chart_title": "By month",
+  "energy_chart_title": "By month · {year}",
   "energy_metric_label": "Show in the chart",
   "energy_metric_solar": "Solar",
   "energy_metric_grid": "Grid",
@@ -861,5 +861,15 @@
   "energy_chart_no_data": "No energy data for {year}",
   "nav_charging_settings_short": "Settings",
   "nav_charging_settings": "Charging settings",
-  "cmd_kw_charging_settings": "data sources sync synchronization history integrations tariff fees markup grid cost api key zaptec skoda emaldo elpris"
+  "cmd_kw_charging_settings": "data sources sync synchronization history integrations tariff fees markup grid cost api key zaptec skoda emaldo elpris",
+  "energy_period_month": "{month} {year}",
+  "energy_period_year": "Year {year}",
+  "energy_period_whole_year": "All of {year}",
+  "energy_period_choose": "Period: {period}. Choose period",
+  "energy_period_picker": "Choose period",
+  "energy_period_prev_month": "Previous month",
+  "energy_period_next_month": "Next month",
+  "energy_period_prev_year": "Previous year",
+  "energy_period_next_year": "Next year",
+  "energy_chart_select_hint": "Click a month to show it in the summary."
 }
