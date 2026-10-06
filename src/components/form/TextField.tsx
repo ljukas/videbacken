@@ -1,5 +1,5 @@
 import { useStore } from '@tanstack/react-form'
-import type { ComponentProps, KeyboardEventHandler } from 'react'
+import type { ComponentProps, KeyboardEventHandler, ReactNode } from 'react'
 import { Field, FieldDescription, FieldError, FieldLabel } from '~/components/ui/field'
 import { Input } from '~/components/ui/input'
 import {
@@ -12,13 +12,16 @@ import { useFieldContext } from '~/hooks/form'
 
 type Props = {
   label: string
-  description?: string
+  /** Hint under the input, announced with it; may hold several lines (e.g. a status and a hint). */
+  description?: ReactNode
   type?: ComponentProps<typeof Input>['type']
   /** Soft-keyboard hint, e.g. `decimal` for a comma-friendly number field. */
   inputMode?: ComponentProps<typeof Input>['inputMode']
   autoComplete?: string
   placeholder?: string
   autoFocus?: boolean
+  /** Disabled on top of the always-on disable while the form submits. */
+  disabled?: boolean
   inputClassName?: string
   inputSize?: ComponentProps<typeof Input>['size']
   srOnlyLabel?: boolean
@@ -47,6 +50,7 @@ export function TextField({
   autoComplete,
   placeholder,
   autoFocus,
+  disabled,
   inputClassName,
   inputSize,
   srOnlyLabel,
@@ -83,7 +87,7 @@ export function TextField({
     onBlur: field.handleBlur,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => field.handleChange(e.target.value),
     'aria-invalid': isInvalid,
-    disabled: isSubmitting,
+    disabled: disabled || isSubmitting,
   }
 
   return (
