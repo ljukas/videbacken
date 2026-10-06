@@ -1,5 +1,6 @@
 import { KeyRoundIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert'
+import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { m } from '~/paraglide/messages'
 import { formatDate } from './format'
 import { SettingsLink } from './SettingsLink'
@@ -38,7 +39,15 @@ export function CredentialExpiryAlert({
         </div>
         {settingsLink ? (
           <div>
-            <SettingsLink />
+            <SettingsLink
+              search={{ dialog: 'credentials', source: 'skoda' }}
+              aria-label={m.charging_source_action_label({
+                action: m.charging_credentials_replace_key(),
+                source: integrationSourceName('skoda'),
+              })}
+            >
+              {m.charging_credentials_replace_key()}
+            </SettingsLink>
           </div>
         ) : null}
       </AlertDescription>

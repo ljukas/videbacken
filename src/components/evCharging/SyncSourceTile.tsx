@@ -5,10 +5,14 @@ import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card } from '~/components/ui/card'
 import { Progress } from '~/components/ui/progress'
+import { isCredentialSource } from '~/lib/integrationCredentials'
+import { suspectFieldsMessage } from '~/lib/integrationCredentialsMessage'
 import type { IntegrationSource } from '~/lib/integrationHealth'
 import { integrationHealthTitle, integrationSourceName } from '~/lib/integrationHealthMessage'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
+import { CredentialsButton } from './CredentialsButton'
+import { credentialLink, currentSuspectFields } from './credentialLink'
 import { formatAgo } from './format'
 import { syncHealthMessage } from './SyncHealthAlert'
 import { SyncNowButton } from './SyncNowButton'
@@ -90,6 +94,8 @@ export function SyncSourceTile({
   historyRef,
   details,
   actions,
+  onOpenCredentials,
+  credentialsUpdatedAt,
 }: {
   source: IntegrationSource
   health: Health | undefined
@@ -102,6 +108,10 @@ export function SyncSourceTile({
   details?: React.ReactNode
   /** Source-specific `<Button>`s (the rows size them by data-slot), each on its own full-width row above sync + history; pass undefined for none. */
   actions?: React.ReactNode
+  /** Opens this source's credentials dialog; absent (or a source without credentials) → no key button, no link. */
+  onOpenCredentials?: () => void
+  /** When this source's credentials were last saved (`credentials.status`): null when none are stored, undefined while unknown. */
+  credentialsUpdatedAt?: Date | null
 }) {
   const name = integrationSourceName(source)
   const message = health ? syncHealthMessage(health) : null
@@ -116,6 +126,21 @@ export function SyncSourceTile({
   // Only a run in flight; the server sends progress only while its lease is live.
   const progress = pending ? (health?.progress ?? null) : null
   const progressText = progress ? m.charging_source_progress(progress) : null
+  const credentials = onOpenCredentials && isCredentialSource(source) ? source : null
+  // One verdict for both: the suspect line shows only when the health blames the credentials
+  // ("Uppdatera inloggning"), the link whenever it points at them and the page can open the dialog.
+  const cred = health ? credentialLink(health) : null
+  const link = cred && onOpenCredentials ? cred : null
+  const linkText =
+    link?.kind === 'configure'
+      ? m.charging_credentials_configure()
+      : m.charging_credentials_update()
+  // Not the fields a save has since replaced (see currentSuspectFields); the link stays.
+  const suspectFields = currentSuspectFields(health, credentialsUpdatedAt)
+  const suspect =
+    cred?.kind === 'update' && suspectFields.length > 0
+      ? suspectFieldsMessage(cred.source, suspectFields)
+      : null
   return (
     <Card className="@container relative h-full min-w-0 px-5 py-5">
       {progress && progressText ? (
@@ -129,7 +154,14 @@ export function SyncSourceTile({
           className="absolute inset-x-0 top-0 h-1 rounded-none bg-primary/15"
         />
       ) : null}
-      <div className="flex @[11rem]:flex-row flex-col @[11rem]:items-start gap-3">
+      {/* pe-*: room for the key button, stacked or in a row. */}
+      <div
+        data-credentials-room={credentials ? '' : undefined}
+        className={cn(
+          'flex @[11rem]:flex-row flex-col @[11rem]:items-start gap-3',
+          credentials && 'pe-9 pointer-coarse:pe-12',
+        )}
+      >
         <SyncSourceMark source={source} />
         <div className="flex min-w-0 flex-col">
           {/* translate="no": a company/domain name, not prose. */}
@@ -142,6 +174,16 @@ export function SyncSourceTile({
           <p className="text-muted-foreground text-xs">{syncSourceRole(source)}</p>
         </div>
       </div>
+      {/* After the header in the DOM so the name is read and tabbed first; absolute, so its place is unchanged. */}
+      {credentials && onOpenCredentials ? (
+        <div className="absolute end-3 top-3">
+          <CredentialsButton
+            source={credentials}
+            label={m.charging_credentials_button({ source: name })}
+            onClick={onOpenCredentials}
+          />
+        </div>
+      ) : null}
       <div className="flex flex-col items-start gap-1.5">
         <SyncStateBadge health={health} />
         {lastSync ? (
@@ -177,6 +219,18 @@ export function SyncSourceTile({
           >
             {message}
           </p>
+        ) : null}
+        {suspect ? <p className="text-destructive text-xs">{suspect}</p> : null}
+        {link && onOpenCredentials ? (
+          <Button
+            variant="link"
+            size="xs"
+            className="h-auto min-h-6 pointer-coarse:min-h-11 p-0 underline underline-offset-4"
+            aria-label={m.charging_source_action_label({ action: linkText, source: name })}
+            onClick={onOpenCredentials}
+          >
+            {linkText}
+          </Button>
         ) : null}
         {details}
       </div>

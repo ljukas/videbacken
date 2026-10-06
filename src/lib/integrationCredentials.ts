@@ -43,3 +43,6 @@ export const isCredentialField = <S extends CredentialSource>(
   source: S,
   field: string,
 ): field is CredentialField<S> => (CREDENTIAL_FIELDS[source] as readonly string[]).includes(field)
+
+export const isCredentialSource = (source: string): source is CredentialSource =>
+  (CREDENTIAL_SOURCES as readonly string[]).includes(source)

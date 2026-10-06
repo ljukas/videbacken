@@ -5,6 +5,7 @@ import { configureBoneyard } from 'boneyard-js/react'
 
 import _charging_chart from './charging-chart.bones.json'
 import _charging_economy from './charging-economy.bones.json'
+import _charging_grid from './charging-grid.bones.json'
 import _charging_patterns from './charging-patterns.bones.json'
 import _charging_sessions from './charging-sessions.bones.json'
 import _charging_sources from './charging-sources.bones.json'
@@ -23,6 +24,7 @@ configureBoneyard({"color":"#ebebeb","darkColor":"#262626","animate":"pulse"})
 registerBones({
   "charging-chart": _charging_chart,
   "charging-economy": _charging_economy,
+  "charging-grid": _charging_grid,
   "charging-patterns": _charging_patterns,
   "charging-sessions": _charging_sessions,
   "charging-sources": _charging_sources,

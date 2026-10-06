@@ -55,7 +55,7 @@ src/
     api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), emaldo-sync.ts hourly at :45, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly)
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
-    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging/{index,patterns,economy,settings (admin-only: Datakällor + tariffs)}, sensors
+    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging/{index,patterns,economy,settings (admin-only: Datakällor + tariffs + credentials (key button per source, Elnätsavtal card))}, sensors
   lib/
     auth.ts / authClient.ts     betterAuth() (drizzleAdapter + google + magicLink + admin; allowlist gate) / createAuthClient()
     getSession.ts               server fn wrapping auth.api.getSession()
@@ -78,7 +78,8 @@ src/
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
     time/stockholm.ts           client-safe Stockholm calendar helpers (DST-aware day bounds)
     integrationHealth.ts        client-safe integration-health vocabulary (sources, error codes, states — ADR-0019)
-    integrationCredentials.ts   client-safe credential vocabulary (sources, fields, field kinds, origins — ADR-0026)
+    integrationCredentials.ts   client-safe credential vocabulary (sources, fields, field kinds, origins — ADR-0026);
+                                integrationCredentialsMessage.ts: client-safe credential copy
     files/, image/              upload helpers: EXIF / blurhash, HEIC transcode, sizes
     query/                      routeData.ts: `loadRouteData` — the server awaits `critical` and skips `deferred`; the client starts everything and awaits nothing (ADR-0025)
     i18n/, zodLocale.ts, theme.ts, browserSession.ts, devHost.ts (dev:host LAN URLs), utils.ts

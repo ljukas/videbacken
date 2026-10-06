@@ -18,9 +18,11 @@ type Props = {
   className?: string
   variant?: ComponentProps<typeof Button>['variant']
   size?: ComponentProps<typeof Button>['size']
+  /** Disabled on top of the form's own rule (e.g. saving is impossible right now). */
+  disabled?: boolean
 }
 
-export function SubmitButton({ label, pendingLabel, className, variant, size }: Props) {
+export function SubmitButton({ label, pendingLabel, className, variant, size, disabled }: Props) {
   const form = useFormContext()
   const canSubmit = useStore(form.store, (s) => s.canSubmit)
   const isSubmitting = useStore(form.store, (s) => s.isSubmitting)
@@ -33,7 +35,7 @@ export function SubmitButton({ label, pendingLabel, className, variant, size }: 
       size={size}
       // Stay functionally disabled the whole time it's submitting — TanStack Form
       // has no internal double-submit guard, it relies on this.
-      disabled={!canSubmit || isSubmitting}
+      disabled={disabled || !canSubmit || isSubmitting}
       // ...but keep full opacity (override the base `disabled:opacity-50`) until the
       // loader is actually shown, so a fast save doesn't flash a dim. Keys off
       // isSubmitting/showPending only — never canSubmit — so the invalid-state dim
