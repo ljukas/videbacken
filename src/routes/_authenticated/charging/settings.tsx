@@ -243,12 +243,19 @@ function ChargingSettingsPage() {
       <LoadErrorAlert title={m.charging_tariff_error_title()} query={tariffsResult} />
 
       <LoadErrorAlert title={m.charging_credentials_error_title()} query={credentialsResult} />
-      {/* No status line until the credentials' origins are known. */}
-      <GridTariffCard
-        facility={credentialsResult.data?.sources.gridTariff.fields.facilityId}
-        unreadable={credentialsResult.data?.sources.gridTariff.unreadable ?? false}
-        onOpenCredentials={() => open('credentials', { source: 'gridTariff' })}
-      />
+      {/* A skeleton until the credentials' origins are known; a failed read
+          leaves the card without a status line (the alert above says why). */}
+      <SectionSkeleton
+        name="charging-grid"
+        loading={firstLoadPending(credentialsResult)}
+        fallbackHeight="9rem"
+      >
+        <GridTariffCard
+          facility={credentialsResult.data?.sources.gridTariff.fields.facilityId}
+          unreadable={credentialsResult.data?.sources.gridTariff.unreadable ?? false}
+          onOpenCredentials={() => open('credentials', { source: 'gridTariff' })}
+        />
+      </SectionSkeleton>
 
       {/* Waits for the tariffs: "new" starts from the newest period's
           amounts, and the form keeps the defaults it mounted with. */}

@@ -124,16 +124,17 @@ export function SyncSourceTile({
   const progress = pending ? (health?.progress ?? null) : null
   const progressText = progress ? m.charging_source_progress(progress) : null
   const credentials = onOpenCredentials && isCredentialSource(source) ? source : null
-  const link = onOpenCredentials && health && credentials ? credentialLink(health) : null
+  // One verdict for both: the suspect line shows only when the health blames the credentials
+  // ("Uppdatera inloggning"), the link whenever it points at them and the page can open the dialog.
+  const cred = health ? credentialLink(health) : null
+  const link = cred && onOpenCredentials ? cred : null
   const linkText =
     link?.kind === 'configure'
       ? m.charging_credentials_configure()
       : m.charging_credentials_update()
-  // The suspect line and the link agree: both only when the health points at the credentials.
-  const credentialSource = health && isCredentialSource(source) ? credentialLink(health) : null
   const suspect =
-    credentialSource?.kind === 'update' && health?.adminDetail?.suspectFields
-      ? suspectFieldsMessage(credentialSource.source, health.adminDetail.suspectFields)
+    cred?.kind === 'update' && health?.adminDetail?.suspectFields
+      ? suspectFieldsMessage(cred.source, health.adminDetail.suspectFields)
       : null
   return (
     <Card className="@container relative h-full min-w-0 px-5 py-5">
@@ -219,7 +220,7 @@ export function SyncSourceTile({
           <Button
             variant="link"
             size="xs"
-            className="h-auto min-h-6 p-0"
+            className="h-auto min-h-6 pointer-coarse:min-h-11 p-0 underline underline-offset-4"
             aria-label={m.charging_source_action_label({ action: linkText, source: name })}
             onClick={onOpenCredentials}
           >

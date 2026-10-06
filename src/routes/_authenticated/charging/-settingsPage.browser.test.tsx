@@ -398,9 +398,11 @@ test('credentials’ origins still loading: a deep link waits, without a dialog 
   const { screen, router } = await renderSettings('?dialog=credentials&source=emaldo', {
     prepare: (qc) => pendingForever(qc, credentialsKey),
   })
-  // Positive signal first: the page rendered past its reads.
+  // Positive signals first: the page rendered past its reads, and the grid card's
+  // skeleton mounted (hydrated, origins pending) in place of the card.
   await expect.element(screen.getByRole('heading', sourcesHeading)).toBeVisible()
-  await expect.element(screen.getByRole('heading', { name: m.charging_grid_title() })).toBeVisible()
+  await expect.poll(() => skeleton('charging-grid')).not.toBeNull()
+  expect(screen.getByRole('heading', { name: m.charging_grid_title() }).elements()).toHaveLength(0)
   expect(router.state.location.search).toMatchObject({ dialog: 'credentials', source: 'emaldo' })
   expect(screen.getByRole('dialog').elements()).toHaveLength(0)
   expect(screen.getByText(m.charging_credentials_error_title()).elements()).toHaveLength(0)

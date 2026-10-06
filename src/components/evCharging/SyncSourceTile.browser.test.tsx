@@ -315,7 +315,10 @@ test('not configured links to set it up', async () => {
   const { screen } = await renderWithProviders(
     tile({ ...ok, state: 'not_configured', code: 'not_configured' }, { onOpenCredentials: onOpen }),
   )
-  await screen.getByRole('button', credLink(m.charging_credentials_configure(), 'Zaptec')).click()
+  const link = screen.getByRole('button', credLink(m.charging_credentials_configure(), 'Zaptec'))
+  // Underlined at rest, so it reads as a link, not bold text (no app.css here: the class is pinned).
+  expect(link.element().classList).toContain('underline')
+  await link.click()
   expect(onOpen).toHaveBeenCalledOnce()
 })
 
