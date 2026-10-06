@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { z } from 'zod'
+import { CredentialsDialog } from '~/components/evCharging/CredentialsDialog'
+import { credentialsButtonId, currentSuspectFields } from '~/components/evCharging/credentialLink'
 import { DeleteTariffDialog } from '~/components/evCharging/DeleteTariffDialog'
+import { GridTariffCard } from '~/components/evCharging/GridTariffCard'
 import { healthPoll } from '~/components/evCharging/healthPoll'
 import {
   SkodaSourceDetails,
@@ -18,6 +21,11 @@ import { firstLoadPending, LoadErrorAlert } from '~/components/layout/LoadErrorA
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
+import {
+  CREDENTIAL_SOURCES,
+  type CredentialSource,
+  isCredentialSource,
+} from '~/lib/integrationCredentials'
 import { INTEGRATION_SOURCES, type IntegrationSource } from '~/lib/integrationHealth'
 import { orpc } from '~/lib/orpc/client'
 import { loadRouteData } from '~/lib/query/routeData'
@@ -26,17 +34,22 @@ import { seo } from '~/utils/seo'
 
 // The charging section's admin page: every data source's state, sync and
 // history (Datakällor), the car's log import, and the tariff periods the cost
-// is priced with. Moved off the overview, which keeps only the alerts.
+// is priced with, and each source's credentials (ADR-0026). Moved off the
+// overview, which keeps only the alerts.
 const searchSchema = z.object({
   // Dialogs (ADR-0013): tariff new (pre-filled from the newest period), edit,
-  // delete; the car's log import; one data source's sync history.
+  // delete; the car's log import; one data source's sync history or credentials.
   dialog: z
-    .enum(['tariffNew', 'tariffEdit', 'tariffDelete', 'vehicleImport', 'syncRuns'])
+    .enum(['tariffNew', 'tariffEdit', 'tariffDelete', 'vehicleImport', 'syncRuns', 'credentials'])
     .optional()
     .catch(undefined),
   tariffId: z.string().optional().catch(undefined),
-  // The data source whose sync history is open (`dialog=syncRuns`).
-  source: z.enum(INTEGRATION_SOURCES).optional().catch(undefined),
+  // The source whose sync history (`dialog=syncRuns`, an integration source) or
+  // credentials (`dialog=credentials`, a credential source) are open.
+  source: z
+    .union([z.enum(INTEGRATION_SOURCES), z.enum(CREDENTIAL_SOURCES)])
+    .optional()
+    .catch(undefined),
 })
 type SettingsSearch = z.infer<typeof searchSchema>
 type SettingsDialog = NonNullable<SettingsSearch['dialog']>
@@ -46,6 +59,10 @@ const RECENT_RUNS = 20
 const runsQuery = orpc.evCharging.recentRuns.queryOptions({ input: { limit: RECENT_RUNS } })
 const vehicleCoverageQuery = orpc.evCharging.vehicleRecordCoverage.queryOptions()
 const vehicleLatestQuery = orpc.evCharging.vehicleStateLatest.queryOptions()
+const credentialsStatusQuery = orpc.credentials.status.queryOptions()
+
+const isIntegrationSource = (s: string | undefined): s is IntegrationSource =>
+  s !== undefined && (INTEGRATION_SOURCES as readonly string[]).includes(s)
 
 export const Route = createFileRoute('/_authenticated/charging/settings')({
   head: () => ({
@@ -62,14 +79,15 @@ export const Route = createFileRoute('/_authenticated/charging/settings')({
   validateSearch: searchSchema,
   // ADR-0025: the server waits for what the first paint shows; the client waits
   // for nothing (sections show skeletons). Critical: each source's state (the
-  // tiles at the top) and the tariff periods (the card, and a tariff dialog's
-  // deep link). Deferred: the diagnostics inside the tiles, the sync histories,
-  // the car's latest state and the log coverage. A failed read never throws
-  // here: it shows on its tile, in its history overlay or as the tariff card's
-  // alert, each with a retry.
+  // tiles at the top), the tariff periods (the card, and a tariff dialog's
+  // deep link) and the credentials' origins (the grid card, and a credentials
+  // dialog's deep link). Deferred: the diagnostics inside the tiles, the sync
+  // histories, the car's latest state and the log coverage. A failed read never
+  // throws here: it shows on its tile, in its history overlay or as the tariff
+  // card's or the credentials' alert, each with a retry.
   loader: async ({ context: { queryClient } }) => {
     await loadRouteData(queryClient, {
-      critical: [syncHealthQuery, orpc.tariff.list.queryOptions()],
+      critical: [syncHealthQuery, orpc.tariff.list.queryOptions(), credentialsStatusQuery],
       deferred: [runsQuery, vehicleCoverageQuery, vehicleLatestQuery],
     })
   },
@@ -81,7 +99,8 @@ function ChargingSettingsPage() {
   const syncNow = useSyncNow()
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const tariffId = Route.useSearch({ select: (s) => s.tariffId })
-  const runsSource = Route.useSearch({ select: (s) => s.source })
+  // The source of the open history or credentials dialog.
+  const source = Route.useSearch({ select: (s) => s.source })
   const { isOpen, open, close } = useUrlDialog<SettingsDialog, SettingsSearch>({
     current: dialog,
     navigate,
@@ -91,16 +110,19 @@ function ChargingSettingsPage() {
   const tariffs = tariffsResult.data
   const selectedTariff = tariffs?.find((t) => t.id === tariffId)
   // A dialog that can't show (a tariffId that no longer exists; a sync history
-  // without a valid source) is cleared from the URL instead of lingering there.
-  // A tariff dialog is only judged once the tariffs are known.
+  // or credentials dialog without a source that has one) is cleared from the URL
+  // instead of lingering there. A tariff dialog is only judged once the tariffs
+  // are known.
   const dialogUnavailable =
     dialog !== undefined &&
     (dialog === 'syncRuns'
-      ? runsSource === undefined
-      : dialog !== 'tariffNew' &&
-        dialog !== 'vehicleImport' &&
-        tariffs !== undefined && // still loading: not "gone" yet
-        !selectedTariff)
+      ? !isIntegrationSource(source)
+      : dialog === 'credentials'
+        ? !(source && isCredentialSource(source))
+        : dialog !== 'tariffNew' &&
+          dialog !== 'vehicleImport' &&
+          tariffs !== undefined && // still loading: not "gone" yet
+          !selectedTariff)
   useEffect(() => {
     // `replace`, so Back doesn't return to the bad URL (and bounce again).
     if (dialogUnavailable) {
@@ -133,6 +155,24 @@ function ChargingSettingsPage() {
   const emaldoRuns = useQuery({ ...runsQuery, select: (runs) => runs.emaldo })
   const vehicleCoverage = useQuery(vehicleCoverageQuery)
   const vehicleLatest = useQuery(vehicleLatestQuery)
+  const credentialsResult = useQuery(credentialsStatusQuery)
+  // Each source's last save (`updatedAt`): the fields a sync blamed before it no
+  // longer count, on the tiles or in the dialog. Unknown (undefined): they do.
+  const savedCredentials = credentialsResult.data?.sources
+  const credentialsSource =
+    isOpen('credentials') && source && isCredentialSource(source) ? source : undefined
+  // Opens once the origins are known, or their read failed (the dialog then has
+  // no origin lines): never with origins that are still loading.
+  const credentialsReady = credentialsResult.data !== undefined || credentialsResult.isError
+  // The key button that opened the dialog, for focus on close: the URL (and so
+  // `credentialsSource`) clears before Radix asks where focus goes. Both refs
+  // are read by onCloseAutoFocus, which can fire from a stale render's closure.
+  const lastCredentialsSource = useRef<CredentialSource | undefined>(undefined)
+  const openCredentialsSource = useRef(credentialsSource)
+  useEffect(() => {
+    openCredentialsSource.current = credentialsSource
+    if (credentialsSource) lastCredentialsSource.current = credentialsSource
+  }, [credentialsSource])
 
   return (
     <PageContainer>
@@ -156,12 +196,18 @@ function ChargingSettingsPage() {
       <SectionSkeleton name="charging-sources" loading={sourcesPending} fallbackHeight="20rem">
         <SyncSourcesPanel
           entries={[
-            { source: 'zaptec', health: sourcesHealth?.zaptec, runs: zaptecRuns },
+            {
+              source: 'zaptec',
+              health: sourcesHealth?.zaptec,
+              runs: zaptecRuns,
+              credentialsUpdatedAt: savedCredentials?.zaptec.updatedAt,
+            },
             { source: 'elpris', health: sourcesHealth?.elpris, runs: pricesRuns },
             {
               source: 'skoda',
               health: sourcesHealth?.skoda,
               runs: skodaRuns,
+              credentialsUpdatedAt: savedCredentials?.skoda.updatedAt,
               // The car's log and live poll are one source to the admin: its last
               // contact, key expiry and log (+ import) live on its tile. A failed
               // read shows an error there, never "none".
@@ -176,13 +222,19 @@ function ChargingSettingsPage() {
               ),
               actions: <VehicleLogImportButton onImport={() => open('vehicleImport')} />,
             },
-            { source: 'emaldo', health: sourcesHealth?.emaldo, runs: emaldoRuns },
+            {
+              source: 'emaldo',
+              health: sourcesHealth?.emaldo,
+              runs: emaldoRuns,
+              credentialsUpdatedAt: savedCredentials?.emaldo.updatedAt,
+            },
           ]}
           onSync={syncNow.syncSource}
           isPendingFor={syncNow.isPendingFor}
-          openSource={isOpen('syncRuns') ? runsSource : undefined}
-          onOpenHistory={(source: IntegrationSource) => open('syncRuns', { source })}
+          openSource={isOpen('syncRuns') && isIntegrationSource(source) ? source : undefined}
+          onOpenHistory={(s: IntegrationSource) => open('syncRuns', { source: s })}
           onCloseHistory={close}
+          onOpenCredentials={(s) => open('credentials', { source: s })}
         />
       </SectionSkeleton>
 
@@ -203,6 +255,21 @@ function ChargingSettingsPage() {
         ) : null}
       </SectionSkeleton>
       <LoadErrorAlert title={m.charging_tariff_error_title()} query={tariffsResult} />
+
+      <LoadErrorAlert title={m.charging_credentials_error_title()} query={credentialsResult} />
+      {/* A skeleton until the credentials' origins are known; a failed read
+          leaves the card without a status line (the alert above says why). */}
+      <SectionSkeleton
+        name="charging-grid"
+        loading={firstLoadPending(credentialsResult)}
+        fallbackHeight="9rem"
+      >
+        <GridTariffCard
+          facility={credentialsResult.data?.sources.gridTariff.fields.facilityId}
+          unreadable={credentialsResult.data?.sources.gridTariff.unreadable ?? false}
+          onOpenCredentials={() => open('credentials', { source: 'gridTariff' })}
+        />
+      </SectionSkeleton>
 
       {/* Waits for the tariffs: "new" starts from the newest period's
           amounts, and the form keeps the defaults it mounted with. */}
@@ -226,6 +293,37 @@ function ChargingSettingsPage() {
         open={isOpen('vehicleImport')}
         onOpenChange={(o) => {
           if (!o) close()
+        }}
+      />
+      <CredentialsDialog
+        source={credentialsSource}
+        open={credentialsSource !== undefined && credentialsReady}
+        onOpenChange={(o) => {
+          if (!o) close()
+        }}
+        status={credentialsResult.data}
+        suspectFields={
+          credentialsSource && isIntegrationSource(credentialsSource)
+            ? currentSuspectFields(
+                sourcesHealth?.[credentialsSource],
+                savedCredentials?.[credentialsSource].updatedAt,
+              )
+            : null
+        }
+        // The grid facility has no sync to run: the monthly catalogue check reads it.
+        onChanged={(s) => {
+          if (s !== 'gridTariff') syncNow.syncSource(s)
+        }}
+        // Opened by URL state: Radix has no trigger to return focus to.
+        onCloseAutoFocus={(event) => {
+          // Still open: the overlay only swapped dialog ↔ bottom sheet (a
+          // rotation, or a phone deep link hydrating) — not a close.
+          if (openCredentialsSource.current !== undefined) return
+          const opener = lastCredentialsSource.current
+          const el = opener ? document.getElementById(credentialsButtonId(opener)) : null
+          if (!el) return
+          event.preventDefault()
+          el.focus()
         }}
       />
       <DeleteTariffDialog

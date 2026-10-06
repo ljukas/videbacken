@@ -49,7 +49,7 @@ test('says how to renew, in html and text, both locales', async () => {
     })
     for (const out of [html, text]) {
       expect(out).toContain('https://go.skoda.eu/api-keys')
-      expect(out).toContain('SKODA_API_KEY')
+      expect(out).not.toContain('SKODA_API_KEY')
       expect(out).toContain('/charging/settings')
       expect(out).toContain(settingsWord[locale])
     }
@@ -76,7 +76,7 @@ test('a summer (CEST) expiry late on the 30th is 1 July in Stockholm', async () 
   expect(en.subject).toBe('The Škoda key expires on 1 July 2027')
 })
 
-test('the date and the Vercel Production environment are in html and text, both locales', async () => {
+test('the date is in html and text, both locales', async () => {
   const dates = { sv: '15 januari 2027', en: '15 January 2027' } as const
   for (const locale of ['sv', 'en'] as const) {
     const { html, text } = await renderCredentialExpiry({
@@ -87,20 +87,19 @@ test('the date and the Vercel Production environment are in html and text, both 
     })
     for (const out of [html, text]) {
       expect(out).toContain(dates[locale])
-      expect(out).toContain('Production')
     }
   }
 })
 
-test('says what an expired key does and how to verify the new one, in html and text', async () => {
+test('says what an expired key does and that saving the new one syncs at once, in html and text', async () => {
   const sentences = {
     sv: [
       'Efter det räknas nya laddningar som vår bil, även om en gäst laddade.',
-      'Verifiera med Synka nu på Škoda under Laddning → Inställningar.',
+      'Synken körs direkt när du sparar.',
     ],
     en: [
       'After that, new charging sessions count as our car, even if a guest charged.',
-      'Verify with Sync now on Škoda under Charging → Settings.',
+      'The sync runs as soon as you save.',
     ],
   } as const
   for (const locale of ['sv', 'en'] as const) {

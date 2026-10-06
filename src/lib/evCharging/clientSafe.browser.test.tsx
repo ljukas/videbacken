@@ -27,6 +27,12 @@ test('the integration-health copy is importable client-side', async () => {
   expect(typeof mod.integrationErrorMessage).toBe('function')
 })
 
+test('the credential copy is importable client-side', async () => {
+  const mod = await import('~/lib/integrationCredentialsMessage')
+  expect(typeof mod.credentialFieldLabel).toBe('function')
+  expect(typeof mod.suspectFieldsMessage).toBe('function')
+})
+
 test('the cost math, price slots, zones and Stockholm time helpers are importable client-side', async () => {
   const cost = await import('~/lib/evCharging/cost')
   const slots = await import('~/lib/spotPrice/slots')
