@@ -102,8 +102,9 @@ export function flowLayout(width: number): FlowLayout {
     },
     edges: [
       edge('sol', 'exp', 'b', -50 * k, 't', -50 * k),
-      // Runs straight down the battery's left side and turns late, so it passes under the battery, not through it.
-      edge('sol', 'load', 'b', -28 * k, 't', -58 * k, 1, 0.15),
+      // Runs straight down the battery's left side and turns as late as the curve allows (k2 0: the 16 px control
+      // minimum), so even a 16 px stroke passes under the battery's corner with room to spare.
+      edge('sol', 'load', 'b', -28 * k, 't', -58 * k, 1, 0),
       edge('sol', 'bat', 'b', 30 * k, 't', -24 * k),
       edge('imp', 'bat', 'b', -34 * k, 't', 24 * k),
       // Its value sits high, clear of the loss stub.

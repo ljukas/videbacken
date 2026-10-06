@@ -4,6 +4,7 @@ import {
   arrowHead,
   drawnFlows,
   edgeKwh,
+  type FlowEdgeSpec,
   type FlowLayout,
   type FlowNodeKey,
   flowCurve,
@@ -148,6 +149,25 @@ describe.each(WIDTHS)('at %i px', (width) => {
       expect(t.tile.y).toBeGreaterThanOrEqual(node.y - node.h / 2)
     }
   })
+})
+
+test.each([
+  280, 296, 311, 320, 340,
+])('at %i px a 16 px Solel → Förbrukning stroke clears the battery by 2 px', (width) => {
+  // Narrow phones: the arrow runs down the battery's left side and under it. Its widest stroke (16 px, when it
+  // is the period's largest arrow) must not touch the battery's corner.
+  const layout = flowLayout(width)
+  const e = layout.edges.find((x) => x.from === 'sol' && x.to === 'load') as FlowEdgeSpec
+  const b = layout.nodes.bat
+  const c = flowCurve(layout, e)
+  let nearest = Number.POSITIVE_INFINITY
+  for (let i = 0; i <= 2000; i++) {
+    const p = c.at(i / 2000)
+    const dx = Math.max(b.x - b.w / 2 - p.x, 0, p.x - (b.x + b.w / 2))
+    const dy = Math.max(b.y - b.h / 2 - p.y, 0, p.y - (b.y + b.h / 2))
+    nearest = Math.min(nearest, Math.hypot(dx, dy))
+  }
+  expect(nearest - 16 / 2).toBeGreaterThanOrEqual(2)
 })
 
 test('widths are linear in kWh with a 2 px floor', () => {
