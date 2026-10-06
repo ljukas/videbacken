@@ -12,3 +12,8 @@ test('the /energy route module evaluates client-side without a db leak', async (
   const mod = await import('~/routes/_authenticated/energy/index')
   expect(mod.Route).toBeDefined()
 })
+
+test('the period vocabulary is importable client-side', async () => {
+  const mod = await import('~/lib/houseEnergy/period')
+  expect(typeof mod.parsePeriod).toBe('function')
+})
