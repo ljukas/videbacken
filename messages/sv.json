@@ -787,7 +787,7 @@
   "energy_tile_load": "Förbrukning",
   "energy_tile_load_car": "varav laddning {kwh} kWh",
   "energy_missing_hours": "Data saknas för {hours} h",
-  "energy_chart_title": "Per månad",
+  "energy_chart_title": "Per månad · {year}",
   "energy_metric_label": "Visa i diagrammet",
   "energy_metric_solar": "Solel",
   "energy_metric_grid": "Nät",

@@ -44,7 +44,11 @@ export function periodFromSearch(search: { period?: string; year?: number }): En
   )
 }
 
-/** The overview year to request; undefined lets the service pick the current year (Totalt, the default). */
+/**
+ * The period's own year; undefined for Totalt and the default, which have none.
+ * The pages then ask for the current Stockholm year (`energyOverviewQueryYear`),
+ * never for undefined, so every way to the same year shares one cache entry.
+ */
 export function periodQueryYear(p: EnergyPeriod | null): number | undefined {
   return p && p.kind !== 'all' ? p.year : undefined
 }

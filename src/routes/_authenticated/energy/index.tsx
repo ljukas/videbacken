@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { SunIcon } from 'lucide-react'
-import { useCallback, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { z } from 'zod'
 import { EnergyHeading } from '~/components/energy/EnergyHeading'
 import {
@@ -10,7 +10,7 @@ import {
   energyMetricOptions,
 } from '~/components/energy/EnergyMonthlyChart'
 import { EnergyReadouts } from '~/components/energy/EnergyTiles'
-import { energyOverviewQuery } from '~/components/energy/energyQueries'
+import { energyOverviewQueryFor } from '~/components/energy/energyQueries'
 import { PeriodControl } from '~/components/energy/PeriodControl'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
@@ -27,7 +27,6 @@ import {
   type EnergyPeriod,
   formatPeriod,
   periodFromSearch,
-  periodQueryYear,
   resolvePeriod,
 } from '~/lib/houseEnergy/period'
 import { loadRouteData } from '~/lib/query/routeData'
@@ -47,15 +46,6 @@ const searchSchema = z.object({
   /** Step-1 links: read as `?period=Y`, dropped on the next write. */
   year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional().catch(undefined),
 })
-
-/**
- * The overview year to request: the period's, else (Totalt, the default) the
- * current Stockholm year, the one the service would pick. Always concrete, so
- * the default and a month of this year share one cache entry: a month switch
- * inside a year costs no request.
- */
-const queryYear = (period: EnergyPeriod | null) =>
-  periodQueryYear(period) ?? stockholmYearMonth(Date.now()).year
 
 const periodOf = ({ period, year }: z.infer<typeof searchSchema>) =>
   periodFromSearch({ period: period === undefined ? undefined : String(period), year })
@@ -77,9 +67,9 @@ export const Route = createFileRoute('/_authenticated/energy/')({
   // switch is the page's own query, whose old figures stay, dimmed, until the
   // new year lands. Parsed with the route's own fallbacks.
   loader: ({ context: { queryClient }, location }) => {
-    const year = queryYear(periodOf(searchSchema.parse(location.search)))
+    const period = periodOf(searchSchema.parse(location.search))
     return loadRouteData(queryClient, {
-      critical: [energyOverviewQuery(year), syncHealthQuery],
+      critical: [energyOverviewQueryFor(period), syncHealthQuery],
     })
   },
   component: EnergyOverviewPage,
@@ -93,15 +83,17 @@ function EnergyOverviewPage() {
   // a client navigation doesn't wait for it (ADR-0025 §3).
   const { data: sourcesHealth } = useQuery({ ...syncHealthQuery, refetchInterval: 60_000 })
   const health = sourcesHealth?.emaldo
-  const requested = periodOf(Route.useSearch())
+  const search = Route.useSearch()
+  const requested = periodOf(search)
   // Hourly data: focus refetch only, no polling interval (ADR-0018).
   const result = useQuery({
-    ...energyOverviewQuery(queryYear(requested)),
+    ...energyOverviewQueryFor(requested),
     placeholderData: keepPreviousData,
   })
   const { data, isPlaceholderData: stale } = result
+  const failed = loadFailed(result)
   // Placeholder data counts as data (the old year, dimmed); a failed read doesn't.
-  const overview = data && !loadFailed(result) ? data : undefined
+  const overview = data && !failed ? data : undefined
   // Nothing to show yet and nothing failed: the sections' skeletons.
   const pending = firstLoadPending(result)
   // The last overview with readings that the page showed. A failed read of
@@ -139,10 +131,27 @@ function EnergyOverviewPage() {
             ? tiles.months[period.month - 1]
             : null
   // While another year loads, the placeholder can't answer for a month of the
-  // new year: keep the figures the card showed last, dimmed with the chart.
+  // new year: keep the figures the card showed last, dimmed with the chart. A
+  // failed read keeps them too (dimmed, under the alert): "no data" would be a
+  // false empty claim (ADR-0016).
   const [lastSums, setLastSums] = useState<PeriodSums | null>(periodSums)
-  if (!stale && periodSums !== lastSums) setLastSums(periodSums)
-  const tileSums = stale ? lastSums : periodSums
+  if (!stale && !failed && periodSums !== lastSums) setLastSums(periodSums)
+  const tileSums = stale || failed ? lastSums : periodSums
+  // A period the data can't show (a stale link, a year without readings, a
+  // legacy ?year=) resolves to the default: once its year's data is in, the URL
+  // follows, so the query (and the chart) move to the shown period's year.
+  const rewrite =
+    overview && !stale && overview.firstReadingDay !== null && period
+      ? requested
+        ? formatPeriod(requested) !== formatPeriod(period)
+        : search.period !== undefined || search.year !== undefined
+      : false
+  const rewriteTo = rewrite && period ? searchValue(period) : null
+  useEffect(() => {
+    if (rewriteTo !== null) {
+      void navigate({ to: '.', search: { period: rewriteTo }, replace: true, resetScroll: false })
+    }
+  }, [rewriteTo, navigate])
 
   return (
     <PageContainer>
@@ -176,10 +185,7 @@ function EnergyOverviewPage() {
           <SectionSkeleton name="energy-tiles" loading={pending} fallbackHeight="12rem">
             {tiles && period ? (
               <section aria-labelledby={tilesHeadingId}>
-                <Card
-                  className={cn('transition-opacity', stale && 'opacity-60')}
-                  aria-busy={stale || undefined}
-                >
+                <Card>
                   {/* As tall for every period: the control's label cell is as
                       wide as its widest label, its buttons a fixed 40 px. */}
                   <CardHeader className="flex flex-wrap items-center justify-between gap-2">
@@ -193,7 +199,11 @@ function EnergyOverviewPage() {
                       onChange={setPeriod}
                     />
                   </CardHeader>
-                  <CardContent>
+                  {/* The control stays live while a year loads: only the figures dim. */}
+                  <CardContent
+                    className={cn('transition-opacity', (stale || failed) && 'opacity-60')}
+                    aria-busy={stale || undefined}
+                  >
                     <EnergyReadouts sums={tileSums} />
                   </CardContent>
                 </Card>
@@ -206,7 +216,7 @@ function EnergyOverviewPage() {
                 <Card>
                   <CardHeader className="flex flex-wrap items-center justify-between gap-2">
                     <h2 id={chartHeadingId} className="font-semibold text-lg">
-                      {m.energy_chart_title()} · {overview.year}
+                      {m.energy_chart_title({ year: String(overview.year) })}
                     </h2>
                     <MetricToggle
                       value={metric}

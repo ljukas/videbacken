@@ -787,7 +787,7 @@
   "energy_tile_load": "Consumption",
   "energy_tile_load_car": "of which charging {kwh} kWh",
   "energy_missing_hours": "Data missing for {hours} h",
-  "energy_chart_title": "By month",
+  "energy_chart_title": "By month · {year}",
   "energy_metric_label": "Show in the chart",
   "energy_metric_solar": "Solar",
   "energy_metric_grid": "Grid",
