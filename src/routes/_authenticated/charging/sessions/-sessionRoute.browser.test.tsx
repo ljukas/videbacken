@@ -133,11 +133,11 @@ test('a failed load keeps one h1 above the load-error alert', async () => {
   )
   await expect
     .element(screen.getByRole('alert'))
-    .toHaveTextContent(m.charging_session_error_title())
+    .toMatchTextContent(m.charging_session_error_title())
   expect(screen.getByRole('heading', { level: 1 }).elements()).toHaveLength(1)
   await expect
     .element(screen.getByRole('heading', { level: 1 }))
-    .toHaveTextContent(m.meta_charging_session_title())
+    .toMatchTextContent(m.meta_charging_session_title())
   expect(warn).toHaveBeenCalledWith('session prefetch failed', expect.anything())
 })
 

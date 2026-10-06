@@ -10,7 +10,7 @@ test('shows the selected year and reports a picked one as a number', async () =>
     <YearSelector years={[2026, 2025, 2024]} value={2026} onChange={onChange} />,
   )
   const trigger = screen.getByRole('combobox', { name: m.charging_year_label() })
-  await expect.element(trigger).toHaveTextContent('2026')
+  await expect.element(trigger).toMatchTextContent('2026')
 
   await trigger.click()
   await screen.getByRole('option', { name: '2024' }).click()
@@ -23,7 +23,7 @@ test('keeps a selected year without data selectable', async () => {
   )
   await expect
     .element(screen.getByRole('combobox', { name: m.charging_year_label() }))
-    .toHaveTextContent('2021')
+    .toMatchTextContent('2021')
 })
 
 test('the server render already shows the year, so it never pops in on hydration', () => {

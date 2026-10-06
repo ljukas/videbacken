@@ -109,7 +109,7 @@ const render = (d: ReturnType<typeof detail>) => renderWithProviders(<SessionSum
 test('the owner’s session: hero cost, verdict, sentence, range bar and both explained deltas', async () => {
   const { screen } = await render(detail())
   const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
-  await expect.element(card).toHaveTextContent(/95,13\s?kr/)
+  await expect.element(card).toMatchTextContent(/95,13\s?kr/)
   // The kWh lives in the page header, not repeated in the hero.
   expect(card.element().textContent).not.toMatch(/56,0\s?kWh/)
   await expect.element(card.getByText('1,70 kr/kWh i snitt')).toBeVisible()
@@ -133,15 +133,15 @@ test('the owner’s session: hero cost, verdict, sentence, range bar and both ex
   await expect.element(card.getByText(/^50\s?%$/)).toBeVisible()
 
   const saved = screen.getByRole('group', { name: m.charging_session_saved_title() })
-  await expect.element(saved).toHaveTextContent(/33,14\s?kr/)
+  await expect.element(saved).toMatchTextContent(/33,14\s?kr/)
   await expect
     .element(saved)
-    .toHaveTextContent('Om bilen laddat med full fart från 17:10 (8,9 kW) tills den var klar.')
+    .toMatchTextContent('Om bilen laddat med full fart från 17:10 (8,9 kW) tills den var klar.')
   const left = screen.getByRole('group', { name: m.charging_session_left_title() })
-  await expect.element(left).toHaveTextContent(/35,69\s?kr/)
+  await expect.element(left).toMatchTextContent(/35,69\s?kr/)
   await expect
     .element(left)
-    .toHaveTextContent(
+    .toMatchTextContent(
       'Om laddningen följt billigaste schemat (markerat i grafen): mån 00:00–06:30.',
     )
 })
@@ -171,8 +171,8 @@ test('the range bar is one image summarised in its label, its markers placed bet
     `${m.charging_session_range_cheapest()} ${formatSek(59.44, 2)}`,
     `${m.charging_session_range_dearest()} ${formatSek(130.82, 2)}`,
   ]) {
-    // toHaveTextContent collapses the no-break space before "kr"; the expected text must too.
-    await expect.element(bar).toHaveTextContent(text.replaceAll('\u00a0', ' '))
+    // toMatchTextContent collapses the no-break space before "kr"; the expected text must too.
+    await expect.element(bar).toMatchTextContent(text.replaceAll('\u00a0', ' '))
   }
 })
 
@@ -235,7 +235,7 @@ describe('verdict tiers', () => {
     // The deltas still explain the (tiny) figures.
     await expect
       .element(screen.getByRole('group', { name: m.charging_session_left_title() }))
-      .toHaveTextContent(/0,02\s?kr/)
+      .toMatchTextContent(/0,02\s?kr/)
   })
 })
 
@@ -292,7 +292,7 @@ describe('saved vs charging at once', () => {
 
   test('a negative saving is signed and bad', async () => {
     const tile = await savedTile(-4)
-    await expect.element(tile).toHaveTextContent(/−4,00\s?kr/)
+    await expect.element(tile).toMatchTextContent(/−4,00\s?kr/)
     expect(tile.element().querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('bad')
   })
 
@@ -322,7 +322,7 @@ describe('saved vs charging at once', () => {
   test('the rate is named when it matches the header peak', async () => {
     const { screen } = await render(detail({ peakKw: 5.29, rateKw: 5.29 }))
     const tile = screen.getByRole('group', { name: m.charging_session_saved_title() })
-    await expect.element(tile).toHaveTextContent('(5,3 kW)')
+    await expect.element(tile).toMatchTextContent('(5,3 kW)')
   })
 
   test('a rate that differs from the header peak is worded without a number', async () => {
@@ -330,7 +330,7 @@ describe('saved vs charging at once', () => {
     const tile = screen.getByRole('group', { name: m.charging_session_saved_title() })
     await expect
       .element(tile)
-      .toHaveTextContent(m.charging_session_saved_explainer_no_rate({ time: '17:10' }))
+      .toMatchTextContent(m.charging_session_saved_explainer_no_rate({ time: '17:10' }))
     expect(tile.element().textContent).not.toMatch(/kW/)
   })
 
@@ -342,7 +342,7 @@ describe('saved vs charging at once', () => {
 
   test('zero is neutral, never "−0"', async () => {
     const tile = await savedTile(-0.001)
-    await expect.element(tile).toHaveTextContent(/^[^−]*0,00\s?kr/)
+    await expect.element(tile).toMatchTextContent(/^[^−]*0,00\s?kr/)
     expect(tile.element().querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('neutral')
   })
 })
@@ -356,12 +356,12 @@ describe('the cheapest windows', () => {
 
   test('one run on the plug-in day has no weekday', async () => {
     const tile = await leftTile(quarters('2026-09-27T16:00:00Z', '2026-09-27T18:00:00Z'))
-    await expect.element(tile).toHaveTextContent(explained('18:00–20:00'))
+    await expect.element(tile).toMatchTextContent(explained('18:00–20:00'))
   })
 
   test('one run on the next day gets its weekday', async () => {
     const tile = await leftTile(OWNER_SCHEDULE)
-    await expect.element(tile).toHaveTextContent(explained('mån 00:00–06:30'))
+    await expect.element(tile).toMatchTextContent(explained('mån 00:00–06:30'))
   })
 
   test('two runs are both listed', async () => {
@@ -369,7 +369,7 @@ describe('the cheapest windows', () => {
       ...quarters('2026-09-27T22:00:00Z', '2026-09-28T00:00:00Z'),
       ...quarters('2026-09-28T03:00:00Z', '2026-09-28T04:30:00Z'),
     ])
-    await expect.element(tile).toHaveTextContent(explained('mån 00:00–02:00 och 05:00–06:30'))
+    await expect.element(tile).toMatchTextContent(explained('mån 00:00–02:00 och 05:00–06:30'))
   })
 
   test('three or more runs are counted, from the first start to the last end', async () => {
@@ -378,7 +378,9 @@ describe('the cheapest windows', () => {
       ...quarters('2026-09-27T23:00:00Z', '2026-09-28T00:00:00Z'),
       ...quarters('2026-09-28T03:00:00Z', '2026-09-28T04:30:00Z'),
     ])
-    await expect.element(tile).toHaveTextContent(explained('3 perioder mellan 22:00 och mån 06:30'))
+    await expect
+      .element(tile)
+      .toMatchTextContent(explained('3 perioder mellan 22:00 och mån 06:30'))
   })
 })
 
@@ -434,8 +436,8 @@ test('an estimated session marks its cost "≈" with the reason for screen reade
   d.session.estimated = true
   const { screen } = await render(d)
   const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
-  await expect.element(card).toHaveTextContent(/≈\s95,13/)
-  await expect.element(card).toHaveTextContent(m.charging_sessions_cost_estimated())
+  await expect.element(card).toMatchTextContent(/≈\s95,13/)
+  await expect.element(card).toMatchTextContent(m.charging_sessions_cost_estimated())
   // No unmarked kWh · kr/kWh line derived from the estimate.
   expect(screen.getByText(/kr\/kWh/).elements()).toHaveLength(0)
 })
@@ -457,7 +459,7 @@ const mixedCash = cash(61.2, {
 test('the hero is the cash cost; the timing below is headed as all-grid', async () => {
   const { screen } = await render(detail({ cost: mixedCash }))
   const card = screen.getByRole('group', { name: m.charging_session_fig_actual() })
-  await expect.element(card).toHaveTextContent(/61,20\s?kr/)
+  await expect.element(card).toMatchTextContent(/61,20\s?kr/)
   await expect.element(card.getByText('1,09 kr/kWh i snitt')).toBeVisible()
   const timing = screen.getByRole('region', { name: m.charging_economy_grid_only_heading() })
   await expect.element(timing.getByText(m.charging_session_verdict_ok())).toBeVisible()
@@ -476,7 +478,7 @@ test('the hero is the cash cost; the timing below is headed as all-grid', async 
     .toBeInTheDocument()
   await expect
     .element(screen.getByRole('figure', { name: m.charging_session_sources_title() }))
-    .toHaveTextContent(/28,0 kWh.*20,0 kWh.*8,0 kWh/)
+    .toMatchTextContent(/28,0 kWh.*20,0 kWh.*8,0 kWh/)
 })
 
 test('an excluded session has the cash hero and no timing section', async () => {

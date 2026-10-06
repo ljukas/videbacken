@@ -22,8 +22,8 @@ test('is a destructive alert whose retry refetches', async () => {
     <LoadErrorAlert title="Laddmönstren kunde inte hämtas" query={failed({ refetch })} />,
   )
   const alert = screen.getByRole('alert')
-  await expect.element(alert).toHaveTextContent('Laddmönstren kunde inte hämtas')
-  await expect.element(alert).toHaveTextContent('Kontrollera anslutningen och försök igen.')
+  await expect.element(alert).toMatchTextContent('Laddmönstren kunde inte hämtas')
+  await expect.element(alert).toMatchTextContent('Kontrollera anslutningen och försök igen.')
   expect(alert.element().className).toMatch(/destructive/)
   await screen.getByRole('button', { name: 'Försök igen' }).click()
   expect(refetch).toHaveBeenCalledOnce()

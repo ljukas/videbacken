@@ -184,7 +184,7 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           pool: 'forks',
-          // Distinct groupOrder from the browser project: Vitest 4 refuses to
+          // Distinct groupOrder from the browser project: Vitest refuses to
           // co-run projects that share a groupOrder but differ in maxWorkers.
           // Group 0 runs first (node/DB), then group 1 (browser) — see
           // vitest.browser.config.ts.
