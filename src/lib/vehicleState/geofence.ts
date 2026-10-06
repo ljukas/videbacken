@@ -24,6 +24,11 @@ export function parseHomePoint(raw: string | undefined): LatLon | null {
   return { latitude, longitude }
 }
 
+/** Five decimals (about 1 m): the form value the home-position picker writes, readable by `parseHomePoint`. */
+export function formatHomePoint(p: LatLon): string {
+  return `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`
+}
+
 export function distanceMeters(a: LatLon, b: LatLon): number {
   const rad = (deg: number) => (deg * Math.PI) / 180
   const h =

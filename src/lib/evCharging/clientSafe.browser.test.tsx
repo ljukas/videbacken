@@ -20,6 +20,12 @@ test('the credential vocabulary is importable client-side', async () => {
   const mod = await import('~/lib/integrationCredentials')
   expect(mod.CREDENTIAL_SOURCES).toContain('zaptec')
   expect(mod.credentialFieldKind('skoda', 'vin')).toBe('text')
+  expect(mod.credentialFieldKind('skoda', 'homeCoordinates')).toBe('position')
+})
+
+test('the home-point helpers are importable client-side', async () => {
+  const mod = await import('~/lib/vehicleState/geofence')
+  expect(mod.formatHomePoint({ latitude: 59.3293, longitude: 18.0686 })).toBe('59.32930,18.06860')
 })
 
 test('the integration-health copy is importable client-side', async () => {
