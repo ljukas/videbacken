@@ -1,0 +1,5 @@
+ALTER TABLE "integration_sync" ADD COLUMN "suspect_fields" text[];--> statement-breakpoint
+ALTER TABLE "integration_sync_run" ADD COLUMN "suspect_fields" text[];--> statement-breakpoint
+ALTER TABLE "integration_sync" ADD CONSTRAINT "integration_sync_suspect_fields_check" CHECK ("integration_sync"."suspect_fields" IS NULL OR (cardinality("integration_sync"."suspect_fields") > 0 AND "integration_sync"."suspect_fields" <@ ARRAY['username', 'password', 'apiKey', 'vin', 'homeCoordinates', 'user', 'appId', 'appSecret', 'facilityId']::text[]));--> statement-breakpoint
+ALTER TABLE "integration_sync_run" ADD CONSTRAINT "integration_sync_run_suspect_fields_check" CHECK ("integration_sync_run"."suspect_fields" IS NULL OR (cardinality("integration_sync_run"."suspect_fields") > 0 AND "integration_sync_run"."suspect_fields" <@ ARRAY['username', 'password', 'apiKey', 'vin', 'homeCoordinates', 'user', 'appId', 'appSecret', 'facilityId']::text[]));--> statement-breakpoint
+ALTER TABLE "integration_sync_run" ADD CONSTRAINT "integration_sync_run_suspect_fields_outcome_check" CHECK ("integration_sync_run"."suspect_fields" IS NULL OR "integration_sync_run"."outcome" <> 'ok');

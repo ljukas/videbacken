@@ -518,3 +518,61 @@ test('listRecentRunsBySource keeps a failed run’s error fields, as listRecentR
     errorMessage: 'connect ECONNREFUSED',
   })
 })
+
+const runValues = {
+  source: 'zaptec',
+  trigger: 'cron',
+  startedAt: T0,
+  finishedAt: T0,
+  durationMs: 0,
+  timings: {},
+} as const
+
+test('integration_sync_run suspect_fields: names from the vocabulary, only on a failed run', async () => {
+  await db.insert(integrationSyncRun).values({
+    ...runValues,
+    outcome: 'failed',
+    errorCode: 'auth_failed',
+    suspectFields: ['username', 'password'],
+  })
+  await expect(
+    db.insert(integrationSyncRun).values({ ...runValues, outcome: 'ok', suspectFields: ['vin'] }),
+  ).rejects.toThrow()
+  await expect(
+    db.insert(integrationSyncRun).values({
+      ...runValues,
+      outcome: 'failed',
+      errorCode: 'auth_failed',
+      suspectFields: [],
+    }),
+  ).rejects.toThrow()
+  await expect(
+    db.insert(integrationSyncRun).values({
+      ...runValues,
+      outcome: 'failed',
+      errorCode: 'auth_failed',
+      suspectFields: ['token'],
+    }),
+  ).rejects.toThrow()
+})
+
+test('integration_sync suspect_fields: non-empty vocabulary names; no tie to error_code (rollback-safe)', async () => {
+  await db.insert(integrationSync).values({ source: 'zaptec', updatedAt: T0 })
+  // A rollback's success leaves the column while clearing error_code: must be writable.
+  await db
+    .update(integrationSync)
+    .set({ suspectFields: ['username'] })
+    .where(eq(integrationSync.source, 'zaptec'))
+  await expect(
+    db
+      .update(integrationSync)
+      .set({ suspectFields: [] })
+      .where(eq(integrationSync.source, 'zaptec')),
+  ).rejects.toThrow()
+  await expect(
+    db
+      .update(integrationSync)
+      .set({ suspectFields: ['token'] })
+      .where(eq(integrationSync.source, 'zaptec')),
+  ).rejects.toThrow()
+})

@@ -14,6 +14,14 @@ export const CREDENTIAL_FIELDS = {
   gridTariff: ['facilityId'],
 } as const satisfies Record<CredentialSource, readonly string[]>
 
+/**
+ * Every field name across sources, deduplicated, in vocabulary order: the allowed values of the sync tables'
+ * `suspect_fields` (names only). Changing it changes the rendered DB CHECK text: run `bun run db:generate`.
+ */
+export const CREDENTIAL_FIELD_NAMES: readonly string[] = [
+  ...new Set(Object.values(CREDENTIAL_FIELDS).flat()),
+]
+
 export type CredentialField<S extends CredentialSource> = (typeof CREDENTIAL_FIELDS)[S][number]
 export type CredentialValues<S extends CredentialSource> = Partial<
   Record<CredentialField<S>, string>
