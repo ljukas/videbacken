@@ -52,3 +52,18 @@ test('no readings: no bar; a negative loss draws only out', () => {
   expect(noisy.loss).toBeNull()
   expect(noisy.label).toBeNull()
 })
+
+test('a loss share of exactly 25 % is not winter: no label', () => {
+  // in 100, out 75 with an unchanged charge level: loss 25, share 0,25.
+  const [edge] = batteryChartRows([
+    sums({
+      batteryChargeSolarKwh: 100,
+      batteryChargeGridKwh: 0,
+      batteryDischargeKwh: 75,
+      firstSocPct: 50,
+      lastSocPct: 50,
+    }),
+  ])
+  expect(edge.loss).toBeCloseTo(25, 9)
+  expect(edge.label).toBeNull()
+})

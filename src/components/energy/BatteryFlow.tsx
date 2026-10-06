@@ -11,7 +11,7 @@ import {
   gapHours,
   type PeriodSums,
 } from '~/lib/houseEnergy/figures'
-import { MIN_FLOW_KWH } from '~/lib/houseEnergy/flowLayout'
+import { lossLabel, MIN_FLOW_KWH } from '~/lib/houseEnergy/flowLayout'
 import { m } from '~/paraglide/messages'
 import { BatteryFlowDiagram } from './BatteryFlowDiagram'
 import { SHOW_FLOW_VALUES_KEY } from './EnergyFlow'
@@ -21,6 +21,18 @@ import { FlowTableFrame, FlowValuesSwitch, RingFigure } from './flowParts'
 export function efficiencyText(e: number | null): string {
   if (e === null) return '—'
   return e >= 1 ? `≈ ${formatShare(1)}` : formatShare(e)
+}
+
+/** "Ändrat lager": the signed change in stored energy, "—" when the charge level is unknown (the figure is then 0). */
+export function storedText(s: PeriodSums, f: EnergyFigures): string {
+  return s.firstSocPct !== null && s.lastSocPct !== null
+    ? `${formatSignedOneDecimal(f.deltaStored)}\u00a0kWh`
+    : '—'
+}
+
+/** The loss share in parentheses, only when the loss reads as a value (≥ 0,5 kWh), else ''. */
+export function lossShareText(f: EnergyFigures): string {
+  return lossLabel(f.loss) === 'value' && f.lossShare !== null ? formatShare(f.lossShare) : ''
 }
 
 // The Batteri page's Summering card body (step 2): Verkningsgrad, the battery flow in a box whose height is
@@ -84,10 +96,7 @@ function BatteryTable({ sums: s, f }: { sums: PeriodSums; f: EnergyFigures }) {
     [m.energy_battery_row_in_solar(), kwh(f.solarToBattery)],
     [m.energy_battery_row_in_grid(), kwh(f.batteryIn - f.solarToBattery)],
     [m.energy_battery_row_in_total(), kwh(f.batteryIn)],
-    [
-      m.energy_flow_row_stored(),
-      socKnown ? `${formatSignedOneDecimal(f.deltaStored)}\u00a0kWh` : '—',
-    ],
+    [m.energy_flow_row_stored(), storedText(s, f)],
     [m.energy_battery_node_out(), kwh(f.batteryOut)],
     ...(f.batteryToGrid >= MIN_FLOW_KWH
       ? ([[m.energy_battery_row_sold(), kwh(f.batteryToGrid)]] as [string, string][])
@@ -95,7 +104,7 @@ function BatteryTable({ sums: s, f }: { sums: PeriodSums; f: EnergyFigures }) {
     // The real value, also when the diagram says "≈ 0".
     [
       m.energy_flow_loss_title(),
-      f.lossShare === null ? kwh(f.loss) : `${kwh(f.loss)} (${formatShare(f.lossShare)})`,
+      lossShareText(f) === '' ? kwh(f.loss) : `${kwh(f.loss)} (${lossShareText(f)})`,
     ],
     [m.energy_battery_efficiency(), efficiencyText(f.efficiency)],
   ]

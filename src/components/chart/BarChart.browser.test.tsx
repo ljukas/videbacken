@@ -865,3 +865,18 @@ test('without pattern or barLabel nothing new is drawn', async () => {
   await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
   expect(screen.container.querySelectorAll('pattern, [data-bar-label]')).toHaveLength(0)
 })
+
+test('barLabel skips a label that would overlap the previously drawn one', async () => {
+  const many: Row[] = Array.from({ length: 8 }, (_, i) => ({ label: `m${i}`, a: 10 + i, b: 5 }))
+  const { screen } = await render({ rows: many, barLabel: () => '43 %' }, 240)
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('[data-bar-label]').length).toBeGreaterThan(0),
+  )
+  const boxes = [...screen.container.querySelectorAll('[data-bar-label]')].map((l) =>
+    l.getBoundingClientRect(),
+  )
+  // Not every category is labelled at this width, and the drawn ones never touch.
+  expect(boxes.length).toBeLessThan(8)
+  for (let i = 1; i < boxes.length; i++)
+    expect(boxes[i].left).toBeGreaterThanOrEqual(boxes[i - 1].right)
+})

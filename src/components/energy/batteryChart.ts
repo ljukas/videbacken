@@ -7,7 +7,7 @@ export type BatteryChartRow = {
   month: number
   sums: PeriodSums | null
   out: number | null
-  /** max(0, loss); null when there is none to draw. */
+  /** The loss; null when it is zero or negative (nothing to draw). */
   loss: number | null
   /** The loss share above a winter month's bar, else null. */
   label: string | null

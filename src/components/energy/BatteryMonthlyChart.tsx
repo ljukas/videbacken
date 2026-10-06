@@ -4,14 +4,12 @@ import { CHART_HEIGHT, HATCH_SWATCH, TooltipRow } from '~/components/chart/Chart
 import {
   formatCount,
   formatOneDecimal,
-  formatShare,
-  formatSignedOneDecimal,
   monthLabel,
   monthName,
 } from '~/components/evCharging/format'
 import { energyFigures, gapHours, type PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
-import { efficiencyText } from './BatteryFlow'
+import { efficiencyText, lossShareText, storedText } from './BatteryFlow'
 import { type BatteryChartRow, batteryChartRows } from './batteryChart'
 
 const monthCategory = (r: BatteryChartRow) => monthLabel(r.month)
@@ -142,7 +140,7 @@ function BatteryTooltip({
         {kwh(f.batteryIn - f.solarToBattery)}
       </TooltipRow>
       <TooltipRow label={m.energy_flow_row_stored()} share="">
-        {formatSignedOneDecimal(f.deltaStored)} kWh
+        {storedText(sums, f)}
       </TooltipRow>
       <TooltipRow
         label={m.energy_battery_series_out()}
@@ -156,7 +154,7 @@ function BatteryTooltip({
         label={m.energy_battery_series_loss()}
         color={HATCH_SWATCH('var(--energy-loss)')}
         strong
-        share={f.lossShare === null ? '' : formatShare(Math.max(0, f.lossShare))}
+        share={lossShareText(f)}
       >
         {kwh(f.loss)}
       </TooltipRow>

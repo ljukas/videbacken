@@ -154,7 +154,7 @@ test('a negative loss: the table keeps the real value', async () => {
   const row = [...screen.container.querySelectorAll('th[scope="row"]')].find(
     (t) => t.textContent === m.energy_flow_loss_title(),
   )
-  expect(row?.nextElementSibling?.textContent).toMatch(/^[-−]0,2\skWh/)
+  expect(row?.nextElementSibling?.textContent).toMatch(/^[-−]0,2\skWh$/) // no share below 0,5 kWh
 })
 
 test('an unknown charge level: "Lager —" and "—" in the table', async () => {

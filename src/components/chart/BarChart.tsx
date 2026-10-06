@@ -427,26 +427,35 @@ export function BarChart<Row>({
           </g>
         ))}
         {barLabel
-          ? range(count).map((i) => {
-              const text = barLabel(rows[i], i)
-              const tops = geometry.rects.filter((r) => r.index === i).map((r) => r.y)
-              if (text === null || tops.length === 0) return null
-              return (
-                <text
-                  key={i}
-                  data-bar-label
-                  x={geometry.centres[i]}
-                  y={Math.min(...tops) - 6}
-                  textAnchor="middle"
-                  fontSize={tickPx}
-                  fontWeight={600}
-                  className="fill-foreground tabular-nums"
-                  pointerEvents="none"
-                >
-                  {text}
-                </text>
-              )
-            })
+          ? (() => {
+              // Left to right; a label whose box would touch the previously drawn one (4 px gap) is skipped.
+              const measure = measureAt(tickPx)
+              let drawnRight = Number.NEGATIVE_INFINITY
+              return range(count).map((i) => {
+                const text = barLabel(rows[i], i)
+                const tops = geometry.rects.filter((r) => r.index === i).map((r) => r.y)
+                if (text === null || tops.length === 0) return null
+                const half = measure(text) / 2
+                const centre = geometry.centres[i]
+                if (centre - half < drawnRight + 4) return null
+                drawnRight = centre + half
+                return (
+                  <text
+                    key={i}
+                    data-bar-label
+                    x={centre}
+                    y={Math.min(...tops) - 6}
+                    textAnchor="middle"
+                    fontSize={tickPx}
+                    fontWeight={600}
+                    className="fill-foreground tabular-nums"
+                    pointerEvents="none"
+                  >
+                    {text}
+                  </text>
+                )
+              })
+            })()
           : null}
         {line ? (
           <g data-series={line.key} data-kind="line">
