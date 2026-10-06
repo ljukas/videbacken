@@ -170,6 +170,14 @@ test.each([
   expect(nearest - 16 / 2).toBeGreaterThanOrEqual(2)
 })
 
+test('without a charge level the wide battery text block is still centred on its tile', () => {
+  const layout = flowLayout(1006)
+  const t = nodeText(layout.nodes.bat, 'bat', false, { chargeLine: false })
+  expect(t.third).toBeNull()
+  const capTop = t.label.y - 14 * 0.7
+  expect(Math.abs((capTop + t.value.y) / 2 - (t.tile.y + t.tile.size / 2))).toBeLessThanOrEqual(2)
+})
+
 test('widths are linear in kWh with a 2 px floor', () => {
   expect(flowWidth(1631.7, 1631.7, false)).toBe(20)
   expect(flowWidth(815.85, 1631.7, false)).toBeCloseTo(10)

@@ -376,7 +376,7 @@ function FlowNodeBox({
   charge: string | null
 }) {
   const n = layout.nodes[key]
-  const t = nodeText(n, key, layout.narrow)
+  const t = nodeText(n, key, layout.narrow, { chargeLine: charge !== null })
   const Icon = ICON[key]
   const tint = SOURCE_COLOR[key]
   const figure = {

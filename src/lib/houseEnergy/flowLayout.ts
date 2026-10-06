@@ -224,9 +224,16 @@ export type NodeText = {
  * Where a node's tile and text go. Wide: the tile left of the text, the text block (label cap top to the last
  * baseline, cap height ≈ 0.7 em) centred on the tile. Narrow: the tile and the label share the first row, the
  * figure runs the node's width below. The battery's `value` is its loss; its charge level is `third` on the wide
- * layout (narrow: it moves to the loss tooltip). Förbrukning's two car lines are `second` and `third`.
+ * layout (narrow: it is in the table, and the loss tooltip when there is a stub); without one (`chargeLine`
+ * false: a SoC is missing) the label and the loss move down to stay centred. Förbrukning's two car lines are
+ * `second` and `third`.
  */
-export function nodeText(node: FlowNode, key: FlowNodeKey, narrow: boolean): NodeText {
+export function nodeText(
+  node: FlowNode,
+  key: FlowNodeKey,
+  narrow: boolean,
+  { chargeLine = true }: { chargeLine?: boolean } = {},
+): NodeText {
   const x0 = node.x - node.w / 2
   const y0 = node.y - node.h / 2
   if (narrow) {
@@ -246,12 +253,14 @@ export function nodeText(node: FlowNode, key: FlowNodeKey, narrow: boolean): Nod
   if (key === 'bat') {
     const tile = { x: x0 + 12, y: y0 + (node.h - 48) / 2, size: 48, icon: 28 }
     const tx = tile.x + 48 + 12
+    // Half the charge line's 19 px step, so the two remaining rows sit where the three did.
+    const dy = chargeLine ? 0 : 9.5
     return {
       tile,
-      label: { x: tx, y: y0 + 25 },
-      value: { x: tx, y: y0 + 50, size: 20 },
+      label: { x: tx, y: y0 + 25 + dy },
+      value: { x: tx, y: y0 + 50 + dy, size: 20 },
       second: null,
-      third: { x: tx, y: y0 + 69 },
+      third: chargeLine ? { x: tx, y: y0 + 69 } : null,
     }
   }
   const tile = { x: x0 + 12, y: y0 + 16, size: 48, icon: 28 }

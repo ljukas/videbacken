@@ -193,3 +193,11 @@ test('the charge level is rounded', async () => {
     .element(screen.getByText(m.energy_flow_charge_level({ from: '19', to: '100' })))
     .toBeInTheDocument()
 })
+
+test('without a charge level the wide battery text moves down to stay centred on its tile', async () => {
+  const labelY = (c: HTMLElement) =>
+    Number(c.querySelector('[data-flow-node="bat"] text')?.getAttribute('y'))
+  const withSoc = await draw(sums())
+  const without = await draw(sums({ firstSocPct: null }))
+  expect(labelY(without.screen.container) - labelY(withSoc.screen.container)).toBe(9.5)
+})
