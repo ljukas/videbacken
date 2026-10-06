@@ -12,7 +12,9 @@ edits. A step starts only when the previous step's checkpoint has passed.
 | 1 | Settings page: move the tariff card and Datakällor to `/charging/settings` (admin-only), with nav, links and emails | [plan](../plans/2026-10-05-charging-settings-1-move.md) | [#90](https://github.com/ljukas/videbacken/pull/90) | checkpoint passed | 2026-10-05: owner checked the settings page on prod; the member redirect was verified locally |
 | 2 | Credential store and resolver (table, crypto, service, per-field resolver, adapters, env docs; no UI) | [plan](../plans/2026-10-05-charging-settings-2-store.md) | [#96](https://github.com/ljukas/videbacken/pull/96) | checkpoint passed | 2026-10-05: after the deploy, all four sources ran `ok` (Emaldo cron; Škoda, Zaptec, elpris via "Synka nu"); Škoda's geofence was on (home point from env via the resolver); `integration_credential` exists, is empty, RLS on |
 | 3a | Credentials server: save rules (`INVALID_FIELD` lists every field, `REENTER_ALL_FIELDS`), suspect fields per run (migration + client mappings), `credentials` procedures; no UI | [plan](../plans/2026-10-05-charging-settings-3a-server.md) | [#100](https://github.com/ljukas/videbacken/pull/100) | merged | — (checked with 3b) |
-| 3b | Credentials UI (key button per tile, dialog, grid card, save → sync, remove; copy, runbook) | [plan](../plans/2026-10-06-charging-settings-3b-ui.md) | [#102](https://github.com/ljukas/videbacken/pull/102) | PR open | — |
+| 3b | Credentials UI (key button per tile, dialog, grid card, save → sync, remove; copy, runbook) | [plan](../plans/2026-10-06-charging-settings-3b-ui.md) | [#102](https://github.com/ljukas/videbacken/pull/102) | merged | — |
+| 3c-1 | Credentials UX: field states (badge + "Byt" / "Ange i appen", hints above inputs), remove-confirm consequence, VIN hint → MyŠkoda; UI only ([spec](../specs/2026-10-05-charging-settings-design.md#3c-1--field-states-and-copy-ui-only)) | written when step 3c-1 starts | — | not started | — (checked with 3c-2) |
+| 3c-2 | Home-position map picker (MapLibre + OpenFreeMap, Nominatim search via our server, saved pin shown to admins, "Använd min position"; ADR-0026 amendment 2026-10-06) | written when step 3c-2 starts | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
@@ -54,3 +56,7 @@ If a step changes a design decision, amend the spec and ADR-0026 in that step's 
      `ok`, and the key-expiry date is unchanged.
    - "Ta bort sparade uppgifter" drops back to the env var, and the next sync is still `ok`.
    - A read-only SELECT shows only the `v1.` envelope, no plaintext.
+4. **After step 3c-2 (prod, on a phone).**
+   - The Škoda dialog shows each field's badge; nothing reads like an error.
+   - The home-position picker opens on the saved pin. The owner moves it (search, drag or "Använd min position")
+     and saves. The next Škoda poll's run line shows `geofence: on`, and the car at home is attributed as before.

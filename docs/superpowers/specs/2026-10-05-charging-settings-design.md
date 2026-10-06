@@ -472,6 +472,137 @@ link straight to `/charging/settings?dialog=credentials&source=<source>`; `Crede
   grid card, and the `dialog=credentials` deep link and its cleanup.
 - **Live** (Phase 6), at desktop, tablet and mobile widths.
 
+## Step 3c — credentials UX (two PRs, owner 2026-10-06)
+
+The owner reviewed the 3b dialog after it merged (#102):
+- The grey status line under an empty input ("Från miljövariabel") reads like an error.
+- Typing "lat,lon" by hand is the wrong input for a position.
+- The VIN is easier to find in the MyŠkoda app than in the registration certificate.
+
+Research behind this section (2026-10-06):
+- Write-only values in admin UIs: Grafana's `SecretInput` ("configured" + Reset), GitHub Actions secrets, Stripe
+  keys, Vercel sensitive env vars. Field anatomy follows GOV.UK, Carbon and Atlassian: hint above the input, the space
+  below the input is for errors, no state in placeholders.
+- Map libraries, tile hosts and geocoders: listed in "3c-2" below.
+
+Owner decisions (2026-10-06 brainstorm):
+
+| Question | Decision |
+|---|---|
+| How a field shows its origin | **Badge + Byt.** A set field shows no input until "Byt" / "Ange i appen" reveals it. "Ta bort sparade uppgifter" stays per source; no per-field remove. |
+| Map stack | **MapLibre GL v6 + OpenFreeMap tiles**, with address search through **Nominatim, proxied by our server**. |
+| Show the saved pin | **Yes, to admins.** The home position is the one credential value the server returns (ADR-0026 amendment, 2026-10-06). |
+| "Använd min position" | **Yes.** `Permissions-Policy` changes from `geolocation=()` to `geolocation=(self)`. |
+| Slicing | **3c-1** field states and copy (UI only), then **3c-2** the map picker (dependencies, server reads, ADR amendment). |
+
+### 3c-1 — field states and copy (UI only)
+
+Each field row is its label with a neutral badge, then a body that depends on the field's origin. The badge is real
+text, so the state never relies on colour alone.
+
+| Origin | Badge (sv / en) | Body |
+|---|---|---|
+| `stored` | "Sparad" / "Saved" | "Sparad i appen {date}" / "Saved in the app {date}" and a **Byt** / **Replace** button |
+| `env` | "Miljövariabel" / "Environment variable" | "Används från `{ENV_VAR}`" / "Using `{ENV_VAR}`" and an **Ange i appen** / **Set in the app** button |
+| `missing` | "Inte angiven" / "Not set" | the input, shown directly |
+| source unreadable | "Kan inte läsas" / "Can't be read" (amber, with an icon) | the input, shown directly |
+
+- **The env var name** comes from a client-safe copy of the field → env var map (vocabulary only: names, never
+  values). The server-only `src/lib/credentials/env.ts` keeps reading `process.env`. A test pins the two maps to each
+  other.
+- **"Byt" / "Ange i appen"** reveals the input and focuses it, with an "Avbryt" / "Cancel" link that hides it again
+  and clears what was typed.
+  - The hint sits between the label and the input: "Det nuvarande värdet används tills du sparar." / "The current
+    value stays in use until you save."
+  - For an `env` field, add: "Ett värde som sparas här går före miljövariabeln." / "A value saved here overrides the
+    environment variable."
+  - A field's format hint (VIN, coordinates, facility ID) also moves above the input.
+  - Each button has its own accessible name: "Byt VIN" / "Replace VIN".
+- **Only open inputs are submitted.** A hidden field keeps its value, so the dialog-level "Lämna ett fält tomt för
+  att behålla det som är sparat" line goes away. "Spara" with nothing open, or only empty open inputs, is refused as
+  today ("Fyll i minst ett fält").
+- **An unreadable source** shows every input open. The existing alert stays above the fields.
+- **Server field errors** (`INVALID_FIELD`, `REENTER_ALL_FIELDS`) open the named field if it is closed, then show the
+  error below its input. Red text and borders stay reserved for errors.
+- **The suspect line** ("Fungerade inte vid senaste synken") stays under the badge row, in red text, as today.
+- **"Ta bort sparade uppgifter"** stays per source. Its confirm adds what happens next:
+  - "Appen använder miljövariablerna igen." / "The app falls back to the environment variables." when any of the
+    source's fields has an env value;
+  - otherwise "Källan slutar synka." / "This source stops syncing."
+- **VIN hint:** "17 tecken (inte I, O eller Q). Finns i MyŠkoda-appen och i registreringsbeviset." /
+  "17 characters (no I, O or Q). Shown in the MyŠkoda app and on the registration certificate." The exact place in
+  the MyŠkoda app is confirmed with the owner before the PR ships.
+- **Tests (browser, `CredentialsDialog`):**
+  - each origin renders its badge and body;
+  - "Byt" reveals and focuses the input, and "Avbryt" hides it and clears it;
+  - only open inputs are sent;
+  - `INVALID_FIELD` opens a closed field;
+  - an unreadable source opens every field;
+  - the remove confirm's consequence line, with env and without;
+  - the env var name shown for an `env` field.
+- **Live check:** at desktop, tablet and mobile widths.
+
+### 3c-2 — the home-position map picker
+
+The Škoda "Laddboxens position" field's "Byt" opens a picker instead of a text input.
+
+- **Saved pin.** `credentials.homePosition` (`adminProcedure`) returns `{ lat, lon }` or `null`.
+  - The value is the stored one, else the env one, parsed with `parseHomePoint`. The service owns the read (ADR-0002);
+    the procedure stays thin.
+  - An unreadable Škoda row returns a typed `UNREADABLE` error and the picker opens on the default view.
+  - The client fetches it only when the Škoda dialog opens, so it never lands in the server-rendered HTML or the
+    dehydrated cache. It uses `gcTime: 0`.
+  - It is never logged, and the timing line carries no value.
+- **Address search.** `credentials.searchAddress({ query })` (`adminProcedure`) returns up to 5
+  `{ label, lat, lon }`.
+  - It goes through a new keyless effect, `src/lib/effects/geocoder/`, with a Nominatim adapter shaped like
+    `effects/eltariff`. It uses `effects/http.ts` (timeout and retries) and fails closed with `GEOCODER_UNAVAILABLE`.
+  - Request parameters: `countrycodes=se`, `accept-language=sv`, `limit=5`, a distinctive `User-Agent`.
+  - It is throttled to 1 request/s per instance and keeps a small in-memory cache (10 min) of results.
+  - The query and the results are never logged; log lines carry only the outcome and the timing.
+  - The search runs on submit ("Sök"), never as the admin types: Nominatim's policy forbids autocomplete.
+- **Picker component** (`HomePositionPicker`). The form value stays the same `"lat,lon"` string, so the server's
+  validation is unchanged.
+  - A search box with "Sök", and a list of up to 5 hits; picking one moves the pin.
+  - A map about 260 px tall: `maplibre-gl` v6 through `@vis.gl/react-maplibre`.
+    - It is lazy-loaded and wrapped in TanStack Router's `<ClientOnly>`, so nothing loads until the picker opens.
+    - It uses OpenFreeMap's `liberty` style.
+    - On touch pointers it uses `cooperativeGestures`, so one finger still scrolls the bottom sheet.
+    - The OpenFreeMap / OpenStreetMap attribution stays visible, in compact form.
+  - A draggable pin that the keyboard can also move. Clicking the map moves the pin there.
+  - "Använd min position" / "Use my location" (`navigator.geolocation`): it centres the map and moves the pin there.
+  - A "lat, lon" text input synced both ways with the pin, as the keyboard and screen-reader alternative.
+  - The chosen point is announced in a polite live region. Coordinates are rounded to 5 decimals (about 1 m).
+  - It opens on the saved pin; with none, on Sweden at country zoom.
+- **Config.**
+  - Vite: `optimizeDeps.exclude: ['maplibre-gl']` and the worker URL (`setWorkerUrl`), checked in both
+    `vite dev` and `vite build`.
+  - `Permissions-Policy: geolocation=(self)`.
+- **Failure behaviour:**
+
+  | Situation | Behaviour |
+  |---|---|
+  | Geocoder down or rate-limited | An inline "Adressökningen fungerar inte just nu"; the map and the text input still work. |
+  | No WebGL2 | The map is replaced by a note, and the text input remains. |
+  | Location denied or unavailable | An inline message; nothing else changes. |
+  | Tiles fail to load | The map shows the pin on a blank background; the text input remains. |
+
+- **Tests:**
+  - unit tests for parsing and rounding;
+  - service and procedure tests for `homePosition`: a member gets `FORBIDDEN`, an unreadable row gives `UNREADABLE`,
+    and a log spy proves the value is never logged;
+  - geocoder adapter tests with `effects/testing/fakeFetch`: the parameters, the `User-Agent`, the throttle, the
+    cache, and failing closed;
+  - `searchAddress` procedure tests;
+  - browser tests with the map module mocked: search → pick, the text input ↔ pin sync, the geolocation button, and
+    the fallbacks;
+  - the real map checked live at three widths, including a phone-sized bottom sheet.
+- **Privacy notes:**
+  - Proxying the search hides the admin's IP and browser from the geocoder, but the address text still reaches
+    OpenStreetMap's servers.
+  - The tile host sees roughly which area is viewed, and the admin's IP.
+  - There is no reverse geocoding of the chosen point.
+
 ## Error handling summary
 
 | Situation | Behaviour |

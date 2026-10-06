@@ -172,3 +172,21 @@ The [spec](../superpowers/specs/2026-10-05-charging-settings-design.md) has the 
 - **A refused Emaldo login flags `user` + `password`**, even though a rotated app secret (which encrypts the login
   body) can cause it too. The run message names both causes.
 - **Step 3 ships as two PRs:** 3a (server) and 3b (UI).
+
+## Amendment (2026-10-06): the home position is shown to admins
+
+The owner asked for a map picker for the Škoda home position (spec "Step 3c"). A picker that can't show the saved pin
+is a guess every time. So decision 6 ("write-only") gets **one exception**: `credentials.homePosition` returns the
+resolved home point (stored, else env) to admins.
+- **Every other field stays write-only**, including the facility ID and every secret.
+- **The value never reaches the server-rendered HTML.** The client fetches it only when the Škoda dialog opens, with
+  `gcTime: 0`, so it never lands in the dehydrated cache. It is never logged.
+- **Why this one:** it is the household's own address, shown only to its admins, who already know it. A key, a
+  password or the facility ID gives access to something. A pin on a map gives nothing beyond what the admin already
+  knows.
+- **Alternatives rejected:**
+  - Keep it write-only, so the map always opens on a default view.
+  - Return a rounded area (about 1 km), which leaves a rule to explain for little gain.
+- **Address search** goes to Nominatim (OpenStreetMap), proxied by our server, so the admin's IP and browser stay
+  private. The address text itself does reach OpenStreetMap's servers. There is no reverse geocoding of the chosen
+  point.
