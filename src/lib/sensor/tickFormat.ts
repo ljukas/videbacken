@@ -1,3 +1,11 @@
+import {
+  type CountableTimeInterval,
+  type TimeInterval,
+  timeDay,
+  timeHour,
+  timeMonday,
+  timeMonth,
+} from 'd3-time'
 import type { SeriesRange } from '~/lib/sensor/range'
 
 // Range-aware x-axis / tooltip-header time label. Client-safe and locale-explicit
@@ -18,4 +26,47 @@ export function makeTickFormatter(range: SeriesRange, locale: string): (t: numbe
         : { month: 'short', day: 'numeric' }
   const fmt = new Intl.DateTimeFormat(locale, options)
   return (t: number) => fmt.format(new Date(t))
+}
+
+/** A time axis: its candidate tick intervals, finest first, and its tick label. */
+export type TimeAxis = {
+  intervals: readonly TimeInterval[]
+  format: (t: number) => string
+}
+
+// `every` is null only for a non-positive step.
+const every = (interval: CountableTimeInterval, step: number): TimeInterval =>
+  interval.every(step) ?? interval
+// The 1st and the 16th: twice a month without drifting off the calendar.
+const halfMonth = timeDay.filter((d) => d.getDate() === 1 || d.getDate() === 16)
+
+// Round local times per range (owner's choice, step 5c). The chart takes the
+// finest interval whose labels fit its width (pickTimeTicks).
+const INTERVALS: Record<SeriesRange, readonly TimeInterval[]> = {
+  '24h': [every(timeHour, 3), every(timeHour, 6), every(timeHour, 12)],
+  '1w': [timeDay, every(timeDay, 2)],
+  '1m': [timeMonday, halfMonth],
+  '3m': [halfMonth, timeMonth],
+  '6m': [halfMonth, timeMonth, every(timeMonth, 2)],
+  '1y': [timeMonth, every(timeMonth, 2), every(timeMonth, 3)],
+  all: [
+    timeMonth,
+    every(timeMonth, 2),
+    every(timeMonth, 3),
+    every(timeMonth, 6),
+    every(timeMonth, 12),
+  ],
+}
+
+// The axis label matches its ticks: the time of day for hours, the weekday for
+// midnights, the date beyond a week. (The card's header keeps makeTickFormatter.)
+export function makeTimeAxis(range: SeriesRange, locale: string): TimeAxis {
+  const options: Intl.DateTimeFormatOptions =
+    range === '24h'
+      ? { hour: '2-digit', minute: '2-digit' }
+      : range === '1w'
+        ? { weekday: 'short' }
+        : { month: 'short', day: 'numeric' }
+  const fmt = new Intl.DateTimeFormat(locale, options)
+  return { intervals: INTERVALS[range], format: (t) => fmt.format(new Date(t)) }
 }
