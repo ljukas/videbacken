@@ -232,3 +232,22 @@ test('a car part that would read "0,0" leaves the car lines blank', async () => 
   const atMin = await draw(sums({ carKwh: 0.05 }))
   await expect.element(atMin.screen.getByText(m.energy_flow_car())).toBeInTheDocument()
 })
+
+test('an arrow tooltip leaves its own value pill uncovered', async () => {
+  const { screen } = await draw(sums())
+  const c = screen.container
+  await userEvent.hover(hitOf(c, 'imp>load'))
+  const title = screen.getByText(
+    m.energy_flow_arrow({ from: m.energy_tile_import(), to: m.energy_tile_load() }),
+  )
+  await expect.element(title).toBeVisible()
+  const card = (title.element() as HTMLElement).parentElement as HTMLElement
+  const pill = [...c.querySelectorAll('[data-slot="flow-value"]')].find(
+    (p) => p.textContent === '111,8',
+  ) as SVGGElement
+  const a = card.getBoundingClientRect()
+  const b = pill.getBoundingClientRect()
+  const apart = a.bottom <= b.top || b.bottom <= a.top || a.right <= b.left || b.right <= a.left
+  expect(apart, `tooltip ${JSON.stringify(a)} covers pill ${JSON.stringify(b)}`).toBe(true)
+  await userEvent.hover(document.body)
+})

@@ -276,9 +276,11 @@ export function EnergyFlowDiagram({
           ) : null}
         </Group>
       </svg>
+      {/* Above, not over: the arrow's own value pill sits where the pointer anchors the tooltip. */}
       <ChartPopover
         state={popover}
         dataKey={popover.data?.id}
+        placement="above"
         className="flex min-w-48 flex-col gap-0.5 whitespace-normal rounded-lg border bg-card px-3 py-2 text-card-foreground text-sm shadow-lg"
       >
         {popover.data ? <TipBody tip={popover.data} /> : null}
