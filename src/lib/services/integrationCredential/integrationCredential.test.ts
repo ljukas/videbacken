@@ -101,7 +101,7 @@ describe('set', () => {
       it(`rejects ${name} without echoing the value or writing a row`, async () => {
         const err = await domainError(() => set(source, fields, null))
         expect(err.code).toBe('INVALID_FIELD')
-        expect(err.field).toBe(field)
+        expect(err.fields).toEqual([field])
         // Exact: the message names the field and carries no part of the value.
         expect(err.message).toBe(`INVALID_FIELD (${field})`)
         expect(await rows()).toEqual([])
@@ -113,9 +113,23 @@ describe('set', () => {
       expect((await readStored('zaptec'))?.password).toHaveLength(512)
     })
 
+    it('lists every invalid field at once, unknown names first and deduplicated', async () => {
+      const err = await domainError(() =>
+        set(
+          'skoda',
+          { 'x-1': 'a', 'y-2': 'b', apiKey: 'fine', vin: 'short', homeCoordinates: 'nowhere' },
+          null,
+        ),
+      )
+      expect(err.code).toBe('INVALID_FIELD')
+      expect(err.fields).toEqual(['unknown', 'vin', 'homeCoordinates'])
+      expect(err.message).toBe('INVALID_FIELD (unknown, vin, homeCoordinates)')
+      expect(await rows()).toEqual([])
+    })
+
     it('rejects an unknown field even next to valid ones', async () => {
       const err = await domainError(() => set('zaptec', { username: 'u', token: 'x' }, null))
-      expect(err.field).toBe('token')
+      expect(err.fields).toEqual(['token'])
       expect(await rows()).toEqual([])
     })
 
@@ -123,18 +137,18 @@ describe('set', () => {
       for (const key of ['x-secret-token', 'a'.repeat(33), 'tok3n', '']) {
         const err = await domainError(() => set('skoda', { [key]: 'v' }, null))
         expect(err.code).toBe('INVALID_FIELD')
-        expect(err.field).toBe('unknown')
+        expect(err.fields).toEqual(['unknown'])
         expect(err.message).toBe('INVALID_FIELD (unknown)')
       }
       const err = await domainError(() => set('skoda', { ['a'.repeat(32)]: 'v' }, null))
-      expect(err.field).toBe('a'.repeat(32))
+      expect(err.fields).toEqual(['a'.repeat(32)])
     })
 
     it('rejects control characters inside a value', async () => {
       for (const value of ['a\u0000b', 'p\nq', 'x\u007fy', 'tab\there']) {
         const err = await domainError(() => set('zaptec', { password: value }, null))
         expect(err.code).toBe('INVALID_FIELD')
-        expect(err.field).toBe('password')
+        expect(err.fields).toEqual(['password'])
       }
       expect(await rows()).toEqual([])
     })
@@ -144,9 +158,11 @@ describe('set', () => {
       // characters, so four such Emaldo fields would overflow the ciphertext CHECK.
       const err = await domainError(() => set('emaldo', { password: '\ud800'.repeat(512) }, null))
       expect(err.code).toBe('INVALID_FIELD')
-      expect(err.field).toBe('password')
+      expect(err.fields).toEqual(['password'])
       for (const value of ['a\udc00b', 'x\ud83d']) {
-        expect((await domainError(() => set('emaldo', { user: value }, null))).field).toBe('user')
+        expect((await domainError(() => set('emaldo', { user: value }, null))).fields).toEqual([
+          'user',
+        ])
       }
       expect(await rows()).toEqual([])
       // A well-formed surrogate pair (an emoji) is still a valid value.
@@ -157,14 +173,14 @@ describe('set', () => {
     it('rejects a non-string value', async () => {
       const err = await domainError(() => set('skoda', { apiKey: 7 as never }, null))
       expect(err.code).toBe('INVALID_FIELD')
-      expect(err.field).toBe('apiKey')
+      expect(err.fields).toEqual(['apiKey'])
     })
 
     it('leaves an existing row unchanged', async () => {
       await set('skoda', { apiKey: 'good' }, null)
       const [before] = await rows()
       const err = await domainError(() => set('skoda', { apiKey: 'new', vin: 'bad' }, null))
-      expect(err.field).toBe('vin')
+      expect(err.fields).toEqual(['vin'])
       expect(await readStored('skoda')).toEqual({ apiKey: 'good' })
       expect(await rows()).toEqual([before])
     })
@@ -199,16 +215,102 @@ describe('set', () => {
     })
   }
 
-  it('replaces an unreadable row and logs only the source', async () => {
-    await set('skoda', { vin: 'TMBJR7NY0PZ123456', apiKey: 'old' }, null)
+  it('replaces an unreadable row when every field is sent, and logs only the source', async () => {
+    await set('skoda', { apiKey: 'old-key' }, null)
     vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
-    const result = await set('skoda', { apiKey: 'k' }, null)
-    expect(result.fieldsSet).toEqual(['apiKey'])
-    expect(await readStored('skoda')).toEqual({ apiKey: 'k' })
+    const result = await set(
+      'skoda',
+      { apiKey: 'new-key', vin: 'TMBJR7NY0PZ123456', homeCoordinates: '59.3293,18.0686' },
+      null,
+    )
+    expect(result.fieldsSet).toEqual(['apiKey', 'vin', 'homeCoordinates'])
+    expect(await readStored('skoda')).toEqual({
+      apiKey: 'new-key',
+      vin: 'TMBJR7NY0PZ123456',
+      homeCoordinates: '59.3293,18.0686',
+    })
     expect(warn).toHaveBeenCalledWith('integration credentials replaced unreadable row', {
       source: 'skoda',
     })
+  })
+
+  it('REENTER_ALL_FIELDS over an unreadable row with a field left blank writes nothing', async () => {
+    await set('zaptec', { username: 'u', password: 'p' }, null)
+    const [before] = await rows()
+    vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+    const err = await domainError(() =>
+      set('zaptec', { username: 'new-user', password: '  ' }, null),
+    )
+    expect(err.code).toBe('REENTER_ALL_FIELDS')
+    expect(err.fields).toEqual(['password'])
+    expect(err.message).toBe('REENTER_ALL_FIELDS (password)')
+    const [after] = await rows()
+    expect(after.ciphertext).toBe(before.ciphertext)
+  })
+
+  describe('check order over an unreadable row', () => {
+    const unreadableZaptec = async () => {
+      await set('zaptec', { username: 'u', password: 'p' }, null)
+      const [before] = await rows()
+      vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+      return before
+    }
+
+    it('INVALID_FIELD wins over REENTER_ALL_FIELDS and writes nothing', async () => {
+      const before = await unreadableZaptec()
+      const err = await domainError(() => set('zaptec', { username: 'x'.repeat(513) }, null))
+      expect(err.code).toBe('INVALID_FIELD')
+      expect(err.fields).toEqual(['username'])
+      expect((await rows())[0].ciphertext).toBe(before.ciphertext)
+    })
+
+    it('NOTHING_TO_SAVE wins over REENTER_ALL_FIELDS', async () => {
+      await unreadableZaptec()
+      const err = await domainError(() => set('zaptec', { username: ' ', password: '' }, null))
+      expect(err.code).toBe('NOTHING_TO_SAVE')
+      expect(err.fields).toEqual([])
+    })
+
+    it('ENCRYPTION_KEY_MISSING wins over REENTER_ALL_FIELDS', async () => {
+      await set('skoda', { apiKey: 'old' }, null)
+      vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', '')
+      const err = await domainError(() => set('skoda', { apiKey: 'k' }, null))
+      expect(err.code).toBe('ENCRYPTION_KEY_MISSING')
+      expect(err.fields).toEqual([])
+    })
+  })
+
+  it('INVALID_FIELD lists non-string values with the rest, without any value', async () => {
+    const err = await domainError(() =>
+      set('skoda', { apiKey: 7 as never, vin: 'short', homeCoordinates: 99 as never }, null),
+    )
+    expect(err.code).toBe('INVALID_FIELD')
+    expect(err.fields).toEqual(['apiKey', 'vin', 'homeCoordinates'])
+    expect(err.message).toBe('INVALID_FIELD (apiKey, vin, homeCoordinates)')
+  })
+
+  it('REENTER_ALL_FIELDS lists every blank field, in vocabulary order', async () => {
+    await set('skoda', { apiKey: 'old' }, null)
+    const [before] = await rows()
+    vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+    const err = await domainError(() => set('skoda', { vin: 'TMBJR7NY0PZ123456' }, null))
+    expect(err.code).toBe('REENTER_ALL_FIELDS')
+    expect(err.fields).toEqual(['apiKey', 'homeCoordinates'])
+    expect((await rows())[0].ciphertext).toBe(before.ciphertext)
+  })
+
+  it('REENTER_ALL_FIELDS over a malformed-shape row', async () => {
+    await insertRaw('skoda', '{"bogus":"x"}')
+    const err = await domainError(() => set('skoda', { apiKey: 'k' }, null))
+    expect(err.code).toBe('REENTER_ALL_FIELDS')
+    expect(err.fields).toEqual(['vin', 'homeCoordinates'])
+  })
+
+  it('over a readable row a blank field still keeps its stored value', async () => {
+    await set('zaptec', { username: 'u', password: 'p' }, null)
+    await set('zaptec', { username: 'u2', password: '' }, null)
+    expect(await readStored('zaptec')).toEqual({ username: 'u2', password: 'p' })
   })
 
   it('keeps plaintext out of the ciphertext column; fields_set holds names only', async () => {
@@ -380,6 +482,16 @@ describe('cache invalidation', () => {
     expect(await cachedSkoda()).toEqual({ apiKey: 'k' })
     await clear('skoda')
     expect(await cachedSkoda()).toBeNull()
+  })
+
+  it('a set rejected with REENTER_ALL_FIELDS inside the transaction still invalidates', async () => {
+    await set('skoda', { apiKey: 'old' }, null)
+    expect(await cachedSkoda()).toEqual({ apiKey: 'old' })
+    vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+    const err = await domainError(() => set('skoda', { apiKey: 'k' }, null))
+    expect(err.code).toBe('REENTER_ALL_FIELDS')
+    // The cached value was dropped: the fresh read hits the now-unreadable row.
+    await expect(cachedSkoda()).rejects.toBeInstanceOf(CredentialsUnreadableError)
   })
 
   it('a set rejected by validation does not invalidate', async () => {

@@ -116,6 +116,7 @@ export function createZaptecClient(deps: Deps): ZaptecClient {
         message: grantRetired
           ? `Zaptec login failed: password grant retired (unsupported_grant_type, HTTP ${res.status})`
           : `Zaptec login failed: credentials rejected (HTTP ${res.status})`,
+        suspectFields: grantRetired ? undefined : ['username', 'password'],
       })
     }
     if (!res.ok) throw statusError('token', res)

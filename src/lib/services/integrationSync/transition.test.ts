@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import type { CredentialFieldName } from '~/lib/integrationCredentials'
 import { ALERT_AFTER_FAILURES, STALE_AFTER_MS } from './policy'
 import {
   deriveState,
@@ -38,6 +39,7 @@ const never: HealthSnapshot = {
   alertableFailures: 0,
   errorCode: null,
   lastErrorMessage: null,
+  suspectFields: null,
 }
 const healthy: HealthSnapshot = {
   ...never,
@@ -116,6 +118,7 @@ describe('nextRow transitions', () => {
       alertableFailures: 0,
       errorCode: null,
       lastErrorMessage: null,
+      suspectFields: null,
     })
   })
 
@@ -319,5 +322,39 @@ describe('alert threshold', () => {
       expect(next.transition).toBe('none')
       row = next.row
     }
+  })
+})
+
+describe('suspect fields', () => {
+  const authFailed = (suspectFields?: readonly CredentialFieldName[] | null): SyncOutcome => ({
+    ok: false,
+    kind: 'failed',
+    code: 'auth_failed',
+    message: 'refused',
+    stats,
+    suspectFields,
+  })
+
+  test('a failure records its suspect fields', () => {
+    expect(nextRow(healthy, authFailed(['apiKey']), NOW, STARTED).row.suspectFields).toEqual([
+      'apiKey',
+    ])
+  })
+  test('none or an empty list is null', () => {
+    expect(nextRow(healthy, authFailed(), NOW, STARTED).row.suspectFields).toBeNull()
+    expect(nextRow(healthy, authFailed([]), NOW, STARTED).row.suspectFields).toBeNull()
+  })
+  test('duplicates are deduped', () => {
+    expect(nextRow(healthy, authFailed(['vin', 'vin']), NOW, STARTED).row.suspectFields).toEqual([
+      'vin',
+    ])
+  })
+  test('a later failure without suspects clears them', () => {
+    const first = nextRow(healthy, authFailed(['apiKey']), NOW, STARTED).row
+    expect(nextRow(first, fail('unreachable'), NOW, STARTED).row.suspectFields).toBeNull()
+  })
+  test('success clears them', () => {
+    const first = nextRow(healthy, authFailed(['vin']), NOW, STARTED).row
+    expect(nextRow(first, ok, NOW, STARTED).row.suspectFields).toBeNull()
   })
 })

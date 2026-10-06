@@ -1,3 +1,4 @@
+import type { CredentialField } from '~/lib/integrationCredentials'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
 import { IntegrationError } from '../integrationError'
 
@@ -16,12 +17,17 @@ export class EmaldoError extends IntegrationError {
     readonly code: IntegrationErrorCode,
     readonly op: EmaldoOp,
     readonly status?: number,
-    options?: { cause?: unknown; message?: string },
+    options?: {
+      cause?: unknown
+      message?: string
+      /** The Emaldo credential fields this answer points at (names only). */
+      suspectFields?: readonly CredentialField<'emaldo'>[]
+    },
   ) {
     super(
       options?.message ??
         `Emaldo ${op} failed: ${code}${status === undefined ? '' : ` (HTTP ${status})`}`,
-      options?.cause === undefined ? undefined : { cause: options.cause },
+      { cause: options?.cause, suspectFields: options?.suspectFields },
     )
   }
 }

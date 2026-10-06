@@ -17,6 +17,7 @@ const okRun: Run = {
   outcome: 'ok',
   errorCode: null,
   errorMessage: null,
+  suspectFields: null,
   upserted: 4,
   sessionsSeen: 9,
   pages: 1,
@@ -138,7 +139,11 @@ test('a failing source explains itself, since when, and the admin detail', async
         state: 'failing',
         code: 'auth_failed',
         failingSince: new Date('2026-09-28T06:00:00Z'), // 08:00 Stockholm
-        adminDetail: { lastErrorMessage: 'HTTP 401 from /oauth/token', credentialExpiry: null },
+        adminDetail: {
+          lastErrorMessage: 'HTTP 401 from /oauth/token',
+          credentialExpiry: null,
+          suspectFields: null,
+        },
       },
     }),
   )
