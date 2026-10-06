@@ -135,7 +135,8 @@ function SensorsPage() {
   // Each metric gets its own per-device series (with outage breaks inserted by
   // toDeviceSeries). Colors derive from the FULL roster position (stable order
   // from the service), so a device keeps its color regardless of which siblings
-  // are toggled off; hidden devices stay in the list (their line is `hide`-d).
+  // are toggled off; hidden devices stay in the list (the chart draws no line for
+  // them, but they keep their legend entry and the time axis).
   const tempDevices = useMemo(
     () =>
       toChartDevices(

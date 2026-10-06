@@ -127,7 +127,7 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
   // followScroll: the card is portalled, so it re-measures while a scroll
   // container moves the chart under it.
   const popover = useChartPopover<number>({ followScroll: true })
-  // The reading time the pointer last moved to (Task 5's keys continue from it).
+  // The reading time the pointer or the keys last moved to.
   const cursor = useRef<number | null>(null)
   const hintId = useId()
   // The time the keyboard last stepped to, read out by the live region; a mouse move clears it.

@@ -18,8 +18,8 @@ export function NoData() {
   )
 }
 
-// A custom formatter replaces the tooltip's own colour dots, so each series
-// row draws its dot here (a total row has none). `share` adds a smaller,
+// One tooltip row: a series row draws its colour dot here (a total row has
+// none). `share` adds a smaller,
 // muted column after the value (omitted: no column).
 export function TooltipRow({
   label,

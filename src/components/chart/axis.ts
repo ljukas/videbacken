@@ -13,7 +13,7 @@ export const TICK_SIZE = 6
 export const X_TICK_MARGIN = 8
 export const Y_TICK_MARGIN = 4
 export const TICK_PX = 12
-/** recharts' default axis colour; our ChartContainer never restyled it. */
+/** The axis and tick colour (recharts' default, kept from before visx). */
 export const AXIS_COLOR = '#666'
 
 /** A label's width in px at `px` font size (an estimate where nothing can measure, as in SSR). */
