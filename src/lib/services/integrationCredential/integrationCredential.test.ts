@@ -541,12 +541,44 @@ describe('homePosition', () => {
     expect(await homePosition()).toBeNull()
   })
 
-  it('an unreadable row is UNREADABLE, never the env value', async () => {
-    vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
-    await set('skoda', { homeCoordinates: HOME }, await insertUser())
-    vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
-    const error = await domainError(() => homePosition())
-    expect(error.code).toBe('UNREADABLE')
-    expect(error.message).not.toContain('57.7')
+  describe('an unreadable row is UNREADABLE, never the env value', () => {
+    const expectNoLeak = (error: IntegrationCredentialDomainError) => {
+      expect(error.code).toBe('UNREADABLE')
+      expect(error.message).toBe('UNREADABLE')
+      expect(error.fields).toEqual([])
+      for (const value of ['59.3293', '18.0686', '57.7', '11.97']) {
+        expect(error.message).not.toContain(value)
+      }
+    }
+
+    it('under a wrong key', async () => {
+      vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
+      await set('skoda', { homeCoordinates: HOME }, await insertUser())
+      vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+      expectNoLeak(await domainError(() => homePosition()))
+    })
+
+    it('when the key is unset after the row was saved', async () => {
+      vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
+      await set('skoda', { homeCoordinates: HOME }, await insertUser())
+      vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', '')
+      expectNoLeak(await domainError(() => homePosition()))
+    })
+
+    it('when the decrypted object has the wrong shape', async () => {
+      vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
+      await insertRaw('skoda', '{"bogus":"59.3293,18.0686"}')
+      expectNoLeak(await domainError(() => homePosition()))
+    })
+  })
+
+  it('rethrows a failing read as is, not as a domain error', async () => {
+    vi.spyOn(db, 'select').mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    const err = await homePosition().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toBe('boom')
+    expect(err).not.toBeInstanceOf(IntegrationCredentialDomainError)
   })
 })
