@@ -7,6 +7,7 @@ import {
   CREDENTIAL_ENV_VARS,
   type CredentialFieldName,
   type CredentialSource,
+  credentialFieldKind,
 } from '~/lib/integrationCredentials'
 import { credentialFieldLabel } from '~/lib/integrationCredentialsMessage'
 import { m } from '~/paraglide/messages'
@@ -15,9 +16,21 @@ import { formatDate } from './format'
 /** Where a field's value comes from; `unknown` while the status hasn't loaded. */
 export type CredentialFieldState = 'stored' | 'env' | 'missing' | 'unreadable' | 'unknown'
 
-/** Only a field that has a value can stay closed (and be closed again): the others need input. */
-export const isClosableState = (state: CredentialFieldState) =>
+/** A field with a value: its input stays closed until replaced, and saving keeps the current value. */
+export const hasCredentialValue = (state: CredentialFieldState) =>
   state === 'stored' || state === 'env'
+
+/**
+ * Whether a field may stay closed (and be closed again): one with a value, and
+ * the home position even when missing — its map loads only when asked for (3c-2).
+ */
+export const isClosableField = (
+  source: CredentialSource,
+  field: string,
+  state: CredentialFieldState,
+) =>
+  hasCredentialValue(state) ||
+  (state === 'missing' && credentialFieldKind(source, field) === 'position')
 
 // DOM ids namespaced per source: bare field names (`password`, `user`) would
 // collide with other inputs on the page and invite password-manager matching.
@@ -76,8 +89,8 @@ export function CredentialFieldRow({
   // Named "{action}, {field}": the visible text first (WCAG 2.5.3 label in name).
   const actionLabel = (action: string) =>
     m.charging_credentials_field_action_label({ action, field: label })
-  // The home position is picked on a map from 3c-2; until then it opens the "lat,lon" input.
-  const onMap = source === 'skoda' && field === 'homeCoordinates'
+  // The home position is picked on a map.
+  const onMap = credentialFieldKind(source, field) === 'position'
   const reveal =
     state === 'stored'
       ? onMap
