@@ -19,6 +19,7 @@ export type ParsedShellyReading = {
   temperatureC: number | null
   humidityPct: number | null
   batteryPct: number | null
+  shellyName: string | null
 }
 
 // An empty/whitespace query value means "the placeholder produced nothing" —
@@ -28,6 +29,21 @@ function numParam(raw: string | null): string | undefined {
   if (raw == null) return undefined
   const trimmed = raw.trim()
   return trimmed === '' ? undefined : trimmed
+}
+
+/** The longest Shelly name we keep; a longer one is dropped, not cut. Matches the admin name's bound. */
+export const SHELLY_NAME_MAX = 80
+
+// The device's name from the Shelly app (`${config.sys.device.name}`). An
+// unnamed device sends `null`, an empty value, or — when Shelly can't evaluate
+// the token — the token itself, copied verbatim; all of those, and an
+// over-long value, mean "no name". Never a reason to reject the reading.
+function nameParam(raw: string | null): string | null {
+  const trimmed = raw?.trim()
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed.startsWith('${')) {
+    return null
+  }
+  return trimmed.length > SHELLY_NAME_MAX ? null : trimmed
 }
 
 export function parseShellyQuery(
@@ -47,6 +63,7 @@ export function parseShellyQuery(
       temperatureC: parsed.data.t ?? null,
       humidityPct: parsed.data.h ?? null,
       batteryPct: parsed.data.batt ?? null,
+      shellyName: nameParam(params.get('name')),
     },
   }
 }
@@ -67,6 +84,7 @@ export async function handleShellyWebhook(request: Request): Promise<Response> {
       deviceId,
       hasTemp: parsed.value.temperatureC != null,
       hasHum: parsed.value.humidityPct != null,
+      hasName: parsed.value.shellyName != null,
     })
     return new Response(null, { status: 204 })
   } catch (err) {

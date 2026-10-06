@@ -14,21 +14,39 @@ describe('parseShellyQuery', () => {
   test('parses mac + temp + humidity + battery', () => {
     expect(parseShellyQuery(q('mac=AABBCCDDEEFF&t=21.4&h=48.2&batt=90'))).toEqual({
       ok: true,
-      value: { mac: 'AABBCCDDEEFF', temperatureC: 21.4, humidityPct: 48.2, batteryPct: 90 },
+      value: {
+        mac: 'AABBCCDDEEFF',
+        temperatureC: 21.4,
+        humidityPct: 48.2,
+        batteryPct: 90,
+        shellyName: null,
+      },
     })
   })
 
   test('accepts a reading with only temperature (humidity/battery absent → null)', () => {
     expect(parseShellyQuery(q('mac=AABBCCDDEEFF&t=21.4'))).toEqual({
       ok: true,
-      value: { mac: 'AABBCCDDEEFF', temperatureC: 21.4, humidityPct: null, batteryPct: null },
+      value: {
+        mac: 'AABBCCDDEEFF',
+        temperatureC: 21.4,
+        humidityPct: null,
+        batteryPct: null,
+        shellyName: null,
+      },
     })
   })
 
   test('accepts a bare wake with only a mac', () => {
     expect(parseShellyQuery(q('mac=AABBCCDDEEFF'))).toEqual({
       ok: true,
-      value: { mac: 'AABBCCDDEEFF', temperatureC: null, humidityPct: null, batteryPct: null },
+      value: {
+        mac: 'AABBCCDDEEFF',
+        temperatureC: null,
+        humidityPct: null,
+        batteryPct: null,
+        shellyName: null,
+      },
     })
   })
 
@@ -51,14 +69,26 @@ describe('parseShellyQuery', () => {
   test('accepts a reading with only humidity', () => {
     expect(parseShellyQuery(q('mac=AABBCCDDEEFF&h=48.2'))).toEqual({
       ok: true,
-      value: { mac: 'AABBCCDDEEFF', temperatureC: null, humidityPct: 48.2, batteryPct: null },
+      value: {
+        mac: 'AABBCCDDEEFF',
+        temperatureC: null,
+        humidityPct: 48.2,
+        batteryPct: null,
+        shellyName: null,
+      },
     })
   })
 
   test('accepts a reading with only battery', () => {
     expect(parseShellyQuery(q('mac=AABBCCDDEEFF&batt=77'))).toEqual({
       ok: true,
-      value: { mac: 'AABBCCDDEEFF', temperatureC: null, humidityPct: null, batteryPct: 77 },
+      value: {
+        mac: 'AABBCCDDEEFF',
+        temperatureC: null,
+        humidityPct: null,
+        batteryPct: 77,
+        shellyName: null,
+      },
     })
   })
 
@@ -87,18 +117,88 @@ describe('parseShellyQuery', () => {
     // any valid sibling metric in the same webhook is still kept.
     expect(parseShellyQuery(q('mac=AABBCCDDEEFF&t=&h=48'))).toEqual({
       ok: true,
-      value: { mac: 'AABBCCDDEEFF', temperatureC: null, humidityPct: 48, batteryPct: null },
+      value: {
+        mac: 'AABBCCDDEEFF',
+        temperatureC: null,
+        humidityPct: 48,
+        batteryPct: null,
+        shellyName: null,
+      },
     })
     // ...while a real zero (the string "0") is preserved as 0, not nulled.
     expect(parseShellyQuery(q('mac=AABBCCDDEEFF&t=0'))).toEqual({
       ok: true,
-      value: { mac: 'AABBCCDDEEFF', temperatureC: 0, humidityPct: null, batteryPct: null },
+      value: {
+        mac: 'AABBCCDDEEFF',
+        temperatureC: 0,
+        humidityPct: null,
+        batteryPct: null,
+        shellyName: null,
+      },
     })
+  })
+
+  test('reads the Shelly app name, trimmed', () => {
+    const parsed = parseShellyQuery(q('mac=AABBCCDDEEFF&t=20&name=%20K%C3%A4llare%20NV%20'))
+    expect(parsed).toEqual({
+      ok: true,
+      value: {
+        mac: 'AABBCCDDEEFF',
+        temperatureC: 20,
+        humidityPct: null,
+        batteryPct: null,
+        shellyName: 'Källare NV',
+      },
+    })
+  })
+
+  test.each([
+    ['missing', 'mac=AABBCCDDEEFF&t=20'],
+    ['blank', 'mac=AABBCCDDEEFF&t=20&name=%20%20'],
+    ['null (an unnamed device)', 'mac=AABBCCDDEEFF&t=20&name=null'],
+    ['undefined', 'mac=AABBCCDDEEFF&t=20&name=undefined'],
+    ['the token copied verbatim', 'mac=AABBCCDDEEFF&t=20&name=%24%7Bconfig.sys.device.name%7D'],
+    ['81 characters', `mac=AABBCCDDEEFF&t=20&name=${'a'.repeat(81)}`],
+  ])('a %s name is no name, and the reading still parses', (_case, query) => {
+    const parsed = parseShellyQuery(q(query))
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      expect(parsed.value.shellyName).toBeNull()
+      expect(parsed.value.temperatureC).toBe(20)
+    }
+  })
+
+  // The bound counts UTF-16 code units, like Zod's `.max`.
+  test('keeps an 80-character name and any Unicode', () => {
+    const eighty = `Källare ${'ö'.repeat(72)}` // 8 + 72 = 80
+    const parsed = parseShellyQuery(q(`mac=AABBCCDDEEFF&name=${encodeURIComponent(eighty)}`))
+    expect(parsed.ok && parsed.value.shellyName).toBe(eighty)
   })
 })
 
 describe('handleShellyWebhook', () => {
   setupDatabase()
+
+  test('stores the Shelly name from the webhook', async () => {
+    const res = await handleShellyWebhook(
+      new Request(shellyUrl(`token=${TOKEN}&mac=AABBCCDDEEFF&t=20&name=K%C3%A4llare%20NV`)),
+    )
+    expect(res.status).toBe(204)
+    const [device] = await db.select().from(sensorDevice)
+    expect(device.shellyName).toBe('Källare NV')
+  })
+
+  test('an unnamed device (the token sent verbatim) still stores its reading, with no name', async () => {
+    const res = await handleShellyWebhook(
+      new Request(
+        shellyUrl(`token=${TOKEN}&mac=AABBCCDDEEFF&t=20&name=%24%7Bconfig.sys.device.name%7D`),
+      ),
+    )
+    expect(res.status).toBe(204)
+    const [device] = await db.select().from(sensorDevice)
+    expect(device.shellyName).toBeNull()
+    expect(await db.select().from(sensorReading)).toHaveLength(1)
+  })
 
   test('rejects a bad token with 401 and stores nothing', async () => {
     const res = await handleShellyWebhook(

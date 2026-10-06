@@ -12,13 +12,23 @@ rather than `ev.*` (the event that fired) means every webhook carries a full
 snapshot, so one row stores both temperature and humidity:
 
 ```
-<base>/api/webhooks/shelly?token=<SHELLY_WEBHOOK_TOKEN>&mac=${config.sys.device.mac}&t=${status["temperature:0"].tC}&h=${status["humidity:0"].rh}&batt=${status["devicepower:0"].battery.percent}
+<base>/api/webhooks/shelly?token=<SHELLY_WEBHOOK_TOKEN>&mac=${config.sys.device.mac}&t=${status["temperature:0"].tC}&h=${status["humidity:0"].rh}&batt=${status["devicepower:0"].battery.percent}&name=${config.sys.device.name}
 ```
 
 - `<base>` is `http://<LAN-IP>:14600` for the local test, `https://<app-domain>` in production.
 - The device URL-encodes interpolated values automatically.
-- ~120 chars after substitution — within Shelly's 300-char / 10-hook limit for battery devices.
+- `name` carries the device's name from the Shelly app. A sensor without an admin-set name shows it on `/sensors`,
+  and the edit dialog shows it so you can tell the devices apart. An unnamed device sends nothing usable; that's
+  fine, the reading is still stored and the sensor shows as "Sensor <last 4 of MAC>".
+- Length: the template is ≈270 characters with a `*.vercel.app` domain and a 44-character token; battery devices
+  allow **300** (10 hooks). A domain more than ≈30 characters longer than `videbacken.vercel.app` won't fit — then
+  drop `&name=…` (the dialog still shows the MAC).
 - Unknown MACs **auto-register** as unnamed devices; name them at `/sensors` (admin only).
+
+### Devices set up before the `name` parameter
+
+Edit both webhooks (temperature and humidity change) on each device and append
+`&name=${config.sys.device.name}`. The name arrives with the device's next reading.
 
 ## Local (LAN) test — a device next to your machine
 
