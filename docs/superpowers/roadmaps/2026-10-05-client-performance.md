@@ -14,8 +14,8 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | [#93](https://github.com/ljukas/videbacken/pull/93) | checkpoint passed | 2026-10-05: the owner confirmed on the phone that `/sensors` (including a range switch) and `/users` no longer drag. Prod logs since the #93 deploy show one `getSession` server-function call across the session's navigations: the cached guard's refresh, not one per navigation. |
 | 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-05/06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
 | 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | [#104](https://github.com/ljukas/videbacken/pull/104) | checkpoint passed | 2026-10-06, `main` at `17fb518`: every `packages:` and `bones:` criterion holds. Totals are within 1–2 KB of the bar per page; the shell is 257 against 253, all of it from #102 and #103 merging in (see [checkpoint 4 result](#checkpoint-4-result)). |
-| 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | PR open | — (no checkpoint of its own; see [step 5a notes](#step-5a-notes)) |
-| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | — | — | not started | — |
+| 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | merged | — (no checkpoint of its own; see [step 5a notes](#step-5a-notes)) |
+| 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | — | in progress | — |
 | 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | — | — | not started | — |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) | — | — | not started | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
@@ -283,6 +283,26 @@ charts' sr-only nodes into dot bones, so it is left for 5c, with `.sr-only` excl
 - Opt the pill charts (heatmap, calendar, session) into `followScroll`. Their tooltip drifts from its mark when a
   scroll container moves (pre-existing).
 - Re-measure the axis labels once the web font loads (`getStringWidth` caches the fallback font's widths).
+
+## Step 5b notes
+
+**Baseline** (`bun run bundle:measure` on `main` at `3862039`, KB gz each page adds beyond the entry + shell):
+
+| Page | Before 5b |
+|---|---:|
+| entry + shell | 257 |
+| `/energy` | 149 (chart 81, energy 17, line 9, step 5, TotalsTiles 5) |
+| `/sensors` | 124 (chart 81, recharts until 5c) |
+
+`/energy` packages: `boneyard-js`. The target is the recharts `chart` chunk (81) leaving `/energy`.
+
+**Accepted differences (owner-approved 2026-10-06; state them in the PR):**
+1. Hovering a month's label now outlines the month and opens its card (the label was clickable but showed nothing).
+2. The switch to initials is measured (`labelsFit`) instead of a fixed 36 px column, so full labels stay down to
+   about a 27-30 px column.
+3. A mouse click focuses the chart group (the ring shows for keyboard focus only, `focus-visible`). The old
+   `onMouseDown preventDefault` only kept recharts' keyboard mode off January.
+4. The screen-reader announcement starts with the short label ("apr.") before the card's "April ...".
 
 ## Step 7 notes
 
