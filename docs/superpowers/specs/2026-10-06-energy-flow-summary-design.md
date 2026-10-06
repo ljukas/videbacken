@@ -41,6 +41,12 @@ that how they relate is visible at a glance, built with visx, and the battery's 
 | 1 | **A flow diagram** replaces the five tiles: Solel and Köpt el in, the battery in the middle, Förbrukning and Såld el out. Chosen over figure tiles with built-in marks and two in/out bars. |
 | 2 | **Exactly today's figures stay**, each on its own node. Självförsörjning opens the card with a small ring. The detail lines (solar split, "varav till batteriet") become arrow values. |
 | 3 | **The battery shows its loss**: the node gives the loss and the charge level at the period's start and end, and a fading stub leaves it, as wide as the loss. |
+
+> **Amended 2026-10-06 (after checkpoint 1c):** the owner found "laddnivå 19 → 100 %" on the node unclear. The wide
+> battery node now shows the change in stored energy in kWh, in the loss line's form: "Lagrat +6,1 kWh" (more stored
+> at the end), "Lagrat −0,8 kWh" (less), "Lagrat 0,0 kWh" (no sign when it rounds to zero). It is ΔSoC × 7,58 kWh,
+> the term the loss subtracts, so the two lines explain each other. The owner's wording "+6,1 kWh kvar i batteriet"
+> was ~160 px against the node's ~140 px. The charge levels (%) stay in the loss tooltip and the table.
 | 4 | **One layout, in → out**: in on the left, out on the right; on a narrow card, in on top, out below. A single grid node (bought and sold together) was tried and dropped: its arrows cross. |
 | 5 | **Values on the arrows by default**, with a "Visa värden" switch on the card, remembered per browser. |
 | 6 | **The battery arrow is one colour** (aqua). Splitting it by charge origin was tried and dropped. |
@@ -72,7 +78,7 @@ What each element shows:
 | Såld el node | `gridExportKwh` |
 | Förbrukning node | `loadKwh`; "varav laddning" `car` (lines hidden when `car` is 0, space kept) |
 | Självförsörjning line | `selfSufficiency` (as today) |
-| Battery node | `loss` and "laddnivå {firstSocPct} → {lastSocPct} %" |
+| Battery node | `loss` and "Lagrat {±deltaStored} kWh" (wide; amended 2026-10-06, see below) |
 | Solel → Förbrukning | `solarDirect` |
 | Solel → Batteri | `solarToBattery` |
 | Solel → Såld el | `solarExported` |
@@ -166,17 +172,17 @@ mockup's numbers are the starting point:
   neutral.
 - **Wide**: the tile sits left of the text; the text block (label cap top to figure baseline: 14 px label, 28 px figure,
   14 px muted unit) is **centred on the tile**, not on the font's line box (cap height ≈ 0.7 em). The battery's three rows (label, "Förlust
-  X kWh" with a 20 px figure, 13 px "laddnivå") are centred on its tile the same way (2 px higher than mockup version 4, which sat 2 px low by that measure). Förbrukning's car lines hang
+  X kWh" with a 20 px figure, 13 px "Lagrat" line) are centred on its tile the same way (2 px higher than mockup version 4, which sat 2 px low by that measure). Förbrukning's car lines hang
   below the top row.
 - **Narrow**: the tile and the label share the first row (label centred on the tile); the figure (24 px) runs the
-  node's full width below. The battery drops the charge level (it is in the table, and the loss tooltip when there
+  node's full width below. The battery drops the stored line (the change and the charge levels are in the table, and the loss tooltip when there
   is a stub).
 - **Wide battery without a charge level** (either SoC null): its label and loss move down by half the missing line,
   so the two rows stay centred on the tile.
 - **Fit**: a node figure (or the battery's loss) that would run past 12 px inside its node steps its font size down
   2 px at a time, to 18 px (loss 16 px), measured before paint and again once the body font has loaded. Only the size
   changes. A four-digit loss on a 296 px card (a 360 px phone) still ends ≈ 1 px past the node at 16 px.
-- **Muted text inside a node** (unit, "Förlust", charge level, car lines) mixes 10 % foreground into
+- **Muted text inside a node** (unit, "Förlust", "Lagrat", car lines) mixes 10 % foreground into
   `--muted-foreground`: the token alone is 4.39 : 1 on the node surface in light (5.23 : 1 mixed; dark 6.93 : 1).
 
 ### Självförsörjning line
