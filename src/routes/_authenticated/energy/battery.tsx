@@ -59,8 +59,7 @@ function EnergyBatteryPage() {
   )
   const e = useEnergyPeriod(Route.useSearch(), writeSearch)
   const chartHeadingId = useId()
-  // The chart's year (the overview's), for the month click; only read while the chart renders.
-  const chartYear = e.overview?.year ?? e.now.year
+  const { overview } = e
   return (
     <PageContainer>
       <EnergyHeading
@@ -76,7 +75,7 @@ function EnergyBatteryPage() {
           retrying={syncNow.isPendingFor('emaldo')}
         />
       ) : null}
-      {e.overview?.firstReadingDay === null ? (
+      {overview?.firstReadingDay === null ? (
         <EnergyEmpty />
       ) : (
         <div className="flex flex-col gap-4">
@@ -95,12 +94,12 @@ function EnergyBatteryPage() {
             ) : null}
           </SectionSkeleton>
           <SectionSkeleton bones={batteryChartBones} loading={e.pending} fallbackHeight="22rem">
-            {e.overview ? (
+            {overview ? (
               <section aria-labelledby={chartHeadingId}>
                 <Card>
                   <CardHeader>
                     <h2 id={chartHeadingId} className="font-semibold text-lg">
-                      {m.energy_battery_chart_title({ year: String(e.overview.year) })}
+                      {m.energy_battery_chart_title({ year: String(overview.year) })}
                     </h2>
                   </CardHeader>
                   <CardContent
@@ -108,16 +107,16 @@ function EnergyBatteryPage() {
                     aria-busy={e.stale || undefined}
                   >
                     <BatteryMonthlyChart
-                      year={e.overview.year}
-                      months={e.overview.months}
-                      currentMonth={e.overview.year === e.now.year ? e.now.month : null}
+                      year={overview.year}
+                      months={overview.months}
+                      currentMonth={overview.year === e.now.year ? e.now.month : null}
                       selectedMonth={
-                        e.period?.kind === 'month' && e.period.year === e.overview.year
+                        e.period?.kind === 'month' && e.period.year === overview.year
                           ? e.period.month
                           : null
                       }
                       onSelectMonth={(month) =>
-                        e.setPeriod({ kind: 'month', year: chartYear, month })
+                        e.setPeriod({ kind: 'month', year: overview.year, month })
                       }
                     />
                   </CardContent>
@@ -125,7 +124,7 @@ function EnergyBatteryPage() {
               </section>
             ) : null}
           </SectionSkeleton>
-          {e.tiles ? (
+          {overview ? (
             <p className="max-w-[70ch] text-pretty text-muted-foreground text-sm">
               {m.energy_battery_note({ capacity: formatDecimal(BATTERY_CAPACITY_KWH) })}
             </p>

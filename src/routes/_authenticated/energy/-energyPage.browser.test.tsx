@@ -89,7 +89,10 @@ async function renderPage(
   route: AnyRoute,
   path: string,
   prepare: (qc: QueryClient) => void,
-  { staleTime = Number.POSITIVE_INFINITY }: { staleTime?: number } = {},
+  {
+    staleTime = Number.POSITIVE_INFINITY,
+    extraRoutes = [],
+  }: { staleTime?: number; extraRoutes?: [AnyRoute, string][] } = {},
 ) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime, retry: false } })
@@ -102,13 +105,15 @@ async function renderPage(
   })
   // The route's path is the pathname; the search goes to the history only.
   const pathname = path.split('?')[0]
-  ;(route as unknown as { update: (o: unknown) => void }).update({
-    id: pathname,
-    path: pathname,
-    getParentRoute: () => root,
-  })
+  for (const [r, p] of [[route, pathname] as const, ...extraRoutes]) {
+    ;(r as unknown as { update: (o: unknown) => void }).update({
+      id: p,
+      path: p,
+      getParentRoute: () => root,
+    })
+  }
   const router = createRouter({
-    routeTree: root.addChildren([route as never]),
+    routeTree: root.addChildren([route, ...extraRoutes.map(([r]) => r)] as never[]),
     context: { queryClient: qc, user: { role: 'user' } },
     history: createMemoryHistory({ initialEntries: [path] }),
   })
@@ -582,12 +587,43 @@ test('Batteri: heading, the Summering card with its period control, the chart, t
 })
 
 test('Batteri reads the same cache entry as Översikt: no request, the period from the URL', async () => {
+  let fetches: ReturnType<typeof recordFetches> | undefined
   const { screen, router } = await renderPage(
     Battery,
     '/energy/battery?period=2026-03',
-    seedOverview(withData),
+    (qc) => {
+      seedOverview(withData)(qc)
+      fetches = recordFetches(qc)
+    },
+    { staleTime: 0 },
   )
   await expect.element(screen.getByRole('button', { name: /mars 2026/i })).toBeVisible()
+  expect(router.state.location.search).toEqual({ period: '2026-03' })
+  await expect.poll(() => router.state.status).toBe('idle')
+  fetches?.stop()
+  expect(fetches?.fetched).toEqual([])
+})
+
+test('switching Översikt to Batteri sends no request and keeps the period', async () => {
+  let fetches: ReturnType<typeof recordFetches> | undefined
+  const { screen, router } = await renderPage(
+    Overview,
+    '/energy?period=2026-03',
+    (qc) => {
+      seedOverview(withData)(qc)
+      fetches = recordFetches(qc)
+    },
+    { staleTime: 0, extraRoutes: [[Battery, '/energy/battery']] },
+  )
+  await expect.element(screen.getByRole('button', { name: /mars 2026/i })).toBeVisible()
+  await router.navigate({ to: '/energy/battery', search: { period: '2026-03' } } as never)
+  await expect
+    .element(screen.getByRole('heading', { level: 1, name: m.energy_battery_title() }))
+    .toBeVisible()
+  await expect.element(screen.getByRole('button', { name: /mars 2026/i })).toBeVisible()
+  await expect.poll(() => router.state.status).toBe('idle')
+  fetches?.stop()
+  expect(fetches?.fetched).toEqual([])
   expect(router.state.location.search).toEqual({ period: '2026-03' })
 })
 
@@ -598,15 +634,21 @@ test('Batteri: clicking a month in the chart selects it', async () => {
   if (!march) throw new Error('no March bar')
   await clickOn(screen.container, march)
   await vi.waitFor(() => expect(router.state.location.search).toEqual({ period: '2026-03' }))
+  await expect.element(screen.getByRole('button', { name: /mars 2026/i })).toBeVisible()
 })
 
 test('Batteri: empty and failed reads', async () => {
   const emptyPage = await renderPage(Battery, '/energy/battery', seedOverview(empty))
   await expect.element(emptyPage.screen.getByText(m.energy_empty_title())).toBeVisible()
+  expect(emptyPage.screen.getByText(/7,58 kWh per 100/).elements()).toHaveLength(0)
+  expect(emptyPage.screen.getByRole('button', { name: periodControl }).elements()).toHaveLength(0)
   emptyPage.screen.unmount()
   const failed = await renderPage(Battery, '/energy/battery', () => {})
   await expect
     .element(failed.screen.getByRole('heading', { level: 1, name: m.energy_battery_title() }))
     .toBeVisible()
   await expect.element(failed.screen.getByText(m.energy_error_title())).toBeVisible()
+  expect(skeleton('energy-battery-flow')).toBeNull()
+  expect(skeleton('energy-battery-chart')).toBeNull()
+  expect(failed.screen.getByText(/7,58 kWh per 100/).elements()).toHaveLength(0)
 })

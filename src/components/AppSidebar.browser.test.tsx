@@ -11,9 +11,17 @@ import { AppSidebar } from './AppSidebar'
 // Component tests are router-free (test/browser/render.tsx): `Link` becomes a
 // plain anchor and `useMatchRoute` matches against a scripted current path,
 // exactly unless `fuzzy` (the router's own semantics).
-const { current, linkProps } = vi.hoisted(() => ({
+const { current, linkProps, textOf } = vi.hoisted(() => ({
+  textOf: (node: unknown): string =>
+    Array.isArray(node)
+      ? node.map(textOf).join('')
+      : typeof node === 'string'
+        ? node
+        : typeof node === 'object' && node && 'props' in node
+          ? textOf((node as { props: { children?: unknown } }).props.children)
+          : '',
   current: { path: '/' },
-  // What each Link was given, by target: the router derives aria-current and the
+  // What each Link was given, by `to|text`: the router derives aria-current and the
   // next URL's search from these, and they can't be exercised router-free.
   linkProps: new Map<string, { search?: unknown; activeOptions?: unknown }>(),
 }))
@@ -34,7 +42,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       search?: unknown
       activeOptions?: unknown
     }) => {
-      linkProps.set(to, { search, activeOptions })
+      linkProps.set(`${to}|${textOf(children)}`, { search, activeOptions })
       return (
         <a href={to} {...rest}>
           {children}
@@ -125,10 +133,15 @@ test('elsewhere no charging item is active', async () => {
 test("charging links match exactly, ignoring the views' own params, and keep the year and vehicle scope", async () => {
   current.path = '/charging/patterns'
   await renderSidebar()
-  // The section link and its Översikt share /charging, and so the same props.
-  for (const to of ['/charging', '/charging/patterns']) {
-    const props = linkProps.get(to)
-    expect(props?.activeOptions, to).toEqual({ exact: true, includeSearch: false })
+  // The section link (Laddning) and its Översikt share /charging, and so the same props.
+  for (const key of [
+    `/charging|${m.nav_charging()}`,
+    `/charging|${m.nav_charging_overview()}`,
+    `/charging/patterns|${m.nav_charging_patterns_short()}`,
+  ]) {
+    const props = linkProps.get(key)
+    expect(props, key).toBeDefined()
+    expect(props?.activeOptions, key).toEqual({ exact: true, includeSearch: false })
     const search = props?.search as (prev: object) => object
     expect(search({ year: 2025, month: 3, metric: 'plugged' })).toEqual({ year: 2025 })
     expect(search({ year: 2025, vehicle: 'other', month: 3 })).toEqual({
@@ -140,7 +153,7 @@ test("charging links match exactly, ignoring the views' own params, and keep the
     expect(search({ range: '7d' })).toEqual({ year: undefined })
   }
   // Other sections keep the router's default matching.
-  expect(linkProps.get('/sensors')?.activeOptions).toBeUndefined()
+  expect(linkProps.get(`/sensors|${m.nav_sensors()}`)?.activeOptions).toBeUndefined()
 })
 
 test('admins get Inställningar under Laddning', async () => {
@@ -161,7 +174,7 @@ test('members do not see Inställningar', async () => {
 test('the settings link is exact and carries no page filter', async () => {
   current.path = '/charging'
   await renderSidebar('admin')
-  const props = linkProps.get('/charging/settings')
+  const props = linkProps.get(`/charging/settings|${m.nav_charging_settings_short()}`)
   expect(props?.activeOptions).toEqual({ exact: true, includeSearch: false })
   // A clean URL: the year and vehicle scope belong to the views, not to settings.
   const search = props?.search as (prev: object) => object
@@ -200,9 +213,14 @@ test.each([
 test('energy links match exactly and carry the period, never the charging year or vehicle', async () => {
   current.path = '/energy/battery'
   await renderSidebar()
-  for (const to of ['/energy', '/energy/battery']) {
-    const props = linkProps.get(to)
-    expect(props?.activeOptions, to).toEqual({ exact: true, includeSearch: false })
+  for (const key of [
+    `/energy|${m.nav_energy()}`,
+    `/energy|${m.nav_energy_overview()}`,
+    `/energy/battery|${m.nav_energy_battery()}`,
+  ]) {
+    const props = linkProps.get(key)
+    expect(props, key).toBeDefined()
+    expect(props?.activeOptions, key).toEqual({ exact: true, includeSearch: false })
     const search = props?.search as (prev: object) => object
     expect(search({ period: '2026-08', year: 2025, vehicle: 'other' })).toEqual({
       period: '2026-08',
