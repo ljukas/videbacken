@@ -125,6 +125,7 @@ test('set maps INVALID_FIELD with every field name and no value', async () => {
   expect(err).toBeInstanceOf(ORPCError)
   expect(err).toMatchObject({
     code: 'INVALID_FIELD',
+    status: 422,
     defined: true,
     data: { fields: ['vin', 'homeCoordinates'] },
   })
@@ -149,6 +150,7 @@ test('set maps REENTER_ALL_FIELDS with the blank fields', async () => {
     ),
   ).rejects.toMatchObject({
     code: 'REENTER_ALL_FIELDS',
+    status: 422,
     defined: true,
     data: { fields: ['password'] },
   })
@@ -162,16 +164,20 @@ test.each([
   if (key !== undefined) vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', key)
   await expect(
     call(credentialsRouter.set, { source: 'zaptec', fields }, { context: baseContext() }),
-  ).rejects.toMatchObject({ code, defined: true })
+  ).rejects.toMatchObject({ code, defined: true, status: code === 'NOTHING_TO_SAVE' ? 422 : 409 })
 })
 
 test('set rejects a field of another source at input, storing nothing', async () => {
   await signIn('admin')
-  await expect(
-    call(credentialsRouter.set, { source: 'skoda', fields: { username: SECRET } } as never, {
-      context: baseContext(),
-    }),
-  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  const err = await call(
+    credentialsRouter.set,
+    { source: 'skoda', fields: { username: SECRET } } as never,
+    { context: baseContext() },
+  ).catch((e: unknown) => e)
+  expect(err).toMatchObject({ code: 'BAD_REQUEST' })
+  // The messages (what logRpcError logs) carry no key; the issue's structured `keys` still does.
+  const issues = (err as { data?: { issues?: { message: string }[] } }).data?.issues
+  expect(issues?.map((i) => i.message)).toEqual(['Unknown credential field'])
   expect(await readStored('skoda')).toBeNull()
 })
 

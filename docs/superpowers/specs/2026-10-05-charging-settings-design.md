@@ -199,7 +199,7 @@ The field-to-env-var map is server-only, in `src/lib/credentials/env.ts`:
   - `facilityId`: must parse with `parseFacilityId`.
   - Every other field: non-empty.
 - **Domain errors** (`IntegrationCredentialDomainError`):
-  - `INVALID_FIELD`: carries the field name. The message never contains the value. An unknown field name is echoed
+  - `INVALID_FIELD`: carries the field names (a list; see Step 3a). The message never contains the value. An unknown field name is echoed
     only if it matches `/^[A-Za-z]{1,32}$/`; otherwise it is `unknown`.
   - `NOTHING_TO_SAVE`.
   - `ENCRYPTION_KEY_MISSING`.

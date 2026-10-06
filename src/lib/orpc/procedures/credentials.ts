@@ -15,28 +15,35 @@ const credentialErrors = {
   REENTER_ALL_FIELDS: { status: 422, data: fieldNames },
   NOTHING_TO_SAVE: { status: 422 },
   ENCRYPTION_KEY_MISSING: { status: 409 },
-} satisfies Record<IntegrationCredentialDomainErrorCode, unknown>
+} satisfies Record<IntegrationCredentialDomainErrorCode, { status: number; data?: unknown }>
 
 // Bounds the payload only; the service enforces the real limits (512 chars, per-field
 // formats) and names each failing field in INVALID_FIELD.
 const value = z.string().max(4096).optional()
+
+// An unknown key is not echoed: Zod's default unrecognized_keys message names the keys, and
+// that message reaches the warn log. Returning undefined keeps the default for other issues.
+const fieldsOf = <T extends z.core.$ZodShape>(shape: T) =>
+  z.strictObject(shape, {
+    error: (issue) => (issue.code === 'unrecognized_keys' ? 'Unknown credential field' : undefined),
+  })
 
 // One branch per source, each with exactly that source's fields (CREDENTIAL_FIELDS;
 // a test pins the match): a field of another source is a BAD_REQUEST.
 export const setCredentialsInput = z.discriminatedUnion('source', [
   z.object({
     source: z.literal('zaptec'),
-    fields: z.strictObject({ username: value, password: value }),
+    fields: fieldsOf({ username: value, password: value }),
   }),
   z.object({
     source: z.literal('skoda'),
-    fields: z.strictObject({ apiKey: value, vin: value, homeCoordinates: value }),
+    fields: fieldsOf({ apiKey: value, vin: value, homeCoordinates: value }),
   }),
   z.object({
     source: z.literal('emaldo'),
-    fields: z.strictObject({ user: value, password: value, appId: value, appSecret: value }),
+    fields: fieldsOf({ user: value, password: value, appId: value, appSecret: value }),
   }),
-  z.object({ source: z.literal('gridTariff'), fields: z.strictObject({ facilityId: value }) }),
+  z.object({ source: z.literal('gridTariff'), fields: fieldsOf({ facilityId: value }) }),
 ])
 
 export const credentialsRouter = {
