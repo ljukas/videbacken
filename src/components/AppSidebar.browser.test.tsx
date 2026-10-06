@@ -13,7 +13,7 @@ import { AppSidebar } from './AppSidebar'
 // exactly unless `fuzzy` (the router's own semantics).
 const { current, linkProps } = vi.hoisted(() => ({
   current: { path: '/' },
-  // What each Link was given, by label: the router derives aria-current and the
+  // What each Link was given, by target: the router derives aria-current and the
   // next URL's search from these, and they can't be exercised router-free.
   linkProps: new Map<string, { search?: unknown; activeOptions?: unknown }>(),
 }))
@@ -34,11 +34,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       search?: unknown
       activeOptions?: unknown
     }) => {
-      const label = (Array.isArray(children) ? children : [children])
-        .map((c) => (typeof c === 'object' && c && 'props' in c ? c.props.children : c))
-        .filter((c) => typeof c === 'string')
-        .join('')
-      linkProps.set(label, { search, activeOptions })
+      linkProps.set(to, { search, activeOptions })
       return (
         <a href={to} {...rest}>
           {children}
@@ -75,14 +71,30 @@ const renderSidebar = (role: string | null = 'user') =>
     </CommandPaletteProvider>,
   )
 
+const subLink = (
+  screen: Awaited<ReturnType<typeof renderSidebar>>['screen'],
+  name: string,
+  href: string,
+) => {
+  const el = [...screen.container.querySelectorAll('a')].find(
+    (a) => a.textContent === name && a.getAttribute('href') === href,
+  )
+  if (!el) throw new Error(`no link ${name} → ${href}`)
+  return el
+}
+
 const active = (el: Element) => el.getAttribute('data-active') === 'true'
 
 test('lists the charging views as sub-items under Laddning', async () => {
   const { screen } = await renderSidebar()
-  const overview = screen.getByRole('link', { name: m.nav_charging_overview(), exact: true })
-  const patterns = screen.getByRole('link', { name: m.nav_charging_patterns_short(), exact: true })
-  await expect.element(overview).toHaveAttribute('href', '/charging')
-  await expect.element(patterns).toHaveAttribute('href', '/charging/patterns')
+  expect(subLink(screen, m.nav_charging_overview(), '/charging')).toHaveAttribute(
+    'href',
+    '/charging',
+  )
+  expect(subLink(screen, m.nav_charging_patterns_short(), '/charging/patterns')).toHaveAttribute(
+    'href',
+    '/charging/patterns',
+  )
 })
 
 test.each([
@@ -91,31 +103,32 @@ test.each([
 ] as const)('on %s marks only that view active, and Laddning', async (path, overviewOn, patternsOn) => {
   current.path = path
   const { screen } = await renderSidebar()
-  const link = (name: string) => screen.getByRole('link', { name, exact: true }).element()
-  expect(active(link(m.nav_charging_overview()))).toBe(overviewOn)
-  expect(active(link(m.nav_charging_patterns_short()))).toBe(patternsOn)
-  expect(active(link(m.nav_charging()))).toBe(true)
+  expect(active(subLink(screen, m.nav_charging_overview(), '/charging'))).toBe(overviewOn)
+  expect(active(subLink(screen, m.nav_charging_patterns_short(), '/charging/patterns'))).toBe(
+    patternsOn,
+  )
+  expect(active(screen.getByRole('link', { name: m.nav_charging(), exact: true }).element())).toBe(
+    true,
+  )
 })
 
 test('elsewhere no charging item is active', async () => {
   current.path = '/sensors'
   const { screen } = await renderSidebar()
-  const link = (name: string) => screen.getByRole('link', { name, exact: true }).element()
-  expect(active(link(m.nav_charging()))).toBe(false)
-  expect(active(link(m.nav_charging_overview()))).toBe(false)
-  expect(active(link(m.nav_charging_patterns_short()))).toBe(false)
+  expect(active(screen.getByRole('link', { name: m.nav_charging(), exact: true }).element())).toBe(
+    false,
+  )
+  expect(active(subLink(screen, m.nav_charging_overview(), '/charging'))).toBe(false)
+  expect(active(subLink(screen, m.nav_charging_patterns_short(), '/charging/patterns'))).toBe(false)
 })
 
 test("charging links match exactly, ignoring the views' own params, and keep the year and vehicle scope", async () => {
   current.path = '/charging/patterns'
   await renderSidebar()
-  for (const label of [
-    m.nav_charging(),
-    m.nav_charging_overview(),
-    m.nav_charging_patterns_short(),
-  ]) {
-    const props = linkProps.get(label)
-    expect(props?.activeOptions, label).toEqual({ exact: true, includeSearch: false })
+  // The section link and its Översikt share /charging, and so the same props.
+  for (const to of ['/charging', '/charging/patterns']) {
+    const props = linkProps.get(to)
+    expect(props?.activeOptions, to).toEqual({ exact: true, includeSearch: false })
     const search = props?.search as (prev: object) => object
     expect(search({ year: 2025, month: 3, metric: 'plugged' })).toEqual({ year: 2025 })
     expect(search({ year: 2025, vehicle: 'other', month: 3 })).toEqual({
@@ -127,7 +140,7 @@ test("charging links match exactly, ignoring the views' own params, and keep the
     expect(search({ range: '7d' })).toEqual({ year: undefined })
   }
   // Other sections keep the router's default matching.
-  expect(linkProps.get(m.nav_sensors())?.activeOptions).toBeUndefined()
+  expect(linkProps.get('/sensors')?.activeOptions).toBeUndefined()
 })
 
 test('admins get Inställningar under Laddning', async () => {
@@ -139,9 +152,7 @@ test('admins get Inställningar under Laddning', async () => {
 
 test('members do not see Inställningar', async () => {
   const { screen } = await renderSidebar('user')
-  await expect
-    .element(screen.getByRole('link', { name: m.nav_charging_overview(), exact: true }))
-    .toBeVisible()
+  expect(subLink(screen, m.nav_charging_overview(), '/charging')).toBeTruthy()
   expect(
     screen.getByRole('link', { name: m.nav_charging_settings_short(), exact: true }).elements(),
   ).toHaveLength(0)
@@ -150,7 +161,7 @@ test('members do not see Inställningar', async () => {
 test('the settings link is exact and carries no page filter', async () => {
   current.path = '/charging'
   await renderSidebar('admin')
-  const props = linkProps.get(m.nav_charging_settings_short())
+  const props = linkProps.get('/charging/settings')
   expect(props?.activeOptions).toEqual({ exact: true, includeSearch: false })
   // A clean URL: the year and vehicle scope belong to the views, not to settings.
   const search = props?.search as (prev: object) => object
@@ -162,8 +173,43 @@ test('on /charging/settings only Inställningar (and Laddning) is active', async
   const { screen } = await renderSidebar('admin')
   const link = (name: string) => screen.getByRole('link', { name, exact: true }).element()
   expect(active(link(m.nav_charging_settings_short()))).toBe(true)
-  expect(active(link(m.nav_charging_overview()))).toBe(false)
+  expect(active(subLink(screen, m.nav_charging_overview(), '/charging'))).toBe(false)
   expect(active(link(m.nav_charging()))).toBe(true)
+})
+
+test('lists the energy views as sub-items under Energi', async () => {
+  const { screen } = await renderSidebar()
+  expect(subLink(screen, m.nav_energy_overview(), '/energy')).toBeTruthy()
+  expect(subLink(screen, m.nav_energy_battery(), '/energy/battery')).toBeTruthy()
+})
+
+test.each([
+  ['/energy', true, false],
+  ['/energy/battery', false, true],
+] as const)('on %s marks only that energy view active, and Energi', async (path, overviewOn, batteryOn) => {
+  current.path = path
+  const { screen } = await renderSidebar()
+  expect(active(subLink(screen, m.nav_energy_overview(), '/energy'))).toBe(overviewOn)
+  expect(active(subLink(screen, m.nav_energy_battery(), '/energy/battery'))).toBe(batteryOn)
+  expect(active(screen.getByRole('link', { name: m.nav_energy(), exact: true }).element())).toBe(
+    true,
+  )
+  expect(active(subLink(screen, m.nav_charging_overview(), '/charging'))).toBe(false)
+})
+
+test('energy links match exactly and carry the period, never the charging year or vehicle', async () => {
+  current.path = '/energy/battery'
+  await renderSidebar()
+  for (const to of ['/energy', '/energy/battery']) {
+    const props = linkProps.get(to)
+    expect(props?.activeOptions, to).toEqual({ exact: true, includeSearch: false })
+    const search = props?.search as (prev: object) => object
+    expect(search({ period: '2026-08', year: 2025, vehicle: 'other' })).toEqual({
+      period: '2026-08',
+    })
+    expect(search({ period: 2026 })).toEqual({ period: 2026 })
+    expect(Object.entries(search({})).filter(([, v]) => v !== undefined)).toEqual([])
+  }
 })
 
 test('lists Energi after Laddning, linking to /energy, active on /energy', async () => {

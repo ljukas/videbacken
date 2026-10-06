@@ -31,13 +31,17 @@ const DEFAULT_PATHS = [
   '/charging/patterns',
   '/charging/settings',
   '/energy',
+  '/energy/battery',
   '/sensors',
   '/users',
 ]
-// Widths one page captures on top of boneyard.config.json's (ADR-0025 §4). /energy's Summering card turns
+// Widths one page captures on top of boneyard.config.json's (ADR-0025 §4). /energy's and /energy/battery's Summering card turns
 // wide when the content reaches 860 px, at a 1220 px viewport: without its own capture, 1220–1279 replayed the
 // 1100 (narrow) bones, 125 px too tall.
-const EXTRA_BREAKPOINTS: Record<string, number[]> = { '/energy': [1220] }
+const EXTRA_BREAKPOINTS: Record<string, number[]> = {
+  '/energy': [1220],
+  '/energy/battery': [1220],
+}
 
 const email = process.env.INITIAL_ADMIN_EMAILS?.split(',')[0]?.trim()
 if (!email) {

@@ -13,6 +13,7 @@ export type EnergySearchWrite = (search: { period?: string | number }) => void
 // overview read (one cache entry per year, shared by both pages), the period
 // shown, its sums with the stale/failed rules, and the URL rewrite of a period
 // the data can't show. Moved from energy/index.tsx unchanged.
+/** `writeSearch` must be referentially stable (wrap it in `useCallback`): `setPeriod` depends on it. */
 export function useEnergyPeriod(search: EnergySearch, writeSearch: EnergySearchWrite) {
   const requested = periodOfSearch(search)
   // Hourly data: focus refetch only, no polling interval (ADR-0018).

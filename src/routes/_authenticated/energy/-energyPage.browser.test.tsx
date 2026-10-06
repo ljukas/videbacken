@@ -12,13 +12,13 @@ import { energyOverviewQuery } from '~/components/energy/energyQueries'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
-import { clickOn, legendText, xTickTexts } from '~test/browser/chartDom'
+import { bars, clickOn, legendText, xTickTexts } from '~test/browser/chartDom'
 import { makeTestQueryClient } from '~test/browser/render'
 import { seedSourcesHealth } from '~test/browser/syncHealth'
+import { Route as Battery } from './battery'
 import { Route as Overview } from './index'
 
-// Step 2 widens this union with the battery route.
-type AnyRoute = typeof Overview
+type AnyRoute = typeof Overview | typeof Battery
 
 const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   gridImportKwh: 561,
@@ -561,4 +561,52 @@ test('a failed read: the error under a working heading, no skeleton', async () =
   expect(skeleton('energy-tiles')).toBeNull()
   expect(skeleton('energy-chart')).toBeNull()
   expect(screen.getByText(m.energy_empty_title()).elements()).toHaveLength(0)
+})
+
+test('Batteri: heading, the Summering card with its period control, the chart, the winter note naming C', async () => {
+  const { screen } = await renderPage(Battery, '/energy/battery', seedOverview(withData))
+  await expect
+    .element(screen.getByRole('heading', { level: 1, name: m.energy_battery_title() }))
+    .toBeVisible()
+  await expect
+    .element(screen.getByRole('heading', { name: m.energy_tiles_heading() }))
+    .toBeVisible()
+  // Named on the diagram's headline and again in the table's row.
+  await expect
+    .element(screen.getByText(m.energy_battery_efficiency(), { exact: true }).first())
+    .toBeVisible()
+  await expect
+    .element(screen.getByRole('heading', { name: m.energy_battery_chart_title({ year: '2026' }) }))
+    .toBeVisible()
+  await expect.element(screen.getByText(/7,58 kWh per 100/)).toBeVisible()
+})
+
+test('Batteri reads the same cache entry as Översikt: no request, the period from the URL', async () => {
+  const { screen, router } = await renderPage(
+    Battery,
+    '/energy/battery?period=2026-03',
+    seedOverview(withData),
+  )
+  await expect.element(screen.getByRole('button', { name: /mars 2026/i })).toBeVisible()
+  expect(router.state.location.search).toEqual({ period: '2026-03' })
+})
+
+test('Batteri: clicking a month in the chart selects it', async () => {
+  const { screen, router } = await renderPage(Battery, '/energy/battery', seedOverview(withData))
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  const march = bars(screen.container).find((b) => b.getAttribute('data-index') === '2')
+  if (!march) throw new Error('no March bar')
+  await clickOn(screen.container, march)
+  await vi.waitFor(() => expect(router.state.location.search).toEqual({ period: '2026-03' }))
+})
+
+test('Batteri: empty and failed reads', async () => {
+  const emptyPage = await renderPage(Battery, '/energy/battery', seedOverview(empty))
+  await expect.element(emptyPage.screen.getByText(m.energy_empty_title())).toBeVisible()
+  emptyPage.screen.unmount()
+  const failed = await renderPage(Battery, '/energy/battery', () => {})
+  await expect
+    .element(failed.screen.getByRole('heading', { level: 1, name: m.energy_battery_title() }))
+    .toBeVisible()
+  await expect.element(failed.screen.getByText(m.energy_error_title())).toBeVisible()
 })
