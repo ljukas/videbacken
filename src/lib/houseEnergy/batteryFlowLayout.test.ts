@@ -54,7 +54,7 @@ test('the 860 px rule: 859 is narrow, 860 is wide', () => {
   expect(batteryFlowLayout(860).narrow).toBe(false)
 })
 
-describe.each([324, 380, 754, 859, 860, 1006])('at %i px', (width) => {
+describe.each([256, 296, 311, 324, 380, 754, 859, 860, 1006])('at %i px', (width) => {
   const layout = batteryFlowLayout(width)
   test('the layout kind and height follow the 860 px rule', () => {
     expect(layout.narrow).toBe(width < 860)

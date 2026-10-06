@@ -962,6 +962,7 @@
   "energy_battery_efficiency_detail": "av det som laddades in kom ut igen, rättat för lagret",
   "energy_battery_node_out": "Ut",
   "energy_battery_stored_label": "Lager",
+  "energy_battery_flow_hint": "Pilens bredd visar mängden energi. Färgen visar var den kom ifrån; rött är förlusten.",
   "energy_battery_out_sold": "varav såld {kwh} kWh",
   "energy_battery_out_house": "till huset",
   "energy_battery_out_split": "{house} kWh till huset · {sold} kWh såld",

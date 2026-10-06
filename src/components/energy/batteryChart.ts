@@ -2,6 +2,7 @@
 // the battery (in − ändrat lager): out at the bottom, the loss on top, so the green share is the efficiency.
 import { formatShare } from '~/components/evCharging/format'
 import { energyFigures, type PeriodSums, WINTER_LOSS_SHARE } from '~/lib/houseEnergy/figures'
+import { lossLabel } from '~/lib/houseEnergy/flowLayout'
 
 export type BatteryChartRow = {
   month: number
@@ -23,7 +24,9 @@ export function batteryChartRows(months: (PeriodSums | null)[]): BatteryChartRow
       out: f.batteryOut,
       loss: f.loss > 0 ? f.loss : null,
       label:
-        f.lossShare !== null && f.lossShare > WINTER_LOSS_SHARE ? formatShare(f.lossShare) : null,
+        lossLabel(f.loss) === 'value' && f.lossShare !== null && f.lossShare > WINTER_LOSS_SHARE
+          ? formatShare(f.lossShare)
+          : null,
     }
   })
 }

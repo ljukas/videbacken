@@ -43,7 +43,8 @@ export function batteryFlowLayout(width: number): FlowGraph<BatteryNodeKey> {
       ],
     }
   }
-  const nw = Math.min(220, Math.floor((width - 24) / 2))
+  // 124 px is the least that leaves a figure its 100 px of room; below ~272 px the nodes' gap shrinks to 6 px.
+  const nw = Math.min(220, Math.max(124, Math.floor((width - 24) / 2)))
   const H = BATTERY_NARROW_HEIGHT
   // Offsets tuned at a 146 px node (as step 1c's narrow layout); they scale with it.
   const k = nw / 146

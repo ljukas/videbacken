@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import type { PeriodSums } from '~/lib/houseEnergy/figures'
+import { energyFigures, type PeriodSums } from '~/lib/houseEnergy/figures'
 import { batteryChartRows } from './batteryChart'
 
 const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
@@ -66,4 +66,20 @@ test('a loss share of exactly 25 % is not winter: no label', () => {
   ])
   expect(edge.loss).toBeCloseTo(25, 9)
   expect(edge.label).toBeNull()
+})
+
+test('a loss that reads ≈ 0 has no winter label even when its share is large', () => {
+  // in 1,2, out 0,85, charge level unchanged: loss 0,35 kWh (< 0,5), share 0,29 (> 0,25).
+  const [tiny] = batteryChartRows([
+    sums({
+      batteryChargeSolarKwh: 1.2,
+      batteryChargeGridKwh: 0,
+      batteryDischargeKwh: 0.85,
+      firstSocPct: 50,
+      lastSocPct: 50,
+    }),
+  ])
+  const f = energyFigures(tiny.sums as PeriodSums)
+  expect(f.lossShare).toBeGreaterThan(0.25)
+  expect(tiny.label).toBeNull()
 })

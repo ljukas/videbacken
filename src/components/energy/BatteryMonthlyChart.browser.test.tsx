@@ -106,6 +106,8 @@ test("a month's tooltip: in by origin, stored, out, the loss with its share, the
     expect(t).toContain(label)
   expect(t).toMatch(/43\s%/)
   expect(t).toMatch(/157,0\skWh/)
+  expect(t).toMatch(/118,3\skWh/)
+  expect(t).toMatch(/57\s%/)
   expect(t).not.toContain('—')
 })
 

@@ -12,7 +12,7 @@ export type EnergySearchWrite = (search: { period?: string | number }) => void
 // The Energi pages' shared state (steps 1b and 2): the requested period, the
 // overview read (one cache entry per year, shared by both pages), the period
 // shown, its sums with the stale/failed rules, and the URL rewrite of a period
-// the data can't show. Moved from energy/index.tsx unchanged.
+// the data can't show. Navigation goes through the page's `writeSearch`.
 /** `writeSearch` must be referentially stable (wrap it in `useCallback`): `setPeriod` depends on it. */
 export function useEnergyPeriod(search: EnergySearch, writeSearch: EnergySearchWrite) {
   const requested = periodOfSearch(search)
@@ -76,8 +76,8 @@ export function useEnergyPeriod(search: EnergySearch, writeSearch: EnergySearchW
   // legacy ?year=) resolves to the default: once its year's data is in, the URL
   // follows, so the query (and the chart) move to the shown period's year.
   // Nothing valid requested (an invalid ?period= or ?year=) is the default
-  // already: the URL goes back to a bare /energy.
-  // undefined: the URL stays; null: back to a bare /energy; else the period.
+  // already: the URL drops those params (the page's own path stays).
+  // undefined: the URL stays; null: drop the period params; else the period.
   const rewriteTo: string | number | null | undefined = requested
     ? overview && !stale && overview.firstReadingDay !== null && period
       ? formatPeriod(requested) !== formatPeriod(period)

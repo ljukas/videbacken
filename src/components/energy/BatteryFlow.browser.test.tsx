@@ -69,6 +69,31 @@ test('a small or negative loss reads ≈ 0 kWh, with no loss arrow and no share'
   expect(edges()).not.toContain('bat>loss')
 })
 
+test('a small positive loss (0,3 kWh) reads ≈ 0 too: no arrow, the table keeps the value without a share', async () => {
+  // in 10, out 9,7, charge level unchanged: loss 0,3 kWh (< 0,5), share 3 %.
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 1100 }}>
+      <BatteryFlow
+        sums={sums({
+          batteryChargeSolarKwh: 10,
+          batteryChargeGridKwh: 0,
+          batteryDischargeKwh: 9.7,
+          firstSocPct: 50,
+          lastSocPct: 50,
+        })}
+      />
+    </div>,
+  )
+  await vi.waitFor(() => expect(edges()).toContain('bat>out'))
+  expect(node('loss')).toContain('≈ 0')
+  expect(edges()).not.toContain('bat>loss')
+  await userEvent.click(screen.getByText(m.energy_flow_table_toggle()))
+  const row = [...screen.container.querySelectorAll('th[scope="row"]')].find(
+    (t) => t.textContent === m.energy_flow_loss_title(),
+  )
+  expect(row?.nextElementSibling?.textContent).toBe('0,3\u00a0kWh')
+})
+
 test('a battery that barely ran: "—", an empty ring, no shares', async () => {
   const { screen } = await renderWithProviders(
     <div style={{ width: 1100 }}>

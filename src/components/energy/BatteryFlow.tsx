@@ -71,7 +71,7 @@ export function BatteryFlow({ sums }: { sums: PeriodSums | null | 'unavailable' 
       <FlowValuesSwitch
         checked={showValues}
         onCheckedChange={setShowValues}
-        hint={m.energy_flow_hint()}
+        hint={m.energy_battery_flow_hint()}
       />
       <p
         data-slot="energy-gap"

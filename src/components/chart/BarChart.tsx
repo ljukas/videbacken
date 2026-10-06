@@ -428,33 +428,42 @@ export function BarChart<Row>({
         ))}
         {barLabel
           ? (() => {
-              // Left to right; a label whose box would touch the previously drawn one (4 px gap) is skipped.
+              // Placed by priority: the tallest stack first (smallest top y), ties left to right. A label whose
+              // box would come within 4 px of one already placed is skipped. Drawn left to right.
               const measure = measureAt(tickPx)
-              let drawnRight = Number.NEGATIVE_INFINITY
-              return range(count).map((i) => {
+              const items = range(count).flatMap((i) => {
                 const text = barLabel(rows[i], i)
                 const tops = geometry.rects.filter((r) => r.index === i).map((r) => r.y)
-                if (text === null || tops.length === 0) return null
-                const half = measure(text) / 2
-                const centre = geometry.centres[i]
-                if (centre - half < drawnRight + 4) return null
-                drawnRight = centre + half
-                return (
+                if (text === null || tops.length === 0) return []
+                return [{ i, text, top: Math.min(...tops), half: measure(text) / 2 }]
+              })
+              const placed: { left: number; right: number }[] = []
+              const drawn = new Set<number>()
+              for (const it of [...items].sort((p, q) => p.top - q.top || p.i - q.i)) {
+                const c = geometry.centres[it.i]
+                const left = c - it.half
+                const right = c + it.half
+                if (placed.some((o) => left < o.right + 4 && right > o.left - 4)) continue
+                placed.push({ left, right })
+                drawn.add(it.i)
+              }
+              return items
+                .filter((it) => drawn.has(it.i))
+                .map((it) => (
                   <text
-                    key={i}
+                    key={it.i}
                     data-bar-label
-                    x={centre}
-                    y={Math.min(...tops) - 6}
+                    x={geometry.centres[it.i]}
+                    y={it.top - 6}
                     textAnchor="middle"
                     fontSize={tickPx}
                     fontWeight={600}
                     className="fill-foreground tabular-nums"
                     pointerEvents="none"
                   >
-                    {text}
+                    {it.text}
                   </text>
-                )
-              })
+                ))
             })()
           : null}
         {line ? (
