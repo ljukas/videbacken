@@ -38,7 +38,7 @@ test('loading announces a status; not loading has none', async () => {
       <p>content</p>
     </SectionSkeleton>,
   )
-  await expect.element(loading.screen.getByRole('status')).toHaveTextContent('Laddar')
+  await expect.element(loading.screen.getByRole('status')).toMatchTextContent('Laddar')
   await loading.screen.unmount()
   const idle = await renderWithRouter(
     <SectionSkeleton name="status-b" loading={false}>

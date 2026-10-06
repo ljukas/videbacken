@@ -58,7 +58,7 @@ test('an ok source shows its name, role, state, last sync and cadence', async ()
   await expect.element(screen.getByText(m.charging_source_cadence_zaptec())).toBeVisible()
   await expect
     .element(screen.getByRole('button', syncButton('Zaptec')))
-    .toHaveTextContent(m.charging_sync_now())
+    .toMatchTextContent(m.charging_sync_now())
 })
 
 test('sync and history call their handlers', async () => {
@@ -78,7 +78,7 @@ test('a pending sync is soft-disabled: focusable, but a click does nothing', asy
   await expect.element(button).toHaveAttribute('aria-disabled', 'true')
   // Not natively `disabled`, so keyboard focus can stay on it.
   expect(button.element().hasAttribute('disabled')).toBe(false)
-  await expect.element(button).toHaveTextContent(m.charging_source_syncing())
+  await expect.element(button).toMatchTextContent(m.charging_source_syncing())
   ;(button.element() as HTMLButtonElement).click()
   expect(onSync).not.toHaveBeenCalled()
 })
@@ -90,7 +90,7 @@ test('a sync already running on the server disables the button too', async () =>
     syncButton('elprisetjustnu.se', m.charging_source_syncing()),
   )
   await expect.element(button).toHaveAttribute('aria-disabled', 'true')
-  await expect.element(button).toHaveTextContent(m.charging_source_syncing())
+  await expect.element(button).toMatchTextContent(m.charging_source_syncing())
 })
 
 test('not configured has no sync button and says why', async () => {
@@ -128,7 +128,7 @@ test('failing offers a retry and shows the error copy', async () => {
     .toBeVisible()
   await expect
     .element(screen.getByRole('button', syncButton('Škoda', m.common_try_again())))
-    .toHaveTextContent(m.common_try_again())
+    .toMatchTextContent(m.common_try_again())
 })
 
 test('stale shows its source-specific copy', async () => {

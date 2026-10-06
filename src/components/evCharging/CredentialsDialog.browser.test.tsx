@@ -339,7 +339,7 @@ test('a blank submit shows an alert and focuses the first input', async () => {
   await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
   await expect
     .element(screen.getByRole('alert'))
-    .toHaveTextContent(m.charging_credentials_nothing_to_save())
+    .toMatchTextContent(m.charging_credentials_nothing_to_save())
   await expect.element(screen.getByLabelText(API_KEY)).toHaveFocus()
 })
 
@@ -424,7 +424,7 @@ test('the grid remove confirm names the facility ID', async () => {
   await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
   await expect
     .element(screen.getByRole('alertdialog'))
-    .toHaveTextContent(m.charging_credentials_remove_confirm_grid())
+    .toMatchTextContent(m.charging_credentials_remove_confirm_grid())
 })
 
 test('the MyŠkoda link says it opens a new tab', async () => {

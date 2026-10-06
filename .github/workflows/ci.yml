@@ -46,8 +46,11 @@ jobs:
         run: bun run i18n:compile
       - run: bun run ${{ matrix.cmd }}
 
-  test:
-    name: Test
+  # The two Vitest projects run as parallel jobs: the node project needs
+  # Postgres but no browser, the browser project needs Chromium but no
+  # database. Run in one job they ran back to back.
+  test-node:
+    name: Test (node)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Self-contained Postgres service. Mirrors local dev: plain
@@ -76,6 +79,36 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
+      # `bun run test` runs the vitest bin under Node (its shebang), and Vitest 5
+      # needs Node >= 22.12. Pin it rather than trust the runner image's default.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Cache bun install cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: Apply migrations
+        run: bun run db:migrate
+      - name: Run node tests
+        run: bun run test --project node
+
+  test-browser:
+    name: Test (browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      # Same Node pin as test-node: Vitest 5 needs Node >= 22.12.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - name: Cache bun install cache
         uses: actions/cache@v6
         with:
@@ -85,10 +118,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Install Playwright Chromium
         run: bunx playwright install --with-deps chromium
-      - name: Apply migrations
-        run: bun run db:migrate
-      - name: Run tests
-        run: bun run test
+      - name: Run browser tests
+        run: bun run test --project browser
 
   # Single aggregate gate — the ONLY required status check on `main`.
   # Named jobs / matrix legs can be added or renamed without touching the
@@ -98,7 +129,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [check, test]
+    needs: [check, test-node, test-browser]
     if: always()
     timeout-minutes: 5
     steps:

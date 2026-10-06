@@ -183,7 +183,7 @@ test('a page past the end is shown as the last page', async () => {
   )
   await expect
     .element(screen.getByRole('status'))
-    .toHaveTextContent(m.charging_sessions_pagination_range({ from: 211, to: 214, total: 214 }))
+    .toMatchTextContent(m.charging_sessions_pagination_range({ from: 211, to: 214, total: 214 }))
   await expect
     .element(screen.getByText(m.charging_sessions_pagination_position({ page: 22, count: 22 })))
     .toBeInTheDocument()
@@ -204,7 +204,7 @@ test('the size selector offers 10, 25 and 50 and reports the chosen size', async
     />,
   )
   const trigger = screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() })
-  await expect.element(trigger).toHaveTextContent('10')
+  await expect.element(trigger).toMatchTextContent('10')
   await trigger.click()
   await expect.element(screen.getByRole('option', { name: '50' })).toBeVisible()
   await screen.getByRole('option', { name: '25' }).click()
@@ -223,5 +223,5 @@ test('a last page holding one session names it alone, not as "101–101"', async
   )
   await expect
     .element(screen.getByRole('status'))
-    .toHaveTextContent(m.charging_sessions_pagination_range_one({ n: 101, total: 101 }))
+    .toMatchTextContent(m.charging_sessions_pagination_range_one({ n: 101, total: 101 }))
 })
