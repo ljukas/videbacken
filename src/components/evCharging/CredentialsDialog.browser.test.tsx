@@ -2,14 +2,16 @@ import { ORPCError } from '@orpc/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { credentialFieldLabel } from '~/lib/integrationCredentialsMessage'
 import { m } from '~/paraglide/messages'
-import { renderWithProviders } from '~test/browser/render'
+import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
 import { type CredentialStatus, CredentialsDialog } from './CredentialsDialog'
 
 // Mock the oRPC client so a save or remove records its input (or fails on
 // demand) instead of hitting the network; spreading `opts` keeps the dialog's
-// own onSettled (same idiom as TariffDialog's test).
+// own onSettled (same idiom as TariffDialog's test). The mutation keys mirror
+// oRPC's, which `credentials.key()` partially matches (the dialog's busy check).
 const { setFn, clearFn, toastMock } = vi.hoisted(() => ({
   setFn: vi.fn(),
   clearFn: vi.fn(),
@@ -18,8 +20,20 @@ const { setFn, clearFn, toastMock } = vi.hoisted(() => ({
 vi.mock('~/lib/orpc/client', () => ({
   orpc: {
     credentials: {
-      set: { mutationOptions: (o: Record<string, unknown>) => ({ ...o, mutationFn: setFn }) },
-      clear: { mutationOptions: (o: Record<string, unknown>) => ({ ...o, mutationFn: clearFn }) },
+      set: {
+        mutationOptions: (o: Record<string, unknown>) => ({
+          ...o,
+          mutationKey: ['credentials', 'set'],
+          mutationFn: setFn,
+        }),
+      },
+      clear: {
+        mutationOptions: (o: Record<string, unknown>) => ({
+          ...o,
+          mutationKey: ['credentials', 'clear'],
+          mutationFn: clearFn,
+        }),
+      },
       key: () => ['credentials'],
     },
     evCharging: { key: () => ['evCharging'] },
@@ -95,7 +109,6 @@ test('each field shows its origin, and every input starts empty', async () => {
   // Secrets are password inputs; the VIN is plain text.
   expect(screen.getByLabelText(API_KEY).element().getAttribute('type')).toBe('password')
   expect(screen.getByLabelText(VIN).element().getAttribute('type')).toBe('text')
-  expect(screen.getByLabelText(API_KEY).element().getAttribute('autocomplete')).toBe('off')
 })
 
 test('a suspect field gets its red line', async () => {
@@ -219,18 +232,29 @@ test('remove asks first, then clears and runs the sync', async () => {
   expect(onOpenChange).toHaveBeenCalledWith(false)
 })
 
-test('a failed remove toasts and runs no sync', async () => {
-  clearFn.mockRejectedValue(new Error('boom'))
+test('a failed remove toasts, runs no sync and keeps focus on Remove', async () => {
+  let reject: (err: Error) => void = () => {}
+  clearFn.mockReturnValue(new Promise((_, r) => (reject = r)))
   const { screen } = await renderWithProviders(dialog())
-  await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
+  const trigger = screen.getByRole('button', { name: m.charging_credentials_remove() })
+  await trigger.click()
   await screen
     .getByRole('alertdialog')
     .getByRole('button', { name: m.charging_credentials_remove() })
     .click()
+  // While the remove runs, Remove keeps focus (aria-disabled, not disabled).
+  await vi.waitFor(() => expect(clearFn).toHaveBeenCalled())
+  await expect.element(trigger).toHaveAttribute('aria-disabled', 'true')
+  await expect.element(trigger).toHaveFocus()
+  reject(new Error('boom'))
   await vi.waitFor(() =>
     expect(toastMock.error).toHaveBeenCalledWith(m.charging_credentials_remove_error()),
   )
   expect(onChanged).not.toHaveBeenCalled()
+  // Focus is back on Remove, not lost to the page.
+  await expect
+    .element(screen.getByRole('button', { name: m.charging_credentials_remove() }))
+    .toHaveFocus()
 })
 
 test('nothing stored: no remove button', async () => {
@@ -261,4 +285,142 @@ test('reopening starts clean', async () => {
   await expect
     .element(screen.getByText(m.charging_credentials_invalid_vin()))
     .not.toBeInTheDocument()
+})
+
+test('secret inputs ask for a new password and every id is namespaced per source', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  const apiKey = screen.getByLabelText(API_KEY).element()
+  expect(apiKey.getAttribute('autocomplete')).toBe('new-password')
+  expect(apiKey.id).toBe('credential-skoda-apiKey')
+  expect(apiKey.getAttribute('name')).toBe('credential-skoda-apiKey')
+  for (const attr of ['data-1p-ignore', 'data-lpignore', 'data-bwignore', 'data-form-type'])
+    expect(apiKey.hasAttribute(attr)).toBe(true)
+  const vin = screen.getByLabelText(VIN).element()
+  expect(vin.getAttribute('autocomplete')).toBe('off')
+  expect(vin.id).toBe('credential-skoda-vin')
+  expect(vin.hasAttribute('data-1p-ignore')).toBe(true)
+})
+
+test('the VIN is described by its origin, and after INVALID_FIELD by the error too', async () => {
+  setFn.mockRejectedValue(
+    new ORPCError('INVALID_FIELD', { defined: true, data: { fields: ['vin'] } }),
+  )
+  const { screen } = await renderWithProviders(dialog())
+  const vin = screen.getByLabelText(VIN)
+  await expect
+    .element(vin)
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_origin_env()))
+  await vin.fill('x')
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await expect
+    .element(vin)
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_invalid_vin()))
+  await expect
+    .element(vin)
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_origin_env()))
+})
+
+test('a blank submit shows an alert and focuses the first input', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await expect
+    .element(screen.getByRole('alert'))
+    .toHaveTextContent(m.charging_credentials_nothing_to_save())
+  await expect.element(screen.getByLabelText(API_KEY)).toHaveFocus()
+})
+
+test('the dialog cannot be dismissed while a save is pending', async () => {
+  setFn.mockReturnValue(new Promise(() => {}))
+  const { screen } = await renderWithProviders(dialog())
+  await screen.getByLabelText(API_KEY).fill('k')
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await vi.waitFor(() => expect(setFn).toHaveBeenCalled())
+  await userEvent.keyboard('{Escape}')
+  expect(onOpenChange).not.toHaveBeenCalledWith(false)
+  await expect.element(screen.getByRole('dialog')).toBeInTheDocument()
+})
+
+test('missing key: focus starts on Cancel, and each input is described by the alert', async () => {
+  const { screen } = await renderWithProviders(
+    dialog({ status: status({ encryptionKeyConfigured: false }) }),
+  )
+  await expect.element(screen.getByRole('button', { name: m.common_cancel() })).toHaveFocus()
+  await expect
+    .element(screen.getByLabelText(API_KEY))
+    .toHaveAccessibleDescription(expect.stringContaining(m.charging_credentials_key_missing()))
+})
+
+test('missing key: remove still works', async () => {
+  const { screen } = await renderWithProviders(
+    dialog({ status: status({ encryptionKeyConfigured: false }) }),
+  )
+  const trigger = screen.getByRole('button', { name: m.charging_credentials_remove() })
+  await expect.element(trigger).toBeEnabled()
+  await trigger.click()
+  await screen
+    .getByRole('alertdialog')
+    .getByRole('button', { name: m.charging_credentials_remove() })
+    .click()
+  await vi.waitFor(() => expect(clearFn).toHaveBeenCalled())
+  expect(clearFn.mock.calls[0][0]).toEqual({ source: 'skoda' })
+})
+
+test('save invalidates the credentials and charging queries', async () => {
+  const queryClient = makeTestQueryClient()
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+  const { screen } = await renderWithProviders(dialog(), { queryClient })
+  await screen.getByLabelText(API_KEY).fill('k')
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await vi.waitFor(() => expect(onChanged).toHaveBeenCalledWith('skoda'))
+  await vi.waitFor(() => {
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['credentials'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['evCharging'] })
+  })
+})
+
+test('unreadable: stored fields say they cannot be read, not when they were saved', async () => {
+  const { screen } = await renderWithProviders(dialog({ status: status({}, { unreadable: true }) }))
+  await expect
+    .element(screen.getByText(m.charging_credentials_origin_unreadable(), { exact: true }))
+    .toBeVisible()
+  expect(screen.getByText(/Sparad i appen ·/).elements()).toHaveLength(0)
+})
+
+test('the grid remove confirm names the facility ID', async () => {
+  const s = status()
+  s.sources.gridTariff = {
+    fields: { facilityId: { origin: 'stored' } },
+    updatedAt: SAVED,
+    unreadable: false,
+  }
+  const { screen } = await renderWithProviders(dialog({ source: 'gridTariff', status: s }))
+  await screen.getByRole('button', { name: m.charging_credentials_remove() }).click()
+  await expect
+    .element(screen.getByRole('alertdialog'))
+    .toHaveTextContent(m.charging_credentials_remove_confirm_grid())
+})
+
+test('the MyŠkoda link says it opens a new tab', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_credentials_skoda_link() }))
+    .toHaveAccessibleName(`${m.charging_credentials_skoda_link()} ${m.common_opens_in_new_tab()}`)
+})
+
+test('editing a rejected field forgets its server error; the others keep theirs', async () => {
+  setFn.mockRejectedValue(
+    new ORPCError('INVALID_FIELD', { defined: true, data: { fields: ['vin', 'homeCoordinates'] } }),
+  )
+  const { screen } = await renderWithProviders(dialog())
+  await screen.getByLabelText(VIN).fill('x')
+  await screen.getByLabelText(HOME).fill('y')
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await expect.element(screen.getByText(m.charging_credentials_invalid_vin())).toBeVisible()
+  // Typing the rejected value back no longer brings its error back: it was dropped.
+  await screen.getByLabelText(VIN).fill('xy')
+  await screen.getByLabelText(VIN).fill('x')
+  await expect
+    .element(screen.getByText(m.charging_credentials_invalid_vin()))
+    .not.toBeInTheDocument()
+  await expect.element(screen.getByText(m.charging_credentials_invalid_home())).toBeVisible()
 })

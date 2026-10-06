@@ -1,7 +1,7 @@
 import { isDefinedError } from '@orpc/client'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangleIcon, ExternalLinkIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '~/components/ui/alert'
 import {
@@ -49,6 +49,22 @@ type SourceStatus = CredentialStatus['sources'][CredentialSource]
 
 const SKODA_KEYS_URL = 'https://go.skoda.eu/api-keys'
 
+// DOM ids namespaced per source: bare field names (`password`, `user`) would
+// collide with other inputs on the page and invite password-manager matching.
+const inputId = (source: CredentialSource, field: string) => `credential-${source}-${field}`
+const cancelId = (source: CredentialSource) => `credential-${source}-cancel`
+const keyMissingId = (source: CredentialSource) => `credential-${source}-key-missing`
+
+// Password managers ignore autocomplete="off" on password inputs; these opt-outs
+// (1Password, LastPass, Bitwarden, Dashlane) keep a saved login from being
+// filled in and silently resubmitted.
+const NO_PASSWORD_MANAGER = {
+  'data-1p-ignore': '',
+  'data-lpignore': 'true',
+  'data-bwignore': '',
+  'data-form-type': 'other',
+} as const
+
 type Props = {
   source: CredentialSource | undefined
   open: boolean
@@ -87,10 +103,31 @@ export function CredentialsDialog({
     setWasOpen(open)
     if (open) setOpens((n) => n + 1)
   }
+  // A save or remove in flight: Escape, the overlay, the X and Cancel are
+  // ignored until it settles, so its result never lands on a closed (or
+  // reopened) form.
+  const busy = useIsMutating({ mutationKey: orpc.credentials.key() }) > 0
+  const keyMissing = status?.encryptionKeyConfigured === false
+  const dismiss = () => {
+    if (!busy) onOpenChange(false)
+  }
 
   return (
-    <ResponsiveDialog open={open && current !== undefined} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="sm:max-w-md" onCloseAutoFocus={onCloseAutoFocus}>
+    <ResponsiveDialog
+      open={open && current !== undefined}
+      onOpenChange={(next) => (next ? onOpenChange(true) : dismiss())}
+    >
+      <ResponsiveDialogContent
+        className="sm:max-w-md"
+        // Nothing can be saved without the key: start on Cancel, never on the
+        // destructive Remove (the first tabbable once the inputs are disabled).
+        onOpenAutoFocus={(e) => {
+          if (!keyMissing || !current) return
+          e.preventDefault()
+          document.getElementById(cancelId(current))?.focus()
+        }}
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         {current ? (
           <>
             <ResponsiveDialogHeader>
@@ -105,7 +142,8 @@ export function CredentialsDialog({
               status={status}
               suspectFields={suspectFields ?? []}
               onDone={(changed) => {
-                if (changed) onChanged(current)
+                if (!changed) return dismiss()
+                onChanged(current)
                 onOpenChange(false)
               }}
             />
@@ -122,6 +160,7 @@ function originLine(sourceStatus: SourceStatus | undefined, field: string): stri
     ?.origin
   switch (origin) {
     case 'stored':
+      if (sourceStatus.unreadable) return m.charging_credentials_origin_unreadable()
       return sourceStatus.updatedAt
         ? m.charging_credentials_origin_stored({ date: formatDate(sourceStatus.updatedAt) })
         : null
@@ -133,10 +172,6 @@ function originLine(sourceStatus: SourceStatus | undefined, field: string): stri
       return null
   }
 }
-
-// The source's name inside a sentence; the grid "source" is the agreement itself.
-const sourceName = (source: CredentialSource) =>
-  source === 'gridTariff' ? m.charging_grid_title() : integrationSourceName(source)
 
 /** A field error the server reported, held until that field's value changes. */
 type ServerError = { value: string; message: string }
@@ -164,10 +199,12 @@ function CredentialsForm({
   // Field errors from the server, kept as state and checked by each field's
   // validator (not written into the error map, which TanStack clears on every
   // change/blur), so an error stays until that field's value actually changes.
+  // An entry (holding the rejected, possibly secret value) is dropped as soon
+  // as its field changes.
   const [serverErrors, setServerErrors] = useState<Record<string, ServerError>>({})
-  // Set on that rejection; a field can only take focus once the submit has
-  // ended (inputs are disabled while submitting).
-  const focusAfterSubmit = useRef(false)
+  // The input to focus once the submit has ended (inputs are disabled while
+  // submitting, so they can't take focus before).
+  const [focusTarget, setFocusTarget] = useState<string | null>(null)
 
   // A rejected field is shown on the field itself (the dialog stays open so it
   // can be fixed); any other failure is a toast.
@@ -188,22 +225,23 @@ function CredentialsForm({
             : m.charging_credentials_reenter_field(),
       }
     }
-    if (Object.keys(errors).length === 0) {
+    const first = fields.find((f) => errors[f])
+    if (!first) {
       toast.error(m.charging_credentials_save_error())
       return
     }
     for (const f of Object.keys(errors))
       form.setFieldMeta(f, (meta) => ({ ...meta, isTouched: true }))
-    focusAfterSubmit.current = true
     setServerErrors(errors)
+    setFocusTarget(inputId(source, first))
   }
 
   // Saved credentials change what every sync uses and the sources' health.
-  const invalidate = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: orpc.credentials.key() }),
-      queryClient.invalidateQueries({ queryKey: orpc.evCharging.key() }),
-    ])
+  // Not awaited: the dialog closes on success without waiting for the refetches.
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: orpc.credentials.key() })
+    void queryClient.invalidateQueries({ queryKey: orpc.evCharging.key() })
+  }
   const set = useMutation(
     orpc.credentials.set.mutationOptions({
       onError: (err) => {
@@ -218,6 +256,7 @@ function CredentialsForm({
     }),
   )
   const clear = useMutation(orpc.credentials.clear.mutationOptions({ onSettled: invalidate }))
+  const busy = set.isPending || clear.isPending
 
   const form = useAppForm({
     defaultValues: Object.fromEntries(fields.map((f) => [f, ''])) as Record<string, string>,
@@ -226,6 +265,13 @@ function CredentialsForm({
         Object.values(value).every((v) => v.trim() === '')
           ? m.charging_credentials_nothing_to_save()
           : undefined,
+    },
+    // Refused before reaching the server (nothing filled in, or a field still
+    // shows the server's error): focus where the fix goes.
+    onSubmitInvalid: ({ formApi }) => {
+      const first =
+        fields.find((f) => (formApi.getFieldMeta(f)?.errors.length ?? 0) > 0) ?? fields[0]
+      setFocusTarget(inputId(source, first))
     },
     onSubmit: async ({ value }) => {
       // Blank means "keep what is stored": send only what was filled in.
@@ -247,12 +293,11 @@ function CredentialsForm({
     for (const f of Object.keys(serverErrors)) form.validateField(f, 'change')
   }, [serverErrors, form])
   useEffect(() => {
-    // …and move focus to the first one once the submit has finished.
-    if (isSubmitting || !focusAfterSubmit.current) return
-    focusAfterSubmit.current = false
-    const first = fields.find((f) => serverErrors[f])
-    if (first) document.getElementById(first)?.focus()
-  }, [isSubmitting, fields, serverErrors])
+    // …and move focus once the submit has finished.
+    if (isSubmitting || !focusTarget) return
+    document.getElementById(focusTarget)?.focus()
+    setFocusTarget(null)
+  }, [isSubmitting, focusTarget])
 
   // Change-only: raised via validateField('change'), cleared by the next edit;
   // a blur never touches this slot, so the message stays put.
@@ -262,6 +307,13 @@ function CredentialsForm({
       const error = serverErrors[field]
       return error && error.value === value ? { message: error.message } : undefined
     }
+  const forgetServerError = (field: string) =>
+    setServerErrors((prev) => {
+      if (!(field in prev)) return prev
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
 
   const remove = () =>
     clear.mutate(
@@ -286,7 +338,9 @@ function CredentialsForm({
         {keyMissing ? (
           <Alert variant="destructive">
             <AlertTriangleIcon />
-            <AlertDescription>{m.charging_credentials_key_missing()}</AlertDescription>
+            <AlertDescription id={keyMissingId(source)}>
+              {m.charging_credentials_key_missing()}
+            </AlertDescription>
           </Alert>
         ) : sourceStatus?.unreadable ? (
           <Alert variant="destructive">
@@ -305,6 +359,7 @@ function CredentialsForm({
             >
               {m.charging_credentials_skoda_link()}
               <ExternalLinkIcon aria-hidden className="size-3.5" />
+              <span className="sr-only"> {m.common_opens_in_new_tab()}</span>
             </a>
           </div>
         ) : null}
@@ -326,18 +381,25 @@ function CredentialsForm({
                 ) : null}
               </>
             ) : undefined
+          const secret = credentialFieldKind(source, f) === 'secret'
           return (
             <form.AppField
               key={f}
               name={f}
               validators={{ onChange: serverError(f) }}
+              listeners={{ onChange: () => forgetServerError(f) }}
               children={(field) => (
                 <field.TextField
                   label={credentialFieldLabel(source, f)}
-                  type={credentialFieldKind(source, f) === 'secret' ? 'password' : 'text'}
-                  autoComplete="off"
+                  type={secret ? 'password' : 'text'}
+                  // Browsers ignore "off" on password inputs; "new-password" keeps
+                  // a saved login out of them.
+                  autoComplete={secret ? 'new-password' : 'off'}
+                  inputId={inputId(source, f)}
+                  inputData={NO_PASSWORD_MANAGER}
                   autoFocus={i === 0 && !keyMissing}
                   disabled={keyMissing}
+                  describedBy={keyMissing ? keyMissingId(source) : undefined}
                   description={description}
                 />
               )}
@@ -364,8 +426,13 @@ function CredentialsForm({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="pointer-coarse:h-11 w-full text-destructive hover:text-destructive sm:w-auto"
-                  disabled={clear.isPending}
+                  className="pointer-coarse:h-11 w-full text-destructive hover:text-destructive aria-disabled:opacity-50 sm:w-auto"
+                  // aria-disabled, not disabled: the confirm hands focus back
+                  // here, and a disabled button would drop it to the page.
+                  aria-disabled={busy}
+                  onClick={(e) => {
+                    if (busy) e.preventDefault()
+                  }}
                 >
                   {m.charging_credentials_remove()}
                 </Button>
@@ -374,9 +441,11 @@ function CredentialsForm({
                 <AlertDialogHeader>
                   <AlertDialogTitle>{m.charging_credentials_remove_title()}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    {m.charging_credentials_remove_confirm({
-                      source: sourceName(source),
-                    })}
+                    {source === 'gridTariff'
+                      ? m.charging_credentials_remove_confirm_grid()
+                      : m.charging_credentials_remove_confirm({
+                          source: integrationSourceName(source),
+                        })}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -391,7 +460,9 @@ function CredentialsForm({
           </div>
         ) : null}
         <form.AppForm>
-          <form.CancelButton onClick={() => onDone(false)}>{m.common_cancel()}</form.CancelButton>
+          <form.CancelButton id={cancelId(source)} onClick={() => onDone(false)}>
+            {m.common_cancel()}
+          </form.CancelButton>
           <form.SubmitButton label={m.common_save()} disabled={keyMissing} />
         </form.AppForm>
       </ResponsiveDialogFooter>

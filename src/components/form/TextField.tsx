@@ -40,6 +40,15 @@ type Props = {
    * such as "öre/kWh"). When set, the field renders as an input group.
    */
   suffix?: string
+  /**
+   * The input's DOM id and name, when the field name alone isn't unique on the
+   * page (default: the field name). The hint and error ids derive from it.
+   */
+  inputId?: string
+  /** Ids of elements outside the field that also describe the input, announced first. */
+  describedBy?: string
+  /** Extra `data-*` attributes on the input (e.g. password-manager opt-outs). */
+  inputData?: Record<`data-${string}`, string>
 }
 
 export function TextField({
@@ -58,6 +67,9 @@ export function TextField({
   orientation = 'vertical',
   fieldClassName,
   suffix,
+  inputId,
+  describedBy: externalDescribedBy,
+  inputData,
 }: Props) {
   const field = useFieldContext<string>()
   const isSubmitting = useStore(field.form.store, (s) => s.isSubmitting)
@@ -65,18 +77,25 @@ export function TextField({
 
   // The unit suffix, hint and error are announced with the input (the suffix
   // is otherwise only visual), so "Energiskatt" reads as "… öre/kWh".
-  const suffixId = `${field.name}-suffix`
-  const descriptionId = `${field.name}-description`
-  const errorId = `${field.name}-error`
+  const id = inputId ?? field.name
+  const suffixId = `${id}-suffix`
+  const descriptionId = `${id}-description`
+  const errorId = `${id}-error`
   const describedBy =
-    [suffix ? suffixId : null, description ? descriptionId : null, isInvalid ? errorId : null]
+    [
+      externalDescribedBy ?? null,
+      suffix ? suffixId : null,
+      description ? descriptionId : null,
+      isInvalid ? errorId : null,
+    ]
       .filter(Boolean)
       .join(' ') || undefined
 
   const sharedInputProps = {
-    id: field.name,
+    ...inputData,
+    id,
     'aria-describedby': describedBy,
-    name: field.name,
+    name: id,
     type,
     inputMode,
     autoComplete,
@@ -92,7 +111,7 @@ export function TextField({
 
   return (
     <Field data-invalid={isInvalid} orientation={orientation} className={fieldClassName}>
-      <FieldLabel htmlFor={field.name} className={srOnlyLabel ? 'sr-only' : undefined}>
+      <FieldLabel htmlFor={id} className={srOnlyLabel ? 'sr-only' : undefined}>
         {label}
       </FieldLabel>
       {suffix ? (
