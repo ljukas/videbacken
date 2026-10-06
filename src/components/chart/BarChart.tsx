@@ -102,6 +102,8 @@ export type BarChartProps<Row> = {
    * Pass `label` with it: the labelled group is the selection's keyboard path (see BarSelection).
    */
   selection?: BarSelection<Row>
+  /** A short label above a category's stack (e.g. a winter loss share); null draws none. */
+  barLabel?: (row: Row, index: number) => string | null
 }
 
 const DOT_R = 3
@@ -138,6 +140,7 @@ export function BarChart<Row>({
   legendClassName,
   keyboardHint,
   selection,
+  barLabel,
 }: BarChartProps<Row>) {
   // No debounce: a resize that wraps the legend re-lays the plot at once,
   // as recharts' ResponsiveContainer did (a stale plot would overlap it).
@@ -146,6 +149,7 @@ export function BarChart<Row>({
   // container moves the chart under it.
   const popover = useChartPopover<number>({ followScroll: true })
   const hintId = useId()
+  const patternId = useId()
   const [announced, setAnnounced] = useState<number | null>(null)
   // The category the pointer or the keys last moved to (null: none). Kept apart
   // from the popover, which stays closed on a category without a tooltip: the
@@ -157,6 +161,8 @@ export function BarChart<Row>({
   const [outline, setOutline] = useState<{ index: number; keyboard: boolean } | null>(null)
   const at = (i: number, key: string) => value(rows[i], key)
   const count = rows.length
+  // A label over the tallest bar needs room above the plot.
+  const marginTop = barLabel ? MARGIN.top + tickPx + 6 : MARGIN.top
   const tickLabel = { fill: 'var(--muted-foreground)', fontSize: tickPx }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `at` is rows + value, both listed
@@ -165,7 +171,7 @@ export function BarChart<Row>({
     const keys = line ? [...series, { key: line.key, label: '', color: '' }] : series
     const measure = measureAt(tickPx)
     const extent = stackExtent({ count, series: keys, value: at, offset: stackOffset })
-    const plotH = Math.max(0, plotBoxH - MARGIN.top - MARGIN.bottom - X_AXIS_H)
+    const plotH = Math.max(0, plotBoxH - marginTop - MARGIN.bottom - X_AXIS_H)
     const y = yScaleFor({ extent, height: plotH, integers: yIntegers, domain: yDomain })
     const yLabels = y.ticks.map(yTickFormat)
     const yAxisW = hideYAxis ? 0 : yAxisWidth(yLabels, measure)
@@ -212,6 +218,7 @@ export function BarChart<Row>({
     shortCategory,
     tickPx,
     minBarPx,
+    marginTop,
   ])
 
   const chosen = selection?.selected
@@ -233,7 +240,7 @@ export function BarChart<Row>({
     if (dot !== null) tops.push(geometry.y.scale(dot) - DOT_R)
     return {
       left: geometry.left + geometry.centres[i],
-      top: MARGIN.top + Math.min(geometry.plotH, ...tops),
+      top: marginTop + Math.min(geometry.plotH, ...tops),
     }
   }
   const open = (i: number) => {
@@ -319,7 +326,7 @@ export function BarChart<Row>({
   }
 
   const legendItems = [
-    ...series.map(({ key, label: l, color }) => ({ key, label: l, color })),
+    ...series.map(({ key, label: l, color, pattern }) => ({ key, label: l, color, pattern })),
     ...(line ? [{ key: line.key, label: line.label, color: line.color }] : []),
   ]
   const active =
@@ -343,7 +350,30 @@ export function BarChart<Row>({
       aria-hidden
       className="block overflow-visible"
     >
-      <Group left={geometry.left} top={MARGIN.top}>
+      {series.some((s) => s.pattern === 'hatch') ? (
+        <defs>
+          {series
+            .filter((s) => s.pattern === 'hatch')
+            .map((s) => (
+              <pattern
+                key={s.key}
+                id={`${patternId}-${s.key}`}
+                width={5}
+                height={5}
+                patternUnits="userSpaceOnUse"
+                patternTransform="rotate(45)"
+              >
+                <rect
+                  width={5}
+                  height={5}
+                  fill={`color-mix(in srgb, ${s.color} 40%, var(--card))`}
+                />
+                <rect width={2.5} height={5} fill={s.color} />
+              </pattern>
+            ))}
+        </defs>
+      ) : null}
+      <Group left={geometry.left} top={marginTop}>
         {hideYAxis ? null : (
           <g data-grid>
             <GridRows
@@ -379,7 +409,7 @@ export function BarChart<Row>({
                   y: r.y,
                   width: r.width,
                   height: r.height,
-                  fill: s.color,
+                  fill: s.pattern === 'hatch' ? `url(#${patternId}-${s.key})` : s.color,
                   stroke: s.stroke,
                   strokeWidth: s.strokeWidth,
                 }
@@ -396,6 +426,28 @@ export function BarChart<Row>({
               })}
           </g>
         ))}
+        {barLabel
+          ? range(count).map((i) => {
+              const text = barLabel(rows[i], i)
+              const tops = geometry.rects.filter((r) => r.index === i).map((r) => r.y)
+              if (text === null || tops.length === 0) return null
+              return (
+                <text
+                  key={i}
+                  data-bar-label
+                  x={geometry.centres[i]}
+                  y={Math.min(...tops) - 6}
+                  textAnchor="middle"
+                  fontSize={tickPx}
+                  fontWeight={600}
+                  className="fill-foreground tabular-nums"
+                  pointerEvents="none"
+                >
+                  {text}
+                </text>
+              )
+            })
+          : null}
         {line ? (
           <g data-series={line.key} data-kind="line">
             <LinePath

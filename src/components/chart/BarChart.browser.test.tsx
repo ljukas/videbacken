@@ -821,3 +821,47 @@ test('fewer rows after a refetch never let Enter select a missing category', asy
   await settle()
   expect(onSelect).not.toHaveBeenCalled()
 })
+
+test('a hatched series fills its bars with a pattern in the chart and hatches its legend swatch', async () => {
+  const { screen } = await render({
+    series: [
+      { key: 'a', label: 'Serie A', color: 'var(--energy-battery)', stack: 's' },
+      { key: 'b', label: 'Serie B', color: 'var(--energy-loss)', stack: 's', pattern: 'hatch' },
+    ],
+  })
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('[data-series="b"] [data-bar]')).not.toBeNull(),
+  )
+  const fill =
+    screen.container.querySelector('[data-series="b"] [data-bar]')?.getAttribute('fill') ?? ''
+  const id = /^url\(#(.+)\)$/.exec(fill)?.[1]
+  expect(id).toBeTruthy()
+  expect(screen.container.querySelector(`pattern[id="${id}"]`)).not.toBeNull()
+  expect(screen.container.querySelector('[data-series="a"] [data-bar]')?.getAttribute('fill')).toBe(
+    'var(--energy-battery)',
+  )
+  const swatch = screen.container.querySelector<HTMLElement>('[data-legend-item="b"] > div')
+  expect(swatch?.style.backgroundImage).toContain('repeating-linear-gradient')
+})
+
+test('barLabel draws above its stack, and nothing where it returns null', async () => {
+  // Index 3 is apr (the tallest stack); feb (1) has no bars at all.
+  const { screen } = await render({ barLabel: (_r, i) => (i === 3 ? '43 %' : null) })
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('[data-bar-label]')).toHaveLength(1),
+  )
+  const label = screen.container.querySelector<SVGTextElement>('[data-bar-label]')
+  expect(label?.textContent).toBe('43 %')
+  const top = Math.min(
+    ...[...screen.container.querySelectorAll('[data-bar][data-index="3"]')].map(
+      (b) => b.getBoundingClientRect().top,
+    ),
+  )
+  expect(label?.getBoundingClientRect().bottom).toBeLessThanOrEqual(top)
+})
+
+test('without pattern or barLabel nothing new is drawn', async () => {
+  const { screen } = await render()
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  expect(screen.container.querySelectorAll('pattern, [data-bar-label]')).toHaveLength(0)
+})
