@@ -8,6 +8,16 @@ import { cn } from '~/lib/utils'
 const OFFSET_TOP = -34
 // Near the wrapper's top edge there's no room above: drop below the mark instead.
 const OFFSET_BELOW = 24
+// `placement="above"`: the gap between the mark and the tooltip's nearer edge. Clears a 14 px value label
+// centred on the mark (the flow diagram's pills), which the default offsets, sized for a one-line tooltip,
+// would cover.
+const MARK_GAP = 16
+
+/**
+ * `over` (default): the top edge 34 px above the mark, the body over it.
+ * `above`: the whole tooltip above the mark, or below it when the window has no room above.
+ */
+export type ChartPopoverPlacement = 'over' | 'above'
 
 type Bounds = ReturnType<typeof useTooltipInPortal>['containerBounds']
 
@@ -119,14 +129,18 @@ const EDGE = 8
 // page coordinates with the viewport size, so it misplaces the tooltip once the
 // page is scrolled; measuring the real rect sidesteps that.
 // A tooltip placed above the mark that would leave the top of the window drops
-// below the mark instead of being shifted over it.
-function keepInWindow(el: HTMLDivElement | null, above: boolean) {
+// below the mark instead of being shifted over it. With `placement="above"` the
+// tooltip renders with its top edge on the mark and is lifted here by its own
+// measured height, so its bottom edge sits MARK_GAP above the mark.
+function keepInWindow(el: HTMLDivElement | null, above: boolean, placement: ChartPopoverPlacement) {
   if (!el) return
   el.style.transform = ''
   const r = el.getBoundingClientRect()
   const dx = Math.max(EDGE - r.left, 0) + Math.min(window.innerWidth - EDGE - r.right, 0)
   let dy = 0
-  if (above && r.top < EDGE) dy = OFFSET_BELOW - OFFSET_TOP
+  if (placement === 'above')
+    dy = r.top - r.height - MARK_GAP < EDGE ? MARK_GAP : -r.height - MARK_GAP
+  else if (above && r.top < EDGE) dy = OFFSET_BELOW - OFFSET_TOP
   dy += Math.max(EDGE - (r.top + dy), 0) + Math.min(window.innerHeight - EDGE - (r.bottom + dy), 0)
   if (dx || dy) el.style.transform = `translate(${Math.round(dx)}px, ${Math.round(dy)}px)`
 }
@@ -139,11 +153,13 @@ export function ChartPopover({
   dataKey,
   children,
   className,
+  placement = 'over',
 }: {
   state: { open: boolean; left?: number; top?: number; containerBounds: Bounds }
   dataKey?: string
   children: React.ReactNode
   className?: string
+  placement?: ChartPopoverPlacement
 }) {
   const bounds = state.containerBounds
   // Rendered (closed) during SSR too, where there is no window.
@@ -155,8 +171,8 @@ export function ChartPopover({
   const above = (state.top ?? 0) >= -OFFSET_TOP
   // biome-ignore lint/correctness/useExhaustiveDependencies: the position is the re-run trigger
   const clampRef = useCallback(
-    (el: HTMLDivElement | null) => keepInWindow(el, above),
-    [pageLeft, pageTop, above],
+    (el: HTMLDivElement | null) => keepInWindow(el, above, placement),
+    [pageLeft, pageTop, above, placement],
   )
   if (!state.open) return null
   return createPortal(
@@ -170,7 +186,7 @@ export function ChartPopover({
       left={pageLeft}
       top={pageTop}
       offsetLeft={0}
-      offsetTop={above ? OFFSET_TOP : OFFSET_BELOW}
+      offsetTop={placement === 'above' ? 0 : above ? OFFSET_TOP : OFFSET_BELOW}
       className={cn(
         'pointer-events-none z-10 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-background text-xs shadow-md',
         className,
