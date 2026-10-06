@@ -13,9 +13,9 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 1 | Deferred route loading on the charging pages (ADR-0025: loader helper, cached session guard, boneyard-js spike + section skeletons on `/charging`, economy, patterns; the session page keeps its awaited not-found check) | [plan](../plans/2026-10-05-client-perf-1-deferred-charging.md) | [#89](https://github.com/ljukas/videbacken/pull/89) | checkpoint passed | 2026-10-05: the owner confirmed the drag is gone on the phone. Prod logs show 0 `/_serverFn` calls since the #89 deploy (230 in the 6 h before), across `/charging`, economy, patterns, `/sensors` and `/users`. Small layout shifts seen, now step 7. |
 | 2 | Same pattern on `/sensors` and `/users` | [plan](../plans/2026-10-05-client-perf-2-deferred-sensors-users.md) | [#93](https://github.com/ljukas/videbacken/pull/93) | checkpoint passed | 2026-10-05: the owner confirmed on the phone that `/sensors` (including a range switch) and `/users` no longer drag. Prod logs since the #93 deploy show one `getSession` server-function call across the session's navigations: the cached guard's refresh, not one per navigation. |
 | 3 | Fewer, cheaper reads per page (ADR-0025 §5): merge reads per concern (sources' health, runs, sessions + costs), auth looked up once per HTTP request, pool gauges in the timing line | [plan](../plans/2026-10-05-client-perf-3-fewer-reads.md) | [#98](https://github.com/ljukas/videbacken/pull/98) | checkpoint passed | 2026-10-05/06: an admin `/charging` client navigation made 6 oRPC requests (5 plus a cached `syncStatuses`) with no `sessionCosts` waterfall; `/charging/settings` made 5 (a stale `user/me` refresh not counted). Every burst started from an empty pool and opened connections (`poolOpened` 1 per request on settings, 2–4 on `/charging` bursts), so the pool fix is row 8. See [notes](#checkpoint-3-result). |
-| 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | [#104](https://github.com/ljukas/videbacken/pull/104) | PR open | — |
+| 4 | Bundle (ADR-0025 §6): phone fields out of the global form hook; admin-only dialogs (`/charging/settings`, `/sensors`, `/users`) load on first open; each page imports its own bones, no registry (since step 2, `/sensors` and `/users` loaded ~23 KB gz of charging bones). See [notes](#step-4-notes) | [plan](../plans/2026-10-05-client-perf-4-bundle.md) | [#104](https://github.com/ljukas/videbacken/pull/104) | checkpoint passed | 2026-10-06, `main` at `17fb518`: every `packages:` and `bones:` criterion holds. Totals are within 1–2 KB of the bar per page; the shell is 257 against 253, all of it from #102 and #103 merging in (see [checkpoint 4 result](#checkpoint-4-result)). |
 | 5 | Replace recharts with visx (refactor-workflow) | — | — | not started | — |
-| 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too) | — | — | not started | — |
+| 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) | — | — | not started | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
 | 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
 
@@ -207,6 +207,39 @@ step-6 item, since it needs its own measurement, `/login` included (ADR-0025 §6
 **`/users` keeps `libphonenumber-js`** (~39 KB gz, the `getInternationalPhoneNumberPrefix` chunk). The users table
 formats each stored number with `formatPhoneNumberIntl`, now imported from `react-phone-number-input/input`, so the
 country flags are gone but the number metadata stays. A lighter formatter would need its own change.
+
+### Checkpoint 4 result
+
+Measured 2026-10-06 with `bun run bundle:measure` on `main` at `17fb518`, which is #104 plus #102 (credentials on
+the settings page) and #103 (the Energi month picker).
+
+- **Packages: pass.** `country-flag-icons` is only on `/account/profile`. `libphonenumber-js` is only on
+  `/account/profile` and `/users`. No `@tanstack/form-core` on `/sensors`, `/users` or `/charging/settings`.
+- **Bones: pass.** Each page lists only its own captures. `/charging/settings` also lists `charging-grid`, #102's
+  new section.
+- **Totals (KB gz):**
+
+  | | Step 4 final | `main` |
+  |---|---|---|
+  | entry + shell | 253 | 257 |
+  | `/charging` | 161 | 160 |
+  | `/charging/settings` | 41 | 43 (#102's grid card + its bones) |
+  | economy | 159 | 158 |
+  | patterns | 171 | 170 |
+  | `/charging/sessions/$id` | 66 | 64 |
+  | `/energy` | 152 | 148 |
+  | `/sensors` | 123 | 123 |
+  | `/users` | 72 | 73 |
+  | `/account/profile` | 212 | 213 |
+
+**The shell's +4 KB is new code from #102 and #103, not a step-4 regression.** A source-map diff of the entry +
+shell closure, between step 4's final commit (`895b686`, 437 modules) and `main` (453), shows only additions:
+- `date-fns` (`addDays`, `startOfMonth`, `formatISO`, …), `@date-fns/tz`, `src/lib/time/stockholm.ts`,
+  `src/lib/houseEnergy/period.ts` and `energy/index.tsx?tsr-shared=1`, all from #103. The `/energy` route's
+  `validateSearch` parses the month, and TanStack keeps a route's search parsing in the eagerly loaded route tree.
+- `src/lib/integrationCredentials.ts`, from #102: the settings route's search schema reads `CREDENTIAL_SOURCES`.
+
+Keeping search parsing out of the shell (a lighter parser, or one with no time-zone library) is added to step 6.
 
 ## Step 7 notes
 
