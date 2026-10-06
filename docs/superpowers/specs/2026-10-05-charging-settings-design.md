@@ -516,8 +516,7 @@ text, so the state never relies on colour alone.
 - **The home position's button speaks of the map** (owner, 2026-10-06): "Välj på kartan" / "Choose on the map" for
   `env` and `missing`, and "Ändra på kartan" / "Change on the map" for `stored`. In 3c-1, before the picker exists,
   the button opens the "lat,lon" input and keeps the same label. In 3c-2 it opens the picker. A *missing* home
-  position shows the input directly in 3c-1; 3c-2 decides how a missing position reaches the picker (likely the same
-  "Välj på kartan" button).
+  position shows the input directly in 3c-1. In 3c-2 it starts closed behind the same "Välj på kartan" button.
 - **Footer** (from the mockup): with no field open, the footer shows "Stäng" and a disabled "Spara"; once a field is
   open, it shows "Avbryt" and an enabled "Spara".
 - **The remove confirm names the stored fields** ("De sparade uppgifterna för Škoda (API-nyckel och VIN) tas
@@ -642,6 +641,48 @@ The Škoda "Laddboxens position" field's "Byt" opens a picker instead of a text 
   - map: Leaflet with OSM raster tiles, pigeon-maps;
   - geocoder: Photon, Lantmäteriet, keyed free tiers;
   - tiles: keyed tiers.
+
+**As built (3c-2):**
+
+- `homePosition` returns `{ latitude, longitude }`, not `{ lat, lon }`: the geofence's `LatLon` shape. The same goes
+  for the `searchAddress` hits.
+- The service reads the stored row, else env, without the resolver's cache. The timing line carries `homePositionMs`
+  only.
+- The saved pin is fetched when the picker opens, not when the Škoda dialog opens. It is never fetched while the
+  field is closed or the key is missing. `gcTime: 0`, no retry, no refocus refetch.
+- The picker seeds the form value with the saved pin (5 decimals) unless the admin already picked. "Spara" with the
+  picker open therefore re-saves it, and an env pin becomes stored.
+- The search is a TanStack query run on submit ("Sök" or Enter), not a mutation, so it never counts as a pending
+  credentials save. Enter never submits the dialog. The same text again re-runs it.
+- The geocoder does not retry (a retry inside `fetchWithRetry` would bypass the 1 req/s slot). A search that would
+  wait more than 3 s for its slot fails as `rate_limited`. Timeout 5 s; the procedure passes an 8 s signal. Cache:
+  10 min, at most 100 queries, keyed on the trimmed, lower-cased, whitespace-collapsed query. Hits with unusable or
+  out-of-range values are dropped.
+- The outage logs once at warn with only the geocoder code. `logRpcError` now grades any declared `ORPCError` as an
+  expected outcome whatever its status. A future declared 5xx must log its own warn.
+- "Sök" and "Använd min position" stay enabled while busy. They show "Söker…" / "Hämtar position…" with `aria-busy`
+  and ignore repeat presses, because disabling the pressed button would drop keyboard focus.
+- Status messages (hit count with plural forms, no hits, search unavailable, location denied or unavailable) sit in
+  always-mounted live regions (`role=status` / `role=alert`). Each chosen point is announced ("Vald position: …").
+- Layout order inside the field: hints, "Sök adress" + "Sök", "Använd min position", the map, then the "lat,lon"
+  input with its format hint below it.
+- A missing position starts closed with the badge "Inte angiven", the purpose line "Används för att se om bilen
+  står hemma." and "Välj på kartan" (owner, 2026-10-06). Other missing fields still show their input directly.
+- The home input is plain text with `inputMode="text"`: the iOS decimal pad has no comma. It is no longer a
+  password input (`credentialFieldKind` gains `'position'`).
+- MapLibre's own strings are Swedish or English through its `locale` option (7 `charging_home_map_ui_*` keys).
+- Every reported point goes through `LngLat.wrap()` (to ±180).
+- Clicking, or pressing Enter or Space on, the pin does not re-pick. Arrow keys on the focused pin move only the
+  pin (Shift moves 5 times as far). It is a native `keydown` listener, because React's synthetic `stopPropagation`
+  runs after MapLibre's container listener.
+- A camera request made before the map has loaded is applied on load.
+- Config: `optimizeDeps.exclude: ['maplibre-gl']` held in dev (no console errors). The worker loads through
+  `maplibre-gl-worker.mjs?worker&url` and `setWorkerUrl`. No `ssr.noExternal` was needed. MapLibre's CSS is emitted
+  with the lazy chunk.
+- The map chunk is about 288 KB gz and loads only when a picker shows a map.
+- Live-checked at 1280, 820 and 390 px (touch, bottom sheet) on software GL: tiles, pin, click, drag, arrow keys,
+  search → fly, the Swedish gesture hint. Not checked: a real GPU, a real two-finger gesture, iOS's keypad.
+  Checkpoint 4 (owner, phone) covers these.
 
 ## Error handling summary
 

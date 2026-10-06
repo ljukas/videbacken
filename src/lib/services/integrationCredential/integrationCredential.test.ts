@@ -9,7 +9,7 @@ import { integrationCredential, user } from '~/lib/db/schema'
 import { logger } from '~/lib/logger/server'
 import { setupDatabase } from '~test/setup'
 import { IntegrationCredentialDomainError } from './errors'
-import { clear, readStored, set, status } from './integrationCredential'
+import { clear, homePosition, readStored, set, status } from './integrationCredential'
 
 setupDatabase()
 
@@ -516,5 +516,69 @@ describe('cache invalidation', () => {
     await domainError(() => set('skoda', { vin: 'bad' }, null))
     await insertRaw('skoda', '{"apiKey":"raw"}')
     expect(await cachedSkoda()).toBeNull()
+  })
+})
+
+describe('homePosition', () => {
+  const HOME = '59.3293,18.0686' // central Stockholm, not a real home
+
+  it('a stored value wins over env', async () => {
+    vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
+    await set('skoda', { homeCoordinates: HOME }, await insertUser())
+    expect(await homePosition()).toEqual({ latitude: 59.3293, longitude: 18.0686 })
+  })
+
+  it('env fills in when the stored row has no home position', async () => {
+    vi.stubEnv('SKODA_HOME_COORDINATES', ' 57.7 , 11.97 ')
+    await set('skoda', { apiKey: 'k1' }, await insertUser())
+    expect(await homePosition()).toEqual({ latitude: 57.7, longitude: 11.97 })
+  })
+
+  it('null when unset or unparseable', async () => {
+    vi.stubEnv('SKODA_HOME_COORDINATES', '')
+    expect(await homePosition()).toBeNull()
+    vi.stubEnv('SKODA_HOME_COORDINATES', 'hemma')
+    expect(await homePosition()).toBeNull()
+  })
+
+  describe('an unreadable row is UNREADABLE, never the env value', () => {
+    const expectNoLeak = (error: IntegrationCredentialDomainError) => {
+      expect(error.code).toBe('UNREADABLE')
+      expect(error.message).toBe('UNREADABLE')
+      expect(error.fields).toEqual([])
+      for (const value of ['59.3293', '18.0686', '57.7', '11.97']) {
+        expect(error.message).not.toContain(value)
+      }
+    }
+
+    it('under a wrong key', async () => {
+      vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
+      await set('skoda', { homeCoordinates: HOME }, await insertUser())
+      vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
+      expectNoLeak(await domainError(() => homePosition()))
+    })
+
+    it('when the key is unset after the row was saved', async () => {
+      vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
+      await set('skoda', { homeCoordinates: HOME }, await insertUser())
+      vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', '')
+      expectNoLeak(await domainError(() => homePosition()))
+    })
+
+    it('when the decrypted object has the wrong shape', async () => {
+      vi.stubEnv('SKODA_HOME_COORDINATES', '57.7,11.97')
+      await insertRaw('skoda', '{"bogus":"59.3293,18.0686"}')
+      expectNoLeak(await domainError(() => homePosition()))
+    })
+  })
+
+  it('rethrows a failing read as is, not as a domain error', async () => {
+    vi.spyOn(db, 'select').mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    const err = await homePosition().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toBe('boom')
+    expect(err).not.toBeInstanceOf(IntegrationCredentialDomainError)
   })
 })

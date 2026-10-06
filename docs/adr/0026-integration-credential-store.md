@@ -183,7 +183,7 @@ resolved home point (stored, else env) to admins.
 - **Every other field stays write-only**, including the facility ID and every secret.
 - **An unreadable Škoda row returns `UNREADABLE`**, never the env value (decision 4).
 - **The value never reaches the server-rendered HTML**, because the client fetches it only when the Škoda dialog
-  opens, never in a loader. Separately, `gcTime: 0` limits how long it stays in the client cache. It is never logged.
+  opens, never in a loader. (Step 3c-2 narrowed this to when the picker opens: see the as-built amendment below.) Separately, `gcTime: 0` limits how long it stays in the client cache. It is never logged.
 - **Why this one:** it is the household's own address, shown only to its admins, who already know it. A key, a
   password or the facility ID gives access to something. A pin on a map gives nothing beyond what the admin already
   knows.
@@ -192,8 +192,48 @@ resolved home point (stored, else env) to admins.
   - Return a rounded area (about 1 km), which leaves a rule to explain for little gain.
 - **Cost, accepted:** a stolen admin session or an XSS can now read the household's position; write-only prevented
   that.
-- **Address search** goes to Nominatim (OpenStreetMap), proxied by our server, so the admin's IP and browser stay
-  private. The address text itself does reach OpenStreetMap's servers. There is no reverse geocoding of the chosen
-  point.
-- The `Permissions-Policy` change (`geolocation=(self)`) and the Nominatim proxy are step 3c-2 decisions, recorded
-  in the spec; they join this ADR when 3c-2 lands.
+- **Address search** goes to Nominatim (OpenStreetMap), proxied by our server (see the 3c-2 amendment below).
+  The address text itself reaches OpenStreetMap's servers; the admin's IP and browser do not. There is no reverse
+  geocoding of the chosen point.
+
+## Amendment (2026-10-06): as built in step 3c-2
+
+**Home position read:**
+- `credentials.homePosition` returns `{ latitude, longitude } | null`, the shape the geofence uses.
+- The service reads the stored row, else `SKODA_HOME_COORDINATES`. It does not use the resolver's 60 s cache.
+- An unreadable row is the domain code `UNREADABLE` (409), never the env value.
+- The client fetches it only while the picker is open and enabled, not when the Škoda dialog opens. It uses
+  `gcTime: 0`, no retry and no refocus refetch. The timing line carries only `homePositionMs`.
+
+**Seeding:**
+- The picker seeds the form value with the saved pin, rounded to 5 decimals, unless the admin already picked.
+- So "Spara" with the picker open re-saves that point. For an env pin, that moves it into the app.
+- Accepted: the hint "Ett värde som sparas här går före miljövariabeln" says so.
+
+**Address search** (`credentials.searchAddress` → `effects/geocoder`, Nominatim):
+- The query is trimmed, 2–200 characters. The result is up to 5 `{ label, latitude, longitude }`.
+- It sends `countrycodes=se`, `accept-language=sv`, `limit=5` and a distinctive `User-Agent`.
+- It is throttled to 1 request/s per instance. A search that would wait more than 3 s for its slot fails fast as
+  `rate_limited`. An aborted search releases its slot.
+- **No retries.** A retry inside `fetchWithRetry` would bypass the 1 req/s slot. The admin's next "Sök" is the retry.
+- Results are cached in memory for 10 min, at most 100 queries. A cache hit takes no slot. Failures are not cached.
+- Any failure is `GEOCODER_UNAVAILABLE` (503).
+- The handler logs an outage once, at warn, with only the geocoder code. Success logs at debug with the hit count
+  and the cached flag. The query and the results are never logged.
+- **`logRpcError` grading changed.** A *defined* `ORPCError` (declared in `.errors()`, thrown via `errors.X()`) is
+  an expected outcome (info `rpc rejected`) whatever its status. Undefined 5xx errors and unknown throws stay at
+  error. `GEOCODER_UNAVAILABLE` is the first declared 5xx, so a future declared 5xx must log its own warn.
+
+**Browser permissions:**
+- `Permissions-Policy` is now `camera=(), microphone=(), geolocation=(self)`, for "Använd min position".
+
+**The map:**
+- It is `maplibre-gl` 6 with `@vis.gl/react-maplibre` and OpenFreeMap `liberty`, in one lazy chunk (about 288 KB gz).
+  Only modules that show a map load it.
+- Without WebGL2, or if the chunk fails to load, a note replaces the map. Search and the coordinates input remain.
+
+**Missing position:**
+- Owner, 2026-10-06: a missing home position starts closed, with the badge "Inte angiven", the line "Används för
+  att se om bilen står hemma." and a "Välj på kartan" button.
+- Admin reads of the position are still covered by the pre-existing #101: a demoted admin keeps admin rights for
+  about 300 s through the Better Auth cookie cache.
