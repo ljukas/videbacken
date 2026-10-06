@@ -5,12 +5,16 @@ import {
   barHeight,
   barSeries,
   bars,
+  hoverBar,
+  legendLabels,
   legendText,
   lineCurve,
   lineDots,
   lineSeries,
+  tooltipText,
 } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
+import { formatOrePrecise, monthLabel } from './format'
 import { SpotComparisonChart } from './SpotComparisonChart'
 
 type Month = RouterOutputs['evCharging']['economy']['months'][number]
@@ -117,4 +121,52 @@ test('a near-zero paid price still draws a visible bar', async () => {
   )
   await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(1))
   expect(barHeight(bars(screen.container)[0])).toBeGreaterThanOrEqual(2)
+})
+
+test('the legend lists the paid price, then the month average', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <SpotComparisonChart months={months} />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(legendLabels(screen.container)).toEqual([
+      m.charging_economy_series_paid(),
+      m.charging_economy_series_avg(),
+    ]),
+  )
+})
+
+test('a month tooltip shows what we paid, then the average, in öre', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <SpotComparisonChart months={months} />
+    </div>,
+  )
+  await hoverBar(screen.container, 0) // September: paid 80, average 95
+  await vi.waitFor(() => expect(tooltipText()).toContain(monthLabel(9)))
+  const text = tooltipText()
+  const paid = text.indexOf(m.charging_economy_ore({ value: formatOrePrecise(80) }))
+  const avg = text.indexOf(m.charging_economy_ore({ value: formatOrePrecise(95) }))
+  expect(paid).toBeGreaterThanOrEqual(0)
+  expect(paid).toBeLessThan(avg)
+})
+
+test('the average line breaks across a month without a paid price', async () => {
+  const priced = (mo: number) =>
+    month(mo, { sessions: 1, included: 1, paidSpotOre: 50, avgSpotOre: 90 })
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <SpotComparisonChart
+        months={Array.from({ length: 12 }, (_, i) =>
+          i === 7 ? priced(8) : i === 9 ? priced(10) : month(i + 1, { avgSpotOre: 90 }),
+        )}
+      />
+    </div>,
+  )
+  await vi.waitFor(() => expect(lineDots(screen.container)).toHaveLength(2))
+  // Two separate one-point segments: no line drawn through September.
+  const d = lineCurve(screen.container)?.getAttribute('d') ?? ''
+  expect(d.match(/M/g)?.length ?? 0).not.toBe(1)
+  expect(d).not.toMatch(/L/)
 })

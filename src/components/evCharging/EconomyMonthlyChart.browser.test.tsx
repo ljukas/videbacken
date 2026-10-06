@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import {
@@ -6,15 +7,18 @@ import {
   barSeries,
   bars,
   chartSvg,
+  focusTarget,
   gridLines,
   hoverBar,
   legend,
+  legendLabels,
   legendText,
   seriesBars,
   tooltipText,
 } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { EconomyMonthlyChart } from './EconomyMonthlyChart'
+import { formatSek, monthLabel } from './format'
 
 type Month = RouterOutputs['evCharging']['economy']['months'][number]
 const month = (mo: number, over: Partial<Month> = {}): Month => ({
@@ -176,4 +180,67 @@ test('a real 0 or near-0 kr counterfactual in an included month is a visible bar
     expect(heights).toHaveLength(1)
     expect(heights[0]).toBeGreaterThanOrEqual(2)
   }
+})
+
+test('the legend lists immediate, actual, optimal, then the stub', async () => {
+  const withStub = months.map((mo) =>
+    mo.month === 3 ? month(3, { sessions: 1, excluded: { noHourly: 1, noPrice: 0 } }) : mo,
+  )
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <EconomyMonthlyChart months={withStub} />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(legendLabels(screen.container)).toEqual([
+      m.charging_economy_series_immediate(),
+      m.charging_economy_series_actual(),
+      m.charging_economy_series_optimal(),
+      m.charging_economy_series_not_comparable(),
+    ]),
+  )
+})
+
+test('a month tooltip lists its three kronor rows in series order', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <EconomyMonthlyChart months={months} />
+    </div>,
+  )
+  await hoverBar(screen.container, 1) // September's "actual" bar
+  await vi.waitFor(() => expect(tooltipText()).toContain(formatSek(70)))
+  const text = tooltipText()
+  expect(text).toContain(monthLabel(9))
+  const at = (label: string, sek: number) => text.indexOf(`${label}${formatSek(sek)}`)
+  expect(at(m.charging_economy_series_immediate(), 120)).toBeGreaterThanOrEqual(0)
+  expect(at(m.charging_economy_series_immediate(), 120)).toBeLessThan(
+    at(m.charging_economy_series_actual(), 90),
+  )
+  expect(at(m.charging_economy_series_actual(), 90)).toBeLessThan(
+    at(m.charging_economy_series_optimal(), 70),
+  )
+})
+
+test('the keyboard reaches the chart and the arrows walk its tooltip', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720 }}>
+      <button type="button">before</button>
+      <EconomyMonthlyChart months={months} />
+    </div>,
+  )
+  await vi.waitFor(() => expect(focusTarget(screen.container)).not.toBeNull())
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  expect(document.activeElement).toBe(focusTarget(screen.container))
+  // Walk right across the eight months without comparable sessions (they show
+  // no kronor rows) until September's rows appear. The walk must not restart
+  // at January on an empty month.
+  await vi.waitFor(
+    async () => {
+      if (!tooltipText().includes(formatSek(120))) await userEvent.keyboard('{ArrowRight}')
+      expect(tooltipText()).toContain(formatSek(120))
+    },
+    { timeout: 5000, interval: 100 },
+  )
+  expect(tooltipText()).toContain(monthLabel(9))
 })

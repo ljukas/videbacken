@@ -1,17 +1,21 @@
 import { expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
 import {
   barHeight,
   bars,
+  focusTarget,
   hoverBar,
   hoverBetween,
+  legendLabels,
   legendText,
   seriesBars,
   tooltipText,
   xTickLabels,
+  yTickLabels,
 } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
-import { formatSek, monthLabel } from './format'
+import { formatOneDecimal, formatSek, monthLabel } from './format'
 import { MetricToggle } from './MetricToggle'
 import { chartMetricOptions, MonthlyChart } from './MonthlyChart'
 
@@ -446,4 +450,123 @@ test('a negative solar value keeps its sign in the tooltip', async () => {
   await hoverBar(screen.container, 5)
   await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_solar_value_label()))
   expect(tooltipText()).toMatch(/Värde av egen sol−3\skr/)
+})
+
+test('the kWh tooltip names the month and its energy', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} />
+    </div>,
+  )
+  await hoverBar(screen.container, 2) // March: 20 kWh
+  await vi.waitFor(() => {
+    expect(tooltipText()).toContain(monthLabel(3))
+    expect(tooltipText()).toContain(`${formatOneDecimal(20)} kWh`)
+  })
+})
+
+test('the kr legend and tooltip list the series in stack order', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: costMonths }} metric="sek" />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(legendLabels(screen.container)).toEqual([
+      m.charging_chart_series_spot(),
+      m.charging_chart_series_fees(),
+    ]),
+  )
+  await hoverBar(screen.container, 0)
+  await vi.waitFor(() => expect(tooltipText()).toContain(m.charging_chart_total()))
+  const text = tooltipText()
+  expect(text).toContain(m.charging_chart_series_spot())
+  expect(text.indexOf(m.charging_chart_series_spot())).toBeLessThan(
+    text.indexOf(m.charging_chart_series_fees()),
+  )
+  expect(text.indexOf(m.charging_chart_series_fees())).toBeLessThan(
+    text.indexOf(m.charging_chart_total()),
+  )
+})
+
+test('the stub comes last in the kr legend', async () => {
+  const unpriced = costMonths.map((c) =>
+    c.month === 1
+      ? {
+          ...c,
+          fullKwh: 0,
+          noPriceKwh: c.kwh,
+          spotSek: 0,
+          feesSek: 0,
+          totalSek: 0,
+          avgOre: null,
+          complete: false,
+        }
+      : c,
+  )
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months} cost={{ year: 2026, months: unpriced }} metric="sek" />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(legendLabels(screen.container)).toEqual([
+      m.charging_chart_series_spot(),
+      m.charging_chart_series_fees(),
+      m.charging_chart_no_price(),
+    ]),
+  )
+})
+
+test('the count axis labels whole, formatted numbers', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <MonthlyChart months={months.map((mo) => ({ ...mo, kwh: mo.kwh * 100 }))} />
+    </div>,
+  )
+  await vi.waitFor(() => expect(yTickLabels(screen.container).length).toBeGreaterThan(1))
+  for (const label of yTickLabels(screen.container)) {
+    // sv-SE groups thousands with a no-break space; never a decimal comma.
+    expect(label).toMatch(/^−?\d{1,3}( \d{3})*$/)
+  }
+})
+
+test('a narrow chart thins the month labels but keeps the first and the last', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 280, height: 300 }}>
+      <MonthlyChart months={months} />
+    </div>,
+  )
+  await vi.waitFor(() => expect(xTickLabels(screen.container).length).toBeGreaterThan(1))
+  const labels = xTickLabels(screen.container)
+  expect(labels.length).toBeLessThan(12)
+  expect(labels[0]).toBe(monthLabel(1))
+  expect(labels.at(-1)).toBe(monthLabel(12))
+})
+
+test('the keyboard reaches the chart and the arrows walk its tooltip a month at a time', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 300 }}>
+      <button type="button">before</button>
+      <MonthlyChart months={months} />
+    </div>,
+  )
+  await vi.waitFor(() => expect(focusTarget(screen.container)).not.toBeNull())
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  expect(document.activeElement).toBe(focusTarget(screen.container))
+  // recharts shows January on focus; the visx group shows it on the first →.
+  // Either way, two → in a row move exactly one month.
+  await userEvent.keyboard('{ArrowRight}')
+  await vi.waitFor(() => expect(tooltipText()).not.toBe(''))
+  const shown = () =>
+    [...Array(12).keys()]
+      .map((i) => monthLabel(i + 1))
+      .findIndex((l) => tooltipText().startsWith(l))
+  const before = shown()
+  expect(before).toBeGreaterThanOrEqual(0)
+  await userEvent.keyboard('{ArrowRight}')
+  await vi.waitFor(() => expect(shown()).toBe(before + 1))
+  await userEvent.keyboard('{ArrowLeft}')
+  await vi.waitFor(() => expect(shown()).toBe(before))
 })

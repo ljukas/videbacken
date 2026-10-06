@@ -4,11 +4,15 @@ import {
   bars,
   chartSvg,
   focusTarget,
+  hoverBar,
   seriesBars,
+  tooltipText,
   xTickLabels,
 } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
+import { hourRangeLabel } from './format'
 import { HourOfDayChart } from './HourOfDayChart'
+import { valueLabel } from './patternChart'
 
 const hours = Array.from({ length: 24 }, (_, h) => ({ kwh: h * 2, pluggedHours: h }))
 
@@ -89,4 +93,27 @@ test('a tiny real hour keeps a visible bar; a genuine 0 hour stays empty', async
   const heights = seriesBars(screen.container, 0).map(barHeight)
   expect(heights).toHaveLength(2)
   expect(Math.min(...heights)).toBeGreaterThanOrEqual(2)
+})
+
+test('a wide chart labels every third hour', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 220 }}>
+      <HourOfDayChart hours={hours} metric="kwh" />
+    </div>,
+  )
+  await vi.waitFor(() =>
+    expect(xTickLabels(screen.container)).toEqual(['00', '03', '06', '09', '12', '15', '18', '21']),
+  )
+})
+
+test('hovering an hour shows its range and value', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 220 }}>
+      <HourOfDayChart hours={hours} metric="kwh" />
+    </div>,
+  )
+  await hoverBar(screen.container, 4) // hour 5 (hour 0 draws no bar): 10 kWh
+  await vi.waitFor(() =>
+    expect(tooltipText()).toContain(`${hourRangeLabel(5)} · ${valueLabel(10, 'kwh')}`),
+  )
 })
