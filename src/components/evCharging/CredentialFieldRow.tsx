@@ -148,6 +148,8 @@ export function CredentialFieldRow({
                   {envVar}
                 </code>
               </>
+            ) : state === 'missing' && onMap ? (
+              m.charging_credentials_home_missing_summary()
             ) : null}
           </p>
           <Button

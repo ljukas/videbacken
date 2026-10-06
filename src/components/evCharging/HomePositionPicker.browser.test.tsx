@@ -338,3 +338,14 @@ async function userEventEnter(input: HTMLInputElement) {
   input.focus()
   await userEvent.keyboard('{Enter}')
 }
+
+test('the location button comes before the map, so the coordinates sit right under the map', async () => {
+  const { screen } = await renderWithProviders(<Harness />)
+  const locate = screen.getByRole('button', { name: m.charging_home_use_location() }).element()
+  const map = screen.getByTestId('map').element()
+  const coords = screen.getByLabelText('coords').element()
+  const follows = (a: Element, b: Element) =>
+    (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  expect(follows(locate, map)).toBe(true)
+  expect(follows(map, coords)).toBe(true)
+})

@@ -238,6 +238,7 @@
   "charging_credentials_field_action_label": "{action}, {field}",
   "charging_credentials_set_in_app": "Ange i appen",
   "charging_credentials_choose_on_map": "Välj på kartan",
+  "charging_credentials_home_missing_summary": "Används för att se om bilen står hemma.",
   "charging_credentials_change_on_map": "Ändra på kartan",
   "charging_credentials_close_field": "Avbryt",
   "charging_credentials_keeps_current": "Det nuvarande värdet används tills du sparar.",

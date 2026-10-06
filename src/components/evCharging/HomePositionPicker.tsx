@@ -242,22 +242,6 @@ function EnabledPicker({
           </div>
         ) : null}
       </div>
-      {supportsWebGL2() ? (
-        <ClientOnly fallback={<MapPlaceholder />}>
-          <MapBoundary fallback={noMap}>
-            <Suspense fallback={<MapPlaceholder />}>
-              <HomePositionMap
-                point={point}
-                initialView={initialView}
-                camera={camera}
-                onPick={(p) => pick(p)}
-              />
-            </Suspense>
-          </MapBoundary>
-        </ClientOnly>
-      ) : (
-        noMap
-      )}
       <div className="flex flex-col items-start">
         <Button
           type="button"
@@ -280,6 +264,22 @@ function EnabledPicker({
           ) : null}
         </div>
       </div>
+      {supportsWebGL2() ? (
+        <ClientOnly fallback={<MapPlaceholder />}>
+          <MapBoundary fallback={noMap}>
+            <Suspense fallback={<MapPlaceholder />}>
+              <HomePositionMap
+                point={point}
+                initialView={initialView}
+                camera={camera}
+                onPick={(p) => pick(p)}
+              />
+            </Suspense>
+          </MapBoundary>
+        </ClientOnly>
+      ) : (
+        noMap
+      )}
       {children}
       <p role="status" className="sr-only">
         {announcement}

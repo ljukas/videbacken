@@ -1053,3 +1053,15 @@ test('closing a field once the key is gone sends focus to Cancel, not a disabled
     .element(screen.getByRole('button', { name: m.common_close(), exact: true }))
     .toHaveFocus()
 })
+
+test('a closed missing home position says what it is for', async () => {
+  const { screen } = await renderWithProviders(dialog())
+  await expect
+    .element(screen.getByText(m.charging_credentials_home_missing_summary()))
+    .toBeVisible()
+  await expect
+    .element(screen.getByRole('button', { name: CHOOSE_HOME }))
+    .toHaveAccessibleDescription(
+      expect.stringContaining(m.charging_credentials_home_missing_summary()),
+    )
+})
