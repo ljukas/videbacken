@@ -32,17 +32,27 @@ import {
   type CredentialSource,
   credentialFieldKind,
   isCredentialField,
+  isOptionalCredentialField,
 } from '~/lib/integrationCredentials'
 import {
   credentialFieldHint,
-  credentialFieldLabel,
+  credentialFieldList,
   credentialsTitle,
   invalidFieldMessage,
 } from '~/lib/integrationCredentialsMessage'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { orpc, type RouterInputs, type RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { formatDate } from './format'
+import {
+  CredentialFieldRow,
+  type CredentialFieldState,
+  credentialBadgeId,
+  credentialLabelId,
+  credentialRevealId,
+  credentialSuspectId,
+  credentialInputId as inputId,
+  isClosableState,
+} from './CredentialFieldRow'
 
 export type CredentialStatus = RouterOutputs['credentials']['status']
 type SourceStatus = CredentialStatus['sources'][CredentialSource]
@@ -55,9 +65,6 @@ const setInput = (source: CredentialSource, fields: Record<string, string>) =>
 
 const SKODA_KEYS_URL = 'https://go.skoda.eu/api-keys'
 
-// DOM ids namespaced per source: bare field names (`password`, `user`) would
-// collide with other inputs on the page and invite password-manager matching.
-const inputId = (source: CredentialSource, field: string) => `credential-${source}-${field}`
 const cancelId = (source: CredentialSource) => `credential-${source}-cancel`
 const keyMissingId = (source: CredentialSource) => `credential-${source}-key-missing`
 
@@ -84,9 +91,10 @@ type Props = {
 }
 
 // One source's credentials (ADR-0026), opened by URL state (ADR-0013). Never
-// shows a value: each field says where its value comes from, and a blank input
-// keeps what is stored. Saving or removing runs that source's sync through
-// `onChanged`, so the tile's health shows whether the new values work.
+// shows a value: each field says where its value comes from, and a field that
+// has one stays closed until the admin chooses to replace it. Saving or removing
+// runs that source's sync through `onChanged`, so the tile's health shows
+// whether the new values work.
 export function CredentialsDialog({
   source,
   open,
@@ -125,12 +133,22 @@ export function CredentialsDialog({
     >
       <ResponsiveDialogContent
         className="sm:max-w-md"
-        // Nothing can be saved without the key: start on Cancel, never on the
-        // destructive Remove (the first tabbable once the inputs are disabled).
         onOpenAutoFocus={(e) => {
-          if (!keyMissing || !current) return
+          if (!current) return
+          // Nothing can be saved without the key: start on Cancel, never on the
+          // destructive Remove (the first tabbable once the inputs are disabled).
+          if (keyMissing) {
+            e.preventDefault()
+            document.getElementById(cancelId(current))?.focus()
+            return
+          }
+          // Every field closed (no input to autofocus): start on the first reveal
+          // button, not on the external MyŠkoda link above it.
+          const fields = CREDENTIAL_FIELDS[current]
+          const sourceStatus = status?.sources[current]
+          if (!fields.every((f) => isClosableState(fieldState(sourceStatus, f)))) return
           e.preventDefault()
-          document.getElementById(cancelId(current))?.focus()
+          document.getElementById(credentialRevealId(current, fields[0]))?.focus()
         }}
         onCloseAutoFocus={onCloseAutoFocus}
       >
@@ -139,7 +157,11 @@ export function CredentialsDialog({
             <ResponsiveDialogHeader>
               <ResponsiveDialogTitle>{credentialsTitle(current)}</ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
-                {m.charging_credentials_description()}
+                {current === 'gridTariff'
+                  ? m.charging_credentials_dialog_description_grid()
+                  : m.charging_credentials_dialog_description({
+                      source: integrationSourceName(current),
+                    })}
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
             <CredentialsForm
@@ -160,24 +182,12 @@ export function CredentialsDialog({
   )
 }
 
-function originLine(sourceStatus: SourceStatus | undefined, field: string): string | null {
-  if (!sourceStatus) return null // status not loaded: say nothing rather than guess
+function fieldState(sourceStatus: SourceStatus | undefined, field: string): CredentialFieldState {
+  if (!sourceStatus) return 'unknown' // status not loaded: say nothing rather than guess
   // An unreadable row fails the whole source closed: no field falls back to env (ADR-0026).
-  if (sourceStatus.unreadable) return m.charging_credentials_origin_unreadable()
-  const origin = (sourceStatus.fields as Record<string, { origin: CredentialOrigin }>)[field]
-    ?.origin
-  switch (origin) {
-    case 'stored':
-      return sourceStatus.updatedAt
-        ? m.charging_credentials_origin_stored({ date: formatDate(sourceStatus.updatedAt) })
-        : null
-    case 'env':
-      return m.charging_credentials_origin_env()
-    case 'missing':
-      return m.charging_credentials_origin_missing()
-    default:
-      return null
-  }
+  if (sourceStatus.unreadable) return 'unreadable'
+  const fields = sourceStatus.fields as Record<string, { origin: CredentialOrigin }>
+  return fields[field]?.origin ?? 'unknown'
 }
 
 /** A field error the server reported, held until that field's value changes. */
@@ -202,6 +212,58 @@ function CredentialsForm({
     ? Object.values(sourceStatus.fields).some((f) => f.origin === 'stored') ||
       sourceStatus.unreadable
     : false
+  // What the remove confirm says: which saved fields go (unknown for an
+  // unreadable row) and whether the env vars then cover the source's required fields.
+  const statusFields = (sourceStatus?.fields ?? {}) as Record<
+    string,
+    { origin: CredentialOrigin; envSet: boolean } | undefined
+  >
+  const storedFields = fields.filter((f) => statusFields[f]?.origin === 'stored')
+  const requiredFields = fields.filter((f) => !isOptionalCredentialField(source, f))
+  const envCount = requiredFields.filter((f) => statusFields[f]?.envSet).length
+  const isGrid = source === 'gridTariff'
+  const afterRemove =
+    envCount === requiredFields.length
+      ? isGrid
+        ? m.charging_credentials_remove_falls_back_one()
+        : m.charging_credentials_remove_falls_back()
+      : envCount > 0
+        ? m.charging_credentials_remove_env_incomplete()
+        : isGrid
+          ? m.charging_credentials_remove_stops_grid()
+          : m.charging_credentials_remove_stops()
+  const removeConfirm = isGrid
+    ? m.charging_credentials_remove_confirm_grid()
+    : sourceStatus?.unreadable
+      ? m.charging_credentials_remove_confirm_unreadable({ source: integrationSourceName(source) })
+      : m.charging_credentials_remove_confirm({
+          source: integrationSourceName(source),
+          fields: credentialFieldList(source, storedFields),
+        })
+  const states = Object.fromEntries(fields.map((f) => [f, fieldState(sourceStatus, f)])) as Record<
+    CredentialFieldName,
+    CredentialFieldState
+  >
+
+  // Which fields show their input (UI state, not a value). A field without a
+  // value (missing, unreadable, status unknown) is always open; one with a value
+  // opens on its reveal button or a server error. A field joins the set as soon
+  // as it has no value (on a status refetch too) and leaves only on "Avbryt", so
+  // a refetch that gives it a value never hides an input that may hold typing.
+  const [opened, setOpened] = useState<ReadonlySet<CredentialFieldName>>(
+    () => new Set(fields.filter((f) => !isClosableState(states[f]))),
+  )
+  const newlyUnclosable = fields.filter((f) => !isClosableState(states[f]) && !opened.has(f))
+  if (newlyUnclosable.length > 0) setOpened((prev) => new Set([...prev, ...newlyUnclosable]))
+  const isOpen = (f: CredentialFieldName) => opened.has(f) || !isClosableState(states[f])
+  const anyOpen = fields.some(isOpen)
+  // The first open input takes focus when the dialog opens.
+  const [autoFocusField] = useState(() => fields.find(isOpen))
+  // What a save sends: open inputs only, and blank means "keep what is there".
+  const toSend = (value: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(value).filter(([f, v]) => isOpen(f as CredentialFieldName) && v.trim() !== ''),
+    )
 
   // Field errors from the server, kept as state and checked by each field's
   // validator (not written into the error map, which TanStack clears on every
@@ -237,8 +299,8 @@ function CredentialsForm({
       toast.error(m.charging_credentials_save_error())
       return
     }
-    for (const f of Object.keys(errors))
-      form.setFieldMeta(f, (meta) => ({ ...meta, isTouched: true }))
+    // A closed field opens to show its error (marked touched once it has mounted, below).
+    setOpened((prev) => new Set([...prev, ...(Object.keys(errors) as CredentialFieldName[])]))
     setServerErrors(errors)
     setFocusTarget(inputId(source, first))
   }
@@ -277,7 +339,7 @@ function CredentialsForm({
     defaultValues: Object.fromEntries(fields.map((f) => [f, ''])) as Record<string, string>,
     validators: {
       onSubmit: ({ value }) =>
-        Object.values(value).every((v) => v.trim() === '')
+        Object.keys(toSend(value)).length === 0
           ? m.charging_credentials_nothing_to_save()
           : undefined,
     },
@@ -285,12 +347,11 @@ function CredentialsForm({
     // shows the server's error): focus where the fix goes.
     onSubmitInvalid: ({ formApi }) => {
       const first =
-        fields.find((f) => (formApi.getFieldMeta(f)?.errors.length ?? 0) > 0) ?? fields[0]
-      setFocusTarget(inputId(source, first))
+        fields.find((f) => (formApi.getFieldMeta(f)?.errors.length ?? 0) > 0) ?? fields.find(isOpen)
+      if (first) setFocusTarget(inputId(source, first))
     },
     onSubmit: async ({ value }) => {
-      // Blank means "keep what is stored": send only what was filled in.
-      const filled = Object.fromEntries(Object.entries(value).filter(([, v]) => v.trim() !== ''))
+      const filled = toSend(value)
       try {
         await set.mutateAsync(setInput(source, filled))
       } catch {
@@ -303,8 +364,12 @@ function CredentialsForm({
 
   const isSubmitting = useStore(form.store, (st) => st.isSubmitting)
   useEffect(() => {
-    // Surface the server's errors now that the field validators know them…
-    for (const f of Object.keys(serverErrors)) form.validateField(f, 'change')
+    // Surface the server's errors now that the field validators know them (and
+    // a field opened for its error has mounted)…
+    for (const f of Object.keys(serverErrors)) {
+      form.setFieldMeta(f, (meta) => ({ ...meta, isTouched: true }))
+      form.validateField(f, 'change')
+    }
   }, [serverErrors, form])
   useEffect(() => {
     // …and move focus once the submit has finished.
@@ -328,6 +393,28 @@ function CredentialsForm({
       delete next[field]
       return next
     })
+
+  // A reveal always starts empty, whatever the form still holds for the field.
+  const openField = (f: CredentialFieldName) => {
+    form.resetField(f)
+    setOpened((prev) => new Set(prev).add(f))
+    setFocusTarget(inputId(source, f))
+  }
+  // Back to "keep what is there": the typed value, its errors and its server
+  // error go, and focus returns to the reveal button that replaces the input.
+  // Without the key the reveal button is disabled, so focus goes to Cancel instead.
+  const closeField = (f: CredentialFieldName) => {
+    form.resetField(f)
+    forgetServerError(f)
+    // A "fill in at least one field" refusal is about the inputs as they were.
+    form.setErrorMap({ onSubmit: undefined })
+    setOpened((prev) => {
+      const next = new Set(prev)
+      next.delete(f)
+      return next
+    })
+    setFocusTarget(keyMissing ? cancelId(source) : credentialRevealId(source, f))
+  }
 
   const remove = () =>
     clear.mutate(
@@ -379,47 +466,71 @@ function CredentialsForm({
             </a>
           </div>
         ) : null}
-        {fields.map((f, i) => {
-          // Under the input, each on its own line: where the value comes from,
-          // the format hint, and whether the last sync rejected it.
-          const origin = originLine(sourceStatus, f)
-          const hint = credentialFieldHint(source, f)
+        {fields.map((f) => {
+          const state = states[f]
+          const closable = isClosableState(state)
           const suspect = suspectFields.includes(f)
+          // Above the input, each on its own line: the format hint, then what
+          // saving does to a value the field already has.
+          const hint = credentialFieldHint(source, f)
           const description =
-            origin || hint || suspect ? (
+            hint || closable ? (
               <>
-                {origin ? <span className="block">{origin}</span> : null}
                 {hint ? <span className="block">{hint}</span> : null}
-                {suspect ? (
-                  <span className="block text-destructive">
-                    {m.charging_credentials_field_suspect()}
-                  </span>
+                {closable ? (
+                  <span className="block">{m.charging_credentials_keeps_current()}</span>
+                ) : null}
+                {state === 'env' ? (
+                  <span className="block">{m.charging_credentials_overrides_env()}</span>
                 ) : null}
               </>
             ) : undefined
+          // The badge first: tabbing into the input says where its value stands.
+          const describedBy =
+            [
+              state === 'unknown' ? null : credentialBadgeId(source, f),
+              keyMissing ? keyMissingId(source) : null,
+              suspect ? credentialSuspectId(source, f) : null,
+            ]
+              .filter(Boolean)
+              .join(' ') || undefined
           const secret = credentialFieldKind(source, f) === 'secret'
           return (
-            <form.AppField
+            <CredentialFieldRow
               key={f}
-              name={f}
-              validators={{ onChange: serverError(f) }}
-              listeners={{ onChange: () => forgetServerError(f) }}
-              children={(field) => (
-                <field.TextField
-                  label={credentialFieldLabel(source, f)}
-                  type={secret ? 'password' : 'text'}
-                  // Browsers ignore "off" on password inputs; "new-password" keeps
-                  // a saved login out of them.
-                  autoComplete={secret ? 'new-password' : 'off'}
-                  inputId={inputId(source, f)}
-                  inputData={NO_PASSWORD_MANAGER}
-                  autoFocus={i === 0 && !keyMissing}
-                  disabled={keyMissing}
-                  describedBy={keyMissing ? keyMissingId(source) : undefined}
-                  description={description}
-                />
-              )}
-            />
+              source={source}
+              field={f}
+              state={state}
+              savedAt={sourceStatus?.updatedAt ?? null}
+              open={isOpen(f)}
+              onOpen={() => openField(f)}
+              onClose={closable ? () => closeField(f) : undefined}
+              suspect={suspect}
+              disabledBy={keyMissing ? keyMissingId(source) : undefined}
+              busy={busy || isSubmitting}
+            >
+              <form.AppField
+                name={f}
+                validators={{ onChange: serverError(f) }}
+                listeners={{ onChange: () => forgetServerError(f) }}
+                children={(field) => (
+                  <field.TextField
+                    labelledBy={credentialLabelId(source, f)}
+                    type={secret ? 'password' : 'text'}
+                    // Browsers ignore "off" on password inputs; "new-password" keeps
+                    // a saved login out of them.
+                    autoComplete={secret ? 'new-password' : 'off'}
+                    inputId={inputId(source, f)}
+                    inputData={NO_PASSWORD_MANAGER}
+                    autoFocus={f === autoFocusField && !keyMissing}
+                    disabled={keyMissing}
+                    describedBy={describedBy}
+                    description={description}
+                    descriptionPlacement="above"
+                  />
+                )}
+              />
+            </CredentialFieldRow>
           )
         })}
         <form.Subscribe
@@ -457,11 +568,8 @@ function CredentialsForm({
                 <AlertDialogHeader>
                   <AlertDialogTitle>{m.charging_credentials_remove_title()}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    {source === 'gridTariff'
-                      ? m.charging_credentials_remove_confirm_grid()
-                      : m.charging_credentials_remove_confirm({
-                          source: integrationSourceName(source),
-                        })}
+                    {removeConfirm}{' '}
+                    <span className="mt-1.5 block font-medium text-foreground">{afterRemove}</span>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -476,10 +584,11 @@ function CredentialsForm({
           </div>
         ) : null}
         <form.AppForm>
+          {/* Nothing open, nothing to save: the dialog only shows where values come from. */}
           <form.CancelButton id={cancelId(source)} onClick={() => onDone(false)}>
-            {m.common_cancel()}
+            {anyOpen ? m.common_cancel() : m.common_close()}
           </form.CancelButton>
-          <form.SubmitButton label={m.common_save()} disabled={keyMissing} />
+          <form.SubmitButton label={m.common_save()} disabled={keyMissing || !anyOpen} />
         </form.AppForm>
       </ResponsiveDialogFooter>
     </form>

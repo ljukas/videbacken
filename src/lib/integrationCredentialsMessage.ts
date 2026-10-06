@@ -4,6 +4,7 @@ import { getIntlLocale } from '~/lib/i18n/format'
 import {
   CREDENTIAL_FIELDS,
   type CredentialField,
+  type CredentialFieldName,
   type CredentialSource,
 } from '~/lib/integrationCredentials'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
@@ -86,6 +87,17 @@ export function invalidFieldMessage(source: CredentialSource, field: string): st
   }
 }
 
+/** "API-nyckel och VIN": the labels in vocabulary order, joined as a list in the page locale. */
+export function credentialFieldList(
+  source: CredentialSource,
+  fields: readonly CredentialFieldName[],
+): string {
+  const ordered = CREDENTIAL_FIELDS[source].filter((f) => fields.includes(f))
+  return new Intl.ListFormat(getIntlLocale(), { type: 'conjunction' }).format(
+    ordered.map((f) => credentialFieldLabel(source, f)),
+  )
+}
+
 /** "API-nyckel och VIN fungerade inte vid senaste synken." — vocabulary order; null when none is known. */
 export function suspectFieldsMessage(
   source: CredentialSource,
@@ -93,8 +105,7 @@ export function suspectFieldsMessage(
 ): string | null {
   const known = (CREDENTIAL_FIELDS[source] as readonly string[]).filter((f) => fields.includes(f))
   if (known.length === 0) return null
-  const names = new Intl.ListFormat(getIntlLocale(), { type: 'conjunction' }).format(
-    known.map((f) => credentialFieldLabel(source, f as CredentialField<CredentialSource>)),
-  )
-  return m.charging_credentials_suspect({ fields: names })
+  return m.charging_credentials_suspect({
+    fields: credentialFieldList(source, known as CredentialFieldName[]),
+  })
 }

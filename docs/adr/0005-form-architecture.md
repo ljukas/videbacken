@@ -176,22 +176,38 @@ Each bound component:
 #### `TextField` interface
 
 ```ts
-type Props = {
-  label: string
-  description?: string                          // → <FieldDescription>
+type LabelProps =                               // one or the other, never both
+  | { label: string; labelledBy?: undefined }   // → <FieldLabel htmlFor={id}>
+  | { label?: undefined; labelledBy: string }   // id of a label outside the field → aria-labelledby; no <FieldLabel>
+
+type BaseProps = {
+  description?: ReactNode                       // → <FieldDescription>; may hold several lines
+  descriptionPlacement?: 'above' | 'below'      // default 'below'; 'above' sits between label and input
   type?: ComponentProps<typeof Input>['type']   // default 'text'
   inputMode?: ComponentProps<typeof Input>['inputMode']  // soft keyboard; NumberField sets 'decimal'
   autoComplete?: string
   placeholder?: string
   autoFocus?: boolean
+  disabled?: boolean                            // on top of the always-on disable while submitting
   inputClassName?: string                       // for inline edits with custom heights
+  inputSize?: ComponentProps<typeof Input>['size']
   srOnlyLabel?: boolean                         // visually hidden label (inline edits)
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>  // Escape-to-cancel, etc.
+  orientation?: 'vertical' | 'horizontal' | 'responsive'  // default 'vertical'
+  fieldClassName?: string                       // on the <Field> wrapper
   suffix?: string                               // trailing locked text (e.g. a unit such as öre/kWh) → InputGroup
+  inputId?: string                              // DOM id + name when the field name isn't unique on the page; hint/error ids derive from it
+  describedBy?: string                          // ids outside the field that also describe the input, announced first
+  inputData?: Record<`data-${string}`, string>  // extra data-* on the input (e.g. password-manager opt-outs)
 }
+
+type Props = BaseProps & LabelProps
+export type TextFieldPropsWithout<K extends keyof BaseProps> = Omit<BaseProps, K> & LabelProps
 ```
 
-`useFieldContext<string>()`. All input-shaped fields (email, tel, password, url, date, decimal) share this component — they're variations on `<Input type="...">` (`NumberField` and `DateField` are thin presets over it). The value stays `string` in form state even for numbers (see the numeric convention in the 2026-06-10 addendum). When `suffix` is set, the field renders as a shadcn `<InputGroup>` with the suffix pinned to the trailing edge (used by `TariffDialog` for the `öre/kWh` and `%` units).
+`useFieldContext<string>()`. All input-shaped fields (email, tel, password, url, date, decimal) share this component — they're variations on `<Input type="...">` (`NumberField` and `DateField` are thin presets over it, typed `TextFieldPropsWithout<'type' | 'inputMode'>`: a plain `Omit<Props, …>` would merge the label union away). The value stays `string` in form state even for numbers (see the numeric convention in the 2026-06-10 addendum). When `suffix` is set, the field renders as a shadcn `<InputGroup>` with the suffix pinned to the trailing edge (used by `TariffDialog` for the `öre/kWh` and `%` units).
+
+`labelledBy` is for a label rendered outside the field, e.g. `CredentialsDialog`'s row header that also holds a status badge: the text appears once and names the input. `aria-describedby` lists `describedBy`, then the suffix, the description and the error, in that order. `CredentialsDialog` also uses `descriptionPlacement="above"` (hints read before typing), `inputId` (`credential-<source>-<field>`, since field names repeat across sources) and `inputData` (password-manager opt-outs).
 
 #### `SelectField` interface
 

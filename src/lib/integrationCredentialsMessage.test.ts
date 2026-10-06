@@ -4,6 +4,7 @@ import { m } from '~/paraglide/messages'
 import {
   credentialFieldHint,
   credentialFieldLabel,
+  credentialFieldList,
   credentialsTitle,
   invalidFieldMessage,
   suspectFieldsMessage,
@@ -35,6 +36,12 @@ describe('credential copy', () => {
       m.charging_credentials_invalid_facility(),
     )
     expect(invalidFieldMessage('zaptec', 'password')).toBe(m.charging_credentials_invalid_other())
+  })
+  test('credentialFieldList joins labels in vocabulary order', () => {
+    expect(credentialFieldList('skoda', ['vin', 'apiKey'])).toBe('API-nyckel och VIN')
+    expect(credentialFieldList('emaldo', ['appId', 'user', 'password'])).toBe(
+      'Användarnamn, Lösenord och App-id',
+    )
   })
   test('suspect fields read as one sentence, in vocabulary order, unknown names dropped', () => {
     expect(suspectFieldsMessage('skoda', ['vin', 'apiKey', 'bogus'])).toBe(

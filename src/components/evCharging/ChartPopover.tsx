@@ -21,7 +21,7 @@ export type ChartPopoverPlacement = 'over' | 'above'
 
 type Bounds = ReturnType<typeof useTooltipInPortal>['containerBounds']
 
-export function useChartPopover<T>() {
+export function useChartPopover<T>({ followScroll = false }: { followScroll?: boolean } = {}) {
   const { tooltipOpen, tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip } =
     useTooltip<T>()
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -79,6 +79,24 @@ export function useChartPopover<T>() {
 
   // The portalled tooltip is pointer-events-none, so a tap never targets it and
   // can't count as "outside" the chart.
+  // followScroll: while open, any scroll (the page or an inner container)
+  // re-measures the wrapper once a frame, so the portalled tooltip stays on
+  // its mark. Off by default; the pill charts don't follow an inner scroll
+  // container yet (a follow-up).
+  useEffect(() => {
+    if (!followScroll || !tooltipOpen) return
+    let frame = 0
+    const onScroll = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => forceRefreshBounds())
+    }
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      document.removeEventListener('scroll', onScroll, { capture: true })
+    }
+  }, [followScroll, tooltipOpen, forceRefreshBounds])
+
   useEffect(() => {
     if (!tooltipOpen) return
     const onDown = (e: PointerEvent) => {
@@ -145,18 +163,46 @@ function keepInWindow(el: HTMLDivElement | null, above: boolean, placement: Char
   if (dx || dy) el.style.transform = `translate(${Math.round(dx)}px, ${Math.round(dy)}px)`
 }
 
+// Gap between a card and the point it describes.
+const CARD_GAP = 8
+
+// A card is centred over its point, its bottom CARD_GAP above it; with no room
+// above, it drops below the point. Then it's nudged inside the window, as
+// keepInWindow does for the pill.
+function placeCard(el: HTMLDivElement | null) {
+  if (!el) return
+  // Its own width, not the space left right of the point: an absolutely
+  // placed box shrinks to fit that, so near the right edge every row would
+  // wrap. Inline, because visx drops `style` on an unstyled Tooltip.
+  el.style.width = 'max-content'
+  // …capped at a readable width: a long hint wraps rather than spanning the page.
+  el.style.maxWidth = `min(calc(100vw - ${2 * EDGE}px), 22rem)`
+  el.style.transform = ''
+  const r = el.getBoundingClientRect() // its top-left corner sits on the point
+  let dx = -r.width / 2
+  let dy = -r.height - CARD_GAP
+  if (r.top + dy < EDGE) dy = CARD_GAP
+  dx += Math.max(EDGE - (r.left + dx), 0) + Math.min(window.innerWidth - EDGE - (r.right + dx), 0)
+  dy += Math.max(EDGE - (r.top + dy), 0) + Math.min(window.innerHeight - EDGE - (r.bottom + dy), 0)
+  el.style.transform = `translate(${Math.round(dx)}px, ${Math.round(dy)}px)`
+}
+
 // `left`/`top` are in the chart wrapper's coordinates (the element carrying
 // `containerProps`), converted to page coordinates from its measured bounds.
-// `dataKey` re-mounts the tooltip when its content changes.
+// `dataKey` re-mounts the tooltip when its content changes. `variant` picks
+// the look: the dark one-line pill above a mark (heatmap, calendar, session
+// chart), or the bar charts' card of rows, centred above its category.
 export function ChartPopover({
   state,
   dataKey,
+  variant = 'pill',
   children,
   className,
   placement = 'over',
 }: {
   state: { open: boolean; left?: number; top?: number; containerBounds: Bounds }
   dataKey?: string
+  variant?: 'pill' | 'card'
   children: React.ReactNode
   className?: string
   placement?: ChartPopoverPlacement
@@ -171,10 +217,30 @@ export function ChartPopover({
   const above = (state.top ?? 0) >= -OFFSET_TOP
   // biome-ignore lint/correctness/useExhaustiveDependencies: the position is the re-run trigger
   const clampRef = useCallback(
-    (el: HTMLDivElement | null) => keepInWindow(el, above, placement),
-    [pageLeft, pageTop, above, placement],
+    (el: HTMLDivElement | null) =>
+      variant === 'card' ? placeCard(el) : keepInWindow(el, above, placement),
+    [pageLeft, pageTop, above, variant, placement],
   )
   if (!state.open) return null
+  if (variant === 'card') {
+    return createPortal(
+      <Tooltip
+        key={dataKey}
+        {...({ ref: clampRef } as object)}
+        unstyled
+        applyPositionStyle
+        left={pageLeft}
+        top={pageTop}
+        offsetLeft={0}
+        offsetTop={0}
+        data-slot="chart-tooltip"
+        className="pointer-events-none z-50 grid min-w-32 items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-foreground text-xs shadow-xl"
+      >
+        {children}
+      </Tooltip>,
+      document.body,
+    )
+  }
   return createPortal(
     <Tooltip
       key={dataKey}
