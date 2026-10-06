@@ -445,7 +445,7 @@ describe('status', () => {
 
   it('envSet says whether an env var exists, even behind a stored value', async () => {
     vi.stubEnv('SKODA_API_KEY', 'env-key')
-    vi.stubEnv('SKODA_VIN', '')
+    vi.stubEnv('SKODA_VIN', '  ')
     vi.stubEnv('SKODA_HOME_COORDINATES', '')
     await set('skoda', { apiKey: 'stored-key', vin: 'TMBJJ7NE8L0123456' }, null)
     const { sources } = await status()
@@ -458,12 +458,12 @@ describe('status', () => {
     await set('zaptec', { username: 'u', password: 'p' }, null)
     vi.stubEnv('CREDENTIALS_ENCRYPTION_KEY', newKey())
     vi.stubEnv('ZAPTEC_USERNAME', '')
-    vi.stubEnv('ZAPTEC_PASSWORD', '')
+    vi.stubEnv('ZAPTEC_PASSWORD', 'env-zaptec-password')
     const result = await status()
     expect(result.sources.zaptec.unreadable).toBe(true)
     expect(result.sources.zaptec.fields).toEqual({
       username: { origin: 'stored', envSet: false },
-      password: { origin: 'stored', envSet: false },
+      password: { origin: 'stored', envSet: true },
     })
   })
 
