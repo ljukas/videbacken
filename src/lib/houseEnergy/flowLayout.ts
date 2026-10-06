@@ -39,6 +39,11 @@ export const MIN_FLOW_KWH = 0.05
 /** Below this (or negative) the loss reads "≈ 0" and has no stub (house energy design, display rules). */
 export const MIN_LOSS_KWH = 0.5
 const ARROW_LENGTH = 9
+/** A node's inner margin: its text starts this far in and may run to this far from the right edge. */
+const NODE_PADDING = 12
+/** Smallest sizes a node figure / the battery's loss figure steps down to so it fits its node. */
+export const FIGURE_MIN_SIZE = 18
+export const LOSS_MIN_SIZE = 16
 
 const edge = (
   from: FlowNodeKey,
@@ -212,8 +217,11 @@ export function lossStub(layout: FlowLayout, lossKwh: number, max: number) {
 export type NodeText = {
   tile: { x: number; y: number; size: number; icon: number }
   label: Point
-  /** The node's figure; on the battery, its loss. */
-  value: Point & { size: number }
+  /**
+   * The node's figure; on the battery, its loss. `room` is how far its text may run (to 12 px inside the node);
+   * a longer one steps its font size down 2 px at a time, to `minSize`.
+   */
+  value: Point & { size: number; minSize: number; room: number }
   /** Förbrukning's first car line; null on every other node. */
   second: Point | null
   /** Förbrukning's second car line, or the battery's charge level (wide only); null elsewhere. */
@@ -236,16 +244,23 @@ export function nodeText(
 ): NodeText {
   const x0 = node.x - node.w / 2
   const y0 = node.y - node.h / 2
+  const value = (x: number, y: number, size: number) => ({
+    x,
+    y,
+    size,
+    minSize: key === 'bat' ? LOSS_MIN_SIZE : FIGURE_MIN_SIZE,
+    room: x0 + node.w - NODE_PADDING - x,
+  })
   if (narrow) {
     const tile = { x: x0 + 12, y: y0 + 10, size: 34, icon: 20 }
     const label = { x: tile.x + 34 + 10, y: tile.y + 22 }
     if (key === 'bat')
-      return { tile, label, value: { x: x0 + 12, y: y0 + 70, size: 18 }, second: null, third: null }
+      return { tile, label, value: value(x0 + 12, y0 + 70, 18), second: null, third: null }
     const car = key === 'load'
     return {
       tile,
       label,
-      value: { x: x0 + 12, y: y0 + 72, size: 24 },
+      value: value(x0 + 12, y0 + 72, 24),
       second: car ? { x: x0 + 12, y: y0 + node.h - 32 } : null,
       third: car ? { x: x0 + 12, y: y0 + node.h - 13 } : null,
     }
@@ -258,7 +273,7 @@ export function nodeText(
     return {
       tile,
       label: { x: tx, y: y0 + 25 + dy },
-      value: { x: tx, y: y0 + 50 + dy, size: 20 },
+      value: value(tx, y0 + 50 + dy, 20),
       second: null,
       third: chargeLine ? { x: tx, y: y0 + 69 } : null,
     }
@@ -269,7 +284,7 @@ export function nodeText(
   return {
     tile,
     label: { x: tx, y: tile.y + 14 },
-    value: { x: tx, y: tile.y + 44, size: 28 },
+    value: value(tx, tile.y + 44, 28),
     second: car ? { x: tx, y: y0 + node.h - 32 } : null,
     third: car ? { x: tx, y: y0 + node.h - 13 } : null,
   }

@@ -251,3 +251,49 @@ test('an arrow tooltip leaves its own value pill uncovered', async () => {
   expect(apart, `tooltip ${JSON.stringify(a)} covers pill ${JSON.stringify(b)}`).toBe(true)
   await userEvent.hover(document.body)
 })
+
+test('on a 360 px phone, five-digit figures and a long loss shrink to fit their nodes', async () => {
+  // The app's body font (browser tests have no app.css), so the widths are the real ones.
+  const face = new FontFace('Switzer', 'url(/fonts/switzer/Switzer-Variable.woff2)', {
+    weight: '100 900',
+  })
+  document.fonts.add(await face.load())
+  const style = document.createElement('style')
+  style.textContent = 'svg text { font-family: Switzer; font-variant-numeric: tabular-nums }'
+  document.head.append(style)
+  try {
+    // Totalt a few years on: every node figure "12 345,6", the loss 934,5 (in 1 700, out 765,5, no SoC).
+    const big = sums({
+      gridImportKwh: 12345.6,
+      gridExportKwh: 12345.6,
+      solarKwh: 12345.6,
+      loadKwh: 12345.6,
+      carKwh: 2345.6,
+      batteryChargeSolarKwh: 0,
+      batteryChargeGridKwh: 1700,
+      batteryDischargeKwh: 765.5,
+      firstSocPct: null,
+      lastSocPct: null,
+    })
+    // A 360 px viewport leaves a 296 px card content width.
+    const { screen } = await draw(big, 296)
+    const c = screen.container
+    await expect.element(screen.getByText('934,5')).toBeInTheDocument()
+    for (const node of c.querySelectorAll<SVGGElement>('[data-flow-node]')) {
+      const box = (node.querySelector('rect') as SVGRectElement).getBBox()
+      for (const text of node.querySelectorAll('text')) {
+        const t = text.getBBox()
+        const key = `${node.dataset.flowNode}: ${text.textContent}`
+        expect(t.x, key).toBeGreaterThanOrEqual(box.x)
+        expect(t.x + t.width, key).toBeLessThanOrEqual(box.x + box.width)
+      }
+    }
+    // The figures stepped down from 24 px, the loss from 18 px.
+    const size = (sel: string) => Number(c.querySelector(sel)?.getAttribute('font-size'))
+    expect(size('[data-flow-node="load"] text[font-weight="600"]')).toBeLessThan(24)
+    expect(size('[data-flow-node="bat"] tspan')).toBeLessThan(18)
+  } finally {
+    style.remove()
+    document.fonts.delete(face)
+  }
+})

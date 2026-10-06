@@ -8,7 +8,7 @@ import {
   UtilityPoleIcon,
 } from 'lucide-react'
 import type * as React from 'react'
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
 import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
 import { type EnergyFigures, type PeriodSums, WINTER_LOSS_SHARE } from '~/lib/houseEnergy/figures'
@@ -376,6 +376,39 @@ function ValuePill({
   )
 }
 
+/**
+ * The font size that lets a node's figure (or the battery's loss) fit its `room`: from `size`, 2 px down at a
+ * time to `minSize`, measured before paint and again once the body font has loaded. Only the size changes; the
+ * baseline stays, so nothing moves.
+ */
+function useFittedSize(
+  ref: React.RefObject<SVGTextElement | null>,
+  text: string,
+  { x, size: base, minSize, room }: { x: number; size: number; minSize: number; room: number },
+) {
+  const [fontsLoaded, setFontsLoaded] = useState(false)
+  useEffect(() => {
+    let live = true
+    document.fonts?.ready.then(() => {
+      if (live) setFontsLoaded(true)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  // A new text, room or font starts again from the full size.
+  const key = `${text}|${base}|${room}|${fontsLoaded}`
+  const [fit, setFit] = useState({ key, size: base })
+  const size = fit.key === key ? fit.size : base
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || size <= minSize) return
+    const b = el.getBBox()
+    if (b.x + b.width > x + room) setFit({ key, size: size - 2 })
+  }, [ref, key, size, minSize, room, x])
+  return size
+}
+
 function FlowNodeBox({
   nodeKey: key,
   layout,
@@ -393,6 +426,14 @@ function FlowNodeBox({
   const t = nodeText(n, key, layout.narrow, { chargeLine: charge !== null })
   const Icon = ICON[key]
   const tint = SOURCE_COLOR[key]
+  const value =
+    key === 'bat'
+      ? lossLabel(f.loss) === 'about-zero'
+        ? m.energy_flow_about_zero()
+        : kwh(f.loss)
+      : kwh(FIGURE[key](sums))
+  const valueRef = useRef<SVGTextElement>(null)
+  const size = useFittedSize(valueRef, value, t.value)
   return (
     <g data-flow-node={key}>
       <rect
@@ -429,14 +470,10 @@ function FlowNodeBox({
       </text>
       {key === 'bat' ? (
         <>
-          <text x={t.value.x} y={t.value.y} fontSize={14} style={NODE_MUTED}>
+          <text ref={valueRef} x={t.value.x} y={t.value.y} fontSize={14} style={NODE_MUTED}>
             {m.energy_flow_loss()}{' '}
-            <tspan
-              fontSize={t.value.size}
-              fontWeight={600}
-              className="fill-foreground tabular-nums"
-            >
-              {lossLabel(f.loss) === 'about-zero' ? m.energy_flow_about_zero() : kwh(f.loss)}
+            <tspan fontSize={size} fontWeight={600} className="fill-foreground tabular-nums">
+              {value}
             </tspan>{' '}
             kWh
           </text>
@@ -448,13 +485,14 @@ function FlowNodeBox({
         </>
       ) : (
         <text
+          ref={valueRef}
           x={t.value.x}
           y={t.value.y}
-          fontSize={t.value.size}
+          fontSize={size}
           fontWeight={600}
           className="fill-foreground tabular-nums"
         >
-          {kwh(FIGURE[key](sums))}{' '}
+          {value}{' '}
           <tspan fontSize={14} fontWeight={400} style={NODE_MUTED}>
             kWh
           </tspan>

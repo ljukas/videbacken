@@ -178,6 +178,21 @@ test('without a charge level the wide battery text block is still centred on its
   expect(Math.abs((capTop + t.value.y) / 2 - (t.tile.y + t.tile.size / 2))).toBeLessThanOrEqual(2)
 })
 
+test.each([
+  296, 1006,
+])('at %i px each figure may run to 12 px inside its node, and shrinks to 18 px (loss 16)', (width) => {
+  const layout = flowLayout(width)
+  for (const [key, node] of Object.entries(layout.nodes) as [
+    FlowNodeKey,
+    FlowLayout['nodes']['sol'],
+  ][]) {
+    const { value } = nodeText(node, key, layout.narrow)
+    expect(value.x + value.room, key).toBe(node.x + node.w / 2 - 12)
+    expect(value.minSize, key).toBe(key === 'bat' ? 16 : 18)
+    expect(value.size, key).toBeGreaterThan(value.minSize)
+  }
+})
+
 test('widths are linear in kWh with a 2 px floor', () => {
   expect(flowWidth(1631.7, 1631.7, false)).toBe(20)
   expect(flowWidth(815.85, 1631.7, false)).toBeCloseTo(10)
