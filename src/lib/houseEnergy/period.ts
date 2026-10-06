@@ -57,9 +57,13 @@ export function defaultPeriod(monthsWithReadings: string[], now: YearMonth): Ene
   if (monthsWithReadings.includes(monthKey(now.year, now.month))) {
     return { kind: 'month', year: now.year, month: now.month }
   }
-  const thisYear = monthsWithReadings.filter((k) => k.startsWith(`${now.year}-`))
-  const newest = thisYear[thisYear.length - 1]
-  return newest ? (parsePeriod(newest) as EnergyPeriod) : { kind: 'all' }
+  let newest = 0
+  for (const k of monthsWithReadings) {
+    if (!k.startsWith(`${now.year}-`)) continue
+    const m = Number(k.slice(5, 7))
+    if (m <= now.month && m > newest) newest = m
+  }
+  return newest ? { kind: 'month', year: now.year, month: newest } : { kind: 'all' }
 }
 
 const yearsOf = (monthsWithReadings: string[]) => [
