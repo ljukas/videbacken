@@ -306,6 +306,29 @@ test('Använd min position moves the pin there; a refusal says so', async () => 
   await expect.element(screen.getByText(m.charging_home_location_unavailable())).toBeVisible()
 })
 
+test('a press while locating asks again, so a prompt dismissed without an answer is not a dead end', async () => {
+  const geo = vi.spyOn(navigator.geolocation, 'getCurrentPosition')
+  geo.mockImplementation(() => {}) // Firefox "Not now": neither callback fires
+  const { screen } = await renderWithProviders(<Harness />)
+  const locate = screen.getByRole('button', { name: m.charging_home_use_location() })
+  await locate.click()
+  await expect
+    .element(screen.getByRole('button', { name: m.charging_home_locating() }))
+    .toBeVisible()
+  geo.mockImplementation((ok) =>
+    ok({ coords: { latitude: 58.4, longitude: 15.6 } } as GeolocationPosition),
+  )
+  await screen.getByRole('button', { name: m.charging_home_locating() }).click()
+  expect(geo).toHaveBeenCalledTimes(2)
+  await expect.element(screen.getByLabelText('coords')).toHaveValue('58.40000,15.60000')
+})
+
+test('the search input is capped at the server limit of 200 characters', async () => {
+  const { screen } = await renderWithProviders(<Harness />)
+  const search = screen.getByLabelText(m.charging_home_search_label())
+  expect(search.element().getAttribute('maxlength')).toBe('200')
+})
+
 test('without WebGL2 a note replaces the map; search and coordinates remain', async () => {
   webgl.ok = false
   const { screen } = await renderWithProviders(<Harness />)

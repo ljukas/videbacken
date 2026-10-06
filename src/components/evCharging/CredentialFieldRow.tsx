@@ -22,7 +22,7 @@ export const hasCredentialValue = (state: CredentialFieldState) =>
 
 /**
  * Whether a field may stay closed (and be closed again): one with a value, and
- * the home position even when missing — its map loads only when asked for (3c-2).
+ * the home position even when missing or unknown — its map loads only when asked for (3c-2).
  */
 export const isClosableField = (
   source: CredentialSource,
@@ -30,7 +30,8 @@ export const isClosableField = (
   state: CredentialFieldState,
 ) =>
   hasCredentialValue(state) ||
-  (state === 'missing' && credentialFieldKind(source, field) === 'position')
+  ((state === 'missing' || state === 'unknown') &&
+    credentialFieldKind(source, field) === 'position')
 
 // DOM ids namespaced per source: bare field names (`password`, `user`) would
 // collide with other inputs on the page and invite password-manager matching.
@@ -148,7 +149,7 @@ export function CredentialFieldRow({
                   {envVar}
                 </code>
               </>
-            ) : state === 'missing' && onMap ? (
+            ) : (state === 'missing' || state === 'unknown') && onMap ? (
               m.charging_credentials_home_missing_summary()
             ) : null}
           </p>

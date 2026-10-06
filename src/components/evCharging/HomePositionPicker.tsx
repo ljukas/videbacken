@@ -16,6 +16,9 @@ const HomePositionMap = lazy(() =>
   import('./HomePositionMap').then((mod) => ({ default: mod.HomePositionMap })),
 )
 
+/** The server's search limit (`searchAddress` input: max 200). */
+const SEARCH_MAX = 200
+
 export const homeSearchId = (idBase: string) => `${idBase}-search`
 
 export type HomePositionPickerProps = {
@@ -145,7 +148,8 @@ function EnabledPicker({
   }
 
   const locate = () => {
-    if (locating) return
+    // A press while locating asks again: Firefox's "Not now" fires neither callback,
+    // so `locating` alone must never block the button.
     setLocationError(null)
     if (!('geolocation' in navigator)) {
       setLocationError('unavailable')
@@ -183,6 +187,7 @@ function EnabledPicker({
             type="search"
             enterKeyHint="search"
             autoComplete="off"
+            maxLength={SEARCH_MAX}
             className="pointer-coarse:h-11"
             onKeyDown={(e) => {
               // Enter searches; it must never submit the credentials form.

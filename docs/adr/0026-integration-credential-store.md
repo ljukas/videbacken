@@ -183,7 +183,7 @@ resolved home point (stored, else env) to admins.
 - **Every other field stays write-only**, including the facility ID and every secret.
 - **An unreadable Škoda row returns `UNREADABLE`**, never the env value (decision 4).
 - **The value never reaches the server-rendered HTML**, because the client fetches it only when the Škoda dialog
-  opens, never in a loader. Separately, `gcTime: 0` limits how long it stays in the client cache. It is never logged.
+  opens, never in a loader. (Step 3c-2 narrowed this to when the picker opens: see the as-built amendment below.) Separately, `gcTime: 0` limits how long it stays in the client cache. It is never logged.
 - **Why this one:** it is the household's own address, shown only to its admins, who already know it. A key, a
   password or the facility ID gives access to something. A pin on a map gives nothing beyond what the admin already
   knows.

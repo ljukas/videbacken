@@ -26,7 +26,7 @@ import { IntegrationCredentialDomainError } from './errors'
 
 // GUI-set integration credentials (ADR-0026): one encrypted JSON object per
 // source. Values never leave this module except through `readStored` (for the
-// resolver); `status` reports field names and origins only.
+// resolver) and `homePosition` (the admin's map picker, ADR-0026); `status` reports field names and origins only.
 //
 // `fields_set` is unauthenticated plaintext beside the ciphertext: it feeds the
 // `stored` origin in `status` and nothing else. Reads and merges use the

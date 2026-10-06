@@ -315,6 +315,36 @@ test('a closed home field never fetches the saved pin', async () => {
   await vi.waitFor(() => expect(homePositionFn).toHaveBeenCalledTimes(1))
 })
 
+test('a saved pin seeds the input, and Avbryt unseeds it: Spara sends no home position', async () => {
+  homePositionFn.mockResolvedValue({ latitude: 59.3293, longitude: 18.0686 })
+  const { screen } = await renderWithProviders(
+    dialog({
+      status: status(
+        {},
+        { fields: { ...ALL_SET, homeCoordinates: { origin: 'stored', envSet: false } } },
+      ),
+    }),
+  )
+  const change = actionName(m.charging_credentials_change_on_map(), HOME)
+  await screen.getByRole('button', { name: change }).click()
+  await expect
+    .element(screen.getByLabelText(HOME, { exact: true }))
+    .toHaveValue('59.32930,18.06860')
+  await screen.getByRole('button', { name: closeName(HOME) }).click()
+  await screen
+    .getByRole('button', { name: actionName(m.charging_credentials_replace(), VIN) })
+    .click()
+  await screen.getByLabelText(VIN, { exact: true }).fill('TMBJJ7NE8L0123456')
+  await screen.getByRole('button', { name: m.common_save(), exact: true }).click()
+  await vi.waitFor(() => expect(setFn).toHaveBeenCalled())
+  expect(setFn.mock.calls[0][0]).toEqual({ source: 'skoda', fields: { vin: 'TMBJJ7NE8L0123456' } })
+  // Reopened, the saved pin seeds again.
+  await screen.getByRole('button', { name: change }).click()
+  await expect
+    .element(screen.getByLabelText(HOME, { exact: true }))
+    .toHaveValue('59.32930,18.06860')
+})
+
 test('a pin picked on the map is what Spara sends', async () => {
   const { screen } = await renderWithProviders(dialog())
   await openHome(screen)
@@ -376,9 +406,9 @@ test('with nothing open the footer says Stäng and Spara is disabled', async () 
   await expect.element(save).toBeDisabled()
 })
 
-test('unknown status opens every field without badges or Avbryt links', async () => {
+test('unknown status opens every field but the home position, without badges or Avbryt links', async () => {
   const { screen } = await renderWithProviders(dialog({ status: undefined }))
-  for (const name of [API_KEY, VIN, HOME])
+  for (const name of [API_KEY, VIN])
     await expect.element(screen.getByLabelText(name, { exact: true })).toBeVisible()
   for (const badge of [
     m.charging_credentials_badge_stored(),
@@ -389,6 +419,10 @@ test('unknown status opens every field without badges or Avbryt links', async ()
     expect(screen.getByText(badge, { exact: true }).elements()).toHaveLength(0)
   for (const name of [API_KEY, VIN, HOME])
     expect(screen.getByRole('button', { name: closeName(name) }).elements()).toHaveLength(0)
+  // The map loads only when asked for: the home field stays closed, and nothing is fetched.
+  await expect.element(screen.getByRole('button', { name: CHOOSE_HOME })).toBeVisible()
+  await new Promise((r) => setTimeout(r, 50))
+  expect(homePositionFn).not.toHaveBeenCalled()
 })
 
 test('the input keeps the field label as its accessible name', async () => {
