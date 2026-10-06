@@ -48,6 +48,14 @@ that how they relate is visible at a glance, built with visx, and the battery's 
 | 8 | **The text block is centred on its icon tile** (the owner caught a 3 px drop that read as "shifted down"). |
 | 9 | **Built with visx** (installed 4.0.0 packages), no new dependency. |
 
+> **Amended 2026-10-06 (after checkpoint 1c), decision 3:** the owner found "laddnivå 19 → 100 %" on the node
+> unclear. The wide battery node now shows the change in stored energy in kWh under the loss: "Lager +6,1 kWh" (more
+> stored at the end), "Lager −0,8 kWh" (less), "Lager 0,0 kWh" (no sign when it rounds to zero), the owner's pick over
+> "Lagrat ±", "Ändring ±" and "mer / mindre lagrat". It is ΔSoC × 7,58 kWh, the term the loss subtracts. The table
+> row of the same number is "Ändrat lager" (was "Förändrad laddning": "laddning" also means EV charging here) and is
+> signed the same way (`formatSignedOneDecimal`). The owner's first wording, "+6,1 kWh kvar i batteriet", was about
+> 160 px against the node's ~140 px. The charge levels (%) stay in the loss tooltip and the table.
+
 ## Figures
 
 Everything comes from the chosen period's `PeriodSums` through `energyFigures` (`src/lib/houseEnergy/figures.ts`).
@@ -72,7 +80,7 @@ What each element shows:
 | Såld el node | `gridExportKwh` |
 | Förbrukning node | `loadKwh`; "varav laddning" `car` (lines hidden when `car` is 0, space kept) |
 | Självförsörjning line | `selfSufficiency` (as today) |
-| Battery node | `loss` and "laddnivå {firstSocPct} → {lastSocPct} %" |
+| Battery node | `loss` and "Lager {±deltaStored} kWh" (wide; amended 2026-10-06, see decision 3) |
 | Solel → Förbrukning | `solarDirect` |
 | Solel → Batteri | `solarToBattery` |
 | Solel → Såld el | `solarExported` |
@@ -166,17 +174,17 @@ mockup's numbers are the starting point:
   neutral.
 - **Wide**: the tile sits left of the text; the text block (label cap top to figure baseline: 14 px label, 28 px figure,
   14 px muted unit) is **centred on the tile**, not on the font's line box (cap height ≈ 0.7 em). The battery's three rows (label, "Förlust
-  X kWh" with a 20 px figure, 13 px "laddnivå") are centred on its tile the same way (2 px higher than mockup version 4, which sat 2 px low by that measure). Förbrukning's car lines hang
+  X kWh" with a 20 px figure, 13 px "Lager" line) are centred on its tile the same way (2 px higher than mockup version 4, which sat 2 px low by that measure). Förbrukning's car lines hang
   below the top row.
 - **Narrow**: the tile and the label share the first row (label centred on the tile); the figure (24 px) runs the
-  node's full width below. The battery drops the charge level (it is in the table, and the loss tooltip when there
+  node's full width below. The battery drops the stored line (the change and the charge levels are in the table, and the loss tooltip when there
   is a stub).
 - **Wide battery without a charge level** (either SoC null): its label and loss move down by half the missing line,
   so the two rows stay centred on the tile.
 - **Fit**: a node figure (or the battery's loss) that would run past 12 px inside its node steps its font size down
   2 px at a time, to 18 px (loss 16 px), measured before paint and again once the body font has loaded. Only the size
   changes. A four-digit loss on a 296 px card (a 360 px phone) still ends ≈ 1 px past the node at 16 px.
-- **Muted text inside a node** (unit, "Förlust", charge level, car lines) mixes 10 % foreground into
+- **Muted text inside a node** (unit, "Förlust", "Lager", car lines) mixes 10 % foreground into
   `--muted-foreground`: the token alone is 4.39 : 1 on the node surface in light (5.23 : 1 mixed; dark 6.93 : 1).
 
 ### Självförsörjning line

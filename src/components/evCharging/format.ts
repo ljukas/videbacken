@@ -21,6 +21,14 @@ export function formatOneDecimal(value: number): string {
   }).format(value)
 }
 
+// A signed change, one decimal ("+6,1" / "−0,8"), with a typographic minus in every locale; a change that
+// rounds to zero reads "0,0", never "−0,0".
+export function formatSignedOneDecimal(value: number): string {
+  const magnitude = formatOneDecimal(Math.abs(value))
+  if (magnitude === formatOneDecimal(0)) return magnitude
+  return `${value > 0 ? '+' : '−'}${magnitude}`
+}
+
 export function formatCount(n: number): string {
   return new Intl.NumberFormat(getIntlLocale()).format(n)
 }

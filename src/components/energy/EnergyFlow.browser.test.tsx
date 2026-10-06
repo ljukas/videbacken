@@ -71,6 +71,24 @@ test('the table lists every value, the battery included', async () => {
   await expect.element(table.getByRole('cell', { name: /^27\s%$/ })).toBeVisible()
 })
 
+const storedRow = async (s: PeriodSums) => {
+  const { screen } = await renderWithProviders(<EnergyFlow sums={s} />)
+  await screen.getByText(m.energy_flow_table_toggle()).click()
+  const header = screen.getByRole('rowheader', { name: m.energy_flow_row_stored() })
+  await expect.element(header).toBeVisible()
+  return header.element().closest('tr')?.querySelector('td')?.textContent
+}
+
+test('the stored change reads as in the diagram, signed', async () => {
+  // 19 → 100 % of 7,58 kWh
+  expect(await storedRow(sums())).toBe('+6,1 kWh')
+})
+
+test('a stored change that rounds to zero has no sign, never "−0,0"', async () => {
+  // 50 → 49,96 %: −0,003 kWh
+  expect(await storedRow(sums({ firstSocPct: 50, lastSocPct: 49.96 }))).toBe('0,0 kWh')
+})
+
 test('a small or negative battery loss reads "about 0" in the diagram, the real value in the table', async () => {
   // 55,8 − 49,4 − 6,14 ≈ 0,3 kWh
   const small = await renderWithProviders(<EnergyFlow sums={sums({ batteryDischargeKwh: 49.4 })} />)

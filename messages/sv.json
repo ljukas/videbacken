@@ -931,6 +931,7 @@
   "energy_flow_loss": "Förlust",
   "energy_flow_about_zero": "≈ 0",
   "energy_flow_charge_level": "laddnivå {from} → {to}\u00a0%",
+  "energy_flow_stored": "Lager {kwh} kWh",
   "energy_flow_car": "varav laddning",
   "energy_flow_arrow": "{from} → {to}",
   "energy_flow_share_solar": "{share} av solelen",
@@ -946,6 +947,6 @@
   "energy_flow_table_flow": "Flöde",
   "energy_flow_row_battery_in": "Batteri in",
   "energy_flow_row_battery_out": "Batteri ut",
-  "energy_flow_row_stored": "Förändrad laddning",
+  "energy_flow_row_stored": "Ändrat lager",
   "energy_flow_table_value": "Värde"
 }

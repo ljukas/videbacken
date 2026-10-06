@@ -234,15 +234,15 @@ export type NodeText = {
   value: Point & { size: number; minSize: number; room: number }
   /** Förbrukning's first car line; null on every other node. */
   second: Point | null
-  /** Förbrukning's second car line, or the battery's charge level (wide only); null elsewhere. */
+  /** Förbrukning's second car line, or the battery's stored-energy line (wide only); null elsewhere. */
   third: Point | null
 }
 
 /**
  * Where a node's tile and text go. Wide: the tile left of the text, the text block (label cap top to the last
  * baseline, cap height ≈ 0.7 em) centred on the tile. Narrow: the tile and the label share the first row, the
- * figure runs the node's width below. The battery's `value` is its loss; its charge level is `third` on the wide
- * layout (narrow: it is in the table, and the loss tooltip when there is a stub); without one (`chargeLine`
+ * figure runs the node's width below. The battery's `value` is its loss; the change in stored energy (from the
+ * start and end charge levels) is `third` on the wide layout (narrow: it is in the table); without one (`chargeLine`
  * false: a SoC is missing) the label and the loss move down to stay centred. Förbrukning's two car lines are
  * `second` and `third`.
  */

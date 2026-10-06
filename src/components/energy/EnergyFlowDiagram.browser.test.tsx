@@ -98,12 +98,31 @@ test('hovering an arrow names it with its share', async () => {
   await userEvent.hover(document.body)
 })
 
-test('the narrow layout drops the charge level from the battery node', async () => {
+const batteryText = (c: HTMLElement) => c.querySelector('[data-flow-node="bat"]')?.textContent ?? ''
+
+test('the wide battery node shows the change in stored energy, not the charge level', async () => {
+  // 19 → 100 % of 7,58 kWh: 6,1 kWh more is stored at the end.
+  const { screen } = await draw(sums())
+  expect(batteryText(screen.container)).toContain(m.energy_flow_stored({ kwh: '+6,1' }))
+  expect(batteryText(screen.container)).not.toContain(
+    m.energy_flow_charge_level({ from: '19', to: '100' }),
+  )
+})
+
+test('less stored reads with a minus, no change without a sign', async () => {
+  const less = await draw(sums({ firstSocPct: 34, lastSocPct: 23 }))
+  expect(batteryText(less.screen.container)).toContain(m.energy_flow_stored({ kwh: '−0,8' }))
+  const same = await draw(sums({ firstSocPct: 50, lastSocPct: 50.2 }))
+  expect(batteryText(same.screen.container)).toContain(m.energy_flow_stored({ kwh: '0,0' }))
+})
+
+test('the narrow layout drops the stored line from the battery node', async () => {
   const { screen } = await draw(sums(), 324)
   expect(screen.container.querySelector('svg')?.getAttribute('height')).toBe('490')
-  expect(
-    screen.getByText(m.energy_flow_charge_level({ from: '19', to: '100' })).elements(),
-  ).toHaveLength(0)
+  expect(batteryText(screen.container)).not.toContain(m.energy_flow_stored({ kwh: '+6,1' }))
+  expect(batteryText(screen.container)).not.toContain(
+    m.energy_flow_charge_level({ from: '19', to: '100' }),
+  )
 })
 
 const hitOf = (c: Element, id: string) => c.querySelector(`[data-flow-hit="${id}"]`) as Element
@@ -187,11 +206,14 @@ test('the loss tooltip shows the share, the charge level and the winter hint', a
   await userEvent.hover(document.body)
 })
 
-test('the charge level is rounded', async () => {
+test('the loss tooltip rounds the charge level', async () => {
   const { screen } = await draw(sums({ firstSocPct: 19.4999, lastSocPct: 99.6 }))
+  const rects = [...screen.container.querySelectorAll('rect[fill="transparent"]')]
+  await userEvent.hover(rects[rects.length - 1])
   await expect
     .element(screen.getByText(m.energy_flow_charge_level({ from: '19', to: '100' })))
-    .toBeInTheDocument()
+    .toBeVisible()
+  await userEvent.hover(document.body)
 })
 
 test('without a charge level the wide battery text moves down to stay centred on its tile', async () => {
