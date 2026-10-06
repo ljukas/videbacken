@@ -11,7 +11,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92), fix [#95](https://github.com/ljukas/videbacken/pull/95) | checkpoint passed | 2026-10-05: sums and car match prod; warm `energy.overview` query 52 ms mean over 33 calls (one cold instance 736 ms total); owner accepted, asked for a month choice → step 1b |
 | 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | [#103](https://github.com/ljukas/videbacken/pull/103) | checkpoint passed | 2026-10-06: August, Hela 2026 and Totalt match SQL; warm `energy/overview` 64–67 ms; no shift on prod at 500 px (3 widths only locally); owner accepted, asked for a richer summary → step 1c |
 | 1c | Summary as a flow diagram: visx, battery loss, icon tiles, arrow-value switch (replaces the five tiles) | [plan](../plans/2026-10-06-energy-1c-flow-summary.md) | [#112](https://github.com/ljukas/videbacken/pull/112) | checkpoint passed | 2026-10-06: Feb, Aug and Oct table (57 values) = prod SQL within 0,1 kWh; no shift over 10 periods on prod at 500 px (1440 / 820 / 390 px measured locally); owner accepted live |
-| 2 | Energi › Batteri: the period's battery as a flow diagram, a month chart of out + loss, winter note (reshaped 2026-10-06) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
+| 2 | Energi › Batteri: the period's battery as a flow diagram, a month chart of out + loss, winter note (reshaped 2026-10-06) | [plan](../plans/2026-10-05-energy-2-battery.md) | [#124](https://github.com/ljukas/videbacken/pull/124) | PR open | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
@@ -143,3 +143,11 @@ plan rewritten against steps 1b and 1c; its Task 0 still checks `main` before bu
   in the ring). New `--energy-loss` red (#b91c1c / #dc3c3c): the mockup's orange failed against dark solar
   (`--pairs all`). Design: [battery page](../specs/2026-10-06-energy-battery-page-design.md); ADR-0024 decision 6
   amended; the plan rewritten (two refactor commits first: the shared period hook, the shared flow parts).
+- 2026-10-06: step 2 built (branch `feat/energy-battery`, PR #124), task by task with two adversarial reviewers
+  each, then a whole-branch review and one fix wave; decisions are in the spec's build notes (loss share only from
+  0,5 kWh everywhere, unknown charge level "—", in-arrow shares from `gridChargedShare`, a battery-specific hint,
+  overlapping chart labels skipped tallest first, a 124 px node floor below 272 px). Live check on the local full
+  history (Playwright, 1440 / 820 / 390 px, light + dark): 0,0 px shift over 12 periods, node text ≥ 26 px clear at
+  390 px Totalt, February loss 118,3 kWh = SQL (43 %), Översikt ↔ Batteri keeps `?period=` with no request, console
+  clean; seven months' tables = a plain SQL sum within 0,1 kWh. Gate: `check:ci` clean, build passes, 235 files /
+  3 780 tests, sv/en keys match. Next: checkpoint 4 on prod after merge.
