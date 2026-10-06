@@ -2,6 +2,7 @@ import { Tooltip, useTooltip, useTooltipInPortal } from '@visx/tooltip'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { cn } from '~/lib/utils'
 
 // Tooltip sits above the mark so a fingertip doesn't cover it.
 const OFFSET_TOP = -34
@@ -181,11 +182,14 @@ export function ChartPopover({
   state,
   dataKey,
   variant = 'pill',
+  className,
   children,
 }: {
   state: { open: boolean; left?: number; top?: number; containerBounds: Bounds }
   dataKey?: string
   variant?: 'pill' | 'card'
+  /** Card variant: classes merged over the card's. */
+  className?: string
   children: React.ReactNode
 }) {
   const bounds = state.containerBounds
@@ -214,7 +218,10 @@ export function ChartPopover({
         offsetLeft={0}
         offsetTop={0}
         data-slot="chart-tooltip"
-        className="pointer-events-none z-50 grid min-w-32 items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-foreground text-xs shadow-xl"
+        className={cn(
+          'pointer-events-none z-50 grid min-w-32 items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-foreground text-xs shadow-xl',
+          className,
+        )}
       >
         {children}
       </Tooltip>,

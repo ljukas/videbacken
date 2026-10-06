@@ -1,3 +1,4 @@
+import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
 // The chart parts that don't depend on a chart library, so the visx charts
@@ -63,13 +64,15 @@ export function TooltipRow({
 /** The series key under the plot, inside the chart's height (touch can't hover). */
 export function ChartLegend({
   items,
+  className,
 }: {
   items: readonly { key: string; label: string; color: string }[]
+  className?: string
 }) {
   return (
     <div
       data-slot="chart-legend"
-      className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-3"
+      className={cn('flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-3', className)}
     >
       {items.map((item) => (
         <div key={item.key} data-legend-item={item.key} className="flex items-center gap-1.5">

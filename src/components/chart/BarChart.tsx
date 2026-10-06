@@ -11,7 +11,16 @@ import { useId, useMemo, useRef, useState } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
-import { type BarSeries, layoutBars, stackExtent, thinTicks, yScaleFor } from './barLayout'
+import {
+  type BarSeries,
+  labelsFit,
+  layoutBars,
+  MIN_BAR_PX,
+  type StackOffset,
+  stackExtent,
+  thinTicks,
+  yScaleFor,
+} from './barLayout'
 import { CHART_HEIGHT, ChartLegend } from './ChartParts'
 
 export type { BarSeries } from './barLayout'
@@ -46,6 +55,22 @@ export type BarChartProps<Row> = {
   tooltipTitle?: boolean
   /** Accessible name. With it the chart is a keyboard stop; without, it is aria-hidden (bring an sr-only table). */
   label?: string
+  /** 'diverging' hangs negative values below zero (default 'none'). */
+  stackOffset?: StackOffset
+  /** A `var(--border)` line at 0 across the plot. */
+  zeroLine?: boolean
+  /** With it every category is labelled: full labels when they fit, else every label short. */
+  shortCategory?: (row: Row) => string
+  /** The axis labels' font size, also used to measure them (default 12). */
+  tickPx?: number
+  /** The smallest drawn bar height in px (default MIN_BAR_PX; 0 draws true heights). */
+  minBarPx?: number
+  /** Classes merged over the tooltip card's. */
+  tooltipClassName?: string
+  /** Classes merged over the legend's. */
+  legendClassName?: string
+  /** The sr-only keyboard hint (default: the shared one). */
+  keyboardHint?: string
 }
 
 const MARGIN = { top: 8, right: 12, bottom: 0, left: 4 }
@@ -58,9 +83,9 @@ const Y_TICK_MARGIN = 4
 const TICK_PX = 12
 // recharts' default axis colour; our ChartContainer never restyled it.
 const AXIS = '#666'
-const TICK_LABEL = { fill: 'var(--muted-foreground)', fontSize: TICK_PX }
 const DOT_R = 3
-const measure = (s: string) => getStringWidth(s, { fontSize: TICK_PX }) ?? s.length * 7
+const measureAt = (px: number) => (s: string) =>
+  getStringWidth(s, { fontSize: px }) ?? s.length * px * 0.6
 
 // One bar chart for the category charts (months, hours): visx shapes on d3
 // scales, the geometry in barLayout.ts. The SVG is visual; a labelled chart is
@@ -85,6 +110,14 @@ export function BarChart<Row>({
   tooltip,
   tooltipTitle = true,
   label,
+  stackOffset = 'none',
+  zeroLine = false,
+  shortCategory,
+  tickPx = TICK_PX,
+  minBarPx = MIN_BAR_PX,
+  tooltipClassName,
+  legendClassName,
+  keyboardHint,
 }: BarChartProps<Row>) {
   // No debounce: a resize that wraps the legend re-lays the plot at once,
   // as recharts' ResponsiveContainer did (a stale plot would overlap it).
@@ -100,12 +133,14 @@ export function BarChart<Row>({
   const cursor = useRef<number | null>(null)
   const at = (i: number, key: string) => value(rows[i], key)
   const count = rows.length
+  const tickLabel = { fill: 'var(--muted-foreground)', fontSize: tickPx }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `at` is rows + value, both listed
   const geometry = useMemo(() => {
     if (width <= 0 || plotBoxH <= 0) return null
     const keys = line ? [...series, { key: line.key, label: '', color: '' }] : series
-    const extent = stackExtent({ count, series: keys, value: at })
+    const measure = measureAt(tickPx)
+    const extent = stackExtent({ count, series: keys, value: at, offset: stackOffset })
     const plotH = Math.max(0, plotBoxH - MARGIN.top - MARGIN.bottom - X_AXIS_H)
     const y = yScaleFor({ extent, height: plotH, integers: yIntegers, domain: yDomain })
     const yLabels = y.ticks.map(yTickFormat)
@@ -114,15 +149,26 @@ export function BarChart<Row>({
     const plotW = Math.max(0, width - left - MARGIN.right)
     const x = scaleBand<number>().domain(range(count)).range([0, plotW])
     const centres = range(count).map((i) => (x(i) ?? 0) + x.bandwidth() / 2)
+    const fullWidths = rows.map((r) => measure(category(r)))
+    // With short labels every category is labelled: full when they all fit, else all short.
+    const short = shortCategory !== undefined && !labelsFit(centres, fullWidths)
     const xTicks =
-      xTickEvery === undefined
-        ? thinTicks(
-            centres,
-            rows.map((r) => measure(category(r))),
-          )
-        : range(0, count, xTickEvery)
-    const rects = layoutBars({ count, series, value: at, x, y: y.scale, barGap })
-    return { x, y, left, plotW, plotH, xTicks, rects, centres }
+      shortCategory !== undefined
+        ? range(count)
+        : xTickEvery === undefined
+          ? thinTicks(centres, fullWidths)
+          : range(0, count, xTickEvery)
+    const rects = layoutBars({
+      count,
+      series,
+      value: at,
+      x,
+      y: y.scale,
+      barGap,
+      offset: stackOffset,
+      minPx: minBarPx,
+    })
+    return { x, y, left, plotW, plotH, xTicks, rects, centres, short }
   }, [
     width,
     plotBoxH,
@@ -138,6 +184,10 @@ export function BarChart<Row>({
     barGap,
     category,
     count,
+    stackOffset,
+    shortCategory,
+    tickPx,
+    minBarPx,
   ])
 
   // The card's anchor: the category's centre, at the top of its tallest bar.
@@ -220,6 +270,9 @@ export function BarChart<Row>({
     </>
   )
 
+  const tickText = (i: number) =>
+    geometry?.short && shortCategory ? shortCategory(rows[i]) : category(rows[i])
+
   const svg = geometry ? (
     // biome-ignore lint/a11y/noSvgWithoutTitle: visual; the group (or the caller's sr-only table) is the accessible path
     <svg
@@ -299,6 +352,16 @@ export function BarChart<Row>({
               ))}
           </g>
         ) : null}
+        {zeroLine ? (
+          <line
+            data-zero-line
+            x1={0}
+            x2={geometry.plotW}
+            y1={geometry.y.scale(0)}
+            y2={geometry.y.scale(0)}
+            stroke="var(--border)"
+          />
+        ) : null}
         {hideYAxis ? null : (
           <g data-axis="y">
             <AxisLeft
@@ -310,7 +373,7 @@ export function BarChart<Row>({
               hideAxisLine={!yAxisLine}
               stroke={AXIS}
               tickLabelProps={() => ({
-                ...TICK_LABEL,
+                ...tickLabel,
                 dx: -Y_TICK_MARGIN,
                 dy: '0.32em',
                 textAnchor: 'end' as const,
@@ -323,12 +386,12 @@ export function BarChart<Row>({
             top={geometry.plotH}
             scale={geometry.x}
             tickValues={geometry.xTicks}
-            tickFormat={(i) => category(rows[Number(i)])}
+            tickFormat={(i) => tickText(Number(i))}
             hideTicks
             tickLength={TICK_SIZE}
             stroke={AXIS}
             tickLabelProps={() => ({
-              ...TICK_LABEL,
+              ...tickLabel,
               dy: X_TICK_MARGIN,
               textAnchor: 'middle' as const,
             })}
@@ -390,11 +453,11 @@ export function BarChart<Row>({
       >
         {svg}
       </div>
-      {legend ? <ChartLegend items={legendItems} /> : null}
+      {legend ? <ChartLegend items={legendItems} className={legendClassName} /> : null}
       {keyboard ? (
         <>
           <p id={hintId} className="sr-only">
-            {m.chart_keyboard_hint()}
+            {keyboardHint ?? m.chart_keyboard_hint()}
           </p>
           {/* Read whole (atomic): only the changed text would otherwise be read,
               e.g. a new value without its series label. Always with its
@@ -414,6 +477,7 @@ export function BarChart<Row>({
         // resize moves the card with its category.
         state={active === null ? popover : { ...popover, ...anchor(active) }}
         variant="card"
+        className={tooltipClassName}
         dataKey={active === null ? undefined : String(active)}
       >
         {active === null ? null : card(active)}

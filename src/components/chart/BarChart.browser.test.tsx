@@ -3,11 +3,13 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { m } from '~/paraglide/messages'
 import {
+  barHeight,
   bars,
   focusTarget,
   gridLines,
   hoverBar,
   hoverBetween,
+  legend,
   legendLabels,
   moveOverPlot,
   parkPointer,
@@ -15,6 +17,7 @@ import {
   settle,
   tooltipText,
   xTickLabels,
+  xTickTexts,
 } from '~test/browser/chartDom'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
 import { BarChart, type BarChartProps } from './BarChart'
@@ -443,4 +446,99 @@ test('with the y axis shown, grid lines and the axis line are drawn; yAxisLine={
   const hidden = await render({ yAxisLine: false })
   await vi.waitFor(() => expect(gridLines(hidden.screen.container).length).toBeGreaterThan(1))
   expect(hidden.screen.container.querySelector('[data-axis="y"] .visx-axis-line')).toBeNull()
+})
+
+test('stackOffset="diverging" hangs a negative series from the zero line', async () => {
+  const signed = [
+    { label: 'jan', a: 10, b: -6 },
+    { label: 'feb', a: 4, b: -12 },
+  ]
+  const { screen } = await render({
+    rows: signed,
+    series: [
+      { key: 'a', label: 'A', color: 'red', stack: 's' },
+      { key: 'b', label: 'B', color: 'blue', stack: 's' },
+    ],
+    stackOffset: 'diverging',
+    zeroLine: true,
+  })
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(4))
+  const zero = screen.container.querySelector('[data-zero-line]') as SVGLineElement
+  expect(zero).not.toBeNull()
+  const zeroY = zero.getBoundingClientRect().y
+  for (const bar of seriesBars(screen.container, 1)) {
+    expect(bar.getBoundingClientRect().top).toBeCloseTo(zeroY, 0)
+  }
+  for (const bar of seriesBars(screen.container, 0)) {
+    expect(bar.getBoundingClientRect().bottom).toBeCloseTo(zeroY, 0)
+  }
+})
+
+test('no zero line unless asked for', async () => {
+  const { screen } = await render()
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  expect(screen.container.querySelector('[data-zero-line]')).toBeNull()
+})
+
+const twelve = Array.from({ length: 12 }, (_, i) => ({ label: `Långmånad${i}`, a: 5, b: 1 }))
+
+const shortProps = { rows: twelve, shortCategory: (r: Row) => r.label.slice(-1) }
+
+test('shortCategory: every label short when the full ones do not fit', async () => {
+  const { screen } = await render(shortProps, 240)
+  await vi.waitFor(() =>
+    expect(xTickLabels(screen.container)).toEqual(twelve.map((r) => r.label.slice(-1))),
+  )
+})
+
+test('shortCategory: every label in full when they fit', async () => {
+  const { screen } = await render(shortProps, 1400)
+  await vi.waitFor(() => expect(xTickLabels(screen.container)).toEqual(twelve.map((r) => r.label)))
+})
+
+test('tickPx sets the axis label size', async () => {
+  const { screen } = await render({ tickPx: 13 })
+  await vi.waitFor(() => expect(xTickTexts(screen.container).length).toBeGreaterThan(0))
+  for (const t of xTickTexts(screen.container)) expect(t.getAttribute('font-size')).toBe('13')
+})
+
+const tiny = [
+  { label: 'jan', a: 0.1, b: null },
+  { label: 'feb', a: 100, b: null },
+]
+
+test('a tiny value is floored to MIN_BAR_PX by default', async () => {
+  const { screen } = await render({ rows: tiny })
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(2))
+  expect(barHeight(bars(screen.container)[0])).toBeCloseTo(4, 0)
+})
+
+test('minBarPx 0 draws a tiny value at its true height', async () => {
+  const { screen } = await render({ rows: tiny, minBarPx: 0 })
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(2))
+  expect(barHeight(bars(screen.container)[0])).toBeLessThan(1)
+})
+
+test('tooltipClassName and legendClassName merge over the defaults', async () => {
+  const { screen } = await render({
+    tooltipClassName: 'min-w-56 text-sm',
+    legendClassName: 'text-sm',
+  })
+  expect(legend(screen.container)?.className).toContain('text-sm')
+  await hoverBar(screen.container, 0)
+  const card = await vi.waitFor(() => {
+    const el = document.querySelector('[data-slot="chart-tooltip"]')
+    expect(el).not.toBeNull()
+    return el as HTMLElement
+  })
+  expect(card.className).toContain('text-sm')
+  expect(card.className).not.toContain('text-xs')
+  expect(card.className).toContain('min-w-56')
+  expect(card.className).not.toContain('min-w-32')
+})
+
+test('keyboardHint replaces the default hint', async () => {
+  const { screen } = await render({ keyboardHint: 'Pila och välj' })
+  await expect.element(screen.getByText('Pila och välj')).toBeInTheDocument()
+  expect(screen.container.textContent).not.toContain(m.chart_keyboard_hint())
 })
