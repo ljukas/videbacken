@@ -1,6 +1,22 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
+import {
+  barHeight,
+  bars,
+  chartSvg,
+  focusTarget,
+  hoverBar,
+  parkPointer,
+  seriesBars,
+  tooltipText,
+  xTickLabels,
+} from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
+import { hourRangeLabel } from './format'
 import { HourOfDayChart } from './HourOfDayChart'
+import { valueLabel } from './patternChart'
+
+// Keep the real pointer off the charts (see parkPointer).
+beforeEach(parkPointer)
 
 const hours = Array.from({ length: 24 }, (_, h) => ({ kwh: h * 2, pluggedHours: h }))
 
@@ -11,8 +27,8 @@ test('renders one bar per hour', async () => {
     </div>,
   )
   await vi.waitFor(() => {
-    // Hour 0 is 0 kWh: Recharts omits a zero-height rectangle, so 23 of 24.
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(23)
+    // Hour 0 is 0 kWh: a genuine 0 draws no bar, so 23 of 24.
+    expect(bars(screen.container)).toHaveLength(23)
   })
 })
 
@@ -33,12 +49,20 @@ test('hides the chart from assistive tech; the table carries the values', async 
     </div>,
   )
   await vi.waitFor(() => {
-    expect(screen.container.querySelector('svg.recharts-surface')).not.toBeNull()
+    expect(chartSvg(screen.container)).not.toBeNull()
   })
-  const svg = screen.container.querySelector('svg.recharts-surface')
+  const svg = chartSvg(screen.container)
+  expect(focusTarget(screen.container)).toBeNull()
   expect(svg?.hasAttribute('tabindex')).toBe(false)
   expect(svg?.getAttribute('role')).not.toBe('application')
-  expect(svg?.closest('[data-chart]')?.getAttribute('aria-hidden')).toBe('true')
+  // The chart is hidden, with nothing in it to Tab to…
+  const hidden = svg?.closest('[aria-hidden="true"]')
+  expect(hidden).not.toBeNull()
+  expect(hidden?.querySelector('[tabindex]:not([tabindex="-1"])')).toBeNull()
+  // …but the table is not: it carries the values.
+  expect(
+    screen.container.querySelector('table.sr-only')?.closest('[aria-hidden="true"]'),
+  ).toBeNull()
   expect(screen.container.querySelector('table.sr-only caption')).not.toBeNull()
 })
 
@@ -49,24 +73,15 @@ test('stays readable at 320 px', async () => {
     </div>,
   )
   await vi.waitFor(() => {
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle').length).toBeGreaterThan(0)
+    expect(bars(screen.container).length).toBeGreaterThan(0)
   })
-  const svg = screen.container.querySelector('svg.recharts-surface')
+  const svg = chartSvg(screen.container)
   expect(svg?.getBoundingClientRect().width).toBeLessThanOrEqual(320)
   // Narrow: a tick every 6 h (00, 06, 12, 18), not every 3.
   await vi.waitFor(() => {
-    expect(
-      screen.container.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick'),
-    ).toHaveLength(4)
+    expect(xTickLabels(screen.container)).toHaveLength(4)
   })
 })
-
-const barHeights = (container: Element, bar = 0) =>
-  [
-    ...container
-      .querySelectorAll('.recharts-bar')
-      [bar].querySelectorAll('.recharts-bar-rectangle path'),
-  ].map((p) => p.getBoundingClientRect().height)
 
 test('a tiny real hour keeps a visible bar; a genuine 0 hour stays empty', async () => {
   const sparse = Array.from({ length: 24 }, (_, h) => ({
@@ -78,8 +93,31 @@ test('a tiny real hour keeps a visible bar; a genuine 0 hour stays empty', async
       <HourOfDayChart hours={sparse} metric="kwh" />
     </div>,
   )
-  await vi.waitFor(() =>
-    expect(screen.container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(2),
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(2))
+  const heights = seriesBars(screen.container, 0).map(barHeight)
+  expect(heights).toHaveLength(2)
+  expect(Math.min(...heights)).toBeGreaterThanOrEqual(2)
+})
+
+test('a wide chart labels every third hour', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 220 }}>
+      <HourOfDayChart hours={hours} metric="kwh" />
+    </div>,
   )
-  expect(Math.min(...barHeights(screen.container))).toBeGreaterThanOrEqual(2)
+  await vi.waitFor(() =>
+    expect(xTickLabels(screen.container)).toEqual(['00', '03', '06', '09', '12', '15', '18', '21']),
+  )
+})
+
+test('hovering an hour shows its range and value', async () => {
+  const { screen } = await renderWithProviders(
+    <div style={{ width: 720, height: 220 }}>
+      <HourOfDayChart hours={hours} metric="kwh" />
+    </div>,
+  )
+  await hoverBar(screen.container, 4) // hour 5 (hour 0 draws no bar): 10 kWh
+  await vi.waitFor(() =>
+    expect(tooltipText()).toContain(`${hourRangeLabel(5)} · ${valueLabel(10, 'kwh')}`),
+  )
 })

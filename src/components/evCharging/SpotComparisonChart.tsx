@@ -1,24 +1,14 @@
-import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts'
-import {
-  type ChartConfig,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '~/components/ui/chart'
+import { BarChart } from '~/components/chart/BarChart'
+import { NoData, TooltipRow } from '~/components/chart/ChartParts'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
-import { ChartFrame, NoData, TooltipRow } from './ChartFrame'
 import { formatOre, formatOrePrecise, monthLabel } from './format'
-import { minBarFor } from './minBar'
 
 type Month = RouterOutputs['evCharging']['economy']['months'][number]
 
 // Series colours keep >=3:1 against the card in both themes (contrast light /
 // dark): paid --chart-2 3.7 / 7.0; month average --foreground 19.8 / 15.9,
 // dashed so it reads as a reference line rather than a second bar series.
-const SERIES_ORDER = ['paid', 'avg']
-const seriesOrder = (item: { dataKey?: unknown }) => SERIES_ORDER.indexOf(String(item.dataKey))
 
 // Spot we paid (energy-weighted, comparable sessions) vs the month's
 // time-weighted average spot, both öre/kWh incl VAT. A bar below the line
@@ -27,7 +17,7 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
   const config = {
     paid: { label: m.charging_economy_series_paid(), color: 'var(--chart-2)' },
     avg: { label: m.charging_economy_series_avg(), color: 'var(--foreground)' },
-  } satisfies ChartConfig
+  }
   // No priced session in scope: nothing to compare (an average-only chart would be market data, not ours).
   if (!months.some((mo) => mo.paidSpotOre !== null)) return <NoData />
   const data = months.map((mo) => ({
@@ -37,61 +27,33 @@ export function SpotComparisonChart({ months }: { months: Month[] }) {
     avg: mo.paidSpotOre === null ? null : mo.avgSpotOre,
   }))
   return (
-    <ChartFrame config={config}>
-      <ComposedChart data={data} margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tickLine={false} tickMargin={8} interval="preserveStartEnd" />
-        <YAxis
-          width="auto"
-          tickLine={false}
-          axisLine={false}
-          tickMargin={4}
-          tickFormatter={(v) => formatOre(Number(v))}
-        />
-        <ChartTooltip
-          cursor={false}
-          itemSorter={seriesOrder}
-          content={
-            <ChartTooltipContent
-              formatter={(value, name) => {
-                const series = config[name as keyof typeof config]
-                return (
-                  <TooltipRow label={series.label} color={series.color}>
-                    {m.charging_economy_ore({ value: formatOrePrecise(Number(value)) })}
-                  </TooltipRow>
-                )
-              }}
-            />
-          }
-        />
-        <ChartLegend
-          itemSorter={seriesOrder}
-          content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1" />}
-        />
-        {/* A real near-zero price (even 0) must not vanish; null draws no bar. */}
-        <Bar
-          dataKey="paid"
-          fill="var(--color-paid)"
-          radius={3}
-          minPointSize={minBarFor(
-            data.map((d) => d.paid),
-            { zeroIsData: true },
-          )}
-          isAnimationActive={false}
-        />
-        <Line
-          dataKey="avg"
-          type="linear"
-          stroke="var(--color-avg)"
-          strokeWidth={2}
-          strokeDasharray="5 4"
-          // Recharts spreads the line's props onto its dots, so without a
-          // solid override each dot is drawn as a dashed (broken) ring.
-          dot={{ r: 3, strokeDasharray: 'none' }}
-          connectNulls={false}
-          isAnimationActive={false}
-        />
-      </ComposedChart>
-    </ChartFrame>
+    <BarChart
+      rows={data}
+      category={(r) => r.label}
+      // A real near-zero price (even 0) must not vanish; null draws no bar.
+      series={[{ key: 'paid', ...config.paid, radius: 3, zeroIsData: true }]}
+      // Dashed, so it reads as a reference line rather than a second bar
+      // series; its dots stay solid.
+      line={{ key: 'avg', ...config.avg, dash: '5 4' }}
+      value={(r, key) => r[key as 'paid' | 'avg']}
+      yTickFormat={(v) => formatOre(v)}
+      yAxisLine={false}
+      legend
+      label={m.charging_economy_chart_spot_title()}
+      tooltip={(r) =>
+        r.paid === null ? null : (
+          <>
+            <TooltipRow label={config.paid.label} color={config.paid.color}>
+              {m.charging_economy_ore({ value: formatOrePrecise(r.paid) })}
+            </TooltipRow>
+            {r.avg === null ? null : (
+              <TooltipRow label={config.avg.label} color={config.avg.color}>
+                {m.charging_economy_ore({ value: formatOrePrecise(r.avg) })}
+              </TooltipRow>
+            )}
+          </>
+        )
+      }
+    />
   )
 }
