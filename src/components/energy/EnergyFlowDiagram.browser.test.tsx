@@ -201,3 +201,34 @@ test('without a charge level the wide battery text moves down to stay centred on
   const without = await draw(sums({ firstSocPct: null }))
   expect(labelY(without.screen.container) - labelY(withSoc.screen.container)).toBe(9.5)
 })
+
+test('a period under 1 kWh still scales its largest arrow to full width', async () => {
+  const tiny = sums({
+    gridImportKwh: 0.6,
+    gridExportKwh: 0,
+    solarKwh: 0.2,
+    loadKwh: 0.8,
+    batteryDischargeKwh: 0,
+    batteryChargeSolarKwh: 0,
+    batteryChargeGridKwh: 0,
+    carKwh: 0,
+    firstSocPct: null,
+    lastSocPct: null,
+  })
+  const { screen } = await draw(tiny)
+  const stroke = (id: string) =>
+    Number(
+      screen.container.querySelector(`[data-flow-edge="${id}"] path`)?.getAttribute('stroke-width'),
+    )
+  // Köpt el → Förbrukning (0,6 kWh) is the largest arrow: the full 20 px; Solel → Förbrukning (0,2) a third of it.
+  expect(stroke('imp>load')).toBe(20)
+  expect(stroke('sol>load')).toBeCloseTo(20 / 3)
+})
+
+test('a car part that would read "0,0" leaves the car lines blank', async () => {
+  const { screen } = await draw(sums({ carKwh: 0.04 }))
+  expect(screen.getByText(m.energy_flow_car()).elements()).toHaveLength(0)
+  expect(screen.getByText('0,0 kWh').elements()).toHaveLength(0)
+  const atMin = await draw(sums({ carKwh: 0.05 }))
+  await expect.element(atMin.screen.getByText(m.energy_flow_car())).toBeInTheDocument()
+})

@@ -21,6 +21,7 @@ import {
   flowWidth,
   lossLabel,
   lossStub,
+  MIN_FLOW_KWH,
   nodeText,
 } from '~/lib/houseEnergy/flowLayout'
 import { cn } from '~/lib/utils'
@@ -114,7 +115,8 @@ export function EnergyFlowDiagram({
   }
   const fadeId = `loss-fade-${useId().replace(/:/g, '')}`
   const flows = drawnFlows(layout, f)
-  const max = Math.max(1, ...flows.map((x) => x.kwh))
+  // flowWidth and lossStub fall back to the floor when nothing is drawn (max 0).
+  const max = Math.max(0, ...flows.map((x) => x.kwh))
   const stub = lossStub(layout, f.loss, max)
   const charge =
     sums.firstSocPct !== null && sums.lastSocPct !== null
@@ -453,7 +455,8 @@ function FlowNodeBox({
           </tspan>
         </text>
       )}
-      {key === 'load' && f.car > 0 && t.second && t.third ? (
+      {/* Like an arrow, a car part that would read "0,0" is left out; its lines keep their space. */}
+      {key === 'load' && f.car >= MIN_FLOW_KWH && t.second && t.third ? (
         <>
           <text x={t.second.x} y={t.second.y} fontSize={14} className="fill-muted-foreground">
             {m.energy_flow_car()}
