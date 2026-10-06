@@ -357,6 +357,21 @@ test('a hover puts one dot on each card row’s reading', async () => {
   })
 })
 
+test('the hover line and dots paint over the lines and axes', async () => {
+  // recharts drew its cursor (z 1100) and active dots (z 1200) over the curves
+  // (400) and axes (500); an svg paints in DOM order, so they must come later.
+  const root = await renderChart(day())
+  await hoverPlot(root)
+  await vi.waitFor(() => expect(activeDots(root)).toHaveLength(2))
+  const xAxis = root.querySelector('[data-axis="x"]')
+  const cursor = hoverCursor(root)
+  if (!xAxis || !cursor) throw new Error('no x axis or hover line')
+  const after = (el: Element) =>
+    (xAxis.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  expect(after(cursor)).toBe(true)
+  for (const dot of activeDots(root)) expect(after(dot)).toBe(true)
+})
+
 test('a sensor silent around the hovered time is left out of the card and gets no dot', async () => {
   const [a, b] = day()
   // b stops after its first four readings; the plot's centre is hours later.
@@ -454,4 +469,11 @@ test('when the data moves away from an open card, no card or hover line is left'
     expect(hoverCursor(root)).toBeNull()
     expect(activeDots(root)).toHaveLength(0)
   })
+  // A later refetch bringing that time back doesn't pop the card up unprompted.
+  await rerender(devices)
+  await vi.waitFor(() => expect(lineCurves(root)).toHaveLength(2))
+  await settle()
+  expect(tooltipText()).toBe('')
+  expect(hoverCursor(root)).toBeNull()
+  expect(activeDots(root)).toHaveLength(0)
 })

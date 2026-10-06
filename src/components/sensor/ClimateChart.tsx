@@ -6,7 +6,7 @@ import { useParentSize } from '@visx/responsive'
 import { LinePath } from '@visx/shape'
 import { scaleLinear } from 'd3-scale'
 import type * as React from 'react'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import {
   AXIS_COLOR,
   CHART_MARGIN,
@@ -128,7 +128,7 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
   // The reading time the pointer last moved to (Task 5's keys continue from it).
   const cursor = useRef<number | null>(null)
   const times = useMemo(() => readingTimes(devices), [devices])
-  const visible = devices.filter((d) => !d.hidden)
+  const visible = useMemo(() => devices.filter((d) => !d.hidden), [devices])
 
   const geometry = useMemo(() => {
     if (width <= 0 || plotBoxH <= 0) return null
@@ -156,19 +156,28 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
   const active = popover.open && popover.data !== undefined ? popover.data : null
   const rows = active === null ? [] : nearestReadings(devices, active, WINDOW_MS)
   const shown = active !== null && rows.length > 0 && geometry !== null ? active : null
+  // …and the card closes for good: a later refetch that brings the time back
+  // must not pop it up again unprompted.
+  const stale = active !== null && shown === null
+  const { hide } = popover
+  useEffect(() => {
+    if (stale) hide()
+  }, [stale, hide])
 
-  // The card's anchor: the hovered time, above the highest of its dots.
-  const anchor = (t: number) => {
+  // The card's anchor: time `t`, above the highest of its rows' dots.
+  const anchor = (t: number, at: readonly ClimateTooltipRow[]) => {
     if (!geometry) return { left: 0, top: 0 }
-    const dots = nearestReadings(devices, t, WINDOW_MS).map((r) => geometry.y(r.value))
     return {
       left: geometry.left + geometry.x(t),
-      top: CHART_MARGIN.top + Math.min(geometry.plotH, ...dots) - ACTIVE_DOT_R,
+      top:
+        CHART_MARGIN.top +
+        Math.min(geometry.plotH, ...at.map((r) => geometry.y(r.value))) -
+        ACTIVE_DOT_R,
     }
   }
   const open = (t: number) => {
     cursor.current = t
-    const { left, top } = anchor(t)
+    const { left, top } = anchor(t, nearestReadings(devices, t, WINDOW_MS))
     popover.show(t, left, top)
   }
   const onPointer = (e: React.PointerEvent<SVGRectElement>) => {
@@ -183,6 +192,44 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
     if (t === null || (popover.open && popover.data === t)) return
     open(t)
   }
+
+  // The lines and isolated dots, kept across hovers: a pointer move re-renders
+  // only the cursor, the active dots and the card.
+  const series = useMemo(
+    () =>
+      geometry === null
+        ? null
+        : visible.map((d) => (
+            <g key={d.id} data-series={d.id} data-kind="line">
+              <LinePath
+                data-line-curve
+                data={d.points}
+                // Outage markers break the line (recharts' connectNulls={false}).
+                defined={(p) => typeof p[d.id] === 'number'}
+                x={(p) => geometry.x(p.t)}
+                y={(p) => geometry.y(p[d.id] as number)}
+                curve={curveMonotoneX}
+                stroke={d.color}
+                strokeWidth={2}
+                fill="none"
+              />
+              {d.points
+                .filter((p) => p.isolated && typeof p[d.id] === 'number')
+                .map((p) => (
+                  <circle
+                    key={p.t}
+                    data-reading-dot
+                    cx={geometry.x(p.t)}
+                    cy={geometry.y(p[d.id] as number)}
+                    r={ISOLATED_DOT_R}
+                    fill={d.color}
+                    stroke={d.color}
+                  />
+                ))}
+            </g>
+          )),
+    [visible, geometry],
+  )
 
   const svg = geometry ? (
     // biome-ignore lint/a11y/noSvgWithoutTitle: visual; the labelled group is the accessible path
@@ -205,59 +252,7 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
             />
           </g>
         )}
-        {shown === null ? null : (
-          <line
-            data-hover-cursor
-            x1={geometry.x(shown)}
-            x2={geometry.x(shown)}
-            y1={0}
-            y2={geometry.plotH}
-            stroke="var(--border)"
-            pointerEvents="none"
-          />
-        )}
-        {visible.map((d) => (
-          <g key={d.id} data-series={d.id} data-kind="line">
-            <LinePath
-              data-line-curve
-              data={d.points}
-              // Outage markers break the line (recharts' connectNulls={false}).
-              defined={(p) => typeof p[d.id] === 'number'}
-              x={(p) => geometry.x(p.t)}
-              y={(p) => geometry.y(p[d.id] as number)}
-              curve={curveMonotoneX}
-              stroke={d.color}
-              strokeWidth={2}
-              fill="none"
-            />
-            {d.points
-              .filter((p) => p.isolated && typeof p[d.id] === 'number')
-              .map((p) => (
-                <circle
-                  key={p.t}
-                  data-reading-dot
-                  cx={geometry.x(p.t)}
-                  cy={geometry.y(p[d.id] as number)}
-                  r={ISOLATED_DOT_R}
-                  fill={d.color}
-                  stroke={d.color}
-                />
-              ))}
-          </g>
-        ))}
-        {shown === null
-          ? null
-          : rows.map((r) => (
-              <circle
-                key={r.id}
-                data-active-dot
-                cx={geometry.x(r.t)}
-                cy={geometry.y(r.value)}
-                r={ACTIVE_DOT_R}
-                fill={r.color}
-                pointerEvents="none"
-              />
-            ))}
+        {series}
         {geometry.yTicks.length === 0 ? null : (
           <g data-axis="y">
             <AxisLeft
@@ -294,6 +289,31 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
             })}
           />
         </g>
+        {/* The hover paints over the lines and axes, as recharts' did (its z-index layers). */}
+        {shown === null ? null : (
+          <line
+            data-hover-cursor
+            x1={geometry.x(shown)}
+            x2={geometry.x(shown)}
+            y1={0}
+            y2={geometry.plotH}
+            stroke="var(--border)"
+            pointerEvents="none"
+          />
+        )}
+        {shown === null
+          ? null
+          : rows.map((r) => (
+              <circle
+                key={r.id}
+                data-active-dot
+                cx={geometry.x(r.t)}
+                cy={geometry.y(r.value)}
+                r={ACTIVE_DOT_R}
+                fill={r.color}
+                pointerEvents="none"
+              />
+            ))}
         {/* A pointer surface in the aria-hidden svg; the labelled group is the keyboard path. */}
         <rect
           data-hover-overlay
@@ -344,7 +364,9 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
       <ChartPopover
         // Anchored from the current layout on every render, so a refetch or a
         // resize moves the card with its time.
-        state={shown === null ? { ...popover, open: false } : { ...popover, ...anchor(shown) }}
+        state={
+          shown === null ? { ...popover, open: false } : { ...popover, ...anchor(shown, rows) }
+        }
         variant="card"
         dataKey={shown === null ? undefined : String(shown)}
       >
