@@ -7,6 +7,7 @@ import {
   SolarPanelIcon,
   UtilityPoleIcon,
 } from 'lucide-react'
+import type * as React from 'react'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
 import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
@@ -72,6 +73,7 @@ function flowShare(
   f: EnergyFigures,
   sums: PeriodSums,
   from: FlowNodeKey,
+  to: FlowNodeKey,
   value: number,
 ): string | null {
   if (from === 'sol') {
@@ -83,6 +85,8 @@ function flowShare(
     return sums.gridImportKwh > 0
       ? m.energy_flow_share_import({ share: formatShare(value / sums.gridImportKwh) })
       : null
+  // Sold energy never reached the house: no share line.
+  if (to === 'exp') return null
   return sums.loadKwh > 0
     ? m.energy_flow_share_load({ share: formatShare(value / sums.loadKwh) })
     : null
@@ -101,15 +105,23 @@ export function EnergyFlowDiagram({
 }) {
   const layout = flowLayout(width)
   const popover = useChartPopover<Tip>()
-  const { markProps, containerProps } = popover
-  const descId = useId()
+  const { markProps, containerProps, hide } = popover
+  // A mouse leaving an arrow closes its popover (touch keeps it until a tap outside, as in the heatmaps).
+  const leaveProps = {
+    onPointerLeave: (e: React.PointerEvent) => {
+      if (e.pointerType !== 'touch') hide()
+    },
+  }
   const fadeId = `loss-fade-${useId().replace(/:/g, '')}`
   const flows = drawnFlows(layout, f)
   const max = Math.max(1, ...flows.map((x) => x.kwh))
   const stub = lossStub(layout, f.loss, max)
   const charge =
     sums.firstSocPct !== null && sums.lastSocPct !== null
-      ? m.energy_flow_charge_level({ from: String(sums.firstSocPct), to: String(sums.lastSocPct) })
+      ? m.energy_flow_charge_level({
+          from: String(Math.round(sums.firstSocPct)),
+          to: String(Math.round(sums.lastSocPct)),
+        })
       : null
   const active = popover.open ? popover.data?.id : undefined
   const dim = (id: string) => (active !== undefined && active !== id ? 'opacity-25' : undefined)
@@ -120,10 +132,9 @@ export function EnergyFlowDiagram({
         width={width}
         height={layout.height}
         role="img"
-        aria-labelledby={descId}
+        aria-label={m.energy_flow_description()}
         className="block overflow-visible"
       >
-        <title id={descId}>{m.energy_flow_description()}</title>
         <defs>
           <linearGradient
             id={fadeId}
@@ -162,7 +173,7 @@ export function EnergyFlowDiagram({
               width={stub.width}
               height={stub.height}
               fill={`url(#${fadeId})`}
-              className={dim('loss')}
+              className={cn('transition-opacity motion-reduce:transition-none', dim('loss'))}
             />
           ) : null}
         </Group>
@@ -182,7 +193,18 @@ export function EnergyFlowDiagram({
           {showValues
             ? flows.map(({ spec, kwh: v }) => {
                 const p = flowCurve(layout, spec).at(spec.labelT)
-                return <ValuePill key={`${spec.from}>${spec.to}`} x={p.x} y={p.y} text={kwh(v)} />
+                return (
+                  <ValuePill
+                    key={`${spec.from}>${spec.to}`}
+                    x={p.x}
+                    y={p.y}
+                    text={kwh(v)}
+                    className={cn(
+                      'transition-opacity motion-reduce:transition-none',
+                      dim(`${spec.from}>${spec.to}`),
+                    )}
+                  />
+                )
               })
             : null}
           {flows.map(({ spec, kwh: v }) => {
@@ -195,11 +217,12 @@ export function EnergyFlowDiagram({
               from: spec.from,
               to: spec.to,
               kwh: v,
-              share: flowShare(f, sums, spec.from, v),
+              share: flowShare(f, sums, spec.from, spec.to, v),
             }
             return (
-              <g key={id} data-flow-edge={id}>
+              <g key={id}>
                 <path
+                  data-flow-hit={id}
                   data-slot="flow-hit"
                   d={c.d}
                   fill="none"
@@ -208,6 +231,7 @@ export function EnergyFlowDiagram({
                   pointerEvents="stroke"
                   className="cursor-pointer"
                   {...markProps(tip, mid.x, mid.y)}
+                  {...leaveProps}
                 />
               </g>
             )
@@ -220,6 +244,7 @@ export function EnergyFlowDiagram({
               height={stub.height + 16}
               fill="transparent"
               className="cursor-pointer"
+              {...leaveProps}
               {...markProps(
                 {
                   kind: 'loss',
@@ -283,18 +308,37 @@ function TipBody({ tip }: { tip: Tip }) {
 }
 
 // A value on an arrow: the pill is measured from the text, before paint.
-function ValuePill({ x, y, text }: { x: number; y: number; text: string }) {
+function ValuePill({
+  x,
+  y,
+  text,
+  className,
+}: {
+  x: number
+  y: number
+  text: string
+  className?: string
+}) {
   const ref = useRef<SVGTextElement>(null)
   const [box, setBox] = useState<{ x: number; y: number; width: number; height: number } | null>(
     null,
   )
   // biome-ignore lint/correctness/useExhaustiveDependencies: text and position are the re-measure triggers
   useLayoutEffect(() => {
-    const b = ref.current?.getBBox()
-    if (b) setBox({ x: b.x, y: b.y, width: b.width, height: b.height })
+    let live = true
+    const measure = () => {
+      const b = ref.current?.getBBox()
+      if (live && b) setBox({ x: b.x, y: b.y, width: b.width, height: b.height })
+    }
+    measure()
+    // The body font swaps in after first paint and changes the text width: measure again once it has.
+    document.fonts?.ready.then(measure)
+    return () => {
+      live = false
+    }
   }, [text, x, y])
   return (
-    <g data-slot="flow-value" pointerEvents="none">
+    <g data-slot="flow-value" pointerEvents="none" className={className}>
       {box ? (
         <rect
           x={box.x - 7}
@@ -363,7 +407,7 @@ function FlowNodeBox({
         rx={t.tile.size * 0.24}
         style={{
           fill: tint
-            ? `color-mix(in oklab, ${tint} 24%, var(--card))`
+            ? `color-mix(in oklab, ${tint} 24%, ${NODE_SURFACE})`
             : 'color-mix(in oklab, var(--foreground) 7%, var(--card))',
         }}
       />

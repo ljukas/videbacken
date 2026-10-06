@@ -82,9 +82,7 @@ test('battery to sold is drawn when export exceeds the solar surplus', async () 
 test('hovering an arrow names it with its share', async () => {
   const { screen } = await draw(sums())
   // Köpt el → Förbrukning is a point-symmetric cubic: its box centre (where hover points) lies on the stroke.
-  const hit = screen.container.querySelector(
-    '[data-flow-edge="imp>load"] [data-slot="flow-hit"]',
-  ) as Element
+  const hit = screen.container.querySelector('[data-flow-hit="imp>load"]') as Element
   await userEvent.hover(hit)
   await expect
     .element(
@@ -106,4 +104,92 @@ test('the narrow layout drops the charge level from the battery node', async () 
   expect(
     screen.getByText(m.energy_flow_charge_level({ from: '19', to: '100' })).elements(),
   ).toHaveLength(0)
+})
+
+const hitOf = (c: Element, id: string) => c.querySelector(`[data-flow-hit="${id}"]`) as Element
+
+test('the diagram has an accessible name and no native title tooltip', async () => {
+  const { screen } = await draw(sums())
+  await expect
+    .element(screen.getByRole('img', { name: m.energy_flow_description() }))
+    .toBeInTheDocument()
+  expect(screen.container.querySelector('svg title')).toBeNull()
+})
+
+test('leaving an arrow closes the tooltip and clears the dimming', async () => {
+  const { screen } = await draw(sums())
+  const c = screen.container
+  await userEvent.hover(hitOf(c, 'imp>load'))
+  await expect
+    .element(
+      screen.getByText(
+        m.energy_flow_arrow({ from: m.energy_tile_import(), to: m.energy_tile_load() }),
+      ),
+    )
+    .toBeVisible()
+  // The other arrows and their pills dim; the hovered one does not.
+  expect(c.querySelector('[data-flow-edge="sol>load"]')?.getAttribute('class')).toContain(
+    'opacity-25',
+  )
+  expect(c.querySelector('[data-flow-edge="imp>load"]')?.getAttribute('class') ?? '').not.toContain(
+    'opacity-25',
+  )
+  expect(
+    [...c.querySelectorAll('[data-slot="flow-value"]')].filter((p) =>
+      p.getAttribute('class')?.includes('opacity-25'),
+    ),
+  ).toHaveLength(5)
+  await userEvent.hover(c.querySelector('[data-flow-node="load"]') as Element)
+  await expect
+    .element(
+      screen.getByText(
+        m.energy_flow_arrow({ from: m.energy_tile_import(), to: m.energy_tile_load() }),
+      ),
+    )
+    .not.toBeInTheDocument()
+  expect(c.querySelectorAll('.opacity-25')).toHaveLength(0)
+})
+
+test('battery to sold names itself and has no share line', async () => {
+  const { screen } = await draw(sums({ gridExportKwh: 70 }))
+  await userEvent.hover(hitOf(screen.container, 'bat>exp'))
+  await expect
+    .element(
+      screen.getByText(
+        m.energy_flow_arrow({ from: m.energy_flow_battery(), to: m.energy_tile_export() }),
+      ),
+    )
+    .toBeVisible()
+  await expect.element(screen.getByText('14,9 kWh')).toBeVisible()
+  const suffix = m.energy_flow_share_load({ share: '~' }).split('~')[1].trim()
+  expect(document.body.textContent).not.toContain(suffix)
+  await userEvent.hover(document.body)
+})
+
+test('the loss tooltip shows the share, the charge level and the winter hint', async () => {
+  const { screen } = await draw(
+    sums({
+      batteryChargeSolarKwh: 25.57,
+      batteryChargeGridKwh: 248.88,
+      batteryDischargeKwh: 156.97,
+      firstSocPct: 34,
+      lastSocPct: 23,
+    }),
+  )
+  const rects = [...screen.container.querySelectorAll('rect[fill="transparent"]')]
+  await userEvent.hover(rects[rects.length - 1])
+  await expect.element(screen.getByText(m.energy_flow_loss_title())).toBeVisible()
+  await expect.element(screen.getByText(m.energy_flow_winter_hint())).toBeVisible()
+  await expect.element(screen.getByText(m.energy_flow_loss_share({ share: '43 %' }))).toBeVisible()
+  expect(
+    screen.getByText(m.energy_flow_charge_level({ from: '34', to: '23' })).elements().length,
+  ).toBeGreaterThan(0)
+  await userEvent.hover(document.body)
+})
+
+test('the charge level is rounded', async () => {
+  const { screen } = await draw(sums({ firstSocPct: 19.4999, lastSocPct: 99.6 }))
+  await expect
+    .element(screen.getByText(m.energy_flow_charge_level({ from: '19', to: '100' })))
+    .toBeInTheDocument()
 })
