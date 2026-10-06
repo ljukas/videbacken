@@ -558,7 +558,7 @@ function CredentialsForm({
                       : m.charging_credentials_remove_confirm({
                           source: integrationSourceName(source),
                           fields: credentialFieldList(
-                            'skoda',
+                            source as 'skoda',
                             removedFields as readonly CredentialField<'skoda'>[],
                           ),
                         })}
