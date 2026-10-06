@@ -1,11 +1,9 @@
 import { useParentSize } from '@visx/responsive'
-import { useId } from 'react'
 import {
   formatOneDecimal,
   formatShare,
   formatSignedOneDecimal,
 } from '~/components/evCharging/format'
-import { Switch } from '~/components/ui/switch'
 import { useLocalStorageFlag } from '~/hooks/useLocalStorageFlag'
 import {
   type EnergyFigures,
@@ -15,6 +13,7 @@ import {
 } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
 import { EnergyFlowDiagram } from './EnergyFlowDiagram'
+import { FlowTableFrame, FlowValuesSwitch, RingFigure } from './flowParts'
 
 export const SHOW_FLOW_VALUES_KEY = 'videbacken-energy-flow-values'
 
@@ -24,13 +23,18 @@ export const SHOW_FLOW_VALUES_KEY = 'videbacken-energy-flow-values'
 export function EnergyFlow({ sums }: { sums: PeriodSums | null | 'unavailable' }) {
   const [showValues, setShowValues] = useLocalStorageFlag(SHOW_FLOW_VALUES_KEY, true)
   const { parentRef, width } = useParentSize({ debounceTime: 50 })
-  const switchId = useId()
   const s = sums && sums !== 'unavailable' ? sums : null
   const f = s ? energyFigures(s) : null
   const gap = f ? gapHours(f) : null
   return (
     <div className="@container flex flex-col gap-3">
-      <SelfSufficiency value={f?.selfSufficiency ?? null} hidden={!f} />
+      <RingFigure
+        value={f?.selfSufficiency ?? null}
+        label={m.energy_tile_self_sufficiency()}
+        detail={m.energy_tile_self_sufficiency_detail()}
+        arcClassName="stroke-foreground"
+        hidden={!f}
+      />
       <div
         ref={parentRef}
         data-slot="energy-flow-box"
@@ -45,16 +49,11 @@ export function EnergyFlow({ sums }: { sums: PeriodSums | null | 'unavailable' }
           </p>
         ) : null}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-        <p className="text-muted-foreground text-sm">{m.energy_flow_hint()}</p>
-        <label
-          htmlFor={switchId}
-          className="flex min-h-10 cursor-pointer items-center gap-2.5 text-sm"
-        >
-          <Switch id={switchId} checked={showValues} onCheckedChange={setShowValues} />
-          {m.energy_flow_show_values()}
-        </label>
-      </div>
+      <FlowValuesSwitch
+        checked={showValues}
+        onCheckedChange={setShowValues}
+        hint={m.energy_flow_hint()}
+      />
       <p
         data-slot="energy-gap"
         className="min-h-[1.5em] text-muted-foreground text-sm leading-normal"
@@ -67,43 +66,6 @@ export function EnergyFlow({ sums }: { sums: PeriodSums | null | 'unavailable' }
         </summary>
         {s && f ? <FlowTable sums={s} f={f} /> : null}
       </details>
-    </div>
-  )
-}
-
-function SelfSufficiency({ value, hidden }: { value: number | null; hidden: boolean }) {
-  const r = 18
-  const circ = 2 * Math.PI * r
-  return (
-    // Invisible (not absent) without figures, so the card is as tall for every period.
-    <div
-      className={hidden ? 'invisible flex items-center gap-3' : 'flex items-center gap-3'}
-      aria-hidden={hidden || undefined}
-    >
-      <svg viewBox="0 0 44 44" className="size-11 shrink-0" aria-hidden="true">
-        <circle cx={22} cy={22} r={r} fill="none" strokeWidth={6} className="stroke-muted" />
-        {value !== null ? (
-          <circle
-            cx={22}
-            cy={22}
-            r={r}
-            fill="none"
-            strokeWidth={6}
-            className="stroke-foreground"
-            strokeDasharray={`${circ * value} ${circ}`}
-            transform="rotate(-90 22 22)"
-          />
-        ) : null}
-      </svg>
-      <div className="flex flex-col">
-        <span className="font-medium text-sm">{m.energy_tile_self_sufficiency()}</span>
-        <span className="font-semibold text-[length:24px] tabular-nums leading-tight @[860px]:text-[length:28px]">
-          {value === null ? '—' : formatShare(value)}
-        </span>
-        <span className="text-muted-foreground text-sm">
-          {m.energy_tile_self_sufficiency_detail()}
-        </span>
-      </div>
     </div>
   )
 }
@@ -144,44 +106,22 @@ function FlowTable({ sums: s, f }: { sums: PeriodSums; f: EnergyFigures }) {
         })
       : null
   return (
-    <div className="mt-2 overflow-x-auto">
-      <table className="min-w-full border-collapse">
-        <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            <th scope="col" className="py-1.5 pr-4 font-medium">
-              {m.energy_flow_table_flow()}
-            </th>
-            <th scope="col" className="py-1.5 text-right font-medium">
-              {m.energy_flow_table_value()}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(([name, value]) => (
-            <tr key={name} className="border-b">
-              <th scope="row" className="py-1.5 pr-4 text-left font-normal">
-                {name}
-              </th>
-              <td className="py-1.5 text-right tabular-nums">{value}</td>
-            </tr>
-          ))}
-          {charge ? (
-            <tr className="border-b">
-              <th scope="row" colSpan={2} className="py-1.5 text-left font-normal">
-                {charge}
-              </th>
-            </tr>
-          ) : null}
-          <tr>
-            <th scope="row" className="py-1.5 pr-4 text-left font-normal">
-              {m.energy_tile_self_sufficiency()}
-            </th>
-            <td className="py-1.5 text-right tabular-nums">
-              {f.selfSufficiency === null ? '—' : formatShare(f.selfSufficiency)}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <FlowTableFrame rows={rows}>
+      {charge ? (
+        <tr className="border-b">
+          <th scope="row" colSpan={2} className="py-1.5 text-left font-normal">
+            {charge}
+          </th>
+        </tr>
+      ) : null}
+      <tr>
+        <th scope="row" className="py-1.5 pr-4 text-left font-normal">
+          {m.energy_tile_self_sufficiency()}
+        </th>
+        <td className="py-1.5 text-right tabular-nums">
+          {f.selfSufficiency === null ? '—' : formatShare(f.selfSufficiency)}
+        </td>
+      </tr>
+    </FlowTableFrame>
   )
 }

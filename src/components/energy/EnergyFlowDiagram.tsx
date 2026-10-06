@@ -8,7 +8,7 @@ import {
   UtilityPoleIcon,
 } from 'lucide-react'
 import type * as React from 'react'
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useId, useRef } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
 import {
   formatOneDecimal,
@@ -30,6 +30,7 @@ import {
 } from '~/lib/houseEnergy/flowLayout'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
+import { NODE_MUTED, NodeFrame, useFittedSize, ValuePill } from './flowParts'
 
 // The Summering card's flow diagram (step 1c): where the period's energy came from and went. Geometry lives in
 // flowLayout.ts; this draws it. Colour = where the energy came from (three validated source colours only).
@@ -52,10 +53,6 @@ const FIGURE: Record<Exclude<FlowNodeKey, 'bat'>, (s: PeriodSums) => number> = {
   exp: (s) => s.gridExportKwh,
   load: (s) => s.loadKwh,
 }
-const NODE_SURFACE = 'color-mix(in oklab, var(--foreground) 3%, var(--card))'
-// The muted token reaches only 4.4:1 on the raised node surface in light; a touch of the foreground lifts the
-// node's secondary text (unit, "Förlust", "Lager", car lines) above 4.5:1 in both themes.
-const NODE_MUTED = { fill: 'color-mix(in oklab, var(--muted-foreground) 90%, var(--foreground))' }
 const label = (key: FlowNodeKey) =>
   ({
     sol: m.energy_tile_solar(),
@@ -328,96 +325,6 @@ function TipBody({ tip }: { tip: Tip }) {
   )
 }
 
-// A value on an arrow: the pill is measured from the text, before paint.
-function ValuePill({
-  x,
-  y,
-  text,
-  className,
-}: {
-  x: number
-  y: number
-  text: string
-  className?: string
-}) {
-  const ref = useRef<SVGTextElement>(null)
-  const [box, setBox] = useState<{ x: number; y: number; width: number; height: number } | null>(
-    null,
-  )
-  // biome-ignore lint/correctness/useExhaustiveDependencies: text and position are the re-measure triggers
-  useLayoutEffect(() => {
-    let live = true
-    const measure = () => {
-      const b = ref.current?.getBBox()
-      if (live && b) setBox({ x: b.x, y: b.y, width: b.width, height: b.height })
-    }
-    measure()
-    // The body font swaps in after first paint and changes the text width: measure again once it has.
-    document.fonts?.ready.then(measure)
-    return () => {
-      live = false
-    }
-  }, [text, x, y])
-  return (
-    <g data-slot="flow-value" pointerEvents="none" className={className}>
-      {box ? (
-        <rect
-          x={box.x - 7}
-          y={box.y - 3}
-          width={box.width + 14}
-          height={box.height + 6}
-          rx={6}
-          className="fill-card stroke-border"
-        />
-      ) : null}
-      <text
-        ref={ref}
-        x={x}
-        y={y + 5}
-        textAnchor="middle"
-        fontSize={14}
-        fontWeight={600}
-        className="fill-foreground tabular-nums"
-      >
-        {text}
-      </text>
-    </g>
-  )
-}
-
-/**
- * The font size that lets a node's figure (or the battery's loss) fit its `room`: from `size`, 2 px down at a
- * time to `minSize`, measured before paint and again once the body font has loaded. Only the size changes; the
- * baseline stays, so nothing moves.
- */
-function useFittedSize(
-  ref: React.RefObject<SVGTextElement | null>,
-  text: string,
-  { x, size: base, minSize, room }: { x: number; size: number; minSize: number; room: number },
-) {
-  const [fontsLoaded, setFontsLoaded] = useState(false)
-  useEffect(() => {
-    let live = true
-    document.fonts?.ready.then(() => {
-      if (live) setFontsLoaded(true)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
-  // A new text, room or font starts again from the full size.
-  const key = `${text}|${base}|${room}|${fontsLoaded}`
-  const [fit, setFit] = useState({ key, size: base })
-  const size = fit.key === key ? fit.size : base
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el || size <= minSize) return
-    const b = el.getBBox()
-    if (b.x + b.width > x + room) setFit({ key, size: size - 2 })
-  }, [ref, key, size, minSize, room, x])
-  return size
-}
-
 function FlowNodeBox({
   nodeKey: key,
   layout,
@@ -444,39 +351,15 @@ function FlowNodeBox({
   const valueRef = useRef<SVGTextElement>(null)
   const size = useFittedSize(valueRef, value, t.value)
   return (
-    <g data-flow-node={key}>
-      <rect
-        x={n.x - n.w / 2}
-        y={n.y - n.h / 2}
-        width={n.w}
-        height={n.h}
-        rx={12}
-        className="stroke-border"
-        style={{ fill: NODE_SURFACE }}
-      />
-      <rect
-        x={t.tile.x}
-        y={t.tile.y}
-        width={t.tile.size}
-        height={t.tile.size}
-        rx={t.tile.size * 0.24}
-        style={{
-          fill: tint
-            ? `color-mix(in oklab, ${tint} 24%, ${NODE_SURFACE})`
-            : 'color-mix(in oklab, var(--foreground) 7%, var(--card))',
-        }}
-      />
-      <Icon
-        aria-hidden
-        x={t.tile.x + (t.tile.size - t.tile.icon) / 2}
-        y={t.tile.y + (t.tile.size - t.tile.icon) / 2}
-        width={t.tile.icon}
-        height={t.tile.icon}
-        className="text-foreground"
-      />
-      <text x={t.label.x} y={t.label.y} fontSize={14} fontWeight={500} className="fill-foreground">
-        {label(key)}
-      </text>
+    <NodeFrame
+      data-flow-node={key}
+      node={n}
+      tile={t.tile}
+      label={t.label}
+      labelText={label(key)}
+      Icon={Icon}
+      tint={tint}
+    >
       {key === 'bat' ? (
         <>
           <text ref={valueRef} x={t.value.x} y={t.value.y} fontSize={14} style={NODE_MUTED}>
@@ -530,6 +413,6 @@ function FlowNodeBox({
           </text>
         </>
       ) : null}
-    </g>
+    </NodeFrame>
   )
 }

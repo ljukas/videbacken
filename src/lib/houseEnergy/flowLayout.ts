@@ -7,9 +7,9 @@ export type FlowNodeKey = 'sol' | 'imp' | 'bat' | 'exp' | 'load'
 export type Side = 'l' | 'r' | 't' | 'b'
 /** Centre and size. */
 export type FlowNode = { x: number; y: number; w: number; h: number }
-export type FlowEdgeSpec = {
-  from: FlowNodeKey
-  to: FlowNodeKey
+export type FlowEdgeSpec<K extends string = FlowNodeKey> = {
+  from: K
+  to: K
   fromSide: Side
   fromOffset: number
   toSide: Side
@@ -20,11 +20,13 @@ export type FlowEdgeSpec = {
   /** Where on the curve the value pill sits. */
   labelT: number
 }
-export type FlowLayout = {
+export type FlowGraph<K extends string> = {
   narrow: boolean
   height: number
-  nodes: Record<FlowNodeKey, FlowNode>
-  edges: FlowEdgeSpec[]
+  nodes: Record<K, FlowNode>
+  edges: FlowEdgeSpec<K>[]
+}
+export type FlowLayout = FlowGraph<FlowNodeKey> & {
   loss: { side: 'b' | 'r'; offset: number; length: number }
 }
 type Point = { x: number; y: number }
@@ -40,14 +42,14 @@ export const MIN_FLOW_KWH = 0.05
 export const MIN_LOSS_KWH = 0.5
 const ARROW_LENGTH = 9
 /** A node's inner margin: its text starts this far in and may run to this far from the right edge. */
-const NODE_PADDING = 12
+export const NODE_PADDING = 12
 /** Smallest sizes a node figure / the battery's loss figure steps down to so it fits its node. */
 export const FIGURE_MIN_SIZE = 18
 export const LOSS_MIN_SIZE = 16
 
-const edge = (
-  from: FlowNodeKey,
-  to: FlowNodeKey,
+export const flowEdge = <K extends string>(
+  from: K,
+  to: K,
   fromSide: Side,
   fromOffset: number,
   toSide: Side,
@@ -55,7 +57,7 @@ const edge = (
   k1 = 0.5,
   k2 = 0.5,
   labelT = 0.5,
-): FlowEdgeSpec => ({ from, to, fromSide, fromOffset, toSide, toOffset, k1, k2, labelT })
+): FlowEdgeSpec<K> => ({ from, to, fromSide, fromOffset, toSide, toOffset, k1, k2, labelT })
 
 export function flowLayout(width: number): FlowLayout {
   if (width >= WIDE_MIN_WIDTH) {
@@ -76,13 +78,13 @@ export function flowLayout(width: number): FlowLayout {
         load: { x: R, y: H - hLoad / 2 - 2, w: nw, h: hLoad },
       },
       edges: [
-        edge('sol', 'exp', 'r', -22, 'l', 0),
-        edge('sol', 'load', 'r', -2, 't', -20),
-        edge('sol', 'bat', 'r', 20, 't', -26),
-        edge('imp', 'bat', 'r', -20, 'b', -26),
-        edge('imp', 'load', 'r', 14, 'l', 30),
-        edge('bat', 'load', 'r', 0, 'l', -14),
-        edge('bat', 'exp', 't', 26, 'b', -30),
+        flowEdge('sol', 'exp', 'r', -22, 'l', 0),
+        flowEdge('sol', 'load', 'r', -2, 't', -20),
+        flowEdge('sol', 'bat', 'r', 20, 't', -26),
+        flowEdge('imp', 'bat', 'r', -20, 'b', -26),
+        flowEdge('imp', 'load', 'r', 14, 'l', 30),
+        flowEdge('bat', 'load', 'r', 0, 'l', -14),
+        flowEdge('bat', 'exp', 't', 26, 'b', -30),
       ],
       loss: { side: 'b', offset: 40, length: 44 },
     }
@@ -106,11 +108,11 @@ export function flowLayout(width: number): FlowLayout {
       load: { x: R, y: H - hLoad / 2 - 2, w: nw, h: hLoad },
     },
     edges: [
-      edge('sol', 'exp', 'b', -50 * k, 't', -50 * k),
+      flowEdge('sol', 'exp', 'b', -50 * k, 't', -50 * k),
       // Runs straight down the battery's left side and turns late, so it passes under the battery, not through it.
       // On a phone the battery's corner is close: the turn comes as late as the curve allows (k2 0, the 16 px
       // control minimum), so even a 16 px stroke clears it. A wider card has room to ease it out to 0.15.
-      edge(
+      flowEdge(
         'sol',
         'load',
         'b',
@@ -120,12 +122,12 @@ export function flowLayout(width: number): FlowLayout {
         1,
         Math.min(0.15, Math.max(0, (k - 1.2) * 0.6)),
       ),
-      edge('sol', 'bat', 'b', 30 * k, 't', -24 * k),
-      edge('imp', 'bat', 'b', -34 * k, 't', 24 * k),
+      flowEdge('sol', 'bat', 'b', 30 * k, 't', -24 * k),
+      flowEdge('imp', 'bat', 'b', -34 * k, 't', 24 * k),
       // Its value sits high, clear of the loss stub.
-      edge('imp', 'load', 'b', 46 * k, 't', 48 * k, 0.5, 0.5, 0.22),
-      edge('bat', 'load', 'b', 30 * k, 't', 0),
-      edge('bat', 'exp', 'b', -20 * k, 't', 20 * k),
+      flowEdge('imp', 'load', 'b', 46 * k, 't', 48 * k, 0.5, 0.5, 0.22),
+      flowEdge('bat', 'load', 'b', 30 * k, 't', 0),
+      flowEdge('bat', 'exp', 'b', -20 * k, 't', 20 * k),
     ],
     loss: { side: 'r', offset: 4, length: Math.min(30, 18 * k) },
   }
@@ -144,7 +146,7 @@ function port(n: FlowNode, side: Side, offset: number): Port {
 }
 
 /** A cubic from the source port to just outside the target port; the arrowhead fills the last 9 px. */
-export function flowCurve(layout: FlowLayout, e: FlowEdgeSpec) {
+export function flowCurve<K extends string>(layout: FlowGraph<K>, e: FlowEdgeSpec<K>) {
   const a = port(layout.nodes[e.from], e.fromSide, e.fromOffset)
   const tip = port(layout.nodes[e.to], e.toSide, e.toOffset)
   const end = { x: tip.x + tip.dx * ARROW_LENGTH, y: tip.y + tip.dy * ARROW_LENGTH }
