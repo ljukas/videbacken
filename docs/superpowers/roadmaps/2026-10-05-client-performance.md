@@ -270,6 +270,11 @@ the visx primitives, so the session page gained 1 KB from regrouping.
 five), and a narrow chart's x labels thin greedily from the first while keeping the last, so the kept subset can be
 uneven (as recharts' `preserveStartEnd`).
 
+**Bones not recaptured in 5a.** The chart frames keep their heights (260 px; the hour chart 220), with the legend
+inside the frame as before, so the captured skeletons still match the page's layout. A recapture from local data
+picked up data-only drift elsewhere on the pages (the patterns timeline, the economy table rows) and turned the
+charts' sr-only nodes into dot bones, so it is left for 5c, with `.sr-only` excluded in `boneyard.config.json`.
+
 **Follow-ups found in review (not in 5a):**
 - An sr-only data table for Monthly, Economy and Spot. NVDA/JAWS in browse mode don't pass arrows to a group, and
   mobile screen readers have no arrows. Today's recharts charts give them nothing either.
