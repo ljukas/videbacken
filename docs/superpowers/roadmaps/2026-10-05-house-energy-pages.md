@@ -11,7 +11,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92), fix [#95](https://github.com/ljukas/videbacken/pull/95) | checkpoint passed | 2026-10-05: sums and car match prod; warm `energy.overview` query 52 ms mean over 33 calls (one cold instance 736 ms total); owner accepted, asked for a month choice → step 1b |
 | 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | [#103](https://github.com/ljukas/videbacken/pull/103) | checkpoint passed | 2026-10-06: August, Hela 2026 and Totalt match SQL; warm `energy/overview` 64–67 ms; no shift on prod at 500 px (3 widths only locally); owner accepted, asked for a richer summary → step 1c |
 | 1c | Summary as a flow diagram: visx, battery loss, icon tiles, arrow-value switch (replaces the five tiles) | [plan](../plans/2026-10-06-energy-1c-flow-summary.md) | [#112](https://github.com/ljukas/videbacken/pull/112) | checkpoint passed | 2026-10-06: Feb, Aug and Oct table (57 values) = prod SQL within 0,1 kWh; no shift over 10 periods on prod at 500 px (1440 / 820 / 390 px measured locally); owner accepted live |
-| 2 | Energi › Batteri (battery tiles, monthly chart, winter note) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
+| 2 | Energi › Batteri: the period's battery as a flow diagram, a month chart of out + loss, winter note (reshaped 2026-10-06) | [plan](../plans/2026-10-05-energy-2-battery.md) | — | not started | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
@@ -62,10 +62,8 @@ Each must pass, with the result recorded in the table, before the next step star
      within 0.1 kWh.
    - The owner reviews `/energy/battery` live and accepts the winter note's wording.
 
-Step 2's plan predates steps 1b and 1c: its Task 0 must re-check it against step 1b's `EnergyOverview` shape
-(`yearTotal`, `allTime`, `monthsWithReadings`; no `tiles.thisMonth`), the period control (no `PeriodTabs`), the
-colour tokens, and step 1c (the overview already shows the battery's loss; `EnergyReadouts` is gone; `figures.ts` has
-`batteryToGrid` / `batteryToHouse`), and rewrite the affected tasks before building.
+Step 2 was reshaped on 2026-10-06 ([battery page design](../specs/2026-10-06-energy-battery-page-design.md)) and its
+plan rewritten against steps 1b and 1c; its Task 0 still checks `main` before building.
 
 ## Log
 
@@ -138,3 +136,10 @@ colour tokens, and step 1c (the overview already shows the battery's loss; `Ener
   Chrome window was minimised (resize is a no-op, the app refuses to be framed), so 1440 / 820 / 390 px stand on the
   local measurements (step 1c log); a minimised window also pauses the ResizeObserver, so the diagram draws on first
   show into its already-reserved box. Owner reviewed `/energy` live: "It looks good live!" Next: step 2.
+- 2026-10-06: step 2 reshaped with the owner before building, because its plan predated 1b and 1c. Mockup
+  (<https://claude.ai/artifact/9DQUpranaTQ1acazwzLM81>, version 3, prod's 2026 sums): the seasonal story leads; of
+  three chart forms the owner chose one stack per month (out + the loss on top), then asked for the Summering on top
+  as a battery flow diagram like Översikt's (Solel and Köpt el → Batteri "Lager ±" → Ut and Förlust, Verkningsgrad
+  in the ring). New `--energy-loss` red (#b91c1c / #dc3c3c): the mockup's orange failed against dark solar
+  (`--pairs all`). Design: [battery page](../specs/2026-10-06-energy-battery-page-design.md); ADR-0024 decision 6
+  amended; the plan rewritten (two refactor commits first: the shared period hook, the shared flow parts).
