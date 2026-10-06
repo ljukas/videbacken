@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from '~/components/ui/card'
-import type { CredentialOrigin } from '~/lib/integrationCredentials'
+import { CREDENTIAL_ENV_VARS, type CredentialOrigin } from '~/lib/integrationCredentials'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { CredentialsButton } from './CredentialsButton'
@@ -17,7 +17,14 @@ function statusText(origin: CredentialOrigin, unreadable: boolean) {
     case 'stored':
       return m.charging_grid_status_stored()
     case 'env':
-      return m.charging_grid_status_env()
+      return (
+        <>
+          {m.charging_grid_status_env()}{' '}
+          <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-foreground text-xs">
+            {CREDENTIAL_ENV_VARS.gridTariff.facilityId}
+          </code>
+        </>
+      )
     case 'missing':
       return m.charging_grid_status_missing()
   }
