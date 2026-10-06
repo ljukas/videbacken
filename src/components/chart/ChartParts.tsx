@@ -60,12 +60,16 @@ export function TooltipRow({
   )
 }
 
+/** A hatched swatch's CSS background: `color` stripes over a 45 % tint, at 135°. */
+export const HATCH_SWATCH = (color: string) =>
+  `repeating-linear-gradient(135deg, ${color} 0 3px, color-mix(in srgb, ${color} 45%, var(--card)) 3px 5px)`
+
 /** The series key under the plot, inside the chart's height (touch can't hover). */
 export function ChartLegend({
   items,
   className,
 }: {
-  items: readonly { key: string; label: string; color: string }[]
+  items: readonly { key: string; label: string; color: string; pattern?: 'hatch' }[]
   className?: string
 }) {
   return (
@@ -75,7 +79,14 @@ export function ChartLegend({
     >
       {items.map((item) => (
         <div key={item.key} data-legend-item={item.key} className="flex items-center gap-1.5">
-          <div className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
+          <div
+            className="h-2 w-2 shrink-0 rounded-[2px]"
+            style={
+              item.pattern === 'hatch'
+                ? { backgroundImage: HATCH_SWATCH(item.color) }
+                : { backgroundColor: item.color }
+            }
+          />
           {item.label}
         </div>
       ))}

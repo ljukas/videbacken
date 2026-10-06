@@ -23,55 +23,78 @@ import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { m } from '~/paraglide/messages'
 
 // label is a message function rather than a string: module scope evaluates
-// once per process, but the active locale is per request/render. `scoped`
-// views share the page filter (year, vehicle); settings is admin-only and
-// unscoped. Every item carries both flags, so the array keeps one shape.
+// once per process, but the active locale is per request/render. `link` picks the
+// props a view's Link gets: charging views share the page filter (year, vehicle),
+// energy views the period, settings is admin-only and unscoped. Every item carries
+// both `link` and `adminOnly`, so each array keeps one shape.
 const chargingSubItems = linkOptions([
-  { to: '/charging', label: m.nav_charging_overview, scoped: true, adminOnly: false },
+  { to: '/charging', label: m.nav_charging_overview, link: 'charging', adminOnly: false },
   {
     to: '/charging/patterns',
     label: m.nav_charging_patterns_short,
-    scoped: true,
+    link: 'charging',
     adminOnly: false,
   },
-  { to: '/charging/economy', label: m.nav_charging_economy_short, scoped: true, adminOnly: false },
+  {
+    to: '/charging/economy',
+    label: m.nav_charging_economy_short,
+    link: 'charging',
+    adminOnly: false,
+  },
   {
     to: '/charging/settings',
     label: m.nav_charging_settings_short,
-    scoped: false,
+    link: 'unscoped',
     adminOnly: true,
   },
+])
+
+const energySubItems = linkOptions([
+  { to: '/energy', label: m.nav_energy_overview, link: 'energy', adminOnly: false },
+  { to: '/energy/battery', label: m.nav_energy_battery, link: 'energy', adminOnly: false },
 ])
 
 const mainNavItems = linkOptions([
   { to: '/', label: m.nav_home, icon: HomeIcon },
   { to: '/sensors', label: m.nav_sensors, icon: ThermometerIcon },
-  { to: '/charging', label: m.nav_charging, icon: ZapIcon, subItems: chargingSubItems },
-  { to: '/energy', label: m.nav_energy, icon: SunIcon },
+  {
+    to: '/charging',
+    label: m.nav_charging,
+    icon: ZapIcon,
+    subItems: chargingSubItems,
+    link: 'charging',
+  },
+  { to: '/energy', label: m.nav_energy, icon: SunIcon, subItems: energySubItems, link: 'energy' },
   { to: '/users', label: m.nav_users, icon: UsersIcon },
 ])
 
 type NavItem = (typeof mainNavItems)[number]
-type NavSubItem = (typeof chargingSubItems)[number]
+type NavSubItem = (typeof chargingSubItems)[number] | (typeof energySubItems)[number]
 
 // Links into a section with sub-views. Link sets aria-current itself from its
-// own match, prefix by default, so it must be exact or /charging would read as
-// the current page on /charging/patterns too. The views' own params (month,
-// metric, dialog) mustn't count, so search is ignored for the match. The chosen
-// year and vehicle scope (the page filter, ADR-0021) are kept when switching
-// between the views.
-const sectionLinkProps = {
+// own match, prefix by default, so it must be exact or /charging (and /energy)
+// would read as the current page on its views too. The views' own params (month,
+// metric, dialog) mustn't count, so search is ignored for the match.
+const activeOptions = { exact: true, includeSearch: false } as const
+// Charging views keep the chosen year and vehicle scope (the page filter, ADR-0021) between them.
+const chargingLinkProps = {
   search: (prev: { year?: number; vehicle?: VehicleScope }) => ({
     year: prev.year,
     vehicle: prev.vehicle,
   }),
-  activeOptions: { exact: true, includeSearch: false },
+  activeOptions,
 } as const
-
+// Energi views keep the chosen period (?period=); they have no year or vehicle filter.
+const energyLinkProps = {
+  search: (prev: { period?: string | number }) => ({ period: prev.period }),
+  activeOptions,
+} as const
 // Settings: matched exactly like the views, but it starts from a clean URL.
-const unscopedLinkProps = {
-  search: () => ({}),
-  activeOptions: { exact: true, includeSearch: false },
+const unscopedLinkProps = { search: () => ({}), activeOptions } as const
+const LINK_PROPS = {
+  charging: chargingLinkProps,
+  energy: energyLinkProps,
+  unscoped: unscopedLinkProps,
 } as const
 
 export function AppSidebar({ role }: { role?: string | null } = {}) {
@@ -89,7 +112,7 @@ export function AppSidebar({ role }: { role?: string | null } = {}) {
         <SidebarMenuButton asChild isActive={isActive} tooltip={item.label()}>
           <Link
             to={item.to}
-            {...('subItems' in item ? sectionLinkProps : {})}
+            {...('subItems' in item ? LINK_PROPS[item.link] : {})}
             onClick={() => setOpenMobile(false)}
           >
             <item.icon />
@@ -105,18 +128,14 @@ export function AppSidebar({ role }: { role?: string | null } = {}) {
     )
   }
 
-  // Sibling views of one section. Matched exactly (see sectionLinkProps): the
+  // Sibling views of one section. Matched exactly (see LINK_PROPS): the
   // overview's /charging is a prefix of /charging/patterns.
   function renderSubItem(item: NavSubItem) {
     const isActive = !!matchRoute({ to: item.to })
     return (
       <SidebarMenuSubItem key={item.to}>
         <SidebarMenuSubButton asChild isActive={isActive}>
-          <Link
-            to={item.to}
-            {...(item.scoped ? sectionLinkProps : unscopedLinkProps)}
-            onClick={() => setOpenMobile(false)}
-          >
+          <Link to={item.to} {...LINK_PROPS[item.link]} onClick={() => setOpenMobile(false)}>
             <span>{item.label()}</span>
           </Link>
         </SidebarMenuSubButton>

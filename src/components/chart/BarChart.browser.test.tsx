@@ -821,3 +821,101 @@ test('fewer rows after a refetch never let Enter select a missing category', asy
   await settle()
   expect(onSelect).not.toHaveBeenCalled()
 })
+
+test('a hatched series fills its bars with a pattern in the chart and hatches its legend swatch', async () => {
+  const { screen } = await render({
+    series: [
+      { key: 'a', label: 'Serie A', color: 'var(--energy-battery)', stack: 's' },
+      { key: 'b', label: 'Serie B', color: 'var(--energy-loss)', stack: 's', pattern: 'hatch' },
+    ],
+  })
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('[data-series="b"] [data-bar]')).not.toBeNull(),
+  )
+  const fill =
+    screen.container.querySelector('[data-series="b"] [data-bar]')?.getAttribute('fill') ?? ''
+  const id = /^url\(#(.+)\)$/.exec(fill)?.[1]
+  expect(id).toBeTruthy()
+  expect(screen.container.querySelector(`pattern[id="${id}"]`)).not.toBeNull()
+  expect(screen.container.querySelector('[data-series="a"] [data-bar]')?.getAttribute('fill')).toBe(
+    'var(--energy-battery)',
+  )
+  const swatch = screen.container.querySelector<HTMLElement>('[data-legend-item="b"] > div')
+  expect(swatch?.style.backgroundImage).toContain('repeating-linear-gradient')
+})
+
+test('barLabel draws above its stack, and nothing where it returns null', async () => {
+  // Index 3 is apr (the tallest stack); feb (1) has no bars at all.
+  const { screen } = await render({ barLabel: (_r, i) => (i === 3 ? '43 %' : null) })
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('[data-bar-label]')).toHaveLength(1),
+  )
+  const label = screen.container.querySelector<SVGTextElement>('[data-bar-label]')
+  expect(label?.textContent).toBe('43 %')
+  const top = Math.min(
+    ...[...screen.container.querySelectorAll('[data-bar][data-index="3"]')].map(
+      (b) => b.getBoundingClientRect().top,
+    ),
+  )
+  expect(label?.getBoundingClientRect().bottom).toBeLessThanOrEqual(top)
+})
+
+test('without pattern or barLabel nothing new is drawn', async () => {
+  const { screen } = await render()
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  expect(screen.container.querySelectorAll('pattern, [data-bar-label]')).toHaveLength(0)
+})
+
+test('barLabel skips a label that would overlap the previously drawn one', async () => {
+  const many: Row[] = Array.from({ length: 8 }, (_, i) => ({ label: `m${i}`, a: 10 + i, b: 5 }))
+  const { screen } = await render({ rows: many, barLabel: () => '43 %' }, 240)
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('[data-bar-label]').length).toBeGreaterThan(0),
+  )
+  const boxes = [...screen.container.querySelectorAll('[data-bar-label]')].map((l) =>
+    l.getBoundingClientRect(),
+  )
+  // Not every category is labelled at this width, and the drawn ones never touch.
+  expect(boxes.length).toBeLessThan(8)
+  for (let i = 1; i < boxes.length; i++)
+    expect(boxes[i].left).toBeGreaterThanOrEqual(boxes[i - 1].right)
+})
+
+test('barLabel keeps the taller of two colliding labels', async () => {
+  // Two categories in 90 px: the labels collide. Index 1 is the taller stack.
+  const two: Row[] = [
+    { label: 'm0', a: 5, b: 5 },
+    { label: 'm1', a: 20, b: 5 },
+  ]
+  const { screen } = await render(
+    { rows: two, barLabel: (_r, i) => (i === 0 ? 'low stack' : 'high stack') },
+    90,
+  )
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('[data-bar-label]').length).toBeGreaterThan(0),
+  )
+  const labels = [...screen.container.querySelectorAll('[data-bar-label]')]
+  expect(labels.map((l) => l.textContent)).toEqual(['high stack'])
+})
+
+test('barLabel drawn labels never overlap, and the tallest is always drawn', async () => {
+  // The last stack is the tallest.
+  const many: Row[] = Array.from({ length: 8 }, (_, i) => ({ label: `m${i}`, a: 10 + i, b: 5 }))
+  const { screen } = await render({ rows: many, barLabel: () => '43 %' }, 240)
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('[data-bar-label]').length).toBeGreaterThan(0),
+  )
+  const boxes = [...screen.container.querySelectorAll('[data-bar-label]')]
+    .map((l) => l.getBoundingClientRect())
+    .sort((p, q) => p.left - q.left)
+  for (let i = 1; i < boxes.length; i++)
+    expect(boxes[i].left).toBeGreaterThanOrEqual(boxes[i - 1].right + 4 - 0.5)
+  // The series sit side by side: the tallest category's span is its bars' union.
+  const spans = [...screen.container.querySelectorAll('[data-bar][data-index="7"]')].map((b) =>
+    b.getBoundingClientRect(),
+  )
+  const centre =
+    (Math.min(...spans.map((b) => b.left)) + Math.max(...spans.map((b) => b.right))) / 2
+  const last = boxes[boxes.length - 1]
+  expect(Math.abs((last.left + last.right) / 2 - centre)).toBeLessThan(1)
+})

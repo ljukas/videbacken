@@ -22,3 +22,13 @@ test('the flow diagram geometry is importable client-side', async () => {
   const mod = await import('~/lib/houseEnergy/flowLayout')
   expect(typeof mod.flowLayout).toBe('function')
 })
+
+test('the /energy/battery route module evaluates client-side without a db leak', async () => {
+  const mod = await import('~/routes/_authenticated/energy/battery')
+  expect(mod.Route).toBeDefined()
+})
+
+test('the battery flow geometry is importable client-side', async () => {
+  const mod = await import('~/lib/houseEnergy/batteryFlowLayout')
+  expect(typeof mod.batteryFlowLayout).toBe('function')
+})

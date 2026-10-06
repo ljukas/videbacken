@@ -18,6 +18,8 @@ export type BarSeries = {
   color: string
   /** Series with the same stack id draw as one bar, stacked in series order; others sit side by side. */
   stack?: string
+  /** 'hatch': 45° stripes of `color` over a 40 % tint (a second cue besides colour, e.g. the battery's loss). */
+  pattern?: 'hatch'
   radius?: number
   /** Round only the end away from the axis (a stack's top). Default: every corner. */
   roundEndOnly?: boolean
