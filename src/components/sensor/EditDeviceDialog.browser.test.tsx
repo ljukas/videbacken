@@ -193,3 +193,10 @@ test('Återställ then Spara submits an empty name', async () => {
   await screen.getByRole('button', { name: m.common_save() }).click()
   await vi.waitFor(() => expect(renameFn).toHaveBeenCalledWith({ id: 'a', name: '', location: '' }))
 })
+
+test('the name input has focus when the dialog opens, even with Återställ before it', async () => {
+  const { screen } = await renderWithProviders(
+    <EditDeviceDialog open device={device({ name: 'Old' })} onOpenChange={() => {}} />,
+  )
+  await expect.element(screen.getByLabelText(m.sensors_field_name(), { exact: true })).toHaveFocus()
+})

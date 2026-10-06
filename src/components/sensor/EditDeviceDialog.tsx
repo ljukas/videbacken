@@ -90,8 +90,7 @@ function EditDeviceForm({ device, onDone }: { device: EditableDevice; onDone: ()
 
   // What the page will show for the name as typed: blank (spaces too — the
   // server clears them) falls back to the Shelly name, else "Sensor a1b2".
-  const name = useStore(form.store, (s) => s.values.name)
-  const hasOwnName = name.trim() !== ''
+  const hasOwnName = useStore(form.store, (s) => s.values.name.trim() !== '')
   const fallback = fallbackSensorName(device.shellyName, device.mac)
   const badge = hasOwnName
     ? m.sensors_name_badge_own()
@@ -117,7 +116,11 @@ function EditDeviceForm({ device, onDone }: { device: EditableDevice; onDone: ()
             <Label id={NAME_LABEL_ID} htmlFor={NAME_INPUT_ID}>
               {m.sensors_field_name()}
             </Label>
-            <Badge id={NAME_BADGE_ID} variant="outline" className="text-muted-foreground">
+            <Badge
+              id={NAME_BADGE_ID}
+              variant="outline"
+              className="h-auto text-muted-foreground text-sm"
+            >
               {badge}
             </Badge>
             {hasOwnName ? (
@@ -126,7 +129,7 @@ function EditDeviceForm({ device, onDone }: { device: EditableDevice; onDone: ()
                 variant="link"
                 size="sm"
                 // 44 px on touch without growing the header: the extra height overlaps the gap.
-                className="pointer-coarse:-my-2 ml-auto h-7 pointer-coarse:h-11 px-1"
+                className="pointer-coarse:-my-2 ml-auto h-7 pointer-coarse:h-11 px-1 text-sm"
                 aria-label={m.sensors_name_reset_label()}
                 onClick={() => {
                   form.setFieldValue('name', '')
@@ -142,6 +145,7 @@ function EditDeviceForm({ device, onDone }: { device: EditableDevice; onDone: ()
             name="name"
             children={(field) => (
               <field.TextField
+                inputId={NAME_INPUT_ID}
                 labelledBy={NAME_LABEL_ID}
                 describedBy={NAME_BADGE_ID}
                 placeholder={fallback}
@@ -182,7 +186,7 @@ function DeviceIdentity({ device }: { device: EditableDevice }) {
           {device.shellyName ?? m.sensors_identity_shelly_name_missing()}
         </dd>
         <dt className="text-muted-foreground">{m.sensors_identity_mac()}</dt>
-        <dd className="font-mono tabular-nums">{formatMac(device.mac)}</dd>
+        <dd className="break-all font-mono tabular-nums">{formatMac(device.mac)}</dd>
       </dl>
       {device.shellyName ? null : (
         <p className="mt-2 text-muted-foreground">{m.sensors_identity_shelly_name_hint()}</p>
