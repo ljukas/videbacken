@@ -36,13 +36,21 @@ test('disabled: no loader is ever called', async () => {
   expect(a).not.toHaveBeenCalled()
 })
 
-test('unmount before idle: no call', async () => {
-  const a = vi.fn(() => Promise.resolve())
-  const screen = await render(<Harness enabled loaders={[a]} />)
-  await screen.unmount()
-  await idle()
-  await idle()
-  expect(a).not.toHaveBeenCalled()
+test('unmount before idle: the scheduled callback is cancelled and no loader is called', async () => {
+  const request = vi.fn((_cb: IdleRequestCallback) => 42)
+  const cancel = vi.fn()
+  vi.stubGlobal('requestIdleCallback', request)
+  vi.stubGlobal('cancelIdleCallback', cancel)
+  try {
+    const a = vi.fn(() => Promise.resolve())
+    const screen = await render(<Harness enabled loaders={[a]} />)
+    expect(request).toHaveBeenCalledTimes(1)
+    await screen.unmount()
+    expect(cancel).toHaveBeenCalledWith(42)
+    expect(a).not.toHaveBeenCalled()
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })
 
 test('a rejecting loader produces no unhandled rejection', async () => {

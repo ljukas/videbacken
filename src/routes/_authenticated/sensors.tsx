@@ -29,6 +29,8 @@ const searchSchema = z.object({
   deviceId: z.string().optional(),
 })
 type SensorsSearch = z.infer<typeof searchSchema>
+type SensorsDialog = NonNullable<SensorsSearch['dialog']>
+
 // Admin-only: loads on first open (LazyDialogMount), so a member never fetches the form code;
 // an admin warms the chunk once the browser is idle (useIdlePreload).
 const loadEditDeviceDialog = () => import('~/components/sensor/EditDeviceDialog')
@@ -36,8 +38,6 @@ const EditDeviceDialog = lazy(() =>
   loadEditDeviceDialog().then((mod) => ({ default: mod.EditDeviceDialog })),
 )
 const ADMIN_DIALOG_LOADERS = [loadEditDeviceDialog]
-
-type SensorsDialog = NonNullable<SensorsSearch['dialog']>
 
 // Only the shorter ranges poll — a new reading won't visibly move a 1-year daily
 // chart, so longer ranges just refetch on focus/mount.

@@ -101,6 +101,13 @@ test('list cached: the table renders at once, no skeleton', async () => {
   expect(skeleton('users-table')).toBeNull()
 })
 
+test('a phone number shows in international format', async () => {
+  const { screen } = await renderUsers('', (qc) =>
+    qc.setQueryData(listKey, [row({ phone: '+46701234567' })]),
+  )
+  await expect.element(screen.getByText('+46 70 123 45 67').first()).toBeVisible()
+})
+
 test('a revoke deep link waits for the list, then opens', async () => {
   const { screen, router, qc } = await renderUsers(
     '?dialog=revoke&email=anna%40example.com',
