@@ -174,9 +174,9 @@ function EnabledPicker({
       <div id={headerId} className="flex flex-col gap-1 text-muted-foreground text-sm">
         {header}
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col">
         <Label htmlFor={searchId}>{m.charging_home_search_label()}</Label>
-        <div className="flex gap-2">
+        <div className="mt-1.5 flex gap-2">
           <Input
             id={searchId}
             ref={searchRef}
@@ -203,19 +203,26 @@ function EnabledPicker({
             {hits.isFetching ? m.charging_home_searching() : m.charging_home_search()}
           </Button>
         </div>
-        {/* Always mounted, so a screen reader announces what appears inside. */}
-        <div role="alert" className="text-muted-foreground text-sm empty:hidden">
-          {query !== null && hits.isError ? m.charging_home_search_unavailable() : null}
+        {/* Always mounted and never display:none (an empty div has no height), so a
+            screen reader announces what appears inside. Spacing lives on the message. */}
+        <div role="alert">
+          {query !== null && hits.isError ? (
+            <p className="mt-1.5 text-muted-foreground text-sm">
+              {m.charging_home_search_unavailable()}
+            </p>
+          ) : null}
         </div>
-        <div role="status" className="text-muted-foreground text-sm empty:hidden">
-          {query !== null && !hits.isError && hits.data
-            ? hits.data.length === 0
-              ? m.charging_home_search_empty()
-              : m.charging_home_search_hit_count({ count: hits.data.length })
-            : null}
+        <div role="status">
+          {query !== null && !hits.isError && hits.data ? (
+            <p className="mt-1.5 text-muted-foreground text-sm">
+              {hits.data.length === 0
+                ? m.charging_home_search_empty()
+                : m.charging_home_search_hit_count({ count: hits.data.length })}
+            </p>
+          ) : null}
         </div>
         {query !== null && !hits.isError && hits.data && hits.data.length > 0 ? (
-          <div className="flex flex-col gap-1">
+          <div className="mt-1 flex flex-col gap-1">
             <ul aria-label={m.charging_home_search_hits()} className="flex flex-col">
               {hits.data.map((hit) => (
                 <li key={`${hit.latitude},${hit.longitude},${hit.label}`}>
@@ -251,7 +258,7 @@ function EnabledPicker({
       ) : (
         noMap
       )}
-      <div className="flex flex-col items-start gap-1">
+      <div className="flex flex-col items-start">
         <Button
           type="button"
           variant="outline"
@@ -263,12 +270,14 @@ function EnabledPicker({
           <LocateFixedIcon aria-hidden />
           {locating ? m.charging_home_locating() : m.charging_home_use_location()}
         </Button>
-        <div role="status" className="text-muted-foreground text-sm empty:hidden">
-          {locationError === 'denied'
-            ? m.charging_home_location_denied()
-            : locationError === 'unavailable'
-              ? m.charging_home_location_unavailable()
-              : null}
+        <div role="status">
+          {locationError ? (
+            <p className="mt-1 text-muted-foreground text-sm">
+              {locationError === 'denied'
+                ? m.charging_home_location_denied()
+                : m.charging_home_location_unavailable()}
+            </p>
+          ) : null}
         </div>
       </div>
       {children}

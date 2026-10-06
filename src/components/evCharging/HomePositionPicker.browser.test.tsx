@@ -201,6 +201,15 @@ test('results and errors are announced through live regions', async () => {
   const { screen } = await renderWithProviders(<Harness />)
   const field = screen.getByLabelText(m.charging_home_search_label())
   const button = screen.getByRole('button', { name: m.charging_home_search(), exact: true })
+  // Empty live regions stay mounted and out of display:none (and `hidden`), or screen
+  // readers miss what is later put into them. The Tailwind class can't render here
+  // (no app.css), so pin the class too.
+  const regions = document.querySelectorAll('[role="alert"], [role="status"]')
+  expect(regions.length).toBeGreaterThanOrEqual(3)
+  for (const region of regions) {
+    expect(region.className).not.toMatch(/hidden/)
+    expect(getComputedStyle(region).display).not.toBe('none')
+  }
   await field.fill('Storgatan 1')
   await button.click()
   await expect
