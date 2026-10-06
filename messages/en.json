@@ -891,5 +891,6 @@
   "energy_flow_table_flow": "Flow",
   "energy_flow_row_battery_in": "Battery in",
   "energy_flow_row_battery_out": "Battery out",
-  "energy_flow_row_stored": "Change in stored energy"
+  "energy_flow_row_stored": "Change in stored energy",
+  "energy_flow_table_value": "Value"
 }
