@@ -73,8 +73,8 @@ test('Automatiskt sends null; a failure shows the error toast and keeps the save
     expect(toastMock.error).toHaveBeenCalledWith(m.charging_vehicle_save_error()),
   )
   // Nothing was saved, so the select still shows the stored tag, not "Automatiskt".
-  await expect.element(trigger).toHaveTextContent(m.charging_vehicle_other())
-  await expect.element(trigger).not.toHaveTextContent(m.charging_vehicle_auto())
+  await expect.element(trigger).toMatchTextContent(m.charging_vehicle_other())
+  await expect.element(trigger).not.toMatchTextContent(m.charging_vehicle_auto())
 })
 
 test('while saving, focus stays on the trigger and a second choice is ignored', async () => {
@@ -100,12 +100,12 @@ test('while saving the select shows the chosen value, not the stale stored one',
     <SessionVehicle sessionId={ID} vehicle="ours" vehicleSource="default" isAdmin />,
   )
   const trigger = screen.getByRole('combobox', { name: m.charging_vehicle_who_label() })
-  await expect.element(trigger).toHaveTextContent(m.charging_vehicle_auto())
+  await expect.element(trigger).toMatchTextContent(m.charging_vehicle_auto())
   await trigger.click()
   await screen.getByRole('option', { name: m.charging_vehicle_other() }).click()
   await vi.waitFor(() => expect(setVehicleFn).toHaveBeenCalled())
-  await expect.element(trigger).toHaveTextContent(m.charging_vehicle_other())
-  await expect.element(trigger).not.toHaveTextContent(m.charging_vehicle_auto())
+  await expect.element(trigger).toMatchTextContent(m.charging_vehicle_other())
+  await expect.element(trigger).not.toMatchTextContent(m.charging_vehicle_auto())
 })
 
 test('a live-state attribution says it came from the car', async () => {

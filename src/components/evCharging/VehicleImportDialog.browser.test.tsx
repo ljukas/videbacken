@@ -199,6 +199,6 @@ test('the dialog cannot be closed while the import is in flight', async () => {
 test('the preview is a polite status the file input points at', async () => {
   const { screen, fileInput } = await setup()
   await userEvent.upload(fileInput, fixture())
-  await expect.element(screen.getByRole('status')).toHaveTextContent(/3 laddningar/)
+  await expect.element(screen.getByRole('status')).toMatchTextContent(/3 laddningar/)
   await expect.element(fileInput).toHaveAttribute('aria-describedby', 'vehicleExport-status')
 })

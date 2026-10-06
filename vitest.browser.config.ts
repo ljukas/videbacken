@@ -36,7 +36,7 @@ export default defineProject({
   resolve: { tsconfigPaths: true },
   test: {
     name: 'browser',
-    // Distinct groupOrder from the node project (vite.config.ts): Vitest 4
+    // Distinct groupOrder from the node project (vite.config.ts): Vitest
     // refuses to co-run projects that share a groupOrder but differ in
     // maxWorkers. Group 1 runs after the node/DB group.
     sequence: { groupOrder: 1 },
@@ -47,6 +47,10 @@ export default defineProject({
       provider: playwright(),
       headless: true,
       instances: [{ browser: 'chromium' }],
+      // Vitest 5 made text locators (getByText, getByRole's `name`, …) match
+      // exactly by default. The suite was written against the Vitest 4
+      // substring match, so keep that until the locators are tightened.
+      locators: { exact: false },
     },
   },
 })
