@@ -18,9 +18,15 @@ test.each([
       <p>Innehåll</p>
     </PageContainer>,
   )
-  const container = screen.getByText('Innehåll').element().closest('[data-slot="page-container"]')
-  const unprefixedOverflow = container?.className
-    .split(/\s+/)
-    .filter((c) => c.startsWith('overflow-'))
-  expect(unprefixedOverflow).toEqual([])
+  const classes =
+    screen
+      .getByText('Innehåll')
+      .element()
+      .closest('[data-slot="page-container"]')
+      ?.className.split(/\s+/) ?? []
+  const overflow = classes.filter((c) => /(^|:)overflow-/.test(c))
+  // Nothing clips or scrolls below md (no bare, sm: or max-* overflow class)…
+  expect(overflow.filter((c) => !/^(md|lg|xl|2xl):/.test(c))).toEqual([])
+  // …and from md up the panel still owns the scroll or the clip.
+  expect(overflow.some((c) => c.startsWith('md:'))).toBe(true)
 })
