@@ -96,6 +96,7 @@ test('devices still loading: skeletons, never the "no sensors" empty state', asy
   await expect.poll(() => skeleton('sensors-tiles')).not.toBeNull()
   expect(skeleton('sensors-temp-chart')).not.toBeNull()
   expect(skeleton('sensors-hum-chart')).not.toBeNull()
+  expect(skeleton('sensors-chips')).not.toBeNull()
   expect(screen.getByText(m.sensors_empty_title()).elements()).toHaveLength(0)
   expect(screen.getByText(m.sensors_devices_error_title()).elements()).toHaveLength(0)
 })
@@ -135,6 +136,10 @@ test('series still loading: tiles render, the charts are skeletons, never "no da
 test('series failed: one alert in place of the charts, never "no data"', async () => {
   const { screen } = await renderSensors('', (qc) => qc.setQueryData(devicesKey, [device]))
   await expect.element(screen.getByText(m.sensors_series_error_title())).toBeVisible()
+  // The alert sits in the Historik card, under its still-working range control.
+  const history = screen.getByRole('region', { name: m.sensors_history_heading() })
+  await expect.element(history.getByText(m.sensors_series_error_title())).toBeVisible()
+  await expect.element(history.getByRole('radio', { name: m.sensors_range_1y() })).toBeVisible()
   await expect.element(screen.getByText('21.7°C')).toBeVisible()
   expect(screen.getByText(m.sensors_chart_empty()).elements()).toHaveLength(0)
   expect(skeleton('sensors-temp-chart')).toBeNull()
@@ -155,6 +160,31 @@ test('both cached: no skeleton at all', async () => {
   await expect.element(screen.getByText(m.sensors_chart_empty()).first()).toBeVisible()
   expect(skeleton('sensors-tiles')).toBeNull()
   expect(skeleton('sensors-temp-chart')).toBeNull()
+  expect(skeleton('sensors-chips')).toBeNull()
+})
+
+test('the range control sits in the Historik card with the chips and both charts', async () => {
+  const { screen } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [device])
+    qc.setQueryData(seriesKey, noSeries)
+  })
+  const history = screen.getByRole('region', { name: m.sensors_history_heading() })
+  await expect.element(history).toBeVisible()
+  await expect.element(history.getByRole('radio', { name: m.sensors_range_1y() })).toBeVisible()
+  await expect
+    .element(history.getByRole('button', { name: 'Sensor 34cd', exact: true }))
+    .toBeVisible()
+  await expect
+    .element(history.getByRole('heading', { name: m.sensors_temp_chart_title() }))
+    .toBeVisible()
+  await expect
+    .element(history.getByRole('heading', { name: m.sensors_humidity_chart_title() }))
+    .toBeVisible()
+  // The tiles are in their own card, outside Historik.
+  const current = screen.getByRole('region', { name: m.sensors_current_heading() })
+  await expect.element(current.getByText('21.7°C')).toBeVisible()
+  expect(history.getByText('21.7°C').elements()).toHaveLength(0)
+  expect(document.querySelector('[data-slot="chart-legend"]')).toBeNull()
 })
 
 test('an edit deep link keeps its params while the devices load', async () => {
@@ -217,6 +247,11 @@ test("a range switch keeps the shown range's chart, dimmed, with that range's ti
   await screen.getByRole('radio', { name: m.sensors_range_1y() }).click()
   // The 24 h data stays up while the year loads: dimmed, and still labelled as hours.
   await expect.poll(() => document.querySelectorAll('[aria-busy="true"]').length).toBe(2)
+  // Only the charts dim: the range control and the chips stay live and in place.
+  const radio = screen.getByRole('radio', { name: m.sensors_range_1y() }).element()
+  expect(radio.closest('[aria-busy="true"]')).toBeNull()
+  const chip = screen.getByRole('button', { name: 'Sensor 34cd', exact: true }).element()
+  expect(chip.closest('[aria-busy="true"]')).toBeNull()
   expect(xTicks().length).toBeGreaterThan(0)
   for (const tick of xTicks()) expect(tick).toMatch(/\d{1,2}[:.]\d{2}/)
 })

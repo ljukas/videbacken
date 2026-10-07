@@ -11,9 +11,9 @@ Ask for it as "the next step of the Shelly improvements roadmap" (or "the Klimat
 
 | # | Step | Plan | Execution | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|---|
-| 0 | Spec, plans and this roadmap | — | — | [#122](https://github.com/ljukas/videbacken/pull/122) | PR open | — |
-| 1 | Shelly name + sensor dialog: `shelly_name` column, webhook `name` param, own → Shelly → `Sensor a1b2`, dialog Enhet box (Shelly name, MAC), live badge, "Återställ", runbook | [plan](../plans/2026-10-06-climate-1-shelly-name.md) | subagent-driven | [#123](https://github.com/ljukas/videbacken/pull/123) | PR open | — |
-| 2 | Klimat page: "Just nu" card (tiles with location, readable sizes, named 40 px edit button) and "Historik" card (range control in the header, chips and both charts), chart text 13–14 px, no per-chart legends, bones | [plan](../plans/2026-10-06-climate-2-page-readability.md) | native | — | not started | — |
+| 0 | Spec, plans and this roadmap | — | — | [#122](https://github.com/ljukas/videbacken/pull/122) | merged | — |
+| 1 | Shelly name + sensor dialog: `shelly_name` column, webhook `name` param, own → Shelly → `Sensor a1b2`, dialog Enhet box (Shelly name, MAC), live badge, "Återställ", runbook | [plan](../plans/2026-10-06-climate-1-shelly-name.md) | subagent-driven | [#123](https://github.com/ljukas/videbacken/pull/123) | merged | — |
+| 2 | Klimat page: "Just nu" card (tiles with location, readable sizes, named 40 px edit button) and "Historik" card (range control in the header, chips and both charts), chart text 13–14 px, no per-chart legends, bones | [plan](../plans/2026-10-06-climate-2-page-readability.md) | native | [#125](https://github.com/ljukas/videbacken/pull/125) | PR open | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
@@ -65,3 +65,7 @@ If a step changes a design decision, amend the spec in that step's PR.
   changes to the plan: a Shelly name with a control character (a NUL would abort the insert) counts as no name; the
   dialog's badge and Återställ are 14 px; the dialog description keeps its old copy until step 2's tiles show the
   location (the rewording moved into step 2's plan).
+- 2026-10-07: step 2 built native (4 tasks, then a whole-branch review by two reviewers). Changes to the plan: the
+  hover card is portaled, so it gets its own `text-sm`; the tiles switch to 4 columns from their own width
+  (`@container`), not `md` (the spec is amended); the bones are captured with four sensors. Checkpoint 1 not started
+  yet (prod: no `shelly_name` on any sensor).

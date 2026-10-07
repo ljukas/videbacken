@@ -121,7 +121,7 @@ SELECT): it must equal the name in the Shelly app. If it's null or the device ID
 ```
 Klimat (h1, unchanged) + description
 ┌ Just nu ─────────────────────────────────────┐
-│ tiles: 2 columns on a phone, 4 from md       │
+│ tiles: 2 columns, 4 once each tile fits      │
 └──────────────────────────────────────────────┘
 ┌ Historik ────────────── [range control] ─────┐
 │ sensor chips                                 │
@@ -143,6 +143,9 @@ Klimat (h1, unchanged) + description
 ### Tiles (`CurrentReadingTiles`)
 
 Inner tiles are bordered blocks inside the Just nu card (not nested `Card`s).
+Columns follow the tiles' own width (`@container`, 4 columns from `@xl`, 576 px), not the viewport: with the
+sidebar open, a tablet (768–900 px) left ~67–100 px per tile in four columns and the 30 px temperature overflowed
+(amended in PR 2, found by the branch review and measured live).
 
 | Part | Today | New |
 |---|---|---|

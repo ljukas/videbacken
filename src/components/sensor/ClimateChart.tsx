@@ -12,14 +12,12 @@ import {
   AXIS_COLOR,
   CHART_MARGIN,
   measureAt,
-  TICK_PX,
   TICK_SIZE,
   X_AXIS_H,
   X_TICK_MARGIN,
   Y_TICK_MARGIN,
   yAxisWidth,
 } from '~/components/chart/axis'
-import { ChartLegend } from '~/components/chart/ChartParts'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
 import {
   type ClimateTooltipRow,
@@ -58,15 +56,14 @@ type Props = {
 }
 
 const HEIGHT = 260
+// The /energy scale: 13 px axis labels. Local, not the shared TICK_PX (12),
+// until the app-wide pass. Measured and drawn at the same size, so the y-axis
+// width and the end labels' inward shift fit the text.
+const CLIMATE_TICK_PX = 13
 const ISOLATED_DOT_R = 3
 const ACTIVE_DOT_R = 4
 // A reading counts for a hovered time within one reporting cadence (nearestReadings).
 const WINDOW_MS = CADENCE_SEC * 1000
-
-// The legend's order: by display name, as recharts' legend sorted its entries
-// (plain code-unit comparison, so "Visible one" comes before "a").
-const byName = (a: ClimateChartDevice, b: ClimateChartDevice) =>
-  a.displayName < b.displayName ? -1 : a.displayName > b.displayName ? 1 : 0
 
 // The card: one row per visible device, each at its reading nearest the
 // hovered time. A row shows its own time only when it differs from the header
@@ -91,14 +88,14 @@ function CardContent({
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <span
                 aria-hidden
-                className="inline-block size-2.5 shrink-0 rounded-[2px]"
+                className="inline-block size-3 shrink-0 rounded-[2px]"
                 style={{ backgroundColor: row.color }}
               />
               {row.displayName}
             </span>
             <span className="flex items-baseline gap-2">
               {row.t !== t ? (
-                <span className="text-[10px] text-muted-foreground tabular-nums">
+                <span className="text-[13px] text-muted-foreground tabular-nums">
                   {formatTick(row.t)}
                 </span>
               ) : null}
@@ -137,7 +134,7 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
 
   const geometry = useMemo(() => {
     if (width <= 0 || plotBoxH <= 0) return null
-    const measure = measureAt(TICK_PX)
+    const measure = measureAt(CLIMATE_TICK_PX)
     const plotH = Math.max(0, plotBoxH - CHART_MARGIN.top - CHART_MARGIN.bottom - X_AXIS_H)
     const values = valueRange(devices)
     const yNice = values ? niceYScale(values[0], values[1]) : null
@@ -316,7 +313,7 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
               tickStroke={AXIS_COLOR}
               tickLabelProps={() => ({
                 fill: 'var(--muted-foreground)',
-                fontSize: TICK_PX,
+                fontSize: CLIMATE_TICK_PX,
                 dx: -Y_TICK_MARGIN,
                 dy: '0.32em',
                 textAnchor: 'end' as const,
@@ -336,7 +333,7 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
             // An end label shifts inward to stay in the svg; its tick mark stays on its time.
             tickLabelProps={(_, i) => ({
               fill: 'var(--muted-foreground)',
-              fontSize: TICK_PX,
+              fontSize: CLIMATE_TICK_PX,
               dx: geometry.xTicks[i]?.dx ?? 0,
               dy: X_TICK_MARGIN,
               textAnchor: 'middle' as const,
@@ -397,7 +394,7 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
       {...popover.containerProps}
       // The box is inline styles, not Tailwind: the plot must measure before
       // CSS loads and in the CSS-less browser tests.
-      className="w-full text-xs"
+      className="w-full text-sm"
       style={{ height: HEIGHT, display: 'flex', flexDirection: 'column' }}
     >
       {/* A named group that takes focus; the svg inside stays aria-hidden. */}
@@ -417,11 +414,6 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
       >
         {svg}
       </div>
-      <ChartLegend
-        items={[...devices]
-          .sort(byName)
-          .map((d) => ({ key: d.id, label: d.displayName, color: d.color }))}
-      />
       <p id={hintId} className="sr-only">
         {m.sensors_chart_keyboard_hint()}
       </p>
@@ -445,6 +437,8 @@ export function ClimateChart({ devices, unit, formatTick, timeAxis, label }: Pro
           shown === null ? { ...popover, open: false } : { ...popover, ...anchor(shown, rows) }
         }
         variant="card"
+        // 14 px: the card is portaled to the body, so it doesn't inherit the box's size.
+        className="text-sm"
         dataKey={shown === null ? undefined : String(shown)}
       >
         {shown === null ? null : (
