@@ -158,3 +158,11 @@ plan rewritten against steps 1b and 1c; its Task 0 still checks `main` before bu
   201,6 / 19,3 / 201,5 / +3,6 / 15,8 kWh, 93 % (SQL 15.831, 33 → 80 %); September 172,9 / 67,9 / 225,4 / +0,4 /
   15,0 kWh, 94 % (SQL 15.035, 15 → 20 %). The owner's Chrome window was minimised again (500 px), so the diagram drew
   only once a screenshot forced a paint, as in 1c. The owner accepted the winter note's wording. The roadmap is done.
+- 2026-10-07: the owner left step 2's four open items to the agent. Rulings: (1) the chart hint keeps naming its
+  colours (the owner likes them; the legend names the series too). (2) Verkningsgrad and the loss share both divide by
+  what stayed in (in − Δstored), so they add up to 100 %; the in-arrows' shares divide by the raw in, so the two arrows
+  add up to 100 %. Each base is right for its pair; at monthly granularity Δstored is at most 7,58 kWh against months
+  of 100–275 kWh in, so the copy stays. (3) Översikt's Köpt el → Batteri caps the battery's grid charge at the import,
+  and Batteri doesn't. On prod every month imports at least 5× the grid charge and `charge_ac` is 0, so the figures
+  are identical; kept as is. (4) Översikt's table read "0,0 kWh" for an unknown charge level: fixed to "—" like
+  Batteri, in its own PR (no prod bucket lacks a SoC today, so it never showed).
