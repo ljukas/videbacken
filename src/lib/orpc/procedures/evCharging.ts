@@ -308,6 +308,7 @@ export const evChargingRouter = {
         context.timings.emaldoFetchMs = run.fetchMs
         context.timings.emaldoStoreMs = run.storeMs
         context.timings.emaldoDeriveMs = run.deriveMs
+        context.timings.emaldoRefreshMs = run.refreshMs
       }
       // Counts only: readings never leave the server (ADR-0023).
       return { outcome: run.outcome, code: run.code, upserted: run.bucketsStored }
