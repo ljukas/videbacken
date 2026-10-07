@@ -18,7 +18,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | checkpoint passed | Covered by checkpoint 5 (see [step 5b notes](#step-5b-notes)). |
 | 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | [#118](https://github.com/ljukas/videbacken/pull/118) | checkpoint passed | 2026-10-06: the owner reviewed the converted charts live on prod and they look good. On `main` at `b63da3b`, no page's `packages:` line lists recharts, redux, immer or decimal.js-light, and `bun.lock` has none of them. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) (search parsing: recorded, not changed) | [plan](../plans/2026-10-06-client-perf-6-small-items.md) | [#127](https://github.com/ljukas/videbacken/pull/127) | checkpoint passed | 2026-10-07, `main` at `a409a97`: no exifreader, `@vercel/blob` or jose on `/account/profile` or `/onboarding` (AvatarUpload 72 → 10 KB gz), the prod SSR `<head>` of `/login` carries the Switzer preload, and the prod build's chunk check passed. Against `main` just before #127, no page grew. Against the step notes' final column, 5 figures read 0.3–2 above; the rebuilt branch head reads the same as `main`. See [checkpoint 6 result](#checkpoint-6-result). |
-| 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
+| 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — (no change needed) | checkpoint passed | 2026-10-07: the owner navigated the app and found no layout shifts left. Other PRs and design changes since step 1 had already fixed the ones they saw, so the step needed no PR of its own. See [checkpoint 7 result](#checkpoint-7-result). |
 | 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. `needs shaping` means
@@ -603,3 +603,12 @@ candidates, for comparison only:
   than its skeleton, so it shifts once on load.
 - **Economy gap.** The economy section's loaded height is 24 px taller than its bones at 375 and 1280 px (the lead
   paragraph's `gap-6`; already so at 1280 before 5c).
+
+### Checkpoint 7 result
+
+Recorded 2026-10-07, `main` at `1adf584`.
+
+- **Live: pass.** Asked for the spots, the owner said the shifts had already been fixed by other PRs and changes to
+  the design, and navigating the app turned up none. Step 7 needed no PR of its own.
+- **Not checked one by one.** The owner's check was a general navigation of the app, so the candidates above were
+  not each re-measured. If one of them comes back, fix it under the bugfix workflow, not as a new roadmap step.
