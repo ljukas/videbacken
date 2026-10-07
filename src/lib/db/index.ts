@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
-import { Pool } from 'pg'
+import { Pool, type PoolConfig } from 'pg'
 import { logger } from '~/lib/logger/server'
 import { resolvePooledUrl } from './connectionString'
 import * as schema from './schema'
@@ -17,23 +17,45 @@ if (!connectionString) {
 // runs ~15 queries at once and hit it on every full page load (Vercel's 300 s
 // timeout). node-postgres sends one query per connection and waits for its
 // reply. Its unnamed statements are fine behind the transaction pooler.
-//
-// In tests: pin to one connection that never idles out, so the `SET
-// search_path` issued in `test/setup.ts` persists across every drizzle query
-// and transaction. Local tests run against a plain Postgres container (see
-// compose.yaml + vite.config.ts), so there's no pooler: connections are direct
-// sessions and the single pinned connection keeps the SET alive.
-const pool = new Pool({
-  connectionString,
-  // Fail fast instead of waiting forever (node-postgres's default): a stalled
-  // connect or pool checkout errors after 10 s, a query whose reply never
-  // comes after 30 s — well inside Vercel's 300 s function timeout. Inside a
-  // transaction a timed-out query leaves its client busy, so the rollback can
-  // still wait; outside one the client is discarded.
-  connectionTimeoutMillis: 10_000,
-  query_timeout: 30_000,
-  ...(process.env.TEST_SCHEMA ? { max: 1, idleTimeoutMillis: 0 } : {}),
-})
+
+// Connections a production instance keeps open between requests (ADR-0025 §5,
+// roadmap step 8). pg's 10 s idle timeout emptied the pool before every 60 s
+// poll and most navigations, and opening one costs ~17 ms alone, more inside a
+// burst. 3 covers 278 of 280 measured bursts. pg-pool never closes an idle
+// client while the pool holds `min` or fewer; the timeout still trims the rest.
+export const POOL_WARM_MIN = 3
+
+/**
+ * The pool's options.
+ * - Everywhere: fail fast instead of waiting forever (node-postgres's default).
+ *   A stalled connect or pool checkout errors after 10 s, a query whose reply
+ *   never comes after 30 s — well inside Vercel's 300 s function timeout.
+ *   Inside a transaction a timed-out query leaves its client busy, so the
+ *   rollback can still wait; outside one the client is discarded.
+ * - Production: a warm minimum (above). Not in dev: the dev server re-creates
+ *   this module's pool when a module it imports changes, and a minimum would
+ *   keep every old pool's connections open.
+ * - Tests: pin to one connection that never idles out, so the `SET
+ *   search_path` issued in `test/setup.ts` persists across every drizzle query
+ *   and transaction. Local tests run against a plain Postgres container (see
+ *   compose.yaml + vite.config.ts), so there's no pooler: connections are
+ *   direct sessions and the single pinned connection keeps the SET alive.
+ */
+export function poolOptions(
+  connectionString: string,
+  mode: { test: boolean; production: boolean },
+): PoolConfig {
+  const base = { connectionString, connectionTimeoutMillis: 10_000, query_timeout: 30_000 }
+  if (mode.test) return { ...base, max: 1, idleTimeoutMillis: 0 }
+  return mode.production ? { ...base, min: POOL_WARM_MIN } : base
+}
+
+const pool = new Pool(
+  poolOptions(connectionString, {
+    test: Boolean(process.env.TEST_SCHEMA),
+    production: process.env.NODE_ENV === 'production',
+  }),
+)
 // An idle client's socket error (the pooler closing an idle connection) is
 // re-emitted on the pool; unhandled, it would crash the process. The pool has
 // already discarded that client, so logging is all that's left to do.
@@ -78,8 +100,11 @@ export function watchPool(): () => { poolOpened: number; poolPeakWaiting: number
 }
 // Deliberately no `attachDatabasePool` (@vercel/functions): it `waitUntil`s
 // idleTimeoutMillis + 100 ms (~10 s) after every query, so each ~100 ms poll
-// would keep its Fluid instance billed ~100x longer (ADR-0018). Connections
-// left idle on a suspended instance are closed by the pooler, as before.
+// would keep its Fluid instance billed ~100x longer (ADR-0018), and it closes
+// idle connections before suspension, the opposite of the warm minimum. Idle
+// timers don't run on a suspended instance, so up to POOL_WARM_MIN connections
+// stay open through suspension: that many Supavisor clients per instance (an
+// idle client holds no Postgres connection in transaction mode).
 
 export const db = drizzle({ client: pool, schema, casing: 'snake_case' })
 
