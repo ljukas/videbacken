@@ -46,7 +46,7 @@ scripts/                        patchBetterAuthSchema.mjs (auth:schema), devQueu
                                 deriveEnergyMix.ts (one-off energy-mix re-derive; bun --no-env-file + explicit DATABASE_URL)
 src/
   router.tsx / routeTree.gen.ts createRouter (+ codegen — DO NOT hand-edit)
-  server.ts                     custom entry; wraps each request in the Paraglide locale scope
+  server.ts                     custom entry; wraps each request in the Server-Timing collector + the Paraglide locale scope
   routes/
     __root.tsx                  root layout; session guard (public: /, /login, /api/auth/*)
     login.tsx                   Google button + magic-link form
@@ -84,6 +84,7 @@ src/
                                 integrationCredentialsMessage.ts: client-safe credential copy
     files/, image/              upload helpers: EXIF / blurhash, HEIC transcode, sizes
     query/                      routeData.ts: `loadRouteData` — the server awaits `critical` and skips `deferred`; the client starts everything and awaits nothing (ADR-0025)
+    serverTiming.ts             server-only: the per-request Server-Timing collector + header (`recordServerTiming`)
     i18n/, zodLocale.ts, theme.ts, browserSession.ts, devHost.ts (dev:host LAN URLs), fonts.ts (BODY_FONT_URL, the preloaded body font), utils.ts
   components/                   <entity>/ folders: account, chart (visx `BarChart` + pure `barLayout`), command, energy, evCharging, form, layout (`LazyDialogMount`), login, onboarding, sensor, user; ui/ (shadcn);
                                 root: AppSidebar, ThemeProvider, ModeToggle, LocaleSwitcher, Logo, NotFound, DefaultCatchBoundary
@@ -106,7 +107,7 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
 - **Cross-system effects in `src/lib/effects/`.** Services never import Better Auth / Blob / Resend;
   effect adapters run *after* a successful service call. See **ADR-0001**.
 - **Logging via `~/lib/logger/`.** `context.log` in oRPC; `logger` singleton elsewhere. Never `console.*`. See **ADR-0003**.
-- **Timing: every RPC is auto-timed — instrument new work.** `/api/rpc` logs one `rpc timing` line per request (`region`, `totalMs`, sub-timings) to Vercel Runtime Logs. For anything heavier than a single query (multiple queries, external calls, expensive compute), record named sub-timings: `if (context.timings) context.timings.<label>Ms = …`. Pattern: `getSessionMs`/`findActiveByIdMs` in `src/lib/orpc/context.ts`.
+- **Timing: every RPC is auto-timed — instrument new work.** `/api/rpc` logs one `rpc timing` line per request (`region`, `totalMs`, sub-timings) to Vercel Runtime Logs. For anything heavier than a single query (multiple queries, external calls, expensive compute), record named sub-timings: `if (context.timings) context.timings.<label>Ms = …`. Pattern: `getSessionMs`/`findActiveByIdMs` in `src/lib/orpc/context.ts`. The same numbers go into the response's `Server-Timing` header (every response also gets `queue` = Vercel edge → our code and `app`; `src/lib/serverTiming.ts`, wrapped in `src/server.ts`): read them in DevTools → Network → Timing.
 - **Never hold a connection open on a Vercel Function** — no SSE, WebSockets or long-polling. Fluid Compute bills provisioned memory for a request's whole lifetime; one open stream exhausted the Hobby allowance in ~7 days and blocked prod (2026-08-05). Freshness comes from TanStack Query `refetchInterval` + focus refetch. See **ADR-0018**.
 - **Forms via `useAppForm`.** Never `useState` for field values; canonical example `src/components/login/LoginFormCard.tsx`. See **ADR-0005**.
 - **Reuse before you hand-roll (non-trivial work only).** Before writing anything non-trivial
