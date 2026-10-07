@@ -20,7 +20,9 @@ const MAX_BYTES = 5_000_000
 // exifreader (~344 KB raw) and @vercel/blob's client, whose @vercel/oidc browser
 // entry is CommonJS and requires all of jose, are only needed once a file is
 // picked. A click on the upload button starts the import, since the OS picker
-// takes seconds, and the pick awaits the same (cached) promise.
+// takes seconds. Not memoized: each call re-runs import(), which the browser dedupes
+// once loaded, and a memoized rejection would break the retry. Some browsers keep
+// failing a retried fetch until a reload.
 const loadUploadModules = () =>
   Promise.all([import('~/lib/files/exif'), import('~/lib/effects/storage/clientUpload')])
 
@@ -97,6 +99,10 @@ export function AvatarUpload({ onUploadingChange, variant = 'default' }: Props =
         return
       }
 
+      // Disable the button right away: the chunk fetch can take seconds on a slow
+      // connection, and `busy` must cover it so a second pick can't start.
+      setProgress({ loaded: 0, total: rawFile.size, percentage: 0 })
+
       let readImageMetaFromFile: typeof import('~/lib/files/exif').readImageMetaFromFile
       let runUploadFlow: typeof import('~/lib/effects/storage/clientUpload').runUploadFlow
       try {
@@ -116,7 +122,6 @@ export function AvatarUpload({ onUploadingChange, variant = 'default' }: Props =
         setPreviewUrl(localPreview)
       }
 
-      setProgress({ loaded: 0, total: rawFile.size, percentage: 0 })
       await runUploadFlow(rawFile, {
         access: 'public',
         contentType,

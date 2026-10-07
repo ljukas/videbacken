@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { orpc } from '~/lib/orpc/client'
+import { m } from '~/paraglide/messages'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
 import { AvatarUpload } from './AvatarUpload'
 
@@ -55,4 +56,31 @@ test('a picked image is read and uploaded through the lazily loaded modules', as
   )
   await expect.poll(() => mocks.toastSuccess.mock.calls.length).toBe(1)
   expect(mocks.toastError).not.toHaveBeenCalled()
+})
+
+test('the button is disabled from the pick until the upload finishes', async () => {
+  let release: () => void = () => {}
+  mocks.readImageMetaFromFile.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ gps: null, thumbnail: null })
+      }),
+  )
+  mocks.runUploadFlow.mockClear()
+  const queryClient = makeTestQueryClient()
+  queryClient.setQueryData(orpc.user.me.queryKey(), fakeMe)
+  const { screen } = await renderWithProviders(<AvatarUpload />, { queryClient })
+
+  const input = screen.container.querySelector<HTMLInputElement>('input[type="file"]')
+  if (!input) throw new Error('no file input')
+  const file = new File([new Uint8Array([137, 80, 78, 71])], 'me.png', { type: 'image/png' })
+  await userEvent.upload(input, file)
+
+  const button = screen.getByRole('button', { name: m.avatar_add_button() })
+  await expect.element(button).toBeDisabled()
+  expect(mocks.runUploadFlow).not.toHaveBeenCalled()
+
+  release()
+  await expect.poll(() => mocks.runUploadFlow.mock.calls.length).toBe(1)
+  await expect.element(button).toBeEnabled()
 })
