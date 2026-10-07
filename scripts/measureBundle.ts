@@ -10,6 +10,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
+import { chunkCycles, formatChunkCycles, readChunkGraph } from './chunkGraph'
 
 const ASSETS = '.output/public/assets'
 // Route chunk name prefixes (TanStack names a split route chunk after its file).
@@ -57,23 +58,15 @@ export function staticClosure(deps: Map<string, string[]>, root: string): Set<st
 
 function main() {
   if (!existsSync(ASSETS)) throw new Error(`${ASSETS} is missing: run \`bun run bundle:measure\``)
-  const files = readdirSync(ASSETS).filter((f) => f.endsWith('.js'))
+  const { files, code, deps } = readChunkGraph(ASSETS)
   const captured = readdirSync('src/bones')
     .filter((f) => f.endsWith('.bones.json'))
     .map((f) => f.slice(0, -'.bones.json'.length))
     .sort()
   const gz = new Map<string, number>()
-  const deps = new Map<string, string[]>()
   const sources = new Map<string, string[]>()
-  const code = new Map<string, string>()
   for (const file of files) {
-    const text = readFileSync(join(ASSETS, file), 'utf8')
-    code.set(file, text)
-    gz.set(file, gzipSync(text).length)
-    const imports = [...text.matchAll(/(?:import|from)\s*["']\.\/([^"']+\.js)["']/g)].map(
-      (x) => x[1],
-    )
-    deps.set(file, [...new Set(imports)])
+    gz.set(file, gzipSync(code.get(file) ?? '').length)
     const map = join(ASSETS, `${file}.map`)
     sources.set(
       file,
@@ -83,7 +76,7 @@ function main() {
   const kb = (set: Set<string>) => [...set].reduce((sum, f) => sum + (gz.get(f) ?? 0), 0) / 1024
   const byPrefix = (prefix: string) => files.filter((f) => f.startsWith(`${prefix}-`))
 
-  const entry = files.find((f) => readFileSync(join(ASSETS, f), 'utf8').includes('hydrateRoot'))
+  const entry = files.find((f) => code.get(f)?.includes('hydrateRoot'))
   if (!entry) throw new Error('No entry chunk (none calls hydrateRoot)')
   const base = staticClosure(deps, entry)
   const entryOnly = new Set(base)
@@ -93,6 +86,8 @@ function main() {
     .sort((a, b) => kb(b) - kb(a))[0]
   for (const f of shell ?? []) base.add(f)
   console.log(`entry: ${kb(entryOnly).toFixed(1)} KB gz`)
+  // `bun run build` fails on a cycle; printed here too, next to the numbers a group change moves.
+  console.log(formatChunkCycles(chunkCycles(deps)))
   console.log(`entry + shell: ${kb(base).toFixed(0)} KB gz\n`)
 
   const report = (pages: Record<string, string>, beyond: Set<string>, digits: number) => {

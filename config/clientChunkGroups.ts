@@ -15,13 +15,17 @@
 //
 // includeDependenciesRecursively is false so a grouped module's dependencies stay
 // where rolldown put them (several are entry modules). The cost: rolldown no longer
-// keeps the chunk graph acyclic. If an ungrouped module imports a grouped one while
-// the group imports that module's chunk, the two chunks import each other, and one
-// runs before the other's exports exist. class-variance-authority in `ui` did that:
-// button.tsx imports it, `ui` imports button's Radix primitives, and /login crashed
-// (`i is not a function`). So button.tsx's dependencies stay ungrouped, and
-// sidebar.tsx's `menu` icon sits in `shell`, not in the layout's chunk. After a
-// change, load /login on a prod build and check no chunk imports itself in a loop.
+// keeps the chunk graph acyclic, and chunks that import each other crash at module
+// init (one runs before the other has defined its exports). The rule that avoids it:
+// a module that a group member imports, and that isn't in the group itself, must not
+// import any group member, nor share a chunk with a module that does. So a new import
+// used only by `shell` members belongs in `shell`. Two breaches so far: class-variance-authority in `ui` (button.tsx imports
+// it, `ui` imports button's Radix primitives) crashed /login with
+// `i is not a function`, so button.tsx's dependencies stay ungrouped; and
+// sidebar.tsx's `menu` icon, left in the layout's chunk, looped `_authenticated` and
+// `shell` (a cycle of that kind only crashes signed-in pages), so it's in `shell`.
+// `bun run build` fails on any cycle (scripts/checkChunkCycles.ts), and
+// `bun run bundle:measure` prints the cycles under its `entry:` line.
 export type ClientChunkGroup = {
   name: string
   priority: number
@@ -41,6 +45,7 @@ const SHARED_PACKAGES = new RegExp(
     [
       String.raw`@radix-ui[\\/]react-(collection|direction|use-is-hydrated|roving-focus|use-size|arrow|popper|menu|dropdown-menu|presence|dismissable-layer|focus-scope|portal|focus-guards)`,
       '@floating-ui',
+      // If an entry-path package ever imports tslib, the entry imports `ui` (the `entry:` line shows it).
       'tslib',
       'react-remove-scroll',
       'react-remove-scroll-bar',
@@ -49,7 +54,6 @@ const SHARED_PACKAGES = new RegExp(
       'aria-hidden',
       'react-style-singleton',
       'get-nonce',
-      'detect-node-es',
     ].join('|') +
     String.raw`)[\\/]`,
 )
