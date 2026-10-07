@@ -18,7 +18,7 @@ change.
 - The body font URL lives in one client-safe constant (`src/lib/fonts.ts`), which `__root.tsx` preloads. A node test
   checks that `app.css`'s Switzer `@font-face` uses the same URL and that the file exists. A mismatch would download
   the font twice.
-- Two rolldown `codeSplitting.groups` for the client build only (`build/clientChunkGroups.ts`, wired through
+- Two rolldown `codeSplitting.groups` for the client build only (`config/clientChunkGroups.ts`, wired through
   `environments.client` in `vite.config.ts`): `shell` for the modules only the signed-in shell uses, `ui` for those it
   shares with the signed-out pages. **No grouped module may be reachable from the entry.** One such module (the
   router's nested `@tanstack/store`) put the whole group on every page in the prototype.
@@ -443,7 +443,7 @@ git commit -m "perf(fonts): preload the body font"
 ### Task 4: Merge the shell's chunks with rolldown chunk groups
 
 **Files:**
-- Create: `build/clientChunkGroups.ts`
+- Create: `config/clientChunkGroups.ts`
 - Modify: `vite.config.ts` (add `environments.client`, next to `optimizeDeps`)
 - Test: `test/clientChunkGroups.test.ts` (new, node project)
 
@@ -461,7 +461,7 @@ number against the baseline table (after the implementer's run, never at the sam
 
 ```ts
 import { describe, expect, it } from 'vitest'
-import { clientChunkGroups } from '../build/clientChunkGroups'
+import { clientChunkGroups } from '../config/clientChunkGroups'
 
 const groupOf = (id: string) =>
   [...clientChunkGroups].sort((a, b) => b.priority - a.priority).find((g) => g.test(id))?.name
@@ -500,7 +500,7 @@ Expected: FAIL, the module doesn't exist.
 
 - [ ] **Step 2: Add the groups (the prototype) and wire them**
 
-`build/clientChunkGroups.ts`:
+`config/clientChunkGroups.ts`:
 
 ```ts
 // Client-build chunk groups (ADR-0025 §6, roadmap step 6). Step 4's lazy dialogs
@@ -613,7 +613,7 @@ each:
 Stop at the first configuration where **every** number is at or below the baseline (entry alone, entry + shell,
 every signed-in page, `/login`, `/onboarding` after Task 2, `/signed-in`). Update the test's "ui" cases if a
 module moved. If none gets there, delete the `ui` group and keep `shell`. If `shell` alone still grows a page,
-remove the groups and `build/`, and Task 5 records the measurements instead.
+remove the groups and `config/`, and Task 5 records the measurements instead.
 
 - [ ] **Step 5: Check the build output is sane**
 
@@ -639,7 +639,7 @@ in as the local admin. Check:
 - [ ] **Step 8: Commit**
 
 ```bash
-git add build/clientChunkGroups.ts vite.config.ts test/clientChunkGroups.test.ts
+git add config/clientChunkGroups.ts vite.config.ts test/clientChunkGroups.test.ts
 git commit -m "perf(bundle): merge the shell's chunks with rolldown groups"
 ```
 
@@ -682,10 +682,10 @@ and why that wasn't changed (the prototype numbers, ADR-0025 §1).
 Under Gotchas, add:
 
 ```markdown
-- **Client chunk groups (`build/clientChunkGroups.ts`) must not capture a module the entry reaches.** The entry then imports the whole group and every page, `/login` included, loads it. After changing a group, check `bun run bundle:measure`'s `entry:` line against the roadmap's step 6 numbers.
+- **Client chunk groups (`config/clientChunkGroups.ts`) must not capture a module the entry reaches.** The entry then imports the whole group and every page, `/login` included, loads it. After changing a group, check `bun run bundle:measure`'s `entry:` line against the roadmap's step 6 numbers.
 ```
 
-Add `build/` to the code map's last line (`drizzle/, compose.yaml, vite.config.ts …`): `build/ (client chunk groups)`.
+Add `config/` to the code map's last line (`drizzle/, compose.yaml, vite.config.ts …`): `config/ (client chunk groups; `/build/` is gitignored)`.
 
 - [ ] **Step 5: Commit**
 
