@@ -32,17 +32,19 @@ export function HourOfDayChart({ hours, metric }: { hours: Slot[]; metric: Patte
   )
   const table = useMemo(
     () => (
-      <table className="sr-only">
-        <caption>{m.charging_patterns_hour_caption()}</caption>
-        <tbody>
-          {range(24).map((h) => (
-            <tr key={h}>
-              <th scope="row">{hourRangeLabel(h)}</th>
-              <td>{valueLabel(data[h]?.value ?? 0, metric)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="sr-only">
+        <table>
+          <caption>{m.charging_patterns_hour_caption()}</caption>
+          <tbody>
+            {range(24).map((h) => (
+              <tr key={h}>
+                <th scope="row">{hourRangeLabel(h)}</th>
+                <td>{valueLabel(data[h]?.value ?? 0, metric)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     ),
     [data, metric],
   )

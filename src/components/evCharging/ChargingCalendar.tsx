@@ -207,17 +207,19 @@ function MonthCardImpl({
         </div>
       </div>
       {listed.length > 0 ? (
-        <table className="sr-only">
-          <caption>{m.charging_patterns_calendar_caption({ month: name, year })}</caption>
-          <tbody>
-            {listed.map((c) => (
-              <tr key={c.day}>
-                <th scope="row">{formatDay(c.day)}</th>
-                <td>{valueLabel(c.kwh, 'kwh')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="sr-only">
+          <table>
+            <caption>{m.charging_patterns_calendar_caption({ month: name, year })}</caption>
+            <tbody>
+              {listed.map((c) => (
+                <tr key={c.day}>
+                  <th scope="row">{formatDay(c.day)}</th>
+                  <td>{valueLabel(c.kwh, 'kwh')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
     </div>
   )
