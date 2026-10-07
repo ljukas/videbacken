@@ -104,3 +104,16 @@ test('the readable sizes: 16 px name that truncates, 14 px detail, a 40 px edit 
   // No 12 px text left in a tile (browser tests have no app.css: classes, not pixels).
   expect(document.querySelector('li .text-xs')).toBeNull()
 })
+
+test('four columns only once the tiles themselves have room, not from a viewport width', async () => {
+  await renderWithProviders(
+    <CurrentReadingTiles devices={[device]} isAdmin={false} onEdit={() => {}} />,
+  )
+  // With the sidebar open, a tablet viewport leaves ~67 px per tile in four
+  // columns: the 30 px temperature overflows. The tiles' own width decides
+  // (container query), so two columns until each tile fits its figure.
+  const list = document.querySelector('ul')
+  expect(list?.className).toContain('@xl:grid-cols-4')
+  expect(list?.className).not.toContain('md:grid-cols-4')
+  expect(list?.parentElement?.className).toContain('@container')
+})
