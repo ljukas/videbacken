@@ -56,10 +56,7 @@ refresh time. Created `WITH DATA` (populated by the migration, ≈ 50 ms on prod
 the read's order.
 
 **Grants.** A materialized view can't enable RLS; `test/rls.test.ts` checks only `relkind IN ('r','p')`, so it is
-unaffected. Prod's Data API is off and the runtime role is `postgres`. After deploy, a read-only check confirms the
-view has no `anon` / `authenticated` grant (the migration can't `REVOKE` from roles that don't exist in
-`postgres:17-alpine`); if Supabase's default privileges granted any, a follow-up migration revokes them guarded by a
-role-exists check.
+unaffected. Prod's Data API is off and the runtime role is `postgres`. The migration revokes everything from `anon` and `authenticated` in a role-exists-guarded `DO` block (a no-op locally and in CI). After deploy, a read-only check confirms the view has no `anon` / `authenticated` privilege.
 
 ### 2. The migration
 

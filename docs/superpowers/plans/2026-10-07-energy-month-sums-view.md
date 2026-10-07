@@ -764,8 +764,7 @@ Record in a small `docs(energy): …` PR (or the spec's status line):
 1. Same figures: the view's 2026-02, 2026-08 rows and the all-time sum equal plain SQL sums over
    `house_energy_reading`; `/energy` and `/energy/battery` show the same values as before.
 2. Grants: `SELECT grantee, privilege_type FROM information_schema.table_privileges WHERE table_name =
-   'house_energy_month'` lists no `anon` / `authenticated` (else: a follow-up migration revoking them inside a
-   role-exists `DO` block).
+   'house_energy_month'` lists no `anon` / `authenticated` (the migration revoked them; a grant here means the DO block didn't run).
 3. Refresh: the next Emaldo run's log line carries `refreshMs` and no refresh warning; the view's newest `last_bucket`
    moved.
 4. Speed: `pg_stat_statements` for the view read, and `rpc timing` `houseScanMs` / `totalMs` for `energy.overview`,

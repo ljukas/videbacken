@@ -53,3 +53,9 @@ FROM "monthly" "m";
 --> statement-breakpoint
 -- REFRESH … CONCURRENTLY needs a unique index over every row.
 CREATE UNIQUE INDEX "house_energy_month_year_month_idx" ON "house_energy_month" ("year", "month");
+--> statement-breakpoint
+-- No RLS on a materialized view: keep Supabase's API roles off it (no-op where they don't exist, e.g. local and CI).
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN REVOKE ALL ON "house_energy_month" FROM anon; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN REVOKE ALL ON "house_energy_month" FROM authenticated; END IF;
+END $$;

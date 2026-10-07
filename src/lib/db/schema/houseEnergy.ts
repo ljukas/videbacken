@@ -34,6 +34,7 @@ const kwhCheck = (name: string, column: AnyPgColumn) =>
 // stay gaps. A household load profile: server-only, never logged raw, never
 // sent to the client. Kept indefinitely, like vehicle_state_snapshot. The
 // primary key serves every read: the day replace, range reads and min().
+// house_energy_month (migration 0021) depends on its columns, so altering or dropping one needs a custom migration that drops the view, alters, then recreates the view and its index (drizzle-kit doesn't know about the dependency).
 export const houseEnergyReading = pgTable(
   'house_energy_reading',
   {
