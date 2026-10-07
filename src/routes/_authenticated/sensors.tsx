@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useHydrated } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
-import { lazy, useMemo, useState } from 'react'
+import { lazy, useId, useMemo, useState } from 'react'
 import { z } from 'zod'
 import sensorsHumChartBones from '~/bones/sensors-hum-chart.bones.json'
 import sensorsTempChartBones from '~/bones/sensors-temp-chart.bones.json'
@@ -14,6 +14,7 @@ import { ClimateChart } from '~/components/sensor/ClimateChart'
 import { CurrentReadingTiles } from '~/components/sensor/CurrentReadingTiles'
 import { DeviceToggles } from '~/components/sensor/DeviceToggles'
 import { RangeSelector } from '~/components/sensor/RangeSelector'
+import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
 import { useIdlePreload } from '~/hooks/useIdlePreload'
 import { useUrlDialog } from '~/hooks/useUrlDialog'
@@ -72,6 +73,8 @@ function SensorsPage() {
   const range = Route.useSearch({ select: (s) => s.range })
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const deviceId = Route.useSearch({ select: (s) => s.deviceId })
+  const currentHeadingId = useId()
+  const historyHeadingId = useId()
   const { isOpen, open, close } = useUrlDialog<SensorsDialog, SensorsSearch>({
     current: dialog,
     navigate,
@@ -136,7 +139,7 @@ function SensorsPage() {
   // toDeviceSeries). Colors derive from the FULL roster position (stable order
   // from the service), so a device keeps its color regardless of which siblings
   // are toggled off; hidden devices stay in the list (the chart draws no line for
-  // them, but they keep their legend entry and the time axis).
+  // them, but they keep the time axis, and their chip stays to toggle them back).
   const tempDevices = useMemo(
     () =>
       toChartDevices(
@@ -205,65 +208,86 @@ function SensorsPage() {
     <PageContainer>
       <SensorsHeading />
 
-      <div className="flex flex-col gap-3">
-        <RangeSelector value={range} onChange={setRange} />
-        <SectionSkeleton bones={sensorsTilesBones} loading={devicesPending} fallbackHeight="13rem">
-          {devices ? (
-            <div className="flex flex-col gap-6">
-              <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
-              <section className="flex flex-col gap-2">
-                <h2 className="sr-only">{m.sensors_current_heading()}</h2>
+      <SectionSkeleton bones={sensorsTilesBones} loading={devicesPending} fallbackHeight="13rem">
+        {devices ? (
+          <section aria-labelledby={currentHeadingId}>
+            <Card>
+              <CardHeader>
+                <h2 id={currentHeadingId} className="font-semibold text-lg">
+                  {m.sensors_current_heading()}
+                </h2>
+              </CardHeader>
+              <CardContent>
                 <CurrentReadingTiles
                   devices={roster}
                   isAdmin={isAdmin}
                   onEdit={(id) => open('edit', { deviceId: id })}
                 />
-              </section>
-            </div>
-          ) : null}
-        </SectionSkeleton>
-      </div>
+              </CardContent>
+            </Card>
+          </section>
+        ) : null}
+      </SectionSkeleton>
 
-      <LoadErrorAlert title={m.sensors_series_error_title()} query={seriesResult} />
-      {seriesFailed ? null : (
-        <>
-          <ChartSection title={m.sensors_temp_chart_title()}>
-            <SectionSkeleton
-              bones={sensorsTempChartBones}
-              loading={chartsPending}
-              fallbackHeight="260px"
-            >
-              <ChartBody ready={chartsReady} stale={seriesStale} hasData={hasData}>
-                <ClimateChart
-                  devices={tempDevices}
-                  unit="°C"
-                  formatTick={formatTick}
-                  timeAxis={timeAxis}
-                  label={m.sensors_temp_chart_title()}
-                />
-              </ChartBody>
+      {/* The header (title + range control) is always real text and stays live
+          while a range loads; only the charts dim (ChartBody). */}
+      <section aria-labelledby={historyHeadingId}>
+        <Card>
+          <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id={historyHeadingId} className="font-semibold text-lg">
+              {m.sensors_history_heading()}
+            </h2>
+            <RangeSelector value={range} onChange={setRange} />
+          </CardHeader>
+          <CardContent className="flex flex-col gap-6">
+            <SectionSkeleton name="sensors-chips" loading={devicesPending} fallbackHeight="2.5rem">
+              {devices ? (
+                <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
+              ) : null}
             </SectionSkeleton>
-          </ChartSection>
+            <LoadErrorAlert title={m.sensors_series_error_title()} query={seriesResult} />
+            {seriesFailed ? null : (
+              <>
+                <ChartSection title={m.sensors_temp_chart_title()}>
+                  <SectionSkeleton
+                    bones={sensorsTempChartBones}
+                    loading={chartsPending}
+                    fallbackHeight="260px"
+                  >
+                    <ChartBody ready={chartsReady} stale={seriesStale} hasData={hasData}>
+                      <ClimateChart
+                        devices={tempDevices}
+                        unit="°C"
+                        formatTick={formatTick}
+                        timeAxis={timeAxis}
+                        label={m.sensors_temp_chart_title()}
+                      />
+                    </ChartBody>
+                  </SectionSkeleton>
+                </ChartSection>
 
-          <ChartSection title={m.sensors_humidity_chart_title()}>
-            <SectionSkeleton
-              bones={sensorsHumChartBones}
-              loading={chartsPending}
-              fallbackHeight="260px"
-            >
-              <ChartBody ready={chartsReady} stale={seriesStale} hasData={hasData}>
-                <ClimateChart
-                  devices={humDevices}
-                  unit="%"
-                  formatTick={formatTick}
-                  timeAxis={timeAxis}
-                  label={m.sensors_humidity_chart_title()}
-                />
-              </ChartBody>
-            </SectionSkeleton>
-          </ChartSection>
-        </>
-      )}
+                <ChartSection title={m.sensors_humidity_chart_title()}>
+                  <SectionSkeleton
+                    bones={sensorsHumChartBones}
+                    loading={chartsPending}
+                    fallbackHeight="260px"
+                  >
+                    <ChartBody ready={chartsReady} stale={seriesStale} hasData={hasData}>
+                      <ClimateChart
+                        devices={humDevices}
+                        unit="%"
+                        formatTick={formatTick}
+                        timeAxis={timeAxis}
+                        label={m.sensors_humidity_chart_title()}
+                      />
+                    </ChartBody>
+                  </SectionSkeleton>
+                </ChartSection>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
       {isAdmin ? (
         <LazyDialogMount open={editDeviceOpen}>
@@ -292,11 +316,11 @@ function SensorsHeading() {
 }
 
 // The title stays real text; only the chart area (ChartBody) is a skeleton
-// while loading.
+// while loading. An h3: the Historik card's h2 heads it.
 function ChartSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="font-medium text-sm">{title}</h2>
+      <h3 className="font-medium text-base">{title}</h3>
       {children}
     </section>
   )
