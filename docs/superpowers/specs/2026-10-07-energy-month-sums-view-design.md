@@ -1,7 +1,8 @@
 # Energy month sums as a materialized view — design
 
 - **Date**: 2026-10-07
-- **Status**: approved 2026-10-07, built on branch perf/energy-month-view
+- **Status**: built ([#131](https://github.com/ljukas/videbacken/pull/131), merged 2026-10-07); checkpoint passed
+  2026-10-07 (see Verification)
 - **ADR**: amends [ADR-0024](../../adr/0024-house-energy-pages.md) Consequences (the planned rollup becomes a
   materialized view). Roadmap: [house energy pages](../roadmaps/2026-10-05-house-energy-pages.md) (done; this is a
   follow-up, one PR).
@@ -128,6 +129,25 @@ refresh is a warning only (not a health alert), so the pages lag until the next 
 3. **Refresh:** the next Emaldo run logs `refreshMs` and no refresh warning; the view's newest `last_bucket` moves.
 4. **Speed:** `pg_stat_statements` for the new read and `rpc timing` for `energy.overview` (`houseScanMs`) against
    today's 160 ms mean.
+
+**Checkpoint result, 2026-10-07** (prod, read-only, after #131 deployed at ≈ 12:42 UTC and the first new-code Emaldo
+run at 12:45):
+
+1. **Same figures:** all 10 months in the view equal a plain per-row SQL sum over `house_energy_reading` (Stockholm
+   month on every row, independent of the view's hour-first query): 0 mismatches over every sum column and the bucket
+   counts. `/energy/battery?period=2026-02` shows Solel 25,6 / Köpt el 248,9 / Lager −0,8 / Ut 157,0 / Förlust
+   118,3 kWh and 57 %, the same as checkpoint 4 that morning.
+2. **Grants:** `relacl` = `{postgres, service_role}`; `anon` and `authenticated` have no SELECT. (`information_schema`
+   doesn't list materialized views; check `pg_class.relacl` / `has_table_privilege`.)
+3. **Refresh:** the 12:45 Emaldo run was `ok` with `refreshMs` 129 (`pg_stat_statements`: 113 ms for the
+   `REFRESH … CONCURRENTLY`); no refresh warning; the view's newest `last_bucket` equals the table's. The migration's
+   populate took 926 ms once, at deploy.
+4. **Speed:** `pg_stat_statements`: the view read, 4 calls, mean 0.45 ms (min 0.11, max 1.47), against the old scan's
+   115 calls, mean 164 ms (min 36, max 719). The only new-code `energy.overview` RPC line so far ran on a fresh instance:
+   `totalMs` 334, `houseScanMs` 41 (new pool connections included), `findActiveByIdMs` 132, `carMs` 113. The house sums
+   are no longer the slow part of the request; `carMs` (the charging overview, out of scope here) is now the largest.
+   A warm `totalMs` on the new code was not sampled: most page loads went through SSR and the query cache, which
+   write no `rpc timing` line.
 
 ## Out of scope
 
