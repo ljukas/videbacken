@@ -4,8 +4,10 @@
 // code on the request's path adds metrics with `recordServerTiming`, which
 // is a no-op outside a request (queue consumer, scripts).
 //
-// The header carries metric names and durations only, never ids or data:
-// it goes on every response, signed in or not.
+// `queue` and `app` go on every response, signed in or not: names and
+// durations only, never ids or data. Anything describing more than the
+// request itself (the RPC route's instance-wide pool gauges) is recorded for
+// signed-in callers only.
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 export type ServerTimingMetric = { name: string; dur?: number; desc?: string }

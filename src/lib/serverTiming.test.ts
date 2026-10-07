@@ -134,6 +134,20 @@ describe('withServerTiming', () => {
     expect(response.headers.get('server-timing')).toMatch(/^app;dur=/)
   })
 
+  it('keeps every Set-Cookie when it rebuilds a response (auth sets several)', async () => {
+    const original = new Response(null, { status: 204 })
+    original.headers.append('set-cookie', 'a=1; Path=/')
+    original.headers.append('set-cookie', 'b=2; Path=/')
+    // Stand in for a response whose headers are read-only.
+    original.headers.append = () => {
+      throw new TypeError('immutable')
+    }
+    const response = await withServerTiming(request(), async () => original)
+    expect(response.status).toBe(204)
+    expect(response.headers.getSetCookie()).toEqual(['a=1; Path=/', 'b=2; Path=/'])
+    expect(response.headers.get('server-timing')).toMatch(/^app;dur=/)
+  })
+
   it('keeps metrics of concurrent requests apart', async () => {
     const run = (name: string, delayMs: number) =>
       withServerTiming(request(), async () => {

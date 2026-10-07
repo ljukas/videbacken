@@ -3,7 +3,7 @@ import { RPCHandler } from '@orpc/server/fetch'
 import { BatchHandlerPlugin } from '@orpc/server/plugins'
 import { createFileRoute } from '@tanstack/react-router'
 import { createRequestLogger } from '~/lib/logger/server'
-import { createAuthMemo, type RequestTimings } from '~/lib/orpc/context'
+import { createAuthMemo, memoFoundActiveUser, type RequestTimings } from '~/lib/orpc/context'
 import { logRpcError } from '~/lib/orpc/logRpcError'
 import { appRouter } from '~/lib/orpc/router'
 import { currentQueueMs, recordServerTiming, rpcServerTimings } from '~/lib/serverTiming'
@@ -36,6 +36,7 @@ export const Route = createFileRoute('/api/rpc/$')({
         const pool = poolStats()
         const stopPoolWatch = watchPool()
         let poolActivity: ReturnType<typeof stopPoolWatch> | undefined
+        const authMemo = createAuthMemo()
         const startedAt = performance.now()
         const { response } = await handler
           .handle(request, {
@@ -46,7 +47,7 @@ export const Route = createFileRoute('/api/rpc/$')({
               log,
               requestId,
               timings,
-              authMemo: createAuthMemo(),
+              authMemo,
             },
           })
           // Stop watching even if the handler throws, so no watch outlives its request.
@@ -68,7 +69,9 @@ export const Route = createFileRoute('/api/rpc/$')({
         // Only the app's pool: Supavisor's own queueing doesn't show here.
         // `queueMs` is Vercel's edge → this function (~/lib/serverTiming): time
         // spent before any of our code ran, absent off Vercel.
-        // The same numbers go into the response's Server-Timing header.
+        // The same numbers go into the response's Server-Timing header, for a
+        // signed-in caller only: the pool gauges are instance-wide, so they
+        // would tell anyone else that someone is using the app right now.
         const totalMs = Math.round(performance.now() - startedAt)
         log.info('rpc timing', {
           procedure: new URL(request.url).pathname.replace(/^\/api\/rpc\/?/, '') || '(root)',
@@ -80,8 +83,10 @@ export const Route = createFileRoute('/api/rpc/$')({
           ...poolActivity,
           status: response?.status ?? 404,
         })
-        for (const metric of rpcServerTimings({ totalMs, timings, pool, poolActivity })) {
-          recordServerTiming(metric)
+        if (await memoFoundActiveUser(authMemo)) {
+          for (const metric of rpcServerTimings({ totalMs, timings, pool, poolActivity })) {
+            recordServerTiming(metric)
+          }
         }
         return response ?? new Response('Not Found', { status: 404 })
       },
