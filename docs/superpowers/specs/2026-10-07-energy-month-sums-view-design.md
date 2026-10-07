@@ -1,7 +1,7 @@
 # Energy month sums as a materialized view — design
 
 - **Date**: 2026-10-07
-- **Status**: approved in brainstorm (approach A), spec under owner review
+- **Status**: approved 2026-10-07, built on branch perf/energy-month-view
 - **ADR**: amends [ADR-0024](../../adr/0024-house-energy-pages.md) Consequences (the planned rollup becomes a
   materialized view). Roadmap: [house energy pages](../roadmaps/2026-10-05-house-energy-pages.md) (done; this is a
   follow-up, one PR).
@@ -64,7 +64,11 @@ unaffected. Prod's Data API is off and the runtime role is `postgres`. The migra
 and `CREATE UNIQUE INDEX`, no `"public".` qualifiers (the test setup runs every migration in a per-test schema).
 The schema module declares it with `pgMaterializedView('house_energy_month', {…columns}).existing()`, so queries are
 typed and drizzle-kit never generates or drops it. Changing the definition later = a new custom migration
-(`DROP MATERIALIZED VIEW` + create + index).
+(drop, create, index, and the guarded REVOKE).
+
+`drizzle.config.ts` `schema` now points at the barrel `src/lib/db/schema/index.ts`, because drizzle-kit 0.31 loads
+every file in the folder and de-duplicates tables but not views (the barrel re-export made the view a duplicate). A
+schema file must be re-exported from the barrel for drizzle-kit to see it.
 
 Every Vercel deploy migrates (CLAUDE.md gotcha): prod gets the view on the next production deploy, populated.
 
@@ -74,6 +78,9 @@ Every Vercel deploy migrates (CLAUDE.md gotcha): prod gets the view on the next 
 i.e. `REFRESH MATERIALIZED VIEW CONCURRENTLY house_energy_month`.
 `CONCURRENTLY` keeps the old rows readable during the refresh; a second refresh waits on the first (an EXCLUSIVE lock).
 The Emaldo runs hold a lease, so they don't overlap anyway.
+The refresh runs in a transaction with `SET LOCAL lock_timeout = '5s'` and `SET LOCAL statement_timeout = '8s'` (inside
+the sync's 10 s client budget), so a stuck refresh is ended server-side and releases its lock instead of queueing the
+next run's refresh.
 
 The Emaldo sync's `execute` `finally` (`src/lib/houseEnergy/sync.ts`) calls it **before** `deriveAfterSync`, only when
 the run stored a day (`run.earliestReplacedDay !== null`):
@@ -97,7 +104,8 @@ on the same key.
 ### 5. Freshness
 
 Readings change only in the Emaldo sync. Between a run storing its days and its refresh (seconds), the pages show the
-previous run's sums. ADR-0024 decision 7 (focus refetch, no polling, the Emaldo health alert when stale) stands.
+previous run's sums. ADR-0024 decision 7 (focus refetch, no polling, the Emaldo health alert when stale) stands, with one caveat: a failed
+refresh is a warning only (not a health alert), so the pages lag until the next successful refresh.
 
 ## Testing
 
@@ -112,7 +120,8 @@ previous run's sums. ADR-0024 decision 7 (focus refetch, no polling, the Emaldo 
 
 ## Verification (the PR's checkpoint, on prod after deploy)
 
-1. **Same figures:** for 2026-02, 2026-08 and Totalt, the view's row (or sum) equals a plain SQL sum over
+1. **Same figures** (compare after the first new-code Emaldo run has logged `refreshMs`: a deploy migrates before
+   promotion, so an old-code run can store readings the view hasn't seen yet; or compare closed months only): for 2026-02, 2026-08 and Totalt, the view's row (or sum) equals a plain SQL sum over
    `house_energy_reading` (the checkpoint 1b/1c queries), and `/energy` + `/energy/battery` show the same values as
    before the deploy.
 2. **Grants:** `house_energy_month` has no `anon` / `authenticated` privilege.

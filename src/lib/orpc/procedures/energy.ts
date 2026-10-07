@@ -6,7 +6,8 @@ import { getEnergyOverview } from '~/lib/services/houseEnergy'
 export const energyRouter = {
   // The Energi pages' one read (ADR-0024): monthly sums for the chart's year
   // plus the chart year's total, all time and the months with readings. Any signed-in member: read-only.
-  // One grouped scan + the charging overview's queries → its own timing, plus
+  // Reads the month sums view (houseScanMs, name kept for before/after
+  // comparison) plus the charging overview's queries → its own timing, plus
   // the service's two sub-timings (houseScanMs, carMs).
   overview: protectedProcedure
     .input(

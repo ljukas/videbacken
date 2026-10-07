@@ -39,6 +39,9 @@ Measured on the full local history (2026-10-05):
 2. **On-read monthly aggregates.** One service query groups `house_energy_reading` by Stockholm month for the
    chart's year, plus the current month, the current year and all time for the tiles. The car's kWh comes from
    `ev_charge_interval`, the same source as `/charging`'s monthly chart. No rollup table.
+   - *Amended 2026-10-07:* the month sums are now read from the materialized view `house_energy_month`, which the
+     Emaldo sync refreshes once per run that stored a day. Still no hand-kept rollup table. Design:
+     [month sums view](../superpowers/specs/2026-10-07-energy-month-sums-view-design.md).
 3. **Only sums cross the wire.** The procedure returns period totals, never buckets; the load-profile rule stands.
 4. **One set of definitions, in one pure client-safe module** (`src/lib/houseEnergy/figures.ts`):
    - **Self-sufficiency** = max(0, 1 − import ÷ load). Grid-charged battery energy (and its loss) counts as
@@ -63,6 +66,9 @@ Measured on the full local history (2026-10-05):
      metric toggle. Same figures (`figures.ts`), same read. Design:
      [battery page](../superpowers/specs/2026-10-06-energy-battery-page-design.md).
 7. **Freshness:** no polling interval; focus refetch, and the Emaldo sync health alert shows when data is stale.
+   - *Amended 2026-10-07:* the month sums are only as fresh as the last refresh of `house_energy_month`. A failed
+     refresh is a warning (`house energy month refresh failed`), not a health alert, so the Emaldo source can be green
+     while the pages lag until the next successful run. Every run retries.
 
 ## Alternatives considered
 

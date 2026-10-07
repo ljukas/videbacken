@@ -34,7 +34,7 @@ const kwhCheck = (name: string, column: AnyPgColumn) =>
 // stay gaps. A household load profile: server-only, never logged raw, never
 // sent to the client. Kept indefinitely, like vehicle_state_snapshot. The
 // primary key serves every read: the day replace, range reads and min().
-// house_energy_month (migration 0021) depends on its columns, so altering or dropping one needs a custom migration that drops the view, alters, then recreates the view and its index (drizzle-kit doesn't know about the dependency).
+// house_energy_month (migration 0021) depends on its columns, so altering or dropping one needs a custom migration that drops the view, alters, then recreates the view, its index and the guarded REVOKE (drizzle-kit doesn't know about the dependency).
 export const houseEnergyReading = pgTable(
   'house_energy_reading',
   {
@@ -229,7 +229,7 @@ export const energyMixDeriveRequest = pgTable('energy_mix_derive_request', {
 // request never scans the readings. A materialized view, defined in the custom
 // migration 0021 (Drizzle can't declare its unique index, which REFRESH …
 // CONCURRENTLY needs), hence `.existing()`: drizzle-kit never generates or drops
-// it. Changing it = a new custom migration (drop, create, index).
+// it. Changing it = a new custom migration (drop, create, index + the guarded REVOKE).
 // It is only as fresh as its last refresh: every writer of house_energy_reading
 // must call `houseEnergy.refreshMonthSums()` after it writes (today: the Emaldo
 // sync, once per run).

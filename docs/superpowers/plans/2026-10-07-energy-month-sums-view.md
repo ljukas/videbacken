@@ -17,6 +17,14 @@ drizzle-kit 0.31 (`generate --custom`), Vitest node project (per-test schema).
 **Spec:** [`docs/superpowers/specs/2026-10-07-energy-month-sums-view-design.md`](../specs/2026-10-07-energy-month-sums-view-design.md)
 (read it first). ADR: [ADR-0024](../../adr/0024-house-energy-pages.md) (Consequences amended 2026-10-07).
 
+**As built (2026-10-07):** differences from the plan text below.
+
+- `drizzle.config.ts` points at the schema barrel (Task 1 ruling).
+- Migration 0021 ends with a role-guarded `REVOKE` from `anon` / `authenticated` (Task 1 review).
+- `refreshMonthSums` runs in a transaction with `SET LOCAL lock_timeout = '5s'` / `statement_timeout = '8s'` (final
+  review of Task 3).
+- Task 4 added a fired-deadline sync test.
+
 ## Global Constraints
 
 - One PR, one concern: `perf(energy): read the month sums from a materialized view` (≤ 72 chars, Conventional Commits).
