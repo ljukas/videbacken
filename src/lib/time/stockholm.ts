@@ -52,8 +52,8 @@ function toDay(date: Date | number): string {
 // pages' compute. Stockholm's offset is +01:00 or +02:00 and its DST switches
 // at 01:00 UTC, so every UTC hour from 1970 through 2999 lies in one Stockholm
 // day: remember the day per hour. Outside that range the cache stays out: local
-// mean time (+00:53:28) before 1900, and near the top of the Date range the
-// local time overflows mid-hour. A plain Map cleared at the cap, not an LRU:
+// mean time before 1900, and near the top of the Date range the local time
+// overflows mid-hour. A plain Map cleared at the cap, not an LRU:
 // pricing every session touches ~10–20k hours.
 const HOUR_MS = 3_600_000
 const CACHED_UNTIL_MS = Date.UTC(3000, 0, 1)

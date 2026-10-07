@@ -131,7 +131,8 @@ describe('stockholmDayOf and stockholmYearMonth match Intl', () => {
   })
 
   test('every hour from 1970 through 1975, then the first hours again', () => {
-    // More distinct hours than a per-hour cache should hold for long.
+    // ~52 600 distinct hours: more than the per-hour cache's cap (50 000 in
+    // stockholm.ts), so it clears once and the first hours are asked again.
     const instants: number[] = []
     for (let ms = utc('1970-01-01T00:00:00Z'); ms < utc('1976-01-01T00:00:00Z'); ms += HOUR) {
       instants.push(ms + 1_234_567)
@@ -233,6 +234,24 @@ describe('stockholmDayOf and stockholmYearMonth match Intl', () => {
     expect(mismatches([utc('1969-12-31T21:30:00Z'), utc('1969-12-31T22:00:00Z'), -1, 0])).toEqual(
       [],
     )
+  })
+
+  test('fractional instants on either side of a local midnight, and -0', () => {
+    const midnights = ['2029-12-31T23:00:00Z', '2029-06-30T22:00:00Z'].map(utc)
+    const below = (x: number) => x - 2 ** -12 // the nearest step below at this magnitude
+    expect(
+      mismatches(midnights.flatMap((m) => [below(m), m - 0.5, m, m + 0.5, m + HOUR - 0.5])),
+    ).toEqual([])
+    expect(stockholmDayOf(below(midnights[0]))).toBe('2029-12-31')
+    expect(stockholmDayOf(midnights[0])).toBe('2030-01-01')
+    expect(stockholmDayOf(-0)).toBe('1970-01-01')
+  })
+
+  test('the year 3000, where the hours stop being remembered', () => {
+    const bound = utc('3000-01-01T00:00:00Z')
+    expect(mismatches([bound - HOUR, bound - 1, bound, bound + 1, bound + HOUR])).toEqual([])
+    expect(stockholmDayOf(bound - HOUR)).toBe('3000-01-01') // 00:00 CET
+    expect(stockholmYearMonth(bound - 1)).toEqual({ year: 3000, month: 1 })
   })
 
   test('an invalid instant, asked for twice: no day, and a NaN year and month', () => {
