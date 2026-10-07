@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { __testClient, db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
 import { setupDatabase } from '~test/setup'
@@ -39,7 +39,7 @@ test('watchPool reports the peak checkout queue during the watch', async () => {
     await new Promise((resolve) => setImmediate(resolve))
   })
   await queued
-  expect(stop()).toEqual({ poolOpened: 0, poolPeakWaiting: 1 })
+  expect(stop()).toMatchObject({ poolOpened: 0, poolPeakWaiting: 1 })
 })
 
 test('watchPool counts connections opened during the watch, and stops counting after', async () => {
@@ -50,7 +50,32 @@ test('watchPool counts connections opened during the watch, and stops counting a
   // never opens a second one, so emit it, with a stand-in client).
   pool.emit('connect', new EventEmitter())
   pool.emit('connect', new EventEmitter())
-  expect(stop()).toEqual({ poolOpened: 2, poolPeakWaiting: 0 })
+  expect(stop()).toMatchObject({ poolOpened: 2, poolPeakWaiting: 0 })
   const later = watchPool()
-  expect(later()).toEqual({ poolOpened: 0, poolPeakWaiting: 0 })
+  expect(later()).toEqual({
+    poolOpened: 0,
+    poolPeakWaiting: 0,
+    poolExpired: 0,
+    poolReuseIdleMs: 0,
+  })
+})
+
+// How long a reused connection had sat idle, and how many were discarded as too
+// old (WarmPool): checkpoint 8 reads them against any dead-connection error.
+test('watchPool reports how long reused connections sat idle', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    await db.select().from(user).limit(1)
+    vi.setSystemTime(Date.now() + 1234)
+    const stop = watchPool()
+    await db.select().from(user).limit(1)
+    expect(stop()).toEqual({
+      poolOpened: 0,
+      poolPeakWaiting: 0,
+      poolExpired: 0,
+      poolReuseIdleMs: 1234,
+    })
+  } finally {
+    vi.useRealTimers()
+  }
 })

@@ -3,6 +3,8 @@ import { Pool, type PoolClient, type PoolConfig } from 'pg'
 export type WarmPoolConfig = PoolConfig & {
   /** Discard an idle connection released longer ago than this, by the wall clock. */
   maxIdleAgeMillis?: number
+  /** Called for each checkout of an idle connection: how long it sat idle, and whether that expired it. */
+  onIdleCheckout?: (idleMs: number, expired: boolean) => void
 }
 
 type ConnectCallback = (
@@ -24,11 +26,17 @@ type ConnectCallback = (
  */
 export class WarmPool extends Pool {
   readonly #maxIdleAge: number
+  readonly #onIdleCheckout: (idleMs: number, expired: boolean) => void
   readonly #releasedAt = new WeakMap<PoolClient, number>()
 
-  constructor({ maxIdleAgeMillis = Number.POSITIVE_INFINITY, ...config }: WarmPoolConfig = {}) {
+  constructor({
+    maxIdleAgeMillis = Number.POSITIVE_INFINITY,
+    onIdleCheckout = () => {},
+    ...config
+  }: WarmPoolConfig = {}) {
     super(config)
     this.#maxIdleAge = maxIdleAgeMillis
+    this.#onIdleCheckout = onIdleCheckout
     this.on('release', (_err, client) => this.#releasedAt.set(client, Date.now()))
   }
 
@@ -47,7 +55,11 @@ export class WarmPool extends Pool {
     for (;;) {
       const client = await super.connect()
       const releasedAt = this.#releasedAt.get(client)
-      if (releasedAt === undefined || Date.now() - releasedAt <= this.#maxIdleAge) return client
+      if (releasedAt === undefined) return client
+      const idleMs = Date.now() - releasedAt
+      const expired = idleMs > this.#maxIdleAge
+      this.#onIdleCheckout(idleMs, expired)
+      if (!expired) return client
       // Releasing with an error removes the client and ends its connection.
       client.release(new Error('pooled connection idle past its maximum age'))
     }

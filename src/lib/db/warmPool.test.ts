@@ -7,11 +7,13 @@ import { WarmPool } from './warmPool'
 const connectionString = process.env.DATABASE_URL
 const maxIdleAgeMillis = 60_000
 let pool: WarmPool
+const onIdleCheckout = vi.fn<(idleMs: number, expired: boolean) => void>()
 
 beforeEach(() => {
   if (!connectionString) throw new Error('DATABASE_URL is set for the node tests (vite.config.ts)')
   vi.useFakeTimers({ toFake: ['Date'] })
-  pool = new WarmPool({ connectionString, min: 1, maxIdleAgeMillis })
+  onIdleCheckout.mockClear()
+  pool = new WarmPool({ connectionString, min: 1, maxIdleAgeMillis, onIdleCheckout })
 })
 
 afterEach(async () => {
@@ -54,4 +56,17 @@ test('an idle connection released within the cap is reused', async () => {
   vi.setSystemTime(Date.now() + maxIdleAgeMillis)
 
   expect(await backendPid()).toBe(pid)
+})
+
+// The timing line counts discards and reused ages (checkpoint 8).
+test('reports each checkout of an idle connection: its idle time, and whether it expired', async () => {
+  await backendPid()
+  expect(onIdleCheckout).not.toHaveBeenCalled()
+  vi.setSystemTime(Date.now() + 500)
+  await backendPid()
+  expect(onIdleCheckout).toHaveBeenLastCalledWith(500, false)
+  vi.setSystemTime(Date.now() + maxIdleAgeMillis + 1)
+  await backendPid()
+  expect(onIdleCheckout).toHaveBeenCalledWith(maxIdleAgeMillis + 1, true)
+  expect(onIdleCheckout).toHaveBeenCalledTimes(2)
 })

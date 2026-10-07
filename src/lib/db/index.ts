@@ -58,12 +58,13 @@ export function poolOptions(
     : base
 }
 
-const pool = new WarmPool(
-  poolOptions(connectionString, {
+const pool = new WarmPool({
+  ...poolOptions(connectionString, {
     test: Boolean(process.env.TEST_SCHEMA),
     production: process.env.NODE_ENV === 'production',
   }),
-)
+  onIdleCheckout: observeIdleCheckout,
+})
 // An idle client's socket error (the pooler closing an idle connection) is
 // re-emitted on the pool; unhandled, it would crash the process. The pool has
 // already discarded that client, so logging is all that's left to do.
@@ -91,7 +92,10 @@ export const poolStats = () => ({
 // queueing (pool size). Instance-wide: a request also counts its neighbours'
 // activity, which is the burst it shares the pool with. The pool emits
 // `release` before it hands the client to the next waiter, so a queue shows.
-type PoolWatch = { opened: number; peakWaiting: number }
+// Also the warm pool's checkouts (WarmPool, roadmap step 8): connections
+// discarded as idle too long, and the longest a reused one had sat idle, so a
+// dead-connection error can be read against how old its connection was.
+type PoolWatch = { opened: number; peakWaiting: number; expired: number; reuseIdleMs: number }
 const watches = new Set<PoolWatch>()
 const sampleWaiting = () => {
   for (const watch of watches) watch.peakWaiting = Math.max(watch.peakWaiting, pool.waitingCount)
@@ -102,23 +106,40 @@ pool.on('connect', () => {
 })
 pool.on('acquire', sampleWaiting)
 pool.on('release', sampleWaiting)
+function observeIdleCheckout(idleMs: number, expired: boolean) {
+  for (const watch of watches) {
+    if (expired) watch.expired += 1
+    else watch.reuseIdleMs = Math.max(watch.reuseIdleMs, idleMs)
+  }
+}
 
 /** Starts watching the pool; the returned function stops and reports. */
-export function watchPool(): () => { poolOpened: number; poolPeakWaiting: number } {
-  const watch: PoolWatch = { opened: 0, peakWaiting: pool.waitingCount }
+export function watchPool(): () => {
+  poolOpened: number
+  poolPeakWaiting: number
+  poolExpired: number
+  poolReuseIdleMs: number
+} {
+  const watch: PoolWatch = { opened: 0, peakWaiting: pool.waitingCount, expired: 0, reuseIdleMs: 0 }
   watches.add(watch)
   return () => {
     watches.delete(watch)
-    return { poolOpened: watch.opened, poolPeakWaiting: watch.peakWaiting }
+    return {
+      poolOpened: watch.opened,
+      poolPeakWaiting: watch.peakWaiting,
+      poolExpired: watch.expired,
+      poolReuseIdleMs: watch.reuseIdleMs,
+    }
   }
 }
 // Deliberately no `attachDatabasePool` (@vercel/functions): it `waitUntil`s
 // idleTimeoutMillis + 100 ms (~10 s) after every query, so each ~100 ms poll
 // would keep its Fluid instance billed ~100x longer (ADR-0018), and it closes
 // idle connections before suspension, the opposite of the warm minimum. Idle
-// timers don't run on a suspended instance, so up to POOL_WARM_MIN connections
-// stay open through suspension: that many Supavisor clients per instance (an
-// idle client holds no Postgres connection in transaction mode).
+// timers don't run on a suspended instance, so the connections idle at
+// suspension stay open through it: always the POOL_WARM_MIN warm ones, plus any
+// released in the 10 s before (up to `max`; bursts peak at 4). Each is a
+// Supavisor client, which holds no Postgres connection in transaction mode.
 
 export const db = drizzle({ client: pool, schema, casing: 'snake_case' })
 
