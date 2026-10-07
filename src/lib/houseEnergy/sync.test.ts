@@ -848,3 +848,31 @@ test('a run that fails part-way still refreshes for the days that landed', async
   expect(result.outcome).toBe('failed')
   expect(refresh).toHaveBeenCalledTimes(1)
 })
+
+test('a run whose deadline fired before the finally still refreshes the days that landed', async () => {
+  const refresh = vi.fn(async () => {})
+  let calls = 0
+  // The first day lands, then the next call hangs past the run deadline.
+  const client: EmaldoClient = {
+    fetchDay: (offset) =>
+      ++calls === 1
+        ? Promise.resolve(syntheticDay(addDays(TODAY, offset)))
+        : new Promise<EmaldoDay>(() => {}),
+  }
+
+  const result = await runEmaldoSync({
+    trigger: 'cron',
+    now: () => NOW,
+    deadlineMs: 1_000,
+    deps: {
+      emaldo: client,
+      log: capturingLogger().log,
+      sleep: async () => {},
+      refreshMonthSums: refresh,
+    },
+  })
+
+  expect(result).toMatchObject({ outcome: 'failed', code: 'unreachable' })
+  expect(result.earliestReplacedDay).not.toBeNull()
+  expect(refresh).toHaveBeenCalledTimes(1)
+})
