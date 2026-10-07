@@ -6,6 +6,7 @@ import { createRequestLogger } from '~/lib/logger/server'
 import { createAuthMemo, type RequestTimings } from '~/lib/orpc/context'
 import { logRpcError } from '~/lib/orpc/logRpcError'
 import { appRouter } from '~/lib/orpc/router'
+import { currentQueueMs, recordServerTiming, rpcServerTimings } from '~/lib/serverTiming'
 import { poolStats, watchPool } from '~/lib/services/dbPool'
 
 const handler = new RPCHandler(appRouter, {
@@ -65,15 +66,23 @@ export const Route = createFileRoute('/api/rpc/$')({
         // `poolExpired` / `poolReuseIdleMs` the warm pool's discards of connections
         // idle too long, and the longest a reused one had sat idle (step 8).
         // Only the app's pool: Supavisor's own queueing doesn't show here.
+        // `queueMs` is Vercel's edge → this function (~/lib/serverTiming): time
+        // spent before any of our code ran, absent off Vercel.
+        // The same numbers go into the response's Server-Timing header.
+        const totalMs = Math.round(performance.now() - startedAt)
         log.info('rpc timing', {
           procedure: new URL(request.url).pathname.replace(/^\/api\/rpc\/?/, '') || '(root)',
           region: process.env.VERCEL_REGION ?? 'local',
-          totalMs: Math.round(performance.now() - startedAt),
+          totalMs,
+          queueMs: currentQueueMs(),
           ...timings,
           ...pool,
           ...poolActivity,
           status: response?.status ?? 404,
         })
+        for (const metric of rpcServerTimings({ totalMs, timings, pool, poolActivity })) {
+          recordServerTiming(metric)
+        }
         return response ?? new Response('Not Found', { status: 404 })
       },
     },
