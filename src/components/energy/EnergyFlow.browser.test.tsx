@@ -89,6 +89,10 @@ test('a stored change that rounds to zero has no sign, never "−0,0"', async ()
   expect(await storedRow(sums({ firstSocPct: 50, lastSocPct: 49.96 }))).toBe('0,0 kWh')
 })
 
+test('an unknown charge level reads "—", not "0,0 kWh" (as on Batteri)', async () => {
+  expect(await storedRow(sums({ firstSocPct: null, lastSocPct: null }))).toBe('—')
+})
+
 test('a small or negative battery loss reads "about 0" in the diagram, the real value in the table', async () => {
   // 55,8 − 49,4 − 6,14 ≈ 0,3 kWh
   const small = await renderWithProviders(<EnergyFlow sums={sums({ batteryDischargeKwh: 49.4 })} />)

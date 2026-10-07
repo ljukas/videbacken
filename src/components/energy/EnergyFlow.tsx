@@ -1,9 +1,5 @@
 import { useParentSize } from '@visx/responsive'
-import {
-  formatOneDecimal,
-  formatShare,
-  formatSignedOneDecimal,
-} from '~/components/evCharging/format'
+import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
 import { useLocalStorageFlag } from '~/hooks/useLocalStorageFlag'
 import {
   type EnergyFigures,
@@ -13,7 +9,7 @@ import {
 } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
 import { EnergyFlowDiagram } from './EnergyFlowDiagram'
-import { FlowTableFrame, FlowValuesSwitch, RingFigure } from './flowParts'
+import { FlowTableFrame, FlowValuesSwitch, RingFigure, storedText } from './flowParts'
 
 export const SHOW_FLOW_VALUES_KEY = 'videbacken-energy-flow-values'
 
@@ -93,8 +89,8 @@ function FlowTable({ sums: s, f }: { sums: PeriodSums; f: EnergyFigures }) {
     [arrow(bat, exp), kwh(f.batteryToGrid)],
     [m.energy_flow_row_battery_in(), kwh(f.batteryIn)],
     [m.energy_flow_row_battery_out(), kwh(f.batteryOut)],
-    // Signed like the diagram's "Lager" line.
-    [m.energy_flow_row_stored(), `${formatSignedOneDecimal(f.deltaStored)}\u00a0kWh`],
+    // Signed like the diagram's "Lager" line; "—" without a charge level, as on Batteri.
+    [m.energy_flow_row_stored(), storedText(s, f)],
     // The real value, also when the diagram says "≈ 0".
     [m.energy_flow_loss_title(), kwh(f.loss)],
   ]
