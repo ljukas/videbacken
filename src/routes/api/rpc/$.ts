@@ -83,7 +83,10 @@ export const Route = createFileRoute('/api/rpc/$')({
           ...poolActivity,
           status: response?.status ?? 404,
         })
-        if (await memoFoundActiveUser(authMemo)) {
+        // Not for a batch: it streams, so its numbers are partial and waiting
+        // on an unfinished auth lookup would hold its headers.
+        const isBatch = new URL(request.url).pathname.endsWith('/__batch__')
+        if (!isBatch && (await memoFoundActiveUser(authMemo))) {
           for (const metric of rpcServerTimings({ totalMs, timings, pool, poolActivity })) {
             recordServerTiming(metric)
           }

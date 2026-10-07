@@ -32,7 +32,7 @@ the step needs a brainstorm before its plan.
 
 ## Checkpoints (real-world gates)
 
-1. **After step 1 (prod).** In DevTools on prod, a signed-in `/api/rpc` request's Timing tab shows `queue`, `app`, `rpc`, its
+1. **After step 1 (prod).** In DevTools on prod, an `/api/rpc` request that ran an authenticated procedure (not a batch) shows, in its Timing tab, `queue`, `app`, `rpc`, its
    sub-timings and `pool`; an SSR page shows `queue` and `app`. Vercel passes the header through (check the preview
    first). `rpc timing` log lines carry `queueMs`. Record what a sidebar-hover burst shows for `sensor/series` and
    `costOverview`: does `queue` explain the gap between DevTools time and `totalMs`?
