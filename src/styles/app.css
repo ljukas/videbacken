@@ -266,6 +266,13 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Signed in, the canvas behind the page (iOS Safari's overscroll bounce,
+     the strip under its bottom bar) matches the page surface. Scoped: login
+     and onboarding paint their wash over the plain background. */
+  html:has([data-slot='sidebar-inset']),
+  html:has([data-slot='sidebar-inset']) body {
+    @apply bg-surface-page;
+  }
   /* Linear-style body tuning: tight tracking + optical sizing on the variable face. */
   html {
     @apply font-sans;
