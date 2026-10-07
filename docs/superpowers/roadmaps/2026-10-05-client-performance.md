@@ -17,7 +17,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | checkpoint passed | Covered by checkpoint 5 (see [step 5a notes](#step-5a-notes)). |
 | 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | checkpoint passed | Covered by checkpoint 5 (see [step 5b notes](#step-5b-notes)). |
 | 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | [#118](https://github.com/ljukas/videbacken/pull/118) | checkpoint passed | 2026-10-06: the owner reviewed the converted charts live on prod and they look good. On `main` at `b63da3b`, no page's `packages:` line lists recharts, redux, immer or decimal.js-light, and `bun.lock` has none of them. See [checkpoint 5 result](#checkpoint-5-result). |
-| 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) (search parsing: recorded, not changed) | [plan](../plans/2026-10-06-client-perf-6-small-items.md) | [#127](https://github.com/ljukas/videbacken/pull/127) | PR open | — |
+| 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) (search parsing: recorded, not changed) | [plan](../plans/2026-10-06-client-perf-6-small-items.md) | [#127](https://github.com/ljukas/videbacken/pull/127) | checkpoint passed | 2026-10-07, `main` at `a409a97`: no exifreader, `@vercel/blob` or jose on `/account/profile` or `/onboarding` (AvatarUpload 72 → 10 KB gz), the prod SSR `<head>` of `/login` carries the Switzer preload, and the prod build's chunk check passed. Against `main` just before #127, no page grew. Against the step notes' final column, 5 figures read 0.3–2 above; the rebuilt branch head reads the same as `main`. See [checkpoint 6 result](#checkpoint-6-result). |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
 | 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
 
@@ -543,6 +543,48 @@ parsing. It is the `/energy` loader: `energyOverviewQueryFor` → `stockholmYear
 route tree) was prototyped: entry 176.4 → 170.6 and shell total 258 → 255, but every page grew 2–3 KB gz, and a cold
 client navigation's queries would start only after the route chunk arrives, against ADR-0025 §1. A narrow `Intl` fix
 goes against the date-fns preference. So loaders stay in the route tree, and their imports stay in the entry.
+
+### Checkpoint 6 result
+
+Recorded 2026-10-07. `main` is at `a409a97` (#127, merged after #125 and #128). Prod runs that commit
+(`videbacken-q21pu20d2`).
+
+- **Upload chunk: pass.** Neither `/account/profile` nor `/onboarding` lists exifreader, `@vercel/blob` or jose in its
+  `packages:` line. `AvatarUpload` is 10 KB gz on both (72 before).
+- **Font preload: pass.** The prod SSR HTML of `/login`, from `curl https://app.lukaslindqvist.se/login`, has
+  `<link rel="preload" href="/fonts/switzer/Switzer-Variable.woff2" as="font" type="font/woff2" crossorigin="anonymous"/>`
+  in its `<head>`, and the font serves (`font/woff2`, 43,220 bytes).
+- **Chunk check: pass.** `bun run bundle:measure` prints `chunk cycles: none`. The prod `vercel-build` log prints
+  `checking .vercel/output/static/assets` and then
+  `chunk cycles: none; the entry reaches no chunk group (131 client chunks)`.
+- **Sizes: nothing grew.** It doesn't match the final column, though. Table in KB gz; each page counts beyond the entry
+  and the shell, and the signed-out pages beyond the entry only. The pre-#127 build was measured with `a409a97`'s
+  `measureBundle.ts`, because the older script had no `entry:` line and no signed-out pages.
+
+  | Page | Step notes' final | `main` before #127 (`96737f7`) | Branch head rebuilt (`8e6e312`) | `main` (`a409a97`) |
+  |---|---:|---:|---:|---:|
+  | entry alone | 176.2 | 176.7 | 176.5 | 176.5 |
+  | entry + shell | 252 | 258 | 253 | 253 |
+  | `/charging` | 84 | 84 | 84 | 84 |
+  | `/charging/settings` | 43 | 44 | 43 | 43 |
+  | economy | 77 | 78 | 78 | 78 |
+  | patterns | 76 | 77 | 77 | 77 |
+  | `/charging/sessions/$id` | 65 | 65 | 65 | 65 |
+  | `/energy` | 72 | 74 | 74 | 74 |
+  | `/sensors` | 48 | 48 | 48 | 48 |
+  | `/users` | 73 | 73 | 73 | 73 |
+  | `/account/profile` | 151 | 213 | 151 | 151 |
+  | `/login` | 85.9 | 88.4 | 85.9 | 85.9 |
+  | `/onboarding` | 85.6 | 150.0 | 85.6 | 85.6 |
+  | `/signed-in` | 31.5 | 34.0 | 31.5 | 31.5 |
+
+  The criterion compares against the final column, and five figures there read 0.3–2 KB lower than on `main`: the
+  entry, the shell, economy, patterns and `/energy`. #127
+  didn't cause the gap. Its branch head, rebuilt today with the same lockfile, reads exactly what `main` does. `main`
+  just before #127 already had economy 78, patterns 77 and `/energy` 74, and #127 changed none of the three. The final
+  column most likely predates the branch's last rebase onto `10e0e08`, which brought in #124 (the battery page): its
+  `/energy` 72 is the step's own baseline from before #124. Against `main` just before #127, the step took 5 KB gz off the shell, 62 off `/account/profile`, 64
+  off `/onboarding`, 2.5 off `/login` and `/signed-in`, and 1 off `/charging/settings`. No page grew.
 
 ## Step 7 notes
 
