@@ -1,9 +1,5 @@
 import { useParentSize } from '@visx/responsive'
-import {
-  formatOneDecimal,
-  formatShare,
-  formatSignedOneDecimal,
-} from '~/components/evCharging/format'
+import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
 import { useLocalStorageFlag } from '~/hooks/useLocalStorageFlag'
 import {
   type EnergyFigures,
@@ -15,19 +11,12 @@ import { lossLabel, MIN_FLOW_KWH } from '~/lib/houseEnergy/flowLayout'
 import { m } from '~/paraglide/messages'
 import { BatteryFlowDiagram } from './BatteryFlowDiagram'
 import { SHOW_FLOW_VALUES_KEY } from './EnergyFlow'
-import { FlowTableFrame, FlowValuesSwitch, RingFigure } from './flowParts'
+import { FlowTableFrame, FlowValuesSwitch, RingFigure, storedText } from './flowParts'
 
 /** "—" without a value, "≈ 100 %" when capped at 1, else the share. */
 export function efficiencyText(e: number | null): string {
   if (e === null) return '—'
   return e >= 1 ? `≈ ${formatShare(1)}` : formatShare(e)
-}
-
-/** "Ändrat lager": the signed change in stored energy, "—" when the charge level is unknown (the figure is then 0). */
-export function storedText(s: PeriodSums, f: EnergyFigures): string {
-  return s.firstSocPct !== null && s.lastSocPct !== null
-    ? `${formatSignedOneDecimal(f.deltaStored)}\u00a0kWh`
-    : '—'
 }
 
 /** The loss share in parentheses, only when the loss reads as a value (≥ 0,5 kWh), else ''. */
