@@ -265,21 +265,23 @@ and `PhoneField`'s own entry, is a new dynamic entry, and rolldown groups module
 them. So modules the shell shares with those entries (Radix primitives, cmdk, `button`, `dialog`, floating-ui …) split
 into more, smaller chunks: about +5 KB gz of per-chunk overhead (the figure sums each chunk's gzip): +1.3 KB when `PhoneField` became its own entry, +3.3 KB when the lazy dialogs did, with the same 437 modules throughout; the entry + shell parts are rounded separately, so 172 + 77 reads 248 in the tables and 9 more
 `modulepreload` requests on every signed-in page. A rolldown chunk group
-(`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up, since it
+(`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up (done in the 2026-10-06 amendment below), since it
 needs its own measurement, `/login` included.
 
 *Amendment, 2026-10-06 (roadmap step 6).* Three changes, measured with `bun run bundle:measure` (KB gz):
 
 - **The upload's heavy modules load on pick.** `AvatarUpload` imports `exifreader` and the Vercel Blob client
   with `import()`, started by a click on the upload button and awaited by `handleFile`. `@vercel/blob/client`
-  dragged `jose` in through `@vercel/oidc`'s CommonJS browser entry, which can't tree-shake and is unchanged
-  upstream (4.0.0), so loading it on pick is the fix. `/account/profile` went 213 → 151 and `/onboarding`
-  150.0 → 85.6.
+  dragged `jose` in through `@vercel/oidc`'s CommonJS browser entry, which can't tree-shake (the locked `@vercel/blob` 2.6.1 and `@vercel/oidc` 3.8.0; on npm 2026-10-06 `@vercel/oidc`
+  4.0.0's browser entry still requires `jose` and `@vercel/blob` 2.8.1 still depends on `^3.6.1`), so loading it on
+  pick is the fix. `/account/profile` went 213 → 151. `/onboarding` went 150.0 → 88.0 with the upload change alone,
+  then 85.6 with the chunk groups.
 - **Two chunk groups for the client build** (`config/clientChunkGroups.ts`, `codeSplitting.groups`) merge the shell's
   chunks back: `shell` for modules only the signed-in shell uses, `ui` for those it shares with the signed-out pages.
   Entry + shell went 258 → 252 (28 shell chunks → 13) and modulepreloads on `/charging` 86 → 71. No page grew:
-  `/charging` 84, settings 44 → 43, economy 77, patterns 76, session 65, `/energy` 72, `/sensors` 48, `/users` 73,
-  `/login` 88.4 → 85.9, `/signed-in` 34.0 → 31.5. Two rules keep them safe:
+  `/login` 88.4 → 85.9 and `/signed-in` 34.0 → 31.5 dropped, and the signed-in pages stayed put (`/charging` 84,
+  settings 44, economy 77, patterns 76, session 65, `/energy` 72, `/sensors` 48, `/users` 73; they moved by 0.2 KB
+  at most, settings 43.5 → 43.4). Two rules keep them safe:
   - **No grouped module may be reachable from the entry.** The entry would import the whole group and every page
     would load it. The prototype had one (the router's nested `@tanstack/store`).
   - **No chunk cycles.** A page that loads one module of a group loads all of it, so `ui` holds only what the shell
