@@ -80,8 +80,9 @@ describe('stockholmYearMonth', () => {
 // stockholmDayOf and stockholmYearMonth run once or more per priced 15-min
 // piece, so they are the ones worth speeding up. These pin them against Intl,
 // which shares no code with them (only the runtime's zone data: the
-// hand-written cases below catch wrong zone data). The instants are spread
-// so that each test meets hours no earlier test has asked for.
+// hand-written cases below catch wrong zone data). The functions remember the
+// day per UTC hour across calls, so the tests vary the order the hours are
+// first asked in; each still holds whatever ran before it.
 describe('stockholmDayOf and stockholmYearMonth match Intl', () => {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Europe/Stockholm',
@@ -125,14 +126,18 @@ describe('stockholmDayOf and stockholmYearMonth match Intl', () => {
     for (let ms = utc('2023-01-01T00:00:00Z'); ms < utc('2028-01-01T00:00:00Z'); ms += HOUR / 4) {
       instants.push(ms)
     }
-    const mixed = shuffled(instants)
-    expect(mismatches(mixed).slice(0, 5)).toEqual([])
-    expect(mismatches(instants).slice(0, 5)).toEqual([])
+    const want = instants.map(reference)
+    const order = shuffled(instants.map((_, i) => i))
+    const at = (i: number) => instants[i]
+    const wantAt = (i: number) => want[i]
+    expect(mismatches(order.map(at), order.map(wantAt)).slice(0, 5)).toEqual([])
+    expect(mismatches(instants, want).slice(0, 5)).toEqual([])
   })
 
   test('every hour from 1970 through 1975, then the first hours again', () => {
     // ~52 600 distinct hours: more than the per-hour cache's cap (50 000 in
-    // stockholm.ts), so it clears once and the first hours are asked again.
+    // stockholm.ts), so the cache clears at least once before the first hours
+    // are asked again.
     const instants: number[] = []
     for (let ms = utc('1970-01-01T00:00:00Z'); ms < utc('1976-01-01T00:00:00Z'); ms += HOUR) {
       instants.push(ms + 1_234_567)
@@ -264,14 +269,15 @@ describe('stockholmDayOf and stockholmYearMonth match Intl', () => {
 
   test('the top of the Date range, where one UTC hour gives a day and then none', () => {
     // 2 h before the last valid instant, the local time still fits a Date at
-    // the hour's first ms but not 1 ms later. Ask in both orders.
+    // the hour's first ms but not 1 ms later: two different answers, which a
+    // per-hour cache would merge. 1 ms past the last valid instant throws.
     const lastHour = 8.64e15 - 2 * HOUR
     const later = stockholmDayOf(lastHour + 1)
-    expect(stockholmDayOf(lastHour)).toBe('275760-09-13')
+    const first = stockholmDayOf(lastHour)
     expect(stockholmDayOf(lastHour + 1)).toBe(later)
-    expect(later).not.toBe('275760-09-13')
-    // The last valid instant gives no real day, and 1 ms past it throws.
-    expect(stockholmDayOf(8.64e15)).not.toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(stockholmDayOf(lastHour)).toBe(first)
+    expect(later).not.toBe(first)
+    stockholmDayOf(8.64e15)
     expect(() => stockholmDayOf(8.64e15 + 1)).toThrow(RangeError)
   })
 

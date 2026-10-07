@@ -48,8 +48,8 @@ function toDay(date: Date | number): string {
 }
 
 // stockholmDayOf and stockholmYearMonth run once or more per priced 15-min
-// piece, and each Intl-backed conversion costs microseconds: most of the cost
-// pages' compute. Stockholm's offset is +01:00 or +02:00 and its DST switches
+// piece, and their Intl-backed conversions were most of the cost and economy
+// overviews' compute. Stockholm's offset is +01:00 or +02:00 and its DST switches
 // at 01:00 UTC, so every UTC hour from 1970 through 2999 lies in one Stockholm
 // day: remember the day per hour. Outside that range the cache stays out: local
 // mean time before 1900, and near the top of the Date range the local time
