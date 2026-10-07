@@ -12,8 +12,8 @@ Ask for it as "the next step of the Shelly improvements roadmap" (or "the Klimat
 | # | Step | Plan | Execution | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|---|
 | 0 | Spec, plans and this roadmap | — | — | [#122](https://github.com/ljukas/videbacken/pull/122) | merged | — |
-| 1 | Shelly name + sensor dialog: `shelly_name` column, webhook `name` param, own → Shelly → `Sensor a1b2`, dialog Enhet box (Shelly name, MAC), live badge, "Återställ", runbook | [plan](../plans/2026-10-06-climate-1-shelly-name.md) | subagent-driven | [#123](https://github.com/ljukas/videbacken/pull/123) | merged | — |
-| 2 | Klimat page: "Just nu" card (tiles with location, readable sizes, named 40 px edit button) and "Historik" card (range control in the header, chips and both charts), chart text 13–14 px, no per-chart legends, bones | [plan](../plans/2026-10-06-climate-2-page-readability.md) | native | [#125](https://github.com/ljukas/videbacken/pull/125) | PR open | — |
+| 1 | Shelly name + sensor dialog: `shelly_name` column, webhook `name` param, own → Shelly → `Sensor a1b2`, dialog Enhet box (Shelly name, MAC), live badge, "Återställ", runbook | [plan](../plans/2026-10-06-climate-1-shelly-name.md) | subagent-driven | [#123](https://github.com/ljukas/videbacken/pull/123) | checkpoint passed | 2026-10-07: a new sensor (MAC …7434) sent `shelly_name` "Förråd", equal to its Shelly app name (å/ö intact); the dialog's MAC matches the app; Återställ works; the old-URL sensors keep reporting |
+| 2 | Klimat page: "Just nu" card (tiles with location, readable sizes, named 40 px edit button) and "Historik" card (range control in the header, chips and both charts), chart text 13–14 px, no per-chart legends, bones | [plan](../plans/2026-10-06-climate-2-page-readability.md) | native | [#125](https://github.com/ljukas/videbacken/pull/125) | merged | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
@@ -51,7 +51,7 @@ If a step changes a design decision, amend the spec in that step's PR.
    - The other sensors keep reporting (old URL, no name) and keep their names.
    - The edit dialog shows that sensor's Shelly name, and its MAC reads like the Shelly app's device information.
    - "Återställ" + Spara on a sensor with an own name brings back its Shelly name on the tile.
-   - Then the owner updates the other three sensors.
+   - Then the owner updates the other sensors.
 2. **After step 2 (prod, owner review).**
    - At desktop, tablet and phone widths: the range control sits in the Historik header with the charts; nothing
      moves when switching ranges; the tiles show locations; text reads at the new sizes.
@@ -69,3 +69,8 @@ If a step changes a design decision, amend the spec in that step's PR.
   hover card is portaled, so it gets its own `text-sm`; the tiles switch to 4 columns from their own width
   (`@container`), not `md` (the spec is amended); the bones are captured with four sensors. Checkpoint 1 not started
   yet (prod: no `shelly_name` on any sensor).
+- 2026-10-07: #125 merged. Checkpoint 1 passed on prod with a newly added sensor (MAC …7434, set up with the `name`
+  parameter from the start): `shelly_name` = "Förråd", the name in the Shelly app; the edit dialog's MAC reads like
+  the app's device information; Återställ + Spara brought back the Shelly name on the tile. Fack 1 (…1B7C) and
+  Fack 3 (…71C4) kept reporting on the old URL with their names. Prod has three sensors, not four. Open: the owner
+  appends `&name=${config.sys.device.name}` to Fack 1 and Fack 3's webhooks; checkpoint 2 (the page reviewed live).
