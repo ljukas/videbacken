@@ -146,3 +146,46 @@ test('deleteDevice on a missing id throws DEVICE_NOT_FOUND', async () => {
     code: 'DEVICE_NOT_FOUND',
   })
 })
+
+test('recordReading stores the Shelly name on first registration', async () => {
+  await recordReading({ mac: 'aabbccddeeff', temperatureC: 20, shellyName: 'Källare NV' })
+  const [device] = await db.select().from(sensorDevice)
+  expect(device.shellyName).toBe('Källare NV')
+})
+
+test('a later reading with a new Shelly name replaces the stored one', async () => {
+  await recordReading({ mac: 'aabbccddeeff', shellyName: 'Källare NV' })
+  await recordReading({ mac: 'aabbccddeeff', shellyName: 'Källare nordväst' })
+  const [device] = await db.select().from(sensorDevice)
+  expect(device.shellyName).toBe('Källare nordväst')
+})
+
+test('a reading without a Shelly name keeps the stored one (a device on the old webhook URL)', async () => {
+  await recordReading({ mac: 'aabbccddeeff', shellyName: 'Källare NV' })
+  await recordReading({ mac: 'aabbccddeeff', temperatureC: 21 })
+  await recordReading({ mac: 'aabbccddeeff', temperatureC: 22, shellyName: null })
+  const [device] = await db.select().from(sensorDevice)
+  expect(device.shellyName).toBe('Källare NV')
+})
+
+test('listDevices shows the own name, else the Shelly name, else "Sensor eeff"', async () => {
+  const own = await recordReading({ mac: 'aabbccdd0001', shellyName: 'Shelly ett' })
+  await renameDevice(own.deviceId, { name: 'Under köket', location: null })
+  await recordReading({ mac: 'aabbccdd0002', shellyName: 'Shelly två' })
+  await recordReading({ mac: 'aabbccddeeff' })
+  const devices = await listDevices()
+  expect(devices.map((d) => [d.displayName, d.shellyName])).toEqual([
+    ['Under köket', 'Shelly ett'],
+    ['Shelly två', 'Shelly två'],
+    ['Sensor eeff', null],
+  ])
+})
+
+test('clearing the own name falls back to the Shelly name', async () => {
+  const { deviceId } = await recordReading({ mac: 'aabbccddeeff', shellyName: 'Källare NV' })
+  await renameDevice(deviceId, { name: 'Under köket', location: null })
+  await renameDevice(deviceId, { name: null, location: null })
+  const [device] = await listDevices()
+  expect(device.displayName).toBe('Källare NV')
+  expect(device.name).toBeNull()
+})

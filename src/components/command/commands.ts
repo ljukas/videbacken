@@ -1,5 +1,6 @@
 import { linkOptions } from '@tanstack/react-router'
 import {
+  BatteryChargingIcon,
   CalendarClockIcon,
   HomeIcon,
   PiggyBankIcon,
@@ -73,6 +74,13 @@ export const NAVIGATE_COMMANDS = linkOptions([
     label: m.nav_energy,
     keywords: m.cmd_kw_energy,
     icon: SunIcon,
+    adminOnly: false,
+  },
+  {
+    to: '/energy/battery',
+    label: m.nav_energy_battery_long,
+    keywords: m.cmd_kw_energy_battery,
+    icon: BatteryChargingIcon,
     adminOnly: false,
   },
   {

@@ -37,7 +37,8 @@ export const sensorRouter = {
       z.object({
         id: z.uuid(),
         // A blank/whitespace label means "clear it" → null (one canonical
-        // representation of "unset", so displayName falls back to the MAC).
+        // representation of "unset", so displayName falls back to the Shelly name,
+        // else "Sensor" + the MAC's last four).
         name: labelField(80),
         location: labelField(120),
       }),

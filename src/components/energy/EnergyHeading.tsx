@@ -6,16 +6,18 @@ import { m } from '~/paraglide/messages'
 // `lastSuccessAt` is `undefined` while the sync status is still loading.
 export function EnergyHeading({
   title,
+  description = m.energy_description(),
   lastSuccessAt,
 }: {
   title: string
+  description?: string
   /** `undefined`: the sync status is still loading. `null`: never synced. */
   lastSuccessAt: Date | null | undefined
 }) {
   return (
     <header className="flex flex-col gap-2">
       <h1 className="text-balance font-bold text-2xl tracking-tight md:text-3xl">{title}</h1>
-      <p className="max-w-2xl text-muted-foreground text-sm">{m.energy_description()}</p>
+      <p className="max-w-2xl text-muted-foreground text-sm">{description}</p>
       {/* Relative time differs slightly between SSR and hydration (as in ChargingHeading). */}
       <p data-sync-line className="text-muted-foreground text-sm" suppressHydrationWarning>
         {lastSuccessAt === undefined

@@ -64,6 +64,7 @@
     --color-energy-battery: var(--energy-battery);
     --color-energy-house: var(--energy-house);
     --color-energy-car: var(--energy-car);
+    --color-energy-loss: var(--energy-loss);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-selected-foreground: var(--selected-foreground);
@@ -143,6 +144,8 @@
   --energy-export: #2a78d6;
   --energy-house: #eb6834;
   --energy-car: #4a3aa7;
+  /* The battery's loss (step 2): red, validated with solar, grid and battery (--pairs all) in both themes; hatched in charts. */
+  --energy-loss: #b91c1c;
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -220,6 +223,7 @@
   --energy-export: #3987e5;
   --energy-house: #d95926;
   --energy-car: #9085e9;
+  --energy-loss: #dc3c3c;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

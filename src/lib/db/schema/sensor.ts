@@ -3,7 +3,9 @@ import { check, index, integer, pgTable, real, text, timestamp, uuid } from 'dri
 
 // One row per physical Shelly H&T Gen3, keyed by its MAC. `name`/`location` are
 // null until an admin names it — devices auto-register on first webhook, then an
-// admin labels them at /sensors.
+// admin labels them at /sensors. `shellyName` is the name the device reports
+// from the Shelly app (`${config.sys.device.name}`), refreshed by every webhook
+// that carries one; a sensor without an admin name shows it.
 export const sensorDevice = pgTable('sensor_device', {
   id: uuid('id').primaryKey().defaultRandom(),
   // Normalized MAC (lowercase, separators stripped) — the device identity from
@@ -11,6 +13,7 @@ export const sensorDevice = pgTable('sensor_device', {
   mac: text('mac').notNull().unique(),
   name: text('name'),
   location: text('location'),
+  shellyName: text('shelly_name'),
   batteryPct: integer('battery_pct'),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
