@@ -86,11 +86,14 @@ the step needs a short brainstorm before its plan.
      three warm (pg-pool reuses it first), so the others can expire between navigations;
    - a lone request's first query (`findActiveByIdMs`, no other request within 400 ms) p50: 21 ms before, expected
      near 4;
-   - burst p90 per procedure, `poolExpired` and `poolReuseIdleMs`: recorded, no threshold;
+   - burst p90 per procedure, `poolExpired`, `poolReuseIdleMs` (0 also means nothing was reused; read it with
+     `poolOpened`) and the count of `pool connection expired` lines (SSR loads too) with their `idleMs`: recorded, no
+     threshold;
    - **no failed request from a dead connection:** search all runtime log lines, not only `rpc timing` ones (SSR
      page loads go through the in-process client, which writes no `orpc handler error` and no timing line). No
-     error (or `cause`, since drizzle wraps the driver's error) that is `Connection terminated unexpectedly` or
-     `ECONNRESET`, no `getSession failed` warning, and no `uncaughtException`. Any one fails the checkpoint and goes
+     error (or `cause`, since drizzle wraps the driver's error) that is `Connection terminated unexpectedly`,
+     `ECONNRESET`, `EPIPE`, `Query read timeout` (a half-open socket) or `not queryable` (a socket that died inside
+     a transaction), no `getSession failed` warning, and no `uncaughtException`. Any one fails the checkpoint and goes
      to the bugfix workflow, with its request's `poolReuseIdleMs` when it has an `rpc timing` line. An
      `idle postgres client error` warning alone isn't a failure (a discarded dead connection can log one as it
      closes); read it against `poolExpired`.

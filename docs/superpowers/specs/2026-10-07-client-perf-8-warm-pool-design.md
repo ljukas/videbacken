@@ -76,7 +76,9 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
   hazard is older than this step.
 - **The timing line shows the guard.** `WarmPool` reports each checkout of an idle connection (`onIdleCheckout`),
   and `watchPool` adds `poolExpired` (connections discarded as too old) and `poolReuseIdleMs` (the longest a reused
-  connection had sat idle; instance-wide, the oldest reuse during the request) to the `rpc timing` line. A dead-connection error can then be read against its
+  connection had sat idle; instance-wide, the oldest reuse during the request) to the `rpc timing` line. Each
+  discard is also logged on its own (`pool connection expired`, with `idleMs`), since an SSR load writes no timing
+  line. A dead-connection error can then be read against its
   connection's age, which turns the inferred 5 min bound into a measured one.
 - **Not guarded: a pooler that closes a connection during a short freeze** (a Supavisor deploy or restart). The
   connection is younger than the cap and fails on reuse. Rare; the damage is `getSession` returning `null` on any DB
@@ -100,7 +102,7 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
   tested without the app's singleton pool:
   - in production (`NODE_ENV === 'production'`, which the Vercel runtime sets): `connectionTimeoutMillis` 10 s,
     `query_timeout` 30 s (unchanged), `min: 3` and `maxIdleAgeMillis` 5 min;
-  - in dev: the same, without `min`. The Vite dev server re-evaluates `src/lib/db/index.ts` when a module it imports
+  - in dev: the timeouts only (no `min`, no idle cap). The Vite dev server re-evaluates `src/lib/db/index.ts` when a module it imports
     changes (a schema file), creating a new pool. The old pool's idle connections close after 10 s today; with a
     `min` they would stay open, leaking 3 local Postgres connections per edit;
   - under `TEST_SCHEMA`: the pinned `max: 1`, `idleTimeoutMillis: 0` pool, unchanged, with no `min`.
@@ -141,10 +143,13 @@ the baseline above:
   only one of the three warm: a navigation after a poll-only stretch of over 5 min discards the other two.
 - **A lone request's first query (`findActiveById`) p50:** 21 ms now, expected near 4.
 - **Burst p90 per procedure** (the table above): recorded, no threshold.
-- **`poolExpired` and `poolReuseIdleMs`:** recorded. How often the cap fires, and the oldest connection reused.
+- **`poolExpired`, `poolReuseIdleMs` and the `pool connection expired` lines:** recorded. How often the cap fires
+  (the log line counts SSR loads too, which write no timing line), and the oldest connection reused (0 also means
+  nothing was reused; read it with `poolOpened`).
 - **No failed request from a dead connection:** search all runtime log lines, not only `rpc timing` ones (SSR page
   loads go through the in-process client, which writes no `orpc handler error` and no timing line). No error (or
-  `cause`, since drizzle wraps the driver's error) that is `Connection terminated unexpectedly` or `ECONNRESET`, no
+  `cause`, since drizzle wraps the driver's error) that is `Connection terminated unexpectedly`, `ECONNRESET`,
+  `EPIPE`, `Query read timeout` (a half-open socket) or `not queryable` (a socket that died inside a transaction), no
   `getSession failed` warning, and no `uncaughtException`. Any one fails the checkpoint and goes to the bugfix
   workflow, with its request's `poolReuseIdleMs` when it has an `rpc timing` line. An `idle postgres client error`
   warning alone isn't a failure (a discarded dead connection can log one as it closes); read it against

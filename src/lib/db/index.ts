@@ -106,7 +106,11 @@ pool.on('connect', () => {
 })
 pool.on('acquire', sampleWaiting)
 pool.on('release', sampleWaiting)
-function observeIdleCheckout(idleMs: number, expired: boolean) {
+// A discard is also logged on its own line: the first checkout after a long
+// absence is often an SSR load, which writes no timing line (checkpoint 8 counts
+// these to check the 5 min cap). Exported for its test.
+export function observeIdleCheckout(idleMs: number, expired: boolean) {
+  if (expired) logger.info('pool connection expired', { idleMs })
   for (const watch of watches) {
     if (expired) watch.expired += 1
     else watch.reuseIdleMs = Math.max(watch.reuseIdleMs, idleMs)

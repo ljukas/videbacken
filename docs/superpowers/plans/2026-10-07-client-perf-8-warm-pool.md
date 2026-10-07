@@ -243,6 +243,11 @@ with `"development"` or `false`, stop and report: the warm minimum would never r
 
 ### Task 1b: guards against a dead held connection (added after Task 1's review)
 
+> As shipped (7e43cd7 and the final-review fix), `WarmPoolConfig` also takes `onIdleCheckout`, and `watchPool`, the
+> `rpc timing` line (`src/routes/api/rpc/$.ts`) and `dbPool.test.ts` gained `poolExpired` / `poolReuseIdleMs`, plus
+> a `pool connection expired` log line. This supersedes the Global Constraints' "no change to … the timing line" and
+> Review Focus 5's "not testable locally": the guards are unit-tested; only a real dead socket is left to prod.
+
 Ruling (owner, 2026-10-07): the review of Task 1 found that a held connection is likely dead after a long
 suspension, and that it can crash an instance (an uncaught `'error'` on a transaction's client) or bounce a user to
 `/login` (`getSession` returns `null` on a DB error). See the spec's "The risk" and "Guards".
