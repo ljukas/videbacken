@@ -7,7 +7,13 @@ import { user } from '~/lib/db/schema'
 import type { Logger } from '~/lib/logger'
 import * as userService from '~/lib/services/user'
 import { setupDatabase } from '~test/setup'
-import { adminProcedure, authMemoFor, createAuthMemo, protectedProcedure } from './context'
+import {
+  adminProcedure,
+  authMemoFor,
+  createAuthMemo,
+  memoFoundActiveUser,
+  protectedProcedure,
+} from './context'
 
 setupDatabase()
 
@@ -213,4 +219,28 @@ test('a memo never answers for other headers: a different cookie looks up again'
   // The same cookie again is the memo's request: no new lookup.
   await call(echo, undefined, { context: withCookie('session=a') })
   expect(getSession).toHaveBeenCalledTimes(2)
+})
+
+test('memoFoundActiveUser: only a request whose lookup found an active user counts as signed in', async () => {
+  const signedIn = createAuthMemo()
+  const row = await activeUser()
+  await call(echo, undefined, { context: { ...baseContext(), authMemo: signedIn } })
+  expect(await memoFoundActiveUser(signedIn)).toBe(true)
+
+  // Revoked: the session cookie is still accepted, the user row is not.
+  await db.update(user).set({ deletedAt: new Date() }).where(eq(user.id, row.id))
+  const revoked = createAuthMemo()
+  await call(echo, undefined, { context: { ...baseContext(), authMemo: revoked } }).catch(() => {})
+  expect(await memoFoundActiveUser(revoked)).toBe(false)
+
+  // No lookup at all (a public procedure, an unknown path).
+  expect(await memoFoundActiveUser(createAuthMemo())).toBe(false)
+})
+
+test('memoFoundActiveUser is false when the lookup failed', async () => {
+  await activeUser()
+  vi.spyOn(userService, 'findActiveById').mockRejectedValueOnce(new Error('db down'))
+  const authMemo = createAuthMemo()
+  await call(echo, undefined, { context: { ...baseContext(), authMemo } }).catch(() => {})
+  expect(await memoFoundActiveUser(authMemo)).toBe(false)
 })

@@ -30,6 +30,15 @@ export type AuthMemo = {
 
 export const createAuthMemo = (): AuthMemo => ({ activeUsers: new Map() })
 
+/**
+ * Whether this request's lookups found an active user: signed in and not
+ * revoked. A failed lookup, or none at all (a public procedure), is false.
+ */
+export async function memoFoundActiveUser(memo: AuthMemo): Promise<boolean> {
+  const users = await Promise.all([...memo.activeUsers.values()].map((p) => p.catch(() => null)))
+  return users.some(Boolean)
+}
+
 const credentialsOf = (headers: Headers) =>
   `${headers.get('cookie') ?? ''}\n${headers.get('authorization') ?? ''}`
 
