@@ -25,6 +25,26 @@ const SEL = {
   hoverCursor: '[data-hover-cursor]',
 } as const
 
+// Tailwind's sr-only as the build emits it; the browser project has no app.css.
+export const SR_ONLY_CSS =
+  '.sr-only{clip-path:inset(50%);white-space:nowrap;border-width:0;width:1px;height:1px;margin:-1px;padding:0;position:absolute;overflow:hidden}'
+
+// How far `box`'s content reaches past its right edge. A table can't shrink to
+// sr-only's 1px, so an sr-only <table> sticks out and widens a phone's page.
+export const overflowX = (box: Element) => box.scrollWidth - box.clientWidth
+
+// Every <table> under `root` sits in a box that clips it to sr-only's 1px —
+// wherever the layout puts it (with SR_ONLY_CSS loaded).
+export function tablesClipped(root: ParentNode) {
+  const tables = all<HTMLTableElement>(root, 'table')
+  expect(tables.length).toBeGreaterThan(0)
+  for (const table of tables) {
+    const box = table.parentElement as HTMLElement
+    expect(getComputedStyle(box).overflow).toBe('hidden')
+    expect(box.getBoundingClientRect().width).toBeLessThanOrEqual(1)
+  }
+}
+
 const all = <E extends Element = Element>(root: ParentNode, sel: string) => [
   ...root.querySelectorAll<E>(sel),
 ]

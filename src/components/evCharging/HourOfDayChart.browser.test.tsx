@@ -5,8 +5,11 @@ import {
   chartSvg,
   focusTarget,
   hoverBar,
+  overflowX,
   parkPointer,
+  SR_ONLY_CSS,
   seriesBars,
+  tablesClipped,
   tooltipText,
   xTickLabels,
 } from '~test/browser/chartDom'
@@ -61,9 +64,9 @@ test('hides the chart from assistive tech; the table carries the values', async 
   expect(hidden?.querySelector('[tabindex]:not([tabindex="-1"])')).toBeNull()
   // …but the table is not: it carries the values.
   expect(
-    screen.container.querySelector('table.sr-only')?.closest('[aria-hidden="true"]'),
+    screen.container.querySelector('.sr-only table')?.closest('[aria-hidden="true"]'),
   ).toBeNull()
-  expect(screen.container.querySelector('table.sr-only caption')).not.toBeNull()
+  expect(screen.container.querySelector('.sr-only table caption')).not.toBeNull()
 })
 
 test('stays readable at 320 px', async () => {
@@ -120,4 +123,16 @@ test('hovering an hour shows its range and value', async () => {
   await vi.waitFor(() =>
     expect(tooltipText()).toContain(`${hourRangeLabel(5)} · ${valueLabel(10, 'kwh')}`),
   )
+})
+
+test("its sr-only table doesn't widen a 320 px page", async () => {
+  const { screen } = await renderWithProviders(
+    <div data-testid="page" style={{ width: 320, overflow: 'auto', position: 'relative' }}>
+      <style>{SR_ONLY_CSS}</style>
+      <HourOfDayChart hours={hours} metric="kwh" />
+    </div>,
+  )
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(23))
+  expect(overflowX(screen.getByTestId('page').element())).toBe(0)
+  tablesClipped(screen.container)
 })

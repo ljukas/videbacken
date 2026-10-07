@@ -76,3 +76,37 @@ test('a heading hidden under a scroller that sits below a header still counts as
   ;(screen.getByRole('button', { name: 'Next' }).element() as HTMLButtonElement).click()
   expect(document.activeElement).toBe(heading)
 })
+
+test('with the document scrolling, a heading under the sticky header counts as out of view', async () => {
+  // On a phone the document scrolls and html's scroll-padding-top keeps
+  // targets clear of the sticky header (app.css).
+  document.documentElement.style.scrollPaddingTop = '48px'
+  try {
+    const screen = await render(<DocumentHarness />)
+    const heading = screen.getByRole('heading', { name: 'Sessions' }).element() as HTMLElement
+    window.scrollTo(0, heading.getBoundingClientRect().top + window.scrollY - 20)
+    expect(heading.getBoundingClientRect().top).toBeCloseTo(20, 0)
+    ;(screen.getByRole('button', { name: 'Next' }).element() as HTMLButtonElement).click()
+    expect(document.activeElement).toBe(heading)
+    expect(heading.getBoundingClientRect().top).toBeGreaterThanOrEqual(47)
+  } finally {
+    document.documentElement.style.scrollPaddingTop = ''
+    window.scrollTo(0, 0)
+  }
+})
+
+function DocumentHarness() {
+  const { ref, reveal } = useListTop()
+  return (
+    <div>
+      <div style={{ height: 600 }} />
+      <h2 ref={ref} tabIndex={-1}>
+        Sessions
+      </h2>
+      <div style={{ height: 2_000 }} />
+      <button type="button" onClick={reveal}>
+        Next
+      </button>
+    </div>
+  )
+}

@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import type { RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
+import { overflowX, SR_ONLY_CSS, tablesClipped } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { SessionPriceChart } from './SessionPriceChart'
 
@@ -839,4 +840,16 @@ test('an excluded session without an optimal schedule shows no toggle', async ()
   expect(screen.getByRole('checkbox').elements()).toHaveLength(0)
   expect(series('optimal')).toHaveLength(0)
   expect(document.querySelector('[data-legend="optimal"]')).toBeNull()
+})
+
+test("its sr-only table doesn't widen a 320 px page", async () => {
+  const { screen } = await renderWithProviders(
+    <div data-testid="page" style={{ width: 320, overflow: 'auto', position: 'relative' }}>
+      <style>{SR_ONLY_CSS}</style>
+      <SessionPriceChart detail={detail} />
+    </div>,
+  )
+  await expect.poll(() => document.querySelector('[data-hover-overlay]')).not.toBeNull()
+  expect(overflowX(screen.getByTestId('page').element())).toBe(0)
+  tablesClipped(screen.container)
 })
