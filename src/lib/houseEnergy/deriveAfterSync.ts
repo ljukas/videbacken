@@ -10,8 +10,9 @@ import * as energyMixService from '~/lib/services/energyMix'
 import { deriveFrom } from './derive'
 
 /**
- * How long a sync waits for its derive. Added to a run's 240 s deadline it
- * stays under Vercel's 300 s function limit. A derive given up on keeps
+ * How long a sync waits for its derive. A run's 240 s deadline, the 10 s
+ * month-sums refresh (`REFRESH_BUDGET_MS`) and this 30 s budget add up to 280 s,
+ * under Vercel's 300 s function limit. A derive given up on keeps
  * running; if the instance is frozen first, Postgres ends its idle transaction
  * after 60 s and the next trigger redoes the work.
  */

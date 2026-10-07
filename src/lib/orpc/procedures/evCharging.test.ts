@@ -978,7 +978,13 @@ test('syncNow with source emaldo runs only the house sync (not configured under 
     { context: { ...baseContext(), timings } },
   )
   expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
-  for (const key of ['emaldoSyncMs', 'emaldoFetchMs', 'emaldoStoreMs', 'emaldoDeriveMs'])
+  for (const key of [
+    'emaldoSyncMs',
+    'emaldoFetchMs',
+    'emaldoStoreMs',
+    'emaldoDeriveMs',
+    'emaldoRefreshMs',
+  ])
     expect(typeof timings[key]).toBe('number')
   const zaptec = await integrationSyncService.getHealth('zaptec', {
     now: new Date(),

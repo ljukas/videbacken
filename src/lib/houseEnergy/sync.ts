@@ -15,6 +15,7 @@ import { getLastSuccessStartedAt } from '~/lib/services/integrationSync'
 import { addDays, daysBetween, stockholmDayBounds, stockholmDayOf } from '~/lib/time/stockholm'
 import type { deriveFrom } from './derive'
 import { deriveAfterSync } from './deriveAfterSync'
+import { refreshAfterSync } from './refreshAfterSync'
 
 // Server-only (db, effects). Never import it from client code — and keep
 // `src/lib/houseEnergy/` free of an index barrel, so the client-safe modules
@@ -60,6 +61,8 @@ export type EmaldoSyncRun = RunBase & {
   earliestReplacedDay: string | null
   /** Time spent queuing and re-deriving the energy mix (ADR-0023). */
   deriveMs: number
+  /** Time spent refreshing the monthly sums view (ADR-0024). */
+  refreshMs: number
 }
 
 const SOURCE = 'emaldo'
@@ -126,6 +129,7 @@ export async function runEmaldoSync(opts: {
     log?: Logger
     sleep?: (ms: number) => Promise<void>
     deriveFrom?: typeof deriveFrom
+    refreshMonthSums?: () => Promise<void>
   }
 }): Promise<EmaldoSyncRun> {
   const client = opts.deps?.emaldo ?? emaldo
@@ -155,11 +159,19 @@ export async function runEmaldoSync(opts: {
       backfillDaysLeft: 0,
       earliestReplacedDay: null,
       deriveMs: 0,
+      refreshMs: 0,
     }),
     execute: async ({ run, signal, now, log, reportProgress }) => {
       try {
         await syncDays(client, run, stats, { signal, now, sleep, log, reportProgress })
       } finally {
+        // ADR-0024: the pages read the monthly sums view; refresh it first,
+        // whenever a day landed (also when the run then fails part-way).
+        run.refreshMs = await refreshAfterSync({
+          stored: run.earliestReplacedDay !== null,
+          log,
+          refresh: opts.deps?.refreshMonthSums,
+        })
         // ADR-0023: new readings change the house mix and the pool from the
         // earliest replaced day on — also when the run then fails part-way.
         run.deriveMs = await deriveAfterSync({
@@ -191,6 +203,7 @@ export async function runEmaldoSync(opts: {
         rejectedDays: run.rejectedDays,
         backfillDaysLeft: run.backfillDaysLeft,
         deriveMs: run.deriveMs,
+        refreshMs: run.refreshMs,
       },
     }),
     finalize: (run) => {
@@ -215,6 +228,7 @@ export async function runEmaldoSync(opts: {
       backfillDaysLeft: run.backfillDaysLeft,
       earliestReplacedDay: run.earliestReplacedDay,
       deriveMs: run.deriveMs,
+      refreshMs: run.refreshMs,
     }),
   })
 }

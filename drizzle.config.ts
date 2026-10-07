@@ -7,7 +7,8 @@ const url = resolveUnpooledUrl() ?? ''
 
 export default defineConfig({
   dialect: 'postgresql',
-  schema: './src/lib/db/schema',
+  // The barrel only: drizzle-kit 0.31 dedupes tables but not views across files, and the barrel re-exports every schema file.
+  schema: './src/lib/db/schema/index.ts',
   out: './drizzle',
   dbCredentials: { url },
   casing: 'snake_case',
