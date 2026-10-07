@@ -11,8 +11,8 @@ const widths = {
  * Shared page wrapper: centers content, constrains width, and owns the page
  * padding once (replacing per-route `flex flex-col gap-6 p-4 md:p-8`).
  *
- * Lives inside `SidebarInset`, which is a fixed-height flex column — so
- * PageContainer is the page's scroll owner. Three modes:
+ * From `md` up it lives inside `SidebarInset`, which is a fixed-height flex
+ * column — so PageContainer is the page's scroll owner. Three modes:
  * - default: the whole page scrolls inside the panel (forms, lists, reading).
  * - `fill`: the container is a fixed-height flex column that clips; a child
  *   owns the scroll (Linear-style data-table screens, where the chrome stays
@@ -26,6 +26,11 @@ const widths = {
  *
  * The scroll/clip lives on the full-width outer element so the scrollbar sits
  * at the panel edge, not at the centered `max-w-*` edge.
+ *
+ * Below `md` none of this applies: the document scrolls, because iOS Safari
+ * only shrinks its toolbars and draws the page under the bottom bar when the
+ * document scrolls (the shell in `_authenticated.tsx` is fixed-height from
+ * `md` up only).
  */
 export function PageContainer({
   className,
@@ -39,9 +44,9 @@ export function PageContainer({
       data-slot="page-container"
       className={cn(
         'flex min-h-0 flex-1 flex-col',
-        fill === true && 'overflow-hidden',
-        fill === 'lg' && 'overflow-y-auto lg:overflow-hidden',
-        fill === false && 'overflow-y-auto',
+        fill === true && 'md:overflow-hidden',
+        fill === 'lg' && 'md:overflow-y-auto lg:overflow-hidden',
+        fill === false && 'md:overflow-y-auto',
       )}
       {...props}
     >

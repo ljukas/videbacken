@@ -58,9 +58,11 @@ function AuthenticatedLayout() {
   return (
     <CommandPaletteProvider>
       <TooltipProvider>
-        <SidebarProvider className="h-svh overflow-hidden">
+        {/* Fixed-height panel with an inner scroller from md up; on a phone the
+            document scrolls, so iOS Safari can shrink its toolbars (PageContainer). */}
+        <SidebarProvider className="md:h-svh md:overflow-hidden">
           <AppSidebar role={user.role} />
-          <SidebarInset className="min-h-0 overflow-hidden bg-surface-page">
+          <SidebarInset className="bg-surface-page md:min-h-0 md:overflow-hidden">
             <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b bg-surface-page px-4 md:hidden">
               <SidebarTrigger />
               <div className="flex flex-1 justify-center px-3">
