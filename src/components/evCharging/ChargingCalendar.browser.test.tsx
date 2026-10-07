@@ -1,6 +1,7 @@
 import { Profiler } from 'react'
 import { expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
+import { overflowX, SR_ONLY_CSS, tablesClipped } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { ChargingCalendar } from './ChargingCalendar'
 
@@ -219,4 +220,22 @@ test('days are coloured by quantile step and empty days are muted', async () => 
   expect(style('2026-09-05')?.fill).toBe('color-mix(in oklab, var(--brand) 100%, var(--card))')
   expect(style('2026-09-06')?.fill).toBe('var(--muted)')
   expect(style('2026-09-06')?.stroke).toBe('var(--border)')
+})
+
+test("its sr-only tables don't widen a 320 px page", async () => {
+  const { screen } = await renderWithProviders(
+    <div data-testid="page" style={{ width: 320, overflow: 'auto', position: 'relative' }}>
+      <style>{SR_ONLY_CSS}</style>
+      <ChargingCalendar
+        year={2026}
+        daily={daily}
+        months={months}
+        today="2026-09-30"
+        onPickMonth={() => {}}
+      />
+    </div>,
+  )
+  await expect.element(screen.getByRole('table', { name: /september 2026/i })).toBeInTheDocument()
+  expect(overflowX(screen.getByTestId('page').element())).toBe(0)
+  tablesClipped(screen.container)
 })

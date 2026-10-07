@@ -125,29 +125,31 @@ export function WeekdayHourHeatmap({ grid, metric }: { grid: Slot[][]; metric: P
 
   const table = useMemo(
     () => (
-      <table className="sr-only">
-        <caption>{m.charging_patterns_heatmap_caption()}</caption>
-        <thead>
-          <tr>
-            <td />
-            {range(24).map((h) => (
-              <th key={h} scope="col">
-                {hourRangeLabel(h)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {cells.map((row) => (
-            <tr key={row[0]?.weekday}>
-              <th scope="row">{weekdayLabel(row[0]?.weekday ?? 0, 'long')}</th>
-              {row.map((c) => (
-                <td key={c.hour}>{valueLabel(c.value, metric)}</td>
+      <div className="sr-only">
+        <table>
+          <caption>{m.charging_patterns_heatmap_caption()}</caption>
+          <thead>
+            <tr>
+              <td />
+              {range(24).map((h) => (
+                <th key={h} scope="col">
+                  {hourRangeLabel(h)}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {cells.map((row) => (
+              <tr key={row[0]?.weekday}>
+                <th scope="row">{weekdayLabel(row[0]?.weekday ?? 0, 'long')}</th>
+                {row.map((c) => (
+                  <td key={c.hour}>{valueLabel(c.value, metric)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     ),
     [cells, metric],
   )

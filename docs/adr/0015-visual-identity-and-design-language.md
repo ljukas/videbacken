@@ -146,6 +146,15 @@ wrap; both read as a distinct surface (the standard inset look). Text contrast i
 >   0.99 < `--card`/`--background` 1.0) and is unchanged. (Light `--canvas` shipped as `oklch(0.99 0 0)`,
 >   not the `0.98` quoted in the prior amendment.)
 
+> **Amendment (2026-10-07) — phones scroll the document, not the panel.** The fixed-height panel
+> (`SidebarProvider` at `h-svh`, `PageContainer` as the inner scroller) now applies from `md` up only.
+> On iOS Safari the toolbars only shrink, and the page only draws under the floating bottom bar, when the
+> document scrolls; the inner scroller kept the bars big and, at its edges, rubber-banded the whole page.
+> Below `md` the document scrolls: `html` gets `scroll-padding-top: 3rem` so scrolled-to targets clear the
+> sticky `h-12` header, `SidebarInset` keeps `min-w-0` so wide content can't widen the page, and a hidden
+> `sr-only` table must sit in an `sr-only` wrapper (a table can't shrink to 1px and widened the page).
+> Trade-off: on phones, sticky headers inside `fill` tables (the `/users` header row) scroll away.
+
 ### Typography & type scale
 
 Both faces are **self-hosted woff2 under `public/fonts/`** with `@font-face` declarations in `app.css`

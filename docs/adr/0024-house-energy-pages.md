@@ -39,6 +39,9 @@ Measured on the full local history (2026-10-05):
 2. **On-read monthly aggregates.** One service query groups `house_energy_reading` by Stockholm month for the
    chart's year, plus the current month, the current year and all time for the tiles. The car's kWh comes from
    `ev_charge_interval`, the same source as `/charging`'s monthly chart. No rollup table.
+   - *Amended 2026-10-07:* the month sums are now read from the materialized view `house_energy_month`, which the
+     Emaldo sync refreshes once per run that stored a day. Still no hand-kept rollup table. Design:
+     [month sums view](../superpowers/specs/2026-10-07-energy-month-sums-view-design.md).
 3. **Only sums cross the wire.** The procedure returns period totals, never buckets; the load-profile rule stands.
 4. **One set of definitions, in one pure client-safe module** (`src/lib/houseEnergy/figures.ts`):
    - **Self-sufficiency** = max(0, 1 − import ÷ load). Grid-charged battery energy (and its loss) counts as
@@ -63,6 +66,9 @@ Measured on the full local history (2026-10-05):
      metric toggle. Same figures (`figures.ts`), same read. Design:
      [battery page](../superpowers/specs/2026-10-06-energy-battery-page-design.md).
 7. **Freshness:** no polling interval; focus refetch, and the Emaldo sync health alert shows when data is stale.
+   - *Amended 2026-10-07:* the month sums are only as fresh as the last refresh of `house_energy_month`. A failed
+     refresh is a warning (`house energy month refresh failed`), not a health alert, so the Emaldo source can be green
+     while the pages lag until the next successful run. Every run retries.
 
 ## Alternatives considered
 
@@ -92,5 +98,14 @@ Measured on the full local history (2026-10-05):
     2–2.5× today's rows (mid–late 2027) the scan alone reaches the 150 ms budget, and past ≈25–30k hours the hourly
     hash spills to disk at prod's `work_mem`. Watch `houseScanMs`; a per-month rollup written in `replaceDay`'s
     transaction is the next step then.
+  - *Amended 2026-10-07:* that step is taken early, as a **materialized view** instead of a rollup table. On prod the
+    overview query's mean was already 160 ms over 108 calls (min 36, max 719: a long tail on a ≈ 33 ms scan), and the
+    hourly hash used 2.7 MB of its ≈ 4.3 MB limit (`work_mem` × `hash_mem_multiplier` 2), so it spills at ≈ 10k hours
+    (mid–late 2027), not 25–30k. `house_energy_month` holds the same monthly sums and first/last SoC; the Emaldo sync
+    refreshes it `CONCURRENTLY` once per run that stored a day (best effort, a warning on failure, repaired by the next
+    run), and `energy.overview` reads it. Postgres computes it from the readings, so it can't drift from them the way
+    a hand-kept table could; `pg_ivm` and TimescaleDB, which maintain such views incrementally, aren't available on
+    prod. Decision 2's "no rollup table" holds; the read is now one row per month, not a scan. Design:
+    [month sums view](../superpowers/specs/2026-10-07-energy-month-sums-view-design.md).
 - `figures.ts` is the single home of the house-energy definitions; a later kronor or economy phase builds on it.
 - `C` is a code constant (ADR-0023). If it changes, past loss figures change with it, which is intended.

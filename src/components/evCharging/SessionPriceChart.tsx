@@ -564,27 +564,31 @@ export function SessionPriceChart({ detail }: { detail: Detail }) {
 
   const table = useMemo(
     () => (
-      <table className="sr-only">
-        <caption>{m.charging_session_chart_table_caption()}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{m.charging_session_chart_col_time()}</th>
-            <th scope="col">{m.charging_session_chart_col_kwh()}</th>
-            <th scope="col">{m.charging_session_chart_col_ore()}</th>
-            {optimalSchedule ? <th scope="col">{m.charging_session_chart_col_optimal()}</th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.startMs}>
-              <th scope="row">{rowLabel(r, multiDay)}</th>
-              <td>{kwhLabel(kwhWithin(intervals, r))}</td>
-              <td>{oreLabel(r.spotOre)}</td>
-              {optimalSchedule ? <td>{kwhLabel(kwhWithin(optimalSchedule, r))}</td> : null}
+      <div className="sr-only">
+        <table>
+          <caption>{m.charging_session_chart_table_caption()}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{m.charging_session_chart_col_time()}</th>
+              <th scope="col">{m.charging_session_chart_col_kwh()}</th>
+              <th scope="col">{m.charging_session_chart_col_ore()}</th>
+              {optimalSchedule ? (
+                <th scope="col">{m.charging_session_chart_col_optimal()}</th>
+              ) : null}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.startMs}>
+                <th scope="row">{rowLabel(r, multiDay)}</th>
+                <td>{kwhLabel(kwhWithin(intervals, r))}</td>
+                <td>{oreLabel(r.spotOre)}</td>
+                {optimalSchedule ? <td>{kwhLabel(kwhWithin(optimalSchedule, r))}</td> : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     ),
     [rows, intervals, optimalSchedule, multiDay],
   )

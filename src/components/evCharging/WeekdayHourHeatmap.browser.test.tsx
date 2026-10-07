@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { userEvent } from 'vitest/browser'
+import { overflowX, SR_ONLY_CSS, tablesClipped } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { WeekdayHourHeatmap } from './WeekdayHourHeatmap'
 
@@ -156,4 +157,16 @@ test('cells are coloured by quantile step; empty cells are muted with a border',
   expect(fill('0-0')?.fill).toBe('var(--muted)')
   expect(fill('0-0')?.stroke).toBe('var(--border)')
   expect(fill('0-20')?.stroke).toBe('')
+})
+
+test("its sr-only table doesn't widen a 320 px page", async () => {
+  const { screen } = await renderWithProviders(
+    <div data-testid="page" style={{ width: 320, overflow: 'auto', position: 'relative' }}>
+      <style>{SR_ONLY_CSS}</style>
+      <WeekdayHourHeatmap grid={grid} metric="kwh" />
+    </div>,
+  )
+  await expect.poll(() => screen.container.querySelectorAll('rect[data-cell]').length).toBe(168)
+  expect(overflowX(screen.getByTestId('page').element())).toBe(0)
+  tablesClipped(screen.container)
 })

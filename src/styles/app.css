@@ -269,6 +269,9 @@
   /* Linear-style body tuning: tight tracking + optical sizing on the variable face. */
   html {
     @apply font-sans;
+    /* On a phone the document scrolls under the sticky h-12 header
+       (_authenticated.tsx); keep scrolled-to targets clear of it. */
+    @apply max-md:scroll-pt-12;
     letter-spacing: -0.011em;
     font-optical-sizing: auto;
   }

@@ -4,7 +4,7 @@ import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
 import type { Logger } from '~/lib/logger'
-import { replaceDay } from '~/lib/services/houseEnergy'
+import { refreshMonthSums, replaceDay } from '~/lib/services/houseEnergy'
 import { stockholmDayBounds, stockholmYearMonth } from '~/lib/time/stockholm'
 import { syntheticDay } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
@@ -63,6 +63,7 @@ test('a signed-in member reads the overview, and the timings are recorded', asyn
   const day = '2026-02-10'
   const { startMs, endMs } = stockholmDayBounds(day)
   await replaceDay({ dayStart: new Date(startMs), dayEnd: new Date(endMs) }, syntheticDay(day))
+  await refreshMonthSums()
   await signIn('user')
   const timings: Record<string, number> = {}
   const o = await call(energyRouter.overview, { year: 2026 }, { context: context(timings) })
@@ -92,6 +93,7 @@ test('privacy: the output holds period sums only, never buckets', async () => {
   const day = '2026-02-10'
   const { startMs, endMs } = stockholmDayBounds(day)
   await replaceDay({ dayStart: new Date(startMs), dayEnd: new Date(endMs) }, syntheticDay(day))
+  await refreshMonthSums()
   await signIn('user')
   const o = await call(energyRouter.overview, { year: 2026 }, { context: context() })
   expect(Object.keys(o).sort()).toEqual([
