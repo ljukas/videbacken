@@ -17,7 +17,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 5a | Bar charts on visx (refactor-workflow): a shared visx bar-chart module, tests moved off recharts' classes, HourOfDay, Monthly, Economy and Spot converted. `/charging`, economy and patterns drop recharts | [plan](../plans/2026-10-06-client-perf-5a-visx-bar-charts.md) | [#111](https://github.com/ljukas/videbacken/pull/111) | checkpoint passed | Covered by checkpoint 5 (see [step 5a notes](#step-5a-notes)). |
 | 5b | The Energi month chart on the bar module (selection, keyboard, export below the axis, hover outline) | [plan](../plans/2026-10-06-client-perf-5b-energi-chart.md) | [#115](https://github.com/ljukas/videbacken/pull/115) | checkpoint passed | Covered by checkpoint 5 (see [step 5b notes](#step-5b-notes)). |
 | 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | [#118](https://github.com/ljukas/videbacken/pull/118) | checkpoint passed | 2026-10-06: the owner reviewed the converted charts live on prod and they look good. On `main` at `b63da3b`, no page's `packages:` line lists recharts, redux, immer or decimal.js-light, and `bun.lock` has none of them. See [checkpoint 5 result](#checkpoint-5-result). |
-| 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) | — | — | not started | — |
+| 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) (search parsing: recorded, not changed) | [plan](../plans/2026-10-06-client-perf-6-small-items.md) | [#127](https://github.com/ljukas/videbacken/pull/127) | PR open | — |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — | needs shaping | — |
 | 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
 
@@ -68,7 +68,16 @@ the step needs a short brainstorm before its plan.
      `/users` 72, `/account/profile` 212.
 5. **After step 5c (prod).** Steps 5a and 5b have no checkpoint of their own; each PR is reviewed live at three widths before merge. Owner reviews every converted chart live. recharts, redux, immer and decimal.js-light are
    gone from the build.
-6. **After step 6 (build).** The upload chunk shrinks, and the font preload shows in the SSR `<head>`.
+6. **After step 6 (build).** Run `bun run bundle:measure` on `main` after the merge (final figures in
+   [step 6 notes](#step-6-notes)):
+   - `/account/profile` and `/onboarding` list none of exifreader, @vercel/blob or jose.
+   - No page above step 6's final measurement: entry 176.2, entry + shell 252, `/charging` 84, `/charging/settings` 44 (43.4 unrounded),
+     economy 77, patterns 76, `/charging/sessions/$id` 65, `/energy` 72, `/sensors` 48, `/users` 73,
+     `/account/profile` 151, `/login` 85.9, `/onboarding` 85.6, `/signed-in` 31.5. Compare the printed values:
+     signed-in pages print integers, signed-out pages one decimal.
+   - `bun run build` and `bun run bundle:measure` print `chunk cycles: none`, and the build's chunk check reports
+     that the entry reaches no chunk group.
+   - The SSR `<head>` of `/login` carries the Switzer preload.
 7. **After step 7 (prod).** The owner reviews the spots they reported, live on prod, and they no longer shift.
 
 ## Baseline (audit, 2026-10-05, `main` at `99fa206`)
@@ -430,6 +439,110 @@ Recorded 2026-10-06, `main` at `b63da3b` (#118 merged, plus the docs-only #119).
 - Stale recharts mentions: comments in the `ClimateChart` tests and `docs/bugfix-workflow.md:36`.
 - A poll that changes the announced time's rows re-reads the live region (the bar chart does the same).
 - The same-time early return in `onPointer` skips `setAnnounced(null)` (harmless, the same content).
+
+## Step 6 notes
+
+**Baseline, `main` at `4376917`** (prod build, `bun run bundle:measure`; KB gz, each page beyond the entry and the
+signed-in shell, signed-out pages beyond the entry only). The final column is the step's branch head.
+
+| Page | Baseline | Final | Notes |
+|---|---:|---:|---|
+| entry alone | 176.4 | 176.2 | 24 chunks at baseline |
+| entry + signed-in shell | 258 | 252 | shell chunks beyond the entry: 28 before, 13 after |
+| `/charging` | 84 | 84 | |
+| `/charging/settings` | 44 | 43 | 43.5 → 43.4 unrounded |
+| `/charging/economy` | 77 | 77 | |
+| `/charging/patterns` | 76 | 76 | |
+| `/charging/sessions/$id` | 65 | 65 | |
+| `/energy` | 72 | 72 | |
+| `/sensors` | 48 | 48 | |
+| `/users` | 73 | 73 | |
+| `/account/profile` | 213 | 151 | AvatarUpload chunk 72 → 10 |
+| `/login` | 88.4 | 85.9 | |
+| `/onboarding` | 150.0 | 85.6 | also renders AvatarUpload |
+| `/signed-in` | 34.0 | 31.5 | |
+
+Task 4 re-measured the branch before the groups at entry 176.5 and `/onboarding` 88.1; the tuning table below uses those.
+
+**Upload modules load on pick.** `AvatarUpload` imports `exifreader` and the Vercel Blob client with one `import()`
+pair. A click on the upload button starts it (the OS picker takes seconds), and `handleFile` awaits it. The busy state
+starts at the pick, so the button is disabled while the chunk loads. A chunk that fails to load shows the localized
+upload error. `/account/profile` went 213 → 151. `/onboarding` went 150.0 → 88.0 with the upload change alone, then 85.6 with the chunk groups. The AvatarUpload chunk is 10 KB gz,
+not the ~5 the plan guessed, because `bowser` (36 KB raw) stays inlined in it.
+
+**Where `jose` came from.** `@vercel/blob/client`'s shared chunk imports `getVercelOidcToken` from `@vercel/oidc`.
+That package's browser entry (`dist/index-browser.js`) is CommonJS and `require`s `verify-vercel-oidc-token`, which
+requires all of `jose`, so nothing tree-shakes (raw: exifreader 344 KB, `@vercel/oidc` + `jose` 146, `@vercel/blob`
+81, `bowser` 36). That holds for the locked `@vercel/blob` 2.6.1 and `@vercel/oidc` 3.8.0. Checked on npm 2026-10-06: `@vercel/oidc` 4.0.0's browser entry still requires `jose`, and `@vercel/blob` 2.8.1 still depends on `^3.6.1`.
+Patching a dependency is out (owner rule), so the fix is to load it only on upload.
+
+**Body font preload.** `src/lib/fonts.ts` holds the Switzer URL, and `__root.tsx` renders the preload `<link>`. A node
+test checks that `app.css`'s `@font-face` uses the same URL and that the file exists, since a mismatch downloads the
+font twice. The SSR HTML of `/login` carries
+`<link rel="preload" href="/fonts/switzer/Switzer-Variable.woff2" as="font" type="font/woff2" crossorigin="anonymous"/>`,
+and the live check fetched the font once with no "preloaded but not used" warning. The heading font isn't preloaded.
+
+**Chunk groups.** Two rolldown groups for the client build only (`config/clientChunkGroups.ts`, wired through
+`environments.client` in `vite.config.ts`; `/build/` is gitignored, so the file isn't under `build/`): `shell` for the
+modules only the signed-in shell uses and `ui` for those it shares with the signed-out pages. The rule is that no
+grouped module may be reachable from the entry. Tuning, one measured configuration after another (KB gz):
+
+| Config | entry | entry + shell | `/login` | `/onboarding` | `/signed-in` | Chunk cycles |
+|---|---:|---:|---:|---:|---:|---|
+| before the groups | 176.5 | 258 | 88.4 | 88.1 | 34.0 | none |
+| c1: the plan's prototype | 176.2 | 251 | 84.6 | 96.1 | 49.1 | `button` ↔ `ui` ↔ `blurhash-image`, `_authenticated` ↔ `shell` |
+| c2: better-auth chain and `authClient` out of `ui` | 176.2 | 251 | 85.0 | 84.6 | 37.6 | the same two |
+| c3: also out of `ui`: what `/signed-in` didn't load on `main` (avatar, spinner, input, input-group, image sizes, blurhash, unpic, react-avatar, react-visually-hidden) | 176.2 | 252 | 85.7 | 85.4 | 31.4 | `button` ↔ `ui`, `_authenticated` ↔ `shell`; `/login` crashes |
+| **c4 (final):** c3 without `class-variance-authority`, with lucide's `menu` icon in `shell` | **176.2** | **252** | **85.9** | **85.6** | **31.5** | none |
+
+Every signed-in page is at or below its baseline in every configuration, to one decimal as well as rounded (unchanged pages moved by 0.2 KB at most). The
+plan's prototype broke the no-growth rule on the signed-out pages: a page that loads one module of `ui` loads all of
+it, so `/onboarding` and `/signed-in` pulled in code they never used. The tuning took those modules out of `ui`, which
+is now exactly what the shell shares with `/signed-in`, the smallest signed-out page.
+
+**The crash the numbers didn't show.** The c3 build passed every size target and the whole test suite, but `/login`
+failed on hydration with `TypeError: i is not a function` in `button-*.js`. With `includeDependenciesRecursively:
+false`, rolldown no longer keeps the chunk graph acyclic (its type docs recommend `strictExecutionOrder`, which would
+wrap every module in the client build). `ui` imported the Radix primitives from `button`'s chunk, `button`'s chunk
+imported `cva` back from `ui`, and `button` ran first, so `cva` was still undefined. A second cycle,
+`_authenticated` ↔ `shell`, came from `sidebar.tsx`'s `menu` icon staying in the layout chunk. That one crossed only at render
+time and was harmless at init, but it is the same trap and only signed-in pages load it. Both were broken by choosing what goes in each group, not by `strictExecutionOrder`.
+
+**Cycle guard.** Nothing in the tests or the sizes sees such a cycle, so the build does:
+- `scripts/chunkGraph.ts` reads the client chunks' static import graph (shared with `measureBundle.ts`) and finds
+  cycles (`chunkCycles`, Tarjan).
+- `scripts/checkChunkCycles.ts` runs after `vite build` in both `build` (so CI's `Check (build)` fails) and
+  `vercel-build`, since a squash-merge of two green PRs can form a cycle on `main` that no PR's CI saw. It checks the
+  newer of `.output/public/assets` (node-server preset) and `.vercel/output/static/assets` (Vercel preset), and exits
+  1 on a cycle or when the entry's static closure reaches a `shell-*` or `ui-*` chunk (the group names come from
+  `config/clientChunkGroups.ts`). It fails closed: no build dir, no chunks or no entry chunk is a failure, never a
+  pass. Putting the c3 configuration back reproduced the two cycles with the same chunk hashes and failed the build;
+  grouping an entry-only module (`@tanstack/history`) in `ui` failed the entry rule alone.
+- `bun run bundle:measure` prints a `chunk cycles:` line under `entry:`.
+- Only static imports count. A cycle through a dynamic `import()` is safe at init.
+
+**`modulepreload` counts**, prod builds of `main` and the branch, headless, local data, load + 4 s (modulepreloads /
+JS requests):
+
+| Page | `main` | Branch |
+|---|---|---|
+| `/charging` | 86 / 88 | 71 / 73 |
+| `/users` | 85 / 87 | 70 / 72 |
+| `/login` (signed out) | 47 / 49 | 41 / 43 |
+
+On the branch at 1280 and 375 px: `/charging` renders, the sidebar opens and closes at 375 px, Cmd+K opens the palette
+and `/users`' lazy invite dialog opens, with no page errors. A tooltip wasn't exercised, since `/charging` has no
+tooltip trigger in its default state. On `/account/profile`, no exif or client-upload chunk loads before the pick, and
+after picking a PNG both load and the "Profilbilden uppdaterad" toast shows (local presigned-PUT path). A Vercel Blob
+upload, the prod transport, is only exercised on the preview deployment.
+
+**Item 5, search parsing out of the shell: recorded, not changed** (owner, 2026-10-06). The cause isn't search
+parsing. It is the `/energy` loader: `energyOverviewQueryFor` → `stockholmYearMonth` pulls `date-fns` and
+`@date-fns/tz` into the entry, about 2 KB gz, which every page that formats dates loads anyway. The general fix
+(TanStack's `codeSplittingOptions` with `defaultBehavior: [['loader', 'component'], …]`, which moves loaders out of the
+route tree) was prototyped: entry 176.4 → 170.6 and shell total 258 → 255, but every page grew 2–3 KB gz, and a cold
+client navigation's queries would start only after the route chunk arrives, against ADR-0025 §1. A narrow `Intl` fix
+goes against the date-fns preference. So loaders stay in the route tree, and their imports stay in the entry.
 
 ## Step 7 notes
 

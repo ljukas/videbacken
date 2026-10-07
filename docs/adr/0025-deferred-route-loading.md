@@ -265,8 +265,54 @@ and `PhoneField`'s own entry, is a new dynamic entry, and rolldown groups module
 them. So modules the shell shares with those entries (Radix primitives, cmdk, `button`, `dialog`, floating-ui …) split
 into more, smaller chunks: about +5 KB gz of per-chunk overhead (the figure sums each chunk's gzip): +1.3 KB when `PhoneField` became its own entry, +3.3 KB when the lazy dialogs did, with the same 437 modules throughout; the entry + shell parts are rounded separately, so 172 + 77 reads 248 in the tables and 9 more
 `modulepreload` requests on every signed-in page. A rolldown chunk group
-(`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up, since it
+(`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up (done in the 2026-10-06 amendment below), since it
 needs its own measurement, `/login` included.
+
+*Amendment, 2026-10-06 (roadmap step 6).* Two changes, plus the body-font preload, measured with
+`bun run bundle:measure` (KB gz). The baseline is `main` at `4376917`, after step 5 dropped recharts, which is why its
+numbers differ from the step-4 table above (entry + shell 253 and `/charging` 161 there, 258 and 84 here).
+
+- **The upload's heavy modules load on pick.** `AvatarUpload` imports `exifreader` and the Vercel Blob client
+  with `import()`, started by a click on the upload button and awaited by `handleFile`. `@vercel/blob/client`
+  dragged `jose` in through `@vercel/oidc`'s CommonJS browser entry, which can't tree-shake (the locked `@vercel/blob` 2.6.1 and `@vercel/oidc` 3.8.0; on npm 2026-10-06 `@vercel/oidc`
+  4.0.0's browser entry still requires `jose` and `@vercel/blob` 2.8.1 still depends on `^3.6.1`), so loading it on
+  pick is the fix. `/account/profile` went 213 → 151. `/onboarding` went 150.0 → 88.0 with the upload change alone,
+  then 85.6 with the chunk groups.
+- **Two chunk groups for the client build** (`config/clientChunkGroups.ts`, `codeSplitting.groups`) merge the shell's
+  chunks back: `shell` for modules only the signed-in shell uses, `ui` for those it shares with the signed-out pages.
+  Entry + shell went 258 → 252 (28 shell chunks → 13) and modulepreloads on `/charging` 86 → 71. No page grew:
+  `/login` 88.4 → 85.9 and `/signed-in` 34.0 → 31.5 dropped, and the signed-in pages stayed put (`/charging` 84,
+  settings 44, economy 77, patterns 76, session 65, `/energy` 72, `/sensors` 48, `/users` 73; they moved by 0.2 KB
+  at most, settings 43.5 → 43.4).
+
+  Both groups set `includeDependenciesRecursively: false`, so a grouped module's dependencies, several of them entry
+  modules, stay where rolldown put them. Pulled into the group, they would make the entry import it. The cost is that
+  rolldown no longer keeps the chunk graph acyclic. Its type docs recommend `strictExecutionOrder` for that; it is
+  rejected because it wraps every module of the client build, every page included, to guard against a mistake that
+  choosing the groups' contents avoids and the build now catches. Three rules keep the groups safe:
+  1. **Never group a module the entry reaches.** The entry would import the whole group and every page, `/login`
+     included, would load it. The prototype had one (the router's nested `@tanstack/store`).
+  2. **No group may import a chunk outside it that imports back** (no chunk cycles). One chunk then runs before the
+     other has defined its exports: `ui` imported the Radix primitives from `button`'s chunk, which imported `cva`
+     back from `ui`, and `/login` crashed on hydration with sizes and tests passing.
+  3. **No page grows.** A page that loads one module of a group loads all of it, so `ui` holds only what the shell
+     shares with `/signed-in`, the smallest signed-out page.
+
+  The build enforces (1) and (2): `scripts/checkChunkCycles.ts` runs after `vite build` in both `build` (CI's
+  `Check (build)`) and `vercel-build`, so a squash-merge of two green PRs that forms a cycle on `main` doesn't deploy.
+  It reads the newer of `.output/public/assets` and `.vercel/output/static/assets`, fails on any static chunk cycle
+  or on the entry's static closure reaching a `shell-*` or `ui-*` chunk, and fails closed on a missing build, no
+  chunks, or no entry chunk. (3) is checked by `bun run bundle:measure` against the numbers above.
+- **The body font is preloaded.** `__root.tsx` renders a `<link rel="preload" as="font">` for Switzer only
+  (`BODY_FONT_URL`, `src/lib/fonts.ts`), so it starts with the CSS instead of after it. It sets `crossOrigin`: a font
+  fetch is a CORS request even same-origin, and a preload without it isn't reused, so the font would download twice.
+  The heading font (Cabinet Grotesk) isn't preloaded, since two 42 KB fonts would compete with the entry JS. A node
+  test checks that `app.css`'s `@font-face` uses the same URL (ADR-0015).
+
+**Rejected: moving loaders out of the route tree** (owner, 2026-10-06). Their imports (for example `date-fns` through
+the `/energy` loader, about 2 KB gz) ship in the entry. Moving loaders out with TanStack's `codeSplittingOptions` cut
+the entry 176.4 → 170.6 but grew every page 2–3 KB gz, and a cold client navigation's queries would start only after
+the route chunk arrives, against §1. Loaders and search parsing stay where they are.
 
 ---
 

@@ -5,6 +5,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import { nitro } from 'nitro/vite'
 import { defineConfig } from 'vitest/config'
+import { clientChunkGroups } from './config/clientChunkGroups'
 import { vercelBuildOutput } from './server/vercelBuildOutput'
 import { IMAGE_SIZES } from './src/lib/image/sizes'
 
@@ -28,6 +29,12 @@ export default defineConfig({
   // maplibre-gl's worker is loaded by URL (setWorkerUrl in HomePositionMap); esbuild's
   // dep pre-bundling would rewrite it. Only the lazy map chunk imports it.
   optimizeDeps: { exclude: ['maplibre-gl'] },
+  // Client only: the Nitro/SSR build keeps rolldown's default chunking.
+  environments: {
+    client: {
+      build: { rolldownOptions: { output: { codeSplitting: { groups: clientChunkGroups } } } },
+    },
+  },
   // App build pulls in the TanStack Start + React + Tailwind + Nitro plugin chain.
   // Vitest runs server-only modules under `environment: 'node'`, so loading those
   // plugins would (a) try to evaluate React's CJS entry as ESM and (b) keep a Vite

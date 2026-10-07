@@ -10,6 +10,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
+import {
+  chunkCycles,
+  entryChunk,
+  formatChunkCycles,
+  readChunkGraph,
+  staticClosure,
+} from './chunkGraph'
 
 const ASSETS = '.output/public/assets'
 // Route chunk name prefixes (TanStack names a split route chunk after its file).
@@ -24,6 +31,13 @@ const PAGES: Record<string, string> = {
   '/users': 'users',
   '/account/profile': 'profile',
 }
+// Signed-out pages: they load the entry but not the signed-in shell, so they
+// are measured beyond the entry only.
+const SIGNED_OUT: Record<string, string> = {
+  '/login': 'login',
+  '/onboarding': 'onboarding',
+  '/signed-in': 'signed-in',
+}
 const WATCHED = [
   'libphonenumber-js',
   'country-flag-icons',
@@ -31,39 +45,22 @@ const WATCHED = [
   'boneyard-js',
   'maplibre-gl',
   '@vis.gl/react-maplibre',
+  'exifreader',
+  '@vercel/blob',
+  'jose',
 ]
-
-export function staticClosure(deps: Map<string, string[]>, root: string): Set<string> {
-  const seen = new Set<string>()
-  const stack = [root]
-  while (stack.length) {
-    const file = stack.pop() as string
-    if (seen.has(file)) continue
-    seen.add(file)
-    stack.push(...(deps.get(file) ?? []))
-  }
-  return seen
-}
 
 function main() {
   if (!existsSync(ASSETS)) throw new Error(`${ASSETS} is missing: run \`bun run bundle:measure\``)
-  const files = readdirSync(ASSETS).filter((f) => f.endsWith('.js'))
+  const { files, code, deps } = readChunkGraph(ASSETS)
   const captured = readdirSync('src/bones')
     .filter((f) => f.endsWith('.bones.json'))
     .map((f) => f.slice(0, -'.bones.json'.length))
     .sort()
   const gz = new Map<string, number>()
-  const deps = new Map<string, string[]>()
   const sources = new Map<string, string[]>()
-  const code = new Map<string, string>()
   for (const file of files) {
-    const text = readFileSync(join(ASSETS, file), 'utf8')
-    code.set(file, text)
-    gz.set(file, gzipSync(text).length)
-    const imports = [...text.matchAll(/(?:import|from)\s*["']\.\/([^"']+\.js)["']/g)].map(
-      (x) => x[1],
-    )
-    deps.set(file, [...new Set(imports)])
+    gz.set(file, gzipSync(code.get(file) ?? '').length)
     const map = join(ASSETS, `${file}.map`)
     sources.set(
       file,
@@ -73,39 +70,52 @@ function main() {
   const kb = (set: Set<string>) => [...set].reduce((sum, f) => sum + (gz.get(f) ?? 0), 0) / 1024
   const byPrefix = (prefix: string) => files.filter((f) => f.startsWith(`${prefix}-`))
 
-  const entry = files.find((f) => readFileSync(join(ASSETS, f), 'utf8').includes('hydrateRoot'))
+  const entry = entryChunk(code)
   if (!entry) throw new Error('No entry chunk (none calls hydrateRoot)')
   const base = staticClosure(deps, entry)
+  const entryOnly = new Set(base)
   // Two route chunks are named _authenticated (the layout and the dashboard); the shell is the bigger closure.
   const shell = byPrefix('_authenticated')
     .map((f) => staticClosure(deps, f))
     .sort((a, b) => kb(b) - kb(a))[0]
   for (const f of shell ?? []) base.add(f)
+  console.log(`entry: ${kb(entryOnly).toFixed(1)} KB gz`)
+  // `bun run build` fails on a cycle; printed here too, next to the numbers a group change moves.
+  console.log(formatChunkCycles(chunkCycles(deps)))
   console.log(`entry + shell: ${kb(base).toFixed(0)} KB gz\n`)
 
-  for (const [page, prefix] of Object.entries(PAGES)) {
-    const [chunk, ...more] = byPrefix(prefix)
-    if (!chunk || more.length) {
-      console.log(`${page}: ${chunk ? 'ambiguous' : 'no'} chunk for prefix "${prefix}"`)
-      continue
+  const report = (pages: Record<string, string>, beyond: Set<string>, digits: number) => {
+    for (const [page, prefix] of Object.entries(pages)) {
+      const [chunk, ...more] = byPrefix(prefix)
+      if (!chunk || more.length) {
+        console.log(`${page}: ${chunk ? 'ambiguous' : 'no'} chunk for prefix "${prefix}"`)
+        continue
+      }
+      const own = staticClosure(deps, chunk)
+      for (const f of beyond) own.delete(f)
+      const all = [...own].flatMap((f) => sources.get(f) ?? [])
+      const packages = WATCHED.filter((p) => all.some((s) => s.includes(`node_modules/${p}/`)))
+      // Every breakpoint of a capture is named after it (test/sectionSkeletonBones.test.ts):
+      // `name:"x"` as an object literal, `"name":"x"` inside a big one's JSON.parse string.
+      const bones = captured.filter((name) =>
+        [...own].some((f) => new RegExp(`\\bname"?:["'\`]${name}["'\`]`).test(code.get(f) ?? '')),
+      )
+      const top = [...own]
+        .sort((a, b) => (gz.get(b) ?? 0) - (gz.get(a) ?? 0))
+        .slice(0, 5)
+        .map((f) => `${f.replace(/-[\w-]{8}\.js$/, '')} ${((gz.get(f) ?? 0) / 1024).toFixed(0)}`)
+      console.log(
+        `${page.padEnd(24)} +${kb(own)
+          .toFixed(digits)
+          .padStart(digits ? 6 : 4)} KB gz | ${top.join(', ')}`,
+      )
+      console.log(`${''.padEnd(26)}packages: ${packages.join(', ') || '—'}`)
+      console.log(`${''.padEnd(26)}bones: ${bones.join(', ') || '—'}`)
     }
-    const own = staticClosure(deps, chunk)
-    for (const f of base) own.delete(f)
-    const all = [...own].flatMap((f) => sources.get(f) ?? [])
-    const packages = WATCHED.filter((p) => all.some((s) => s.includes(`node_modules/${p}/`)))
-    // Every breakpoint of a capture is named after it (test/sectionSkeletonBones.test.ts):
-    // `name:"x"` as an object literal, `"name":"x"` inside a big one's JSON.parse string.
-    const bones = captured.filter((name) =>
-      [...own].some((f) => new RegExp(`\\bname"?:["'\`]${name}["'\`]`).test(code.get(f) ?? '')),
-    )
-    const top = [...own]
-      .sort((a, b) => (gz.get(b) ?? 0) - (gz.get(a) ?? 0))
-      .slice(0, 5)
-      .map((f) => `${f.replace(/-[\w-]{8}\.js$/, '')} ${((gz.get(f) ?? 0) / 1024).toFixed(0)}`)
-    console.log(`${page.padEnd(24)} +${kb(own).toFixed(0).padStart(4)} KB gz | ${top.join(', ')}`)
-    console.log(`${''.padEnd(26)}packages: ${packages.join(', ') || '—'}`)
-    console.log(`${''.padEnd(26)}bones: ${bones.join(', ') || '—'}`)
   }
+  report(PAGES, base, 0)
+  console.log('\nsigned-out (beyond the entry)')
+  report(SIGNED_OUT, entryOnly, 1)
 }
 
 if (import.meta.main) main()
