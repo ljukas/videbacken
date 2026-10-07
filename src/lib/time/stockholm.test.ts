@@ -77,6 +77,227 @@ describe('stockholmYearMonth', () => {
   })
 })
 
+// stockholmDayOf and stockholmYearMonth run once or more per priced 15-min
+// piece, so they are the ones worth speeding up. These pin them against Intl,
+// which shares no code with them (only the runtime's zone data: the
+// hand-written cases below catch wrong zone data). The functions remember the
+// day per UTC hour across calls, so the tests vary the order the hours are
+// first asked in; each still holds whatever ran before it.
+describe('stockholmDayOf and stockholmYearMonth match Intl', () => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Stockholm',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  })
+  const reference = (ms: number) => {
+    const p = Object.fromEntries(parts.formatToParts(ms).map((x) => [x.type, x.value]))
+    const [year, month, day] = [Number(p.year), Number(p.month), Number(p.day)]
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return { day: `${year}-${pad(month)}-${pad(day)}`, year, month }
+  }
+  const mismatches = (instants: number[], want = instants.map(reference)) =>
+    instants.flatMap((ms, i) => {
+      const day = stockholmDayOf(ms)
+      const ym = stockholmYearMonth(ms)
+      return day === want[i].day && ym.year === want[i].year && ym.month === want[i].month
+        ? []
+        : [{ at: new Date(ms).toISOString(), day, ym, want: want[i] }]
+    })
+  // A fixed-seed shuffle (mulberry32 + Fisher–Yates), so a failure reproduces.
+  const shuffled = (xs: number[]) => {
+    let seed = 0x5eed
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    const out = [...xs]
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1))
+      ;[out[i], out[j]] = [out[j], out[i]]
+    }
+    return out
+  }
+
+  test('every 15 minutes from 2023 through 2027, in shuffled and then in time order', () => {
+    const instants: number[] = []
+    for (let ms = utc('2023-01-01T00:00:00Z'); ms < utc('2028-01-01T00:00:00Z'); ms += HOUR / 4) {
+      instants.push(ms)
+    }
+    const want = instants.map(reference)
+    const order = shuffled(instants.map((_, i) => i))
+    const at = (i: number) => instants[i]
+    const wantAt = (i: number) => want[i]
+    expect(mismatches(order.map(at), order.map(wantAt)).slice(0, 5)).toEqual([])
+    expect(mismatches(instants, want).slice(0, 5)).toEqual([])
+  })
+
+  test('every hour from 1970 through 1975, then the first hours again', () => {
+    // ~52 600 distinct hours: more than the per-hour cache's cap (50 000 in
+    // stockholm.ts), so the cache clears at least once before the first hours
+    // are asked again.
+    const instants: number[] = []
+    for (let ms = utc('1970-01-01T00:00:00Z'); ms < utc('1976-01-01T00:00:00Z'); ms += HOUR) {
+      instants.push(ms + 1_234_567)
+    }
+    const want = instants.map(reference)
+    expect(mismatches(instants, want).slice(0, 5)).toEqual([])
+    expect(mismatches(instants.slice(0, 48), want.slice(0, 48))).toEqual([])
+  })
+
+  test('each hour asked for at its last ms before its first', () => {
+    // The 2030 switches (31 Mar and 27 Oct, 01:00Z) and the local midnights
+    // around them, outside every other test's range.
+    const hours = [
+      '2030-03-30T22:00:00Z',
+      '2030-03-30T23:00:00Z',
+      '2030-03-31T00:00:00Z',
+      '2030-03-31T01:00:00Z',
+      '2030-03-31T21:00:00Z',
+      '2030-03-31T22:00:00Z',
+      '2030-10-26T21:00:00Z',
+      '2030-10-26T22:00:00Z',
+      '2030-10-27T00:00:00Z',
+      '2030-10-27T01:00:00Z',
+      '2030-10-27T22:00:00Z',
+      '2030-10-27T23:00:00Z',
+      '2030-12-31T22:00:00Z',
+      '2030-12-31T23:00:00Z',
+    ].map(utc)
+    expect(mismatches(hours.flatMap((h) => [h + HOUR - 1, h]))).toEqual([])
+  })
+
+  test('hand-written days, independent of the zone data the code reads', () => {
+    expect(stockholmDayOf(utc('2026-03-29T01:00:00Z'))).toBe('2026-03-29')
+    expect(stockholmDayOf(utc('2026-12-31T23:00:00Z'))).toBe('2027-01-01')
+    expect(stockholmYearMonth(utc('2026-12-31T23:00:00Z'))).toEqual({ year: 2027, month: 1 })
+    // 22:30Z is 23:30 in CET (same day) and 00:30 in CEST (next day). No DST
+    // before 1980; it began 6 Apr 1980, ended in September until 1995 and in
+    // October from 1996.
+    expect(stockholmDayOf(Date.UTC(1979, 6, 1, 22, 30))).toBe('1979-07-01')
+    expect(stockholmDayOf(Date.UTC(1980, 3, 6, 22, 30))).toBe('1980-04-07')
+    expect(stockholmDayOf(Date.UTC(1995, 8, 24, 22, 30))).toBe('1995-09-24')
+    expect(stockholmDayOf(Date.UTC(1996, 9, 26, 22, 30))).toBe('1996-10-27')
+  })
+
+  test('around the 2026 DST switches, New Year and month ends', () => {
+    const instants = [
+      // Spring forward 2026-03-29 01:00Z, fall back 2026-10-25 01:00Z.
+      '2026-03-28T22:59:59.999Z',
+      '2026-03-28T23:00:00Z',
+      '2026-03-29T00:59:59.999Z',
+      '2026-03-29T01:00:00Z',
+      '2026-03-29T01:59:59.999Z',
+      '2026-03-29T21:59:59.999Z',
+      '2026-03-29T22:00:00Z',
+      '2026-10-24T21:59:59.999Z',
+      '2026-10-24T22:00:00Z',
+      '2026-10-25T00:59:59.999Z',
+      '2026-10-25T01:00:00Z',
+      '2026-10-25T01:59:59.999Z',
+      '2026-10-25T22:59:59.999Z',
+      '2026-10-25T23:00:00Z',
+      // New Year (CET) and month ends on both offsets.
+      '2026-12-31T22:59:59.999Z',
+      '2026-12-31T23:00:00Z',
+      '2026-02-28T22:59:59.999Z',
+      '2026-02-28T23:00:00Z',
+      '2026-06-30T21:59:59.999Z',
+      '2026-06-30T22:00:00Z',
+      '2028-02-29T22:59:59.999Z',
+      '2028-02-29T23:00:00Z',
+    ].map(utc)
+    expect(mismatches(instants)).toEqual([])
+  })
+
+  test('the first and last ms of an hour', () => {
+    const instants: number[] = []
+    for (let h = utc('2026-10-24T20:00:00Z'); h < utc('2026-10-26T02:00:00Z'); h += HOUR) {
+      instants.push(h, h + HOUR - 1)
+    }
+    expect(mismatches(instants)).toEqual([])
+  })
+
+  test('before 1900, when one UTC hour can span two Stockholm days', () => {
+    // Local mean time: +00:53:28 in the zone data since tzdata 2022b (which
+    // merged Europe/Stockholm into Europe/Berlin), so 23:00Z and 23:30Z on
+    // 31 Dec 1878 fall on different Stockholm days.
+    expect(stockholmDayOf(utc('1878-12-31T23:00:00Z'))).toBe('1878-12-31')
+    expect(stockholmDayOf(utc('1878-12-31T23:30:00Z'))).toBe('1879-01-01')
+    expect(stockholmYearMonth(utc('1878-12-31T23:00:00Z'))).toEqual({ year: 1878, month: 12 })
+    expect(stockholmYearMonth(utc('1878-12-31T23:30:00Z'))).toEqual({ year: 1879, month: 1 })
+    expect(mismatches([utc('1878-12-31T23:00:00Z'), utc('1878-12-31T23:30:00Z')])).toEqual([])
+  })
+
+  test('just before 1970, in time order', () => {
+    // Different Stockholm days; a key that rounds negative hours toward zero
+    // would give both the same one.
+    expect(stockholmDayOf(utc('1969-12-31T22:30:00Z'))).toBe('1969-12-31')
+    expect(stockholmDayOf(utc('1969-12-31T23:00:00Z'))).toBe('1970-01-01')
+    expect(mismatches([utc('1969-12-31T21:30:00Z'), utc('1969-12-31T22:00:00Z'), -1, 0])).toEqual(
+      [],
+    )
+  })
+
+  test('fractional instants on either side of a local midnight, and -0', () => {
+    const midnights = ['2029-12-31T23:00:00Z', '2029-06-30T22:00:00Z'].map(utc)
+    const below = (x: number) => x - 2 ** -12 // the nearest step below at this magnitude
+    expect(
+      mismatches(midnights.flatMap((m) => [below(m), m - 0.5, m, m + 0.5, m + HOUR - 0.5])),
+    ).toEqual([])
+    expect(stockholmDayOf(below(midnights[0]))).toBe('2029-12-31')
+    expect(stockholmDayOf(midnights[0])).toBe('2030-01-01')
+    expect(stockholmDayOf(-0)).toBe('1970-01-01')
+  })
+
+  test('the year 3000, where the hours stop being remembered', () => {
+    const bound = utc('3000-01-01T00:00:00Z')
+    expect(mismatches([bound - HOUR, bound - 1, bound, bound + 1, bound + HOUR])).toEqual([])
+    expect(stockholmDayOf(bound - HOUR)).toBe('3000-01-01') // 00:00 CET
+    expect(stockholmYearMonth(bound - 1)).toEqual({ year: 3000, month: 1 })
+  })
+
+  test('an invalid instant, asked for twice: no day, and a NaN year and month', () => {
+    const invalid = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 8.64e15 + 1]
+    for (const ms of [...invalid, ...invalid]) {
+      expect(() => stockholmDayOf(ms)).toThrow(RangeError)
+      expect(stockholmYearMonth(ms)).toEqual({ year: Number.NaN, month: Number.NaN })
+    }
+  })
+
+  test('the top of the Date range, where one UTC hour gives a day and then none', () => {
+    // 2 h before the last valid instant, the local time still fits a Date at
+    // the hour's first ms but not 1 ms later: two different answers, which a
+    // per-hour cache would merge. 1 ms past the last valid instant throws.
+    const lastHour = 8.64e15 - 2 * HOUR
+    const later = stockholmDayOf(lastHour + 1)
+    const first = stockholmDayOf(lastHour)
+    expect(stockholmDayOf(lastHour + 1)).toBe(later)
+    expect(stockholmDayOf(lastHour)).toBe(first)
+    expect(later).not.toBe(first)
+    stockholmDayOf(8.64e15)
+    expect(() => stockholmDayOf(8.64e15 + 1)).toThrow(RangeError)
+  })
+
+  test('a result changed by the caller does not leak into the next call', () => {
+    // Outside every other test's range, so the first call is the first ask.
+    const ms = utc('2031-05-10T12:00:00Z')
+    const mutate = (ym: { year: number; month: number }) => {
+      try {
+        ym.month = 1
+      } catch {
+        // A frozen result throws in strict mode; either way the next call is right.
+      }
+    }
+    mutate(stockholmYearMonth(ms))
+    expect(stockholmYearMonth(ms)).toEqual({ year: 2031, month: 5 })
+    mutate(stockholmYearMonth(ms + HOUR / 2))
+    expect(stockholmYearMonth(ms)).toEqual({ year: 2031, month: 5 })
+  })
+})
+
 describe('addDays', () => {
   test('crosses month, year and leap-day boundaries', () => {
     expect(addDays('2026-01-31', 1)).toBe('2026-02-01')
