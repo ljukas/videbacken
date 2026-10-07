@@ -63,7 +63,11 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
 
 - **`src/lib/db/index.ts`.** The `Pool` options move into an exported builder, so they can be tested without the
   app's singleton pool:
-  - outside tests: `connectionTimeoutMillis` 10 s, `query_timeout` 30 s (unchanged) and `min: 3`;
+  - in production (`NODE_ENV === 'production'`, which the Vercel runtime sets): `connectionTimeoutMillis` 10 s,
+    `query_timeout` 30 s (unchanged) and `min: 3`;
+  - in dev: the same, without `min`. The Vite dev server re-evaluates `src/lib/db/index.ts` when a module it imports
+    changes (a schema file), creating a new pool. The old pool's idle connections close after 10 s today; with a
+    `min` they would stay open, leaking 3 local Postgres connections per edit;
   - under `TEST_SCHEMA`: the pinned `max: 1`, `idleTimeoutMillis: 0` pool, unchanged, with no `min`.
 - The comment under `watchPool` that says connections left idle on a suspended instance "are closed by the pooler,
   as before" is replaced with the new rule and its cost.
@@ -71,7 +75,8 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
 
 ## Tests (node project)
 
-- **The builder:** `min: 3` and the timeouts outside tests; the pinned options under `TEST_SCHEMA`, with no `min`.
+- **The builder:** `min: 3` and the timeouts in production; the timeouts and no `min` in dev; the pinned options
+  under `TEST_SCHEMA`, with no `min`.
 - **The pg-pool behaviour we rely on:** a real `Pool` built from the non-test options against the local Postgres,
   with `idleTimeoutMillis` shortened to 50 ms, checks out 4 connections at once, releases them, and settles at
   `totalCount` 3 (`idleCount` 3) after the timeout. A pg-pool upgrade that changes `min` fails CI. The test ends
