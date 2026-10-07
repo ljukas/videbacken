@@ -151,9 +151,11 @@ wrap; both read as a distinct surface (the standard inset look). Text contrast i
 > On iOS Safari the toolbars only shrink, and the page only draws under the floating bottom bar, when the
 > document scrolls; the inner scroller kept the bars big and, at its edges, rubber-banded the whole page.
 > Below `md` the document scrolls: `html` gets `scroll-padding-top: 3rem` so scrolled-to targets clear the
-> sticky `h-12` header, `SidebarInset` keeps `min-w-0` so wide content can't widen the page, and a hidden
+> `h-12` header, `SidebarInset` keeps `min-w-0` so wide content can't widen the page, and a hidden
 > `sr-only` table must sit in an `sr-only` wrapper (a table can't shrink to 1px and widened the page).
 > Trade-off: on phones, sticky headers inside `fill` tables (the `/users` header row) scroll away.
+> The phone header is `fixed` (with `pt-12` on `SidebarInset`), not `sticky`, so iOS's overscroll bounce
+> moves only the content under it; the canvas behind the page is `bg-surface-page` while signed in.
 
 ### Typography & type scale
 
