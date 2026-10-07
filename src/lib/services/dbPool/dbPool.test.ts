@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { expect, test } from 'vitest'
 import { __testClient, db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
@@ -46,9 +47,9 @@ test('watchPool counts connections opened during the watch, and stops counting a
   if (!pool) throw new Error('tests run with the pinned test pool')
   const stop = watchPool()
   // A new physical connection is the pool's 'connect' event (a pinned test pool
-  // never opens a second one, so emit it).
-  pool.emit('connect')
-  pool.emit('connect')
+  // never opens a second one, so emit it, with a stand-in client).
+  pool.emit('connect', new EventEmitter())
+  pool.emit('connect', new EventEmitter())
   expect(stop()).toEqual({ poolOpened: 2, poolPeakWaiting: 0 })
   const later = watchPool()
   expect(later()).toEqual({ poolOpened: 0, poolPeakWaiting: 0 })

@@ -1,6 +1,6 @@
 import { Pool, type PoolClient } from 'pg'
 import { expect, test } from 'vitest'
-import { __testClient, POOL_WARM_MIN, poolOptions } from '~/lib/db'
+import { __testClient, POOL_MAX_IDLE_AGE_MS, POOL_WARM_MIN, poolOptions } from '~/lib/db'
 
 // A dropped reply or a half-open socket must fail fast, not hang the request
 // until Vercel's 300 s timeout (the /charging 504s). node-postgres waits
@@ -21,8 +21,10 @@ test('production keeps a warm minimum of three connections', () => {
     connectionTimeoutMillis: 10_000,
     query_timeout: 30_000,
     min: 3,
+    maxIdleAgeMillis: 300_000,
   })
   expect(POOL_WARM_MIN).toBe(3)
+  expect(POOL_MAX_IDLE_AGE_MS).toBe(300_000)
 })
 
 // The dev server re-creates the pool when a module db/index imports changes; a
@@ -68,5 +70,19 @@ test('a production pool settles at the warm minimum after a burst', async () => 
     expect(pool.idleCount).toBe(POOL_WARM_MIN)
   } finally {
     await pool.end()
+  }
+})
+
+// drizzle's transactions check a client out with no 'error' listener, and pg
+// emits 'error' when the socket dies: unhandled, that crashes the instance. The
+// failed query is the record, so the listener only has to exist.
+test('an error on a checked-out client does not throw', async () => {
+  const pool = __testClient
+  if (!pool) throw new Error('tests run with the pinned test pool')
+  const client = await pool.connect()
+  try {
+    expect(() => client.emit('error', new Error('socket died'))).not.toThrow()
+  } finally {
+    client.release()
   }
 })
