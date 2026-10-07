@@ -153,6 +153,8 @@ Both faces are **self-hosted woff2 under `public/fonts/`** with `@font-face` dec
 cost of the chosen faces. (Videbacken is a non-commercial internal tool, so commercial-licensing concerns
 don't apply; both faces are ITF-FFL anyway, which permits commercial + web embedding regardless — see
 Alternative E for why the originally-considered dafont route was dropped.)
+The body face (Switzer) is preloaded from the root `<head>` and the heading face isn't; see ADR-0025 §6
+(amendment 2026-10-06, `BODY_FONT_URL`).
 
 - **Headings — Cabinet Grotesk.** Variable woff2 from **Fontshare** (Jérémie Hornus / ITF) under the **ITF
   Free Font License** (free personal + commercial + web embedding); retain the license file in-repo. A

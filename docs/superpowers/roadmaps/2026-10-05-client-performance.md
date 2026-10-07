@@ -71,10 +71,12 @@ the step needs a short brainstorm before its plan.
 6. **After step 6 (build).** Run `bun run bundle:measure` on `main` after the merge (final figures in
    [step 6 notes](#step-6-notes)):
    - `/account/profile` and `/onboarding` list none of exifreader, @vercel/blob or jose.
-   - No page above step 6's final measurement: entry 176.2, entry + shell 252, `/charging` 84, `/charging/settings` 44 (43.4 unrounded; compare one-decimal values, the printed integer can round either side),
+   - No page above step 6's final measurement: entry 176.2, entry + shell 252, `/charging` 84, `/charging/settings` 44 (43.4 unrounded),
      economy 77, patterns 76, `/charging/sessions/$id` 65, `/energy` 72, `/sensors` 48, `/users` 73,
-     `/account/profile` 151, `/login` 85.9, `/onboarding` 85.6, `/signed-in` 31.5.
-   - `bun run build` and `bun run bundle:measure` print `chunk cycles: none`.
+     `/account/profile` 151, `/login` 85.9, `/onboarding` 85.6, `/signed-in` 31.5. Compare the printed values:
+     signed-in pages print integers, signed-out pages one decimal.
+   - `bun run build` and `bun run bundle:measure` print `chunk cycles: none`, and the build's chunk check reports
+     that the entry reaches no chunk group.
    - The SSR `<head>` of `/login` carries the Switzer preload.
 7. **After step 7 (prod).** The owner reviews the spots they reported, live on prod, and they no longer shift.
 
@@ -509,9 +511,13 @@ time and was harmless at init, but it is the same trap and only signed-in pages 
 **Cycle guard.** Nothing in the tests or the sizes sees such a cycle, so the build does:
 - `scripts/chunkGraph.ts` reads the client chunks' static import graph (shared with `measureBundle.ts`) and finds
   cycles (`chunkCycles`, Tarjan).
-- `scripts/checkChunkCycles.ts` runs after `vite build` in the `build` script and exits 1 on a cycle, so CI's
-  `Check (build)` fails. Putting the c3 configuration back reproduced the two cycles with the same chunk hashes and
-  failed the build. `vercel-build` doesn't run it; the required CI check gates the merge.
+- `scripts/checkChunkCycles.ts` runs after `vite build` in both `build` (so CI's `Check (build)` fails) and
+  `vercel-build`, since a squash-merge of two green PRs can form a cycle on `main` that no PR's CI saw. It checks the
+  newer of `.output/public/assets` (node-server preset) and `.vercel/output/static/assets` (Vercel preset), and exits
+  1 on a cycle or when the entry's static closure reaches a `shell-*` or `ui-*` chunk (the group names come from
+  `config/clientChunkGroups.ts`). It fails closed: no build dir, no chunks or no entry chunk is a failure, never a
+  pass. Putting the c3 configuration back reproduced the two cycles with the same chunk hashes and failed the build;
+  grouping an entry-only module (`@tanstack/history`) in `ui` failed the entry rule alone.
 - `bun run bundle:measure` prints a `chunk cycles:` line under `entry:`.
 - Only static imports count. A cycle through a dynamic `import()` is safe at init.
 

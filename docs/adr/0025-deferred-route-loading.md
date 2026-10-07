@@ -268,7 +268,9 @@ into more, smaller chunks: about +5 KB gz of per-chunk overhead (the figure sums
 (`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up (done in the 2026-10-06 amendment below), since it
 needs its own measurement, `/login` included.
 
-*Amendment, 2026-10-06 (roadmap step 6).* Three changes, measured with `bun run bundle:measure` (KB gz):
+*Amendment, 2026-10-06 (roadmap step 6).* Two changes, plus the body-font preload, measured with
+`bun run bundle:measure` (KB gz). The baseline is `main` at `4376917`, after step 5 dropped recharts, which is why its
+numbers differ from the step-4 table above (entry + shell 253 and `/charging` 161 there, 258 and 84 here).
 
 - **The upload's heavy modules load on pick.** `AvatarUpload` imports `exifreader` and the Vercel Blob client
   with `import()`, started by a click on the upload button and awaited by `handleFile`. `@vercel/blob/client`
@@ -281,17 +283,36 @@ needs its own measurement, `/login` included.
   Entry + shell went 258 → 252 (28 shell chunks → 13) and modulepreloads on `/charging` 86 → 71. No page grew:
   `/login` 88.4 → 85.9 and `/signed-in` 34.0 → 31.5 dropped, and the signed-in pages stayed put (`/charging` 84,
   settings 44, economy 77, patterns 76, session 65, `/energy` 72, `/sensors` 48, `/users` 73; they moved by 0.2 KB
-  at most, settings 43.5 → 43.4). Two rules keep them safe:
-  - **No grouped module may be reachable from the entry.** The entry would import the whole group and every page
-    would load it. The prototype had one (the router's nested `@tanstack/store`).
-  - **No chunk cycles.** A page that loads one module of a group loads all of it, so `ui` holds only what the shell
-    shares with `/signed-in`. Groups also drop rolldown's acyclic guarantee: `ui` and `button`'s chunk once imported
-    each other, and `/login` crashed on hydration with sizes and tests passing. `bun run build` now fails on a cycle
-    (`scripts/checkChunkCycles.ts`, and `bundle:measure` prints a `chunk cycles:` line).
-- **Loaders stay in the route tree.** Their imports (for example `date-fns` through the `/energy` loader, about 2 KB gz)
-  ship in the entry. Moving loaders out with TanStack's `codeSplittingOptions` cut the entry 176.4 → 170.6 but grew
-  every page 2–3 KB gz, and a cold client navigation's queries would start only after the route chunk arrives, against
-  §1. Not changed.
+  at most, settings 43.5 → 43.4).
+
+  Both groups set `includeDependenciesRecursively: false`, so a grouped module's dependencies, several of them entry
+  modules, stay where rolldown put them. Pulled into the group, they would make the entry import it. The cost is that
+  rolldown no longer keeps the chunk graph acyclic. Its type docs recommend `strictExecutionOrder` for that; it is
+  rejected because it wraps every module of the client build, every page included, to guard against a mistake that
+  choosing the groups' contents avoids and the build now catches. Three rules keep the groups safe:
+  1. **Never group a module the entry reaches.** The entry would import the whole group and every page, `/login`
+     included, would load it. The prototype had one (the router's nested `@tanstack/store`).
+  2. **No group may import a chunk outside it that imports back** (no chunk cycles). One chunk then runs before the
+     other has defined its exports: `ui` imported the Radix primitives from `button`'s chunk, which imported `cva`
+     back from `ui`, and `/login` crashed on hydration with sizes and tests passing.
+  3. **No page grows.** A page that loads one module of a group loads all of it, so `ui` holds only what the shell
+     shares with `/signed-in`, the smallest signed-out page.
+
+  The build enforces (1) and (2): `scripts/checkChunkCycles.ts` runs after `vite build` in both `build` (CI's
+  `Check (build)`) and `vercel-build`, so a squash-merge of two green PRs that forms a cycle on `main` doesn't deploy.
+  It reads the newer of `.output/public/assets` and `.vercel/output/static/assets`, fails on any static chunk cycle
+  or on the entry's static closure reaching a `shell-*` or `ui-*` chunk, and fails closed on a missing build, no
+  chunks, or no entry chunk. (3) is checked by `bun run bundle:measure` against the numbers above.
+- **The body font is preloaded.** `__root.tsx` renders a `<link rel="preload" as="font">` for Switzer only
+  (`BODY_FONT_URL`, `src/lib/fonts.ts`), so it starts with the CSS instead of after it. It sets `crossOrigin`: a font
+  fetch is a CORS request even same-origin, and a preload without it isn't reused, so the font would download twice.
+  The heading font (Cabinet Grotesk) isn't preloaded, since two 42 KB fonts would compete with the entry JS. A node
+  test checks that `app.css`'s `@font-face` uses the same URL (ADR-0015).
+
+**Rejected: moving loaders out of the route tree** (owner, 2026-10-06). Their imports (for example `date-fns` through
+the `/energy` loader, about 2 KB gz) ship in the entry. Moving loaders out with TanStack's `codeSplittingOptions` cut
+the entry 176.4 → 170.6 but grew every page 2–3 KB gz, and a cold client navigation's queries would start only after
+the route chunk arrives, against §1. Loaders and search parsing stay where they are.
 
 ---
 
