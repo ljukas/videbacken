@@ -76,7 +76,7 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
   hazard is older than this step.
 - **The timing line shows the guard.** `WarmPool` reports each checkout of an idle connection (`onIdleCheckout`),
   and `watchPool` adds `poolExpired` (connections discarded as too old) and `poolReuseIdleMs` (the longest a reused
-  connection had sat idle) to the `rpc timing` line. A dead-connection error can then be read against its
+  connection had sat idle; instance-wide, the oldest reuse during the request) to the `rpc timing` line. A dead-connection error can then be read against its
   connection's age, which turns the inferred 5 min bound into a measured one.
 - **Not guarded: a pooler that closes a connection during a short freeze** (a Supavisor deploy or restart). The
   connection is younger than the cap and fails on reuse. Rare; the damage is `getSession` returning `null` on any DB
@@ -95,7 +95,7 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
 
 ## Change
 
-- **`src/lib/db/warmPool.ts` (new).** `WarmPool` (above) and its `maxIdleAgeMillis` option.
+- **`src/lib/db/warmPool.ts` (new).** `WarmPool` (above) and its `maxIdleAgeMillis` and `onIdleCheckout` options.
 - **`src/lib/db/index.ts`.** The pool is a `WarmPool`. Its options move into an exported builder, so they can be
   tested without the app's singleton pool:
   - in production (`NODE_ENV === 'production'`, which the Vercel runtime sets): `connectionTimeoutMillis` 10 s,
@@ -107,7 +107,8 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
 - The comment under `watchPool` that says connections left idle on a suspended instance "are closed by the pooler,
   as before" is replaced with the new rule and its cost.
 - Every client gets an `'error'` listener on `connect` (above).
-- No change to `max` (10), `keepAlive`, the timing line, or Supavisor settings.
+- **`watchPool` and `src/routes/api/rpc/$.ts`:** `poolExpired` and `poolReuseIdleMs` on the timing line.
+- No change to `max` (10), `keepAlive` or Supavisor settings.
 
 ## Tests (node project)
 
@@ -122,11 +123,12 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
   within the cap is reused.
 - **The listener:** an `'error'` emitted on a checked-out client of the app's pool doesn't throw.
 - **Telemetry:** `onIdleCheckout` reports each idle checkout's age and whether it expired; `watchPool` reports
-  `poolReuseIdleMs` (fake `Date`) and `poolExpired`.
+  `poolReuseIdleMs` (fake `Date`).
 
 ## Docs
 
-- **ADR-0025 §5 amendment:** the warm minimum, why not `attachDatabasePool`, and the leak bound.
+- **ADR-0025 §5 amendment:** the warm minimum, why not `attachDatabasePool`, the leak bound, and its guards (idle cap,
+  `'error'` listener, telemetry).
 - **Roadmap:** row 8 gets its plan and PR; step 8 notes hold the baseline above; checkpoint 8 is defined (below).
 
 ## Checkpoint 8 (prod)
@@ -140,8 +142,10 @@ the baseline above:
 - **A lone request's first query (`findActiveById`) p50:** 21 ms now, expected near 4.
 - **Burst p90 per procedure** (the table above): recorded, no threshold.
 - **`poolExpired` and `poolReuseIdleMs`:** recorded. How often the cap fires, and the oldest connection reused.
-- **No failed request from a dead connection:** no `orpc handler error` whose error (or its `cause`, since drizzle
-  wraps the driver's error) is `Connection terminated unexpectedly` or `ECONNRESET`, no `getSession failed`
-  warning, and no `uncaughtException`. Any one fails the checkpoint and goes to the bugfix workflow, with its
-  request's `poolReuseIdleMs`. An `idle postgres client error` warning alone isn't a failure (a discarded dead
-  connection can log one as it closes); read it against `poolExpired`.
+- **No failed request from a dead connection:** search all runtime log lines, not only `rpc timing` ones (SSR page
+  loads go through the in-process client, which writes no `orpc handler error` and no timing line). No error (or
+  `cause`, since drizzle wraps the driver's error) that is `Connection terminated unexpectedly` or `ECONNRESET`, no
+  `getSession failed` warning, and no `uncaughtException`. Any one fails the checkpoint and goes to the bugfix
+  workflow, with its request's `poolReuseIdleMs` when it has an `rpc timing` line. An `idle postgres client error`
+  warning alone isn't a failure (a discarded dead connection can log one as it closes); read it against
+  `poolExpired`.

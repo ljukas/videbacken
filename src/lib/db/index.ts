@@ -137,7 +137,7 @@ export function watchPool(): () => {
 // would keep its Fluid instance billed ~100x longer (ADR-0018), and it closes
 // idle connections before suspension, the opposite of the warm minimum. Idle
 // timers don't run on a suspended instance, so the connections idle at
-// suspension stay open through it: always the POOL_WARM_MIN warm ones, plus any
+// suspension stay open through it: up to POOL_WARM_MIN warm ones, plus any
 // released in the 10 s before (up to `max`; bursts peak at 4). Each is a
 // Supavisor client, which holds no Postgres connection in transaction mode.
 

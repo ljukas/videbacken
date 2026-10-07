@@ -279,6 +279,9 @@ suspension, and that it can crash an instance (an uncaught `'error'` on a transa
 
 ### Task 2: Record the decision and the checkpoint
 
+> As shipped, the ADR and roadmap text below was extended for Task 1b's guards, the timing-line fields and a
+> checkpoint rule that searches all runtime logs (see the committed docs; the blocks here are the original draft).
+
 **Files:**
 - Modify: `docs/adr/0025-deferred-route-loading.md` (end of §5, after the "**Where the line is.**" paragraph; and
   the Consequences list)
@@ -379,7 +382,7 @@ by request id). Cold: the request found the pool empty and opened a connection. 
 - 68% of requests opened a connection. The most common gap between requests is 60 s (the polls).
 - Peak connections per burst (280 bursts, requests under 1.5 s apart): 1 in 218, 2 in 5, 3 in 55, 4 in 2.
 - How to pull the logs: `vercel logs` caps a call at 5,000 lines and repeats each line many times, so fetch in
-  one-hour windows (`--since`/`--until`) with `--environment production --no-branch -q "rpc timing" --json`, then
+  one-hour windows (`--since`/`--until`) with `--environment production --no-branch -q "rpc timing" --json --limit 5000`, then
   de-duplicate by `requestId`.
 ```
 
