@@ -21,7 +21,7 @@ export function useListTop<T extends HTMLElement = HTMLHeadingElement>() {
 
 // The top edge of the element's nearest scrolling ancestor (PageContainer's
 // scroller from md up), or else the viewport's below the document's
-// scroll-padding-top (the sticky header on a phone; app.css).
+// scroll-padding-top (the fixed header on a phone; app.css).
 function scrollerTop(el: HTMLElement): number {
   for (let node = el.parentElement; node; node = node.parentElement) {
     const { overflowY } = getComputedStyle(node)

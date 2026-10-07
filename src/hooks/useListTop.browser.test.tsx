@@ -77,9 +77,9 @@ test('a heading hidden under a scroller that sits below a header still counts as
   expect(document.activeElement).toBe(heading)
 })
 
-test('with the document scrolling, a heading under the sticky header counts as out of view', async () => {
+test('with the document scrolling, a heading under the phone header counts as out of view', async () => {
   // On a phone the document scrolls and html's scroll-padding-top keeps
-  // targets clear of the sticky header (app.css).
+  // targets clear of the fixed header (app.css).
   document.documentElement.style.scrollPaddingTop = '48px'
   try {
     const screen = await render(<DocumentHarness />)
