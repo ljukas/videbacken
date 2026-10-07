@@ -13,7 +13,7 @@ import {
   focusChart,
   gridLines,
   hoverCursor,
-  legendLabels,
+  legend,
   lineCurves,
   moveAt,
   parkPointer,
@@ -130,7 +130,7 @@ test('draws connected lines for hours-apart readings on a coarse range', async (
   })
 })
 
-test('renders one line per visible device in its own colour, and a legend entry for every device', async () => {
+test('renders one line per visible device in its own colour, and no legend', async () => {
   const root = await renderChart([
     device(
       'a',
@@ -169,8 +169,8 @@ test('renders one line per visible device in its own colour, and a legend entry 
     'rgb(1, 2, 3)',
     'rgb(4, 5, 6)',
   ])
-  // The legend lists every device, the hidden one too, sorted by name (recharts' order).
-  expect(legendLabels(root)).toEqual(['Boiler', 'Kitchen', 'NW corner'])
+  // The page's sensor chips are the key; the chart draws none.
+  expect(legend(root)).toBeNull()
 })
 
 test('breaks the line at an outage marker while keeping each cluster connected', async () => {
@@ -295,6 +295,42 @@ test('a single hover lists every visible sensor at its nearest reading, with the
   })
 })
 
+test('axis labels are 13 px and the hover card is 14 px with a 13 px row time', async () => {
+  const root = await renderChart(
+    [
+      device('a', [
+        { t: T0, a: 15.1 },
+        { t: T0 + 20 * MIN, a: 15.3 },
+      ]),
+      device('b', [
+        { t: T0 + 7 * MIN, b: 14.2 },
+        { t: T0 + 27 * MIN, b: 14.4 },
+      ]),
+    ],
+    { formatTick: (t) => new Date(t).toISOString().slice(11, 16) },
+  )
+  await vi.waitFor(() => expect(xTickTexts(root).length).toBeGreaterThan(0))
+  for (const text of xTickTexts(root)) expect(text.getAttribute('font-size')).toBe('13')
+  const yText = root.querySelector('[data-axis="y"] text')
+  expect(yText?.getAttribute('font-size')).toBe('13')
+  // The chart box carries the card's text size (browser tests have no app.css: classes, not pixels).
+  const box = root.querySelector('[data-chart="line"]')
+  expect(box?.className).toContain('text-sm')
+  expect(box?.className).not.toContain('text-xs')
+  await hoverPlot(root)
+  await vi.waitFor(() => {
+    // The card is portaled to the body, outside the box: it sets its own size.
+    const card = tooltipNodes()[0]
+    expect(card?.className).toContain('text-sm')
+    expect(card?.className).not.toContain('text-xs')
+    // b's nearest reading is 7 min off a's, so its row shows its own time.
+    const rowTime = [...(card?.querySelectorAll('span') ?? [])].find((s) =>
+      s.className.includes('text-[13px]'),
+    )
+    expect(rowTime).toBeDefined()
+  })
+})
+
 test('renders a dot for an isolated reading so it is not invisible', async () => {
   const root = await renderChart([
     device('a', [{ t: 5, a: 20, isolated: true }]),
@@ -308,7 +344,7 @@ test('renders a dot for an isolated reading so it is not invisible', async () =>
   await vi.waitFor(() => expect(readingDots(root)).toHaveLength(1))
 })
 
-test('with every device hidden there is no line and no card, and the legend keeps every device', async () => {
+test('with every device hidden there is no line and no card', async () => {
   const points = (id: string, v: number) => [
     { t: T0, [id]: v },
     { t: T0 + HOUR, [id]: v + 1 },
@@ -318,7 +354,8 @@ test('with every device hidden there is no line and no card, and the legend keep
     device('b', points('b', 30), { displayName: 'Visible one', hidden: hideB }),
   ]
   const { root, rerender } = await renderRefetchable(devices(true))
-  await vi.waitFor(() => expect(legendLabels(root)).toEqual(['Visible one', 'a']))
+  // Drawn: the time axis keeps its ticks even with nothing visible.
+  await vi.waitFor(() => expect(xTickLabels(root).length).toBeGreaterThan(0))
   expect(lineCurves(root)).toHaveLength(0)
   await hoverPlot(root)
   // Give a card the chance to appear before asserting it didn't.
