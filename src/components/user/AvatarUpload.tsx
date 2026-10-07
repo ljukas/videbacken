@@ -7,8 +7,7 @@ import { Button } from '~/components/ui/button'
 import { Progress } from '~/components/ui/progress'
 import { Spinner } from '~/components/ui/spinner'
 import { useIsIOS } from '~/hooks/useIsIOS'
-import { runUploadFlow, type UploadProgress } from '~/lib/effects/storage/clientUpload'
-import { readImageMetaFromFile } from '~/lib/files/exif'
+import type { UploadProgress } from '~/lib/effects/storage/clientUpload'
 import { imageAccept, isHeicFile } from '~/lib/image/heicMime'
 import { orpc } from '~/lib/orpc/client'
 import { cn, initials } from '~/lib/utils'
@@ -17,6 +16,13 @@ import { m } from '~/paraglide/messages'
 const DIRECT_UPLOAD_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const
 type DirectUploadMime = (typeof DIRECT_UPLOAD_MIME)[number]
 const MAX_BYTES = 5_000_000
+
+// exifreader (~344 KB raw) and @vercel/blob's client, whose @vercel/oidc browser
+// entry is CommonJS and requires all of jose, are only needed once a file is
+// picked. A click on the upload button starts the import, since the OS picker
+// takes seconds, and the pick awaits the same (cached) promise.
+const loadUploadModules = () =>
+  Promise.all([import('~/lib/files/exif'), import('~/lib/effects/storage/clientUpload')])
 
 function formatBytes(n: number) {
   if (n < 1000) return `${n} B`
@@ -88,6 +94,17 @@ export function AvatarUpload({ onUploadingChange, variant = 'default' }: Props =
           : rawFile.type
       if (!isDirectUploadMime(contentType)) {
         toast.error(m.avatar_error_unsupported_format())
+        return
+      }
+
+      let readImageMetaFromFile: typeof import('~/lib/files/exif').readImageMetaFromFile
+      let runUploadFlow: typeof import('~/lib/effects/storage/clientUpload').runUploadFlow
+      try {
+        const [exif, upload] = await loadUploadModules()
+        readImageMetaFromFile = exif.readImageMetaFromFile
+        runUploadFlow = upload.runUploadFlow
+      } catch {
+        toast.error(m.avatar_upload_error())
         return
       }
 
@@ -171,7 +188,10 @@ export function AvatarUpload({ onUploadingChange, variant = 'default' }: Props =
         {fileInput}
         <button
           type="button"
-          onClick={() => inputRef.current?.click()}
+          onClick={() => {
+            void loadUploadModules().catch(() => {})
+            inputRef.current?.click()
+          }}
           disabled={busy}
           aria-label={me.image ? m.avatar_change_button() : m.avatar_add_button()}
           className="group relative w-fit rounded-full outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:pointer-events-none"
@@ -221,7 +241,10 @@ export function AvatarUpload({ onUploadingChange, variant = 'default' }: Props =
         {fileInput}
         <Button
           variant="outline"
-          onClick={() => inputRef.current?.click()}
+          onClick={() => {
+            void loadUploadModules().catch(() => {})
+            inputRef.current?.click()
+          }}
           disabled={busy}
           className="w-fit"
         >
