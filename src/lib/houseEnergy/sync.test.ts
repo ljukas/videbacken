@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { eq, sql } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { integrationSync, integrationSyncRun, user } from '~/lib/db/schema'
+import { houseEnergyMonth, integrationSync, integrationSyncRun, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import {
   type EmaldoClient,
@@ -24,6 +24,7 @@ import { LEASE_DURATION_MS } from '~/lib/services/integrationSync/policy'
 import { addDays, stockholmDayBounds } from '~/lib/time/stockholm'
 import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
+import type { deriveFrom } from './derive'
 import { planEmaldoDays, runEmaldoSync } from './sync'
 
 setupDatabase()
@@ -112,6 +113,8 @@ type RunExtra = {
   log?: ReturnType<typeof capturingLogger>['log']
   now?: () => Date
   sleep?: (ms: number) => Promise<void>
+  refreshMonthSums?: () => Promise<void>
+  deriveFrom?: typeof deriveFrom
 }
 const run = (client: EmaldoClient, extra: RunExtra = {}) =>
   runEmaldoSync({
@@ -121,6 +124,8 @@ const run = (client: EmaldoClient, extra: RunExtra = {}) =>
       emaldo: client,
       log: extra.log ?? capturingLogger().log,
       sleep: extra.sleep ?? (async () => {}),
+      refreshMonthSums: extra.refreshMonthSums,
+      deriveFrom: extra.deriveFrom,
     },
   })
 
@@ -675,6 +680,7 @@ test('the run row records since and every counter', async () => {
     backfillDaysLeft: 0,
     bucketsWithoutSoc: 0,
     deriveMs: expect.any(Number),
+    refreshMs: expect.any(Number),
   })
 })
 
@@ -778,4 +784,67 @@ test('a run in flight when migration 0015 commits cannot write the watermark bac
   expect((await run(fakeEmaldo().client)).outcome).toBe('skipped')
   const later = new Date(startedAt.getTime() + LEASE_DURATION_MS + 1)
   expect((await run(fakeEmaldo().client, { now: () => later })).outcome).toBe('ok')
+})
+
+test('a run that stored days leaves the month sums view fresh, before the derive runs', async () => {
+  const seen: number[] = []
+  const deriveSpy: typeof deriveFrom = async (fromDay) => {
+    seen.push((await db.select().from(houseEnergyMonth)).length)
+    return { fromDay, days: 0, sessions: 0, deriveMs: 0 }
+  }
+  const { client } = fakeEmaldo()
+
+  const result = await run(client, { deriveFrom: deriveSpy })
+
+  expect(result).toMatchObject({ outcome: 'ok', refreshMs: expect.any(Number) })
+  // Yesterday (31 March) and today (1 April) are two Stockholm months.
+  expect((await db.select().from(houseEnergyMonth)).map((m) => m.month).sort()).toEqual([3, 4])
+  expect(seen).toEqual([2]) // the derive saw the refreshed view
+})
+
+test('a failed refresh only warns: the run is ok and the derive still runs', async () => {
+  const captured = capturingLogger()
+  const derive = vi.fn<typeof deriveFrom>(async (fromDay) => ({
+    fromDay,
+    days: 0,
+    sessions: 0,
+    deriveMs: 0,
+  }))
+  const { client } = fakeEmaldo()
+
+  const result = await run(client, {
+    log: captured.log,
+    deriveFrom: derive,
+    refreshMonthSums: async () => Promise.reject(new Error('refresh boom')),
+  })
+
+  expect(result.outcome).toBe('ok')
+  expect(derive).toHaveBeenCalledWith(YESTERDAY, expect.anything())
+  expect(
+    captured.entries().filter((e) => e.msg === 'house energy month refresh failed'),
+  ).toHaveLength(1)
+})
+
+test('a run that stored nothing does not refresh', async () => {
+  const refresh = vi.fn(async () => {})
+  const { client } = fakeEmaldo({
+    [YESTERDAY]: (d) => syntheticDay(d, 0),
+    [TODAY]: (d) => syntheticDay(d, 0),
+  })
+
+  const result = await run(client, { refreshMonthSums: refresh })
+
+  expect(result).toMatchObject({ outcome: 'failed', earliestReplacedDay: null, refreshMs: 0 })
+  expect(refresh).not.toHaveBeenCalled()
+})
+
+test('a run that fails part-way still refreshes for the days that landed', async () => {
+  const refresh = vi.fn(async () => {})
+  // Today lands, then the empty yesterday fails the run (see "an empty yesterday fails the run…").
+  const { client } = fakeEmaldo({ [YESTERDAY]: (d) => syntheticDay(d, 0) })
+
+  const result = await run(client, { refreshMonthSums: refresh })
+
+  expect(result.outcome).toBe('failed')
+  expect(refresh).toHaveBeenCalledTimes(1)
 })
