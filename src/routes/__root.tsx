@@ -12,6 +12,7 @@ import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary'
 import { NotFound } from '~/components/NotFound'
 import { ThemeProvider } from '~/components/ThemeProvider'
 import { Toaster } from '~/components/ui/sonner'
+import { BODY_FONT_URL } from '~/lib/fonts'
 import { getTheme } from '~/lib/themeFns'
 import { m } from '~/paraglide/messages'
 import { getLocale } from '~/paraglide/runtime'
@@ -30,6 +31,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
+      // crossOrigin is required for font preloads, even same-origin, or the
+      // preloaded response isn't reused.
+      {
+        rel: 'preload',
+        href: BODY_FONT_URL,
+        as: 'font',
+        type: 'font/woff2',
+        crossOrigin: 'anonymous',
+      },
       {
         rel: 'apple-touch-icon',
         sizes: '180x180',
