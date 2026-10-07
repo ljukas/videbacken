@@ -9,8 +9,9 @@ import {
 } from '~/components/evCharging/format'
 import { energyFigures, gapHours, type PeriodSums } from '~/lib/houseEnergy/figures'
 import { m } from '~/paraglide/messages'
-import { efficiencyText, lossShareText, storedText } from './BatteryFlow'
+import { efficiencyText, lossShareText } from './BatteryFlow'
 import { type BatteryChartRow, batteryChartRows } from './batteryChart'
+import { storedText } from './flowParts'
 
 const monthCategory = (r: BatteryChartRow) => monthLabel(r.month)
 const monthInitial = (r: BatteryChartRow) => monthLabel(r.month).charAt(0).toUpperCase()

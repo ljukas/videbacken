@@ -1,8 +1,9 @@
 import type { LucideIcon } from 'lucide-react'
 import type * as React from 'react'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { formatShare } from '~/components/evCharging/format'
+import { formatShare, formatSignedOneDecimal } from '~/components/evCharging/format'
 import { Switch } from '~/components/ui/switch'
+import type { EnergyFigures, PeriodSums } from '~/lib/houseEnergy/figures'
 import type { FlowNode, NodeText } from '~/lib/houseEnergy/flowLayout'
 import { m } from '~/paraglide/messages'
 
@@ -14,6 +15,13 @@ export const NODE_SURFACE = 'color-mix(in oklab, var(--foreground) 3%, var(--car
 export const NODE_MUTED = {
   fill: 'color-mix(in oklab, var(--muted-foreground) 90%, var(--foreground))',
 }
+/** "Ändrat lager": the signed change in stored energy, "—" when the charge level is unknown (the figure is then 0). */
+export function storedText(s: PeriodSums, f: EnergyFigures): string {
+  return s.firstSocPct !== null && s.lastSocPct !== null
+    ? `${formatSignedOneDecimal(f.deltaStored)}\u00a0kWh`
+    : '—'
+}
+
 // A value on an arrow: the pill is measured from the text, before paint.
 export function ValuePill({
   x,
