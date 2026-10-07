@@ -241,6 +241,42 @@ with `"development"` or `false`, stop and report: the warm minimum would never r
 
 ---
 
+### Task 1b: guards against a dead held connection (added after Task 1's review)
+
+Ruling (owner, 2026-10-07): the review of Task 1 found that a held connection is likely dead after a long
+suspension, and that it can crash an instance (an uncaught `'error'` on a transaction's client) or bounce a user to
+`/login` (`getSession` returns `null` on a DB error). See the spec's "The risk" and "Guards".
+
+**Files:**
+- Create: `src/lib/db/warmPool.ts`, `src/lib/db/warmPool.test.ts`
+- Modify: `src/lib/db/index.ts` (use `WarmPool`, `POOL_MAX_IDLE_AGE_MS` in `poolOptions`, the `connect` listener),
+  `src/lib/db/index.test.ts`
+
+**Interfaces:**
+- Produces: `export class WarmPool extends Pool` with `constructor(config?: WarmPoolConfig)`, where
+  `WarmPoolConfig = PoolConfig & { maxIdleAgeMillis?: number }`; `export const POOL_MAX_IDLE_AGE_MS = 5 * 60_000`
+  from `~/lib/db`; `poolOptions()` now returns `WarmPoolConfig`, adding `maxIdleAgeMillis: POOL_MAX_IDLE_AGE_MS` in
+  production only.
+
+**Reviewers:** `code-reviewer` + the `supabase-postgres-best-practices` reviewer (as Task 1).
+
+- [ ] **Step 1: failing tests.** `warmPool.test.ts` (real local Postgres, `vi.useFakeTimers({ toFake: ['Date'] })`
+  so sockets are untouched): a client released longer ago than `maxIdleAgeMillis` is discarded at `connect()` (a
+  different `processID`, `totalCount` 1); the same through `pool.query('select pg_backend_pid() as pid')`; a client
+  released within the cap is reused (same `processID`). `index.test.ts`: the production builder expectation gains
+  `maxIdleAgeMillis: 300_000` (dev and test unchanged); an `'error'` emitted on a checked-out client of
+  `__testClient` doesn't throw.
+- [ ] **Step 2:** `bunx vitest run src/lib/db` → FAIL (no `warmPool` module; the emit throws "Unhandled error").
+- [ ] **Step 3:** implement `WarmPool` (record `Date.now()` on the pool's `release` event in a `WeakMap`; `connect()`
+  supports the promise and callback forms, loops `super.connect()` and `release(err)`s a client older than the cap);
+  make the app's pool a `WarmPool`; add `pool.on('connect', (client) => client.on('error', () => {}))` with a comment
+  (the failed query is the record).
+- [ ] **Step 4:** `bunx vitest run src/lib/db src/lib/services/dbPool` → PASS. `bun run check && bun run check:ci &&
+  bun run typecheck` → clean.
+- [ ] **Step 5:** commit `perf(db): discard pooled connections idle over 5 min, never crash on one`.
+
+---
+
 ### Task 2: Record the decision and the checkpoint
 
 **Files:**
@@ -272,8 +308,12 @@ opened a connection: a lone request's first query took 21 ms p50 that way, again
   longer (ADR-0018), and it closes idle connections before suspension.
 - **The cost:** idle timers don't run on a suspended instance, so up to 3 Supavisor clients per instance stay open
   until the VM shuts down or the pooler drops them. In transaction mode they hold no Postgres connection.
-- **The risk:** a held connection can be dead after a long suspension, and its first query fails with a 500 (a read is
-  retried by Query on the client, a mutation isn't). Checkpoint 8 watches for it; there is no retry until one is seen.
+- **The risk, and its guards:** a held connection is likely dead after a long suspension (the pooler's 60 s
+  heartbeats go unanswered while the instance is frozen). Handed out, it would fail its request, could bounce a user
+  to `/login` (`getSession` treats a DB error as no session), and inside a transaction would crash the instance (an
+  unhandled `'error'`). So `WarmPool` discards, at checkout, an idle connection released more than 5 min ago by the
+  wall clock (`POOL_MAX_IDLE_AGE_MS`; timers can't, since they're frozen during suspension), and every client gets
+  an `'error'` listener. Checkpoint 8 still watches for dead connections.
 - **Production only.** The dev server re-creates the pool when a module it imports changes, and a minimum would keep
   each old pool's connections open. Tests keep their pinned single connection.
 ```
@@ -306,8 +346,8 @@ After item 7, add:
    - a lone request's first query (`findActiveByIdMs`, no other request within 400 ms) p50: 21 ms before, expected
      near 4;
    - burst p90 per procedure: recorded, no threshold;
-   - **no dead connections:** no `idle postgres client error` warning, and no `orpc handler error` whose error (or
-     its `cause`) is `Connection terminated unexpectedly` or `ECONNRESET`. Any one fails the checkpoint and goes to
+   - **no dead connections:** no `idle postgres client error` or `getSession failed` warning, no `uncaughtException`,
+     and no `orpc handler error` whose error (or its `cause`) is `Connection terminated unexpectedly` or `ECONNRESET`. Any one fails the checkpoint and goes to
      the bugfix workflow.
 ```
 
