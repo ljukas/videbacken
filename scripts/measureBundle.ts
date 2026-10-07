@@ -24,6 +24,13 @@ const PAGES: Record<string, string> = {
   '/users': 'users',
   '/account/profile': 'profile',
 }
+// Signed-out pages: they load the entry but not the signed-in shell, so they
+// are measured beyond the entry only.
+const SIGNED_OUT: Record<string, string> = {
+  '/login': 'login',
+  '/onboarding': 'onboarding',
+  '/signed-in': 'signed-in',
+}
 const WATCHED = [
   'libphonenumber-js',
   'country-flag-icons',
@@ -31,6 +38,9 @@ const WATCHED = [
   'boneyard-js',
   'maplibre-gl',
   '@vis.gl/react-maplibre',
+  'exifreader',
+  '@vercel/blob',
+  'jose',
 ]
 
 export function staticClosure(deps: Map<string, string[]>, root: string): Set<string> {
@@ -76,36 +86,47 @@ function main() {
   const entry = files.find((f) => readFileSync(join(ASSETS, f), 'utf8').includes('hydrateRoot'))
   if (!entry) throw new Error('No entry chunk (none calls hydrateRoot)')
   const base = staticClosure(deps, entry)
+  const entryOnly = new Set(base)
   // Two route chunks are named _authenticated (the layout and the dashboard); the shell is the bigger closure.
   const shell = byPrefix('_authenticated')
     .map((f) => staticClosure(deps, f))
     .sort((a, b) => kb(b) - kb(a))[0]
   for (const f of shell ?? []) base.add(f)
+  console.log(`entry: ${kb(entryOnly).toFixed(1)} KB gz`)
   console.log(`entry + shell: ${kb(base).toFixed(0)} KB gz\n`)
 
-  for (const [page, prefix] of Object.entries(PAGES)) {
-    const [chunk, ...more] = byPrefix(prefix)
-    if (!chunk || more.length) {
-      console.log(`${page}: ${chunk ? 'ambiguous' : 'no'} chunk for prefix "${prefix}"`)
-      continue
+  const report = (pages: Record<string, string>, beyond: Set<string>, digits: number) => {
+    for (const [page, prefix] of Object.entries(pages)) {
+      const [chunk, ...more] = byPrefix(prefix)
+      if (!chunk || more.length) {
+        console.log(`${page}: ${chunk ? 'ambiguous' : 'no'} chunk for prefix "${prefix}"`)
+        continue
+      }
+      const own = staticClosure(deps, chunk)
+      for (const f of beyond) own.delete(f)
+      const all = [...own].flatMap((f) => sources.get(f) ?? [])
+      const packages = WATCHED.filter((p) => all.some((s) => s.includes(`node_modules/${p}/`)))
+      // Every breakpoint of a capture is named after it (test/sectionSkeletonBones.test.ts):
+      // `name:"x"` as an object literal, `"name":"x"` inside a big one's JSON.parse string.
+      const bones = captured.filter((name) =>
+        [...own].some((f) => new RegExp(`\\bname"?:["'\`]${name}["'\`]`).test(code.get(f) ?? '')),
+      )
+      const top = [...own]
+        .sort((a, b) => (gz.get(b) ?? 0) - (gz.get(a) ?? 0))
+        .slice(0, 5)
+        .map((f) => `${f.replace(/-[\w-]{8}\.js$/, '')} ${((gz.get(f) ?? 0) / 1024).toFixed(0)}`)
+      console.log(
+        `${page.padEnd(24)} +${kb(own)
+          .toFixed(digits)
+          .padStart(digits ? 6 : 4)} KB gz | ${top.join(', ')}`,
+      )
+      console.log(`${''.padEnd(26)}packages: ${packages.join(', ') || '—'}`)
+      console.log(`${''.padEnd(26)}bones: ${bones.join(', ') || '—'}`)
     }
-    const own = staticClosure(deps, chunk)
-    for (const f of base) own.delete(f)
-    const all = [...own].flatMap((f) => sources.get(f) ?? [])
-    const packages = WATCHED.filter((p) => all.some((s) => s.includes(`node_modules/${p}/`)))
-    // Every breakpoint of a capture is named after it (test/sectionSkeletonBones.test.ts):
-    // `name:"x"` as an object literal, `"name":"x"` inside a big one's JSON.parse string.
-    const bones = captured.filter((name) =>
-      [...own].some((f) => new RegExp(`\\bname"?:["'\`]${name}["'\`]`).test(code.get(f) ?? '')),
-    )
-    const top = [...own]
-      .sort((a, b) => (gz.get(b) ?? 0) - (gz.get(a) ?? 0))
-      .slice(0, 5)
-      .map((f) => `${f.replace(/-[\w-]{8}\.js$/, '')} ${((gz.get(f) ?? 0) / 1024).toFixed(0)}`)
-    console.log(`${page.padEnd(24)} +${kb(own).toFixed(0).padStart(4)} KB gz | ${top.join(', ')}`)
-    console.log(`${''.padEnd(26)}packages: ${packages.join(', ') || '—'}`)
-    console.log(`${''.padEnd(26)}bones: ${bones.join(', ') || '—'}`)
   }
+  report(PAGES, base, 0)
+  console.log('\nsigned-out (beyond the entry)')
+  report(SIGNED_OUT, entryOnly, 1)
 }
 
 if (import.meta.main) main()
