@@ -295,7 +295,23 @@ test('a single hover lists every visible sensor at its nearest reading, with the
   })
 })
 
-test('axis labels are 13 px and the hover card is 14 px with a 13 px row time', async () => {
+test('axis labels are 13 px', async () => {
+  // Six hours: the 24 h axis ticks every 3 local hours, so any 6 h window has a
+  // tick in every timezone (a shorter one may have none in UTC, as CI runs).
+  const root = await renderChart([
+    device('a', [
+      { t: T0, a: 15.1 },
+      { t: T0 + 3 * HOUR, a: 15.3 },
+      { t: T0 + 6 * HOUR, a: 15.2 },
+    ]),
+  ])
+  await vi.waitFor(() => expect(xTickTexts(root).length).toBeGreaterThan(0))
+  for (const text of xTickTexts(root)) expect(text.getAttribute('font-size')).toBe('13')
+  const yText = root.querySelector('[data-axis="y"] text')
+  expect(yText?.getAttribute('font-size')).toBe('13')
+})
+
+test('the hover card is 14 px with a 13 px row time', async () => {
   const root = await renderChart(
     [
       device('a', [
@@ -309,10 +325,6 @@ test('axis labels are 13 px and the hover card is 14 px with a 13 px row time', 
     ],
     { formatTick: (t) => new Date(t).toISOString().slice(11, 16) },
   )
-  await vi.waitFor(() => expect(xTickTexts(root).length).toBeGreaterThan(0))
-  for (const text of xTickTexts(root)) expect(text.getAttribute('font-size')).toBe('13')
-  const yText = root.querySelector('[data-axis="y"] text')
-  expect(yText?.getAttribute('font-size')).toBe('13')
   // The chart box carries the card's text size (browser tests have no app.css: classes, not pixels).
   const box = root.querySelector('[data-chart="line"]')
   expect(box?.className).toContain('text-sm')
@@ -354,8 +366,8 @@ test('with every device hidden there is no line and no card', async () => {
     device('b', points('b', 30), { displayName: 'Visible one', hidden: hideB }),
   ]
   const { root, rerender } = await renderRefetchable(devices(true))
-  // Drawn: the time axis keeps its ticks even with nothing visible.
-  await vi.waitFor(() => expect(xTickLabels(root).length).toBeGreaterThan(0))
+  // Drawn (measured): the svg exists even with nothing visible.
+  await vi.waitFor(() => expect(chartSvg(root)).not.toBeNull())
   expect(lineCurves(root)).toHaveLength(0)
   await hoverPlot(root)
   // Give a card the chance to appear before asserting it didn't.
