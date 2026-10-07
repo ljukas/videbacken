@@ -3,6 +3,7 @@ import { createFileRoute, useHydrated } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
 import { lazy, useId, useMemo, useState } from 'react'
 import { z } from 'zod'
+import sensorsChipsBones from '~/bones/sensors-chips.bones.json'
 import sensorsHumChartBones from '~/bones/sensors-hum-chart.bones.json'
 import sensorsTempChartBones from '~/bones/sensors-temp-chart.bones.json'
 import sensorsTilesBones from '~/bones/sensors-tiles.bones.json'
@@ -240,7 +241,11 @@ function SensorsPage() {
             <RangeSelector value={range} onChange={setRange} />
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
-            <SectionSkeleton name="sensors-chips" loading={devicesPending} fallbackHeight="2.5rem">
+            <SectionSkeleton
+              bones={sensorsChipsBones}
+              loading={devicesPending}
+              fallbackHeight="2.5rem"
+            >
               {devices ? (
                 <DeviceToggles devices={toggleDevices} hidden={hidden} onToggle={toggle} />
               ) : null}

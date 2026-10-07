@@ -1,0 +1,93 @@
+{
+  "breakpoints": {
+    "375": {
+      "name": "sensors-chips",
+      "viewportWidth": 311,
+      "width": 311,
+      "height": 40,
+      "bones": [
+        [
+          0,
+          0,
+          41.258,
+          40,
+          10
+        ],
+        [
+          43.8304,
+          0,
+          40.0271,
+          40,
+          10
+        ]
+      ]
+    },
+    "768": {
+      "name": "sensors-chips",
+      "viewportWidth": 408,
+      "width": 408,
+      "height": 40,
+      "bones": [
+        [
+          0,
+          0,
+          31.4491,
+          40,
+          10
+        ],
+        [
+          33.4099,
+          0,
+          30.5109,
+          40,
+          10
+        ]
+      ]
+    },
+    "1100": {
+      "name": "sensors-chips",
+      "viewportWidth": 740,
+      "width": 740,
+      "height": 40,
+      "bones": [
+        [
+          0,
+          0,
+          17.3395,
+          40,
+          10
+        ],
+        [
+          18.4206,
+          0,
+          16.8222,
+          40,
+          10
+        ]
+      ]
+    },
+    "1280": {
+      "name": "sensors-chips",
+      "viewportWidth": 920,
+      "width": 920,
+      "height": 40,
+      "bones": [
+        [
+          0,
+          0,
+          13.947,
+          40,
+          10
+        ],
+        [
+          14.8166,
+          0,
+          13.5309,
+          40,
+          10
+        ]
+      ]
+    }
+  },
+  "_hash": "eb24a74f04b45dcaf8c2f1694db47d3d"
+}
