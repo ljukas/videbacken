@@ -1,7 +1,7 @@
 import { millisecondsInHour, millisecondsInMinute } from 'date-fns/constants'
 import { and, asc, gte, lt, min } from 'drizzle-orm'
 import { type DbOrTx, db } from '~/lib/db'
-import { HOUSE_BUCKET_KWH_MAX, houseEnergyReading } from '~/lib/db/schema'
+import { HOUSE_BUCKET_KWH_MAX, houseEnergyMonth, houseEnergyReading } from '~/lib/db/schema'
 import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
 import { stockholmDayOf } from '~/lib/time/stockholm'
 import { HouseEnergyDomainError } from './errors'
@@ -108,6 +108,16 @@ export async function replaceDay(
   }
   await writeDay(day, buckets)
   return buckets.length
+}
+
+/**
+ * Recomputes the monthly sums view (`house_energy_month`, ADR-0024) from the
+ * readings. CONCURRENTLY: readers keep the previous rows until it commits; a
+ * second refresh waits for the first. Every writer of readings calls it after
+ * writing (the Emaldo sync, once per run).
+ */
+export async function refreshMonthSums(): Promise<void> {
+  await db.refreshMaterializedView(houseEnergyMonth).concurrently()
 }
 
 // The delete + insert, in one transaction. A database failure (a dropped

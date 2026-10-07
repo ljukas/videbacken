@@ -5,6 +5,8 @@ import {
   check,
   date,
   doublePrecision,
+  integer,
+  pgMaterializedView,
   pgTable,
   primaryKey,
   smallint,
@@ -220,3 +222,31 @@ export const energyMixDeriveRequest = pgTable('energy_mix_derive_request', {
   fromDay: date('from_day', { mode: 'string' }).notNull(),
   requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS()
+
+// Monthly sums of house_energy_reading, one row per Stockholm month with
+// readings (ADR-0024, amended 2026-10-07): what the Energi pages read, so a
+// request never scans the readings. A materialized view, defined in the custom
+// migration 0021 (Drizzle can't declare its unique index, which REFRESH …
+// CONCURRENTLY needs), hence `.existing()`: drizzle-kit never generates or drops
+// it. Changing it = a new custom migration (drop, create, index).
+// It is only as fresh as its last refresh: every writer of house_energy_reading
+// must call `houseEnergy.refreshMonthSums()` after it writes (today: the Emaldo
+// sync, once per run).
+export const houseEnergyMonth = pgMaterializedView('house_energy_month', {
+  year: integer('year').notNull(),
+  month: integer('month').notNull(),
+  gridImportKwh: doublePrecision('grid_import_kwh').notNull(),
+  gridExportKwh: doublePrecision('grid_export_kwh').notNull(),
+  solarKwh: doublePrecision('solar_kwh').notNull(),
+  loadKwh: doublePrecision('load_kwh').notNull(),
+  batteryDischargeKwh: doublePrecision('battery_discharge_kwh').notNull(),
+  batteryChargeSolarKwh: doublePrecision('battery_charge_solar_kwh').notNull(),
+  /** charge_grid + charge_ac (ADR-0023: ac counts as grid). */
+  batteryChargeGridKwh: doublePrecision('battery_charge_grid_kwh').notNull(),
+  buckets: integer('buckets').notNull(),
+  firstBucket: timestamp('first_bucket', { withTimezone: true }).notNull(),
+  lastBucket: timestamp('last_bucket', { withTimezone: true }).notNull(),
+  /** SoC of the month's first / last bucket that has one. */
+  firstSocPct: doublePrecision('first_soc_pct'),
+  lastSocPct: doublePrecision('last_soc_pct'),
+}).existing()
