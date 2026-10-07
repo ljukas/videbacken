@@ -47,6 +47,36 @@ function toDay(date: Date | number): string {
   return formatISO(date, { representation: 'date', in: inStockholm })
 }
 
+// stockholmDayOf and stockholmYearMonth run once or more per priced 15-min
+// piece, and each Intl-backed conversion costs microseconds: most of the cost
+// pages' compute. Stockholm's offset is +01:00 or +02:00 and its DST switches
+// at 01:00 UTC, so every UTC hour from 1970 through 2999 lies in one Stockholm
+// day: remember the day per hour. Outside that range the cache stays out: local
+// mean time (+00:53:28) before 1900, and near the top of the Date range the
+// local time overflows mid-hour. A plain Map cleared at the cap, not an LRU:
+// pricing every session touches ~10–20k hours.
+const HOUR_MS = 3_600_000
+const CACHED_UNTIL_MS = Date.UTC(3000, 0, 1)
+const MAX_CACHED_HOURS = 50_000
+const dayByHour = new Map<number, string>()
+
+/** 1970 through 2999; false for NaN. */
+function isCacheable(ms: number): boolean {
+  return ms >= 0 && ms < CACHED_UNTIL_MS
+}
+
+/** stockholmDayOf for an instant isCacheable accepts. */
+function cachedDayOf(ms: number): string {
+  const hour = Math.floor(ms / HOUR_MS)
+  let day = dayByHour.get(hour)
+  if (day === undefined) {
+    if (dayByHour.size >= MAX_CACHED_HOURS) dayByHour.clear()
+    day = toDay(ms)
+    dayByHour.set(hour, day)
+  }
+  return day
+}
+
 /** Whether `day` is a real 'YYYY-MM-DD' day in 1970–2999 (the days the helpers accept). */
 export function isStockholmDay(day: string): boolean {
   return parseDay(day) !== null
@@ -54,7 +84,7 @@ export function isStockholmDay(day: string): boolean {
 
 /** The Stockholm calendar day the instant falls in. */
 export function stockholmDayOf(ms: number): string {
-  return toDay(ms)
+  return isCacheable(ms) ? cachedDayOf(ms) : toDay(ms)
 }
 
 /** The first day of the Stockholm calendar month the instant falls in. */
@@ -64,6 +94,10 @@ export function stockholmFirstOfMonth(ms: number): string {
 
 /** The Stockholm calendar year/month (1-based) the instant falls in. */
 export function stockholmYearMonth(ms: number): { year: number; month: number } {
+  if (isCacheable(ms)) {
+    const day = cachedDayOf(ms) // 'YYYY-MM-DD': a four-digit year in this range
+    return { year: Number(day.slice(0, 4)), month: Number(day.slice(5, 7)) }
+  }
   const local = inStockholm(ms)
   return { year: local.getFullYear(), month: local.getMonth() + 1 }
 }
