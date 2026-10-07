@@ -654,7 +654,9 @@ by request id). Cold: the request found the pool empty and opened a connection. 
 | `tariff/list` | 85 / 156 | 11 / 20 |
 | `evCharging/syncStatuses` | 34 / 154 | 15 / 61 |
 
-- 68% of requests opened a connection. The most common gap between requests is 60 s (the polls).
+- 68% of requests show `poolOpened` > 0 (instance-wide, so a neighbour's open counts too); 59% (361) found the pool
+  empty and opened one themselves. Checkpoint 8 compares the first figure. The most common gap between requests is
+  60 s (the polls).
 - Peak connections per burst (280 bursts, requests under 1.5 s apart): 1 in 218, 2 in 5, 3 in 55, 4 in 2.
 - How to pull the logs: `vercel logs` caps a call at 5,000 lines and repeats each line many times, so fetch in
   one-hour windows (`--since`/`--until`) with `--environment production --no-branch -q "rpc timing" --json --limit 5000`, then
