@@ -77,6 +77,111 @@ describe('stockholmYearMonth', () => {
   })
 })
 
+// stockholmDayOf and stockholmYearMonth run once or more per priced 15-min
+// piece, so they are the ones worth speeding up. These pin them against Intl,
+// which shares no code with them.
+describe('stockholmDayOf and stockholmYearMonth match Intl', () => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Stockholm',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  })
+  const reference = (ms: number) => {
+    const p = Object.fromEntries(parts.formatToParts(ms).map((x) => [x.type, x.value]))
+    const [year, month, day] = [Number(p.year), Number(p.month), Number(p.day)]
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return { day: `${year}-${pad(month)}-${pad(day)}`, year, month }
+  }
+  const mismatches = (instants: number[]) =>
+    instants.flatMap((ms) => {
+      const want = reference(ms)
+      const day = stockholmDayOf(ms)
+      const ym = stockholmYearMonth(ms)
+      return day === want.day && ym.year === want.year && ym.month === want.month
+        ? []
+        : [{ at: new Date(ms).toISOString(), day, ym, want }]
+    })
+
+  test('every 15 minutes from 2023 through 2027, twice', () => {
+    const instants: number[] = []
+    for (let ms = utc('2023-01-01T00:00:00Z'); ms < utc('2028-01-01T00:00:00Z'); ms += HOUR / 4) {
+      instants.push(ms)
+    }
+    expect(mismatches(instants).slice(0, 5)).toEqual([])
+    expect(mismatches(instants).slice(0, 5)).toEqual([])
+  })
+
+  test('around the 2026 DST switches, New Year and month ends', () => {
+    const instants = [
+      // Spring forward 2026-03-29 01:00Z, fall back 2026-10-25 01:00Z.
+      '2026-03-28T22:59:59.999Z',
+      '2026-03-28T23:00:00Z',
+      '2026-03-29T00:59:59.999Z',
+      '2026-03-29T01:00:00Z',
+      '2026-03-29T01:59:59.999Z',
+      '2026-03-29T21:59:59.999Z',
+      '2026-03-29T22:00:00Z',
+      '2026-10-24T21:59:59.999Z',
+      '2026-10-24T22:00:00Z',
+      '2026-10-25T00:59:59.999Z',
+      '2026-10-25T01:00:00Z',
+      '2026-10-25T01:59:59.999Z',
+      '2026-10-25T22:59:59.999Z',
+      '2026-10-25T23:00:00Z',
+      // New Year (CET) and month ends on both offsets.
+      '2026-12-31T22:59:59.999Z',
+      '2026-12-31T23:00:00Z',
+      '2026-02-28T22:59:59.999Z',
+      '2026-02-28T23:00:00Z',
+      '2026-06-30T21:59:59.999Z',
+      '2026-06-30T22:00:00Z',
+      '2028-02-29T22:59:59.999Z',
+      '2028-02-29T23:00:00Z',
+    ].map(utc)
+    expect(mismatches(instants)).toEqual([])
+  })
+
+  test('the first and last ms of an hour', () => {
+    const instants: number[] = []
+    for (let h = utc('2026-10-24T20:00:00Z'); h < utc('2026-10-26T02:00:00Z'); h += HOUR) {
+      instants.push(h, h + HOUR - 1)
+    }
+    expect(mismatches(instants)).toEqual([])
+  })
+
+  test('before 1900, when one UTC hour can span two Stockholm days', () => {
+    // Local mean time, +00:53:28 in the zone data: 23:00Z and 23:30Z on
+    // 31 Dec 1878 fall on different Stockholm days.
+    expect(stockholmDayOf(utc('1878-12-31T23:00:00Z'))).toBe('1878-12-31')
+    expect(stockholmDayOf(utc('1878-12-31T23:30:00Z'))).toBe('1879-01-01')
+    expect(stockholmYearMonth(utc('1878-12-31T23:00:00Z'))).toEqual({ year: 1878, month: 12 })
+    expect(stockholmYearMonth(utc('1878-12-31T23:30:00Z'))).toEqual({ year: 1879, month: 1 })
+    expect(mismatches([utc('1878-12-31T23:00:00Z'), utc('1878-12-31T23:30:00Z'), -1, 0])).toEqual(
+      [],
+    )
+  })
+
+  test('an invalid instant: no day, and a NaN year and month', () => {
+    for (const ms of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => stockholmDayOf(ms)).toThrow(RangeError)
+      expect(stockholmYearMonth(ms)).toEqual({ year: Number.NaN, month: Number.NaN })
+    }
+  })
+
+  test('a result changed by the caller does not leak into the next call', () => {
+    const ms = utc('2026-05-10T12:00:00Z')
+    const first = stockholmYearMonth(ms)
+    try {
+      ;(first as { month: number }).month = 1
+    } catch {
+      // A frozen result throws in strict mode; either way the next call is right.
+    }
+    expect(stockholmYearMonth(ms)).toEqual({ year: 2026, month: 5 })
+    expect(stockholmYearMonth(ms + HOUR / 2)).toEqual({ year: 2026, month: 5 })
+  })
+})
+
 describe('addDays', () => {
   test('crosses month, year and leap-day boundaries', () => {
     expect(addDays('2026-01-31', 1)).toBe('2026-02-01')
