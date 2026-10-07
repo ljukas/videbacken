@@ -13,7 +13,7 @@ Ask for it as "the next step of the Shelly improvements roadmap" (or "the Klimat
 |---|---|---|---|---|---|---|
 | 0 | Spec, plans and this roadmap | — | — | [#122](https://github.com/ljukas/videbacken/pull/122) | merged | — |
 | 1 | Shelly name + sensor dialog: `shelly_name` column, webhook `name` param, own → Shelly → `Sensor a1b2`, dialog Enhet box (Shelly name, MAC), live badge, "Återställ", runbook | [plan](../plans/2026-10-06-climate-1-shelly-name.md) | subagent-driven | [#123](https://github.com/ljukas/videbacken/pull/123) | checkpoint passed | 2026-10-07: a new sensor (MAC …7434) sent `shelly_name` "Förråd", equal to its Shelly app name (å/ö intact); the dialog's MAC matches the app; Återställ works; the old-URL sensors keep reporting |
-| 2 | Klimat page: "Just nu" card (tiles with location, readable sizes, named 40 px edit button) and "Historik" card (range control in the header, chips and both charts), chart text 13–14 px, no per-chart legends, bones | [plan](../plans/2026-10-06-climate-2-page-readability.md) | native | [#125](https://github.com/ljukas/videbacken/pull/125) | merged | — |
+| 2 | Klimat page: "Just nu" card (tiles with location, readable sizes, named 40 px edit button) and "Historik" card (range control in the header, chips and both charts), chart text 13–14 px, no per-chart legends, bones | [plan](../plans/2026-10-06-climate-2-page-readability.md) | native | [#125](https://github.com/ljukas/videbacken/pull/125) | checkpoint passed | 2026-10-07: the owner reviewed `/sensors` live on prod and accepted it; no follow-up changes |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
@@ -73,4 +73,8 @@ If a step changes a design decision, amend the spec in that step's PR.
   parameter from the start): `shelly_name` = "Förråd", the name in the Shelly app; the edit dialog's MAC reads like
   the app's device information; Återställ + Spara brought back the Shelly name on the tile. Fack 1 (…1B7C) and
   Fack 3 (…71C4) kept reporting on the old URL with their names. Prod has three sensors, not four. Open: the owner
-  appends `&name=${config.sys.device.name}` to Fack 1 and Fack 3's webhooks; checkpoint 2 (the page reviewed live).
+  appends `&name=${config.sys.device.name}` to Fack 1 and Fack 3's webhooks.
+- 2026-10-07: checkpoint 2 passed: the owner reviewed the Klimat page live on prod and accepted it, with no changes.
+  **The roadmap is done.** Left outside it: Fack 1 and Fack 3 get the `name` parameter (owner, no check needed), and
+  #125's deferred minors (the "Just nu" title as a skeleton while loading; a very long name clipped in its chip on a
+  phone; no test on the empty location line).
