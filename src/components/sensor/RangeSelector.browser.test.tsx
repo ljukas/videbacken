@@ -30,3 +30,14 @@ test('re-pressing the active range does not report an empty value', async () => 
   await screen.getByText(m.sensors_range_24h()).click()
   expect(onChange).not.toHaveBeenCalled()
 })
+
+test('range items are 40 px tall with 14 px text, in a 4-column grid on a phone', async () => {
+  const { screen } = await renderWithProviders(<RangeSelector value="24h" onChange={() => {}} />)
+  const group = screen.getByRole('radiogroup', { name: m.sensors_range_label() })
+  await expect.element(group).toBeVisible()
+  expect(group.element().className).toContain('grid-cols-4')
+  expect(group.element().className).toContain('sm:flex')
+  const item = screen.getByRole('radio', { name: m.sensors_range_24h() })
+  expect(item.element().className).toContain('h-10')
+  expect(item.element().className).toContain('text-sm')
+})

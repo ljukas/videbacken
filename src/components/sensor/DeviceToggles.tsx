@@ -27,13 +27,14 @@ export function DeviceToggles({
             pressed={visible}
             onPressedChange={() => onToggle(d.id)}
             variant="outline"
-            size="sm"
+            // 40 px target, 14 px text.
+            className="h-10 px-3 text-sm"
             aria-label={d.displayName}
             aria-pressed={visible}
           >
             <span
               aria-hidden
-              className="mr-2 inline-block size-2.5 shrink-0 rounded-full"
+              className="mr-2 inline-block size-3 shrink-0 rounded-full"
               // A visible chip shows its color; a hidden one dims the swatch.
               style={{ backgroundColor: d.color, opacity: visible ? 1 : 0.35 }}
             />

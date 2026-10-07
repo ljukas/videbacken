@@ -32,11 +32,14 @@ export function RangeSelector({
         if (v) onChange(v as SeriesRange)
       }}
       variant="outline"
-      className="flex-wrap justify-start"
+      // Separate pills, not a joined bar: on a phone the seven ranges wrap into a
+      // 4-column grid (never a sideways scroll); from `sm` they sit in one row.
+      spacing={1}
+      className="grid w-full grid-cols-4 sm:flex sm:w-auto sm:flex-wrap"
       aria-label={m.sensors_range_label()}
     >
       {ORDER.map((r) => (
-        <ToggleGroupItem key={r} value={r}>
+        <ToggleGroupItem key={r} value={r} className="h-10 px-3 text-sm">
           {RANGE_LABEL[r]()}
         </ToggleGroupItem>
       ))}
