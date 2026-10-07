@@ -11,7 +11,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | 1 | Read model + Energi › Översikt (service, `figures.ts`, procedure, nav section, overview page) | [plan](../plans/2026-10-05-energy-1-overview.md) | [#92](https://github.com/ljukas/videbacken/pull/92), fix [#95](https://github.com/ljukas/videbacken/pull/95) | checkpoint passed | 2026-10-05: sums and car match prod; warm `energy.overview` query 52 ms mean over 33 calls (one cold instance 736 ms total); owner accepted, asked for a month choice → step 1b |
 | 1b | Period control: any month / year / all time, chart click, tooltip, validated colours, readable sizes, no layout shift | [plan](../plans/2026-10-05-energy-1b-period-control.md) | [#103](https://github.com/ljukas/videbacken/pull/103) | checkpoint passed | 2026-10-06: August, Hela 2026 and Totalt match SQL; warm `energy/overview` 64–67 ms; no shift on prod at 500 px (3 widths only locally); owner accepted, asked for a richer summary → step 1c |
 | 1c | Summary as a flow diagram: visx, battery loss, icon tiles, arrow-value switch (replaces the five tiles) | [plan](../plans/2026-10-06-energy-1c-flow-summary.md) | [#112](https://github.com/ljukas/videbacken/pull/112) | checkpoint passed | 2026-10-06: Feb, Aug and Oct table (57 values) = prod SQL within 0,1 kWh; no shift over 10 periods on prod at 500 px (1440 / 820 / 390 px measured locally); owner accepted live |
-| 2 | Energi › Batteri: the period's battery as a flow diagram, a month chart of out + loss, winter note (reshaped 2026-10-06) | [plan](../plans/2026-10-05-energy-2-battery.md) | [#124](https://github.com/ljukas/videbacken/pull/124) | PR open | — |
+| 2 | Energi › Batteri: the period's battery as a flow diagram, a month chart of out + loss, winter note (reshaped 2026-10-06) | [plan](../plans/2026-10-05-energy-2-battery.md) | [#124](https://github.com/ljukas/videbacken/pull/124) | checkpoint passed | 2026-10-07: February, May and September in / out / Δstored / loss = prod SQL at one decimal; owner accepted the winter note |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
 
@@ -57,7 +57,7 @@ Each must pass, with the result recorded in the table, before the next step star
      (the flows from `energyFigures`; the loss = in − out − ΔSoC × 7,58 kWh).
    - Switching periods moves nothing: the card and the diagram box keep their rects at 1440, 820 and 390 px.
    - The owner reviews `/energy` live (diagram, icons, loss, switch; desktop + phone) and accepts it.
-4. **After step 2 (prod).**
+4. **After step 2 (prod).** *Passed 2026-10-07 (see the log).*
    - Battery in / out / loss for 2026-02, 2026-05 and 2026-09 match a prod SELECT (with Δstored from first/last SoC)
      within 0.1 kWh.
    - The owner reviews `/energy/battery` live and accepts the winter note's wording.
@@ -151,3 +151,10 @@ plan rewritten against steps 1b and 1c; its Task 0 still checks `main` before bu
   390 px Totalt, February loss 118,3 kWh = SQL (43 %), Översikt ↔ Batteri keeps `?period=` with no request, console
   clean; seven months' tables = a plain SQL sum within 0,1 kWh. Gate: `check:ci` clean, build passes, 235 files /
   3 780 tests, sv/en keys match. Next: checkpoint 4 on prod after merge.
+- 2026-10-07: checkpoint 4 run on prod after #124 deployed (read-only). The Summering card for February, May and
+  September equals a prod SELECT over the Stockholm month (in = `charge_solar` + `charge_grid` + `charge_ac`, out =
+  `discharge`, Δstored from the first / last bucket with a SoC × 7,58 kWh) at one decimal: February Solel 25,6 /
+  Köpt el 248,9 / Ut 157,0 / Lager −0,8 / Förlust 118,3 kWh, 57 % (SQL loss 118.310, laddnivå 34 → 23 %); May
+  201,6 / 19,3 / 201,5 / +3,6 / 15,8 kWh, 93 % (SQL 15.831, 33 → 80 %); September 172,9 / 67,9 / 225,4 / +0,4 /
+  15,0 kWh, 94 % (SQL 15.035, 15 → 20 %). The owner's Chrome window was minimised again (500 px), so the diagram drew
+  only once a screenshot forced a paint, as in 1c. The owner accepted the winter note's wording. The roadmap is done.
