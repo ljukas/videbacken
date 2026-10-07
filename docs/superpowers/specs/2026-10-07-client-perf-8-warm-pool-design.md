@@ -74,6 +74,14 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
   that request (pg rejects the pending query, which the request's handler logs) instead of crashing the instance.
   The listener only keeps the event from being unhandled; the failed query is the record. This is in every mode: the
   hazard is older than this step.
+- **The timing line shows the guard.** `WarmPool` reports each checkout of an idle connection (`onIdleCheckout`),
+  and `watchPool` adds `poolExpired` (connections discarded as too old) and `poolReuseIdleMs` (the longest a reused
+  connection had sat idle) to the `rpc timing` line. A dead-connection error can then be read against its
+  connection's age, which turns the inferred 5 min bound into a measured one.
+- **Not guarded: a pooler that closes a connection during a short freeze** (a Supavisor deploy or restart). The
+  connection is younger than the cap and fails on reuse. Rare; the damage is `getSession` returning `null` on any DB
+  error (a bounce to `/login`). That is older than this step and an auth concern, so it is a follow-up bugfix, not
+  part of this step.
 - **Not guarded: a silently dropped socket** (no reset). Its query waits for `query_timeout` (30 s), and drizzle's
   release after a timed-out transaction returns the client to the pool. Low likelihood if the path answers with a
   reset; recorded as a follow-up, not built.
@@ -113,6 +121,8 @@ settles at 3. The 10 s `idleTimeoutMillis` still trims anything above 3. Three c
   checkout (a new backend `processID`, the stale one removed), through both `connect()` and `query()`; one released
   within the cap is reused.
 - **The listener:** an `'error'` emitted on a checked-out client of the app's pool doesn't throw.
+- **Telemetry:** `onIdleCheckout` reports each idle checkout's age and whether it expired; `watchPool` reports
+  `poolReuseIdleMs` (fake `Date`) and `poolExpired`.
 
 ## Docs
 
@@ -125,10 +135,13 @@ About 24 h after the deploy, read the `rpc timing` lines the same way (de-duplic
 the baseline above:
 
 - **Share of requests that open a connection:** 68% now. Passes below ~30%. New instances (deploys, scale-out) still
-  open their first connections.
+  open their first connections, and pg-pool reuses the most recently released connection first, so lone polls keep
+  only one of the three warm: a navigation after a poll-only stretch of over 5 min discards the other two.
 - **A lone request's first query (`findActiveById`) p50:** 21 ms now, expected near 4.
 - **Burst p90 per procedure** (the table above): recorded, no threshold.
-- **Dead connections: none.** No `idle postgres client error` or `getSession failed` warning, no
-  `uncaughtException`, and no `orpc handler error` line whose error (or its `cause`, since drizzle wraps the driver's
-  error) is `Connection terminated unexpectedly` or `ECONNRESET`. Any such error fails the checkpoint and goes to the
-  bugfix workflow.
+- **`poolExpired` and `poolReuseIdleMs`:** recorded. How often the cap fires, and the oldest connection reused.
+- **No failed request from a dead connection:** no `orpc handler error` whose error (or its `cause`, since drizzle
+  wraps the driver's error) is `Connection terminated unexpectedly` or `ECONNRESET`, no `getSession failed`
+  warning, and no `uncaughtException`. Any one fails the checkpoint and goes to the bugfix workflow, with its
+  request's `poolReuseIdleMs`. An `idle postgres client error` warning alone isn't a failure (a discarded dead
+  connection can log one as it closes); read it against `poolExpired`.
