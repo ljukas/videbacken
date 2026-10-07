@@ -14,7 +14,7 @@
     "dev:log": "rm -f /tmp/videbacken-dev.log && vite dev 2>&1 | tee /tmp/videbacken-dev.log",
     "build": "vite build && bun scripts/checkChunkCycles.ts && tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "vercel-build": "drizzle-kit migrate && vite build && tsc --noEmit",
+    "vercel-build": "drizzle-kit migrate && vite build && bun scripts/checkChunkCycles.ts && tsc --noEmit",
     "preview": "vite preview",
     "start": "node .output/server/index.mjs",
     "db:up": "docker compose up -d --wait db",

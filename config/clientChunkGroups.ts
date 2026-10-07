@@ -5,8 +5,8 @@
 //
 // Rule: never group a module the entry reaches (the router, react-dom, lib/utils,
 // lib/orpc/client, the router's nested @tanstack/store …). The entry would then
-// import the whole group, and every page, /login included, would load it. Check
-// `bun run bundle:measure`'s `entry:` line after any change here.
+// import the whole group, and every page, /login included, would load it. The build
+// fails on it; `bun run bundle:measure`'s `entry:` line shows the size.
 //
 // `ui` holds only what the shell shares with /signed-in, the smallest signed-out
 // page. A page that loads one module of a group loads all of it, so adding a module
@@ -24,8 +24,9 @@
 // `i is not a function`, so button.tsx's dependencies stay ungrouped; and
 // sidebar.tsx's `menu` icon, left in the layout's chunk, looped `_authenticated` and
 // `shell` (a cycle of that kind only crashes signed-in pages), so it's in `shell`.
-// `bun run build` fails on any cycle (scripts/checkChunkCycles.ts), and
-// `bun run bundle:measure` prints the cycles under its `entry:` line.
+// `bun run build` and `vercel-build` fail on any cycle and on the entry reaching a
+// group (scripts/checkChunkCycles.ts); `bun run bundle:measure` prints the cycles
+// under its `entry:` line.
 export type ClientChunkGroup = {
   name: string
   priority: number

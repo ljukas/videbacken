@@ -10,7 +10,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
-import { chunkCycles, formatChunkCycles, readChunkGraph } from './chunkGraph'
+import {
+  chunkCycles,
+  entryChunk,
+  formatChunkCycles,
+  readChunkGraph,
+  staticClosure,
+} from './chunkGraph'
 
 const ASSETS = '.output/public/assets'
 // Route chunk name prefixes (TanStack names a split route chunk after its file).
@@ -44,18 +50,6 @@ const WATCHED = [
   'jose',
 ]
 
-export function staticClosure(deps: Map<string, string[]>, root: string): Set<string> {
-  const seen = new Set<string>()
-  const stack = [root]
-  while (stack.length) {
-    const file = stack.pop() as string
-    if (seen.has(file)) continue
-    seen.add(file)
-    stack.push(...(deps.get(file) ?? []))
-  }
-  return seen
-}
-
 function main() {
   if (!existsSync(ASSETS)) throw new Error(`${ASSETS} is missing: run \`bun run bundle:measure\``)
   const { files, code, deps } = readChunkGraph(ASSETS)
@@ -76,7 +70,7 @@ function main() {
   const kb = (set: Set<string>) => [...set].reduce((sum, f) => sum + (gz.get(f) ?? 0), 0) / 1024
   const byPrefix = (prefix: string) => files.filter((f) => f.startsWith(`${prefix}-`))
 
-  const entry = files.find((f) => code.get(f)?.includes('hydrateRoot'))
+  const entry = entryChunk(code)
   if (!entry) throw new Error('No entry chunk (none calls hydrateRoot)')
   const base = staticClosure(deps, entry)
   const entryOnly = new Set(base)

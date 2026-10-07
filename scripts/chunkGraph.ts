@@ -5,9 +5,10 @@
 // modules allow it, but one chunk then runs before the other has defined its
 // exports, so a call at module init throws (`x is not a function`). The client
 // chunk groups (config/clientChunkGroups.ts) can create one, so `bun run build`
-// fails on any.
+// and `vercel-build` fail on any (`checkChunkGraph`, run by checkChunkCycles.ts).
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { clientChunkGroups } from '../config/clientChunkGroups'
 
 export type ChunkGraph = {
   files: string[]
@@ -69,6 +70,43 @@ export function chunkCycles(deps: Map<string, string[]>): string[][] {
 
   for (const chunk of deps.keys()) if (!index.has(chunk)) visit(chunk)
   return cycles.sort((a, b) => a[0].localeCompare(b[0]))
+}
+
+export function staticClosure(deps: Map<string, string[]>, root: string): Set<string> {
+  const seen = new Set<string>()
+  const stack = [root]
+  while (stack.length) {
+    const file = stack.pop() as string
+    if (seen.has(file)) continue
+    seen.add(file)
+    stack.push(...(deps.get(file) ?? []))
+  }
+  return seen
+}
+
+// The entry chunk is the one that hydrates the app.
+export function entryChunk(code: Map<string, string>): string | undefined {
+  return [...code.keys()].find((f) => code.get(f)?.includes('hydrateRoot'))
+}
+
+// Everything wrong with a client build's chunks; empty means it may ship. Fails
+// closed: no chunks or no entry is a problem, never a pass. The rules (ADR-0025 §6):
+// no chunk cycle, and the entry's static closure reaches no group chunk (a grouped
+// module the entry reaches would make every page, /login included, load the group).
+export function checkChunkGraph(
+  deps: Map<string, string[]>,
+  code: Map<string, string>,
+  groups: string[] = clientChunkGroups.map((g) => g.name),
+): string[] {
+  if (!deps.size || !code.size) return ['no client chunks found']
+  const entry = entryChunk(code)
+  if (!entry) return ['no entry chunk (no chunk calls hydrateRoot)']
+  const problems = chunkCycles(deps).map((cycle) => `chunk cycle: ${cycle.join(' <-> ')}`)
+  // `ui-<hash>.js`. Any hash length: a missed match would pass silently.
+  const isGroupChunk = (f: string) => groups.some((g) => new RegExp(`^${g}-[\\w-]+\\.js$`).test(f))
+  for (const f of [...staticClosure(deps, entry)].filter(isGroupChunk).sort())
+    problems.push(`the entry (${entry}) reaches group chunk ${f}, so every page loads it`)
+  return problems
 }
 
 export function formatChunkCycles(cycles: string[][]): string {

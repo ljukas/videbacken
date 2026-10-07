@@ -1,5 +1,13 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { chunkCycles, formatChunkCycles } from '../scripts/chunkGraph'
+import {
+  checkChunkGraph,
+  chunkCycles,
+  formatChunkCycles,
+  readChunkGraph,
+} from '../scripts/chunkGraph'
 
 const graph = (edges: Record<string, string[]>) => new Map(Object.entries(edges))
 
@@ -62,5 +70,82 @@ describe('formatChunkCycles', () => {
     expect(formatChunkCycles([['button.js', 'ui.js']])).toBe(
       'chunk cycles: 1\n  button.js <-> ui.js',
     )
+  })
+})
+
+describe('checkChunkGraph', () => {
+  const entry = 'import{h as r}from"./client-AbCd1234.js";r.hydrateRoot(document)'
+  const code = (chunks: Record<string, string>) => new Map(Object.entries(chunks))
+
+  it('fails an empty graph: no chunks is never a pass', () => {
+    expect(checkChunkGraph(new Map(), new Map())).toEqual(['no client chunks found'])
+  })
+
+  it('fails a build with no entry chunk', () => {
+    expect(
+      checkChunkGraph(graph({ 'a-AbCd1234.js': [] }), code({ 'a-AbCd1234.js': 'x()' })),
+    ).toEqual(['no entry chunk (no chunk calls hydrateRoot)'])
+  })
+
+  it('fails on a chunk cycle', () => {
+    const deps = graph({
+      'index-AbCd1234.js': [],
+      'button-AbCd1234.js': ['ui-EfGh5678.js'],
+      'ui-EfGh5678.js': ['button-AbCd1234.js'],
+    })
+    expect(checkChunkGraph(deps, code({ 'index-AbCd1234.js': entry }))).toEqual([
+      'chunk cycle: button-AbCd1234.js <-> ui-EfGh5678.js',
+    ])
+  })
+
+  it('fails when the entry reaches a group chunk, directly or not', () => {
+    const deps = graph({
+      'index-AbCd1234.js': ['utils-AbCd1234.js'],
+      'utils-AbCd1234.js': ['ui-x.js'],
+      'ui-x.js': [],
+      'shell-AbCd1234.js': ['ui-x.js'],
+    })
+    expect(checkChunkGraph(deps, code({ 'index-AbCd1234.js': entry }))).toEqual([
+      'the entry (index-AbCd1234.js) reaches group chunk ui-x.js, so every page loads it',
+    ])
+  })
+
+  it('passes a clean graph: groups only reached from page chunks', () => {
+    const deps = graph({
+      'index-AbCd1234.js': ['utils-AbCd1234.js'],
+      'utils-AbCd1234.js': [],
+      'login-AbCd1234.js': ['ui-EfGh5678.js', 'utils-AbCd1234.js'],
+      '_authenticated-AbCd1234.js': ['shell-EfGh5678.js', 'ui-EfGh5678.js'],
+      'shell-EfGh5678.js': ['ui-EfGh5678.js', 'utils-AbCd1234.js'],
+      'ui-EfGh5678.js': ['utils-AbCd1234.js'],
+    })
+    expect(checkChunkGraph(deps, code({ 'index-AbCd1234.js': entry }))).toEqual([])
+  })
+
+  it('reads the group names from config/clientChunkGroups.ts', () => {
+    const deps = graph({ 'index-AbCd1234.js': ['shell-x.js'], 'shell-x.js': [] })
+    expect(checkChunkGraph(deps, code({ 'index-AbCd1234.js': entry }))).toHaveLength(1)
+    expect(checkChunkGraph(deps, code({ 'index-AbCd1234.js': entry }), ['ui'])).toEqual([])
+  })
+})
+
+describe('readChunkGraph', () => {
+  it('reads minified static imports and re-exports as edges, not dynamic imports', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chunk-graph-'))
+    try {
+      writeFileSync(
+        join(dir, 'a.js'),
+        'import{a as t}from"./x.js";import"./y.js";export*from"./z.js";' +
+          'const l=()=>import(`./d.js`),m=()=>import("./e.js");',
+      )
+      for (const f of ['x.js', 'y.js', 'z.js', 'd.js', 'e.js']) writeFileSync(join(dir, f), '')
+      writeFileSync(join(dir, 'a.js.map'), '{}')
+      const { files, deps, code } = readChunkGraph(dir)
+      expect(files.sort()).toEqual(['a.js', 'd.js', 'e.js', 'x.js', 'y.js', 'z.js'])
+      expect(deps.get('a.js')?.sort()).toEqual(['x.js', 'y.js', 'z.js'])
+      expect(code.get('a.js')).toContain('import(`./d.js`)')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

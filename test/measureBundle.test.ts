@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { staticClosure } from '../scripts/measureBundle'
+import { staticClosure } from '../scripts/chunkGraph'
 
 describe('staticClosure', () => {
   it('follows static imports transitively, once each, cycles included', () => {
