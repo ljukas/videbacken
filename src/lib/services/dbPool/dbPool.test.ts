@@ -1,6 +1,8 @@
-import { expect, test } from 'vitest'
-import { __testClient, db } from '~/lib/db'
+import { EventEmitter } from 'node:events'
+import { expect, test, vi } from 'vitest'
+import { __testClient, db, observeIdleCheckout } from '~/lib/db'
 import { user } from '~/lib/db/schema'
+import { logger } from '~/lib/logger/server'
 import { setupDatabase } from '~test/setup'
 import { poolStats, watchPool } from './index'
 
@@ -38,7 +40,7 @@ test('watchPool reports the peak checkout queue during the watch', async () => {
     await new Promise((resolve) => setImmediate(resolve))
   })
   await queued
-  expect(stop()).toEqual({ poolOpened: 0, poolPeakWaiting: 1 })
+  expect(stop()).toMatchObject({ poolOpened: 0, poolPeakWaiting: 1 })
 })
 
 test('watchPool counts connections opened during the watch, and stops counting after', async () => {
@@ -46,10 +48,49 @@ test('watchPool counts connections opened during the watch, and stops counting a
   if (!pool) throw new Error('tests run with the pinned test pool')
   const stop = watchPool()
   // A new physical connection is the pool's 'connect' event (a pinned test pool
-  // never opens a second one, so emit it).
-  pool.emit('connect')
-  pool.emit('connect')
-  expect(stop()).toEqual({ poolOpened: 2, poolPeakWaiting: 0 })
+  // never opens a second one, so emit it, with a stand-in client).
+  pool.emit('connect', new EventEmitter())
+  pool.emit('connect', new EventEmitter())
+  expect(stop()).toMatchObject({ poolOpened: 2, poolPeakWaiting: 0 })
   const later = watchPool()
-  expect(later()).toEqual({ poolOpened: 0, poolPeakWaiting: 0 })
+  expect(later()).toEqual({
+    poolOpened: 0,
+    poolPeakWaiting: 0,
+    poolExpired: 0,
+    poolReuseIdleMs: 0,
+  })
+})
+
+// How long a reused connection had sat idle, and how many were discarded as too
+// old (WarmPool): checkpoint 8 reads them against any dead-connection error.
+test('watchPool reports how long reused connections sat idle', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    await db.select().from(user).limit(1)
+    vi.setSystemTime(Date.now() + 1234)
+    const stop = watchPool()
+    await db.select().from(user).limit(1)
+    expect(stop()).toEqual({
+      poolOpened: 0,
+      poolPeakWaiting: 0,
+      poolExpired: 0,
+      poolReuseIdleMs: 1234,
+    })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// A discard can happen on an SSR load, which writes no timing line, so each one
+// is also logged on its own: checkpoint 8 counts them to check the 5 min cap.
+test('an expired connection counts in poolExpired and logs its idle time', () => {
+  const info = vi.spyOn(logger, 'info').mockImplementation(() => {})
+  try {
+    const stop = watchPool()
+    observeIdleCheckout(301_000, true)
+    expect(stop()).toMatchObject({ poolExpired: 1, poolReuseIdleMs: 0 })
+    expect(info).toHaveBeenCalledWith('pool connection expired', { idleMs: 301_000 })
+  } finally {
+    info.mockRestore()
+  }
 })

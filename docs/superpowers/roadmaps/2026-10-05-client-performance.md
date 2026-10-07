@@ -19,7 +19,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | [#118](https://github.com/ljukas/videbacken/pull/118) | checkpoint passed | 2026-10-06: the owner reviewed the converted charts live on prod and they look good. On `main` at `b63da3b`, no page's `packages:` line lists recharts, redux, immer or decimal.js-light, and `bun.lock` has none of them. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) (search parsing: recorded, not changed) | [plan](../plans/2026-10-06-client-perf-6-small-items.md) | [#127](https://github.com/ljukas/videbacken/pull/127) | checkpoint passed | 2026-10-07, `main` at `a409a97`: no exifreader, `@vercel/blob` or jose on `/account/profile` or `/onboarding` (AvatarUpload 72 → 10 KB gz), the prod SSR `<head>` of `/login` carries the Switzer preload, and the prod build's chunk check passed. Against `main` just before #127, no page grew. Against the step notes' final column, 5 figures read 0.3–2 above; the rebuilt branch head reads the same as `main`. See [checkpoint 6 result](#checkpoint-6-result). |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — (no change needed) | checkpoint passed | 2026-10-07: the owner navigated the app and found no layout shifts left. Other PRs and design changes since step 1 had already fixed the ones they saw, so the step needed no PR of its own. See [checkpoint 7 result](#checkpoint-7-result). |
-| 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool); see [checkpoint 3](#checkpoint-3-result) | — | — | needs shaping | — |
+| 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool): `min: 3` in production, a 5 min idle cap at checkout, an `'error'` listener on every client (ADR-0025 §5 amendment); see [notes](#step-8-notes) | [plan](../plans/2026-10-07-client-perf-8-warm-pool.md) | [#135](https://github.com/ljukas/videbacken/pull/135) | PR open | — |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. `needs shaping` means
 the step needs a short brainstorm before its plan.
@@ -79,6 +79,24 @@ the step needs a short brainstorm before its plan.
      that the entry reaches no chunk group.
    - The SSR `<head>` of `/login` carries the Switzer preload.
 7. **After step 7 (prod).** The owner reviews the spots they reported, live on prod, and they no longer shift.
+8. **After step 8 (prod).** About 24 h after the deploy, read the `rpc timing` lines (de-duplicated by request id)
+   and compare with the [step 8 baseline](#step-8-notes):
+   - the share of requests that open a connection (`poolOpened` > 0): 68% before, passes below ~30%. New instances
+     (deploys, scale-out) still open their first connections, and lone polls keep only the most recently used of the
+     three warm (pg-pool reuses it first), so the others can expire between navigations;
+   - a lone request's first query (`findActiveByIdMs`, no other request within 400 ms) p50: 21 ms before, expected
+     near 4;
+   - burst p90 per procedure, `poolExpired`, `poolReuseIdleMs` (0 also means nothing was reused; read it with
+     `poolOpened`) and the count of `pool connection expired` lines (SSR loads too) with their `idleMs`: recorded, no
+     threshold;
+   - **no failed request from a dead connection:** search all runtime log lines, not only `rpc timing` ones (SSR
+     page loads go through the in-process client, which writes no `orpc handler error` and no timing line). No
+     error (or `cause`, since drizzle wraps the driver's error) that is `Connection terminated unexpectedly`,
+     `ECONNRESET`, `EPIPE`, `Query read timeout` (a half-open socket) or `not queryable` (a socket that died inside
+     a transaction), no `getSession failed` warning, and no `uncaughtException`. Any one fails the checkpoint and goes
+     to the bugfix workflow, with its request's `poolReuseIdleMs` when it has an `rpc timing` line. An
+     `idle postgres client error` warning alone isn't a failure (a discarded dead connection can log one as it
+     closes); read it against `poolExpired`.
 
 ## Baseline (audit, 2026-10-05, `main` at `99fa206`)
 
@@ -612,3 +630,48 @@ Recorded 2026-10-07, `main` at `1adf584`.
   the design, and navigating the app turned up none. Step 7 needed no PR of its own.
 - **Not checked one by one.** The owner's check was a general navigation of the app, so the candidates above were
   not each re-measured. If one of them comes back, fix it under the bugfix workflow, not as a new roadmap step.
+
+## Step 8 notes
+
+Design: [spec](../specs/2026-10-07-client-perf-8-warm-pool-design.md). Decided with the owner on 2026-10-07: a warm
+minimum (`min: 3`) over a longer idle timeout or no change, verified on prod. The adversarial review of the first
+commit found that a connection held through a long suspension is likely dead, and that one could crash an instance or
+bounce a user to `/login`. The owner then chose to guard it in this step: a 5 min wall-clock idle cap at checkout
+(`WarmPool`) and an `'error'` listener on every client, with `poolExpired` / `poolReuseIdleMs` on the timing line.
+
+**Baseline** (prod, 30 h of `rpc timing` logs, 2026-10-06 04:55 to 2026-10-07 09:01 UTC, 614 requests, de-duplicated
+by request id). Cold: the request found the pool empty and opened a connection. Warm: it found an idle one.
+
+| | `findActiveById` p50 / p90 | lone requests only |
+|---|---|---|
+| cold (361) | 21 / 61 ms | 21 / 32 ms (170) |
+| warm (196) | 4 / 5 ms | 4 / 5 ms (51) |
+
+| Procedure | cold `totalMs` p50 / p90 | warm |
+|---|---|---|
+| `sensor/series` | 39 / 152 | 13 / 18 |
+| `sensor/listDevices` | 39 / 141 | 16 / 21 |
+| `tariff/list` | 85 / 156 | 11 / 20 |
+| `evCharging/syncStatuses` | 34 / 154 | 15 / 61 |
+
+- 68% of requests show `poolOpened` > 0 (instance-wide, so a neighbour's open counts too); 59% (361) found the pool
+  empty and opened one themselves. Checkpoint 8 compares the first figure. The most common gap between requests is
+  60 s (the polls).
+- Peak connections per burst (280 bursts, requests under 1.5 s apart): 1 in 218, 2 in 5, 3 in 55, 4 in 2.
+- How to pull the logs: `vercel logs` caps a call at 5,000 lines and repeats each line many times, so fetch in
+  one-hour windows (`--since`/`--until`) with `--environment production --no-branch -q "rpc timing" --json --limit 5000`, then
+  de-duplicate by `requestId`.
+
+**Why 5 min** (from the review, Supavisor's source): the pooler sends idle clients a heartbeat every 60 s and only
+notices a dead client when TCP gives up retransmitting, about 15 min with Linux defaults (inferred, not measured).
+AWS NAT gateways and NLBs drop an idle flow after 350 s, but the heartbeats keep it active. 5 min sits under both.
+
+**Follow-ups (not in step 8):**
+- `getSession` returns `null` on any error, so a DB failure bounces a signed-in user to `/login`. Older than step 8;
+  a pooler restart during a short freeze can still trigger it. A bugfix: retry once, or tell a DB error from no
+  session.
+- A silently dropped socket (no reset) costs up to 2 × 30 s inside a transaction, and drizzle returns the client to
+  the pool. Low likelihood (NAT, NLBs and the pooler's kernel answer with resets).
+- If checkpoint 8 shows dead-connection errors at ages under 5 min: validate on checkout (`select 1` with a ~2 s
+  `query_timeout`, only for connections idle more than a few seconds) instead of trusting the age.
+- Optional: `keepAlive: true`, so a running instance doesn't depend on the pooler's heartbeat setting.

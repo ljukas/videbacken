@@ -222,6 +222,32 @@ whose failures should stay apart: `overview` and `costOverview` stay separate so
 cost figures (ADR-0020). When a merged read has a part that may fail independently, it returns that part as `null`
 rather than failing the whole read (`sessions`' `costs`).
 
+*Amendment, 2026-10-07 (roadmap step 8; design in
+[the step 8 spec](../superpowers/specs/2026-10-07-client-perf-8-warm-pool-design.md)).* **A production instance keeps
+3 pooled connections warm** (`min: 3`, `POOL_WARM_MIN` in `src/lib/db/index.ts`). Checkpoint 3 saw its bursts start from an
+empty pool, and over 30 h 68% of requests opened a connection: pg closes one after 10 s idle, and the polls are 60 s
+apart. A lone request's first query took 21 ms p50 on a new connection, against 4 ms on a warm one.
+
+- **Why 3:** 278 of 280 measured bursts peaked at 3 connections or fewer. The 10 s idle timeout still trims the rest.
+- **Why not `attachDatabasePool`:** it `waitUntil`s ~10 s after every query, which bills each poll's instance far
+  longer (ADR-0018), and it closes idle connections before suspension.
+- **The cost:** idle timers don't run on a suspended instance, so the connections idle at suspension stay open until
+  the VM shuts down or the pooler drops them: up to 3 warm ones, plus any released in the 10 s before. In transaction
+  mode a Supavisor client holds no Postgres connection.
+- **The risk, and its guards:** a held connection is likely dead after a long suspension, since the pooler's 60 s
+  heartbeats go unanswered while the instance is frozen. Handed out, it would fail its request. It could also bounce
+  a user to `/login` (`getSession` treats a DB error as no session), and inside a transaction it would crash the
+  instance (an unhandled `'error'`). So:
+  - `WarmPool` (`src/lib/db/warmPool.ts`) discards, at checkout, an idle connection released more than 5 min ago by
+    the wall clock (`POOL_MAX_IDLE_AGE_MS`). Timers can't do this: they're frozen during suspension and fire only
+    after the resumed request has checked out.
+  - Every client gets an `'error'` listener.
+  - The timing line adds `poolExpired` and `poolReuseIdleMs`, so a dead-connection error can be read against how
+    old the reused connections were (instance-wide, the oldest reuse during the request).
+- **The minimum and the idle cap are production only.** The dev server re-creates the pool when a module it imports
+  changes, and a minimum would keep each old pool's connections open. Tests keep their pinned single connection. The
+  `'error'` listener and the timing fields apply everywhere.
+
 ### 6. Per-page bundle: a page loads only the code it renders
 
 *Amendment, 2026-10-05 (roadmap step 4).* A page's JS is its route chunk's static import closure, on top of the
@@ -340,6 +366,8 @@ the route chunk arrives, against §1. Loaders and search parsing stay where they
   ms on `/charging`), and a revisit shows cached data at once.
 - **Fewer requests block, and they're shorter.** On the client nothing blocks. On the server `/charging` waits on 8
   queries in one hop instead of 15 in two, which also eases the pool queueing behind the inflated `findActiveById`.
+- **Polls, and most navigations, find a warm connection** (§5, step 8): up to 3 per production instance, held through
+  suspension, and discarded at checkout once idle over 5 min.
 - **A new step in UI work:** re-run `bones:capture` after changing a section's layout. Stale bones look slightly wrong
   but never break anything.
 - **The bones cost bytes.** Each skeleton at four widths. Since step 4 a page loads only its own sections' bones

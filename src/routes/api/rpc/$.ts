@@ -61,7 +61,9 @@ export const Route = createFileRoute('/api/rpc/$')({
         // ones the call that ran the lookup (memoized per request, context.ts).
         // `poolTotal` / `poolIdle` / `poolWaiting` are the DB pool at the
         // request's start; `poolOpened` / `poolPeakWaiting` what it did while the
-        // request ran (instance-wide, the whole HTTP request even for a batch).
+        // request ran (instance-wide, the whole HTTP request even for a batch);
+        // `poolExpired` / `poolReuseIdleMs` the warm pool's discards of connections
+        // idle too long, and the longest a reused one had sat idle (step 8).
         // Only the app's pool: Supavisor's own queueing doesn't show here.
         log.info('rpc timing', {
           procedure: new URL(request.url).pathname.replace(/^\/api\/rpc\/?/, '') || '(root)',
