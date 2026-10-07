@@ -268,6 +268,29 @@ into more, smaller chunks: about +5 KB gz of per-chunk overhead (the figure sums
 (`build.rolldownOptions.output.codeSplitting.groups`) could merge them back. That is left as a follow-up, since it
 needs its own measurement, `/login` included.
 
+*Amendment, 2026-10-06 (roadmap step 6).* Three changes, measured with `bun run bundle:measure` (KB gz):
+
+- **The upload's heavy modules load on pick.** `AvatarUpload` imports `exifreader` and the Vercel Blob client
+  with `import()`, started by a click on the upload button and awaited by `handleFile`. `@vercel/blob/client`
+  dragged `jose` in through `@vercel/oidc`'s CommonJS browser entry, which can't tree-shake and is unchanged
+  upstream (4.0.0), so loading it on pick is the fix. `/account/profile` went 213 → 151 and `/onboarding`
+  150.0 → 85.6.
+- **Two chunk groups for the client build** (`config/clientChunkGroups.ts`, `codeSplitting.groups`) merge the shell's
+  chunks back: `shell` for modules only the signed-in shell uses, `ui` for those it shares with the signed-out pages.
+  Entry + shell went 258 → 252 (28 shell chunks → 13) and modulepreloads on `/charging` 86 → 71. No page grew:
+  `/charging` 84, settings 44 → 43, economy 77, patterns 76, session 65, `/energy` 72, `/sensors` 48, `/users` 73,
+  `/login` 88.4 → 85.9, `/signed-in` 34.0 → 31.5. Two rules keep them safe:
+  - **No grouped module may be reachable from the entry.** The entry would import the whole group and every page
+    would load it. The prototype had one (the router's nested `@tanstack/store`).
+  - **No chunk cycles.** A page that loads one module of a group loads all of it, so `ui` holds only what the shell
+    shares with `/signed-in`. Groups also drop rolldown's acyclic guarantee: `ui` and `button`'s chunk once imported
+    each other, and `/login` crashed on hydration with sizes and tests passing. `bun run build` now fails on a cycle
+    (`scripts/checkChunkCycles.ts`, and `bundle:measure` prints a `chunk cycles:` line).
+- **Loaders stay in the route tree.** Their imports (for example `date-fns` through the `/energy` loader, about 2 KB gz)
+  ship in the entry. Moving loaders out with TanStack's `codeSplittingOptions` cut the entry 176.4 → 170.6 but grew
+  every page 2–3 KB gz, and a cold client navigation's queries would start only after the route chunk arrives, against
+  §1. Not changed.
+
 ---
 
 ## Alternatives considered
