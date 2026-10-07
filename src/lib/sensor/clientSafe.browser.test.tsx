@@ -20,3 +20,8 @@ test('the /sensors route module evaluates client-side without a db leak', async 
   const mod = await import('~/routes/_authenticated/sensors')
   expect(mod.Route).toBeDefined()
 })
+
+test('the sensor naming helpers are importable client-side', async () => {
+  const mod = await import('~/lib/sensor/deviceName')
+  expect(mod.fallbackSensorName(null, 'aabbccddeeff')).toBe('Sensor eeff')
+})

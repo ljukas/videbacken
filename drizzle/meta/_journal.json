@@ -141,6 +141,13 @@
       "when": 1791262892210,
       "tag": "0019_integration_sync_suspect_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791310123897,
+      "tag": "0020_sensor_shelly_name",
+      "breakpoints": true
     }
   ]
 }

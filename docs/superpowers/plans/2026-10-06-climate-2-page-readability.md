@@ -69,7 +69,7 @@ the device fixtures already carry `shellyName`.
 | `src/components/sensor/RangeSelector.tsx` (+ browser test) (modify) | 40 px items, 14 px text; 4-column grid below `sm` |
 | `src/routes/_authenticated/sensors.tsx` (+ `-sensorsRoute.browser.test.tsx`) (modify) | "Just nu" card, "Historik" card (range in header, chips + charts in body), chips skeleton |
 | `src/bones/sensors-*.bones.json` (regenerate) + `src/bones/sensors-chips.bones.json` (new) | `bun run bones:capture /sensors --force` |
-| `messages/sv.json`, `messages/en.json` (modify) | `sensors_current_heading` → "Just nu"; `sensors_history_heading`; `sensors_edit_device_named` |
+| `messages/sv.json`, `messages/en.json` (modify) | `sensors_current_heading` → "Just nu"; `sensors_history_heading`; `sensors_edit_device_named`; `sensors_edit_description` reworded |
 
 ---
 
@@ -233,6 +233,7 @@ git commit -m "feat(sensor): set the Klimat chart text at 13-14 px and drop its 
 
 `messages/sv.json`: `"sensors_edit_device_named": "Redigera {name}",` · `messages/en.json`:
 `"sensors_edit_device_named": "Edit {name}",` (next to `sensors_edit_device`, which stays as the dialog title).
+Also reword the dialog description, since the tiles now show the location (moved here from PR 1, which showed it nowhere): `sensors_edit_description` → sv "Namnet och platsen visas på Klimat-sidan.", en "The name and location show on the Climate page."
 Run: `bun run i18n:compile`.
 
 - [ ] **Step 2: Write the failing tests**

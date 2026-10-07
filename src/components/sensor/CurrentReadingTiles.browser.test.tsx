@@ -11,6 +11,7 @@ const device: Device = {
   mac: 'a4cf12ab34cd',
   name: null,
   location: null,
+  shellyName: null,
   displayName: 'Sensor 34cd',
   batteryPct: 88,
   lastSeenAt: new Date(),

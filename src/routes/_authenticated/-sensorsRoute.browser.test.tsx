@@ -29,6 +29,7 @@ const device: Device = {
   mac: 'a4cf12ab34cd',
   name: null,
   location: null,
+  shellyName: null,
   displayName: 'Sensor 34cd',
   batteryPct: 88,
   // Hours ago, not now: "seen 0 s ago" vs "1 s ago" would differ between two renders.

@@ -2,6 +2,7 @@ import { secondsInDay, secondsInHour } from 'date-fns/constants'
 import { and, desc, eq, gte, inArray, lte, type SQL, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
+import { sensorDisplayName } from '~/lib/sensor/deviceName'
 import { SERIES_RANGES, type SeriesRange } from '~/lib/sensor/range'
 import { SensorDomainError } from './errors'
 
@@ -25,30 +26,38 @@ export function isValidMac(normalized: string): boolean {
   return MAC_RE.test(normalized)
 }
 
-function displayNameFor(name: string | null, mac: string): string {
-  return name ?? `Sensor ${mac.slice(-4)}`
-}
-
 export type RecordReadingInput = {
   mac: string
   temperatureC?: number | null
   humidityPct?: number | null
   batteryPct?: number | null
+  /** The name from the Shelly app; absent/null leaves the stored one as it is. */
+  shellyName?: string | null
 }
 
 // Auto-registers the device by MAC (unknown → new unnamed row), inserts one
-// reading, and bumps last-seen (+ battery when present) — all in one tx. A
-// webhook without a battery reading keeps the previously-stored battery.
+// reading, and bumps last-seen (+ battery and Shelly name when present) — all in
+// one tx. A webhook without a battery reading keeps the previously-stored
+// battery; one without a name (a device still on the old URL) keeps the stored
+// Shelly name.
 export async function recordReading(input: RecordReadingInput): Promise<{ deviceId: string }> {
   const mac = normalizeMac(input.mac)
   if (!isValidMac(mac)) throw new SensorDomainError('INVALID_MAC')
   const now = new Date()
   return db.transaction(async (tx) => {
-    const updateSet: { lastSeenAt: Date; batteryPct?: number } = { lastSeenAt: now }
+    const updateSet: { lastSeenAt: Date; batteryPct?: number; shellyName?: string } = {
+      lastSeenAt: now,
+    }
     if (input.batteryPct != null) updateSet.batteryPct = input.batteryPct
+    if (input.shellyName != null) updateSet.shellyName = input.shellyName
     const [device] = await tx
       .insert(sensorDevice)
-      .values({ mac, lastSeenAt: now, batteryPct: input.batteryPct ?? null })
+      .values({
+        mac,
+        lastSeenAt: now,
+        batteryPct: input.batteryPct ?? null,
+        shellyName: input.shellyName ?? null,
+      })
       .onConflictDoUpdate({ target: sensorDevice.mac, set: updateSet })
       .returning({ id: sensorDevice.id })
     // recordedAt set explicitly to the same `now` as lastSeenAt so the device's
@@ -75,6 +84,7 @@ export type SensorDeviceRow = {
   mac: string
   name: string | null
   location: string | null
+  shellyName: string | null
   displayName: string
   batteryPct: number | null
   lastSeenAt: Date | null
@@ -113,7 +123,8 @@ export async function listDevices(): Promise<SensorDeviceRow[]> {
       mac: d.mac,
       name: d.name,
       location: d.location,
-      displayName: displayNameFor(d.name, d.mac),
+      shellyName: d.shellyName,
+      displayName: sensorDisplayName(d.name, d.shellyName, d.mac),
       batteryPct: d.batteryPct,
       lastSeenAt: d.lastSeenAt,
       latest: latest
