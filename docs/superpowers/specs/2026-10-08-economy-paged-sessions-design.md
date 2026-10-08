@@ -108,6 +108,15 @@ export type EconomyListRow = {
 
 - **Only slimming the rows (keep client paging):** halves the bytes (10.9 KB gzip), but they still grow with the
   year, and every page view still ships the whole year.
+- **Cursor/limit (keyset) paging instead of `?page=&size=`** (owner asked, researched 2026-10-08): cursors
+  can't give the list's numbered page links, its "Visar 11–20 av 214" range, a jump to the last page, or a
+  shareable `?page=3` link. Their advantages don't apply here:
+  - Flat cost at deep offsets: `/charging` offsets over ~190 sessions on prod, and this list slices a year that is
+    already loaded in memory.
+  - No skipped or repeated rows: sessions arrive at most hourly, and both lists order by `startAt desc, id desc`.
+  - Offset with `placeholderData: keepPreviousData` and prefetching page + 1 is TanStack Query's own pattern for
+    numbered pages; cursors go with `useInfiniteQuery`.
+  - Revisit if a list becomes an infinite scroll or grows past ~10k rows.
 - **Real `<Link>`s with the router's intent preload:** a hover would run the whole route loader, so once the page's
   other queries are stale it refetches them too (`costOverview`-sized work). It also does nothing on a phone.
 
