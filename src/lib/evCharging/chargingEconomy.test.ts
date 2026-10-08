@@ -8,7 +8,7 @@ import * as tariffService from '~/lib/services/tariff'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import { mixSlot } from '~test/fixtures/energyMix'
 import { setupDatabase } from '~test/setup'
-import { getEconomyOverview, getSessionEconomy } from './chargingEconomy'
+import { getEconomyOverview, getEconomySessions, getSessionEconomy } from './chargingEconomy'
 import { getSessionCosts } from './costing'
 
 setupDatabase()
@@ -480,4 +480,89 @@ test('the hero and the session list agree when a mix slot starts before the firs
   expect(d.cost).toMatchObject({ kwh: 4, solarKwh: 2, complete: true })
   const { sessionId: _, estimated: __, ...listedCost } = listed
   expect(listedCost).toEqual(d.cost)
+})
+test('economy sessions: one page newest first, the total, and the last page for one past the end', async () => {
+  const ids: string[] = []
+  for (let day = 10; day < 22; day++) {
+    ids.push(await session(`2026-09-${day}T08:00:00Z`, `2026-09-${day}T09:00:00Z`, 5))
+  }
+  await session('2025-09-10T08:00:00Z', '2025-09-10T09:00:00Z', 5) // another year
+  const newestFirst = [...ids].reverse()
+  const first = await getEconomySessions({ year: 2026, now: NOW, page: 1, pageSize: 10 })
+  expect(first).toMatchObject({ page: 1, pageSize: 10, total: 12 })
+  expect(first.rows.map((r) => r.sessionId)).toEqual(newestFirst.slice(0, 10))
+  const second = await getEconomySessions({ year: 2026, now: NOW, page: 2, pageSize: 10 })
+  expect(second.rows.map((r) => r.sessionId)).toEqual(newestFirst.slice(10))
+  const past = await getEconomySessions({ year: 2026, now: NOW, page: 99, pageSize: 10 })
+  expect(past).toMatchObject({ page: 2, total: 12 })
+  expect(past.rows.map((r) => r.sessionId)).toEqual(newestFirst.slice(10))
+})
+
+test('economy sessions: an empty year is page 1 of nothing', async () => {
+  expect(await getEconomySessions({ year: 2026, now: NOW, page: 3, pageSize: 10 })).toEqual({
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    rows: [],
+  })
+})
+
+test('economy sessions: a row carries the same figures as the session’s own analysis', async () => {
+  await seedPrices()
+  const id = await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 10, [
+    ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 10],
+  ])
+  const [{ rows }, detail] = await Promise.all([
+    getEconomySessions({ year: 2026, now: NOW, page: 1, pageSize: 10 }),
+    getSessionEconomy({ sessionId: id }),
+  ])
+  const cf = detail.economy.counterfactual
+  expect(rows[0].actualSek).toBeCloseTo(detail.economy.actual.totalSek, 9)
+  expect(rows[0].counterfactual).toEqual({
+    savedVsImmediateSek: cf?.savedVsImmediateSek,
+    leftOnTableSek: cf?.leftOnTableSek,
+    score: cf?.score,
+    spreadSek: (cf?.dearest.totalSek ?? 0) - (cf?.optimal.totalSek ?? 0),
+  })
+  expect(rows[0].counterfactual?.leftOnTableSek).toBeCloseTo(10 * (unit(3) - unit(1)))
+})
+
+test('economy sessions: a session on a day without prices has no kronor and no comparison', async () => {
+  await tariffService.create(TARIFF)
+  await session('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 4, [
+    ['2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 4],
+  ])
+  const { rows } = await getEconomySessions({ year: 2026, now: NOW, page: 1, pageSize: 10 })
+  expect(rows[0]).toMatchObject({ actualSek: null, excluded: 'no_price', counterfactual: null })
+})
+
+test('economy sessions follow the vehicle scope and default to the current year', async () => {
+  const ours = await session('2026-09-10T10:00:00Z', '2026-09-10T11:00:00Z', 10)
+  const guest = await session('2026-09-11T10:00:00Z', '2026-09-11T11:00:00Z', 4, [], {
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const ids = async (vehicle?: 'ours' | 'other' | 'all') =>
+    (await getEconomySessions({ now: NOW, vehicle, page: 1, pageSize: 10 })).rows.map((r) => [
+      r.sessionId,
+      r.vehicle,
+    ])
+  expect(await ids('ours')).toEqual([[ours, 'ours']])
+  expect(await ids('other')).toEqual([[guest, 'other']])
+  expect(await ids()).toEqual([
+    [guest, 'other'],
+    [ours, 'ours'],
+  ])
+})
+
+test('economy sessions fill their timings sink', async () => {
+  await session('2026-09-10T10:00:00Z', '2026-09-10T11:00:00Z', 10)
+  const timings: Record<string, number> = {}
+  await getEconomySessions({ now: NOW, page: 1, pageSize: 10, timings })
+  expect(timings).toMatchObject({
+    energyMs: expect.any(Number),
+    tariffMs: expect.any(Number),
+    slotsMs: expect.any(Number),
+    computeMs: expect.any(Number),
+  })
 })
