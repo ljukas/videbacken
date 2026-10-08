@@ -10,13 +10,13 @@ start of its session.
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1 | `Server-Timing` header on every response: `queue` (Vercel edge → our code, from `x-vercel-id`), `app` (our code → response headers) and, for a signed-in `/api/rpc` caller, the `rpc timing` line's sub-timings + pool gauges; `queueMs` on the log line | bounded (in-chat design) | [#137](https://github.com/ljukas/videbacken/pull/137) | checkpoint passed | 2026-10-07: prod RPC and SSR responses carry the header (`/login`: `queue;dur=22, app;dur=29.5`); `rpc timing` lines carry `queueMs`. Warm `queue` is 20–35 ms; a cold instance started mid-burst shows ~800 ms, now row 4. See [checkpoint 1 result](#checkpoint-1-result). |
-| 2 | Cache the Stockholm day/month per UTC hour in the cost pricing (`stockholmDayOf` / `stockholmYearMonth` are ~70% of `costComputeMs`; Stockholm's offset is always whole hours) | [plan](../plans/2026-10-07-server-latency-2-tz-cache.md) | [#139](https://github.com/ljukas/videbacken/pull/139) | merged | Local: cost compute 13–14 → 1 ms, economy 23–25 → 1 ms; overviews byte-identical. Prod 24 h before: `costComputeMs` 53–159 (median ~71), `economyComputeMs` 72–100. |
+| 2 | Cache the Stockholm day/month per UTC hour in the cost pricing (`stockholmDayOf` / `stockholmYearMonth` are ~70% of `costComputeMs`; Stockholm's offset is always whole hours) | [plan](../plans/2026-10-07-server-latency-2-tz-cache.md) | [#139](https://github.com/ljukas/videbacken/pull/139) | checkpoint passed | 2026-10-08: prod `costComputeMs` median 73 → 26.5 (−64%); repeat visits 68–84 → 21–25. `economyComputeMs` 72–100 → 13–27. `/charging` figures unchanged (owner). See [checkpoint 2 result](#checkpoint-2-result). |
 | 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | — | — | needs shaping | — |
 | 4 | Cold instances in a burst: when Vercel starts an extra instance for a navigation's burst, its requests show `queue` ~800 ms plus ~260 ms of first-request work before the handler (`app` minus `rpc`). Find what the boot and first-request load cost (function bundle, module init) and what Fluid offers against scale-out cold starts | — | — | needs shaping | — |
 | 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | — | not started | — |
 | 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converts and groups every slot of the year (24 476 rows, 61 ms in prod `EXPLAIN ANALYZE`, all buffer hits: CPU). Recommended: a `spot_price_day` table written by `replaceDay` in the same transaction (its only writer) + a backfill, read by PK (~255 rows). Open: that vs a trigger on `spot_price`. Needs the schema-design review | — | — | needs shaping | — |
 
-Order (owner, 2026-10-08): checkpoint 2, then 5, then 6. Rows 3 and 4 follow unless reordered.
+Order (owner, 2026-10-08): checkpoint 2 (passed), then 5, then 6. Rows 3 and 4 follow unless reordered.
 
 The warm pool (keep three pooled connections; removes most `poolOpened` spikes) is client-performance step 8,
 [#135](https://github.com/ljukas/videbacken/pull/135), merged 2026-10-07; its checkpoint lives in
@@ -64,6 +64,30 @@ the step needs a brainstorm before its plan.
     second query round stays slow with a warm pool, and only step 3 removes it.
   - `economy` took 161 ms, with `economyCompute` 77 and `economyDailySpot` 56.
 - `/login` SSR on prod: `queue;dur=22, app;dur=29.5`, then `queue;dur=25, app;dur=7.9`.
+
+## Checkpoint 2 result
+
+2026-10-08, after the #139 deploy (live from 2026-10-07 18:50 UTC). Prod `rpc timing` lines for
+`evCharging/costOverview`:
+
+| | Calls | `costComputeMs` | Median |
+|---|---|---|---|
+| Before (2026-10-06 17:53 → 2026-10-07 17:34) | 42 | 53–159 | 73 |
+| After, everything | 10 | 18–53 | 26.5 |
+| After, owner returning to `/charging` 3× (08:50–08:54) | 4 | 21–25 | 23 |
+
+- **Passed:** the median dropped 64%. Repeat visits dropped from 68–84 ms (checkpoint 1's refreshes) to 21–25 ms.
+- **`economy`:** `economyComputeMs` 72–100 → 13–27 (6 calls).
+- **Figures:** the owner checked `/charging`: it looks like before. #139 had already shown the cost and economy
+  overviews byte-identical locally for 2024–26.
+- **What is left:**
+  - The first call on a fresh instance still costs more: `costComputeMs` 37–53, and `sessions` 30 against 0–1 warm.
+    That is first-request work, so it belongs to row 4.
+  - `costOverview`'s `totalMs` is now 117–125 when warm. Most of that is the two query rounds (`costSlots` +
+    `costMix`, 29–60 ms each), which only step 3 removes.
+- **Measuring tip:** a page refresh renders `costOverview` during SSR, because it is critical in the `/charging`
+  loader. That call never reaches `/api/rpc`, so it logs no `rpc timing` line. To get lines, navigate in the
+  browser: leave the page, wait out the 20 s `staleTime`, then come back.
 
 ## Baseline (2026-10-07)
 
