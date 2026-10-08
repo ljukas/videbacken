@@ -155,6 +155,7 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
 | House energy pages (on-read monthly aggregates, loss + self-sufficiency definitions) | **0024** |
 | Deferred route loading (loaders await on server only, cached session guard, boneyard-js section skeletons, per-page bundle (§6)) | **0025** |
 | Integration credential store (GUI-set, encrypted in Postgres, per-field over env; charging settings page) | **0026** |
+| Heat pump energy data (Panasonic Comfort Cloud: hourly per unit, Användning on Översikt, energy signature around logged events; read-only) | **0027** |
 
 ---
 
