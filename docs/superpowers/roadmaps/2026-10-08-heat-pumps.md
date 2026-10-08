@@ -52,7 +52,7 @@ Each must pass, with the result recorded in the table, before the next step star
    - The adapter logs no password, token, api key or raw HTML (grep the run's output).
 2. **After step 1b (prod).**
    - The backfill is complete: Matsal's first stored hour is on 2024-10-31 and Övervåning's on 2024-11-27, both
-     units have `history_complete_at` set.
+     units have `registered_on` (2024-10-31, 2024-11-27) and `history_complete_at` set.
    - For three months (2025-02, 2026-02, 2026-09), each unit's kWh from a read-only prod SELECT equals the monthly
      figure the Comfort Cloud app shows (the owner reads it off the app).
    - 2025-10-26 and 2026-03-29 have 24 stored hours per unit (UTC); no hour is duplicated.

@@ -50,6 +50,7 @@ See ADR-0027's context for the full list. The facts the build depends on:
 | `-255` = no value (future hours; `cost` without a tariff) | Never stored; a temperature of `-255` is stored as null |
 | The current hour fills in near real time | Re-fetch the last days every run |
 | Month history (`dataMode` 2) = one row per day with the day's total | Cheap backfill probe: one call says which days have data |
+| Every history response carries `deviceRegisterTime` (`YYYYMMDD`): the unit's first data day (Matsal `20241031`, Övervåning `20241127`) | The backfill's exact end; stored per unit |
 | History from 2024-10-31 (Matsal), 2024-11-27 (Övervåning) | Backfill ≈ 1,400 day calls in total |
 | Live status intermittently `500 {"code":5005}` | The sync never reads status; history only |
 
@@ -74,10 +75,14 @@ type ComfortCloudHour = {
   insideC: number | null
   outsideC: number | null
 }
+type ComfortCloudHistory<T> = {
+  registeredOn: string             // YYYY-MM-DD, from deviceRegisterTime: the unit's first data day
+  rows: T[]                        // only rows with a value
+}
 interface ComfortCloudClient {
   units(): Promise<ComfortCloudUnit[]>
-  dayHours(guid: string, utcDay: string /* YYYY-MM-DD */): Promise<ComfortCloudHour[]>   // only hours with a value
-  monthDays(guid: string, utcMonth: string /* YYYY-MM */): Promise<{ day: string; energyKwh: number }[]>
+  dayHours(guid: string, utcDay: string /* YYYY-MM-DD */): Promise<ComfortCloudHistory<ComfortCloudHour>>
+  monthDays(guid: string, utcMonth: string /* YYYY-MM */): Promise<ComfortCloudHistory<{ day: string; energyKwh: number }>>
 }
 ```
 
@@ -153,7 +158,8 @@ All tables end with `.enableRLS()`; schema-design review + `migration-guard` bef
 | `guid` | text, unique, not null | Comfort Cloud device guid |
 | `name` | text, not null | as in Comfort Cloud, refreshed every sync |
 | `model` | text, not null | e.g. `CS-HZ25ZKE` |
-| `history_complete_at` | timestamptz, null | set when the backfill found no earlier data |
+| `registered_on` | date, null | `deviceRegisterTime` from the latest history response: the first day with data |
+| `history_complete_at` | timestamptz, null | set when the backfill has stored every day back to `registered_on` |
 | `first_seen_at`, `last_seen_at` | timestamptz, not null | |
 
 **`heat_pump_reading`** (step 1a)
@@ -192,7 +198,7 @@ Index on `occurred_on`. The source CHECK migration (step 1b) widens `integration
 - `replaceDay(heatPumpId, utcDay, hours)`: in one transaction, delete the unit's hours of that UTC day and insert
   the given ones. Rejects an hour outside the day or a value outside the CHECKs (`HeatPumpDomainError`
   `invalid_reading`), so a bad row fails the day, not the run (Emaldo's `rejectedDays` pattern).
-- `oldestDay(heatPumpId)`, `markHistoryComplete(heatPumpId, now)`.
+- `oldestDay(heatPumpId)`, `setRegisteredOn(heatPumpId, day)` (from each history response), `markHistoryComplete(heatPumpId, now)`.
 - Reads: `monthSums({ from, to })` and `daySums({ from, to })`. Both sum per unit per Stockholm month or day from
   UTC hours, the ADR-0024 way (sum per UTC hour, then convert the hour; Stockholm offsets are whole hours). They
   return kWh, heating kWh (Σ kWh × heat share), cooling kWh, the hour-weighted mean indoor / outdoor / setpoint
@@ -218,7 +224,8 @@ Per run:
    - start from the day before the unit's oldest stored day (with no readings at all: three days before today);
    - `monthDays` for that day's month → the days with data before the start, newest first → `dayHours` →
      `replaceDay` each;
-   - two consecutive months with no data at all → `markHistoryComplete`.
+   - the walk stops at `registered_on`; once the day before the oldest stored day is earlier than `registered_on`,
+     `markHistoryComplete`. A history response without a parseable `deviceRegisterTime` → `unexpected_response`.
 4. Progress: days done / days planned. Counters on the run line: units, days fetched, hours stored, rejected days,
    backfill days left (an estimate).
 
@@ -387,7 +394,7 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
 | Σ heat pumps > load − laddning (meter noise, or heat pump hours present where house buckets are missing) | Heat pumps scaled down to fit; övrigt hus 0 |
 | A unit renamed in Comfort Cloud | Name refreshed on the next sync; history kept (keyed by guid) |
 | A third unit added | Discovered, backfilled, a third colour |
-| A gap of a whole month in a unit's history | The backfill continues; it stops only after two consecutive empty months |
+| A gap of a whole month in a unit's history | The backfill continues to `registered_on`; empty months cost one month call each |
 | Fewer than 14 qualifying days before/after | The signature says so; no number |
 
 ## Testing
@@ -399,7 +406,7 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
 - **Service** (`setupDatabase()` first): `replaceDay` (replace, reject out-of-day and out-of-range rows), `upsertUnits`,
   month and day sums across a month boundary and both DST days (2025-10-26, 2026-03-29), expected hours clipped to
   the first reading and the newest hour, events CRUD with every domain error code.
-- **Sync**: recent days, backfill order and budget, two empty months → complete, a gap month skipped, a rejected
+- **Sync**: recent days, backfill order and budget, stop at `registered_on` → complete, a gap month skipped, a rejected
   day counted, progress, `not_configured`.
 - **`figures.ts`**: the heat pump cap, shares, `restOfHouse`, missing hours; Summering's figures unchanged.
 - **`signature.ts`**: qualifying-day rules, before/after windows around events, the fit on known data, the
