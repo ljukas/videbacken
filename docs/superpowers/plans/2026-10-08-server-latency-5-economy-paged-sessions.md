@@ -77,7 +77,7 @@ process.exit(0)
 ```
 
   Run `LOG_LEVEL=error bun run ./.measure-economy.ts`. Record the result; on 2026-10-08 it was 227.6 KB (gz 21.4)
-  for 208 sessions. Keep the script for Task 6.
+  for 208 sessions. Keep the script for Task 7.
 - [ ] **Step 4: Prod baseline.** Record the last 24 h of `evCharging/economy` `rpc timing` lines from Vercel runtime
   logs (project `prj_8MG0PGBp5OCoa09qvHSkWVt9EjEg`, team `team_ipjl15fK8NbQoalWg86ZAb7o`): `totalMs` and the
   `economy*Ms` sub-timings. The owner's DevTools showed 12.8 kB and 363 ms.
@@ -871,7 +871,79 @@ export function useNextPagePrefetch(
 `vercel-react-best-practices`, focused on Review Focus 4–5. Also: no prefetch storm on fast pointer sweeps
 (`prefetchQuery` de-duplicates in-flight and fresh queries), and touch targets unchanged.
 
-### Task 6: Measure, verify, ship
+### Task 6: A page-size change keeps the reader's place
+
+The owner asked for the best practice (researched 2026-10-08; see the spec's Decision). TanStack Table's
+`setPageSize` keeps the row that was at the top of the page in view, and Ant Design passes the same page to apps as
+`recommendPage`. Today `useSessionPaging.setPageSize` resets to page 1, so this changes both lists.
+
+**Files:**
+- Modify: `src/lib/evCharging/paging.ts`, `src/hooks/useSessionPaging.ts`
+- Test: `src/lib/evCharging/paging.test.ts`
+
+**Interfaces:**
+- Produces: `pageKeepingTopRow(page: number, fromSize: number, toSize: number): number`, the page at `toSize` that
+  holds the first row of `page` at `fromSize`.
+
+- [ ] **Step 1: Write the failing tests** (append to `src/lib/evCharging/paging.test.ts`; add `pageKeepingTopRow`
+  to its import from `./paging`):
+
+```ts
+test('pageKeepingTopRow keeps the first row of the page in view at the new size', () => {
+  // Page 3 at 10 shows rows 21–30: row 21 is on page 1 at 25 and at 50.
+  expect(pageKeepingTopRow(3, 10, 25)).toBe(1)
+  expect(pageKeepingTopRow(3, 10, 50)).toBe(1)
+  // Page 4 at 10 starts at row 31: page 2 at 25 (rows 26–50).
+  expect(pageKeepingTopRow(4, 10, 25)).toBe(2)
+  // Shrinking: page 2 at 50 starts at row 51, page 6 at 10 (rows 51–60).
+  expect(pageKeepingTopRow(2, 50, 10)).toBe(6)
+  expect(pageKeepingTopRow(1, 25, 10)).toBe(1)
+  // The same size is the same page.
+  expect(pageKeepingTopRow(7, 25, 25)).toBe(7)
+})
+```
+
+- [ ] **Step 2: Run it and see it fail.** Run `bunx vitest run src/lib/evCharging/paging.test.ts`. Expected: FAIL,
+  `pageKeepingTopRow` is not exported.
+- [ ] **Step 3: Implement** in `src/lib/evCharging/paging.ts`:
+
+```ts
+/**
+ * The page at `toSize` holding the first row of `page` at `fromSize`, so a
+ * rows-per-page change keeps the reader's place (TanStack Table's setPageSize
+ * rule). A page past the end stays the server's to clamp, as for any `?page=`.
+ */
+export function pageKeepingTopRow(page: number, fromSize: number, toSize: number): number {
+  return Math.floor(((Math.max(page, 1) - 1) * fromSize) / toSize) + 1
+}
+```
+
+- [ ] **Step 4: Run it and see it pass.** Same command. Expected: PASS.
+- [ ] **Step 5: Use it in `useSessionPaging.setPageSize`.** It still replaces the history entry, since a size is a
+  preference. Replace `page: undefined` in its search updater with:
+
+```ts
+          page: ((p) => (p === 1 ? undefined : p))(
+            pageKeepingTopRow(prev.page ?? 1, prev.size ?? DEFAULT_SESSION_PAGE_SIZE, size),
+          ),
+```
+
+  Then update the file's header comment: "a new size is a preference, so it replaces the entry and keeps the row
+  that was at the top of the page in view".
+- [ ] **Step 6: Run the checks.**
+  - `bunx tsc --noEmit -p .`.
+  - `pgrep -fl vitest`, then `bunx vitest run --project browser src/routes/_authenticated/charging`, where the route
+    tests that change the size live.
+  - Expected: clean, and all pass. Any test asserting "a size change goes to page 1" now expects the kept page:
+    update its expectation and say so in the commit body.
+- [ ] **Step 7: Commit.** `git commit -m "feat(charging): keep the reader's place when the page size changes"`
+
+**Reviewers** (UI / route): `code-reviewer`, and a reviewer loading `web-design-guidelines`. They check:
+- the history entry is still replaced, not pushed;
+- focus and scroll stay put on a size change;
+- a kept page past the end (a shrinking list) still renders the server's last page.
+
+### Task 7: Measure, verify, ship
 
 - [ ] **Step 1: Re-measure.** Point `.measure-economy.ts` at the new reads and log both sizes:
   `getEconomyOverview({ year: 2026, now })` and `getEconomySessions({ year: 2026, now, page: 1, pageSize: 10 })`.
@@ -887,6 +959,7 @@ export function useNextPagePrefetch(
     the Network tab.
   - After a page lands, the next page's request has already happened.
   - A year or scope switch on page 3 dims, then lands on page 1.
+  - On page 4 at 10 per page, switching to 25 lands on page 2, with row 31 still on screen.
   - A shared `?page=3` full load renders page 3.
   - With the network offline, a page click shows the list's alert and keeps the last page.
 - [ ] **Step 5: Roadmap and PR.**

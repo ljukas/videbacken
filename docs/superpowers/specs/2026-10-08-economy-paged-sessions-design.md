@@ -104,6 +104,20 @@ export type EconomyListRow = {
 - `/charging` wires the same prop to its `sessionsQuery`, so both lists behave alike. That is the reason the prop
   lives in the shared control, not in each route.
 
+### A page-size change keeps the reader's place (both lists)
+
+Today a rows-per-page change resets to page 1. Instead, keep the row that was at the top of the page in view:
+`page = floor((page − 1) · oldSize / newSize) + 1`. Page 4 at 10 (rows 31–40) becomes page 2 at 25 (rows 26–50).
+The history entry is still replaced, since a size is a preference.
+
+The owner asked for the best practice first (researched 2026-10-08):
+- **TanStack Table:** its `setPageSize` is documented to recalculate `pageIndex` "so the row that was previously at
+  the top of the page remains in view".
+- **Ant Design (rc-pagination):** keeps the page number, clamped, but computes this same page and passes it to apps
+  as `recommendPage`.
+- **Atlassian:** users reported a kept page *number* showing different items as a bug.
+- **Design systems:** Carbon, GOV.UK and Polaris don't specify the behavior.
+
 ### Rejected
 
 - **Only slimming the rows (keep client paging):** halves the bytes (10.9 KB gzip), but they still grow with the
