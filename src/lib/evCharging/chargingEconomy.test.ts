@@ -10,6 +10,7 @@ import { mixSlot } from '~test/fixtures/energyMix'
 import { setupDatabase } from '~test/setup'
 import { getEconomyOverview, getEconomySessions, getSessionEconomy } from './chargingEconomy'
 import { getSessionCosts } from './costing'
+import { toEconomyListRow } from './economy'
 
 setupDatabase()
 
@@ -363,6 +364,7 @@ test('getSessionEconomy on an estimated session (no intervals): no chart data, e
 
 test('economy overview follows the vehicle scope; the session detail carries the attribution', async () => {
   const ours = await session('2026-09-10T10:00:00Z', '2026-09-10T11:00:00Z', 10)
+  await session('2025-09-10T10:00:00Z', '2025-09-10T11:00:00Z', 10) // last year: out when `year` is omitted
   const guest = await session('2026-09-11T10:00:00Z', '2026-09-11T11:00:00Z', 4, [], {
     vehicle: 'other',
     vehicleSource: 'admin',
@@ -565,4 +567,79 @@ test('economy sessions fill their timings sink', async () => {
     slotsMs: expect.any(Number),
     computeMs: expect.any(Number),
   })
+})
+
+test('economy sessions: a middle page sits between the first and the last', async () => {
+  const ids: string[] = []
+  for (let i = 0; i < 25; i++) {
+    const start = new Date(Date.UTC(2026, 7, 1 + i, 8))
+    const end = new Date(start.getTime() + 3_600_000)
+    ids.push(await session(start.toISOString(), end.toISOString(), 5))
+  }
+  const newestFirst = [...ids].reverse()
+  const ofPage = async (page: number) =>
+    getEconomySessions({ year: 2026, now: NOW, page, pageSize: 10 })
+  const [p1, p2, p3] = [await ofPage(1), await ofPage(2), await ofPage(3)]
+  expect(p1.rows.map((r) => r.sessionId)).toEqual(newestFirst.slice(0, 10))
+  expect(p2.rows.map((r) => r.sessionId)).toEqual(newestFirst.slice(10, 20))
+  expect(p3.rows.map((r) => r.sessionId)).toEqual(newestFirst.slice(20))
+  expect([p1.page, p2.page, p3.page]).toEqual([1, 2, 3])
+  expect([p1.total, p2.total, p3.total]).toEqual([25, 25, 25])
+})
+
+test('economy sessions: the year is the Stockholm year of the start, not the UTC year', async () => {
+  const newYear = await session('2025-12-31T23:30:00Z', '2026-01-01T00:30:00Z', 5) // Stockholm 2026-01-01
+  const nextYear = await session('2026-12-31T23:30:00Z', '2027-01-01T00:30:00Z', 5) // Stockholm 2027
+  const ids = async (year: number) =>
+    (await getEconomySessions({ year, now: NOW, page: 1, pageSize: 10 })).rows.map(
+      (r) => r.sessionId,
+    )
+  expect(await ids(2026)).toEqual([newYear])
+  expect(await ids(2025)).toEqual([])
+  expect(await ids(2027)).toEqual([nextYear])
+})
+
+test('economy sessions: a non-first page matches each session’s own analysis', async () => {
+  await seedPrices()
+  const ids: string[] = []
+  // Five adjacent hourly sessions on the priced day, the 08:00Z one in the dear hour.
+  for (let h = 5; h < 10; h++) {
+    const s = `2026-09-28T0${h}:00:00Z`
+    const e = `2026-09-28T${String(h + 1).padStart(2, '0')}:00:00Z`
+    ids.push(await session(s, e, 6, [[s, e, 6]]))
+  }
+  const newestFirst = [...ids].reverse()
+  const { rows, page } = await getEconomySessions({ year: 2026, now: NOW, page: 2, pageSize: 2 })
+  expect(page).toBe(2)
+  expect(rows.map((r) => r.sessionId)).toEqual(newestFirst.slice(2, 4))
+  for (const row of rows) {
+    const { session: detail, economy } = await getSessionEconomy({ sessionId: row.sessionId })
+    const expected = toEconomyListRow(
+      {
+        sessionId: detail.id,
+        startAt: detail.startAt,
+        endAt: detail.endAt,
+        energyKwh: detail.kwh,
+        vehicle: detail.vehicle,
+      },
+      economy,
+    )
+    expect(row.excluded).toBe(expected.excluded)
+    expect(row.actualSek).not.toBeNull()
+    expect(row.actualSek).toBeCloseTo(expected.actualSek ?? Number.NaN, 9)
+    expect(row.counterfactual).not.toBeNull()
+    expect(row.counterfactual?.savedVsImmediateSek).toBeCloseTo(
+      expected.counterfactual?.savedVsImmediateSek ?? Number.NaN,
+      9,
+    )
+    expect(row.counterfactual?.leftOnTableSek).toBeCloseTo(
+      expected.counterfactual?.leftOnTableSek ?? Number.NaN,
+      9,
+    )
+    expect(row.counterfactual?.spreadSek).toBeCloseTo(
+      expected.counterfactual?.spreadSek ?? Number.NaN,
+      9,
+    )
+    expect(row.counterfactual?.score).toEqual(expected.counterfactual?.score)
+  }
 })
