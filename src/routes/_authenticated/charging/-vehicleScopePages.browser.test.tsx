@@ -1043,6 +1043,24 @@ test('Ekonomi: a new page size keeps the first row of the page in view, replacin
   expect(router.history.length).toBe(entries)
 })
 
+test('Ekonomi: a size change from a page past the end keeps the top row of the page served', async () => {
+  // ?page=99 at 50 is served as page 2 (rows 51–100); 10 per page lands on page 6, not 99's 491.
+  const { screen, router } = await renderPage(
+    Economy,
+    '/charging/economy',
+    '?page=99&size=50',
+    (qc) => {
+      seedEconomyRows(qc, 100)
+      seedEconomyPage(qc, { page: 99, pageSize: 50 }, 100, 2)
+    },
+  )
+  await expect.element(screen.getByText(kwhCell(51), { exact: false })).toBeVisible()
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '10' }).click()
+  await expect.element(screen.getByText(kwhCell(51), { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 6 })
+})
+
 test('Ekonomi: a page past the end shows the last page the server served', async () => {
   const { screen } = await renderPage(Economy, '/charging/economy', '?page=9', (qc) => {
     seedEconomyRows(qc, 23)

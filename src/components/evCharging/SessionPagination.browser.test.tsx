@@ -209,7 +209,7 @@ test('the size selector offers 10, 25 and 50 and reports the chosen size', async
   await trigger.click()
   await expect.element(screen.getByRole('option', { name: '50' })).toBeVisible()
   await screen.getByRole('option', { name: '25' }).click()
-  expect(onPageSizeChange).toHaveBeenCalledWith(25)
+  expect(onPageSizeChange).toHaveBeenCalledWith(25, 1)
 })
 
 test('a last page holding one session names it alone, not as "101–101"', async () => {
@@ -267,4 +267,20 @@ test('never prefetches the current page or past either end', async () => {
   expect(prefetchPage).not.toHaveBeenCalled()
   await userEvent.hover(screen.getByRole('button', page(2)))
   expect(prefetchPage).toHaveBeenCalledWith(2)
+})
+
+test('a size change reports the page on screen, a page past the end clamped', async () => {
+  const onPageSizeChange = vi.fn()
+  const screen = await render(
+    <SessionPagination
+      page={99}
+      pageSize={50}
+      total={100}
+      onPageChange={noop}
+      onPageSizeChange={onPageSizeChange}
+    />,
+  )
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '10' }).click()
+  expect(onPageSizeChange).toHaveBeenCalledWith(10, 2)
 })

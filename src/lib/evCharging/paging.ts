@@ -63,8 +63,9 @@ export function pageSlice<T>(
 
 /**
  * The page at `toSize` holding the first row of `page` at `fromSize`, so a
- * rows-per-page change keeps the reader's place (TanStack Table's setPageSize
- * rule). A page past the end stays the server's to clamp, as for any `?page=`.
+ * rows-per-page change lands on the page containing the row that was at the
+ * top (TanStack Table's setPageSize rule). `page` should be the page on screen: a URL page past the end is the
+ * server's to clamp, so callers pass the served one.
  */
 export function pageKeepingTopRow(page: number, fromSize: number, toSize: number): number {
   return Math.floor(((Math.max(page, 1) - 1) * fromSize) / toSize) + 1

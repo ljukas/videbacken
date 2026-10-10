@@ -42,7 +42,9 @@ export function SessionPagination({
   pageSize: number
   total: number
   onPageChange: (page: number) => void
-  onPageSizeChange: (pageSize: SessionPageSize) => void
+  /** `fromPage` is the page on screen (a page past the end clamped), the one a
+   * size change keeps its top row of. */
+  onPageSizeChange: (pageSize: SessionPageSize, fromPage: number) => void
   /** Called with a page a control points at, on hover, focus or touch, so the
    * click finds it loaded. Never for the current page or past either end. */
   prefetchPage?: (page: number) => void
@@ -98,7 +100,7 @@ export function SessionPagination({
             value={String(pageSize)}
             onValueChange={(v) => {
               const size = SESSION_PAGE_SIZES.find((s) => String(s) === v)
-              if (size) onPageSizeChange(size)
+              if (size) onPageSizeChange(size, current)
             }}
           >
             {/* A 44 px target under a finger (the size variant would win without the !). */}
