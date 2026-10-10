@@ -975,6 +975,12 @@ function seedEconomyRows(qc: QueryClient, count: number, years = [2026]) {
 }
 
 const kwhCell = (n: number) => `${100 + n},1`
+/** How many of `el`'s ancestors are dimmed (`opacity-60`). */
+const dimmedAncestors = (el: Element) => {
+  let n = 0
+  for (let a = el.parentElement; a; a = a.parentElement) if (a.classList.contains('opacity-60')) n++
+  return n
+}
 
 test('Ekonomi: the session table shows its newest 10, then pages through the year', async () => {
   const { screen, router } = await renderPage(Economy, '/charging/economy', '', (qc) =>
@@ -1064,6 +1070,81 @@ test('Ekonomi: a page that fails to load keeps the last page, dimmed, under the 
   const list = screen.getByRole('table').element().closest('[aria-busy]')
   expect(list?.getAttribute('aria-busy')).toBe('false')
   expect(list?.className).toContain('opacity-60')
+})
+
+test('Ekonomi: while a new page size loads, focus stays on the control', async () => {
+  const { screen, qc } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyOverview(qc, 'all', 23)
+    seedEconomyPage(qc, { page: 1, pageSize: 10 }, 23)
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  holdQuery(qc, economySessionsKey(1, 25))
+  const size = screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() })
+  await size.click()
+  await screen.getByRole('option', { name: '25' }).click()
+  const list = () => screen.getByRole('table').element().closest('[aria-busy]')
+  await vi.waitFor(() => expect(list()?.getAttribute('aria-busy')).toBe('true'))
+  // The size change never moves focus itself: the select hands it back to its
+  // trigger, which must stay focusable while the next page loads.
+  await vi.waitFor(() => expect(document.activeElement).toBe(size.element()))
+})
+
+test('Ekonomi: after a page fails, another page that loads clears the alert', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyOverview(qc, 'all', 23)
+    seedEconomyPage(qc, { page: 1, pageSize: 10 }, 23)
+    seedEconomyPage(qc, { page: 3, pageSize: 10 }, 23)
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: '2', exact: true }).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  await screen.getByRole('button', { name: '3', exact: true }).click()
+  await expect.element(screen.getByText(kwhCell(21), { exact: false })).toBeVisible()
+  expect(screen.getByText(m.charging_sessions_error_title()).elements()).toHaveLength(0)
+})
+
+test('Ekonomi: after a page fails, stepping to it again from the control retries it', async () => {
+  const { screen, qc } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyOverview(qc, 'all', 23)
+    seedEconomyPage(qc, { page: 1, pageSize: 10 }, 23)
+    qc.setQueryDefaults(economySessionsKey(2), { retry: false })
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  const failures = () => qc.getQueryState(economySessionsKey(2))?.errorUpdateCount ?? 0
+  await vi.waitFor(() => expect(qc.getQueryState(economySessionsKey(2))?.fetchStatus).toBe('idle'))
+  const before = failures()
+  // The control still shows page 1 (the last that loaded): "next" asks for page 2
+  // again, which the URL already holds. That must still fetch it, not no-op.
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
+  await vi.waitFor(() => expect(failures()).toBeGreaterThan(before))
+})
+
+test('Ekonomi: a scope that fails to load never keeps the previous scope’s rows', async () => {
+  // Gäster's overview loads but its table page is unseeded, so that read fails:
+  // the Alla rows must not stay under its toggle.
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomy(qc, 'all', 23)
+    seedEconomyOverview(qc, 'other', 3)
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await radio(screen, m.charging_vehicle_scope_other()).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  await vi.waitFor(() =>
+    expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0),
+  )
+})
+
+test('Ekonomi: previous from a page past the end steps back from the page served', async () => {
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=9', (qc) => {
+    seedEconomyRows(qc, 23)
+    seedEconomyPage(qc, { page: 9, pageSize: 10 }, 23, 3)
+  })
+  await expect.element(screen.getByText(kwhCell(21), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_previous() }).click()
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 2 })
 })
 
 // --- Översikt: the scope is a page filter --------------------------------------
@@ -1244,6 +1325,34 @@ test('Ekonomi: while another year loads, the table keeps the page it showed', as
   expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0)
   const list = screen.getByRole('table').element().closest('[aria-busy]')
   expect(list?.getAttribute('aria-busy')).toBe('true')
+  // Dimmed once, by its own query: not again by the year's dimmed figures.
+  expect(dimmedAncestors(screen.getByRole('table').element())).toBe(1)
+})
+
+test('Ekonomi: the year’s rows that landed are not dimmed while its figures still load', async () => {
+  const year2025 = orpc.evCharging.economy.queryOptions({
+    input: { year: 2025, vehicle: 'all' },
+  }).queryKey
+  const { screen, qc, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) => {
+    seedEconomyRows(qc, 23, [2026, 2025])
+    seedEconomyPage(qc, { page: 1, pageSize: 10, year: 2025 }, 23)
+  })
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  holdQuery(qc, year2025)
+  const original = qc.prefetchQuery.bind(qc)
+  vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) =>
+    JSON.stringify(opts.queryKey) === JSON.stringify(year2025)
+      ? Promise.resolve()
+      : original(opts as never)) as never)
+  await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
+  await screen.getByRole('option', { name: '2025' }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
+  // The new year's first page is in; the figures (the old year's) still dim.
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  const table = screen.getByRole('table').element()
+  expect(dimmedAncestors(table)).toBe(0)
+  expect(table.closest('[aria-busy]')?.getAttribute('aria-busy')).toBe('false')
+  expect(document.querySelector('[aria-busy="true"].opacity-60')).not.toBeNull()
 })
 
 test('Ekonomi: back steps to the previous page of the table', async () => {

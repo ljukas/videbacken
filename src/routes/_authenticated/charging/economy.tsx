@@ -190,37 +190,44 @@ function EconomyPage() {
               <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
             ) : null}
             {economy.tiles.sessions > 0 ? (
-              <div
-                className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}
-                aria-busy={stale}
-              >
-                <EconomyTiles tiles={economy.tiles} />
-                <section aria-labelledby={sekHeadingId}>
-                  <Card>
-                    <CardHeader>
-                      <h2 id={sekHeadingId} className="font-medium text-sm">
-                        {m.charging_economy_chart_sek_title()}
-                      </h2>
-                    </CardHeader>
-                    <CardContent>
-                      <EconomyMonthlyChart months={economy.months} />
-                    </CardContent>
-                  </Card>
-                </section>
-                <section aria-labelledby={spotHeadingId}>
-                  <Card>
-                    <CardHeader>
-                      <h2 id={spotHeadingId} className="font-medium text-sm">
-                        {m.charging_economy_chart_spot_title()}
-                      </h2>
-                    </CardHeader>
-                    <CardContent>
-                      <SpotComparisonChart months={economy.months} />
-                    </CardContent>
-                  </Card>
-                </section>
+              // The year's figures dim while another year or scope loads; the
+              // session table sits outside them and dims by its own query only
+              // (nested, it would dim twice and stay dimmed after its rows land).
+              <div className="flex flex-col gap-4">
+                <div
+                  className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}
+                  aria-busy={stale}
+                >
+                  <EconomyTiles tiles={economy.tiles} />
+                  <section aria-labelledby={sekHeadingId}>
+                    <Card>
+                      <CardHeader>
+                        <h2 id={sekHeadingId} className="font-medium text-sm">
+                          {m.charging_economy_chart_sek_title()}
+                        </h2>
+                      </CardHeader>
+                      <CardContent>
+                        <EconomyMonthlyChart months={economy.months} />
+                      </CardContent>
+                    </Card>
+                  </section>
+                  <section aria-labelledby={spotHeadingId}>
+                    <Card>
+                      <CardHeader>
+                        <h2 id={spotHeadingId} className="font-medium text-sm">
+                          {m.charging_economy_chart_spot_title()}
+                        </h2>
+                      </CardHeader>
+                      <CardContent>
+                        <SpotComparisonChart months={economy.months} />
+                      </CardContent>
+                    </Card>
+                  </section>
+                </div>
                 <EconomySessionsCard year={year} vehicle={vehicle} />
-                <EconomyFootnote excluded={economy.tiles.excluded} />
+                <div className={cn('transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
+                  <EconomyFootnote excluded={economy.tiles.excluded} />
+                </div>
               </div>
             ) : (
               <Empty
@@ -259,7 +266,10 @@ function EconomyPage() {
 // (economySessions). Its own query and component, so a page click re-renders
 // only this card. Another page or scope keeps the current rows, dimmed, until
 // the next ones land; after a failed read only this scope's last page stays,
-// under the alert (the rule /charging's list follows).
+// dimmed under the alert (the rule /charging's list follows). The pagination
+// stays usable throughout: focus stays on the control while a page loads, and
+// after a failure it steps to another page or retries this one (a click on the
+// old page's control pages from the URL, which already holds the new page).
 function EconomySessionsCard({
   year,
   vehicle,
@@ -312,17 +322,13 @@ function EconomySessionsCard({
                 className={cn('flex flex-col gap-3 transition-opacity', stale && 'opacity-60')}
               >
                 <EconomySessionTable sessions={shown.rows} labelledBy={headingId} />
-                {/* Inert while another page or scope loads: a click on the old
-                    page's controls would page from the wrong place. */}
-                <div inert={stale}>
-                  <SessionPagination
-                    page={shown.page}
-                    pageSize={shown.pageSize}
-                    total={shown.total}
-                    onPageChange={paging.setPage}
-                    onPageSizeChange={paging.setPageSize}
-                  />
-                </div>
+                <SessionPagination
+                  page={shown.page}
+                  pageSize={shown.pageSize}
+                  total={shown.total}
+                  onPageChange={paging.setPage}
+                  onPageSizeChange={paging.setPageSize}
+                />
               </div>
             ) : null}
           </SectionSkeleton>
