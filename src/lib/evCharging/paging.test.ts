@@ -5,6 +5,7 @@ import {
   MAX_SESSION_PAGE_SIZE,
   pageCount,
   pageItems,
+  pageKeepingTopRow,
   pageSlice,
   SESSION_PAGE_SIZES,
   sessionPageSize,
@@ -110,4 +111,17 @@ test('pageSlice serves one page of rows, clamping a page past the end like the s
   expect(pageSlice(rows, 0, 10)).toEqual({ rows: rows.slice(0, 10), page: 1 })
   expect(pageSlice(rows, 1, 25)).toEqual({ rows, page: 1 })
   expect(pageSlice([], 4, 10)).toEqual({ rows: [], page: 1 })
+})
+
+test('pageKeepingTopRow keeps the first row of the page in view at the new size', () => {
+  // Page 3 at 10 shows rows 21–30: row 21 is on page 1 at 25 and at 50.
+  expect(pageKeepingTopRow(3, 10, 25)).toBe(1)
+  expect(pageKeepingTopRow(3, 10, 50)).toBe(1)
+  // Page 4 at 10 starts at row 31: page 2 at 25 (rows 26–50).
+  expect(pageKeepingTopRow(4, 10, 25)).toBe(2)
+  // Shrinking: page 2 at 50 starts at row 51, page 6 at 10 (rows 51–60).
+  expect(pageKeepingTopRow(2, 50, 10)).toBe(6)
+  expect(pageKeepingTopRow(1, 25, 10)).toBe(1)
+  // The same size is the same page.
+  expect(pageKeepingTopRow(7, 25, 25)).toBe(7)
 })

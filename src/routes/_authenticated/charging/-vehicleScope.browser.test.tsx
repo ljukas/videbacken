@@ -65,7 +65,7 @@ const scoped = (keys: string[], procedure: string) =>
 test.each([
   ['overview', Overview, ['overview', 'sessions', 'costOverview']],
   ['patterns', Patterns, ['patterns', 'timeline']],
-  ['economy', Economy, ['economy']],
+  ['economy', Economy, ['economy', 'economySessions']],
 ] as const)('%s: a clean URL requests everything, ?vehicle=ours passes ours', async (_n, route, procs) => {
   const clean = await runLoader(route as unknown as RouteLike, {})
   const ours = await runLoader(route as unknown as RouteLike, { vehicle: 'ours' })
@@ -88,4 +88,12 @@ test.each([
   const deps = (search: Record<string, unknown>) =>
     (r.options.loaderDeps as (a: { search: unknown }) => unknown)({ search: validator(r)(search) })
   expect(deps({ page: 2, size: 25 })).toEqual(deps({}))
+})
+
+test('economy: the session list’s page and size come from the URL, not the deps', async () => {
+  const keys = await runLoader(Economy as unknown as RouteLike, { page: 3, size: 25 })
+  const list = scoped(keys, 'economySessions')
+  expect(list).toHaveLength(1)
+  expect(list[0]).toContain('"page":3')
+  expect(list[0]).toContain('"pageSize":25')
 })

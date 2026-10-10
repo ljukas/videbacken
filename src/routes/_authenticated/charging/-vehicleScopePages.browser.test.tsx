@@ -7,10 +7,13 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { afterEach, expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-react'
 import { formatDate } from '~/components/evCharging/format'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { emptyTotals } from '~/lib/evCharging/cost'
+import type { EconomyListRow } from '~/lib/evCharging/economy'
+import { SESSION_PAGE_SIZES, type SessionPageSize } from '~/lib/evCharging/paging'
 import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
@@ -532,6 +535,11 @@ test('Översikt, tariffs still loading: no "set up a tariff" notice', async () =
 const economyKey = orpc.evCharging.economy.queryOptions({
   input: { year: undefined, vehicle: 'all' },
 }).queryKey
+// The economy table's page as the route requests it for a clean URL's scope.
+const economySessionsKey = (page: number, pageSize: SessionPageSize = 10) =>
+  orpc.evCharging.economySessions.queryOptions({
+    input: { year: undefined, vehicle: 'all', page, pageSize },
+  }).queryKey
 const timelineKey = orpc.evCharging.timeline.queryOptions({
   input: { year: undefined, month: undefined, vehicle: 'all' },
 }).queryKey
@@ -579,6 +587,20 @@ test('Ekonomi loaded: no skeleton', async () => {
     .element(screen.getByRole('link', { name: m.charging_economy_grid_only_link() }))
     .toBeVisible()
   expect(skeleton('charging-economy')).toBeNull()
+  expect(skeleton('charging-economy-sessions')).toBeNull()
+})
+
+test('Ekonomi loaded, session table still loading: only the table is a skeleton', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomy(qc, 'all', 3)
+    pendingForever(qc, economySessionsKey(1))
+  })
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_economy_grid_only_link() }))
+    .toBeVisible()
+  await expect.poll(() => skeleton('charging-economy-sessions')).not.toBeNull()
+  expect(skeleton('charging-economy')).toBeNull()
+  expect(screen.getByText(m.charging_sessions_error_title()).elements()).toHaveLength(0)
 })
 
 test('Mönster still loading: one skeleton for the body, heading and scope toggle usable', async () => {
@@ -637,17 +659,63 @@ const economyTotals = (sessions: number) => ({
   avgSpotOre: sessions > 0 ? 110 : null,
 })
 
-function seedEconomy(qc: QueryClient, vehicle: VehicleScope, sessions: number) {
+// The year's sessions, newest first: row n (1-based) charged 100 + n + 0.1 kWh,
+// so "101,1" is the newest and each row's kWh names it.
+const economyRow = (n: number): EconomyListRow => ({
+  sessionId: `e${n}`,
+  startAt: new Date(Date.UTC(2026, 8, 31 - n, 18)),
+  endAt: new Date(Date.UTC(2026, 8, 31 - n, 20)),
+  kwh: 100 + n + 0.1,
+  actualSek: 20,
+  vehicle: 'ours',
+  excluded: null,
+  counterfactual: { score: 0.5, savedVsImmediateSek: 5, leftOnTableSek: 5, spreadSek: 15 },
+})
+
+// One page of the economy table as the server serves it: `total` sessions in
+// the scope, and the page it says it served (the requested one unless it clamped).
+function seedEconomyPage(
+  qc: QueryClient,
+  input: { page: number; pageSize: SessionPageSize; year?: number; vehicle?: VehicleScope },
+  total: number,
+  served = input.page,
+) {
+  const from = (served - 1) * input.pageSize + 1
+  const count = Math.max(0, Math.min(input.pageSize, total - from + 1))
+  qc.setQueryData(
+    orpc.evCharging.economySessions.queryOptions({
+      input: { year: undefined, vehicle: 'all', ...input },
+    }).queryKey,
+    {
+      page: served,
+      pageSize: input.pageSize,
+      total,
+      rows: Array.from({ length: count }, (_, i) => economyRow(from + i)),
+    },
+  )
+}
+
+function seedEconomyOverview(
+  qc: QueryClient,
+  vehicle: VehicleScope,
+  sessions: number,
+  years = [2026],
+) {
   qc.setQueryData(
     orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle } }).queryKey,
     {
       year: 2026,
-      years: [2026],
+      years,
       tiles: economyTotals(sessions),
       months: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...economyTotals(0) })),
-      sessions: [],
     } as never,
   )
+}
+
+// The page's overview and its table's first page (what a clean URL reads).
+function seedEconomy(qc: QueryClient, vehicle: VehicleScope, sessions: number) {
+  seedEconomyOverview(qc, vehicle, sessions)
+  seedEconomyPage(qc, { page: 1, pageSize: 10, vehicle }, sessions)
 }
 
 test.each([
@@ -743,7 +811,7 @@ test('Översikt: back steps to the previous page', async () => {
   expect(router.state.location.search).toMatchObject({ page: 2 })
 })
 
-test('Översikt: a new page size starts over at its first page', async () => {
+test('Översikt: a new page size lands on the page holding the top row (page 1 here)', async () => {
   const { screen, router } = await renderPage(Overview, '/charging', '?page=2', seedPagedOverview)
   await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
   await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
@@ -875,6 +943,22 @@ test('Översikt: a size change replaces the page it left in history', async () =
   expect(router.state.location.search).not.toHaveProperty('size')
 })
 
+test('Översikt: a new page size lands on the page holding the first row, replacing the entry', async () => {
+  // 35 sessions: page 4 at 10 starts at row 31, which is on page 2 at 25.
+  const { screen, router } = await renderPage(Overview, '/charging', '?page=4', (qc) => {
+    seedPagedOverview(qc)
+    seedSessionsPage(qc, { page: 4, pageSize: 10 }, [session('p4', 7.7)], 35)
+    seedSessionsPage(qc, { page: 2, pageSize: 25 }, [session('p2-25', 8.8)], 35)
+  })
+  await expect.element(screen.getByText('7,7', { exact: false })).toBeVisible()
+  const entries = router.history.length
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '25' }).click()
+  await expect.element(screen.getByText('8,8', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 2, size: 25 })
+  expect(router.history.length).toBe(entries)
+})
+
 test('Översikt: a page that fails to load keeps the last page, dimmed, under the alert', async () => {
   // Page 2 is unseeded, so its read fails (no /api/rpc in the test server).
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
@@ -897,43 +981,23 @@ test('Översikt: a page that fails to load keeps the last page, dimmed, under th
 
 // --- Ekonomi: the session table's pages ----------------------------------------
 
-// The year's sessions, newest first: row n (1-based) charged 100 + n + 0.1 kWh,
-// so "101,1" is the newest and each row's kWh names it.
+// The year's overview with `count` sessions, and every page of its table at
+// each size, as the server serves them.
 function seedEconomyRows(qc: QueryClient, count: number, years = [2026]) {
-  const cost = (totalSek: number) => ({ ...emptyTotals(), kwh: 10, gridKwh: 10, totalSek })
-  const rows = Array.from({ length: count }, (_, i) => ({
-    sessionId: `e${i + 1}`,
-    startAt: new Date(Date.UTC(2026, 8, 30 - i, 18)),
-    endAt: new Date(Date.UTC(2026, 8, 30 - i, 20)),
-    kwh: 100 + i + 1 + 0.1,
-    actual: cost(20),
-    actualComplete: true,
-    paidSpotOre: 40,
-    windowAvgSpotOre: 55,
-    vehicle: 'ours',
-    excluded: null,
-    counterfactual: {
-      immediate: cost(25),
-      optimal: cost(15),
-      dearest: cost(30),
-      score: 0.5,
-      savedVsImmediateSek: 5,
-      leftOnTableSek: 5,
-    },
-  }))
-  qc.setQueryData(
-    orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle: 'all' } }).queryKey,
-    {
-      year: 2026,
-      years,
-      tiles: economyTotals(count),
-      months: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...economyTotals(0) })),
-      sessions: rows,
-    } as never,
-  )
+  seedEconomyOverview(qc, 'all', count, years)
+  for (const pageSize of SESSION_PAGE_SIZES) {
+    const pages = Math.max(1, Math.ceil(count / pageSize))
+    for (let page = 1; page <= pages; page++) seedEconomyPage(qc, { page, pageSize }, count)
+  }
 }
 
 const kwhCell = (n: number) => `${100 + n},1`
+/** How many of `el`'s ancestors are dimmed (`opacity-60`). */
+const dimmedAncestors = (el: Element) => {
+  let n = 0
+  for (let a = el.parentElement; a; a = a.parentElement) if (a.classList.contains('opacity-60')) n++
+  return n
+}
 
 test('Ekonomi: the session table shows its newest 10, then pages through the year', async () => {
   const { screen, router } = await renderPage(Economy, '/charging/economy', '', (qc) =>
@@ -964,10 +1028,44 @@ test('Ekonomi: 25 rows per page shows the whole year on one page', async () => {
   expect(router.state.location.search).not.toHaveProperty('page')
 })
 
-test('Ekonomi: a page past the end shows the last page', async () => {
-  const { screen } = await renderPage(Economy, '/charging/economy', '?page=9', (qc) =>
-    seedEconomyRows(qc, 23),
+test('Ekonomi: a new page size lands on the page holding the first row, replacing the entry', async () => {
+  // 35 sessions: page 4 at 10 starts at row 31, which is on page 2 at 25.
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=4', (qc) =>
+    seedEconomyRows(qc, 35),
   )
+  await expect.element(screen.getByText(kwhCell(31), { exact: false })).toBeVisible()
+  const entries = router.history.length
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '25' }).click()
+  await expect.element(screen.getByText(kwhCell(26), { exact: false })).toBeVisible()
+  expect(screen.getByText(kwhCell(25), { exact: false }).elements()).toHaveLength(0)
+  expect(router.state.location.search).toMatchObject({ page: 2, size: 25 })
+  expect(router.history.length).toBe(entries)
+})
+
+test('Ekonomi: a size change from a page past the end keeps the top row of the page served', async () => {
+  // ?page=99 at 50 is served as page 2 (rows 51–100); 10 per page lands on page 6, not 99's 491.
+  const { screen, router } = await renderPage(
+    Economy,
+    '/charging/economy',
+    '?page=99&size=50',
+    (qc) => {
+      seedEconomyRows(qc, 100)
+      seedEconomyPage(qc, { page: 99, pageSize: 50 }, 100, 2)
+    },
+  )
+  await expect.element(screen.getByText(kwhCell(51), { exact: false })).toBeVisible()
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '10' }).click()
+  await expect.element(screen.getByText(kwhCell(51), { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 6 })
+})
+
+test('Ekonomi: a page past the end shows the last page the server served', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '?page=9', (qc) => {
+    seedEconomyRows(qc, 23)
+    seedEconomyPage(qc, { page: 9, pageSize: 10 }, 23, 3)
+  })
   await expect.element(screen.getByText(kwhCell(21), { exact: false })).toBeVisible()
   await expect
     .element(screen.getByRole('button', { name: '3', exact: true }))
@@ -1003,6 +1101,100 @@ test('Ekonomi: ten sessions or fewer need no pagination', async () => {
   expect(
     screen.getByRole('navigation', { name: m.charging_sessions_pagination_label() }).elements(),
   ).toHaveLength(0)
+})
+
+test('Ekonomi: a page that fails to load keeps the last page, dimmed, under the alert', async () => {
+  // Page 2 is unseeded, so its read fails (no /api/rpc in the test server).
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyOverview(qc, 'all', 23)
+    seedEconomyPage(qc, { page: 1, pageSize: 10 }, 23)
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: '2', exact: true }).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  // The rows, the control and the rest of the page stay.
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_economy_grid_only_link() }))
+    .toBeVisible()
+  const list = screen.getByRole('table').element().closest('[aria-busy]')
+  expect(list?.getAttribute('aria-busy')).toBe('false')
+  expect(list?.className).toContain('opacity-60')
+})
+
+test('Ekonomi: while a new page size loads, focus stays on the control', async () => {
+  const { screen, qc } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyOverview(qc, 'all', 23)
+    seedEconomyPage(qc, { page: 1, pageSize: 10 }, 23)
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  holdQuery(qc, economySessionsKey(1, 25))
+  const size = screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() })
+  await size.click()
+  await screen.getByRole('option', { name: '25' }).click()
+  const list = () => screen.getByRole('table').element().closest('[aria-busy]')
+  await vi.waitFor(() => expect(list()?.getAttribute('aria-busy')).toBe('true'))
+  // The size change never moves focus itself: the select hands it back to its
+  // trigger, which must stay focusable while the next page loads.
+  await vi.waitFor(() => expect(document.activeElement).toBe(size.element()))
+})
+
+test('Ekonomi: after a page fails, another page that loads clears the alert', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyOverview(qc, 'all', 23)
+    seedEconomyPage(qc, { page: 1, pageSize: 10 }, 23)
+    seedEconomyPage(qc, { page: 3, pageSize: 10 }, 23)
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: '2', exact: true }).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  await screen.getByRole('button', { name: '3', exact: true }).click()
+  await expect.element(screen.getByText(kwhCell(21), { exact: false })).toBeVisible()
+  expect(screen.getByText(m.charging_sessions_error_title()).elements()).toHaveLength(0)
+})
+
+test('Ekonomi: after a page fails, stepping to it again from the control retries it', async () => {
+  const { screen, qc } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyOverview(qc, 'all', 23)
+    seedEconomyPage(qc, { page: 1, pageSize: 10 }, 23)
+    qc.setQueryDefaults(economySessionsKey(2), { retry: false })
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  const failures = () => qc.getQueryState(economySessionsKey(2))?.errorUpdateCount ?? 0
+  await vi.waitFor(() => expect(qc.getQueryState(economySessionsKey(2))?.fetchStatus).toBe('idle'))
+  const before = failures()
+  // The control still shows page 1 (the last that loaded): "next" asks for page 2
+  // again, which the URL already holds. That must still fetch it, not no-op.
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
+  await vi.waitFor(() => expect(failures()).toBeGreaterThan(before))
+})
+
+test('Ekonomi: a scope that fails to load never keeps the previous scope’s rows', async () => {
+  // Gäster's overview loads but its table page is unseeded, so that read fails:
+  // the Alla rows must not stay under its toggle.
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomy(qc, 'all', 23)
+    seedEconomyOverview(qc, 'other', 3)
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await radio(screen, m.charging_vehicle_scope_other()).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  await vi.waitFor(() =>
+    expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0),
+  )
+})
+
+test('Ekonomi: previous from a page past the end steps back from the page served', async () => {
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=9', (qc) => {
+    seedEconomyRows(qc, 23)
+    seedEconomyPage(qc, { page: 9, pageSize: 10 }, 23, 3)
+  })
+  await expect.element(screen.getByText(kwhCell(21), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: m.charging_sessions_pagination_previous() }).click()
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 2 })
 })
 
 // --- Översikt: the scope is a page filter --------------------------------------
@@ -1105,13 +1297,16 @@ const sessionsKey = (page: number, pageSize: 10 | 25 | 50 = 10) =>
   orpc.evCharging.sessions.queryOptions({ input: { page, pageSize, vehicle: 'all' } }).queryKey
 
 test('Översikt: while the next page loads, the current rows stay, dimmed and busy', async () => {
-  const { screen, qc } = await renderPage(Overview, '/charging', '', (qc) => {
+  // Page 2 is held before the render: once page 1 lands, the eager next-page
+  // prefetch joins this fetch, as does the click below.
+  let release!: ReturnType<typeof holdQuery>
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverviewShell(qc)
     seedOverview(qc, 'all', [])
     seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
+    release = holdQuery(qc, sessionsKey(2))
   })
   await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
-  const release = holdQuery(qc, sessionsKey(2))
   await screen.getByRole('button', { name: '2', exact: true }).click()
   // Not blocked on the loader (the page is no loader dep): the list itself shows it's loading.
   const list = () => screen.getByRole('table').element().closest('[aria-busy]')
@@ -1159,12 +1354,43 @@ test('Ekonomi: while another year loads, the table keeps the page it showed', as
   const year2025 = orpc.evCharging.economy.queryOptions({
     input: { year: 2025, vehicle: 'all' },
   }).queryKey
+  const list2025 = orpc.evCharging.economySessions.queryOptions({
+    input: { year: 2025, vehicle: 'all', page: 1, pageSize: 10 },
+  }).queryKey
   const { screen, qc, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) =>
     seedEconomyRows(qc, 23, [2026, 2025]),
   )
   await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
-  // The year's read stays in flight, and the loader doesn't wait for it, so the
-  // page renders the old year as a placeholder while it loads.
+  // The year's reads stay in flight, and the loader doesn't wait for them, so
+  // the page renders the old year's as placeholders while they load.
+  holdQuery(qc, year2025)
+  holdQuery(qc, list2025)
+  const held = new Set([year2025, list2025].map((k) => JSON.stringify(k)))
+  const original = qc.prefetchQuery.bind(qc)
+  vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) =>
+    held.has(JSON.stringify(opts.queryKey)) ? Promise.resolve() : original(opts as never)) as never)
+  await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
+  await screen.getByRole('option', { name: '2025' }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
+  expect(router.state.location.search).not.toHaveProperty('page')
+  // Still the old year's second page (dimmed and busy), not a flash of its first.
+  await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
+  expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0)
+  const list = screen.getByRole('table').element().closest('[aria-busy]')
+  expect(list?.getAttribute('aria-busy')).toBe('true')
+  // Dimmed once, by its own query: not again by the year's dimmed figures.
+  expect(dimmedAncestors(screen.getByRole('table').element())).toBe(1)
+})
+
+test('Ekonomi: a scope whose list is empty shows no table while its figures still load', async () => {
+  const year2025 = orpc.evCharging.economy.queryOptions({
+    input: { year: 2025, vehicle: 'all' },
+  }).queryKey
+  const { screen, qc, router } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyRows(qc, 23, [2026, 2025])
+    seedEconomyPage(qc, { page: 1, pageSize: 10, year: 2025 }, 0)
+  })
+  await expect.element(screen.getByRole('table')).toBeVisible()
   holdQuery(qc, year2025)
   const original = qc.prefetchQuery.bind(qc)
   vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) =>
@@ -1174,10 +1400,34 @@ test('Ekonomi: while another year loads, the table keeps the page it showed', as
   await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
   await screen.getByRole('option', { name: '2025' }).click()
   await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
-  expect(router.state.location.search).not.toHaveProperty('page')
-  // Still the old year's second page (dimmed), not a flash of its first.
+  // The new year's list is in (empty) while its figures are the old year's placeholder.
+  await vi.waitFor(() => expect(screen.getByRole('table').elements()).toHaveLength(0))
+})
+
+test('Ekonomi: the year’s rows that landed are not dimmed while its figures still load', async () => {
+  const year2025 = orpc.evCharging.economy.queryOptions({
+    input: { year: 2025, vehicle: 'all' },
+  }).queryKey
+  const { screen, qc, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) => {
+    seedEconomyRows(qc, 23, [2026, 2025])
+    seedEconomyPage(qc, { page: 1, pageSize: 10, year: 2025 }, 23)
+  })
   await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
-  expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0)
+  holdQuery(qc, year2025)
+  const original = qc.prefetchQuery.bind(qc)
+  vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) =>
+    JSON.stringify(opts.queryKey) === JSON.stringify(year2025)
+      ? Promise.resolve()
+      : original(opts as never)) as never)
+  await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
+  await screen.getByRole('option', { name: '2025' }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
+  // The new year's first page is in; the figures (the old year's) still dim.
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  const table = screen.getByRole('table').element()
+  expect(dimmedAncestors(table)).toBe(0)
+  expect(table.closest('[aria-busy]')?.getAttribute('aria-busy')).toBe('false')
+  expect(document.querySelector('[aria-busy="true"].opacity-60')).not.toBeNull()
 })
 
 test('Ekonomi: back steps to the previous page of the table', async () => {
@@ -1209,4 +1459,124 @@ test('Översikt: after a page fails, stepping to it again from the control retri
   // again, which the URL already holds. That must still fetch it, not no-op.
   await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
   await vi.waitFor(() => expect(failures()).toBeGreaterThan(before))
+})
+
+// --- Prefetching the session pages ----------------------------------------------
+
+// Both lists, seeded with page 1 only (`total` sessions at 10 a page). The spy goes
+// on after the loader and before the render: it sees what the mounted page asks for.
+const prefetchLists = [
+  [
+    'Översikt',
+    Overview,
+    '/charging',
+    sessionsKey,
+    (qc: QueryClient, total: number, page = 1) => {
+      seedOverviewShell(qc)
+      seedOverview(qc, 'all', [])
+      seedSessionsPage(qc, { page, pageSize: 10 }, [session(`p${page}`, page + 0.1)], total)
+    },
+  ],
+  [
+    'Ekonomi',
+    Economy,
+    '/charging/economy',
+    economySessionsKey,
+    (qc: QueryClient, total: number, page = 1) => {
+      seedEconomyOverview(qc, 'all', total)
+      seedEconomyPage(qc, { page, pageSize: 10 }, total)
+    },
+  ],
+] as const
+
+const requestedKeys = (spy: { mock: { calls: unknown[][] } }) =>
+  spy.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey))
+
+test.each(
+  prefetchLists,
+)('%s: hovering a page link prefetches that page', async (_n, route, path, key, seed) => {
+  let spy!: ReturnType<typeof vi.spyOn>
+  const { screen } = await renderPage(
+    route,
+    path,
+    '',
+    (qc) => seed(qc, 35),
+    'admin',
+    (qc) => {
+      spy = vi.spyOn(qc, 'prefetchQuery')
+    },
+  )
+  await expect.element(screen.getByRole('button', { name: '3', exact: true })).toBeVisible()
+  await userEvent.hover(screen.getByRole('button', { name: '3', exact: true }))
+  await vi.waitFor(() => expect(requestedKeys(spy)).toContain(JSON.stringify(key(3))))
+})
+
+test.each(
+  prefetchLists,
+)('%s: once page 1 has landed, page 2 is requested', async (_n, route, path, key, seed) => {
+  let spy!: ReturnType<typeof vi.spyOn>
+  await renderPage(
+    route,
+    path,
+    '',
+    (qc) => seed(qc, 35),
+    'admin',
+    (qc) => {
+      spy = vi.spyOn(qc, 'prefetchQuery')
+    },
+  )
+  await vi.waitFor(() => expect(requestedKeys(spy)).toEqual([JSON.stringify(key(2))]))
+})
+
+test.each(
+  prefetchLists,
+)('%s: on the last page nothing past the end is requested', async (_n, route, path, _key, seed) => {
+  let spy!: ReturnType<typeof vi.spyOn>
+  const { screen } = await renderPage(
+    route,
+    path,
+    '?page=2',
+    (qc) => seed(qc, 20, 2),
+    'admin',
+    (qc) => {
+      spy = vi.spyOn(qc, 'prefetchQuery')
+    },
+  )
+  await expect.element(screen.getByRole('status')).toBeVisible()
+  await new Promise((r) => setTimeout(r, 200))
+  expect(spy).not.toHaveBeenCalled()
+})
+
+test.each(
+  prefetchLists,
+)('%s: placeholder rows request nothing until the page lands', async (_n, route, path, key, seed) => {
+  let spy!: ReturnType<typeof vi.spyOn>
+  let release!: ReturnType<typeof holdQuery>
+  const { screen } = await renderPage(
+    route,
+    path,
+    '',
+    (qc) => {
+      seed(qc, 35)
+      release = holdQuery(qc, key(2))
+    },
+    'admin',
+    (qc) => {
+      spy = vi.spyOn(qc, 'prefetchQuery')
+    },
+  )
+  // Page 1 landed: the eager prefetch joined the held page 2 fetch.
+  await vi.waitFor(() => expect(requestedKeys(spy)).toEqual([JSON.stringify(key(2))]))
+  await screen.getByRole('button', { name: '2', exact: true }).click()
+  const list = () => screen.getByRole('table').element().closest('[aria-busy]')
+  await vi.waitFor(() => expect(list()?.getAttribute('aria-busy')).toBe('true'))
+  await new Promise((r) => setTimeout(r, 200))
+  // (The click's own hover and focus re-ask for page 2; page 3 waits for it to land.)
+  expect(requestedKeys(spy)).not.toContain(JSON.stringify(key(3)))
+  release(
+    route === Overview
+      ? { sessions: [session('p2', 2.2)], total: 35, page: 2, pageSize: 10, costs: [] }
+      : { page: 2, pageSize: 10, total: 35, rows: [economyRow(11)] },
+  )
+  await vi.waitFor(() => expect(requestedKeys(spy)).toContain(JSON.stringify(key(3))))
 })

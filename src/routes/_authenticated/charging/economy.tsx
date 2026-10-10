@@ -1,9 +1,10 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { PiggyBankIcon } from 'lucide-react'
 import { useCallback, useId, useState } from 'react'
 import { z } from 'zod'
 import chargingEconomyBones from '~/bones/charging-economy.bones.json'
+import chargingEconomySessionsBones from '~/bones/charging-economy-sessions.bones.json'
 import { ChargingHeading } from '~/components/evCharging/ChargingHeading'
 import { EconomyFootnote } from '~/components/evCharging/EconomyFootnote'
 import { EconomyGridOnlyLead } from '~/components/evCharging/EconomyGridOnlyLead'
@@ -22,16 +23,21 @@ import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
+import { useNextPagePrefetch } from '~/hooks/useNextPagePrefetch'
 import { useSessionPaging } from '~/hooks/useSessionPaging'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
-import { DEFAULT_SESSION_PAGE_SIZE, pageSlice, sessionPagingSearch } from '~/lib/evCharging/paging'
+import {
+  DEFAULT_SESSION_PAGE_SIZE,
+  type SessionPageSize,
+  sessionPagingSearch,
+} from '~/lib/evCharging/paging'
 import {
   DEFAULT_VEHICLE_SCOPE,
   type VehicleScope,
   vehicleScope,
   vehicleScopeParam,
 } from '~/lib/evCharging/vehicle'
-import { orpc, type RouterOutputs } from '~/lib/orpc/client'
+import { orpc } from '~/lib/orpc/client'
 import { loadRouteData } from '~/lib/query/routeData'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
@@ -42,13 +48,19 @@ const searchSchema = z.object({
   // Whose charging: a clean URL means every counted session.
   vehicle: vehicleScope.optional().catch(undefined),
   // The session table's page and rows per page: a clean URL is its first 10.
-  // Not loader deps: the page loads the whole year (the tiles and charts need
-  // all of it) and the table shows a slice of it.
+  // Not loader deps: the page loads only the table's page (economySessions),
+  // read from the URL in the loader, as /charging's list.
   ...sessionPagingSearch.shape,
 })
 
 const economyQuery = (year: number | undefined, vehicle: VehicleScope) =>
   orpc.evCharging.economy.queryOptions({ input: { year, vehicle } })
+const economySessionsQuery = (
+  year: number | undefined,
+  vehicle: VehicleScope,
+  page: number,
+  pageSize: SessionPageSize,
+) => orpc.evCharging.economySessions.queryOptions({ input: { year, vehicle, page, pageSize } })
 
 export const Route = createFileRoute('/_authenticated/charging/economy')({
   head: () => ({
@@ -64,10 +76,25 @@ export const Route = createFileRoute('/_authenticated/charging/economy')({
   }),
   // ADR-0025: awaited on the server only; the client shows the skeleton. A
   // failed economy read shows its own alert under a working heading.
-  loader: ({ context: { queryClient }, deps }) =>
-    loadRouteData(queryClient, {
-      critical: [economyQuery(deps.year, deps.vehicle), syncHealthQuery],
-    }),
+  // The list's page and size are deliberately not loader deps: a dep change
+  // blocks the navigation on this whole loader, so a page click would freeze on
+  // the old page. Read here, SSR and a shared link still render the page the
+  // URL asks for; a page click is the list's own query (see /charging).
+  loader: ({ context: { queryClient }, deps, location }) => {
+    const paging = sessionPagingSearch.parse(location.search)
+    return loadRouteData(queryClient, {
+      critical: [
+        economyQuery(deps.year, deps.vehicle),
+        economySessionsQuery(
+          deps.year,
+          deps.vehicle,
+          paging.page ?? 1,
+          paging.size ?? DEFAULT_SESSION_PAGE_SIZE,
+        ),
+        syncHealthQuery,
+      ],
+    })
+  },
   component: EconomyPage,
 })
 
@@ -164,37 +191,44 @@ function EconomyPage() {
               <EconomyGridOnlyLead year={economy.year} vehicle={vehicleParam} />
             ) : null}
             {economy.tiles.sessions > 0 ? (
-              <div
-                className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}
-                aria-busy={stale}
-              >
-                <EconomyTiles tiles={economy.tiles} />
-                <section aria-labelledby={sekHeadingId}>
-                  <Card>
-                    <CardHeader>
-                      <h2 id={sekHeadingId} className="font-medium text-sm">
-                        {m.charging_economy_chart_sek_title()}
-                      </h2>
-                    </CardHeader>
-                    <CardContent>
-                      <EconomyMonthlyChart months={economy.months} />
-                    </CardContent>
-                  </Card>
-                </section>
-                <section aria-labelledby={spotHeadingId}>
-                  <Card>
-                    <CardHeader>
-                      <h2 id={spotHeadingId} className="font-medium text-sm">
-                        {m.charging_economy_chart_spot_title()}
-                      </h2>
-                    </CardHeader>
-                    <CardContent>
-                      <SpotComparisonChart months={economy.months} />
-                    </CardContent>
-                  </Card>
-                </section>
-                <EconomySessionsCard sessions={economy.sessions} stale={stale} />
-                <EconomyFootnote excluded={economy.tiles.excluded} />
+              // The year's figures dim while another year or scope loads; the
+              // session table sits outside them and dims by its own query only
+              // (nested, it would dim twice and stay dimmed after its rows land).
+              <div className="flex flex-col gap-4">
+                <div
+                  className={cn('flex flex-col gap-4 transition-opacity', stale && 'opacity-60')}
+                  aria-busy={stale}
+                >
+                  <EconomyTiles tiles={economy.tiles} />
+                  <section aria-labelledby={sekHeadingId}>
+                    <Card>
+                      <CardHeader>
+                        <h2 id={sekHeadingId} className="font-medium text-sm">
+                          {m.charging_economy_chart_sek_title()}
+                        </h2>
+                      </CardHeader>
+                      <CardContent>
+                        <EconomyMonthlyChart months={economy.months} />
+                      </CardContent>
+                    </Card>
+                  </section>
+                  <section aria-labelledby={spotHeadingId}>
+                    <Card>
+                      <CardHeader>
+                        <h2 id={spotHeadingId} className="font-medium text-sm">
+                          {m.charging_economy_chart_spot_title()}
+                        </h2>
+                      </CardHeader>
+                      <CardContent>
+                        <SpotComparisonChart months={economy.months} />
+                      </CardContent>
+                    </Card>
+                  </section>
+                </div>
+                <EconomySessionsCard year={year} vehicle={vehicle} />
+                <div className={cn('transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
+                  <EconomyFootnote excluded={economy.tiles.excluded} />
+                </div>
               </div>
             ) : (
               <Empty
@@ -229,24 +263,44 @@ function EconomyPage() {
   )
 }
 
-type EconomyRow = RouterOutputs['evCharging']['economy']['sessions'][number]
-
-// The year's sessions, newest first, one page at a time, sliced from the year
-// the page already loaded (a page past the end shows the last). Its own
-// component, reading only its own params, so a page click re-renders this card
-// and not the charts. While another year or scope loads (`stale`, the old
-// payload dimmed) it keeps slicing at the page it showed: the URL has already
-// gone back to page 1, and slicing the old year there would flash its first
-// page before the new year lands.
-function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stale: boolean }) {
+// The year's sessions, newest first, one page at a time from the server
+// (economySessions). Its own query and component, so a page click re-renders
+// only this card. Another page or scope keeps the current rows, dimmed, until
+// the next ones land; after a failed read only this scope's last page stays,
+// dimmed under the alert (the rule /charging's list follows). The pagination
+// stays usable throughout: focus stays on the control while a page loads, and
+// after a failure it steps to another page or retries this one (a click on the
+// old page's control pages from the URL, which already holds the new page).
+function EconomySessionsCard({
+  year,
+  vehicle,
+}: {
+  year: number | undefined
+  vehicle: VehicleScope
+}) {
   const headingId = useId()
-  // The same URL conventions as /charging's list.
-  const requestedPage = Route.useSearch({ select: (s) => s.page ?? 1 })
+  const page = Route.useSearch({ select: (s) => s.page ?? 1 })
   const pageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
-  // Set during render: React's pattern for state derived from a changing value.
-  const [shownPage, setShownPage] = useState(requestedPage)
-  if (!stale && shownPage !== requestedPage) setShownPage(requestedPage)
-  const page = pageSlice(sessions, stale ? shownPage : requestedPage, pageSize)
+  const list = useQuery({
+    ...economySessionsQuery(year, vehicle, page, pageSize),
+    placeholderData: keepPreviousData,
+  })
+  const queryClient = useQueryClient()
+  const prefetchPage = useCallback(
+    (p: number) => void queryClient.prefetchQuery(economySessionsQuery(year, vehicle, p, pageSize)),
+    [queryClient, year, vehicle, pageSize],
+  )
+  useNextPagePrefetch(list, prefetchPage)
+  const scope = `${year ?? 'current'}:${vehicle}`
+  const [lastLoaded, setLastLoaded] = useState(() =>
+    list.data && !list.isPlaceholderData ? { scope, data: list.data } : undefined,
+  )
+  if (list.data && !list.isPlaceholderData && list.data !== lastLoaded?.data) {
+    setLastLoaded({ scope, data: list.data })
+  }
+  const lastInScope = lastLoaded?.scope === scope ? lastLoaded.data : undefined
+  const shown = loadFailed(list) ? lastInScope : (list.data ?? lastInScope)
+  const stale = list.data === undefined || list.isPlaceholderData
   const paging = useSessionPaging<z.infer<typeof searchSchema>>(Route.useNavigate())
 
   return (
@@ -263,18 +317,31 @@ function EconomySessionsCard({ sessions, stale }: { sessions: EconomyRow[]; stal
           </h2>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <EconomySessionTable sessions={page.rows} labelledBy={headingId} />
-          {/* Inert while another year or scope loads: a page picked in the old
-              year's table would carry into the new one's. */}
-          <div inert={stale}>
-            <SessionPagination
-              page={page.page}
-              pageSize={pageSize}
-              total={sessions.length}
-              onPageChange={paging.setPage}
-              onPageSizeChange={paging.setPageSize}
-            />
-          </div>
+          <LoadErrorAlert title={m.charging_sessions_error_title()} query={list} />
+          <SectionSkeleton
+            bones={chargingEconomySessionsBones}
+            loading={firstLoadPending(list)}
+            fallbackHeight="24rem"
+          >
+            {/* An empty scope has no table at all: its empty state comes from the figures, and
+                a header-only table would show under their old, dimmed ones until they land. */}
+            {shown && shown.total > 0 ? (
+              <div
+                aria-busy={stale && !loadFailed(list)}
+                className={cn('flex flex-col gap-3 transition-opacity', stale && 'opacity-60')}
+              >
+                <EconomySessionTable sessions={shown.rows} labelledBy={headingId} />
+                <SessionPagination
+                  page={shown.page}
+                  pageSize={shown.pageSize}
+                  total={shown.total}
+                  onPageChange={paging.setPage}
+                  onPageSizeChange={paging.setPageSize}
+                  prefetchPage={prefetchPage}
+                />
+              </div>
+            ) : null}
+          </SectionSkeleton>
         </CardContent>
       </Card>
     </section>

@@ -36,12 +36,18 @@ export function SessionPagination({
   total,
   onPageChange,
   onPageSizeChange,
+  prefetchPage,
 }: {
   page: number
   pageSize: number
   total: number
   onPageChange: (page: number) => void
-  onPageSizeChange: (pageSize: SessionPageSize) => void
+  /** `fromPage` is the page on screen (a page past the end clamped), the one a
+   * size change keeps its top row of. */
+  onPageSizeChange: (pageSize: SessionPageSize, fromPage: number, fromSize: number) => void
+  /** Called with a page a control points at, on hover, focus or touch, so the
+   * click finds it loaded. Never for the current page or past either end. */
+  prefetchPage?: (page: number) => void
 }) {
   const sizeId = useId()
   if (total <= SESSION_PAGE_SIZES[0]) return null
@@ -50,6 +56,16 @@ export function SessionPagination({
   const current = Math.min(Math.max(page, 1), count)
   const from = (current - 1) * pageSize + 1
   const to = Math.min(current * pageSize, total)
+
+  // Hover, keyboard focus and a finger's touch-down all come before the click.
+  const intent = (target: number): PrefetchIntent =>
+    prefetchPage && target !== current && target >= 1 && target <= count
+      ? {
+          onPointerEnter: () => prefetchPage(target),
+          onFocus: () => prefetchPage(target),
+          onTouchStart: () => prefetchPage(target),
+        }
+      : {}
 
   return (
     // Sized by its own width (a container query), not the viewport's: the same
@@ -84,7 +100,7 @@ export function SessionPagination({
             value={String(pageSize)}
             onValueChange={(v) => {
               const size = SESSION_PAGE_SIZES.find((s) => String(s) === v)
-              if (size) onPageSizeChange(size)
+              if (size) onPageSizeChange(size, current, pageSize)
             }}
           >
             {/* A 44 px target under a finger (the size variant would win without the !). */}
@@ -114,6 +130,7 @@ export function SessionPagination({
                 label={m.charging_sessions_pagination_previous()}
                 unavailable={current <= 1}
                 onClick={() => onPageChange(current - 1)}
+                intent={intent(current - 1)}
               >
                 <ChevronLeftIcon />
               </StepButton>
@@ -137,6 +154,7 @@ export function SessionPagination({
                     className="pointer-coarse:size-11 tabular-nums"
                     aria-current={item === current ? 'page' : undefined}
                     onClick={item === current ? undefined : () => onPageChange(item)}
+                    {...intent(item)}
                   >
                     {item}
                   </Button>
@@ -152,6 +170,7 @@ export function SessionPagination({
                 label={m.charging_sessions_pagination_next()}
                 unavailable={current >= count}
                 onClick={() => onPageChange(current + 1)}
+                intent={intent(current + 1)}
               >
                 <ChevronRightIcon />
               </StepButton>
@@ -163,6 +182,12 @@ export function SessionPagination({
   )
 }
 
+type PrefetchIntent = {
+  onPointerEnter?: () => void
+  onFocus?: () => void
+  onTouchStart?: () => void
+}
+
 // Previous/next. At either end it is aria-disabled rather than disabled: a
 // focused button that turns `disabled` drops focus to <body>, so stepping onto
 // the last page would lose a keyboard user's place. A 44 px target under a
@@ -171,11 +196,13 @@ function StepButton({
   label,
   unavailable,
   onClick,
+  intent,
   children,
 }: {
   label: string
   unavailable: boolean
   onClick: () => void
+  intent: PrefetchIntent
   children: ReactNode
 }) {
   return (
@@ -186,6 +213,7 @@ function StepButton({
       aria-label={label}
       aria-disabled={unavailable || undefined}
       onClick={unavailable ? undefined : onClick}
+      {...intent}
     >
       {children}
     </Button>
