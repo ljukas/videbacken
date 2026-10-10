@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-react'
 import { m } from '~/paraglide/messages'
 import { SessionPagination } from './SessionPagination'
@@ -224,4 +225,46 @@ test('a last page holding one session names it alone, not as "101–101"', async
   await expect
     .element(screen.getByRole('status'))
     .toMatchTextContent(m.charging_sessions_pagination_range_one({ n: 101, total: 101 }))
+})
+
+test('prefetches a page when its number or arrow is hovered, focused or touched', async () => {
+  const prefetchPage = vi.fn()
+  const screen = await render(
+    <SessionPagination
+      page={2}
+      pageSize={10}
+      total={214}
+      onPageChange={noop}
+      onPageSizeChange={noop}
+      prefetchPage={prefetchPage}
+    />,
+  )
+  await userEvent.hover(screen.getByRole('button', page(3)))
+  expect(prefetchPage).toHaveBeenLastCalledWith(3)
+  screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).element().focus()
+  expect(prefetchPage).toHaveBeenLastCalledWith(3)
+  screen
+    .getByRole('button', { name: m.charging_sessions_pagination_previous() })
+    .element()
+    .dispatchEvent(new TouchEvent('touchstart', { bubbles: true }))
+  expect(prefetchPage).toHaveBeenLastCalledWith(1)
+})
+
+test('never prefetches the current page or past either end', async () => {
+  const prefetchPage = vi.fn()
+  const screen = await render(
+    <SessionPagination
+      page={1}
+      pageSize={10}
+      total={14}
+      onPageChange={noop}
+      onPageSizeChange={noop}
+      prefetchPage={prefetchPage}
+    />,
+  )
+  await userEvent.hover(screen.getByRole('button', page(1)))
+  screen.getByRole('button', { name: m.charging_sessions_pagination_previous() }).element().focus()
+  expect(prefetchPage).not.toHaveBeenCalled()
+  await userEvent.hover(screen.getByRole('button', page(2)))
+  expect(prefetchPage).toHaveBeenCalledWith(2)
 })

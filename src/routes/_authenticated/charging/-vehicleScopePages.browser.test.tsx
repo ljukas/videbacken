@@ -7,6 +7,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { afterEach, expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-react'
 import { formatDate } from '~/components/evCharging/format'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
@@ -1247,13 +1248,16 @@ const sessionsKey = (page: number, pageSize: 10 | 25 | 50 = 10) =>
   orpc.evCharging.sessions.queryOptions({ input: { page, pageSize, vehicle: 'all' } }).queryKey
 
 test('Översikt: while the next page loads, the current rows stay, dimmed and busy', async () => {
-  const { screen, qc } = await renderPage(Overview, '/charging', '', (qc) => {
+  // Page 2 is held before the render: once page 1 lands, the eager next-page
+  // prefetch joins this fetch, as does the click below.
+  let release!: ReturnType<typeof holdQuery>
+  const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
     seedOverviewShell(qc)
     seedOverview(qc, 'all', [])
     seedSessionsPage(qc, { page: 1, pageSize: 10 }, [session('p1', 1.1)], 25)
+    release = holdQuery(qc, sessionsKey(2))
   })
   await expect.element(screen.getByText('1,1', { exact: false })).toBeVisible()
-  const release = holdQuery(qc, sessionsKey(2))
   await screen.getByRole('button', { name: '2', exact: true }).click()
   // Not blocked on the loader (the page is no loader dep): the list itself shows it's loading.
   const list = () => screen.getByRole('table').element().closest('[aria-busy]')
@@ -1384,4 +1388,124 @@ test('Översikt: after a page fails, stepping to it again from the control retri
   // again, which the URL already holds. That must still fetch it, not no-op.
   await screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).click()
   await vi.waitFor(() => expect(failures()).toBeGreaterThan(before))
+})
+
+// --- Prefetching the session pages ----------------------------------------------
+
+// Both lists, seeded with page 1 only (`total` sessions at 10 a page). The spy goes
+// on after the loader and before the render: it sees what the mounted page asks for.
+const prefetchLists = [
+  [
+    'Översikt',
+    Overview,
+    '/charging',
+    sessionsKey,
+    (qc: QueryClient, total: number, page = 1) => {
+      seedOverviewShell(qc)
+      seedOverview(qc, 'all', [])
+      seedSessionsPage(qc, { page, pageSize: 10 }, [session(`p${page}`, page + 0.1)], total)
+    },
+  ],
+  [
+    'Ekonomi',
+    Economy,
+    '/charging/economy',
+    economySessionsKey,
+    (qc: QueryClient, total: number, page = 1) => {
+      seedEconomyOverview(qc, 'all', total)
+      seedEconomyPage(qc, { page, pageSize: 10 }, total)
+    },
+  ],
+] as const
+
+const requestedKeys = (spy: { mock: { calls: unknown[][] } }) =>
+  spy.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey))
+
+test.each(
+  prefetchLists,
+)('%s: hovering a page link prefetches that page', async (_n, route, path, key, seed) => {
+  let spy!: ReturnType<typeof vi.spyOn>
+  const { screen } = await renderPage(
+    route,
+    path,
+    '',
+    (qc) => seed(qc, 35),
+    'admin',
+    (qc) => {
+      spy = vi.spyOn(qc, 'prefetchQuery')
+    },
+  )
+  await expect.element(screen.getByRole('button', { name: '3', exact: true })).toBeVisible()
+  await userEvent.hover(screen.getByRole('button', { name: '3', exact: true }))
+  await vi.waitFor(() => expect(requestedKeys(spy)).toContain(JSON.stringify(key(3))))
+})
+
+test.each(
+  prefetchLists,
+)('%s: once page 1 has landed, page 2 is requested', async (_n, route, path, key, seed) => {
+  let spy!: ReturnType<typeof vi.spyOn>
+  await renderPage(
+    route,
+    path,
+    '',
+    (qc) => seed(qc, 35),
+    'admin',
+    (qc) => {
+      spy = vi.spyOn(qc, 'prefetchQuery')
+    },
+  )
+  await vi.waitFor(() => expect(requestedKeys(spy)).toEqual([JSON.stringify(key(2))]))
+})
+
+test.each(
+  prefetchLists,
+)('%s: on the last page nothing past the end is requested', async (_n, route, path, _key, seed) => {
+  let spy!: ReturnType<typeof vi.spyOn>
+  const { screen } = await renderPage(
+    route,
+    path,
+    '?page=2',
+    (qc) => seed(qc, 20, 2),
+    'admin',
+    (qc) => {
+      spy = vi.spyOn(qc, 'prefetchQuery')
+    },
+  )
+  await expect.element(screen.getByRole('status')).toBeVisible()
+  await new Promise((r) => setTimeout(r, 200))
+  expect(spy).not.toHaveBeenCalled()
+})
+
+test.each(
+  prefetchLists,
+)('%s: placeholder rows request nothing until the page lands', async (_n, route, path, key, seed) => {
+  let spy!: ReturnType<typeof vi.spyOn>
+  let release!: ReturnType<typeof holdQuery>
+  const { screen } = await renderPage(
+    route,
+    path,
+    '',
+    (qc) => {
+      seed(qc, 35)
+      release = holdQuery(qc, key(2))
+    },
+    'admin',
+    (qc) => {
+      spy = vi.spyOn(qc, 'prefetchQuery')
+    },
+  )
+  // Page 1 landed: the eager prefetch joined the held page 2 fetch.
+  await vi.waitFor(() => expect(requestedKeys(spy)).toEqual([JSON.stringify(key(2))]))
+  await screen.getByRole('button', { name: '2', exact: true }).click()
+  const list = () => screen.getByRole('table').element().closest('[aria-busy]')
+  await vi.waitFor(() => expect(list()?.getAttribute('aria-busy')).toBe('true'))
+  await new Promise((r) => setTimeout(r, 200))
+  // (The click's own hover and focus re-ask for page 2; page 3 waits for it to land.)
+  expect(requestedKeys(spy)).not.toContain(JSON.stringify(key(3)))
+  release(
+    route === Overview
+      ? { sessions: [session('p2', 2.2)], total: 35, page: 2, pageSize: 10, costs: [] }
+      : { page: 2, pageSize: 10, total: 35, rows: [economyRow(11)] },
+  )
+  await vi.waitFor(() => expect(requestedKeys(spy)).toContain(JSON.stringify(key(3))))
 })

@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { PiggyBankIcon } from 'lucide-react'
 import { useCallback, useId, useState } from 'react'
@@ -23,6 +23,7 @@ import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
 import { Card, CardContent, CardHeader } from '~/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '~/components/ui/empty'
+import { useNextPagePrefetch } from '~/hooks/useNextPagePrefetch'
 import { useSessionPaging } from '~/hooks/useSessionPaging'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import {
@@ -284,6 +285,12 @@ function EconomySessionsCard({
     ...economySessionsQuery(year, vehicle, page, pageSize),
     placeholderData: keepPreviousData,
   })
+  const queryClient = useQueryClient()
+  const prefetchPage = useCallback(
+    (p: number) => void queryClient.prefetchQuery(economySessionsQuery(year, vehicle, p, pageSize)),
+    [queryClient, year, vehicle, pageSize],
+  )
+  useNextPagePrefetch(list, prefetchPage)
   const scope = `${year ?? 'current'}:${vehicle}`
   const [lastLoaded, setLastLoaded] = useState(() =>
     list.data && !list.isPlaceholderData ? { scope, data: list.data } : undefined,
@@ -328,6 +335,7 @@ function EconomySessionsCard({
                   total={shown.total}
                   onPageChange={paging.setPage}
                   onPageSizeChange={paging.setPageSize}
+                  prefetchPage={prefetchPage}
                 />
               </div>
             ) : null}
