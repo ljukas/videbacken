@@ -13,7 +13,7 @@ start of its session.
 | 2 | Cache the Stockholm day/month per UTC hour in the cost pricing (`stockholmDayOf` / `stockholmYearMonth` are ~70% of `costComputeMs`; Stockholm's offset is always whole hours) | [plan](../plans/2026-10-07-server-latency-2-tz-cache.md) | [#139](https://github.com/ljukas/videbacken/pull/139) | checkpoint passed | 2026-10-08: prod `costComputeMs` median 73 → 26.5 (−64%); repeat visits 68–84 → 21–25. `economyComputeMs` 72–100 → 13–27. `/charging` figures unchanged (owner). See [checkpoint 2 result](#checkpoint-2-result). |
 | 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | — | — | needs shaping | — |
 | 4 | Cold instances in a burst: when Vercel starts an extra instance for a navigation's burst, its requests show `queue` ~800 ms plus ~260 ms of first-request work before the handler (`app` minus `rpc`). Find what the boot and first-request load cost (function bundle, module init) and what Fluid offers against scale-out cold starts | — | — | needs shaping | — |
-| 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | — | not started | — |
+| 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | — | PR open | — |
 | 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converts and groups every slot of the year (24 476 rows, 61 ms in prod `EXPLAIN ANALYZE`, all buffer hits: CPU). Recommended: a `spot_price_day` table written by `replaceDay` in the same transaction (its only writer) + a backfill, read by PK (~255 rows). Open: that vs a trigger on `spot_price`. Needs the schema-design review | — | — | needs shaping | — |
 
 Order (owner, 2026-10-08): checkpoint 2 (passed), then 5, then 6. Rows 3 and 4 follow unless reordered.
@@ -48,6 +48,10 @@ the step needs a brainstorm before its plan.
 5. **After step 5 (prod).** In DevTools, `economy` + `economySessions` together are under 3 kB in the Size column
    (12.8 kB before); a hovered or next page renders with no new request; `economySessions`'s `totalMs` is well under
    `economy`'s. Details in the [spec](../specs/2026-10-08-economy-paged-sessions-design.md#checkpoint-5-prod).
+   Baseline before the deploy: prod `evCharging/economy` `rpc timing`, 2026-10-07 18:50 → 2026-10-08 09:00 UTC,
+   10 calls, `totalMs` 94 / 181 / 433 (min / median / max; 433 a cold start), `economyDailySpotMs` 56 / 89.5 / 170.
+   Locally (208 sessions in 2026) the default page went from 21.4 kB gzip to 1.6 kB (`economy` 0.8 +
+   `economySessions` 0.9).
 
 ## Checkpoint 1 result
 
