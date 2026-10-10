@@ -40,7 +40,7 @@ export function useSessionPaging<TSearch extends PagingSearch>(navigate: PagingN
     [navigate, reveal],
   )
   const setPageSize = useCallback(
-    (size: SessionPageSize, fromPage?: number) =>
+    (size: SessionPageSize, fromPage?: number, fromSize?: number) =>
       navigate({
         to: '.',
         search: (prev) => ({
@@ -48,7 +48,7 @@ export function useSessionPaging<TSearch extends PagingSearch>(navigate: PagingN
           page: ((p) => (p === 1 ? undefined : p))(
             pageKeepingTopRow(
               fromPage ?? prev.page ?? 1,
-              prev.size ?? DEFAULT_SESSION_PAGE_SIZE,
+              fromSize ?? prev.size ?? DEFAULT_SESSION_PAGE_SIZE,
               size,
             ),
           ),

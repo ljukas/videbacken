@@ -209,7 +209,7 @@ test('the size selector offers 10, 25 and 50 and reports the chosen size', async
   await trigger.click()
   await expect.element(screen.getByRole('option', { name: '50' })).toBeVisible()
   await screen.getByRole('option', { name: '25' }).click()
-  expect(onPageSizeChange).toHaveBeenCalledWith(25, 1)
+  expect(onPageSizeChange).toHaveBeenCalledWith(25, 1, 10)
 })
 
 test('a last page holding one session names it alone, not as "101–101"', async () => {
@@ -282,5 +282,22 @@ test('a size change reports the page on screen, a page past the end clamped', as
   )
   await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
   await screen.getByRole('option', { name: '10' }).click()
-  expect(onPageSizeChange).toHaveBeenCalledWith(10, 2)
+  expect(onPageSizeChange).toHaveBeenCalledWith(10, 2, 50)
+})
+
+test('a size change reports the size on screen, not a different one the URL asks for', async () => {
+  const onPageSizeChange = vi.fn()
+  // Page 4 of 10-row pages is still on screen (e.g. a size change that failed to load).
+  const screen = await render(
+    <SessionPagination
+      page={4}
+      pageSize={10}
+      total={214}
+      onPageChange={noop}
+      onPageSizeChange={onPageSizeChange}
+    />,
+  )
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '50' }).click()
+  expect(onPageSizeChange).toHaveBeenCalledWith(50, 4, 10)
 })
