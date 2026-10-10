@@ -46,15 +46,6 @@ export type EconomyTimings = {
   computeMs?: number
 }
 
-export type EconomySessionRow = SessionEconomy & {
-  sessionId: string
-  startAt: Date
-  endAt: Date
-  /** The session's `energyKwh` (as SessionList shows it); the money covers the interval sum, which can differ slightly. */
-  kwh: number
-  vehicle: Vehicle
-}
-
 export type EconomyOverview = {
   year: number
   /** Years with counted sessions plus the current one, newest first. */
@@ -62,8 +53,6 @@ export type EconomyOverview = {
   tiles: EconomyTotals
   /** The selected year's 12 Stockholm months (by session start), zero-filled. */
   months: (EconomyTotals & { month: number })[]
-  /** The selected year's counted sessions, newest first. */
-  sessions: EconomySessionRow[]
 }
 
 export type SessionEconomyDetail = {
@@ -186,12 +175,8 @@ export async function getEconomyOverview(input: {
 
   const computeStart = performance.now()
   const index = new SlotIndex(slots)
-  const rows: EconomySessionRow[] = inYear.map((s, i) => ({
-    sessionId: s.sessionId,
+  const rows = inYear.map((s, i) => ({
     startAt: s.startAt,
-    endAt: s.endAt,
-    kwh: s.energyKwh,
-    vehicle: s.vehicle,
     ...analyzeSession(sessions[i], index, tariffsAsc).economy,
   }))
   const rowsByMonth = Map.groupBy(rows, (r) => stockholmYearMonth(r.startAt.getTime()).month)
@@ -211,7 +196,6 @@ export async function getEconomyOverview(input: {
     years: [...years].sort((a, b) => b - a),
     tiles: sumEconomy(rows, averageSpotOre(pricedDays, tariffsAsc)),
     months,
-    sessions: rows.toReversed(),
   }
   if (t) t.computeMs = Math.round(performance.now() - computeStart)
   return overview

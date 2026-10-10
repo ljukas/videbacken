@@ -78,9 +78,9 @@ test('the optimum uses window slots outside the charged hours', async () => {
   await session('2026-09-28T08:00:00Z', '2026-09-28T10:00:00Z', 10, [
     ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 10],
   ])
-  const { sessions } = await getEconomyOverview({ year: 2026, now: NOW })
-  const cf = sessions[0].counterfactual
-  expect(cf?.optimal.totalSek).toBeCloseTo(10 * unit(1))
+  const { rows } = await getEconomySessions({ year: 2026, now: NOW, page: 1, pageSize: 50 })
+  const cf = rows[0].counterfactual
+  expect(cf?.spreadSek).toBeCloseTo(10 * unit(3) - 10 * unit(1))
   expect(cf?.leftOnTableSek).toBeCloseTo(10 * (unit(3) - unit(1)))
 })
 
@@ -91,12 +91,11 @@ test('the actual cost equals the session list’s cost (parity with getSessionCo
     ['2026-09-28T08:00:00Z', '2026-09-28T09:00:00Z', 7],
     ['2026-09-28T09:00:00Z', '2026-09-28T09:40:00Z', 3],
   ])
-  const [{ sessions }, [cost]] = await Promise.all([
-    getEconomyOverview({ year: 2026, now: NOW }),
+  const [{ rows }, [cost]] = await Promise.all([
+    getEconomySessions({ year: 2026, now: NOW, page: 1, pageSize: 50 }),
     getSessionCosts({ sessionIds: [id] }),
   ])
-  expect(sessions[0].actual.totalSek).toBeCloseTo(cost.totalSek, 9)
-  expect(sessions[0].actual.fullKwh).toBeCloseTo(cost.fullKwh, 9)
+  expect(rows[0].actualSek).toBeCloseTo(cost.totalSek, 9)
 })
 
 test('only counted sessions of the selected year, newest first, bucketed by start month', async () => {
@@ -127,7 +126,9 @@ test('only counted sessions of the selected year, newest first, bucketed by star
   })
 
   const o = await getEconomyOverview({ year: 2026, now: NOW })
-  expect(o.sessions.map((s) => s.sessionId)).toEqual([september, overnight])
+  expect(o).not.toHaveProperty('sessions')
+  const { rows } = await getEconomySessions({ year: 2026, now: NOW, page: 1, pageSize: 50 })
+  expect(rows.map((r) => r.sessionId)).toEqual([september, overnight])
   expect(o.months[7]).toMatchObject({ month: 8, sessions: 1, included: 1 })
   expect(o.months[8]).toMatchObject({ month: 9, sessions: 1, included: 1 })
   expect(o.tiles).toMatchObject({ sessions: 2, included: 2, excluded: { noHourly: 0, noPrice: 0 } })
@@ -143,11 +144,12 @@ test('excluded sessions are counted by reason: no hourly data, or a price day mi
   await session('2026-09-28T20:00:00Z', '2026-09-28T23:00:00Z', 10, [
     ['2026-09-28T20:00:00Z', '2026-09-28T21:00:00Z', 10],
   ])
-  const { tiles, sessions } = await getEconomyOverview({ year: 2026, now: NOW })
+  const { tiles } = await getEconomyOverview({ year: 2026, now: NOW })
+  const { rows } = await getEconomySessions({ year: 2026, now: NOW, page: 1, pageSize: 50 })
   expect(tiles.excluded).toEqual({ noHourly: 1, noPrice: 1 })
   expect(tiles.included).toBe(0)
   expect(tiles.score).toBeNull()
-  expect(sessions.map((s) => s.excluded).sort()).toEqual(['no_hourly', 'no_price'])
+  expect(rows.map((r) => r.excluded).sort()).toEqual(['no_hourly', 'no_price'])
 })
 
 test('the month and year average spot cover every priced day, charged or not', async () => {
@@ -280,10 +282,13 @@ test('a session starting at 00:30 local on 1 January belongs to the new year', a
     ['2025-12-31T23:30:00Z', '2026-01-01T00:30:00Z', 5],
   ])
   const y2026 = await getEconomyOverview({ year: 2026, now: NOW })
-  expect(y2026.sessions.map((s) => s.sessionId)).toEqual([id])
+  const idsOf = async (year: number) =>
+    (await getEconomySessions({ year, now: NOW, page: 1, pageSize: 50 })).rows.map(
+      (r) => r.sessionId,
+    )
+  expect(await idsOf(2026)).toEqual([id])
   expect(y2026.months[0].sessions).toBe(1)
-  const y2025 = await getEconomyOverview({ year: 2025, now: NOW })
-  expect(y2025.sessions).toEqual([])
+  expect(await idsOf(2025)).toEqual([])
 })
 
 test('a non-current year selection reads that year’s months and price days', async () => {
@@ -364,16 +369,14 @@ test('getSessionEconomy on an estimated session (no intervals): no chart data, e
 
 test('economy overview follows the vehicle scope; the session detail carries the attribution', async () => {
   const ours = await session('2026-09-10T10:00:00Z', '2026-09-10T11:00:00Z', 10)
-  await session('2025-09-10T10:00:00Z', '2025-09-10T11:00:00Z', 10) // last year: out when `year` is omitted
   const guest = await session('2026-09-11T10:00:00Z', '2026-09-11T11:00:00Z', 4, [], {
     vehicle: 'other',
     vehicleSource: 'admin',
   })
   const rows = async (vehicle?: 'ours' | 'other' | 'all') =>
-    (await getEconomyOverview({ year: 2026, now: NOW, vehicle })).sessions.map((s) => [
-      s.sessionId,
-      s.vehicle,
-    ])
+    (await getEconomySessions({ year: 2026, now: NOW, vehicle, page: 1, pageSize: 50 })).rows.map(
+      (r) => [r.sessionId, r.vehicle],
+    )
   expect(await rows('ours')).toEqual([[ours, 'ours']])
   expect(await rows('other')).toEqual([[guest, 'other']])
   expect(await rows('all')).toEqual([
@@ -441,6 +444,9 @@ test('a stored mix changes only the cash cost: the timing, schedule and economy 
   ])
   const before = await getSessionEconomy({ sessionId: id })
   const overviewBefore = await getEconomyOverview({ year: 2026, now: NOW })
+  const rowsOf = async () =>
+    (await getEconomySessions({ year: 2026, now: NOW, page: 1, pageSize: 50 })).rows
+  const rowsBefore = await rowsOf()
 
   await replaceForSessions(
     [id],
@@ -459,6 +465,8 @@ test('a stored mix changes only the cash cost: the timing, schedule and economy 
   expect(after.economy).toEqual(before.economy)
   expect(after.optimalSchedule).toEqual(before.optimalSchedule)
   expect(await getEconomyOverview({ year: 2026, now: NOW })).toEqual(overviewBefore)
+  expect((await rowsOf())[0].actualSek).toBe(rowsBefore[0].actualSek)
+  expect(await rowsOf()).toEqual(rowsBefore)
 
   // The other session's detail never picks up this one's mix.
   const plain = await getSessionEconomy({ sessionId: other })
@@ -539,6 +547,7 @@ test('economy sessions: a session on a day without prices has no kronor and no c
 })
 
 test('economy sessions follow the vehicle scope and default to the current year', async () => {
+  await session('2025-09-10T10:00:00Z', '2025-09-10T11:00:00Z', 10) // last year: out when `year` is omitted
   const ours = await session('2026-09-10T10:00:00Z', '2026-09-10T11:00:00Z', 10)
   const guest = await session('2026-09-11T10:00:00Z', '2026-09-11T11:00:00Z', 4, [], {
     vehicle: 'other',
