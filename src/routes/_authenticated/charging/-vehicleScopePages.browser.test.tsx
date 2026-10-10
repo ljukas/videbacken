@@ -1382,6 +1382,28 @@ test('Ekonomi: while another year loads, the table keeps the page it showed', as
   expect(dimmedAncestors(screen.getByRole('table').element())).toBe(1)
 })
 
+test('Ekonomi: a scope whose list is empty shows no table while its figures still load', async () => {
+  const year2025 = orpc.evCharging.economy.queryOptions({
+    input: { year: 2025, vehicle: 'all' },
+  }).queryKey
+  const { screen, qc, router } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyRows(qc, 23, [2026, 2025])
+    seedEconomyPage(qc, { page: 1, pageSize: 10, year: 2025 }, 0)
+  })
+  await expect.element(screen.getByRole('table')).toBeVisible()
+  holdQuery(qc, year2025)
+  const original = qc.prefetchQuery.bind(qc)
+  vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) =>
+    JSON.stringify(opts.queryKey) === JSON.stringify(year2025)
+      ? Promise.resolve()
+      : original(opts as never)) as never)
+  await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
+  await screen.getByRole('option', { name: '2025' }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
+  // The new year's list is in (empty) while its figures are the old year's placeholder.
+  await vi.waitFor(() => expect(screen.getByRole('table').elements()).toHaveLength(0))
+})
+
 test('Ekonomi: the year’s rows that landed are not dimmed while its figures still load', async () => {
   const year2025 = orpc.evCharging.economy.queryOptions({
     input: { year: 2025, vehicle: 'all' },

@@ -323,7 +323,9 @@ function EconomySessionsCard({
             loading={firstLoadPending(list)}
             fallbackHeight="24rem"
           >
-            {shown ? (
+            {/* An empty scope has no table at all: its empty state comes from the figures, and
+                a header-only table would show under their old, dimmed ones until they land. */}
+            {shown && shown.total > 0 ? (
               <div
                 aria-busy={stale && !loadFailed(list)}
                 className={cn('flex flex-col gap-3 transition-opacity', stale && 'opacity-60')}
