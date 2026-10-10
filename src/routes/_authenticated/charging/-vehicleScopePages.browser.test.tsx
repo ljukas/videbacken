@@ -11,6 +11,8 @@ import { render } from 'vitest-browser-react'
 import { formatDate } from '~/components/evCharging/format'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { emptyTotals } from '~/lib/evCharging/cost'
+import type { EconomyListRow } from '~/lib/evCharging/economy'
+import { SESSION_PAGE_SIZES, type SessionPageSize } from '~/lib/evCharging/paging'
 import type { VehicleScope } from '~/lib/evCharging/vehicle'
 import { integrationSourceName } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
@@ -532,6 +534,11 @@ test('Översikt, tariffs still loading: no "set up a tariff" notice', async () =
 const economyKey = orpc.evCharging.economy.queryOptions({
   input: { year: undefined, vehicle: 'all' },
 }).queryKey
+// The economy table's page as the route requests it for a clean URL's scope.
+const economySessionsKey = (page: number, pageSize: SessionPageSize = 10) =>
+  orpc.evCharging.economySessions.queryOptions({
+    input: { year: undefined, vehicle: 'all', page, pageSize },
+  }).queryKey
 const timelineKey = orpc.evCharging.timeline.queryOptions({
   input: { year: undefined, month: undefined, vehicle: 'all' },
 }).queryKey
@@ -579,6 +586,20 @@ test('Ekonomi loaded: no skeleton', async () => {
     .element(screen.getByRole('link', { name: m.charging_economy_grid_only_link() }))
     .toBeVisible()
   expect(skeleton('charging-economy')).toBeNull()
+  expect(skeleton('charging-economy-sessions')).toBeNull()
+})
+
+test('Ekonomi loaded, session table still loading: only the table is a skeleton', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomy(qc, 'all', 3)
+    pendingForever(qc, economySessionsKey(1))
+  })
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_economy_grid_only_link() }))
+    .toBeVisible()
+  await expect.poll(() => skeleton('charging-economy-sessions')).not.toBeNull()
+  expect(skeleton('charging-economy')).toBeNull()
+  expect(screen.getByText(m.charging_sessions_error_title()).elements()).toHaveLength(0)
 })
 
 test('Mönster still loading: one skeleton for the body, heading and scope toggle usable', async () => {
@@ -637,17 +658,63 @@ const economyTotals = (sessions: number) => ({
   avgSpotOre: sessions > 0 ? 110 : null,
 })
 
-function seedEconomy(qc: QueryClient, vehicle: VehicleScope, sessions: number) {
+// The year's sessions, newest first: row n (1-based) charged 100 + n + 0.1 kWh,
+// so "101,1" is the newest and each row's kWh names it.
+const economyRow = (n: number): EconomyListRow => ({
+  sessionId: `e${n}`,
+  startAt: new Date(Date.UTC(2026, 8, 31 - n, 18)),
+  endAt: new Date(Date.UTC(2026, 8, 31 - n, 20)),
+  kwh: 100 + n + 0.1,
+  actualSek: 20,
+  vehicle: 'ours',
+  excluded: null,
+  counterfactual: { score: 0.5, savedVsImmediateSek: 5, leftOnTableSek: 5, spreadSek: 15 },
+})
+
+// One page of the economy table as the server serves it: `total` sessions in
+// the scope, and the page it says it served (the requested one unless it clamped).
+function seedEconomyPage(
+  qc: QueryClient,
+  input: { page: number; pageSize: SessionPageSize; year?: number; vehicle?: VehicleScope },
+  total: number,
+  served = input.page,
+) {
+  const from = (served - 1) * input.pageSize + 1
+  const count = Math.max(0, Math.min(input.pageSize, total - from + 1))
+  qc.setQueryData(
+    orpc.evCharging.economySessions.queryOptions({
+      input: { year: undefined, vehicle: 'all', ...input },
+    }).queryKey,
+    {
+      page: served,
+      pageSize: input.pageSize,
+      total,
+      rows: Array.from({ length: count }, (_, i) => economyRow(from + i)),
+    },
+  )
+}
+
+function seedEconomyOverview(
+  qc: QueryClient,
+  vehicle: VehicleScope,
+  sessions: number,
+  years = [2026],
+) {
   qc.setQueryData(
     orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle } }).queryKey,
     {
       year: 2026,
-      years: [2026],
+      years,
       tiles: economyTotals(sessions),
       months: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...economyTotals(0) })),
-      sessions: [],
     } as never,
   )
+}
+
+// The page's overview and its table's first page (what a clean URL reads).
+function seedEconomy(qc: QueryClient, vehicle: VehicleScope, sessions: number) {
+  seedEconomyOverview(qc, vehicle, sessions)
+  seedEconomyPage(qc, { page: 1, pageSize: 10, vehicle }, sessions)
 }
 
 test.each([
@@ -897,40 +964,14 @@ test('Översikt: a page that fails to load keeps the last page, dimmed, under th
 
 // --- Ekonomi: the session table's pages ----------------------------------------
 
-// The year's sessions, newest first: row n (1-based) charged 100 + n + 0.1 kWh,
-// so "101,1" is the newest and each row's kWh names it.
+// The year's overview with `count` sessions, and every page of its table at
+// each size, as the server serves them.
 function seedEconomyRows(qc: QueryClient, count: number, years = [2026]) {
-  const cost = (totalSek: number) => ({ ...emptyTotals(), kwh: 10, gridKwh: 10, totalSek })
-  const rows = Array.from({ length: count }, (_, i) => ({
-    sessionId: `e${i + 1}`,
-    startAt: new Date(Date.UTC(2026, 8, 30 - i, 18)),
-    endAt: new Date(Date.UTC(2026, 8, 30 - i, 20)),
-    kwh: 100 + i + 1 + 0.1,
-    actual: cost(20),
-    actualComplete: true,
-    paidSpotOre: 40,
-    windowAvgSpotOre: 55,
-    vehicle: 'ours',
-    excluded: null,
-    counterfactual: {
-      immediate: cost(25),
-      optimal: cost(15),
-      dearest: cost(30),
-      score: 0.5,
-      savedVsImmediateSek: 5,
-      leftOnTableSek: 5,
-    },
-  }))
-  qc.setQueryData(
-    orpc.evCharging.economy.queryOptions({ input: { year: undefined, vehicle: 'all' } }).queryKey,
-    {
-      year: 2026,
-      years,
-      tiles: economyTotals(count),
-      months: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...economyTotals(0) })),
-      sessions: rows,
-    } as never,
-  )
+  seedEconomyOverview(qc, 'all', count, years)
+  for (const pageSize of SESSION_PAGE_SIZES) {
+    const pages = Math.max(1, Math.ceil(count / pageSize))
+    for (let page = 1; page <= pages; page++) seedEconomyPage(qc, { page, pageSize }, count)
+  }
 }
 
 const kwhCell = (n: number) => `${100 + n},1`
@@ -964,10 +1005,11 @@ test('Ekonomi: 25 rows per page shows the whole year on one page', async () => {
   expect(router.state.location.search).not.toHaveProperty('page')
 })
 
-test('Ekonomi: a page past the end shows the last page', async () => {
-  const { screen } = await renderPage(Economy, '/charging/economy', '?page=9', (qc) =>
-    seedEconomyRows(qc, 23),
-  )
+test('Ekonomi: a page past the end shows the last page the server served', async () => {
+  const { screen } = await renderPage(Economy, '/charging/economy', '?page=9', (qc) => {
+    seedEconomyRows(qc, 23)
+    seedEconomyPage(qc, { page: 9, pageSize: 10 }, 23, 3)
+  })
   await expect.element(screen.getByText(kwhCell(21), { exact: false })).toBeVisible()
   await expect
     .element(screen.getByRole('button', { name: '3', exact: true }))
@@ -1003,6 +1045,25 @@ test('Ekonomi: ten sessions or fewer need no pagination', async () => {
   expect(
     screen.getByRole('navigation', { name: m.charging_sessions_pagination_label() }).elements(),
   ).toHaveLength(0)
+})
+
+test('Ekonomi: a page that fails to load keeps the last page, dimmed, under the alert', async () => {
+  // Page 2 is unseeded, so its read fails (no /api/rpc in the test server).
+  const { screen } = await renderPage(Economy, '/charging/economy', '', (qc) => {
+    seedEconomyOverview(qc, 'all', 23)
+    seedEconomyPage(qc, { page: 1, pageSize: 10 }, 23)
+  })
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await screen.getByRole('button', { name: '2', exact: true }).click()
+  await expect.element(screen.getByText(m.charging_sessions_error_title())).toBeVisible()
+  // The rows, the control and the rest of the page stay.
+  await expect.element(screen.getByText(kwhCell(1), { exact: false })).toBeVisible()
+  await expect
+    .element(screen.getByRole('link', { name: m.charging_economy_grid_only_link() }))
+    .toBeVisible()
+  const list = screen.getByRole('table').element().closest('[aria-busy]')
+  expect(list?.getAttribute('aria-busy')).toBe('false')
+  expect(list?.className).toContain('opacity-60')
 })
 
 // --- Översikt: the scope is a page filter --------------------------------------
@@ -1159,25 +1220,30 @@ test('Ekonomi: while another year loads, the table keeps the page it showed', as
   const year2025 = orpc.evCharging.economy.queryOptions({
     input: { year: 2025, vehicle: 'all' },
   }).queryKey
+  const list2025 = orpc.evCharging.economySessions.queryOptions({
+    input: { year: 2025, vehicle: 'all', page: 1, pageSize: 10 },
+  }).queryKey
   const { screen, qc, router } = await renderPage(Economy, '/charging/economy', '?page=2', (qc) =>
     seedEconomyRows(qc, 23, [2026, 2025]),
   )
   await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
-  // The year's read stays in flight, and the loader doesn't wait for it, so the
-  // page renders the old year as a placeholder while it loads.
+  // The year's reads stay in flight, and the loader doesn't wait for them, so
+  // the page renders the old year's as placeholders while they load.
   holdQuery(qc, year2025)
+  holdQuery(qc, list2025)
+  const held = new Set([year2025, list2025].map((k) => JSON.stringify(k)))
   const original = qc.prefetchQuery.bind(qc)
   vi.spyOn(qc, 'prefetchQuery').mockImplementation(((opts: { queryKey: unknown[] }) =>
-    JSON.stringify(opts.queryKey) === JSON.stringify(year2025)
-      ? Promise.resolve()
-      : original(opts as never)) as never)
+    held.has(JSON.stringify(opts.queryKey)) ? Promise.resolve() : original(opts as never)) as never)
   await screen.getByRole('combobox', { name: m.charging_year_label() }).click()
   await screen.getByRole('option', { name: '2025' }).click()
   await vi.waitFor(() => expect(router.state.location.search).toMatchObject({ year: 2025 }))
   expect(router.state.location.search).not.toHaveProperty('page')
-  // Still the old year's second page (dimmed), not a flash of its first.
+  // Still the old year's second page (dimmed and busy), not a flash of its first.
   await expect.element(screen.getByText(kwhCell(11), { exact: false })).toBeVisible()
   expect(screen.getByText(kwhCell(1), { exact: false }).elements()).toHaveLength(0)
+  const list = screen.getByRole('table').element().closest('[aria-busy]')
+  expect(list?.getAttribute('aria-busy')).toBe('true')
 })
 
 test('Ekonomi: back steps to the previous page of the table', async () => {
