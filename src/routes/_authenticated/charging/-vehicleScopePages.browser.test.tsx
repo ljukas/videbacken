@@ -811,7 +811,7 @@ test('Översikt: back steps to the previous page', async () => {
   expect(router.state.location.search).toMatchObject({ page: 2 })
 })
 
-test('Översikt: a new page size starts over at its first page', async () => {
+test('Översikt: a new page size lands on the page holding the top row (page 1 here)', async () => {
   const { screen, router } = await renderPage(Overview, '/charging', '?page=2', seedPagedOverview)
   await expect.element(screen.getByText('2,2', { exact: false })).toBeVisible()
   await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
@@ -943,7 +943,7 @@ test('Översikt: a size change replaces the page it left in history', async () =
   expect(router.state.location.search).not.toHaveProperty('size')
 })
 
-test('Översikt: a new page size keeps the first row of the page in view, replacing the entry', async () => {
+test('Översikt: a new page size lands on the page holding the first row, replacing the entry', async () => {
   // 35 sessions: page 4 at 10 starts at row 31, which is on page 2 at 25.
   const { screen, router } = await renderPage(Overview, '/charging', '?page=4', (qc) => {
     seedPagedOverview(qc)
@@ -1028,7 +1028,7 @@ test('Ekonomi: 25 rows per page shows the whole year on one page', async () => {
   expect(router.state.location.search).not.toHaveProperty('page')
 })
 
-test('Ekonomi: a new page size keeps the first row of the page in view, replacing the entry', async () => {
+test('Ekonomi: a new page size lands on the page holding the first row, replacing the entry', async () => {
   // 35 sessions: page 4 at 10 starts at row 31, which is on page 2 at 25.
   const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=4', (qc) =>
     seedEconomyRows(qc, 35),

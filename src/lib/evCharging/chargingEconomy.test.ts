@@ -96,6 +96,7 @@ test('the actual cost equals the session list’s cost (parity with getSessionCo
     getSessionCosts({ sessionIds: [id] }),
   ])
   expect(rows[0].actualSek).toBeCloseTo(cost.totalSek, 9)
+  expect(cost.fullKwh).toBeCloseTo(12, 9)
 })
 
 test('only counted sessions of the selected year, newest first, bucketed by start month', async () => {
