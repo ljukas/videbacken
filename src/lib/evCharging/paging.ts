@@ -60,3 +60,12 @@ export function pageSlice<T>(
   const served = Math.min(Math.max(page, 1), pageCount(rows.length, pageSize))
   return { rows: rows.slice((served - 1) * pageSize, served * pageSize), page: served }
 }
+
+/**
+ * The page at `toSize` holding the first row of `page` at `fromSize`, so a
+ * rows-per-page change keeps the reader's place (TanStack Table's setPageSize
+ * rule). A page past the end stays the server's to clamp, as for any `?page=`.
+ */
+export function pageKeepingTopRow(page: number, fromSize: number, toSize: number): number {
+  return Math.floor(((Math.max(page, 1) - 1) * fromSize) / toSize) + 1
+}

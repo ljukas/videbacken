@@ -943,6 +943,22 @@ test('Översikt: a size change replaces the page it left in history', async () =
   expect(router.state.location.search).not.toHaveProperty('size')
 })
 
+test('Översikt: a new page size keeps the first row of the page in view, replacing the entry', async () => {
+  // 35 sessions: page 4 at 10 starts at row 31, which is on page 2 at 25.
+  const { screen, router } = await renderPage(Overview, '/charging', '?page=4', (qc) => {
+    seedPagedOverview(qc)
+    seedSessionsPage(qc, { page: 4, pageSize: 10 }, [session('p4', 7.7)], 35)
+    seedSessionsPage(qc, { page: 2, pageSize: 25 }, [session('p2-25', 8.8)], 35)
+  })
+  await expect.element(screen.getByText('7,7', { exact: false })).toBeVisible()
+  const entries = router.history.length
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '25' }).click()
+  await expect.element(screen.getByText('8,8', { exact: false })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ page: 2, size: 25 })
+  expect(router.history.length).toBe(entries)
+})
+
 test('Översikt: a page that fails to load keeps the last page, dimmed, under the alert', async () => {
   // Page 2 is unseeded, so its read fails (no /api/rpc in the test server).
   const { screen } = await renderPage(Overview, '/charging', '', (qc) => {
@@ -1010,6 +1026,21 @@ test('Ekonomi: 25 rows per page shows the whole year on one page', async () => {
   await expect.element(screen.getByText(kwhCell(23), { exact: false })).toBeVisible()
   expect(router.state.location.search).toMatchObject({ size: 25 })
   expect(router.state.location.search).not.toHaveProperty('page')
+})
+
+test('Ekonomi: a new page size keeps the first row of the page in view, replacing the entry', async () => {
+  // 35 sessions: page 4 at 10 starts at row 31, which is on page 2 at 25.
+  const { screen, router } = await renderPage(Economy, '/charging/economy', '?page=4', (qc) =>
+    seedEconomyRows(qc, 35),
+  )
+  await expect.element(screen.getByText(kwhCell(31), { exact: false })).toBeVisible()
+  const entries = router.history.length
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '25' }).click()
+  await expect.element(screen.getByText(kwhCell(26), { exact: false })).toBeVisible()
+  expect(screen.getByText(kwhCell(25), { exact: false }).elements()).toHaveLength(0)
+  expect(router.state.location.search).toMatchObject({ page: 2, size: 25 })
+  expect(router.history.length).toBe(entries)
 })
 
 test('Ekonomi: a page past the end shows the last page the server served', async () => {
