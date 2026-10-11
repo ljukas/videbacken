@@ -108,8 +108,8 @@ per-day upsert inside `replaceDay`'s transaction, and the one-off backfill over 
 
 **Files:**
 - Modify: `src/lib/db/schema/spotPrice.ts`
-- Create (generated): `drizzle/0022_spot_price_day.sql`, `drizzle/meta/0022_snapshot.json`, journal entry
-- Create (generated, then filled in): `drizzle/0023_backfill_spot_price_day.sql`
+- Create (generated): `drizzle/0023_spot_price_day.sql`, `drizzle/meta/0023_snapshot.json`, journal entry
+- Create (generated, then filled in): `drizzle/0024_backfill_spot_price_day.sql`
 
 **Interfaces:**
 - Produces: `spotPriceDay` (Drizzle table, exported from `~/lib/db/schema`) with columns `zone: string`,
@@ -150,12 +150,12 @@ export const spotPriceDay = pgTable(
 - [ ] **Step 2: Generate the table migration**
 
 Run: `bun run db:generate --name=spot_price_day`
-Expected: `drizzle/0022_spot_price_day.sql` with `CREATE TABLE "spot_price_day"`, the PK, both CHECKs and
+Expected: `drizzle/0023_spot_price_day.sql` with `CREATE TABLE "spot_price_day"`, the PK, both CHECKs and
 `ENABLE ROW LEVEL SECURITY`. Read it; nothing else may change.
 
 - [ ] **Step 3: Generate and fill the backfill migration**
 
-Run: `bun run db:generate --custom --name=backfill_spot_price_day`, then write into `drizzle/0023_backfill_spot_price_day.sql`:
+Run: `bun run db:generate --custom --name=backfill_spot_price_day`, then write into `drizzle/0024_backfill_spot_price_day.sql`:
 
 ```sql
 -- Server latency step 6: every stored day's average, from the slots already in
@@ -178,7 +178,7 @@ ON CONFLICT ("zone", "day") DO UPDATE
 - [ ] **Step 4: Apply locally**
 
 Run: `bun run db:up && bun run db:migrate`
-Expected: both migrations apply with no error. (The local DB is shared with other worktrees; the change is additive.)
+Expected: the pending migrations apply with no error. (The local DB is shared with other worktrees; the change is additive.)
 
 - [ ] **Step 5: RLS test still passes**
 
@@ -345,7 +345,7 @@ In `replaceDay`, between the slot insert and `requestDerive`:
 
 ```ts
     // The day's average, from the slots just written (spot_price_day). The
-    // same aggregate as the 0023 backfill migration; summed in slot order so
+    // same aggregate as the 0024 backfill migration; summed in slot order so
     // the float result is deterministic.
     await tx.execute(sql`
       INSERT INTO ${spotPriceDay} (zone, day, avg_sek_per_kwh, covered_seconds)
