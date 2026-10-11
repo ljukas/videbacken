@@ -22,8 +22,9 @@ Status values: `not started` → `in progress` → `PR open` → `merged` → `c
 - **Before step 1a starts:** this roadmap, the spec, ADR-0027 and the step plans are merged to `main`.
 - **Local, already done (2026-10-08):** `PANASONIC_USER` / `PANASONIC_PASSWORD` in `.env.local` (used by step 1a's
   live check and step 1b's local run).
-- **Before step 1b deploys:** `PANASONIC_USER` / `PANASONIC_PASSWORD` in Vercel **Production** only (not Preview),
-  or entered in Datakällor right after the deploy. Without them the source shows `not_configured`.
+- **Before step 1b deploys, done 2026-10-11:** `PANASONIC_USER` / `PANASONIC_PASSWORD` are set in Vercel
+  **Production** only (not Preview), as sensitive variables. Without them the source shows `not_configured`; they can
+  also be overridden in Datakällor after the deploy.
 - **Step 4a's checkpoint:** enter the first event, the **service on 2026-10-08, both units** (the units were set to
   maximum before the service and switched off during it; that morning's hours are not normal operation).
 
