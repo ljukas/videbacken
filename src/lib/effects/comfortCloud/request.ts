@@ -6,7 +6,12 @@ const TIMEOUT_MS = 10_000
 const RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504])
 const RETRY_LIMIT = 1
 
-export type SendOpts = { stats: ComfortCloudCallStats; signal?: AbortSignal }
+export type SendOpts = {
+  stats: ComfortCloudCallStats
+  signal?: AbortSignal
+  /** `false` for a non-idempotent POST (the password step, the single-use code exchange): no retry. */
+  retry?: boolean
+}
 
 /**
  * One request under ADR-0019's policy (10 s per attempt, 502/503/504 retried once). Redirects are
@@ -30,7 +35,7 @@ export async function send(
         fetch,
         timeoutMs: TIMEOUT_MS,
         retryStatuses: RETRY_STATUSES,
-        retryLimit: RETRY_LIMIT,
+        retryLimit: o.retry === false ? 0 : RETRY_LIMIT,
         signal: o.signal,
         stats: o.stats,
         onTiming: (ms) => {

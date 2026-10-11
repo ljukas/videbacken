@@ -12,10 +12,11 @@ import {
   REDIRECT_URI,
   SCOPE,
 } from './constants'
-import type { ComfortCloudError } from './errors'
+import { ComfortCloudError } from './errors'
 import {
   authorizeRedirect,
   authRoutes,
+  callbackForm,
   guardianPage,
   mfaTokenForm,
   ROUTES,
@@ -218,6 +219,7 @@ describe('refusals', () => {
     const err = await caught(run())
     expect(err).toMatchObject({ code: 'auth_failed', op: 'login' })
     expect(err.message).toContain('2FA')
+    expect(secretsIn(err)).toEqual([])
     expect(f.callsTo(ROUTES.token)).toHaveLength(0)
   })
 })
@@ -301,7 +303,9 @@ describe('statuses and the network', () => {
 
   test('503 is retried once, then unreachable', async () => {
     const { f, run } = login({ [ROUTES.authorize]: () => new Response(null, { status: 503 }) })
-    expect(await caught(run())).toMatchObject({ code: 'unreachable', op: 'login', status: 503 })
+    const err = await caught(run())
+    expect(err).toMatchObject({ code: 'unreachable', op: 'login', status: 503 })
+    expect(secretsIn(err)).toEqual([])
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
   })
 
@@ -317,5 +321,186 @@ describe('statuses and the network', () => {
     expect(err).toMatchObject({ code: 'unreachable', op: 'login' })
     expect(err.cause).toEqual({ name: 'TypeError', code: 'ECONNRESET' })
     expect(secretsIn(err)).toEqual([])
+  })
+})
+
+const origins = (f: ReturnType<typeof fakeFetch>) =>
+  new Set(f.calls.map((r) => new URL(r.url).origin))
+
+describe('the authorization code is taken only from the app redirect URI', () => {
+  const unexpectedErr = async (overrides: Partial<Record<string, FakeRoute>>) => {
+    const { f, run } = login(overrides)
+    const err = await caught(run())
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'login' })
+    expect(secretsIn(err)).toEqual([])
+    return { f, err }
+  }
+
+  test('a final redirect to another host with a code is refused, no token request', async () => {
+    const { f } = await unexpectedErr({
+      [ROUTES.resume]: () => resumeRedirect('https://evil.example.test/?code=X'),
+    })
+    expect(f.callsTo(ROUTES.token)).toHaveLength(0)
+    expect(origins(f)).toEqual(new Set([AUTH_BASE]))
+  })
+
+  test('a lookalike of the redirect URI at the final hop is refused', async () => {
+    const { f } = await unexpectedErr({
+      [ROUTES.resume]: () => resumeRedirect(`${REDIRECT_URI}X?code=X`),
+    })
+    expect(f.callsTo(ROUTES.token)).toHaveLength(0)
+  })
+
+  test('a lookalike of the redirect URI at authorize is refused, no password POST', async () => {
+    const { f } = await unexpectedErr({
+      [ROUTES.authorize]: () => authorizeRedirect(`${REDIRECT_URI}X?code=X`),
+    })
+    expect(f.callsTo(ROUTES.password)).toHaveLength(0)
+    expect(f.callsTo(ROUTES.token)).toHaveLength(0)
+  })
+
+  test('authorize straight to the redirect URI without a code', async () => {
+    const { f } = await unexpectedErr({
+      [ROUTES.authorize]: () => authorizeRedirect(`${REDIRECT_URI}?state=s`),
+    })
+    expect(f.callsTo(ROUTES.token)).toHaveLength(0)
+  })
+
+  test('a redirect carrying userinfo is refused, never requested', async () => {
+    const { f } = await unexpectedErr({
+      [ROUTES.callback]: () =>
+        resumeRedirect('https://u:p@authglb.digital.panasonic.com/authorize/resume?state=s'),
+    })
+    expect(f.callsTo(ROUTES.resume)).toHaveLength(0)
+  })
+})
+
+describe('malformed Auth0 answers', () => {
+  const unexpectedErr = async (overrides: Partial<Record<string, FakeRoute>>, status?: number) => {
+    const { f, run } = login(overrides)
+    const err = await caught(run())
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'login' })
+    if (status !== undefined) expect(err.status).toBe(status)
+    expect(secretsIn(err)).toEqual([])
+    return { f, err }
+  }
+
+  test('a 302 without a Location', async () => {
+    await unexpectedErr({ [ROUTES.authorize]: () => new Response(null, { status: 302 }) })
+  })
+
+  test('a Location that is not a URL', async () => {
+    await unexpectedErr({ [ROUTES.authorize]: () => authorizeRedirect('http://[') })
+  })
+
+  test('the login page answering 500 is unreachable, 404 unexpected', async () => {
+    for (const [status, code] of [
+      [500, 'unreachable'],
+      [404, 'unexpected_response'],
+    ] as const) {
+      const { f, run } = login({ [ROUTES.loginPage]: () => new Response('x', { status }) })
+      const err = await caught(run())
+      expect(err).toMatchObject({ code, op: 'login', status })
+      expect(secretsIn(err)).toEqual([])
+      expect(f.callsTo(ROUTES.password)).toHaveLength(0)
+    }
+  })
+
+  test('the password POST answering 500 is unreachable, 404 unexpected', async () => {
+    for (const [status, code] of [
+      [500, 'unreachable'],
+      [404, 'unexpected_response'],
+    ] as const) {
+      const { f, run } = login({
+        [ROUTES.password]: () => new Response(`x ${TEST_USER}`, { status }),
+      })
+      const err = await caught(run())
+      expect(err).toMatchObject({ code, op: 'login', status })
+      expect(secretsIn(err)).toEqual([])
+      expect(f.callsTo(ROUTES.callback)).toHaveLength(0)
+    }
+  })
+
+  test('a non-302 on the callback and on the resume hop', async () => {
+    const cb = await unexpectedErr({ [ROUTES.callback]: () => new Response('ok') }, 200)
+    expect(cb.f.callsTo(ROUTES.resume)).toHaveLength(0)
+    const rs = await unexpectedErr({ [ROUTES.resume]: () => new Response('ok') }, 200)
+    expect(rs.f.callsTo(ROUTES.token)).toHaveLength(0)
+  })
+
+  test.each([
+    'https://evil.example.test/x',
+    '//evil.example.test/x',
+  ])('an off-host redirect (%s) on the callback and resume hops is never requested', async (target) => {
+    const cb = await unexpectedErr({ [ROUTES.callback]: () => resumeRedirect(target) })
+    expect(origins(cb.f)).toEqual(new Set([AUTH_BASE]))
+    const rs = await unexpectedErr({ [ROUTES.resume]: () => resumeRedirect(target) })
+    expect(origins(rs.f)).toEqual(new Set([AUTH_BASE]))
+    expect(rs.f.callsTo(ROUTES.token)).toHaveLength(0)
+  })
+
+  test('a partial callback form is refused before the callback request', async () => {
+    const { f } = await unexpectedErr({
+      [ROUTES.password]: () =>
+        new Response(
+          '<form><input type="hidden" name="wa" value="wsignin1.0"><input type="hidden" name="wresult" value="r"></form>',
+        ),
+    })
+    expect(f.callsTo(ROUTES.callback)).toHaveLength(0)
+  })
+})
+
+describe('retries', () => {
+  test('500 is not retried', async () => {
+    const { f, run } = login({ [ROUTES.authorize]: () => new Response(null, { status: 500 }) })
+    const err = await caught(run())
+    expect(err).toMatchObject({ code: 'unreachable', status: 500 })
+    expect(f.callsTo(ROUTES.authorize)).toHaveLength(1)
+  })
+
+  test.each([502, 504])('%i is retried once', async (status) => {
+    const { f, run } = login({ [ROUTES.authorize]: () => new Response(null, { status }) })
+    expect(await caught(run())).toMatchObject({ code: 'unreachable', status })
+    expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
+  })
+
+  test('503 then 200 recovers', async () => {
+    const { stats, run } = login({
+      [ROUTES.authorize]: (_req, call) =>
+        call === 0 ? new Response(null, { status: 503 }) : authorizeRedirect(),
+    })
+    expect(await run()).toBe(TEST_ACCESS_TOKEN)
+    expect(stats.retries).toBe(1)
+  })
+
+  test('the password POST is never retried: a network failure is one Auth0 attempt', async () => {
+    const { f, run } = login({
+      [ROUTES.password]: (_req, call) => {
+        if (call === 0) throw new TypeError('fetch failed')
+        return callbackForm()
+      },
+    })
+    const err = await caught(run())
+    expect(err).toMatchObject({ code: 'unreachable', op: 'login' })
+    expect(secretsIn(err)).toEqual([])
+    expect(f.callsTo(ROUTES.password)).toHaveLength(1)
+  })
+
+  test('the single-use code exchange is never retried', async () => {
+    const { f, run } = login({ [ROUTES.token]: () => new Response(null, { status: 503 }) })
+    const err = await caught(run())
+    expect(err).toMatchObject({ code: 'unreachable', op: 'login', status: 503 })
+    expect(f.callsTo(ROUTES.token)).toHaveLength(1)
+  })
+})
+
+describe('ComfortCloudError default message', () => {
+  test('without and with a status', () => {
+    expect(new ComfortCloudError('unreachable', 'history').message).toBe(
+      'Comfort Cloud history failed: unreachable',
+    )
+    expect(new ComfortCloudError('forbidden', 'units', 403).message).toBe(
+      'Comfort Cloud units failed: forbidden (HTTP 403)',
+    )
   })
 })

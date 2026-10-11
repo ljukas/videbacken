@@ -63,10 +63,14 @@ function onAuthHost(location: string): URL {
   } catch {
     throw unexpected('Comfort Cloud login redirect is not a URL')
   }
-  if (url.origin !== AUTH_BASE)
+  if (url.origin !== AUTH_BASE || url.username || url.password) {
     throw unexpected('Comfort Cloud login redirected off the Panasonic login host')
+  }
   return url
 }
+
+/** True when the redirect target is exactly the app's redirect URI (any query), not merely prefixed by it. */
+const isAppRedirect = (location: string) => location.split('?')[0] === REDIRECT_URI
 
 /** The `code` query parameter of a redirect target, or null. */
 function codeOf(location: string): string | null {
@@ -105,11 +109,17 @@ export async function passwordLogin(d: LoginDeps): Promise<string> {
   const jar = new CookieJar()
 
   /** One request to the Auth0 host with the jar's cookies; its Set-Cookie goes back into the jar. */
-  async function auth(url: URL, init: RequestInit): Promise<Response> {
+  async function auth(url: URL, init: RequestInit, retry = true): Promise<Response> {
     const headers = new Headers(init.headers)
     const cookie = await jar.getCookieString(url.href)
     if (cookie) headers.set('cookie', cookie)
-    const res = await send(d.fetch, 'login', url.href, { ...init, headers }, { stats: d.stats })
+    const res = await send(
+      d.fetch,
+      'login',
+      url.href,
+      { ...init, headers },
+      { stats: d.stats, retry },
+    )
     for (const setCookie of res.headers.getSetCookie()) {
       await jar.setCookie(setCookie, url.href, { ignoreError: true })
     }
@@ -128,29 +138,33 @@ export async function passwordLogin(d: LoginDeps): Promise<string> {
     const passwordUrl = new URL('/usernamepassword/login', AUTH_BASE)
     const csrf = (await jar.getCookies(passwordUrl.href)).find((c) => c.key === '_csrf')?.value
     if (!csrf) throw unexpected('Comfort Cloud login page set no _csrf cookie')
-    const answer = await auth(passwordUrl, {
-      method: 'POST',
-      headers: {
-        'auth0-client': AUTH0_CLIENT,
-        'user-agent': AUTH_API_USER_AGENT,
-        'content-type': 'application/json',
+    const answer = await auth(
+      passwordUrl,
+      {
+        method: 'POST',
+        headers: {
+          'auth0-client': AUTH0_CLIENT,
+          'user-agent': AUTH_API_USER_AGENT,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: APP_CLIENT_ID,
+          redirect_uri: REDIRECT_URI,
+          tenant: AUTH0_TENANT,
+          response_type: 'code',
+          scope: SCOPE,
+          audience: AUDIENCE,
+          _csrf: csrf,
+          state,
+          _intstate: 'deprecated',
+          username: d.user,
+          password: d.password,
+          lang: 'en',
+          connection: AUTH0_CONNECTION,
+        }),
       },
-      body: JSON.stringify({
-        client_id: APP_CLIENT_ID,
-        redirect_uri: REDIRECT_URI,
-        tenant: AUTH0_TENANT,
-        response_type: 'code',
-        scope: SCOPE,
-        audience: AUDIENCE,
-        _csrf: csrf,
-        state,
-        _intstate: 'deprecated',
-        username: d.user,
-        password: d.password,
-        lang: 'en',
-        connection: AUTH0_CONNECTION,
-      }),
-    })
+      false,
+    )
     if (answer.status === 400 || answer.status === 401) {
       await discard(answer)
       throw rejected(answer.status)
@@ -173,9 +187,9 @@ export async function passwordLogin(d: LoginDeps): Promise<string> {
     })
     const resumed = await browserGet(onAuthHost(await redirectTarget(callback)))
     const final = await redirectTarget(resumed)
-    const code = codeOf(final)
-    if (code) return code
-    if (final.startsWith(REDIRECT_URI)) {
+    if (isAppRedirect(final)) {
+      const code = codeOf(final)
+      if (code) return code
       throw unexpected('Comfort Cloud login ended at the app without an authorization code')
     }
     // Upstream: some Auth0 setups surface a step-up MFA page only here.
@@ -205,7 +219,7 @@ export async function passwordLogin(d: LoginDeps): Promise<string> {
 
   // Auth0 may already know the session and send the app its code straight away.
   let code: string
-  if (location.startsWith(REDIRECT_URI)) {
+  if (isAppRedirect(location)) {
     const direct = codeOf(location)
     if (!direct)
       throw unexpected('Comfort Cloud authorize reached the app without an authorization code')
@@ -215,22 +229,26 @@ export async function passwordLogin(d: LoginDeps): Promise<string> {
   }
 
   // Step 4: the code exchange.
-  const tokenRes = await auth(new URL('/oauth/token', AUTH_BASE), {
-    method: 'POST',
-    headers: {
-      'auth0-client': AUTH0_CLIENT,
-      'user-agent': AUTH_API_USER_AGENT,
-      'content-type': 'application/json',
+  const tokenRes = await auth(
+    new URL('/oauth/token', AUTH_BASE),
+    {
+      method: 'POST',
+      headers: {
+        'auth0-client': AUTH0_CLIENT,
+        'user-agent': AUTH_API_USER_AGENT,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        scope: 'openid',
+        client_id: APP_CLIENT_ID,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT_URI,
+        code_verifier: verifier,
+      }),
     },
-    body: JSON.stringify({
-      scope: 'openid',
-      client_id: APP_CLIENT_ID,
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: REDIRECT_URI,
-      code_verifier: verifier,
-    }),
-  })
+    false,
+  )
   if (tokenRes.status !== 200) throw await statusError('login', tokenRes)
   return parseToken(parseJson('login', await tokenRes.text()))
 }
