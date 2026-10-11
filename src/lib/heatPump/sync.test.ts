@@ -217,18 +217,25 @@ describe('recentDays', () => {
     ])
   })
 
-  test('after an outage it reaches back to the day the last success started', () => {
+  test('after an outage it reaches back to the day before the last success started', () => {
     expect(recentDays(TODAY, new Date('2026-03-28T18:20:00Z'))).toEqual({
-      days: daysFrom('2026-03-28', TODAY),
+      days: daysFrom('2026-03-27', TODAY),
       skipped: 0,
     })
+  })
+
+  // A success at 00:20 may have run before the previous day's hour 23 settled.
+  test('a success just after midnight re-fetches the day before it', () => {
+    expect(recentDays(TODAY, new Date('2026-04-01T00:20:00Z')).days).toEqual(
+      daysFrom('2026-03-31', TODAY),
+    )
   })
 
   test('the catch-up is capped at 14 days and says how many it skipped', () => {
     const result = recentDays(TODAY, new Date('2026-03-04T00:20:00Z'))
     expect(result.days).toEqual(daysFrom('2026-03-21', TODAY))
     expect(result.days).toHaveLength(14)
-    expect(result.skipped).toBe(17) // 2026-03-04 … 2026-03-20
+    expect(result.skipped).toBe(18) // 2026-03-03 … 2026-03-20
   })
 
   test('a last success in the future changes nothing', () => {
@@ -323,8 +330,9 @@ test('after a five-day outage the next run re-fetches every missed day', async (
 
   await run(client, { now: () => later })
 
+  // From the day before the last success's day.
   expect(calls.filter((c) => c.startsWith('day:'))).toEqual(
-    daysFrom(TODAY, '2026-04-08').map((d) => `day:${MATSAL}:${d}`),
+    daysFrom('2026-04-02', '2026-04-08').map((d) => `day:${MATSAL}:${d}`),
   )
   for (const day of daysFrom('2026-04-04', '2026-04-07'))
     expect(await hoursStored('Matsal', day)).toBe(24)
@@ -340,8 +348,9 @@ test('a catch-up capped at 14 days warns how many days it skipped', async () => 
     log: cap.log,
   })
 
+  // The last success started on 2026-04-03: 2026-04-02 … 2026-04-19 are skipped.
   expect(cap.entries().find((e) => e.msg === 'comfort cloud catch-up capped')).toMatchObject({
-    skippedDays: 17,
+    skippedDays: 18,
   })
 })
 
@@ -760,7 +769,8 @@ test('an outage keeps the run failing until data returns', async () => {
   // A healthy run before the outage stores the unit's history (a quiet yesterday holds the backfill).
   const before = new Date('2026-03-31T10:00:00Z')
   await run(fakeComfortCloud([quiet], { now: before }).client, { now: () => before })
-  // From the last success's day: 2026-03-31 answers, 2026-04-01 … 2026-04-03 don't.
+  // From the day before the last success's day: 2026-03-30 and 2026-03-31
+  // answer, 2026-04-01 … 2026-04-03 don't.
   expect(await run(fakeComfortCloud([quiet]).client)).toMatchObject({
     outcome: 'failed',
     code: 'unexpected_response',

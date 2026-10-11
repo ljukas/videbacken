@@ -70,7 +70,7 @@ export type ComfortCloudSyncRun = RunBase & {
 const SOURCE = 'comfortCloud'
 /** Today and the two previous UTC days: the current hour fills in, the last days settle. */
 const RECENT_DAYS = 3
-/** After an outage the recent window reaches back to the last success's day, at most this far. */
+/** After an outage the recent window reaches further back, at most this many days. */
 const CATCH_UP_MAX_DAYS = 14
 /** Backfill day calls per unit a run; ≈ 700 days each spread over ≈ 6 runs. */
 const BACKFILL_DAYS_PER_UNIT = 60
@@ -94,9 +94,11 @@ const utcStart = (day: string) => new Date(`${day}T00:00:00Z`)
 
 /**
  * Pure: the UTC days a run re-fetches for every unit, oldest first. Today and
- * the two days before; after an outage, back to the day the last successful
- * run started (the days since then may never have landed), at most 14 days.
- * `skipped` counts the days the cap left out (a hole the backfill won't fill).
+ * the two days before; after an outage, back to the day before the one the
+ * last successful run started (the days since then may never have landed, and
+ * a success at 00:20 may have run before the previous day's hour 23 settled),
+ * at most 14 days (today and the 13 before). `skipped` counts the days the cap
+ * left out (a hole the backfill won't fill).
  */
 export function recentDays(
   today: string,
@@ -105,7 +107,7 @@ export function recentDays(
   let from = addUtcDays(today, -(RECENT_DAYS - 1))
   let skipped = 0
   if (lastSuccessStartedAt) {
-    const resume = utcDayOf(lastSuccessStartedAt.getTime())
+    const resume = addUtcDays(utcDayOf(lastSuccessStartedAt.getTime()), -1)
     if (resume < from) {
       const floor = addUtcDays(today, -(CATCH_UP_MAX_DAYS - 1))
       if (resume < floor) {
