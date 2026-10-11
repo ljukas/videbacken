@@ -342,14 +342,21 @@ async function syncUnits(
   // hours reliably, so a quiet yesterday means the unit (or its Wi-Fi adapter)
   // is offline: the run fails — Comfort Cloud's failure (`failed`), not ours —
   // every run until data returns, so an outage never reads as "recovered". A
-  // unit without data for over 14 days (removed, or long dead) only warns, so it
-  // stops alerting after two weeks. A rejected yesterday fails the run too, with
-  // no 14-day rule (a rejection is a fresh answer, not silence): a change on
-  // Panasonic's side (a unit, a range) must fail the source closed, not pile up
-  // as rejected days under a green tile (ADR-0027). Older rejected days only warn.
+  // unit that already answers again (an hour stored after yesterday) only
+  // warns: yesterday's hole won't fill, and the unit is back. A unit without
+  // data for over 14 days (removed, or long dead) only warns, so it stops
+  // alerting after two weeks. Either way its backfill stays held this run. A
+  // rejected yesterday fails the run too, with no 14-day rule (a rejection is a
+  // fresh answer, not silence): a change on Panasonic's side (a unit, a range)
+  // must fail the source closed, not pile up as rejected days under a green
+  // tile (ADR-0027). Older rejected days only warn.
   const offline: string[] = []
   for (const unit of quiet) {
     const newest = await newestHour(unit.id)
+    if (newest && newest >= utcStart(today)) {
+      ctx.log.warn('comfort cloud unit missed yesterday', { unit: unit.name, day: yesterday })
+      continue
+    }
     const sinceMs = newest ? ctx.now().getTime() - newest.getTime() : Number.POSITIVE_INFINITY
     if (sinceMs <= OFFLINE_ALERT_MS) {
       offline.push(unit.name)

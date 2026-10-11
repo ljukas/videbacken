@@ -564,8 +564,10 @@ test('an empty recent day keeps its stored hours', async () => {
 })
 
 test('yesterday empty fails the run, after the rest has landed', async () => {
+  const quiet = () => ({ registeredOn: '2026-03-28', rows: [] })
+  // Offline: no hours yesterday, none today.
   const { client } = fakeComfortCloud([matsal('2026-03-25'), overvaning('2026-03-28')], {
-    days: { [`${OVERVANING}:2026-04-02`]: () => ({ registeredOn: '2026-03-28', rows: [] }) },
+    days: { [`${OVERVANING}:2026-04-02`]: quiet, [`${OVERVANING}:${TODAY}`]: quiet },
   })
 
   const result = await run(client)
@@ -621,14 +623,22 @@ test('a rejected yesterday fails the run as unexpected_response, after the rest 
 
 // A bad yesterday (a changed unit, a transient outage) must not walk the
 // history past days it would reject or find empty: the backfill waits for a healthy yesterday.
+const quietDay = () => ({ registeredOn: '2026-03-25', rows: [] })
 test.each([
-  ['rejected', () => ({ registeredOn: '2026-03-25', rows: hoursOf('2026-04-02', NOW, 7.654321) })],
-  ['quiet', () => ({ registeredOn: '2026-03-25', rows: [] })],
-])('a unit whose yesterday was %s is not backfilled in that run, and resumes once yesterday is healthy', async (_, yesterday) => {
+  [
+    'rejected',
+    {
+      [`${MATSAL}:2026-04-02`]: () => ({
+        registeredOn: '2026-03-25',
+        rows: hoursOf('2026-04-02', NOW, 7.654321),
+      }),
+    },
+  ],
+  // Offline: no hours yesterday, none today.
+  ['quiet', { [`${MATSAL}:2026-04-02`]: quietDay, [`${MATSAL}:${TODAY}`]: quietDay }],
+])('a unit whose yesterday was %s is not backfilled in that run, and resumes once yesterday is healthy', async (_, days) => {
   const spy = vi.spyOn(integrationSyncService, 'reportProgress')
-  const first = fakeComfortCloud([matsal('2026-03-25'), overvaning('2026-03-28')], {
-    days: { [`${MATSAL}:2026-04-02`]: yesterday },
-  })
+  const first = fakeComfortCloud([matsal('2026-03-25'), overvaning('2026-03-28')], { days })
 
   expect(await run(first.client)).toMatchObject({
     outcome: 'failed',
@@ -650,6 +660,25 @@ test.each([
   ])
   expect(await hoursStored('Matsal', '2026-03-25')).toBe(24)
   expect((await unitNamed('Matsal'))?.historyCompleteAt).toEqual(NOW)
+})
+
+// Offline all yesterday, back today: yesterday's hole won't fill, and failing
+// the run for it would only alert about a unit that already answers again.
+test('a unit quiet yesterday that answers today only warns; its backfill still waits', async () => {
+  const cap = capturingLogger()
+  const { client, calls } = fakeComfortCloud([matsal('2026-03-25')], {
+    days: { [`${MATSAL}:2026-04-02`]: () => ({ registeredOn: '2026-03-25', rows: [] }) },
+  })
+
+  const result = await run(client, { log: cap.log })
+
+  expect(result).toMatchObject({ outcome: 'ok', emptyDays: 1, unitsCompleted: 0 })
+  expect(await hoursStored('Matsal', TODAY)).toBe(11)
+  expect(backfillCalls(calls, MATSAL)).toEqual([])
+  expect(cap.entries().find((e) => e.msg === 'comfort cloud unit missed yesterday')).toEqual(
+    expect.objectContaining({ unit: 'Matsal', day: '2026-04-02' }),
+  )
+  expect(cap.raw()).not.toContain(MATSAL)
 })
 
 test('a rejected older recent day only warns', async () => {
