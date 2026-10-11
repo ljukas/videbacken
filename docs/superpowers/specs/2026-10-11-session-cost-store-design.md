@@ -59,7 +59,7 @@ evSessionCost = pgTable('ev_session_cost', {
 }).enableRLS()
 
 evSessionCostMonth = pgTable('ev_session_cost_month', {
-  sessionId: uuid().notNull().references(() => evChargeSession.id, { onDelete: 'cascade' }),
+  sessionId: uuid().notNull().references(() => evSessionCost.sessionId, { onDelete: 'cascade' }), // cascades from the session too
   year: integer().notNull(),                        // Stockholm month, as house_energy_month
   month: integer().notNull(),                       // CHECK 1..12
   // the 14 CostTotals fields, double precision NOT NULL:
@@ -125,12 +125,13 @@ No cron and no queue topic: the hourly syncs and the read fallback make a failed
 
 ### Read side
 
-**`costOverview`**, three queries in parallel:
+**`costOverview`**, two queries in parallel:
 
-1. `sessionCost.monthSums({ vehicle })`: `SUM` of every total column per `(year, month)` over current rows, joined to
-   counted sessions in the scope. All months, all time (a few dozen rows).
-2. `sessionCost.staleSessions({ vehicle })`: ids of counted sessions in the scope that are stale.
-3. `firstReadingAt()`, as today.
+1. `sessionCost.readMonthSums({ vehicle })`, **one statement**: the `SUM` of every total column per `(year, month)`
+   over the current sessions, and the stale sessions' ids with their generations, all over counted sessions in the
+   scope. All months, all time (a few dozen rows). One statement because it is one snapshot: two separate queries
+   could see a session repriced or bumped between them and count it twice or not at all.
+2. `firstReadingAt()`, as today.
 
 With nothing stale, that is the whole request: one round, no slots, no mix, no pricing. Otherwise the stale sessions
 are priced on read by the shared function, merged into the sums, and written back under the guard (awaited,
@@ -143,7 +144,7 @@ stale session. The response shape and the `costs: null` on failure stay.
 
 **Unchanged:** the session page's cash-cost hero and `/charging/economy` keep pricing on read.
 
-**Timings:** `costStoredMs`, `costStaleMs`, `costStaleSessions` (a count) and `costWriteBackMs`. The existing
+**Timings:** `costStoredMs`, `costStaleSessions` (a count) and `costWriteBackMs`. The existing
 `costEnergy`/`costSlots`/`costMix`/`costTariff`/`costCompute` appear only when something was stale. `repriceStale`
 logs its own line per sync run (sessions, ms).
 
@@ -151,7 +152,7 @@ logs its own line per sync run (sessions, ms).
 
 - **Service** (`services/sessionCost`): current vs stale (no row, generation moved, version differs); the guarded
   write-back losing a race (a bump between the generation read and the write-back leaves the session stale and its
-  month rows untouched); `monthSums` and `staleSessions` honor the counted filter and the vehicle scope; cascade on
+  month rows untouched); `readMonthSums` and `readSessionSums` honor the counted filter and the vehicle scope, and read sums and stale ids from one snapshot; cascade on
   session delete.
 - **Writers:** `importSessions`, `replaceForSessions`, `replaceDay` (an overlapping interval, an interval-less session
   over its window, a session outside the day left alone) and the three tariff mutations each bump the right sessions,
