@@ -186,8 +186,10 @@ export function unitPrice(
 
 /**
  * The pricing math's version (ADR-0020, amended 2026-10-11). Bump it with any
- * change to what `priceIntervals` or `toIntervals` (costInputs.ts) computes:
- * every stored session cost then reads as stale and is repriced.
+ * change to anything `priceSessions` (costing.ts) computes or depends on the
+ * shape of: `priceIntervals`, `toIntervals` (costInputs.ts), `bucketStartMs`
+ * and the month keying, and how `listSessionEnergy` builds stretches and
+ * `estimated`. Every stored session cost then reads as stale and is repriced.
  */
 export const PRICING_VERSION = 1
 

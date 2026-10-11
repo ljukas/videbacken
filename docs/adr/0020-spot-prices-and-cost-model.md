@@ -44,7 +44,8 @@ Zaptec reports each session's energy as roughly **hourly intervals**; prices com
   a rollback past this change) is re-fetched and healed. The flip side: deleting a day's slots no longer makes the
   sync re-fetch it (its row survives). Write `spot_price` only through `replaceDay`; to re-fetch a day, delete its
   `spot_price_day` row. Stored because the economy page's on-read grouping of a year's slots cost 56–247 ms on prod.
-  The cost math itself stays on read.
+  The cost math itself is not stored with the prices: charging cost is stored per session and month (see "Stored
+  totals" below), and the session page's hero and the economy page still price on read.
 - **`electricity_tariff`** — admin-managed periods keyed by a unique Stockholm `valid_from` date: retail markup
   (may be negative), grid transfer, energy tax (öre/kWh ex VAT) and VAT %. A period applies until the next begins,
   so editing today's tariff never re-prices history. Fixed monthly fees are deliberately out of scope.
@@ -79,22 +80,42 @@ the energy ones; the page prefetches `costOverview` best-effort, and a session p
 `ev_session_cost` (one row per session: `generation`, `pricing_version`) and `ev_session_cost_month` (one row per
 session and Stockholm month: the totals plus `noPriceKwh` / `noTariffKwh`). A session's stored totals are
 **current** when its `generation` matches the one the totals were priced at and its `pricing_version` equals
-`PRICING_VERSION`; otherwise it is **stale**. A change to `priceIntervals` or `toIntervals` must bump
-`PRICING_VERSION`.
+`PRICING_VERSION`; otherwise it is **stale**. `PRICING_VERSION` must be bumped with any change to anything
+`priceSessions` computes or depends on the shape of: `priceIntervals`, `toIntervals`, `bucketStartMs` and the month
+keying, and how `listSessionEnergy` builds stretches and `estimated`.
 
 - **Writers bump.** Every writer of a cost input bumps the affected sessions' generation in its own transaction
   (`sessionCost/invalidate.ts`): `importSessions` and `replaceForSessions` (the session's intervals and mix) bump
   those sessions, `replaceDay` (spot slots) bumps the sessions overlapping the day, and tariff create/update/remove
-  bumps the sessions overlapping the period (`bumpAll` upserts every session). `pruneUncounted` and attribution are
-  exempt by design: they don't change a counted session's priced cost.
+  bumps **every session** (`bumpAll` upserts a row for each, so a session read without a row loses too).
+  `pruneUncounted` and attribution are exempt by design: they don't change a counted session's priced cost.
+- **Set-wide bumps wait out imports.** `bumpAll` and `bumpOverlapping` choose their sessions from the writer's READ
+  COMMITTED snapshot, so a session or interval inserted by a concurrent, not yet committed `importSessions` would be
+  missed and could then be stored as current with the old tariff or slots. Each tariff transaction therefore starts
+  with `LOCK TABLE ev_charge_session IN SHARE MODE`, and `replaceDay`'s with `LOCK TABLE ev_charge_session,
+  ev_charge_interval IN SHARE MODE` (sessions first, the order the import takes them; tables before cost rows, so no
+  lock cycle). SHARE waits for an in-flight import's ROW EXCLUSIVE and holds new imports off for the few ms of the
+  write; it doesn't conflict with readers or the write-back's FK KEY SHARE row locks.
 - **Generation guard.** A pricer reads the generations first, then the inputs, and writes back with
-  `WHERE generation = g` (one sorted upsert, 1 s lock timeout). If an input changed meanwhile, the write is skipped
-  and the session stays stale.
+  `WHERE generation = g` (one sorted upsert). If an input changed meanwhile, the write is skipped and the session
+  stays stale. The write-back's transaction sets three local timeouts: a lock wait of 1 s (200 ms on the read path,
+  whose reader already has its figures; a derive can hold bumped rows for seconds), 5 s per statement and 5 s idle
+  in the transaction, so a write-back abandoned past its caller's budget on a frozen instance can't hold row locks.
+  A session with a non-finite total is left out (and warned about) rather than failing the whole write-back.
 - **Repricing.** `repriceStale` runs after the Zaptec, elpris and Emaldo syncs and after tariff edits, with a 10 s
   budget. Whatever it doesn't reach is priced on the next read.
 - **Reads.** `costOverview` and the sessions list read the stored sums and the stale ids in one statement, and price
   only the stale sessions. A stored total carries `noPriceKwh` / `noTariffKwh` exactly as before, so "missing
   ≠ 0 kr" is unchanged. The session page's hero and the economy page still price on read.
+- **A read's write-back is a cache fill, not a mutation.** Any signed-in user's read may store the stale sessions it
+  priced. That is derived data computed from inputs the reader doesn't control, so ADR-0017's rule (users are
+  read-only; mutations are admin-only) is about user-initiated mutations and doesn't apply.
+- **A `PRICING_VERSION` deploy churns, correctly.** While the old and the new deployment both serve, each reads the
+  other's rows as stale and rewrites them. Every figure stays right; it only costs extra writes until the old one
+  is gone.
+- **Self-check.** `scripts/checkSessionCosts.ts` (read-only; `bun --no-env-file` with an inline `DATABASE_URL`)
+  prices every current counted session on read and compares it with its stored month rows (≤ 1e-9 relative per
+  field). A session repriced between its two reads can show as an offender: re-run before believing one.
 - **Spec**: [session cost store design](../superpowers/specs/2026-10-11-session-cost-store-design.md).
 - **Operating notes.** After rolling prod back past this change and forward again, bump `PRICING_VERSION`: code
   written before it doesn't bump, so rows priced before the rollback would still read as current. A new total column
@@ -142,7 +163,8 @@ window hours if higher), and prices the result with `priceIntervals`:
 - **Materialize cost per session/interval.** Faster reads, but every tariff edit needs a recompute job and "which
   numbers are stale" bookkeeping. Data is tiny (~100 sessions/yr); on-read stays well under a ~300 ms budget for the
   whole read for years (estimated ~100–150 ms at 5 years). The `rpc timing` line records `costEnergyMs`, `costSlotsMs`,
-  `costTariffMs` and `costComputeMs`; revisit with a monthly rollup if `costSlotsMs` grows.
+  `costTariffMs` and `costComputeMs`; revisit with a monthly rollup if `costSlotsMs` grows. **Adopted 2026-10-11**
+  once on-read pricing measured 117–460 ms on prod; see "Stored totals".
 - **Writers recompute, reads trust the rows (amended 2026-10-11, rejected).** Every writer would have to price the
   affected sessions itself, so a spot-price sync or a tariff edit does the heaviest work inside its transaction, and
   a missed writer leaves wrong numbers with no way to notice. Generations make a miss show up as a stale session.
@@ -158,7 +180,8 @@ window hours if higher), and prices the result with `priceIntervals`:
 - One small, pure, heavily tested module decides every kronor figure; DST days, the hourly→15-min switch and tariff
   changes at Stockholm midnight are unit tests, not SQL fixtures.
 - Cost was an **upper bound** until ADR-0023 (2026-10): all charging counted as grid-bought. Since then the cash
-  cost prices each session's stored solar/battery mix on read; a session without house data is still priced as
+  cost prices each session's stored solar/battery mix (stored per session and month since 2026-10-11, see "Stored
+  totals"; the session page's hero and the economy page price on read); a session without house data is still priced as
   grid-bought, and the page says how much ("Husets energidata saknas för …"). Zaptec's hourly intervals still can't
   resolve cheaper quarters inside an hour, though the mix's load-shaped spread narrows it. The economy
   counterfactuals remain grid-only (spot timing), labelled so.

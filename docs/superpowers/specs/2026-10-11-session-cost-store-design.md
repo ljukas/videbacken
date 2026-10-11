@@ -3,6 +3,9 @@
 Roadmap: [server latency](../roadmaps/2026-10-07-server-latency.md), step 3. Amends ADR-0020 (cost on read →
 priced on write, with an on-read fallback for stale sessions).
 
+Amended during the build (schema and step reviews): "Schema", "Race safety" and the read side below describe what
+shipped.
+
 ## Why
 
 `evCharging/costOverview` is critical in the `/charging` loader and is still the slowest read on the page:
@@ -72,8 +75,14 @@ evSessionCostMonth = pgTable('ev_session_cost_month', {
   (ADR-0002), and the Zaptec upsert's update set stays untouched.
 - `double precision` matches the mix and the session energy. The sums are floats summed in another order than
   today's whole-month pricing, so they agree within float rounding (≤ 1e-9), not bit for bit.
-- The exact CHECKs (finite values, non-negative kWh, `month` 1–12, `priced_generation <= generation`) and
-  indexes are settled in the plan and the schema-design review, against the queries below.
+- The month rows reference `ev_session_cost` (not the session directly): deleting a session cascades through its
+  state row to its months, and a month row can't exist without a state row.
+- CHECKs: `generation >= 0`, and `priced_generation` null or between 0 and `generation`; the priced columns
+  (`priced_generation`, `pricing_version`, `estimated`) are null together or set together; `month` 1–12; every
+  total finite (`> '-Infinity' AND < 'Infinity'`, which also refuses NaN). No sign bound: spot money is negative on
+  negative prices, and a float residue of −1e-17 kWh would fail a whole write-back.
+- Indexes: the month table's PK `(session_id, year, month)` serves the reads' join, the write-back's delete by
+  session and the FK cascade; the month sums scan every row (a few hundred).
 - No backfill migration: after the deploy every session is stale, and the first reprice (the next sync, or the first
   read) fills the table.
 
@@ -89,12 +98,25 @@ current totals.
 ### Race safety
 
 - **Invalidation** is one statement inside the writer's own transaction: an upsert of `ev_session_cost` rows that
-  sets `generation = generation + 1` (inserting `generation = 1` for a session without a row). The input change and
-  the bump commit together.
-- **A repricer reads the generations before the inputs**, then prices, then writes back per session in one
-  transaction: `UPDATE ev_session_cost SET priced_generation = g, pricing_version = V, estimated = … WHERE session_id
-  = s AND generation = g`, and only when that updated a row, replaces the session's month rows. A session with no
-  row is written with an `INSERT … ON CONFLICT DO NOTHING` at generation 0, which loses to a writer's insert.
+  sets `generation = generation + 1` (inserting `generation = 1` for a session without a row), locking rows in
+  `session_id` order. The input change and the bump commit together. `bumpAll` (tariff edits) upserts a row for
+  every session, so a repricer that read a session without a row loses too.
+- **Set-wide bumps wait out imports.** `bumpAll` and `bumpOverlapping` choose sessions from the writer's READ
+  COMMITTED snapshot, which can't see a session or interval a concurrent import hasn't committed. Each tariff
+  transaction therefore starts with `LOCK TABLE ev_charge_session IN SHARE MODE`, and `replaceDay`'s with
+  `LOCK TABLE ev_charge_session, ev_charge_interval IN SHARE MODE`: it waits for an in-flight import and holds new
+  ones off for the few ms of the write, without blocking readers or the write-back's FK KEY SHARE locks. Sessions
+  first, as the import takes them; tables before cost rows, so no lock cycle.
+- **A repricer reads the generations before the inputs**, then prices, then writes back in one transaction with
+  **one sorted upsert**: `INSERT INTO ev_session_cost … ON CONFLICT (session_id) DO UPDATE SET priced_generation,
+  pricing_version, estimated … WHERE ev_session_cost.generation = EXCLUDED.generation`, the rows in `session_id`
+  order (the bumps' order, so no deadlock), joined to `ev_charge_session` (a session deleted meanwhile is skipped).
+  A session read without a row counts as generation 0, so its insert loses to a writer's row (generation ≥ 1). A row
+  already current at that generation and version is skipped, not rewritten. Only the sessions the upsert returned
+  get their month rows replaced. Duplicate ids are stored once.
+- **Timeouts.** The write-back's transaction sets a lock wait of 1 s (200 ms for a read's write-back), 5 s per
+  statement and 5 s idle in the transaction, so an abandoned write-back can't hold row locks; a timeout throws and
+  the callers treat it as best effort.
 - If a writer commits between the repricer's generation read and its input read, the repricer prices newer inputs
   under the old generation; the bump then makes it stale again. Harmless.
 - If a writer commits before the write-back, the `WHERE generation = g` misses: nothing is written.
@@ -127,7 +149,7 @@ No cron and no queue topic: the hourly syncs and the read fallback make a failed
 
 **`costOverview`**, two queries in parallel:
 
-1. `sessionCost.readMonthSums({ vehicle })`, **one statement**: the `SUM` of every total column per `(year, month)`
+1. `sessionCost.readMonthSums({ vehicle, pricingVersion })`, **one statement**: the `SUM` of every total column per `(year, month)`
    over the current sessions, and the stale sessions' ids with their generations, all over counted sessions in the
    scope. All months, all time (a few dozen rows). One statement because it is one snapshot: two separate queries
    could see a session repriced or bumped between them and count it twice or not at all.
