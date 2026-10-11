@@ -65,7 +65,8 @@ export const spotPriceDay = pgTable(
     // upsert's conflict target.
     primaryKey({ name: 'spot_price_day_pk', columns: [table.zone, table.day] }),
     check('spot_price_day_zone_check', sql`${table.zone} IN (${sqlList(PRICE_ZONES)})`),
-    // A stored day is whole: 23, 24 or 25 hours.
+    // At most a 25 h DST day. `replaceDay` only stores whole days (23, 24 or
+    // 25 h, `validateDaySlots`); the bound is a backstop, not that rule.
     check(
       'spot_price_day_covered_seconds_check',
       sql`${table.coveredSeconds} > 0 AND ${table.coveredSeconds} <= 90000`,
