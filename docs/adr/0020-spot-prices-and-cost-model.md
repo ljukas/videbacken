@@ -39,8 +39,10 @@ Zaptec reports each session's energy as roughly **hourly intervals**; prices com
   average SEK/kWh and the covered seconds, PK `(zone, day)`. `replaceDay` rewrites the day's row in the same
   transaction as its slots (the only writer), so it is never staler than they are. It is also the record of which
   days are stored: the elpris sync plans the days without a row, so a day whose slots exist without one (e.g. after
-  a rollback past this change) is re-fetched and healed. Stored because the economy page's on-read grouping of a
-  year's slots cost 56–247 ms on prod. The cost math itself stays on read.
+  a rollback past this change) is re-fetched and healed. The flip side: deleting a day's slots no longer makes the
+  sync re-fetch it (its row survives). Write `spot_price` only through `replaceDay`; to re-fetch a day, delete its
+  `spot_price_day` row. Stored because the economy page's on-read grouping of a year's slots cost 56–247 ms on prod.
+  The cost math itself stays on read.
 - **`electricity_tariff`** — admin-managed periods keyed by a unique Stockholm `valid_from` date: retail markup
   (may be negative), grid transfer, energy tax (öre/kWh ex VAT) and VAT %. A period applies until the next begins,
   so editing today's tariff never re-prices history. Fixed monthly fees are deliberately out of scope.
