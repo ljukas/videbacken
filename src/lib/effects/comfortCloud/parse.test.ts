@@ -80,6 +80,19 @@ describe('units', () => {
     expect(parseUnits({ groupList: [{ deviceList: [absent] }] })).toEqual([])
   })
 
+  test('an empty deviceList falls back to deviceIdList (upstream: `deviceList or deviceIdList`)', () => {
+    const ac = {
+      deviceGuid: 'ID+2',
+      deviceType: '1',
+      deviceName: 'X',
+      deviceModuleNumber: MODEL,
+      parameters: {},
+    }
+    expect(
+      parseUnits({ groupList: [{ deviceList: [], deviceIdList: [ac] }] }).map((u) => u.guid),
+    ).toEqual(['ID+2'])
+  })
+
   test('a nameless unit is named by its model', () => {
     const body = deviceGroupBody() as unknown as {
       groupList: { deviceList: { deviceName: string | null }[] }[]
@@ -152,6 +165,37 @@ describe('day history', () => {
       setpointC: null,
       insideC: null,
       outsideC: null,
+    })
+  })
+
+  test('null optional fields are null and the kWh is kept', () => {
+    const body = dayHistoryBody('2026-06-10', {
+      row: (row, h) =>
+        h === 5
+          ? {
+              ...row,
+              averageOutsideTemp: null,
+              heatConsumptionRate: null,
+              coolConsumptionRate: null,
+            }
+          : row,
+    })
+    expect(parseDayHistory('2026-06-10', body).rows[5]).toMatchObject({
+      energyKwh: syntheticKwh(5),
+      heatShare: null,
+      coolShare: null,
+      outsideC: null,
+      insideC: 20.25,
+    })
+  })
+
+  test('a null consumption is still a wrong shape', () => {
+    const body = dayHistoryBody('2026-06-10', {
+      row: (row, h) => (h === 5 ? { ...row, consumption: null } : row),
+    })
+    expect(caught(() => parseDayHistory('2026-06-10', body))).toMatchObject({
+      code: 'unexpected_response',
+      op: 'history',
     })
   })
 

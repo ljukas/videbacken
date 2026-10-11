@@ -79,8 +79,8 @@ export function parseUnits(value: unknown): ComfortCloudUnit[] {
   const { groupList } = parse('units', groupsSchema, value)
   const units = new Map<string, ComfortCloudUnit>()
   for (const group of groupList ?? []) {
-    // Upstream: `deviceList or deviceIdList`.
-    for (const device of group.deviceList ?? group.deviceIdList ?? []) {
+    // Upstream: `deviceList or deviceIdList` (an empty list falls through too).
+    for (const device of (group.deviceList?.length ? group.deviceList : group.deviceIdList) ?? []) {
       // Upstream's `is_valid`: an air conditioner has the `parameters` key (its value may be null);
       // Aquarea and HWS are skipped.
       if (!device || !('parameters' in device) || NON_AC_DEVICE_TYPES.has(device.deviceType ?? ''))
@@ -100,11 +100,11 @@ const numeric = z.number()
 const rowSchema = z.object({
   dataTime: z.string().max(32),
   consumption: numeric,
-  heatConsumptionRate: numeric.optional(),
-  coolConsumptionRate: numeric.optional(),
-  averageSettingTemp: numeric.optional(),
-  averageInsideTemp: numeric.optional(),
-  averageOutsideTemp: numeric.optional(),
+  heatConsumptionRate: numeric.nullish(),
+  coolConsumptionRate: numeric.nullish(),
+  averageSettingTemp: numeric.nullish(),
+  averageInsideTemp: numeric.nullish(),
+  averageOutsideTemp: numeric.nullish(),
 })
 const historySchema = z.object({
   temperatureUnit: z.int(),
@@ -113,8 +113,8 @@ const historySchema = z.object({
 })
 
 /** null for "no value" or an absent field; anything else as sent (the service range-checks it). */
-const orNull = (v: number | undefined): number | null =>
-  v === undefined || v === NO_VALUE ? null : v
+const orNull = (v: number | null | undefined): number | null =>
+  v === undefined || v === null || v === NO_VALUE ? null : v
 
 /** 'YYYYMMDD' → 'YYYY-MM-DD' (not validated). */
 const dashed = (compact: string) =>
