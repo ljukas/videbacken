@@ -36,6 +36,7 @@ describe('credential env map', () => {
         appId: 'EMALDO_APP_ID',
         appSecret: 'EMALDO_APP_SECRET',
       },
+      comfortCloud: { user: 'PANASONIC_USER', password: 'PANASONIC_PASSWORD' },
       gridTariff: { facilityId: 'GRID_FACILITY_ID' },
     })
   })

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import {
   HEAT_PUMP_HOUR_KWH_MAX,
@@ -15,8 +15,10 @@ import {
   type HeatPumpHourInput,
   listUnits,
   markHistoryComplete,
+  newestHour,
   oldestDay,
   replaceDay,
+  setBackfillCursor,
   setRegisteredOn,
   upsertUnits,
 } from './heatPump'
@@ -74,6 +76,7 @@ test('upsertUnits inserts new units, stamping both seen times', async () => {
     ...MATSAL,
     registeredOn: null,
     historyCompleteAt: null,
+    backfillCursor: null,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
   })
@@ -449,7 +452,64 @@ test('setRegisteredOn and markHistoryComplete of an unknown unit are UNKNOWN_HEA
   }
 })
 
+test('setBackfillCursor stores the walk position of that unit only, and moves it either way', async () => {
+  const { matsal } = await twoUnits()
+  await setBackfillCursor(matsal.id, '2026-01-30')
+  expect(await listUnits()).toEqual([
+    expect.objectContaining({ name: 'Matsal', backfillCursor: '2026-01-30' }),
+    expect.objectContaining({ name: 'Övervåning', backfillCursor: null }),
+  ])
+  await setBackfillCursor(matsal.id, '2026-02-14')
+  expect((await listUnits())[0].backfillCursor).toBe('2026-02-14')
+})
+
+test('setBackfillCursor of an unknown unit is UNKNOWN_HEAT_PUMP; a day that is not real is a RangeError', async () => {
+  for (const id of [UNKNOWN_ID, 'not-a-uuid']) {
+    await expect(setBackfillCursor(id, '2026-01-30')).rejects.toMatchObject({
+      code: 'UNKNOWN_HEAT_PUMP',
+    })
+  }
+  const { matsal } = await twoUnits()
+  await expect(setBackfillCursor(matsal.id, '2026-02-30')).rejects.toThrow(RangeError)
+  expect((await listUnits())[0].backfillCursor).toBeNull()
+})
+
 test('setRegisteredOn refuses a day that is not a real date', async () => {
   const { matsal } = await twoUnits()
   await expect(setRegisteredOn(matsal.id, '2024-13-01')).rejects.toThrow(RangeError)
+})
+
+describe('newestHour', () => {
+  const hour = (iso: string) => ({
+    hourStart: new Date(iso),
+    energyKwh: 0.03,
+    heatShare: 1,
+    coolShare: 0,
+    setpointC: 21,
+    insideC: 21.5,
+    outsideC: 4,
+  })
+
+  test('null without readings, then the newest stored hour of that unit only', async () => {
+    const [a, b] = await upsertUnits(
+      [
+        { guid: 'CS-HZ25ZKE+0000000001', name: 'Matsal', model: 'CS-HZ25ZKE' },
+        { guid: 'CS-HZ25ZKE+0000000002', name: 'Övervåning', model: 'CS-HZ25ZKE' },
+      ],
+      new Date('2026-04-03T10:00:00Z'),
+    )
+    expect(await newestHour(a.id)).toBeNull()
+    await replaceDay(a.id, '2026-04-01', [
+      hour('2026-04-01T05:00:00Z'),
+      hour('2026-04-01T22:00:00Z'),
+    ])
+    await replaceDay(a.id, '2026-03-30', [hour('2026-03-30T23:00:00Z')])
+    await replaceDay(b.id, '2026-04-02', [hour('2026-04-02T01:00:00Z')])
+    expect(await newestHour(a.id)).toEqual(new Date('2026-04-01T22:00:00Z'))
+    expect(await newestHour(b.id)).toEqual(new Date('2026-04-02T01:00:00Z'))
+  })
+
+  test('an id that cannot be a heat pump has no newest hour', async () => {
+    expect(await newestHour('not-a-uuid')).toBeNull()
+  })
 })

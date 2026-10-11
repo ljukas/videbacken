@@ -141,12 +141,16 @@ export default defineConfig({
               //   Zaptec's hourly cron (an admin sync can still overlap; src/lib/vehicleState/skodaSyncCron.ts).
               // - Emaldo house energy hourly at :45 — after Zaptec's :00, clear of Škoda's
               //   :07/:22/:37/:52 (src/lib/houseEnergy/emaldoSyncCron.ts).
+              // - Comfort Cloud heat pumps every 6 h at :20 (00:20, 06:20, 12:20, 18:20 UTC) —
+              //   clear of Zaptec's :00, Škoda's :07/:22/:37/:52, elpris's :30 and Emaldo's :45
+              //   (src/lib/heatPump/comfortCloudSyncCron.ts).
               // Changing a cadence? Its admin-facing copy is `charging_source_cadence_*`
               // (src/components/evCharging/syncSourceCopy.ts).
               crons: [
                 { path: '/api/cron/zaptec-sync', schedule: '0 * * * *' },
                 { path: '/api/cron/skoda-sync', schedule: '7,22,37,52 * * * *' },
                 { path: '/api/cron/emaldo-sync', schedule: '45 * * * *' },
+                { path: '/api/cron/comfort-cloud-sync', schedule: '20 */6 * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 12 * * *' },
                 { path: '/api/cron/elpris-sync', schedule: '30 15 * * *' },
                 // Not a pulled integration: the grid-tariff watcher (ADR-0019's

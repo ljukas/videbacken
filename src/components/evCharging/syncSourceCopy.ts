@@ -16,6 +16,8 @@ export function syncSourceRole(source: IntegrationSource): string {
       return m.charging_source_role_skoda()
     case 'emaldo':
       return m.charging_source_role_emaldo()
+    case 'comfortCloud':
+      return m.charging_source_role_comfortCloud()
   }
 }
 
@@ -30,5 +32,7 @@ export function syncSourceCadence(source: IntegrationSource): string {
       return m.charging_source_cadence_skoda()
     case 'emaldo':
       return m.charging_source_cadence_emaldo()
+    case 'comfortCloud':
+      return m.charging_source_cadence_comfortCloud()
   }
 }

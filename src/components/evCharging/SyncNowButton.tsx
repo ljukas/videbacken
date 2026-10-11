@@ -2,12 +2,18 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ComponentProps } from 'react'
 import { toast } from 'sonner'
 import { RefreshButton } from '~/components/layout/RefreshButton'
-import type { IntegrationErrorCode } from '~/lib/integrationHealth'
+import type { IntegrationErrorCode, IntegrationSource } from '~/lib/integrationHealth'
 import { integrationErrorMessage } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 
-type SyncSource = 'zaptec' | 'elpris' | 'skoda' | 'emaldo'
+// oRPC's TanStack keys are `[path, { input?, type? }]`, and TanStack matches a
+// key prefix partially, so `[['heatPump'], {}]` matches every `heatPump.*`
+// query. Step 3 adds that router: until then nothing matches (harmless), and
+// `orpc.heatPump.key()` doesn't type-check yet — switch to it then.
+const HEAT_PUMP_QUERY_PREFIX = [['heatPump'], {}]
+
+type SyncSource = IntegrationSource
 type SyncResult = {
   outcome: 'ok' | 'skipped' | 'failed' | 'error'
   code: IntegrationErrorCode | null
@@ -26,6 +32,9 @@ type SyncResult = {
 // House energy, like prices, has two mutations: inside a full sync only a real
 // failure toasts (an unconfigured Emaldo stays quiet, its Datakällor tile
 // already says so); an explicit retry confirms either way.
+// The heat pumps (Comfort Cloud) are synced only on their own (a tile or an
+// alert): a backfill run can take minutes and the charging pages don't use
+// them. A landed heat pump sync also refreshes the Energi and Värmepumpar reads.
 // Every outcome can have changed health/runs/data, so the whole evCharging
 // cache is invalidated.
 export function useSyncNow() {
@@ -170,6 +179,39 @@ export function useSyncNow() {
     }),
   )
 
+  // The heat pumps: only ever an explicit action (a tile or an alert), so confirm either way.
+  const heatPumpsError = () =>
+    toast.error(m.charging_sync_heat_pumps_failed(), {
+      description: integrationErrorMessage('internal_error', { source: 'comfortCloud' }),
+    })
+  const heatPumps = useMutation(
+    orpc.evCharging.syncNow.mutationOptions({
+      onSuccess: (result) => {
+        switch (result.outcome) {
+          case 'ok':
+            toast.success(m.charging_sync_heat_pumps_ok())
+            // energy.overview carries heat pump data (step 2); heatPump.* is step 3's page.
+            void queryClient.invalidateQueries({ queryKey: orpc.energy.key() })
+            void queryClient.invalidateQueries({ queryKey: HEAT_PUMP_QUERY_PREFIX })
+            return
+          case 'skipped':
+            toast.info(m.charging_sync_skipped())
+            return
+          case 'failed':
+          case 'error':
+            toast.error(m.charging_sync_heat_pumps_failed(), {
+              description: integrationErrorMessage(result.code ?? 'internal_error', {
+                source: 'comfortCloud',
+              }),
+            })
+            return
+        }
+      },
+      onError: heatPumpsError,
+      onSettled: invalidate,
+    }),
+  )
+
   const pricesPending = prices.isPending || pricesRetry.isPending
   const housePending = house.isPending || houseRetry.isPending
   return {
@@ -190,6 +232,8 @@ export function useSyncNow() {
           return houseRetry.mutate({ source: 'emaldo' })
         case 'zaptec':
           return sessions.mutate({ source: 'zaptec' })
+        case 'comfortCloud':
+          return heatPumps.mutate({ source: 'comfortCloud' })
       }
     },
     // The heading button syncs everything but the car, but waits only on
@@ -207,6 +251,8 @@ export function useSyncNow() {
           return housePending
         case 'zaptec':
           return sessions.isPending
+        case 'comfortCloud':
+          return heatPumps.isPending
       }
     },
   }

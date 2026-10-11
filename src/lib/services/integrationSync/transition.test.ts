@@ -193,6 +193,13 @@ describe('mixed-code streaks pair their alerts', () => {
 })
 
 describe('deriveState', () => {
+  test('comfortCloud goes stale after 13 h: two missed 6-hourly runs', () => {
+    expect(STALE_AFTER_MS.comfortCloud).toBe(13 * 60 * 60 * 1000)
+    const at = (ms: number) => new Date(T0.getTime() + ms)
+    expect(deriveState('comfortCloud', healthy, at(STALE_AFTER_MS.comfortCloud))).toBe('ok')
+    expect(deriveState('comfortCloud', healthy, at(STALE_AFTER_MS.comfortCloud + 1))).toBe('stale')
+  })
+
   const stale = STALE_AFTER_MS.zaptec
 
   test.each([
@@ -244,7 +251,13 @@ describe('alert threshold', () => {
   }
 
   test('the threshold table is pinned', () => {
-    expect(ALERT_AFTER_FAILURES).toEqual({ zaptec: 1, elpris: 1, skoda: 3, emaldo: 1 })
+    expect(ALERT_AFTER_FAILURES).toEqual({
+      zaptec: 1,
+      elpris: 1,
+      skoda: 3,
+      emaldo: 1,
+      comfortCloud: 2,
+    })
   })
 
   test('two failures then success: no alert, streak cleared', () => {

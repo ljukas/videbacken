@@ -46,6 +46,10 @@ export const setCredentialsInput = z.discriminatedUnion('source', [
     source: z.literal('emaldo'),
     fields: fieldsOf({ user: value, password: value, appId: value, appSecret: value }),
   }),
+  z.object({
+    source: z.literal('comfortCloud'),
+    fields: fieldsOf({ user: value, password: value }),
+  }),
   z.object({ source: z.literal('gridTariff'), fields: fieldsOf({ facilityId: value }) }),
 ])
 

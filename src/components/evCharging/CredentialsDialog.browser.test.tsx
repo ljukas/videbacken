@@ -138,6 +138,11 @@ function status(
         updatedAt: null,
         unreadable: false,
       },
+      comfortCloud: {
+        fields: { user: missing, password: missing },
+        updatedAt: null,
+        unreadable: false,
+      },
       gridTariff: { fields: { facilityId: missing }, updatedAt: null, unreadable: false },
     },
     ...over,

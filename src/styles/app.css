@@ -50,6 +50,7 @@
     --color-source-elpris: var(--source-elpris);
     --color-source-skoda: var(--source-skoda);
     --color-source-emaldo: var(--source-emaldo);
+    --color-source-comfort-cloud: var(--source-comfort-cloud);
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
@@ -180,11 +181,15 @@
   /* Integration source tones (the Datakällor tiles on /charging/settings): categorical
      identity, not accents (ADR-0015 amendment). One hue per company, spread in
      lightness too so red-orange and yellow stay apart under deuteranopia; each
-     icon ≥3:1 on its own wash; in sRGB gamut. Keep both themes in sync. */
+     icon ≥3:1 on its own wash; in sRGB gamut. Keep both themes in sync.
+     Comfort Cloud (ADR-0027): violet, icon ≥3:1 on its wash, ΔE ≥ 15 (normal) / ≥ 8 (CVD)
+     from the others (measured: light #a95dda 3.47:1, ΔE 21.9 / CVD 9.9; dark #b464d6
+     3.60:1, ΔE 20.1 / CVD 10.6). */
   --source-zaptec: oklch(0.48 0.17 33);
   --source-elpris: oklch(0.5 0.085 185);
   --source-skoda: oklch(0.48 0.13 250);
   --source-emaldo: oklch(0.6 0.12 90);
+  --source-comfort-cloud: oklch(0.62 0.19 310);
 }
 
 .dark {
@@ -257,6 +262,7 @@
   --source-elpris: oklch(0.77 0.11 185);
   --source-skoda: oklch(0.75 0.12 250);
   --source-emaldo: oklch(0.85 0.15 88);
+  --source-comfort-cloud: oklch(0.64 0.18 315);
 }
 
 @layer base {

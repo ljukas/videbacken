@@ -28,6 +28,7 @@ import { Route as AuthenticatedChargingSettingsRouteImport } from './routes/_aut
 import { Route as AuthenticatedEnergyIndexRouteImport } from './routes/_authenticated/energy/index'
 import { Route as AuthenticatedEnergyBatteryRouteImport } from './routes/_authenticated/energy/battery'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiCronComfortCloudSyncRouteImport } from './routes/api/cron/comfort-cloud-sync'
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
 import { Route as ApiCronEmaldoSyncRouteImport } from './routes/api/cron/emaldo-sync'
 import { Route as ApiCronGridTariffCatalogueRouteImport } from './routes/api/cron/grid-tariff-catalogue'
@@ -139,6 +140,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronComfortCloudSyncRoute = ApiCronComfortCloudSyncRouteImport.update({
+  id: '/api/cron/comfort-cloud-sync',
+  path: '/api/cron/comfort-cloud-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronElprisSyncRoute = ApiCronElprisSyncRouteImport.update({
   id: '/api/cron/elpris-sync',
   path: '/api/cron/elpris-sync',
@@ -198,6 +204,7 @@ export interface FileRoutesByFullPath {
   '/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/energy/battery': typeof AuthenticatedEnergyBatteryRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/comfort-cloud-sync': typeof ApiCronComfortCloudSyncRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
@@ -225,6 +232,7 @@ export interface FileRoutesByTo {
   '/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/energy/battery': typeof AuthenticatedEnergyBatteryRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/comfort-cloud-sync': typeof ApiCronComfortCloudSyncRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
@@ -255,6 +263,7 @@ export interface FileRoutesById {
   '/_authenticated/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/_authenticated/energy/battery': typeof AuthenticatedEnergyBatteryRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/comfort-cloud-sync': typeof ApiCronComfortCloudSyncRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
@@ -285,6 +294,7 @@ export interface FileRouteTypes {
     | '/charging/settings'
     | '/energy/battery'
     | '/api/auth/$'
+    | '/api/cron/comfort-cloud-sync'
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
@@ -312,6 +322,7 @@ export interface FileRouteTypes {
     | '/charging/settings'
     | '/energy/battery'
     | '/api/auth/$'
+    | '/api/cron/comfort-cloud-sync'
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
@@ -341,6 +352,7 @@ export interface FileRouteTypes {
     | '/_authenticated/charging/settings'
     | '/_authenticated/energy/battery'
     | '/api/auth/$'
+    | '/api/cron/comfort-cloud-sync'
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
@@ -361,6 +373,7 @@ export interface RootRouteChildren {
   SignedInRoute: typeof SignedInRoute
   ApiLogRoute: typeof ApiLogRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiCronComfortCloudSyncRoute: typeof ApiCronComfortCloudSyncRoute
   ApiCronElprisSyncRoute: typeof ApiCronElprisSyncRoute
   ApiCronEmaldoSyncRoute: typeof ApiCronEmaldoSyncRoute
   ApiCronGridTariffCatalogueRoute: typeof ApiCronGridTariffCatalogueRoute
@@ -505,6 +518,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/comfort-cloud-sync': {
+      id: '/api/cron/comfort-cloud-sync'
+      path: '/api/cron/comfort-cloud-sync'
+      fullPath: '/api/cron/comfort-cloud-sync'
+      preLoaderRoute: typeof ApiCronComfortCloudSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/elpris-sync': {
       id: '/api/cron/elpris-sync'
       path: '/api/cron/elpris-sync'
@@ -619,6 +639,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignedInRoute: SignedInRoute,
   ApiLogRoute: ApiLogRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiCronComfortCloudSyncRoute: ApiCronComfortCloudSyncRoute,
   ApiCronElprisSyncRoute: ApiCronElprisSyncRoute,
   ApiCronEmaldoSyncRoute: ApiCronEmaldoSyncRoute,
   ApiCronGridTariffCatalogueRoute: ApiCronGridTariffCatalogueRoute,

@@ -1,4 +1,5 @@
 import {
+  AirVentIcon,
   CarFrontIcon,
   ChartLineIcon,
   EvChargerIcon,
@@ -34,6 +35,12 @@ function identity(source: IntegrationSource): { Icon: LucideIcon; tone: string }
       return {
         Icon: SunMediumIcon,
         tone: 'bg-source-emaldo/15 text-source-emaldo dark:bg-source-emaldo/20',
+      }
+    case 'comfortCloud':
+      // The indoor unit's vent: what the source gives us is the heat pumps.
+      return {
+        Icon: AirVentIcon,
+        tone: 'bg-source-comfort-cloud/12 text-source-comfort-cloud dark:bg-source-comfort-cloud/20',
       }
   }
 }

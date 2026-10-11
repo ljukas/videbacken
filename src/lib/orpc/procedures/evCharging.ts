@@ -22,6 +22,7 @@ import {
   vehicleRecordInput,
   vehicleScope,
 } from '~/lib/evCharging/vehicle'
+import { runComfortCloudSync } from '~/lib/heatPump/sync'
 import { runEmaldoSync } from '~/lib/houseEnergy/sync'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import type { PatternTimings, SessionListTimings } from '~/lib/services/evCharging'
@@ -35,9 +36,10 @@ import { runSkodaSync } from '~/lib/vehicleState/sync'
 
 /**
  * The sources the charging page tracks: sessions (Zaptec), spot prices
- * (elpris), the car's live state (Škoda) and the house's energy flows (Emaldo).
+ * (elpris), the car's live state (Škoda), the house's energy flows (Emaldo)
+ * and the heat pumps (Comfort Cloud).
  */
-const chargingSource = z.enum(['zaptec', 'elpris', 'skoda', 'emaldo'])
+const chargingSource = z.enum(['zaptec', 'elpris', 'skoda', 'emaldo', 'comfortCloud'])
 /** `{ source }`, defaulting to Zaptec so existing callers keep their meaning. */
 const sourceInput = z.object({ source: chargingSource.default('zaptec') }).optional()
 const yearInput = z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional()
@@ -321,6 +323,16 @@ export const evChargingRouter = {
   // its own source. A run never throws for a failed/skipped outcome (those
   // are recorded in health); only a genuine bug propagates.
   syncNow: adminProcedure.input(sourceInput).handler(async ({ input, context }) => {
+    if (input?.source === 'comfortCloud') {
+      const run = await runComfortCloudSync({ trigger: 'admin', deps: { log: context.log } })
+      if (context.timings) {
+        context.timings.comfortCloudSyncMs = run.durationMs
+        context.timings.comfortCloudFetchMs = run.fetchMs
+        context.timings.comfortCloudStoreMs = run.storeMs
+      }
+      // Counts only: hourly readings never leave the server (ADR-0027).
+      return { outcome: run.outcome, code: run.code, upserted: run.hoursStored }
+    }
     if (input?.source === 'emaldo') {
       const run = await runEmaldoSync({ trigger: 'admin', deps: { log: context.log } })
       if (context.timings) {

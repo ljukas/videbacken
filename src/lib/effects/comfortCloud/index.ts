@@ -1,5 +1,3 @@
-// Step 1a: the client only. Step 1b adds the `comfortCloud` facade and registers it in
-// src/lib/effects/index.ts.
 export { createComfortCloudClient } from './client'
 export {
   type ComfortCloudCallOpts,
@@ -9,6 +7,13 @@ export {
   type ComfortCloudHistory,
   type ComfortCloudHour,
   type ComfortCloudUnit,
+  comfortCloud,
   newCallStats,
+  selectComfortCloudAdapter,
 } from './comfortCloud'
-export { type ComfortCloudCredentialField, ComfortCloudError, type ComfortCloudOp } from './errors'
+export {
+  type ComfortCloudCredentialField,
+  ComfortCloudDayError,
+  ComfortCloudError,
+  type ComfortCloudOp,
+} from './errors'

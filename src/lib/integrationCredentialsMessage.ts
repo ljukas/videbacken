@@ -31,6 +31,7 @@ export function credentialFieldLabel<S extends CredentialSource>(
       return m.charging_credentials_field_zaptec_username()
     case 'zaptec.password':
     case 'emaldo.password':
+    case 'comfortCloud.password':
       return m.charging_credentials_field_password()
     case 'skoda.apiKey':
       return m.charging_credentials_field_skoda_apiKey()
@@ -40,6 +41,8 @@ export function credentialFieldLabel<S extends CredentialSource>(
       return m.charging_credentials_field_skoda_homeCoordinates()
     case 'emaldo.user':
       return m.charging_credentials_field_emaldo_user()
+    case 'comfortCloud.user':
+      return m.charging_credentials_field_comfortCloud_user()
     case 'emaldo.appId':
       return m.charging_credentials_field_emaldo_appId()
     case 'emaldo.appSecret':
@@ -64,6 +67,10 @@ export function credentialFieldHint<S extends CredentialSource>(
     case 'emaldo.appId':
     case 'emaldo.appSecret':
       return m.charging_credentials_hint_emaldo_app()
+    case 'comfortCloud.user':
+      return m.charging_credentials_hint_comfortCloud_user()
+    case 'comfortCloud.password':
+      return m.charging_credentials_hint_comfortCloud_password()
     case 'gridTariff.facilityId':
       return m.charging_credentials_hint_facility()
     case 'zaptec.password':

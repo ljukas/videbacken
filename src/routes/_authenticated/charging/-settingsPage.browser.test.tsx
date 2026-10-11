@@ -59,6 +59,7 @@ const STATUS = {
       updatedAt: null,
       unreadable: false,
     },
+    comfortCloud: { fields: { user: env, password: env }, updatedAt: null, unreadable: false },
     gridTariff: { fields: { facilityId: env }, updatedAt: null, unreadable: false },
   },
 }
@@ -67,7 +68,13 @@ function seed(qc: QueryClient, opts: { coverage?: boolean; adminReads?: boolean 
   qc.setQueryData(orpc.tariff.list.queryOptions().queryKey, [TARIFF] as never)
   seedSourcesHealth(qc)
   if (opts.adminReads !== false) {
-    qc.setQueryData(runsKey, { zaptec: [], elpris: [], skoda: [], emaldo: [] } as never)
+    qc.setQueryData(runsKey, {
+      zaptec: [],
+      elpris: [],
+      skoda: [],
+      emaldo: [],
+      comfortCloud: [],
+    } as never)
     qc.setQueryData(credentialsKey, STATUS as never)
   }
   qc.setQueryData(orpc.evCharging.vehicleStateLatest.queryOptions().queryKey, null)
@@ -192,6 +199,7 @@ const RUN_CODE = {
   elpris: 'rate_limited',
   skoda: 'auth_failed',
   emaldo: 'forbidden',
+  comfortCloud: 'unexpected_response',
 } as const
 const failedRun = (source: keyof typeof RUN_CODE) => ({
   id: `00000000-0000-4000-8000-00000000000${Object.keys(RUN_CODE).indexOf(source)}`,
@@ -217,6 +225,7 @@ test.each(
         elpris: [failedRun('elpris')],
         skoda: [failedRun('skoda')],
         emaldo: [failedRun('emaldo')],
+        comfortCloud: [failedRun('comfortCloud')],
       } as never),
   })
   const dialog = screen.getByRole('dialog', {
@@ -279,7 +288,7 @@ const credentialsButton = (source: string) => ({
 
 test('the credential tiles have key buttons; elpris has none', async () => {
   const { screen } = await renderSettings('')
-  for (const source of ['zaptec', 'skoda', 'emaldo'] as const)
+  for (const source of ['zaptec', 'skoda', 'emaldo', 'comfortCloud'] as const)
     await expect
       .element(screen.getByRole('button', credentialsButton(integrationSourceName(source))))
       .toBeVisible()
@@ -506,4 +515,25 @@ test('the dialog swapping sheet → dialog (a rotation) is not a close: focus st
     keyButton.removeEventListener('focus', focusedButton)
     await page.viewport(414, 896)
   }
+})
+
+test('Comfort Cloud has its own tile in Datakällor', async () => {
+  const { screen } = await renderSettings('')
+  await expect
+    .element(screen.getByRole('heading', { name: 'Comfort Cloud', level: 3 }))
+    .toBeVisible()
+  await expect.element(screen.getByText(m.charging_source_role_comfortCloud())).toBeVisible()
+  await expect.element(screen.getByText(m.charging_source_cadence_comfortCloud())).toBeVisible()
+})
+
+test('a credentials link to Comfort Cloud opens its dialog with email and password', async () => {
+  const { screen } = await renderSettings('?dialog=credentials&source=comfortCloud')
+  const dialog = screen.getByRole('dialog', { name: credentialsTitle('comfortCloud') })
+  await expect.element(dialog).toBeVisible()
+  await expect
+    .element(dialog.getByText(m.charging_credentials_field_comfortCloud_user(), { exact: true }))
+    .toBeVisible()
+  await expect
+    .element(dialog.getByText(m.charging_credentials_field_password(), { exact: true }))
+    .toBeVisible()
 })

@@ -10,6 +10,16 @@ const ICON_CLASS = {
   elpris: 'lucide-chart-line',
   skoda: 'lucide-car-front',
   emaldo: 'lucide-sun-medium',
+  comfortCloud: 'lucide-air-vent',
+} as const
+
+/** The --source-* token of each source (kebab-case). */
+const TONE = {
+  zaptec: 'zaptec',
+  elpris: 'elpris',
+  skoda: 'skoda',
+  emaldo: 'emaldo',
+  comfortCloud: 'comfort-cloud',
 } as const
 
 const ROLE = {
@@ -17,6 +27,7 @@ const ROLE = {
   elpris: m.charging_source_role_elpris,
   skoda: m.charging_source_role_skoda,
   emaldo: m.charging_source_role_emaldo,
+  comfortCloud: m.charging_source_role_comfortCloud,
 } as const
 
 const CADENCE = {
@@ -24,6 +35,7 @@ const CADENCE = {
   elpris: m.charging_source_cadence_elpris,
   skoda: m.charging_source_cadence_skoda,
   emaldo: m.charging_source_cadence_emaldo,
+  comfortCloud: m.charging_source_cadence_comfortCloud,
 } as const
 
 test.each(INTEGRATION_SOURCES)('%s has its own decorative icon in its own tone', async (source) => {
@@ -32,9 +44,9 @@ test.each(INTEGRATION_SOURCES)('%s has its own decorative icon in its own tone',
   expect(icon).not.toBeNull()
   expect(icon?.getAttribute('aria-hidden')).toBe('true')
   const mark = icon?.parentElement
-  expect(mark?.className).toContain(`bg-source-${source}/`)
-  expect(mark?.className).toContain(`text-source-${source}`)
-  expect(mark?.className).toContain(`dark:bg-source-${source}/`)
+  expect(mark?.className).toContain(`bg-source-${TONE[source]}/`)
+  expect(mark?.className).toContain(`text-source-${TONE[source]}`)
+  expect(mark?.className).toContain(`dark:bg-source-${TONE[source]}/`)
 })
 
 test.each(INTEGRATION_SOURCES)('%s has its own role and cadence copy', (source) => {

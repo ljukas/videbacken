@@ -1,3 +1,4 @@
+export { comfortCloud } from './comfortCloud'
 export { elpris } from './elpris'
 export { eltariff } from './eltariff'
 export { email } from './email'

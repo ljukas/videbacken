@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lt, min, type SQL, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, lt, max, min, type SQL, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { pgErrorSummary } from '~/lib/db/pgError'
 import {
@@ -195,6 +195,21 @@ export async function oldestDay(heatPumpId: string): Promise<string | null> {
 }
 
 /**
+ * The unit's newest stored hour (`hour_start`), or null with none — one max() over the
+ * (heat_pump_id, hour_start) primary key. The sync's offline rule reads it.
+ */
+export async function newestHour(heatPumpId: string): Promise<Date | null> {
+  if (!UUID_RE.test(heatPumpId)) return null
+  const [row] = await guarded('Reading the newest heat pump hour', () =>
+    db
+      .select({ newest: max(heatPumpReading.hourStart) })
+      .from(heatPumpReading)
+      .where(eq(heatPumpReading.heatPumpId, heatPumpId)),
+  )
+  return row?.newest ?? null
+}
+
+/**
  * Records the unit's first data day ('YYYY-MM-DD', from `deviceRegisterTime`). A date earlier
  * than the stored one clears `history_complete_at` in the same statement, so the backfill (which
  * walks units without it) reopens down to the new date. Postgres evaluates every SET expression
@@ -213,9 +228,19 @@ export async function markHistoryComplete(heatPumpId: string, now: Date): Promis
   await updateUnit(heatPumpId, { historyCompleteAt: now })
 }
 
+/**
+ * Records where the unit's backfill walk continues ('YYYY-MM-DD'): the next UTC day it looks
+ * at. The sync persists it when a walk stops short, so days listed but answering no hours (or
+ * rejected) are passed over for good instead of re-walked every run.
+ */
+export async function setBackfillCursor(heatPumpId: string, day: string): Promise<void> {
+  if (!isUtcDay(day)) throw new RangeError(`Not a YYYY-MM-DD day: ${day}`)
+  await updateUnit(heatPumpId, { backfillCursor: day })
+}
+
 async function updateUnit(
   heatPumpId: string,
-  set: { registeredOn?: string; historyCompleteAt?: Date | SQL },
+  set: { registeredOn?: string; historyCompleteAt?: Date | SQL; backfillCursor?: string },
 ): Promise<void> {
   if (!UUID_RE.test(heatPumpId)) throw new HeatPumpDomainError('UNKNOWN_HEAT_PUMP')
   const rows = await guarded('Updating a heat pump unit', () =>

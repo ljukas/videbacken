@@ -66,9 +66,12 @@ Comfort Cloud reports only electricity in, not heat out, so the units' true effi
    `heat_pump_reading` (unit × `hour_start`: kWh, heating and cooling share, average setpoint, indoor and outdoor
    °C). `-255` is never stored. Every request uses `osTimezone: "+00:00"`.
 5. **Sync four times a day, with a backfill.** Each run replaces, for each unit, today and every previous UTC day back
-   to the last successful run (at least two, at most 14; the current hour is partial and gets corrected), then
-   backfills each unit backwards from its oldest stored day, using the month call to skip days without data, down to
-   the unit's registration date (`deviceRegisterTime`, the first data day).
+   to the day before the last successful run's (at least two, at most 14; the current hour is partial and gets
+   corrected), then backfills each unit backwards from its oldest stored day, using the month call to skip days
+   without data, down to the unit's registration date (`deviceRegisterTime`, the first data day). The walk's position
+   is persisted (`heat_pump.backfill_cursor`) so days that answer nothing can't stall it, it reaches
+   `registered_on − 1` (the register day may be a local date), and a unit's backfill pauses while its latest day is
+   bad.
 6. **Only daily sums reach the browser.** Hourly rows tell when someone is home and heating; like the Emaldo
    readings they stay on the server. The service sums per Stockholm month and day on read. At ≈ 17.5k rows a year
    no view or rollup is needed.
