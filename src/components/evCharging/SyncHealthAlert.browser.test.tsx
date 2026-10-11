@@ -328,3 +328,45 @@ test('no settings link for a member, or without the prop', async () => {
   await expect.element(noProp.screen.getByRole('alert')).toBeVisible()
   expect(noProp.screen.getByRole('link').elements()).toHaveLength(0)
 })
+
+test('Comfort Cloud has its own never-synced copy', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...base, source: 'comfortCloud', state: 'never_synced' }}
+      isAdmin
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect
+    .element(screen.getByText(m.charging_health_never_synced_comfortCloud()))
+    .toBeVisible()
+})
+
+test('Comfort Cloud has its own stale copy', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...base, source: 'comfortCloud', state: 'stale' }}
+      isAdmin
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect.element(screen.getByText(m.charging_health_stale_comfortCloud())).toBeVisible()
+})
+
+test('a refused Comfort Cloud login names the two-step code', async () => {
+  const { screen } = await renderWithProviders(
+    <SyncHealthAlert
+      health={{ ...failing, source: 'comfortCloud', code: 'auth_failed' }}
+      isAdmin
+      onRetry={() => {}}
+      retrying={false}
+    />,
+  )
+  await expect
+    .element(
+      screen.getByText(m.integration_health_error_auth_failed_comfortCloud(), { exact: false }),
+    )
+    .toBeVisible()
+})

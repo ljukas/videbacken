@@ -4,13 +4,20 @@
 // the settings form can import it without dragging server code into the
 // browser bundle. See `src/lib/integrationHealth.ts` for the same pattern.
 // Adding a source changes the rendered DB CHECK text: run `bun run db:generate`.
-export const CREDENTIAL_SOURCES = ['zaptec', 'skoda', 'emaldo', 'gridTariff'] as const
+export const CREDENTIAL_SOURCES = [
+  'zaptec',
+  'skoda',
+  'emaldo',
+  'comfortCloud',
+  'gridTariff',
+] as const
 export type CredentialSource = (typeof CREDENTIAL_SOURCES)[number]
 
 export const CREDENTIAL_FIELDS = {
   zaptec: ['username', 'password'],
   skoda: ['apiKey', 'vin', 'homeCoordinates'],
   emaldo: ['user', 'password', 'appId', 'appSecret'],
+  comfortCloud: ['user', 'password'],
   gridTariff: ['facilityId'],
 } as const satisfies Record<CredentialSource, readonly string[]>
 
@@ -45,6 +52,7 @@ export const CREDENTIAL_ENV_VARS = {
     appId: 'EMALDO_APP_ID',
     appSecret: 'EMALDO_APP_SECRET',
   },
+  comfortCloud: { user: 'PANASONIC_USER', password: 'PANASONIC_PASSWORD' },
   gridTariff: { facilityId: 'GRID_FACILITY_ID' },
 } as const satisfies { [S in CredentialSource]: Record<CredentialField<S>, string> }
 

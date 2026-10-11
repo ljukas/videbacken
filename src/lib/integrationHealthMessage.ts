@@ -30,6 +30,8 @@ export function integrationSourceName(source: IntegrationSource): string {
       return m.integration_health_source_skoda()
     case 'emaldo':
       return m.integration_health_source_emaldo()
+    case 'comfortCloud':
+      return m.integration_health_source_comfortCloud()
   }
 }
 
@@ -53,6 +55,8 @@ export function integrationErrorMessage(
           return m.integration_health_error_auth_failed_skoda({}, opts)
         case 'emaldo':
           return m.integration_health_error_auth_failed_emaldo({}, opts)
+        case 'comfortCloud':
+          return m.integration_health_error_auth_failed_comfortCloud({}, opts)
         default:
           return m.integration_health_error_auth_failed({ source }, opts)
       }
@@ -64,10 +68,16 @@ export function integrationErrorMessage(
       return m.integration_health_error_unreachable({ source }, opts)
     case 'unexpected_response':
       // Emaldo's API is unofficial: an answer we can't decode usually means
-      // the app's id/secret rotated (ADR-0023); say what to look for.
-      return options.source === 'emaldo'
-        ? m.integration_health_error_unexpected_response_emaldo({}, opts)
-        : m.integration_health_error_unexpected_response({ source }, opts)
+      // the app's id/secret rotated (ADR-0023). Comfort Cloud's is too, and its
+      // sync also fails when a unit went quiet (ADR-0027): say both.
+      switch (options.source) {
+        case 'emaldo':
+          return m.integration_health_error_unexpected_response_emaldo({}, opts)
+        case 'comfortCloud':
+          return m.integration_health_error_unexpected_response_comfortCloud({}, opts)
+        default:
+          return m.integration_health_error_unexpected_response({ source }, opts)
+      }
     case 'not_configured':
       return m.integration_health_error_not_configured({ source }, opts)
     case 'credentials_unreadable':

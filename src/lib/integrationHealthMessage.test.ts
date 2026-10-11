@@ -77,3 +77,32 @@ test('a refused Emaldo login names the credentials and the Emaldo app key', () =
   expect(en).toContain('credentials')
   expect(en).toContain("Emaldo app's key")
 })
+
+test('comfortCloud is a source named Comfort Cloud', () => {
+  expect(INTEGRATION_SOURCES).toContain('comfortCloud')
+  expect(integrationSourceName('comfortCloud')).toBe('Comfort Cloud')
+})
+
+// The client maps a rejected password and a demanded 2FA code both to auth_failed
+// (the run's message says which); the copy names both causes.
+test('a refused Comfort Cloud login names the password and the two-step code', () => {
+  const sv = integrationErrorMessage('auth_failed', { source: 'comfortCloud', locale: 'sv' })
+  expect(sv).toContain('lösenord')
+  expect(sv).toContain('tvåstegskod')
+  const en = integrationErrorMessage('auth_failed', { source: 'comfortCloud', locale: 'en' })
+  expect(en).toContain('password')
+  expect(en).toContain('two-step code')
+})
+
+test('an unexpected Comfort Cloud answer says a heat pump may be offline', () => {
+  expect(
+    integrationErrorMessage('unexpected_response', { source: 'comfortCloud', locale: 'sv' }),
+  ).toContain('offline')
+  expect(
+    integrationErrorMessage('unexpected_response', { source: 'comfortCloud', locale: 'en' }),
+  ).toContain('offline')
+  // Other codes keep the shared, source-named copy.
+  expect(
+    integrationErrorMessage('unreachable', { source: 'comfortCloud', locale: 'en' }),
+  ).toContain('Comfort Cloud')
+})

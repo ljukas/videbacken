@@ -11,6 +11,28 @@ import {
 } from './integrationCredentialsMessage'
 
 describe('credential copy', () => {
+  test('Comfort Cloud asks for the Panasonic ID email and a password-only account', () => {
+    expect(credentialFieldLabel('comfortCloud', 'user')).toBe(
+      m.charging_credentials_field_comfortCloud_user(),
+    )
+    expect(credentialFieldLabel('comfortCloud', 'password')).toBe(
+      m.charging_credentials_field_password(),
+    )
+    expect(credentialFieldHint('comfortCloud', 'user')).toBe(
+      m.charging_credentials_hint_comfortCloud_user(),
+    )
+    expect(credentialFieldHint('comfortCloud', 'password')).toBe(
+      m.charging_credentials_hint_comfortCloud_password(),
+    )
+    expect(credentialFieldList('comfortCloud', ['password', 'user'])).toBe('E-post och Lösenord')
+    expect(suspectFieldsMessage('comfortCloud', ['password', 'user'])).toBe(
+      m.charging_credentials_suspect({ fields: 'E-post och Lösenord' }),
+    )
+    expect(credentialsTitle('comfortCloud')).toBe(
+      m.charging_credentials_title({ source: 'Comfort Cloud' }),
+    )
+  })
+
   test('every field of every source has a label', () => {
     for (const source of CREDENTIAL_SOURCES)
       for (const field of CREDENTIAL_FIELDS[source])

@@ -337,7 +337,7 @@ test('recentRuns is forbidden for a non-admin user', async () => {
 test('recentRuns returns every source’s (empty) run history for an admin', async () => {
   await signIn('admin')
   const runs = await call(evChargingRouter.recentRuns, {}, { context: baseContext() })
-  expect(runs).toEqual({ zaptec: [], elpris: [], skoda: [], emaldo: [] })
+  expect(runs).toEqual({ zaptec: [], elpris: [], skoda: [], emaldo: [], comfortCloud: [] })
 })
 
 test('recentRuns takes a limit of 1–50 and defaults to 20 runs per source', async () => {
@@ -1019,7 +1019,7 @@ test('syncStatuses rejects an unauthenticated caller', async () => {
 test('syncStatuses hides every source’s adminDetail from a member', async () => {
   await signIn('user')
   const all = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
-  expect(Object.keys(all).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  expect(Object.keys(all).sort()).toEqual(['comfortCloud', 'elpris', 'emaldo', 'skoda', 'zaptec'])
   for (const health of Object.values(all)) expect(health.adminDetail).toBeNull()
 })
 

@@ -112,7 +112,7 @@ export function syncHealthMessage(health: Health): string | null {
 // The state bodies that differ by source: sessions sync hourly and feed the
 // totals; prices sync daily and feed costs; the car's state polls every 15 min
 // and feeds attribution; the house's energy flows sync hourly and will feed the
-// cost mix. Exhaustive — a new source is a
+// cost mix; the heat pumps sync every 6 hours. Exhaustive — a new source is a
 // compile error until it gets its own copy.
 function neverSyncedCopy(source: Health['source']): string {
   switch (source) {
@@ -124,6 +124,8 @@ function neverSyncedCopy(source: Health['source']): string {
       return m.charging_health_never_synced_skoda()
     case 'emaldo':
       return m.charging_health_never_synced_emaldo()
+    case 'comfortCloud':
+      return m.charging_health_never_synced_comfortCloud()
   }
 }
 
@@ -137,6 +139,8 @@ function staleCopy(source: Health['source']): string {
       return m.charging_health_stale_skoda()
     case 'emaldo':
       return m.charging_health_stale_emaldo()
+    case 'comfortCloud':
+      return m.charging_health_stale_comfortCloud()
   }
 }
 

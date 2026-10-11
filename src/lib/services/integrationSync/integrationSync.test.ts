@@ -426,12 +426,12 @@ test('reportProgress after the lease expired (not yet taken over) writes nothing
 test('getAllHealth reads every source at once; a source with no row is never_synced', async () => {
   await acquire(T0) // Zaptec has a row, with a live lease
   const all = await getAllHealth({ now: at(1000), includeAdminDetail: false })
-  expect(Object.keys(all).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  expect(Object.keys(all).sort()).toEqual(['comfortCloud', 'elpris', 'emaldo', 'skoda', 'zaptec'])
   expect(all.zaptec).toEqual(
     await getHealth('zaptec', { now: at(1000), includeAdminDetail: false }),
   )
   expect(all.zaptec.running).toBe(true)
-  for (const source of ['elpris', 'skoda', 'emaldo'] as const)
+  for (const source of ['elpris', 'skoda', 'emaldo', 'comfortCloud'] as const)
     expect(all[source]).toMatchObject({ source, state: 'never_synced', running: false })
 })
 
@@ -507,11 +507,12 @@ test('listRecentRunsBySource returns each source’s newest runs, at most `limit
     })
   }
   const runs = await listRecentRunsBySource({ limit: 2 })
-  expect(Object.keys(runs).sort()).toEqual(['elpris', 'emaldo', 'skoda', 'zaptec'])
+  expect(Object.keys(runs).sort()).toEqual(['comfortCloud', 'elpris', 'emaldo', 'skoda', 'zaptec'])
   expect(runs.zaptec.map((r) => r.startedAt)).toEqual([at(2000), at(1000)])
   expect(runs.elpris.map((r) => r.startedAt)).toEqual([at(3000)])
   expect(runs.skoda).toEqual([])
   expect(runs.emaldo).toEqual([])
+  expect(runs.comfortCloud).toEqual([])
   // Same row shape as the single-source read.
   expect(runs.zaptec[0]).toEqual((await listRecentRuns('zaptec', { limit: 1 }))[0])
 })

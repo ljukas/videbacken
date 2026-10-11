@@ -2,12 +2,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ComponentProps } from 'react'
 import { toast } from 'sonner'
 import { RefreshButton } from '~/components/layout/RefreshButton'
-import type { IntegrationErrorCode } from '~/lib/integrationHealth'
+import type { IntegrationErrorCode, IntegrationSource } from '~/lib/integrationHealth'
 import { integrationErrorMessage } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 
-type SyncSource = 'zaptec' | 'elpris' | 'skoda' | 'emaldo'
+type SyncSource = IntegrationSource
 type SyncResult = {
   outcome: 'ok' | 'skipped' | 'failed' | 'error'
   code: IntegrationErrorCode | null
@@ -190,6 +190,9 @@ export function useSyncNow() {
           return houseRetry.mutate({ source: 'emaldo' })
         case 'zaptec':
           return sessions.mutate({ source: 'zaptec' })
+        case 'comfortCloud':
+          // Task 6 (this branch) wires the Comfort Cloud mutation.
+          return
       }
     },
     // The heading button syncs everything but the car, but waits only on
@@ -207,6 +210,8 @@ export function useSyncNow() {
           return housePending
         case 'zaptec':
           return sessions.isPending
+        case 'comfortCloud':
+          return false
       }
     },
   }
