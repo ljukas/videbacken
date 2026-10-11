@@ -294,12 +294,12 @@ async function syncUnits(
   // unit registered after yesterday has no yesterday to miss), and units whose
   // yesterday failed validation.
   const quiet: Unit[] = []
-  const rejected: string[] = []
+  const rejected: Unit[] = []
   for (const unit of units) {
     for (const day of recent.days) {
       const answer = await syncDay(client, run, ctx, unit, day)
       if (day === yesterday) {
-        if (answer.rejected) rejected.push(unit.name)
+        if (answer.rejected) rejected.push(unit)
         else if (
           answer.hours === 0 &&
           unit.registeredOn !== null &&
@@ -318,7 +318,16 @@ async function syncUnits(
   if (backfilling.length > initiallyIncomplete) {
     await progress.shrink(-(backfilling.length - initiallyIncomplete) * BACKFILL_DAYS_PER_UNIT)
   }
+  // A unit whose yesterday was quiet or rejected waits: walking its history now
+  // would pass over (and persist the cursor past) days a changed API or an outage
+  // answers badly. It resumes on the first run with a healthy yesterday.
+  const held = new Set([...quiet, ...rejected])
   for (const unit of backfilling) {
+    if (held.has(unit)) {
+      await progress.shrink(BACKFILL_DAYS_PER_UNIT)
+      run.backfillDaysLeft += daysLeft(unit, await walkStart(unit, today))
+      continue
+    }
     await backfillUnit(client, run, ctx, unit, { today, progress, lowerSince })
   }
 
@@ -353,7 +362,7 @@ async function syncUnits(
   if (rejected.length > 0) {
     // Names and the day only: never a value.
     problems.push(
-      `Comfort Cloud hours for ${yesterday} (UTC) failed validation for ${rejected.join(' and ')}`,
+      `Comfort Cloud hours for ${yesterday} (UTC) failed validation for ${rejected.map((u) => u.name).join(' and ')}`,
     )
   }
   if (problems.length > 0) {
@@ -362,6 +371,21 @@ async function syncUnits(
     })
   }
 }
+
+// Where the unit's walk starts: the lower of the day before its oldest stored
+// day (with none, the day before the recent window) and the persisted cursor.
+async function walkStart(unit: Unit, today: string): Promise<string> {
+  const oldest = await oldestDay(unit.id)
+  const belowStored = oldest ? addUtcDays(oldest, -1) : addUtcDays(today, -RECENT_DAYS)
+  // 'YYYY-MM-DD' strings compare as days.
+  return unit.backfillCursor !== null && unit.backfillCursor < belowStored
+    ? unit.backfillCursor
+    : belowStored
+}
+
+// Estimate: calendar days from registered_on up to the walk's position.
+const daysLeft = (unit: Unit, cursor: string) =>
+  unit.registeredOn === null ? 0 : Math.max(0, utcDaysBetween(unit.registeredOn, cursor) + 1)
 
 // Walks one unit's history newest first, from the lower of the day before its
 // oldest stored day and the persisted walk position (`backfill_cursor`). The
@@ -378,13 +402,7 @@ async function backfillUnit(
   a: { today: string; progress: Progress; lowerSince: (day: string) => void },
 ): Promise<void> {
   const { progress } = a
-  const oldest = await oldestDay(unit.id)
-  const belowStored = oldest ? addUtcDays(oldest, -1) : addUtcDays(a.today, -RECENT_DAYS)
-  // 'YYYY-MM-DD' strings compare as days.
-  let cursor =
-    unit.backfillCursor !== null && unit.backfillCursor < belowStored
-      ? unit.backfillCursor
-      : belowStored
+  let cursor = await walkStart(unit, a.today)
   let fetched = 0
   let completed = false
   const outOfBudget = () => ctx.now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS
@@ -430,9 +448,7 @@ async function backfillUnit(
     walkFailure = { error }
   }
   if (!completed) {
-    if (unit.registeredOn !== null) {
-      run.backfillDaysLeft += Math.max(0, utcDaysBetween(unit.registeredOn, cursor) + 1)
-    }
+    run.backfillDaysLeft += daysLeft(unit, cursor)
     if (cursor !== unit.backfillCursor) {
       try {
         await setBackfillCursor(unit.id, cursor)
