@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { repriceStale } from '~/lib/evCharging/repriceStale'
 import { TARIFF_LIMITS } from '~/lib/evCharging/tariff'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import * as tariffService from '~/lib/services/tariff'
@@ -48,6 +49,8 @@ export const tariffRouter = {
           tariffId: row.id,
           validFrom: row.validFrom,
         })
+        // After success (ADR-0001): the edit made every stored cost stale.
+        await repriceStale({ trigger: 'tariff', log: context.log })
         return row
       } catch (err) {
         mapTariffError(err, errors)
@@ -62,6 +65,8 @@ export const tariffRouter = {
       try {
         const row = await tariffService.update(id, fields)
         context.log.info('admin updated tariff period', { tariffId: id, validFrom: row.validFrom })
+        // After success (ADR-0001): the edit made every stored cost stale.
+        await repriceStale({ trigger: 'tariff', log: context.log })
         return row
       } catch (err) {
         mapTariffError(err, errors)
@@ -75,6 +80,7 @@ export const tariffRouter = {
       try {
         await tariffService.remove(input.id)
         context.log.info('admin removed tariff period', { tariffId: input.id })
+        await repriceStale({ trigger: 'tariff', log: context.log })
       } catch (err) {
         mapTariffError(err, errors)
       }

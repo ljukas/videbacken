@@ -16,6 +16,7 @@ import { logger } from '~/lib/logger/server'
 import * as evChargingService from '~/lib/services/evCharging'
 import { getLastSuccessStartedAt, type RunStats } from '~/lib/services/integrationSync'
 import { stockholmDayOf } from '~/lib/time/stockholm'
+import { repriceStale } from './repriceStale'
 
 /**
  * The Zaptec sync run — the domain orchestrator both the hourly cron route and
@@ -135,6 +136,9 @@ export async function runZaptecSync(opts: {
           log,
           derive: opts.deps?.deriveFrom,
         })
+        // ADR-0020 (amended 2026-10-11): reprice what this run made stale, so
+        // the next cost read is stored sums only. Best effort, own budget.
+        await repriceStale({ trigger: SOURCE, log, signal })
       }
     },
     toRunStats: (run) => runStats(run, stats),

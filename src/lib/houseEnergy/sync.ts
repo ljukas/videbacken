@@ -5,6 +5,7 @@ import {
   emaldo,
   newCallStats,
 } from '~/lib/effects/emaldo'
+import { repriceStale } from '~/lib/evCharging/repriceStale'
 import type { SyncTrigger } from '~/lib/integrationHealth'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
@@ -181,6 +182,9 @@ export async function runEmaldoSync(opts: {
           log,
           derive: opts.deps?.deriveFrom,
         })
+        // ADR-0020 (amended 2026-10-11): reprice what this run made stale, so
+        // the next cost read is stored sums only. Best effort, own budget.
+        await repriceStale({ trigger: 'emaldo', log, signal })
       }
     },
     toRunStats: (run) => ({

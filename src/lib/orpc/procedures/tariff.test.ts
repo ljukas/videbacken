@@ -3,9 +3,12 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
+import { PRICING_VERSION } from '~/lib/evCharging/cost'
 import type { Logger } from '~/lib/logger'
+import { listStale } from '~/lib/services/sessionCost'
 import * as tariffService from '~/lib/services/tariff'
 import { TariffDomainError } from '~/lib/services/tariff'
+import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { evChargingRouter } from './evCharging'
 import { tariffRouter } from './tariff'
@@ -140,6 +143,8 @@ test('out-of-range amounts are rejected at the input boundary', async () => {
 
 test('costOverview is readable by users and records cost sub-timings', async () => {
   await signIn('user')
+  // A stale session makes the read path price it (the cost sub-timings).
+  await insertSession()
   const timings: Record<string, number> = {}
   const overview = await call(
     evChargingRouter.costOverview,
@@ -224,4 +229,11 @@ test('cost procedures reject anonymous callers and out-of-range input', async ()
   await expect(
     call(evChargingRouter.costOverview, { year: 1999 }, { context: baseContext() }),
   ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
+test('a tariff edit leaves every session repriced', async () => {
+  await signIn('admin')
+  await insertSession()
+  await call(tariffRouter.create, AUG, { context: baseContext() })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
 })
