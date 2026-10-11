@@ -173,7 +173,11 @@ export function createComfortCloudClient(deps: {
       loginBlock = null
       return { token, clientId, issuedAt }
     } catch (err) {
-      if (err instanceof ComfortCloudError && err.code === 'auth_failed') {
+      // A throttled Auth0 must not be hit with the password again either.
+      if (
+        err instanceof ComfortCloudError &&
+        (err.code === 'auth_failed' || err.code === 'rate_limited')
+      ) {
         loginBlock = { error: err, until: now().getTime() + AUTH_FAILURE_TTL_MS }
       }
       throw err
@@ -182,16 +186,20 @@ export function createComfortCloudClient(deps: {
 
   /**
    * The live session, or the shared login. A session that is `stale` (the caller saw it refused)
-   * or 23 h old is dropped first; one that another caller already replaced is reused.
+   * or 23 h old is dropped first; one that another caller already replaced is reused. `fresh`:
+   * this call started or joined the login that issued the session (not read from the cache).
    */
-  function sessionFor(stats: ComfortCloudCallStats, stale?: Session): Promise<Session> {
+  async function sessionFor(
+    stats: ComfortCloudCallStats,
+    stale?: Session,
+  ): Promise<{ session: Session; fresh: boolean }> {
     if (
       session !== null &&
       (session === stale || now().getTime() - session.issuedAt >= TOKEN_MAX_AGE_MS)
     ) {
       session = null
     }
-    if (session !== null) return Promise.resolve(session)
+    if (session !== null) return { session, fresh: false }
     if (pending === null) {
       const shared = logIn(stats)
         .then((s) => {
@@ -205,10 +213,13 @@ export function createComfortCloudClient(deps: {
       shared.catch(() => {})
       pending = shared
     }
-    return pending
+    return { session: await pending, fresh: true }
   }
 
-  /** An authenticated call: one fresh login and one retry on a 401 that isn't 4106 or 4103. */
+  /**
+   * An authenticated call: on a 401 that isn't 4106 or 4103, one fresh login and one retry, unless
+   * the token was issued during this very call: that one is refused outright (no second login).
+   */
   async function authed(
     op: ComfortCloudOp,
     method: 'GET' | 'POST',
@@ -223,11 +234,13 @@ export function createComfortCloudClient(deps: {
       })
     }
     const sendOpts: SendOpts = { stats: o.stats ?? newCallStats(), signal: o.signal }
-    let s = await sessionFor(sendOpts.stats)
+    let { session: s, fresh } = await sessionFor(sendOpts.stats)
     let answer = await apiCall(op, method, path, body, s, sendOpts)
     if (answer.status === 401 && !isTermsPending(answer)) {
-      s = await sessionFor(sendOpts.stats, s)
-      answer = await apiCall(op, method, path, body, s, sendOpts)
+      if (!fresh) {
+        s = (await sessionFor(sendOpts.stats, s)).session
+        answer = await apiCall(op, method, path, body, s, sendOpts)
+      }
       if (answer.status === 401 && !isTermsPending(answer)) {
         const refused = new ComfortCloudError('auth_failed', op, 401, {
           message: `Comfort Cloud refused the ${op} call right after a fresh login`,

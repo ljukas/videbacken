@@ -78,6 +78,19 @@ const caught = (p: Promise<unknown>) =>
     },
     (e: unknown) => e as ComfortCloudError,
   )
+/**
+ * A units route that answers normally until `arm()`. A 401 on a token issued during the same call
+ * is refused outright, so a test of the refuse-then-re-login path warms the session first.
+ */
+function armable(refuse: (req: Request) => Response) {
+  let armed = false
+  return {
+    route: (req: Request) => (armed ? refuse(req) : deviceGroupReply()),
+    arm: () => {
+      armed = true
+    },
+  }
+}
 const apiKeyNow = (token: string) => cfcApiKey('2026-06-11 08:00:00', token)
 const clean = (err: unknown) =>
   expect(secretsIn(err, [apiKeyNow(TEST_ACCESS_TOKEN), apiKeyNow(TEST_ACCESS_TOKEN_2)])).toEqual([])
@@ -138,21 +151,27 @@ describe('session', () => {
   })
 
   test('401 without 4106: one fresh login, the call retried with the new token', async () => {
-    const { f, client } = server({
-      [ROUTES.group]: (req) =>
-        bearer(req) === `Bearer ${TEST_ACCESS_TOKEN}` ? apiError(401, 4100) : deviceGroupReply(),
-    })
+    const refusing = armable((req) =>
+      bearer(req) === `Bearer ${TEST_ACCESS_TOKEN}` ? apiError(401, 4100) : deviceGroupReply(),
+    )
+    const { f, client } = server({ [ROUTES.group]: refusing.route })
+    await client.units() // warms the session with the first token
+    refusing.arm()
     const stats = newCallStats()
     expect(await client.units({ stats })).toHaveLength(2)
-    expect(stats.logins).toBe(2)
+    expect(stats.logins).toBe(1)
     expect(f.callsTo(ROUTES.group).map(bearer)).toEqual([
+      `Bearer ${TEST_ACCESS_TOKEN}`,
       `Bearer ${TEST_ACCESS_TOKEN}`,
       `Bearer ${TEST_ACCESS_TOKEN_2}`,
     ])
   })
 
   test('401 again right after the fresh login is auth_failed', async () => {
-    const { f, client } = server({ [ROUTES.group]: () => apiError(401, 4100) })
+    const refusing = armable(() => apiError(401, 4100))
+    const { f, client } = server({ [ROUTES.group]: refusing.route })
+    await client.units() // warms the session
+    refusing.arm()
     const err = await caught(client.units())
     expect(err).toMatchObject({ code: 'auth_failed', op: 'units', status: 401 })
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
@@ -174,6 +193,31 @@ describe('session', () => {
     await caught(client.units())
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
     clean(first)
+  })
+})
+
+describe('a throttled login', () => {
+  test('a 429 on the password step blocks new logins for five minutes', async () => {
+    const { f, client } = server({
+      [ROUTES.password]: () => new Response(`slow down ${TEST_USER}`, { status: 429 }),
+    })
+    const first = await caught(client.units())
+    expect(first).toMatchObject({ code: 'rate_limited', op: 'login', status: 429 })
+    clean(first)
+    vi.setSystemTime(NOW.getTime() + 5 * 60_000 - 1)
+    expect(await caught(client.dayHours(MATSAL_GUID, '2026-06-10'))).toBe(first)
+    expect(f.callsTo(ROUTES.password)).toHaveLength(1)
+    vi.setSystemTime(NOW.getTime() + 5 * 60_000)
+    await caught(client.units())
+    expect(f.callsTo(ROUTES.password)).toHaveLength(2)
+  })
+
+  test('a 429 from the session login blocks too', async () => {
+    const { f, client } = server({ [ROUTES.accLogin]: () => new Response('{}', { status: 429 }) })
+    const first = await caught(client.units())
+    expect(first).toMatchObject({ code: 'rate_limited', op: 'login', status: 429 })
+    expect(await caught(client.units())).toBe(first)
+    expect(f.callsTo(ROUTES.authorize)).toHaveLength(1)
   })
 })
 
@@ -392,20 +436,24 @@ describe('answer bodies', () => {
 
 describe('status codes are read from the JSON code field', () => {
   test('4106 digits inside another number are not the outdated-app code', async () => {
-    const { f, client } = server({
-      [ROUTES.group]: (req) =>
-        oldToken(req) ? jsonStatus(401, '{"code":4100,"ts":1791441060000}') : deviceGroupReply(),
-    })
+    const refusing = armable((req) =>
+      oldToken(req) ? jsonStatus(401, '{"code":4100,"ts":1791441060000}') : deviceGroupReply(),
+    )
+    const { f, client } = server({ [ROUTES.group]: refusing.route })
+    await client.units() // warms the session
+    refusing.arm()
     expect(await client.units()).toHaveLength(2)
     expect(f.callsTo(ROUTES.playStore)).toHaveLength(0)
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
   })
 
   test('4103 digits inside an id are not the terms error', async () => {
-    const { f, client } = server({
-      [ROUTES.group]: (req) =>
-        oldToken(req) ? jsonStatus(401, '{"code":4100,"requestId":"a41035"}') : deviceGroupReply(),
-    })
+    const refusing = armable((req) =>
+      oldToken(req) ? jsonStatus(401, '{"code":4100,"requestId":"a41035"}') : deviceGroupReply(),
+    )
+    const { f, client } = server({ [ROUTES.group]: refusing.route })
+    await client.units() // warms the session
+    refusing.arm()
     expect(await client.units()).toHaveLength(2)
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
   })
@@ -420,9 +468,38 @@ describe('status codes are read from the JSON code field', () => {
   })
 })
 
+describe('a 401 on a token issued during the same call', () => {
+  test('is a refused fresh token at once: one login, no second', async () => {
+    const { f, client } = server({ [ROUTES.group]: () => apiError(401, 4100) })
+    const stats = newCallStats()
+    const err = await caught(client.units({ stats }))
+    expect(err).toMatchObject({ code: 'auth_failed', op: 'units', status: 401 })
+    expect(f.callsTo(ROUTES.password)).toHaveLength(1)
+    expect(f.callsTo(ROUTES.authorize)).toHaveLength(1)
+    expect(f.callsTo(ROUTES.group)).toHaveLength(1)
+    expect(stats.logins).toBe(1)
+    clean(err)
+    const sent = f.calls.length
+    const later = await caught(client.units())
+    expect(later).toMatchObject({ code: 'auth_failed', op: 'login', status: 401 })
+    expect(f.calls).toHaveLength(sent)
+  })
+
+  test('a caller that joined the in-flight login gets the same verdict', async () => {
+    const { f, client } = server({ [ROUTES.group]: () => apiError(401, 4100) })
+    const [a, b] = await Promise.all([caught(client.units()), caught(client.units())])
+    expect(a).toMatchObject({ code: 'auth_failed', op: 'units' })
+    expect(b).toMatchObject({ code: 'auth_failed', op: 'units' })
+    expect(f.callsTo(ROUTES.authorize)).toHaveLength(1)
+  })
+})
+
 describe('a refused fresh token', () => {
   test('blocks logins for five minutes, then lets one through', async () => {
-    const { f, client } = server({ [ROUTES.group]: () => apiError(401, 4100) })
+    const refusing = armable(() => apiError(401, 4100))
+    const { f, client } = server({ [ROUTES.group]: refusing.route })
+    await client.units() // warms the session
+    refusing.arm()
     const first = await caught(client.units())
     expect(first).toMatchObject({ code: 'auth_failed', op: 'units', status: 401 })
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
@@ -433,7 +510,8 @@ describe('a refused fresh token', () => {
     expect(f.calls).toHaveLength(sent)
     vi.setSystemTime(NOW.getTime() + 5 * 60_000)
     await caught(client.units())
-    expect(f.callsTo(ROUTES.authorize)).toHaveLength(4) // a login, then the refusal's one re-login
+    // One login: its token is issued during that call, so the refusal needs no re-login.
+    expect(f.callsTo(ROUTES.authorize)).toHaveLength(3)
     clean(first)
   })
 })
@@ -454,13 +532,15 @@ describe('Play Store lookup', () => {
 
 describe('concurrent sessions', () => {
   test('two calls refused on the same old token cause one re-login', async () => {
-    const { f, client } = server({
-      [ROUTES.group]: (req) => (oldToken(req) ? apiError(401, 4100) : deviceGroupReply()),
-    })
+    const refusing = armable((req) => (oldToken(req) ? apiError(401, 4100) : deviceGroupReply()))
+    const { f, client } = server({ [ROUTES.group]: refusing.route })
+    await client.units() // warms the session
+    refusing.arm()
     const both = await Promise.all([client.units(), client.units()])
     expect(both.map((u) => u.length)).toEqual([2, 2])
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
     expect(f.callsTo(ROUTES.group).map(bearer)).toEqual([
+      `Bearer ${TEST_ACCESS_TOKEN}`,
       `Bearer ${TEST_ACCESS_TOKEN}`,
       `Bearer ${TEST_ACCESS_TOKEN}`,
       `Bearer ${TEST_ACCESS_TOKEN_2}`,
@@ -538,12 +618,15 @@ describe('the block left by a refused fresh token', () => {
   test('does not drop a newer session another caller already holds', async () => {
     const T3 = 'test-access-token-0003'
     let onToken2 = 0
+    let armed = false
     let second: Promise<unknown[]> | undefined
     const { f, client } = server({
       ...authRoutes([TEST_ACCESS_TOKEN, TEST_ACCESS_TOKEN_2, T3]),
       [ROUTES.group]: (req) => {
         const token = bearer(req)
-        if (token === `Bearer ${TEST_ACCESS_TOKEN}`) return apiError(401, 4100)
+        if (token === `Bearer ${TEST_ACCESS_TOKEN}`) {
+          return armed ? apiError(401, 4100) : deviceGroupReply() // warm-up first
+        }
         if (token === `Bearer ${TEST_ACCESS_TOKEN_2}`) {
           if (onToken2++ > 0) return apiError(401, 4100)
           // The first caller is refused late; meanwhile a second caller, refused at once on the
@@ -554,6 +637,8 @@ describe('the block left by a refused fresh token', () => {
         return deviceGroupReply()
       },
     })
+    await client.units() // warms the session with the first token
+    armed = true
     const first = await caught(client.units())
     expect(first).toMatchObject({ code: 'auth_failed', op: 'units' })
     clean(first)
@@ -661,6 +746,7 @@ describe('error codes per operation', () => {
 
   test('history: 401 twice is auth_failed', async () => {
     const { f, client } = failing(ROUTES.history, () => apiError(401, 4100))
+    await client.units() // warms the session (only the history route refuses)
     const err = await caught(client.dayHours(MATSAL_GUID, '2026-06-10'))
     expect(err).toMatchObject({ code: 'auth_failed', op: 'history', status: 401 })
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)

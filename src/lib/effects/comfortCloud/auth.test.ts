@@ -487,6 +487,14 @@ describe('retries', () => {
     expect(f.callsTo(ROUTES.password)).toHaveLength(1)
   })
 
+  test('the single-use callback POST is never retried', async () => {
+    const { f, run } = login({ [ROUTES.callback]: () => new Response(null, { status: 502 }) })
+    const err = await caught(run())
+    expect(err).toMatchObject({ code: 'unreachable', op: 'login', status: 502 })
+    expect(secretsIn(err)).toEqual([])
+    expect(f.callsTo(ROUTES.callback)).toHaveLength(1)
+  })
+
   test('the single-use code exchange is never retried', async () => {
     const { f, run } = login({ [ROUTES.token]: () => new Response(null, { status: 503 }) })
     const err = await caught(run())

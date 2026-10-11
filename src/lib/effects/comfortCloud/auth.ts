@@ -177,14 +177,19 @@ export async function passwordLogin(d: LoginDeps): Promise<string> {
       throw unexpected('Comfort Cloud login answer has no callback form')
     }
 
-    const callback = await auth(new URL('/login/callback', AUTH_BASE), {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        'user-agent': AUTH_BROWSER_USER_AGENT,
+    // `wresult` is single-use, like the code: never resent.
+    const callback = await auth(
+      new URL('/login/callback', AUTH_BASE),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          'user-agent': AUTH_BROWSER_USER_AGENT,
+        },
+        body: new URLSearchParams([...fields]),
       },
-      body: new URLSearchParams([...fields]),
-    })
+      false,
+    )
     const resumed = await browserGet(onAuthHost(await redirectTarget(callback)))
     const final = await redirectTarget(resumed)
     if (isAppRedirect(final)) {
