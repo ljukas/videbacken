@@ -789,4 +789,53 @@ describe('error codes per operation', () => {
     expect(err).toMatchObject({ code: 'unexpected_response', op: 'history' })
     clean(err)
   })
+
+  test.each([
+    ['dayHours', (c: ReturnType<typeof server>['client']) => c.dayHours(MATSAL_GUID, '2026-06-10')],
+    ['monthDays', (c: ReturnType<typeof server>['client']) => c.monthDays(MATSAL_GUID, '2026-06')],
+  ])('history: a network failure in %s is unreachable with only name and code', async (_n, run) => {
+    const { client } = failing(ROUTES.history, () => {
+      throw Object.assign(
+        new TypeError(`fetch failed Bearer ${TEST_ACCESS_TOKEN} ${MATSAL_GUID}`),
+        { cause: { code: 'ECONNRESET' } },
+      )
+    })
+    const err = await caught(run(client))
+    expect(err).toMatchObject({ code: 'unreachable', op: 'history' })
+    expect(err.cause).toEqual({ name: 'TypeError', code: 'ECONNRESET' })
+    clean(err)
+  })
+
+  test('history: a caller abort while the request waits is unreachable', async () => {
+    const { client } = failing(
+      ROUTES.history,
+      // As a real fetch does: the pending request rejects when its signal aborts.
+      (req) =>
+        new Promise<Response>((resolve, reject) => {
+          setTimeout(() => resolve(dayHistoryReply('2026-06-10')), 5_000)
+          req.signal.addEventListener('abort', () => reject(req.signal.reason))
+        }),
+    )
+    await client.units() // log in first: only the history request waits
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 100)
+    const err = await caught(
+      client.dayHours(MATSAL_GUID, '2026-06-10', { signal: controller.signal }),
+    )
+    expect(err).toMatchObject({ code: 'unreachable', op: 'history' })
+    clean(err)
+  })
+
+  test.each([
+    [500, 'unreachable', () => new Response(`{"echo":"${TEST_USER}"}`, { status: 500 })],
+    [404, 'unexpected_response', () => new Response(`{"echo":"${TEST_USER}"}`, { status: 404 })],
+    [200, 'unexpected_response', () => new Response(`<html>${MATSAL_GUID}</html>`)],
+    [200, 'unexpected_response', () => jsonStatus(200, `{"groupList":"${MATSAL_GUID}"}`)],
+  ] as const)('units: HTTP %i answer #%#, is %s', async (status, code, reply) => {
+    const { client } = failing(ROUTES.group, reply)
+    const err = await caught(client.units())
+    expect(err).toMatchObject({ code, op: 'units' })
+    if (status !== 200) expect(err.status).toBe(status)
+    clean(err)
+  })
 })
