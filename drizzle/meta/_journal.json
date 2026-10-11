@@ -162,6 +162,13 @@
       "when": 1791710444825,
       "tag": "0022_heat_pump",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791715320883,
+      "tag": "0023_comfort_cloud_source",
+      "breakpoints": true
     }
   ]
 }
