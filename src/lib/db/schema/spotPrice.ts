@@ -27,9 +27,9 @@ export const spotPrice = pgTable(
     fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    // Serves the upsert conflict target, the cost read's slot range scan
-    // (`zone = $1 AND slot_start >= $from - 1h AND slot_start < $to`) and the
-    // sync's which-days-are-stored probe — no other index needed.
+    // Serves the conflict target, the cost read's slot range scan
+    // (`zone = $1 AND slot_start >= $from - 1h AND slot_start < $to`) and
+    // replaceDay's day delete and aggregate — no other index needed.
     primaryKey({ name: 'spot_price_pk', columns: [table.zone, table.slotStart] }),
     check('spot_price_zone_check', sql`${table.zone} IN (${sqlList(PRICE_ZONES)})`),
     // The ≤ 1 h bound is load-bearing: the cost read bounds its range scan by

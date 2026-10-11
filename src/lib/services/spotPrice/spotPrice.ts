@@ -114,7 +114,7 @@ export async function listSlotsOverlapping(
  * row (written by code from before the table, e.g. after a rollback) counts as
  * missing, so the sync re-fetches it and `replaceDay` writes both together.
  */
-export async function daysWithSlots(
+export async function daysStored(
   zone: PriceZone,
   fromDay: string,
   toDay: string,
@@ -133,7 +133,7 @@ export async function daysWithSlots(
 }
 
 /**
- * Per Stockholm day in `[fromDay, toDay]` (inclusive) with stored slots: the
+ * Per Stockholm day in `[fromDay, toDay]` (inclusive) stored by `replaceDay`: the
  * time-weighted average SEK/kWh (ex VAT) and how long the day has prices. Read
  * from `spot_price_day` (written by `replaceDay`), a PK range: ~255 rows a year
  * instead of grouping ~35 000 slots.
