@@ -1,43 +1,22 @@
 import { expect, test } from 'vitest'
-import { emptyTotals } from '~/lib/evCharging/cost'
-import type { RouterOutputs } from '~/lib/orpc/client'
+import type { EconomyListRow } from '~/lib/evCharging/economy'
 import { m } from '~/paraglide/messages'
 import { renderWithRouter } from '~test/browser/render'
 import { EconomySessionTable } from './EconomySessionTable'
 import { formatDate, formatSek, formatTime } from './format'
 
-type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
-const cost = (totalSek: number) => ({
-  ...emptyTotals(),
-  kwh: 10,
-  gridKwh: 10,
-  fullKwh: 10,
-  totalSek,
+// `over` may flip a row to excluded (excluded + counterfactual: null together).
+const row = (over: Partial<EconomyListRow> = {}): EconomyListRow => ({
+  sessionId: '11111111-1111-4111-8111-111111111111',
+  startAt: new Date('2026-09-05T19:10:00Z'),
+  endAt: new Date('2026-09-06T05:02:00Z'),
+  kwh: 32.1,
+  actualSek: 41.2,
+  vehicle: 'ours',
+  excluded: null,
+  counterfactual: { score: 0.9, savedVsImmediateSek: 12.4, leftOnTableSek: 3.2, spreadSek: 32 },
+  ...over,
 })
-// `over` may flip a row to excluded (excluded + counterfactual: null together), which
-// Partial<union> can't express, hence the cast.
-const row = (over: Partial<Row> = {}) =>
-  ({
-    sessionId: '11111111-1111-4111-8111-111111111111',
-    startAt: new Date('2026-09-05T19:10:00Z'),
-    endAt: new Date('2026-09-06T05:02:00Z'),
-    kwh: 32.1,
-    actual: cost(41.2),
-    actualComplete: true,
-    paidSpotOre: 40,
-    windowAvgSpotOre: 55,
-    vehicle: 'ours',
-    excluded: null,
-    counterfactual: {
-      immediate: cost(53.6),
-      optimal: cost(38),
-      dearest: cost(70),
-      score: 0.9,
-      savedVsImmediateSek: 12.4,
-      leftOnTableSek: 3.2,
-    },
-    ...over,
-  }) as Row
 
 const bodyRow = (screen: Awaited<ReturnType<typeof renderWithRouter>>['screen']) =>
   screen.getByRole('row').nth(1)
@@ -67,8 +46,7 @@ test('an excluded session with a partial actual shows "—", not the partial kro
         row({
           excluded: 'no_price',
           counterfactual: null,
-          actualComplete: false,
-          actual: cost(17.5),
+          actualSek: null,
         }),
       ]}
     />,
@@ -115,7 +93,7 @@ test('a flat-price session shows "—" for timing', async () => {
     />,
   )
   await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toMatchTextContent(/^—/)
-  // The sr-only reason names the spread that was too small (row() prices 70 − 38 = 32 kr).
+  // The sr-only reason names the spread that was too small (row()'s spread: 70 − 38 = 32 kr).
   await expect.element(bodyRow(screen).getByRole('cell').nth(5)).toMatchTextContent(
     new RegExp(
       m

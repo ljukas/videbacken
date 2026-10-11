@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-react'
 import { m } from '~/paraglide/messages'
 import { SessionPagination } from './SessionPagination'
@@ -208,7 +209,7 @@ test('the size selector offers 10, 25 and 50 and reports the chosen size', async
   await trigger.click()
   await expect.element(screen.getByRole('option', { name: '50' })).toBeVisible()
   await screen.getByRole('option', { name: '25' }).click()
-  expect(onPageSizeChange).toHaveBeenCalledWith(25)
+  expect(onPageSizeChange).toHaveBeenCalledWith(25, 1, 10)
 })
 
 test('a last page holding one session names it alone, not as "101–101"', async () => {
@@ -224,4 +225,79 @@ test('a last page holding one session names it alone, not as "101–101"', async
   await expect
     .element(screen.getByRole('status'))
     .toMatchTextContent(m.charging_sessions_pagination_range_one({ n: 101, total: 101 }))
+})
+
+test('prefetches a page when its number or arrow is hovered, focused or touched', async () => {
+  const prefetchPage = vi.fn()
+  const screen = await render(
+    <SessionPagination
+      page={2}
+      pageSize={10}
+      total={214}
+      onPageChange={noop}
+      onPageSizeChange={noop}
+      prefetchPage={prefetchPage}
+    />,
+  )
+  await userEvent.hover(screen.getByRole('button', page(3)))
+  expect(prefetchPage).toHaveBeenLastCalledWith(3)
+  screen.getByRole('button', { name: m.charging_sessions_pagination_next() }).element().focus()
+  expect(prefetchPage).toHaveBeenLastCalledWith(3)
+  screen
+    .getByRole('button', { name: m.charging_sessions_pagination_previous() })
+    .element()
+    .dispatchEvent(new TouchEvent('touchstart', { bubbles: true }))
+  expect(prefetchPage).toHaveBeenLastCalledWith(1)
+})
+
+test('never prefetches the current page or past either end', async () => {
+  const prefetchPage = vi.fn()
+  const screen = await render(
+    <SessionPagination
+      page={1}
+      pageSize={10}
+      total={14}
+      onPageChange={noop}
+      onPageSizeChange={noop}
+      prefetchPage={prefetchPage}
+    />,
+  )
+  await userEvent.hover(screen.getByRole('button', page(1)))
+  screen.getByRole('button', { name: m.charging_sessions_pagination_previous() }).element().focus()
+  expect(prefetchPage).not.toHaveBeenCalled()
+  await userEvent.hover(screen.getByRole('button', page(2)))
+  expect(prefetchPage).toHaveBeenCalledWith(2)
+})
+
+test('a size change reports the page on screen, a page past the end clamped', async () => {
+  const onPageSizeChange = vi.fn()
+  const screen = await render(
+    <SessionPagination
+      page={99}
+      pageSize={50}
+      total={100}
+      onPageChange={noop}
+      onPageSizeChange={onPageSizeChange}
+    />,
+  )
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '10' }).click()
+  expect(onPageSizeChange).toHaveBeenCalledWith(10, 2, 50)
+})
+
+test('a size change reports the size on screen, not a different one the URL asks for', async () => {
+  const onPageSizeChange = vi.fn()
+  // Page 4 of 10-row pages is still on screen (e.g. a size change that failed to load).
+  const screen = await render(
+    <SessionPagination
+      page={4}
+      pageSize={10}
+      total={214}
+      onPageChange={noop}
+      onPageSizeChange={onPageSizeChange}
+    />,
+  )
+  await screen.getByRole('combobox', { name: m.charging_sessions_pagination_page_size() }).click()
+  await screen.getByRole('option', { name: '50' }).click()
+  expect(onPageSizeChange).toHaveBeenCalledWith(50, 4, 10)
 })

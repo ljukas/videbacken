@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import { newCallStats, ZaptecError, zaptec } from '~/lib/effects/zaptec'
 import {
+  type EconomySessionsTimings,
   type EconomyTimings,
   getEconomyOverview,
+  getEconomySessions,
   getSessionEconomy,
 } from '~/lib/evCharging/chargingEconomy'
 import {
@@ -160,6 +162,25 @@ export const evChargingRouter = {
       const timings: EconomyTimings = {}
       const result = await getEconomyOverview({ year: input.year, timings, vehicle: input.vehicle })
       recordPrefixedTimings(context.timings, 'economy', timings)
+      return result
+    }),
+
+  // One page of /charging/economy's session table (server latency step 5):
+  // the slim rows the table renders, analyzed for the page only. A page past
+  // the end comes back as the last page, with its number in `page`.
+  economySessions: protectedProcedure
+    .input(
+      z.object({
+        year: yearInput,
+        vehicle: vehicleInput,
+        page: z.number().int().min(1).max(MAX_SESSION_PAGE),
+        pageSize: sessionPageSize,
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const timings: EconomySessionsTimings = {}
+      const result = await getEconomySessions({ ...input, timings })
+      recordPrefixedTimings(context.timings, 'economySessions', timings)
       return result
     }),
 

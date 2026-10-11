@@ -6,7 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from '~/components/ui/table'
-import type { RouterOutputs } from '~/lib/orpc/client'
+import type { EconomyListRow } from '~/lib/evCharging/economy'
 import { m } from '~/paraglide/messages'
 import { Estimated } from './Estimated'
 import { formatOneDecimal, formatScore, formatSek, formatSignedSek, formatTime } from './format'
@@ -14,19 +14,17 @@ import { GuestBadge } from './GuestBadge'
 import { SessionLink } from './SessionLink'
 import { Unknown } from './Unknown'
 
-type Row = RouterOutputs['evCharging']['economy']['sessions'][number]
+type Row = EconomyListRow
 
 const noSpread = (cf: NonNullable<Row['counterfactual']>) =>
-  m.charging_economy_tile_no_spread({
-    spread: formatSek(cf.dearest.totalSek - cf.optimal.totalSek, 2),
-  })
+  m.charging_economy_tile_no_spread({ spread: formatSek(cf.spreadSek, 2) })
 
 const reason = (r: Row) =>
   r.excluded === 'no_hourly'
     ? m.charging_economy_reason_no_hourly()
     : m.charging_economy_reason_no_price()
 
-// One page of the selected year's sessions, newest first (the route slices
+// One page of the selected year's sessions, newest first (the server pages
 // it). Excluded sessions keep their actual cost when it is complete and say
 // why the comparison is missing. < sm the comparison folds under the date,
 // like SessionList.
@@ -94,10 +92,10 @@ export function EconomySessionTable({
                 {formatOneDecimal(r.kwh)} kWh
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">
-                {r.actualComplete ? (
+                {r.actualSek !== null ? (
                   // No hourly data means the cost was spread from the total: an estimate.
                   <Estimated estimated={r.excluded === 'no_hourly'}>
-                    {formatSek(r.actual.totalSek, 2)}
+                    {formatSek(r.actualSek, 2)}
                   </Estimated>
                 ) : (
                   <Unknown label={m.charging_sessions_cost_unknown()} />

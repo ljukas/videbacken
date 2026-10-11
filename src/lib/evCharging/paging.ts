@@ -48,7 +48,7 @@ export function pageItems(page: number, count: number): PageItem[] {
 }
 
 /**
- * One page of rows already in hand (a list the page loaded whole), clamped like
+ * One page of a full row list, cut by the server read model and clamped like
  * the `sessions` procedure: a page past the end is the last page, and `page`
  * says which one was served.
  */
@@ -59,4 +59,14 @@ export function pageSlice<T>(
 ): { rows: T[]; page: number } {
   const served = Math.min(Math.max(page, 1), pageCount(rows.length, pageSize))
   return { rows: rows.slice((served - 1) * pageSize, served * pageSize), page: served }
+}
+
+/**
+ * The page at `toSize` holding the first row of `page` at `fromSize`, so a
+ * rows-per-page change lands on the page containing the row that was at the
+ * top (TanStack Table's setPageSize rule). `page` should be the page on screen: a URL
+ * page past the end is the server's to clamp, so callers pass the served one.
+ */
+export function pageKeepingTopRow(page: number, fromSize: number, toSize: number): number {
+  return Math.floor(((Math.max(page, 1) - 1) * fromSize) / toSize) + 1
 }

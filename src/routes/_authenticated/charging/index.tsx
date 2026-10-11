@@ -1,6 +1,6 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { z } from 'zod'
 import chargingChartBones from '~/bones/charging-chart.bones.json'
 import chargingSessionsBones from '~/bones/charging-sessions.bones.json'
@@ -33,6 +33,7 @@ import {
 } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
+import { useNextPagePrefetch } from '~/hooks/useNextPagePrefetch'
 import { useSessionPaging } from '~/hooks/useSessionPaging'
 import { OVERVIEW_MAX_YEAR, OVERVIEW_MIN_YEAR } from '~/lib/evCharging/counting'
 import {
@@ -141,6 +142,12 @@ function ChargingPage() {
     // current rows stay until the next ones arrive.
     placeholderData: keepPreviousData,
   })
+  const queryClient = useQueryClient()
+  const prefetchPage = useCallback(
+    (p: number) => void queryClient.prefetchQuery(sessionsQuery(p, sessionPageSize, vehicle)),
+    [queryClient, sessionPageSize, vehicle],
+  )
+  useNextPagePrefetch(sessions, prefetchPage)
   // The page on screen. Placeholder data lasts only while the next page is
   // pending; once that fetch has failed for good, `data` is gone. The last page
   // that loaded in this scope stays then, under the error alert (rows and the
@@ -395,6 +402,7 @@ function ChargingPage() {
                     total={shownSessions.total}
                     onPageChange={paging.setPage}
                     onPageSizeChange={paging.setPageSize}
+                    prefetchPage={prefetchPage}
                   />
                 }
                 costs={showCost ? { byId: sessionCosts } : undefined}

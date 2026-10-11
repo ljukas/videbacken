@@ -1054,3 +1054,45 @@ test('syncStatuses never shows a member a stored error message; an admin sees it
   const admin = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
   expect(admin.zaptec.adminDetail?.lastErrorMessage).toBe('connect ECONNREFUSED')
 })
+
+test('economySessions rejects an unauthenticated caller', async () => {
+  await expect(
+    call(evChargingRouter.economySessions, { page: 1, pageSize: 10 }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+})
+
+test('economySessions serves a page and records its sub-timings', async () => {
+  await signIn('user')
+  for (let day = 10; day < 22; day++) {
+    await insertSession({
+      startAt: new Date(`2026-05-${day}T08:00:00Z`),
+      endAt: new Date(`2026-05-${day}T09:00:00Z`),
+    })
+  }
+  const context = { ...baseContext(), timings: {} as Record<string, number> }
+  const result = await call(
+    evChargingRouter.economySessions,
+    { year: 2026, page: MAX_SESSION_PAGE, pageSize: 10 },
+    { context },
+  )
+  expect(result).toMatchObject({ page: 2, pageSize: 10, total: 12 })
+  expect(result.rows).toHaveLength(2)
+  expect(context.timings).toMatchObject({
+    economySessionsEnergyMs: expect.any(Number),
+    economySessionsComputeMs: expect.any(Number),
+  })
+})
+
+test('economySessions rejects a page size it does not offer, and an out-of-range page or year', async () => {
+  await signIn('user')
+  for (const input of [
+    { page: 1, pageSize: 7 },
+    { page: 0, pageSize: 10 },
+    { page: MAX_SESSION_PAGE + 1, pageSize: 10 },
+    { year: 1999, page: 1, pageSize: 10 },
+  ]) {
+    await expect(
+      call(evChargingRouter.economySessions, input as never, { context: baseContext() }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  }
+})
