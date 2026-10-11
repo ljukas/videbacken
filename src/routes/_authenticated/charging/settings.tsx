@@ -182,6 +182,7 @@ function ChargingSettingsPage() {
   const pricesRuns = useQuery({ ...runsQuery, select: (runs) => runs.elpris })
   const skodaRuns = useQuery({ ...runsQuery, select: (runs) => runs.skoda })
   const emaldoRuns = useQuery({ ...runsQuery, select: (runs) => runs.emaldo })
+  const comfortCloudRuns = useQuery({ ...runsQuery, select: (runs) => runs.comfortCloud })
   const vehicleCoverage = useQuery(vehicleCoverageQuery)
   const vehicleLatest = useQuery(vehicleLatestQuery)
   const credentialsResult = useQuery(credentialsStatusQuery)
@@ -257,6 +258,12 @@ function ChargingSettingsPage() {
               health: sourcesHealth?.emaldo,
               runs: emaldoRuns,
               credentialsUpdatedAt: savedCredentials?.emaldo.updatedAt,
+            },
+            {
+              source: 'comfortCloud',
+              health: sourcesHealth?.comfortCloud,
+              runs: comfortCloudRuns,
+              credentialsUpdatedAt: savedCredentials?.comfortCloud.updatedAt,
             },
           ]}
           onSync={syncNow.syncSource}

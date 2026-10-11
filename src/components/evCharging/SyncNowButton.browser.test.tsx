@@ -19,6 +19,7 @@ vi.mock('~/lib/orpc/client', () => ({
       },
       key: () => ['evCharging'],
     },
+    energy: { key: () => ['energy'] },
   },
 }))
 vi.mock('sonner', () => ({ toast: toastMock }))
@@ -34,15 +35,10 @@ type Result = {
   upserted: number
 }
 const OK: Result = { outcome: 'ok', code: null, upserted: 96 }
-type Source = 'zaptec' | 'elpris' | 'skoda' | 'emaldo'
+type Source = 'zaptec' | 'elpris' | 'skoda' | 'emaldo' | 'comfortCloud'
 
 // `syncNow` is called once per source; script each source's result.
-function respond(results: {
-  zaptec?: Result | Error
-  elpris?: Result | Error
-  skoda?: Result | Error
-  emaldo?: Result | Error
-}) {
+function respond(results: Partial<Record<Source, Result | Error>>) {
   syncFn.mockImplementation(async ({ source }: { source: Source }) => {
     const r = results[source] ?? OK
     if (r instanceof Error) throw r
@@ -272,5 +268,87 @@ test('a slow house sync leaves the heading free once sessions and prices settle'
   await screen.getByRole('button', { name: 'all' }).click()
   await expect.element(screen.getByTestId('state')).toMatchTextContent('false/true')
   releaseHouse(OK)
+  await expect.element(screen.getByTestId('state')).toMatchTextContent('false/false')
+})
+
+test('retrying Comfort Cloud alone runs only comfortCloud and confirms success', async () => {
+  respond({})
+  const { screen } = await renderWithProviders(<Harness only="comfortCloud" />)
+  await click(screen)
+  await vi.waitFor(() =>
+    expect(toastMock.success).toHaveBeenCalledWith(m.charging_sync_heat_pumps_ok()),
+  )
+  expect(syncFn.mock.calls.map((c) => c[0])).toEqual([{ source: 'comfortCloud' }])
+})
+
+// Energi (step 2) and Värmepumpar (step 3) read heat pump data: a landed sync refreshes them.
+test('a Comfort Cloud success also invalidates the energy and heat pump queries', async () => {
+  respond({})
+  const queryClient = makeTestQueryClient()
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+  const { screen } = await renderWithProviders(<Harness only="comfortCloud" />, { queryClient })
+  await click(screen)
+  await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['evCharging'] }))
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['energy'] })
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: [['heatPump'], {}] })
+})
+
+test('a failed Comfort Cloud sync leaves the energy and heat pump queries alone', async () => {
+  respond({ comfortCloud: { outcome: 'failed', code: 'unreachable', upserted: 0 } })
+  const queryClient = makeTestQueryClient()
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+  const { screen } = await renderWithProviders(<Harness only="comfortCloud" />, { queryClient })
+  await click(screen)
+  await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['evCharging'] }))
+  expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['energy'] })
+  expect(invalidate).not.toHaveBeenCalledWith({ queryKey: [['heatPump'], {}] })
+})
+
+test('a Comfort Cloud retry reports not_configured with its own copy', async () => {
+  respond({ comfortCloud: { outcome: 'failed', code: 'not_configured', upserted: 0 } })
+  const { screen } = await renderWithProviders(<Harness only="comfortCloud" />)
+  await click(screen)
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_heat_pumps_failed(), {
+      description: integrationErrorMessage('not_configured', { source: 'comfortCloud' }),
+    }),
+  )
+})
+
+test('a Comfort Cloud transport error is attributed to Comfort Cloud', async () => {
+  respond({ comfortCloud: new Error('boom') })
+  const { screen } = await renderWithProviders(<Harness only="comfortCloud" />)
+  await click(screen)
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.charging_sync_heat_pumps_failed(), {
+      description: integrationErrorMessage('internal_error', { source: 'comfortCloud' }),
+    }),
+  )
+})
+
+// A backfill run can take minutes; only its own tile shows it pending.
+test('a Comfort Cloud sync is pending on its own, never on the heading', async () => {
+  let release: (r: Result) => void = () => {}
+  syncFn.mockImplementation(
+    () =>
+      new Promise<Result>((resolve) => {
+        release = resolve
+      }),
+  )
+  function HeatPumpHarness() {
+    const { syncSource, isPending, isPendingFor } = useSyncNow()
+    return (
+      <>
+        <button type="button" onClick={() => syncSource('comfortCloud')}>
+          heat pumps
+        </button>
+        <output data-testid="state">{`${isPending}/${isPendingFor('comfortCloud')}`}</output>
+      </>
+    )
+  }
+  const { screen } = await renderWithProviders(<HeatPumpHarness />)
+  await screen.getByRole('button', { name: 'heat pumps' }).click()
+  await expect.element(screen.getByTestId('state')).toMatchTextContent('false/true')
+  release(OK)
   await expect.element(screen.getByTestId('state')).toMatchTextContent('false/false')
 })
