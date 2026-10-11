@@ -11,8 +11,9 @@ import { deriveFrom } from './derive'
 
 /**
  * How long a sync waits for its derive. A run's 240 s deadline, the 10 s
- * month-sums refresh (`REFRESH_BUDGET_MS`) and this 30 s budget add up to 280 s,
- * under Vercel's 300 s function limit. A derive given up on keeps
+ * month-sums refresh (`REFRESH_BUDGET_MS`), this 30 s budget and the 10 s
+ * session cost reprice (`REPRICE_BUDGET_MS`, ../evCharging/repriceStale.ts) add
+ * up to 290 s, under Vercel's 300 s function limit. A derive given up on keeps
  * running; if the instance is frozen first, Postgres ends its idle transaction
  * after 60 s and the next trigger redoes the work.
  */

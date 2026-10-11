@@ -733,6 +733,18 @@ test('sessions keeps its rows when costing fails: costs is null, never 0 kr', as
   expect(warnings).toEqual(['session costs failed; the list shows none'])
 })
 
+test("sessions and costOverview hand the request's logger to the cost read", async () => {
+  await signIn('user')
+  await insertSession()
+  const sessionCosts = vi.spyOn(costing, 'getSessionCosts')
+  const overview = vi.spyOn(costing, 'getCostOverview')
+  const context = baseContext()
+  await call(evChargingRouter.sessions, { page: 1, pageSize: 10 }, { context })
+  await call(evChargingRouter.costOverview, {}, { context })
+  expect(sessionCosts).toHaveBeenCalledWith(expect.objectContaining({ log: context.log }))
+  expect(overview).toHaveBeenCalledWith(expect.objectContaining({ log: context.log }))
+})
+
 const importRow = (id: string, start = '2026-02-01T10:00:00Z', end = '2026-02-01T11:00:00Z') => ({
   sourceSessionId: id,
   startAt: new Date(start),

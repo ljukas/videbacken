@@ -98,6 +98,7 @@ export const evChargingRouter = {
         costs = await getSessionCosts({
           sessionIds: page.sessions.map((s) => s.id),
           timings: costTimings,
+          log: context.log,
         })
       } catch (error) {
         context.log.warn('session costs failed; the list shows none', { error })
@@ -114,14 +115,21 @@ export const evChargingRouter = {
 
   // Cost per month/tile (spot + tariff), kept apart from `overview` so a price
   // or tariff problem degrades only the cost figures, never the kWh ones.
-  // Several queries + the pure cost math → sub-timings (timing rule). Prices
-  // each session's stored solar/battery mix (ADR-0023): `costMixMs`,
-  // `costHouseFromMs`.
+  // Several queries + the pure cost math → sub-timings (timing rule): the
+  // stored sums (`costStoredMs`, ADR-0020 amended 2026-10-11), how many
+  // sessions were stale (`costStaleSessions`, a count) and, when any were,
+  // their pricing and write-back (`costWriteBackMs`); each session's stored
+  // solar/battery mix (ADR-0023): `costMixMs`, `costHouseFromMs`.
   costOverview: protectedProcedure
     .input(z.object({ year: yearInput, vehicle: vehicleInput }))
     .handler(async ({ input, context }) => {
       const timings: CostTimings = {}
-      const overview = await getCostOverview({ year: input.year, timings, vehicle: input.vehicle })
+      const overview = await getCostOverview({
+        year: input.year,
+        timings,
+        vehicle: input.vehicle,
+        log: context.log,
+      })
       recordPrefixedTimings(context.timings, 'cost', timings)
       return overview
     }),

@@ -42,10 +42,15 @@ test('prices every stale session and logs the run', async () => {
   })
 })
 
-test('nothing stale: no log line', async () => {
+test('nothing stale: the run is still logged', async () => {
   const log = fakeLog()
   await repriceStale({ trigger: 'elpris', log })
-  expect(log.info).not.toHaveBeenCalled()
+  expect(log.info).toHaveBeenCalledWith('session costs repriced', {
+    trigger: 'elpris',
+    stale: 0,
+    written: 0,
+    repriceMs: expect.any(Number),
+  })
 })
 
 test('a failing reprice is a warning, never a throw', async () => {

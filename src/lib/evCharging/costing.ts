@@ -10,6 +10,7 @@ import {
   SlotIndex,
 } from '~/lib/evCharging/cost'
 import type { VehicleScope } from '~/lib/evCharging/vehicle'
+import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import { listSessionEnergy, type SessionEnergy } from '~/lib/services/evCharging'
 import { firstReadingAt } from '~/lib/services/houseEnergy'
@@ -152,14 +153,15 @@ export async function priceSessions(
 export async function storePriced(
   stale: readonly SessionGeneration[],
   priced: readonly PricedSessionCost[],
-  opts: { lockTimeoutMs?: number } = {},
+  opts: { lockTimeoutMs?: number; log?: Logger } = {},
 ): Promise<{ written: number }> {
+  const log = opts.log ?? logger
   const generation = new Map(stale.map((s) => [s.sessionId, s.generation]))
   const finite = (p: PricedSessionCost) =>
     [...p.months.values()].every((t) => Object.values(t).every(Number.isFinite))
   const notFinite = priced.filter((p) => !finite(p)).map((p) => p.sessionId)
   if (notFinite.length > 0) {
-    logger.warn('session costs: not stored, a month total is not finite', {
+    log.warn('session costs: not stored, a month total is not finite', {
       sessionIds: notFinite,
     })
   }
@@ -191,14 +193,15 @@ const READ_WRITE_BACK_LOCK_TIMEOUT_MS = 200
 async function writeBack(
   stale: readonly SessionGeneration[],
   priced: readonly PricedSessionCost[],
-  timings?: CostTimings,
+  timings: CostTimings | undefined,
+  log: Logger,
 ): Promise<void> {
   try {
     await timed(timings, 'writeBackMs', () =>
-      storePriced(stale, priced, { lockTimeoutMs: READ_WRITE_BACK_LOCK_TIMEOUT_MS }),
+      storePriced(stale, priced, { lockTimeoutMs: READ_WRITE_BACK_LOCK_TIMEOUT_MS, log }),
     )
   } catch (error) {
-    logger.warn('session costs: write-back failed; figures priced on read', {
+    log.warn('session costs: write-back failed; figures priced on read', {
       sessions: priced.length,
       error,
     })
@@ -220,6 +223,8 @@ export async function getCostOverview(input: {
   now?: Date
   timings?: CostTimings
   vehicle?: VehicleScope
+  /** Where a failed write-back is warned about (the request's logger). */
+  log?: Logger
 }): Promise<CostOverview> {
   const now = input.now ?? new Date()
   const current = stockholmYearMonth(now.getTime())
@@ -246,7 +251,7 @@ export async function getCostOverview(input: {
       input.timings,
     )
     for (const p of fresh) for (const [key, totals] of p.months) addTo(priced, key, totals)
-    await writeBack(stored.stale, fresh, input.timings)
+    await writeBack(stored.stale, fresh, input.timings, input.log ?? logger)
   }
 
   const monthTotals = (y: number, month: number) => priced.get(y * 100 + month) ?? emptyTotals()
@@ -274,6 +279,8 @@ export async function getCostOverview(input: {
 export async function getSessionCosts(input: {
   sessionIds: readonly string[]
   timings?: CostTimings
+  /** Where a failed write-back is warned about (the request's logger). */
+  log?: Logger
 }): Promise<SessionCost[]> {
   if (input.sessionIds.length === 0) return []
   const stored = await timed(input.timings, 'storedMs', () =>
@@ -300,7 +307,7 @@ export async function getSessionCosts(input: {
         ...summarize([...p.months.values()].reduce(mergeTotals, emptyTotals())),
       })
     }
-    await writeBack(stored.stale, fresh, input.timings)
+    await writeBack(stored.stale, fresh, input.timings, input.log ?? logger)
   }
   return costs
 }

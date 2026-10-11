@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
 import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
+import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import { replaceForSessions } from '~/lib/services/energyMix'
 import { getOverview, listSessionEnergy } from '~/lib/services/evCharging'
@@ -263,12 +264,15 @@ test('a bumped session is repriced on the next read; the others stay stored', as
 
 test('a failed write-back still returns the figures priced on read', async () => {
   await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
-  const warn = vi.spyOn(logger, 'warn')
+  const warn = vi.fn()
+  const log: Logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn(), child: () => log }
+  const singletonWarn = vi.spyOn(logger, 'warn')
   const spy = vi
     .spyOn(sessionCostService, 'writePriced')
     .mockRejectedValueOnce(new Error('db down'))
-  const cost = await getCostOverview({ now: NOW })
+  const cost = await getCostOverview({ now: NOW, log })
   expect(cost.months[8].kwh).toBeCloseTo(2)
+  expect(singletonWarn).not.toHaveBeenCalled()
   expect(spy).toHaveBeenCalledOnce()
   // A read waits briefly for a lock (a derive can hold bumped rows for seconds).
   expect(spy).toHaveBeenCalledWith(expect.objectContaining({ lockTimeoutMs: 200 }))

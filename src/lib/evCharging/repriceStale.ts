@@ -17,12 +17,12 @@ import { priceSessions, storePriced } from './costing'
  */
 export const REPRICE_BUDGET_MS = 10_000
 
-async function repriceAll(): Promise<{ stale: number; written: number }> {
+async function repriceAll(log: Logger): Promise<{ stale: number; written: number }> {
   // Generations first, then the inputs (priceSessions): see writePriced.
   const stale = await sessionCostService.listStale({ pricingVersion: PRICING_VERSION })
   if (stale.length === 0) return { stale: 0, written: 0 }
   const priced = await priceSessions(stale.map((s) => s.sessionId))
-  const { written } = await storePriced(stale, priced)
+  const { written } = await storePriced(stale, priced, { log })
   return { stale: stale.length, written }
 }
 
@@ -43,17 +43,16 @@ export async function repriceStale(a: {
   const started = performance.now()
   try {
     const result = await withDeadline(
-      (a.reprice ?? repriceAll)(),
+      (a.reprice ?? (() => repriceAll(a.log)))(),
       AbortSignal.timeout(a.budgetMs ?? REPRICE_BUDGET_MS),
       () => new Error('session cost reprice did not finish within its budget'),
     )
-    if (result.stale > 0) {
-      a.log.info('session costs repriced', {
-        trigger: a.trigger,
-        ...result,
-        repriceMs: Math.round(performance.now() - started),
-      })
-    }
+    // Every run, nothing stale included: the line shows the reprice ran.
+    a.log.info('session costs repriced', {
+      trigger: a.trigger,
+      ...result,
+      repriceMs: Math.round(performance.now() - started),
+    })
   } catch (error) {
     a.log.warn('session cost reprice failed', { trigger: a.trigger, error })
   }

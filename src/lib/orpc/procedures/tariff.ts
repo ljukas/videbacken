@@ -50,7 +50,8 @@ export const tariffRouter = {
           validFrom: row.validFrom,
         })
         // After success (ADR-0001): the edit made every stored cost stale.
-        await repriceStale({ trigger: 'tariff', log: context.log })
+        const repriceMs = await repriceStale({ trigger: 'tariff', log: context.log })
+        if (context.timings) context.timings.repriceMs = repriceMs
         return row
       } catch (err) {
         mapTariffError(err, errors)
@@ -66,7 +67,8 @@ export const tariffRouter = {
         const row = await tariffService.update(id, fields)
         context.log.info('admin updated tariff period', { tariffId: id, validFrom: row.validFrom })
         // After success (ADR-0001): the edit made every stored cost stale.
-        await repriceStale({ trigger: 'tariff', log: context.log })
+        const repriceMs = await repriceStale({ trigger: 'tariff', log: context.log })
+        if (context.timings) context.timings.repriceMs = repriceMs
         return row
       } catch (err) {
         mapTariffError(err, errors)
@@ -80,7 +82,9 @@ export const tariffRouter = {
       try {
         await tariffService.remove(input.id)
         context.log.info('admin removed tariff period', { tariffId: input.id })
-        await repriceStale({ trigger: 'tariff', log: context.log })
+        // After success (ADR-0001): the edit made every stored cost stale.
+        const repriceMs = await repriceStale({ trigger: 'tariff', log: context.log })
+        if (context.timings) context.timings.repriceMs = repriceMs
       } catch (err) {
         mapTariffError(err, errors)
       }

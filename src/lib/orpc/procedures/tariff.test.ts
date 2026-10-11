@@ -110,6 +110,20 @@ test('an admin creates, updates and removes a period', async () => {
   expect(await call(tariffRouter.list, undefined, { context: baseContext() })).toEqual([])
 })
 
+test('tariff writes record the reprice as a sub-timing', async () => {
+  await signIn('admin')
+  const context = () => ({ ...baseContext(), timings: {} as Record<string, number> })
+  const created = context()
+  const row = await call(tariffRouter.create, AUG, { context: created })
+  expect(created.timings.repriceMs).toEqual(expect.any(Number))
+  const updated = context()
+  await call(tariffRouter.update, { ...AUG, id: row.id }, { context: updated })
+  expect(updated.timings.repriceMs).toEqual(expect.any(Number))
+  const removed = context()
+  await call(tariffRouter.remove, { id: row.id }, { context: removed })
+  expect(removed.timings.repriceMs).toEqual(expect.any(Number))
+})
+
 test('domain errors surface as typed codes', async () => {
   await signIn('admin')
   await call(tariffRouter.create, AUG, { context: baseContext() })

@@ -128,7 +128,9 @@ function isValidSession(session: ZaptecSession): boolean {
 // Columns the sync run (Zaptec) owns and may overwrite on re-import. Later
 // phases add admin-owned columns (e.g. a vehicle assignment) to
 // `ev_charge_session` that must survive a re-sync untouched, so the update
-// set is an explicit allow-list rather than "all columns".
+// set is an explicit allow-list rather than "all columns". Never a key column
+// (`id`, `zaptec_session_id`): the cost write-back's FK KEY SHARE row locks
+// would then conflict with this update and could deadlock it.
 function zaptecOwnedSessionUpdateSet(now: Date) {
   return {
     startAt: sql`excluded.start_at`,
