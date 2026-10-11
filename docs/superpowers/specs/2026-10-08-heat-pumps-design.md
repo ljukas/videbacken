@@ -168,6 +168,7 @@ All tables end with `.enableRLS()`; schema-design review + `migration-guard` bef
 | `model` | text, not null | e.g. `CS-HZ25ZKE` |
 | `registered_on` | date, null | `deviceRegisterTime` from the latest history response: the first day with data |
 | `history_complete_at` | timestamptz, null | set when the backfill has stored every day back to `registered_on` |
+| `backfill_cursor` | date, null | the next UTC day the backfill walk looks at (the walk passed over every listed day above it); null = start below the oldest stored day. Added in step 1b (migration 0024) |
 | `first_seen_at`, `last_seen_at` | timestamptz, not null | |
 
 **`heat_pump_reading`** (step 1a)
@@ -205,6 +206,7 @@ colocated tests with `setupDatabase()`):
 
 - `upsertUnits(units, now)`, `listUnits()` (1a): insert or update by guid (name, model, `last_seen_at`); list.
 - `newestHour(heatPumpId)` (1b): the unit's newest stored hour, for the offline rule.
+- `setBackfillCursor(heatPumpId, day)` (1b): saves where the unit's backfill walk continues.
 - `replaceDay(heatPumpId, utcDay, hours)`: in one transaction, delete the unit's hours of that UTC day and insert
   the given ones. Rejects an hour outside the day or a value outside the CHECKs (`HeatPumpDomainError`
   `INVALID_READING`), so a bad row fails the day, not the run (Emaldo's `rejectedDays` pattern).
@@ -235,28 +237,49 @@ Every code literal is exercised in the tests (`test-completeness`).
 
 Per run:
 1. `units()` → `upsertUnits`.
-2. **Recent:** for each unit, today and every previous UTC day back to the day of the last successful run (at least
-   the two previous days, at most 14) → `dayHours` → `replaceDay`. So an outage of up to two weeks heals itself on
-   the first good run; an empty answer never deletes stored hours.
+2. **Recent:** for each unit, today and every previous UTC day back to the day *before* the day the last successful
+   run started (a success at 00:20 may have run before the previous day's hour 23 settled; at least the two previous
+   days, at most 14 days counting today; a capped catch-up warns `comfort cloud catch-up capped` with the number of
+   days it skipped) → `dayHours` → `replaceDay`. So an outage of up to two weeks heals itself on the first good run;
+   an empty answer never deletes stored hours.
 3. **Backfill**, for each unit without `history_complete_at`, newest first, while the run's budget allows
-   (`DAY_BUDGET_MS`-style: no new day after ≈120 s; at most 60 days per unit per run):
-   - start from the day before the unit's oldest stored day (with no readings at all: three days before today);
-   - `monthDays` for that day's month → the days with data before the start, newest first → `dayHours` →
-     `replaceDay` each;
-   - the walk stops at `registered_on`; once the day before the oldest stored day is earlier than `registered_on`,
-     `markHistoryComplete`. A history response without a parseable `deviceRegisterTime` → `unexpected_response`.
-4. Progress: days done / days planned. Counters on the run line: units, days fetched, hours stored, rejected days,
-   backfill days left (an estimate).
+   (`DAY_BUDGET_MS`-style: no new day after ≈120 s; at most 60 days per unit per run; 500 ms between day calls):
+   - the walk starts at the lower of (the day before the unit's oldest stored day, or three days before today with
+     none) and `backfill_cursor`;
+   - `monthDays` for the walk's month → the listed days with data at or below it, newest first → `dayHours` →
+     `replaceDay` each; then the last day of the month before;
+   - the walk stops at `registered_on − 1` (Comfort Cloud's register day may be a local date, so the first UTC hours
+     can fall on the day before); once it passes that day, `markHistoryComplete`. When it stops short (budget, cap,
+     error) it saves `backfill_cursor`, so a listed day that answers no hours or is rejected is passed over for good
+     (re-fetch by setting `backfill_cursor` to NULL); a failed call leaves the cursor at or above that day, for the
+     next run to retry. A month answer the client can't parse (e.g. no parseable `deviceRegisterTime`) fails the run
+     (`unexpected_response`) and the cursor stays.
+   - A unit whose yesterday was rejected or quiet in this run is not backfilled that run (a bad answer must not walk
+     the cursor past history); it resumes on the next run with a healthy yesterday. So a unit quiet for more than 14
+     days (warn-only, below) keeps its backfill held until data returns.
+4. Progress: days done / days planned. Counters on the run line: units, days and months fetched, hours stored, empty
+   days, rejected days, units completed, backfill days left (an estimate).
+
+A day is **rejected** when its hours fail validation (`INVALID_READING`) or the client can't parse its answer
+(`unexpected_response` from `dayHours`: a repeated hour, a row outside the day): nothing is stored, what's stored is
+kept, it counts in `rejectedDays` and warns `comfort cloud day rejected` with the unit name, day and code only. Every
+other day error (login, unreachable, rate limited, …) fails the run.
 
 `STALE_AFTER_MS.comfortCloud` = 13 h (two missed runs); `ALERT_AFTER_FAILURES.comfortCloud` = 2.
 
 A unit whose yesterday (the most recent complete UTC day) has no hours fails the run (`unexpected_response`, naming
-the unit) as long as its newest stored hour is within the last 14 days: Comfort Cloud returns past hours reliably,
-so an empty yesterday means the unit or its Wi-Fi adapter was offline. It keeps failing every run until data returns
-(no false "recovered" email); after 14 days without data it only logs a warning, so a removed unit stops alerting.
-The recent window reads `last_success_started_at` (the last successful run) only to know how far back to re-fetch;
-the backfill needs no watermark: each unit's oldest stored day is its own cursor, and `history_complete_at` says
-when it is done. Zero units listed fails the run (`unexpected_response`); a rejected day never does.
+the unit and day) as long as its newest stored hour is within the last 14 days: Comfort Cloud returns past hours
+reliably, so an empty yesterday means the unit or its Wi-Fi adapter was offline. It keeps failing every run until
+data returns (no false "recovered" email); after 14 days without data it only logs a warning
+(`comfort cloud unit without data`), so a removed unit stops alerting. A unit that already answers again (its newest
+stored hour is from today) only warns (`comfort cloud unit missed yesterday`): yesterday's hole won't fill and the
+unit is back. A unit registered after yesterday has no yesterday to miss. The checks run after the backfill, so its
+progress still lands.
+The recent window reads `last_success_started_at` (the last successful run) only to know how far back to re-fetch.
+The backfill's position is `backfill_cursor` (below the oldest stored day when that is lower), and
+`history_complete_at` says when it is done. Zero units listed fails the run (`unexpected_response`); a rejected
+**yesterday** fails it too (`unexpected_response`, naming the unit and day — a changed unit or range on Panasonic's
+side must fail closed); any other rejected day only warns and counts (`rejectedDays`).
 
 **Per-source wiring** (exhaustive switches the compiler flags; the full list is in the step 1b plan):
 `INTEGRATION_SOURCES`, `policy.ts`, `integrationHealthMessage.ts`, `integrationCredentialsMessage.ts`, the
@@ -427,7 +450,9 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
 | Live status `5005` | Not used by the sync |
 | Partial current hour | Stored; corrected by the next run's re-fetch |
 | A unit offline for hours | Missing hours → "data saknas för N h" (Värmepumpar) and "värmepumpsdata saknas för N h" (Användning). Hours after a unit's newest stored hour count as missing only once that trailing gap is ≥ 13 h (the stale threshold), so the 6-hourly sync's normal lag shows no note; gaps inside the stored range always count |
-| A unit offline for a whole day | Yesterday empty → the run fails (`unexpected_response`, naming the unit) every run until data returns, as long as the unit had data within 14 days; after 14 days without data it only logs a warning (a removed unit stops alerting) |
+| A unit offline for a whole day | Yesterday empty → the run fails (`unexpected_response`, naming the unit and day) every run until data returns, as long as the unit had data within 14 days; after 14 days without data it only logs a warning (a removed unit stops alerting). A unit already answering today only warns (yesterday's hole won't fill). Either way its backfill is held until yesterday answers |
+| Yesterday's hours fail validation (e.g. a changed unit), or its answer can't be parsed | The run fails (`unexpected_response`, naming the unit and day) every run while it lasts; the unit's backfill is held; other rejected days are skipped with a warning |
+| A day answer the client can't parse (a repeated hour, a row outside the day) | Rejected like a day that fails validation: skipped with a warning (unit, day, code), counted in `rejectedDays`; the catch-up and the backfill move past it |
 | Σ heat pumps > load − laddning (meter noise, or heat pump hours present where house buckets are missing) | Heat pumps scaled down to fit; övrigt hus 0 |
 | A unit renamed in Comfort Cloud | Name refreshed on the next sync; history kept (keyed by guid) |
 | A third unit added | Discovered, backfilled, a third colour (a fourth gets a neutral colour; colours never cycle) |
@@ -443,8 +468,9 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
 - **Service** (`setupDatabase()` first): `replaceDay` (replace, reject out-of-day and out-of-range rows), `upsertUnits`,
   month and day sums across a month boundary and both DST days (2025-10-26, 2026-03-29), expected hours clipped to
   the first reading and the newest hour, events CRUD with every domain error code.
-- **Sync**: recent days, backfill order and budget, stop at `registered_on` → complete, a gap month skipped, a rejected
-  day counted, progress, `not_configured`.
+- **Sync**: recent days and the capped catch-up, backfill order and budget, stop at `registered_on − 1` → complete,
+  the persisted cursor across runs, a gap month skipped, a rejected day counted (failed validation or unparsed), a
+  quiet or rejected yesterday failing the run and holding the backfill, progress, `not_configured`.
 - **`figures.ts`**: the heat pump cap, shares, `restOfHouse`, missing hours; Summering's figures unchanged.
 - **`signature.ts`**: qualifying-day rules, before/after windows around events, the fit on known data, the
   extrapolation exclusion, the margin, the not-enough-data states.
