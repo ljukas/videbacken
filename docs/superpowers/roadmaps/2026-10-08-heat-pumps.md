@@ -8,7 +8,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1a | Adapter + storage, nothing calls it yet: the TypeScript Comfort Cloud client (login, units, UTC day and month history), `heat_pump` + `heat_pump_reading`, the service's writes | [plan](../plans/2026-10-08-heat-pumps-1a-adapter-storage.md) | | not started | |
+| 1a | Adapter + storage, nothing calls it yet: the TypeScript Comfort Cloud client (login, units, UTC day and month history), `heat_pump` + `heat_pump_reading`, the service's writes | [plan](../plans/2026-10-08-heat-pumps-1a-adapter-storage.md) | [#146](https://github.com/ljukas/videbacken/pull/146) | PR open | |
 | 1b | Sync live: the `comfortCloud` source (CHECK migration), credentials, sync + backfill + 6-hour cron, Datakällor tile, Synka nu, health copy | [plan](../plans/2026-10-08-heat-pumps-1b-sync.md) | | not started | |
 | 2 | Energi › Översikt: the Användning flow diagram, the month chart's four-part Förbrukning, the Comfort Cloud health alert | [plan](../plans/2026-10-08-heat-pumps-2-overview.md) | | not started | |
 | 3 | Energi › Värmepumpar, consumption: page, nav, period control, month and day charts with last year and outdoor temperature, tiles | [plan](../plans/2026-10-08-heat-pumps-3-page.md) | | not started | |
@@ -90,3 +90,11 @@ Each must pass, with the result recorded in the table, before the next step star
   window re-fetches back to the last successful run (≤ 14 days), the offline rule fails every run while yesterday is
   empty (14-day cut-off), trailing heat pump lag < 13 h isn't "missing", `byHeatPumpName` orders units everywhere,
   the signature excludes off days (owner) and fetches its window in ≤ 800-day chunks.
+- 2026-10-11: step 1a built (#146). Reviews tightened the login: the password, callback and token POSTs are never
+  retried, the code is taken only from the exact app redirect URI, a 429 or a refused fresh token also blocks logins
+  for 5 minutes, 4106/4103 match the JSON `code` field, and a `null` history field becomes null. The schema review
+  ruled no `hour_start` index. Carried forward: **step 1b**: `deviceRegisterTime` may be a local date, so the
+  backfill should also fetch `registered_on − 1`; and the `oldestDay` cursor must skip past a day `monthDays` lists
+  but that stores no rows or is rejected. **Step 2**: the whole-history month read measured ≈ 11 ms at today's 35k
+  rows and ≈ 43 ms at 131k, and an index doesn't help, so plan a `heat_pump_month` materialized view like
+  `house_energy_month` (ADR-0024) or a `heatPumpMs` threshold for adding one.
