@@ -1,10 +1,15 @@
+import { eq } from 'drizzle-orm'
 import { afterEach, expect, test, vi } from 'vitest'
+import { db } from '~/lib/db'
+import { evSessionCost, evSessionCostMonth } from '~/lib/db/schema'
 import type { Logger } from '~/lib/logger'
+import * as evChargingService from '~/lib/services/evCharging'
 import * as sessionCostService from '~/lib/services/sessionCost'
-import { listStale } from '~/lib/services/sessionCost'
+import { bumpSessions, listStale } from '~/lib/services/sessionCost'
 import { insertSession as insertFixtureSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { PRICING_VERSION } from './cost'
+import { getSessionCosts } from './costing'
 import { repriceStale } from './repriceStale'
 
 setupDatabase()
@@ -106,4 +111,57 @@ test("skipped once the run's deadline has fired", async () => {
   expect(log.warn).toHaveBeenCalledWith('session cost reprice skipped: run deadline reached', {
     trigger: 'zaptec',
   })
+})
+
+const monthRowsOf = (sessionId: string) =>
+  db.select().from(evSessionCostMonth).where(eq(evSessionCostMonth.sessionId, sessionId))
+const stateOf = async (sessionId: string) =>
+  (await db.select().from(evSessionCost).where(eq(evSessionCost.sessionId, sessionId)))[0]
+
+test('a session bumped while it is being priced stays stale; nothing is written', async () => {
+  const id = await insertSession('2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
+  const real = evChargingService.listSessionEnergy
+  vi.spyOn(evChargingService, 'listSessionEnergy').mockImplementation(async (input) => {
+    await bumpSessions([id]) // a writer commits between the generation read and the write-back
+    return real(input)
+  })
+  const log = fakeLog()
+  await repriceStale({ trigger: 'zaptec', log })
+  expect(log.info).toHaveBeenCalledWith('session costs repriced', {
+    trigger: 'zaptec',
+    stale: 1,
+    written: 0,
+    repriceMs: expect.any(Number),
+  })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([
+    { sessionId: id, generation: 1 },
+  ])
+  expect(await monthRowsOf(id)).toEqual([])
+})
+
+test('only the stale session is repriced; the current one is left as stored', async () => {
+  const current = await insertSession('2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
+  await repriceStale({ trigger: 'zaptec', log: fakeLog() })
+  const currentState = await stateOf(current)
+  const currentMonths = await monthRowsOf(current)
+  const stale = await insertFixtureSession({
+    startAt: new Date('2026-09-02T10:00:00Z'),
+    endAt: new Date('2026-09-02T11:00:00Z'),
+    energyKwh: 7,
+  })
+
+  const log = fakeLog()
+  await repriceStale({ trigger: 'zaptec', log })
+  expect(log.info).toHaveBeenCalledWith('session costs repriced', {
+    trigger: 'zaptec',
+    stale: 1,
+    written: 1,
+    repriceMs: expect.any(Number),
+  })
+  expect(await stateOf(current)).toEqual(currentState)
+  expect(await monthRowsOf(current)).toEqual(currentMonths)
+  const timings: Record<string, number> = {}
+  const [cost] = await getSessionCosts({ sessionIds: [stale], timings })
+  expect(timings.staleSessions).toBe(0)
+  expect(cost).toMatchObject({ sessionId: stale, kwh: 7, estimated: true })
 })

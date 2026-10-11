@@ -443,6 +443,18 @@ test('replaceDay waits for an in-flight session import, then bumps its session',
   }
 })
 
+test("a failure after replaceDay's bump rolls the bump back", async () => {
+  const inDay = await chargeSession('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z')
+  await replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 15))
+  expect(await generationOf(inDay)).toBe(1)
+  // requestDerive runs after bumpOverlapping in the same transaction.
+  vi.mocked(requestDerive).mockRejectedValueOnce(new Error('derive queue down'))
+  await expect(replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 60))).rejects.toThrow(
+    'derive queue down',
+  )
+  expect(await generationOf(inDay)).toBe(1)
+})
+
 test('a rejected day bumps nothing', async () => {
   const inDay = await chargeSession('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z')
   await expect(replaceDay('SE3', '2026-09-20', [])).rejects.toThrow()

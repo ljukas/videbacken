@@ -3,10 +3,12 @@ import { db } from '~/lib/db'
 import { evCharger, evChargeSession, spotPrice } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { type ElprisClient, ElprisError } from '~/lib/effects/elpris'
+import { PRICING_VERSION } from '~/lib/evCharging/cost'
 import type { deriveFrom } from '~/lib/houseEnergy/derive'
 import { createServerLogger } from '~/lib/logger/server'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, listRecentRuns } from '~/lib/services/integrationSync'
+import { listStale } from '~/lib/services/sessionCost'
 import { dailyAverageSpot, daysStored } from '~/lib/services/spotPrice'
 import type { PriceSlot } from '~/lib/spotPrice/slots'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
@@ -496,4 +498,11 @@ test('a rejected day still moves the progress bar', async () => {
   expect(spy.mock.calls.map(([, , p]) => p)).toEqual(
     Array.from({ length: 10 }, (_, i) => ({ done: i + 1, total: 10 })),
   )
+})
+
+test('a run leaves no session cost stale (the reprice after the derive)', async () => {
+  await insertSession(new Date('2026-09-25T18:00:00Z'))
+  const result = await run(fakeElpris().client)
+  expect(result.outcome).toBe('ok')
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
 })

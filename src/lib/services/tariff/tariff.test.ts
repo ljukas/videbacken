@@ -1,12 +1,18 @@
 import { eq, sql } from 'drizzle-orm'
 import { Client } from 'pg'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { evSessionCost } from '~/lib/db/schema'
-import { bumpSessions } from '~/lib/services/sessionCost/invalidate'
+import { bumpAll, bumpSessions } from '~/lib/services/sessionCost/invalidate'
 import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { create, list, remove, type TariffInput, update } from './tariff'
+
+// The real bumps, wrapped so a test can fail bumpAll inside a tariff write.
+vi.mock('~/lib/services/sessionCost/invalidate', async (importOriginal) => {
+  const real = await importOriginal<typeof import('~/lib/services/sessionCost/invalidate')>()
+  return { ...real, bumpAll: vi.fn(real.bumpAll) }
+})
 
 setupDatabase()
 
@@ -188,4 +194,19 @@ test('a tariff write waits for an in-flight session import, then bumps its sessi
   } finally {
     await other.end()
   }
+})
+
+test('a failed bump rolls the tariff write back', async () => {
+  const session = await insertSession()
+  const real = await vi.importActual<typeof import('~/lib/services/sessionCost/invalidate')>(
+    '~/lib/services/sessionCost/invalidate',
+  )
+  // The bump itself succeeds; the transaction fails right after it.
+  vi.mocked(bumpAll).mockImplementationOnce(async (tx) => {
+    await real.bumpAll(tx)
+    throw new Error('bump failed')
+  })
+  await expect(create(AUG_2026)).rejects.toThrow('bump failed')
+  expect(await list()).toEqual([])
+  expect(await generationOf(session)).toBeUndefined()
 })

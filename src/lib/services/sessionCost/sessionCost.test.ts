@@ -100,6 +100,10 @@ test('another pricing version is stale', async () => {
   expect(read.stale).toEqual([{ sessionId: a, generation: 0 }])
   expect(await listStale({ pricingVersion: V + 1 })).toEqual([{ sessionId: a, generation: 0 }])
   expect(await listStale({ pricingVersion: V })).toEqual([])
+  expect(await readSessionSums({ sessionIds: [a], pricingVersion: V + 1 })).toEqual({
+    current: [],
+    stale: [{ sessionId: a, generation: 0 }],
+  })
 })
 
 test('the write-back loses to a bump that came after the generation read', async () => {
@@ -356,4 +360,25 @@ test('a write-back gives up on a locked row after its lock timeout and writes no
     await db.select().from(evSessionCostMonth).where(eq(evSessionCostMonth.sessionId, a)),
   ).toEqual([])
   expect(await state(a)).toMatchObject({ generation: 1, pricedGeneration: null })
+})
+
+test('stale ids follow the vehicle scope and the counted filter', async () => {
+  const other = await session('2026-09-02T10:00:00Z', '2026-09-02T11:00:00Z', {
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const voided = await session('2026-09-03T10:00:00Z', '2026-09-03T11:00:00Z', { voided: true })
+  const noise = await session('2026-09-04T10:00:00Z', '2026-09-04T11:00:00Z', { energyKwh: 0.01 })
+
+  expect((await readMonthSums({ vehicle: 'ours', pricingVersion: V })).stale).toEqual([])
+  expect((await readMonthSums({ vehicle: 'other', pricingVersion: V })).stale).toEqual([
+    { sessionId: other, generation: null },
+  ])
+  const all = await readMonthSums({ pricingVersion: V })
+  const listed = await listStale({ pricingVersion: V })
+  for (const id of [voided, noise]) {
+    expect(all.stale.map((s) => s.sessionId)).not.toContain(id)
+    expect(listed.map((s) => s.sessionId)).not.toContain(id)
+  }
+  expect(listed).toEqual([{ sessionId: other, generation: null }])
 })

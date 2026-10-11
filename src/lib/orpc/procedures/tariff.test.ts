@@ -5,6 +5,7 @@ import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
 import { PRICING_VERSION } from '~/lib/evCharging/cost'
 import type { Logger } from '~/lib/logger'
+import * as sessionCostService from '~/lib/services/sessionCost'
 import { listStale } from '~/lib/services/sessionCost'
 import * as tariffService from '~/lib/services/tariff'
 import { TariffDomainError } from '~/lib/services/tariff'
@@ -168,6 +169,8 @@ test('costOverview is readable by users and records cost sub-timings', async () 
   expect(overview.months).toHaveLength(12)
   expect(overview.houseDataFrom).toBeNull()
   expect(timings).toMatchObject({
+    costStoredMs: expect.any(Number),
+    costStaleSessions: 1,
     costEnergyMs: expect.any(Number),
     costSlotsMs: expect.any(Number),
     costTariffMs: expect.any(Number),
@@ -250,4 +253,34 @@ test('a tariff edit leaves every session repriced', async () => {
   await insertSession()
   await call(tariffRouter.create, AUG, { context: baseContext() })
   expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
+})
+
+test('tariff update and remove leave every session repriced', async () => {
+  await signIn('admin')
+  await insertSession()
+  await insertSession({
+    startAt: new Date('2026-08-02T10:00:00Z'),
+    endAt: new Date('2026-08-02T11:00:00Z'),
+  })
+  const row = await call(tariffRouter.create, AUG, { context: baseContext() })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
+
+  await call(
+    tariffRouter.update,
+    { ...AUG, id: row.id, gridTransferOre: 40 },
+    { context: baseContext() },
+  )
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
+  await call(tariffRouter.remove, { id: row.id }, { context: baseContext() })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
+})
+
+test('a tariff write still succeeds when the reprice cannot store', async () => {
+  await signIn('admin')
+  await insertSession()
+  vi.spyOn(sessionCostService, 'writePriced').mockRejectedValue(new Error('lock timeout'))
+  const row = await call(tariffRouter.create, AUG, { context: baseContext() })
+  expect(row).toMatchObject(AUG)
+  expect(await tariffService.list()).toEqual([expect.objectContaining({ id: row.id })])
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toHaveLength(1)
 })

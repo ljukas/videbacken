@@ -5,6 +5,7 @@ import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import { replaceForSessions } from '~/lib/services/energyMix'
+import * as evChargingService from '~/lib/services/evCharging'
 import { getOverview, listSessionEnergy } from '~/lib/services/evCharging'
 import { replaceDay as replaceHouseDay } from '~/lib/services/houseEnergy'
 import * as sessionCostService from '~/lib/services/sessionCost'
@@ -662,4 +663,69 @@ test('an interval across local midnight keeps its pieces in its start month; the
   expect(cost.months[8].kwh).toBeCloseTo(1)
   expect(cost.months[7].kwh).toBeCloseTo(kwh.months[7].kwh, 9)
   expect(cost.months[8].kwh).toBeCloseTo(kwh.months[8].kwh, 9)
+})
+
+test('a session bumped while the overview prices it is still shown, and stays stale', async () => {
+  const id = await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
+  const real = evChargingService.listSessionEnergy
+  vi.spyOn(evChargingService, 'listSessionEnergy').mockImplementation(async (input) => {
+    await sessionCostService.bumpSessions([id]) // a writer commits mid-read
+    return real(input)
+  })
+  const cost = await getCostOverview({ now: NOW })
+  expect(cost.months[8].kwh).toBeCloseTo(2)
+  expect(await sessionCostService.listStale({ pricingVersion: PRICING_VERSION })).toEqual([
+    { sessionId: id, generation: 1 },
+  ])
+})
+
+test('session costs of a page: current and stale ids priced, uncounted dropped, only the stale written back', async () => {
+  const current = await session('2026-09-22T08:00:00Z', '2026-09-22T09:00:00Z', 2)
+  await getSessionCosts({ sessionIds: [current] })
+  const stale = await session('2026-09-22T10:00:00Z', '2026-09-22T11:00:00Z', 3)
+  const voided = await session('2026-09-22T12:00:00Z', '2026-09-22T13:00:00Z', 4, [], {
+    voided: true,
+  })
+  const write = vi.spyOn(sessionCostService, 'writePriced')
+  const costs = await getSessionCosts({ sessionIds: [current, stale, voided] })
+  expect(costs.map((c) => [c.sessionId, c.kwh]).sort()).toEqual(
+    [
+      [current, 2],
+      [stale, 3],
+    ].sort(),
+  )
+  expect(write).toHaveBeenCalledOnce()
+  expect(write.mock.calls[0][0].sessions.map((s) => s.sessionId)).toEqual([stale])
+})
+
+test('stored and on-read agree in every scope with a mix, a guest and a session bumped after a read', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-20',
+    daySlots('2026-09-20', 15, () => 0.5),
+  )
+  await tariffService.create(TARIFF)
+  const withMix = await session('2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3, [
+    ['2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3],
+  ])
+  await storeMix(withMix, [
+    mixSlot('2026-09-20T18:00:00Z', { gridKwh: 1, solarKwh: 0.5 }),
+    mixSlot('2026-09-20T18:15:00Z', { gridKwh: 0.5, batteryGridKwh: 1, batteryGridSpotSek: 0.2 }),
+  ])
+  const guest = await session('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 4, [], {
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const plain = await session('2026-09-20T10:00:00Z', '2026-09-20T11:00:00Z', 5, [
+    ['2026-09-20T10:00:00Z', '2026-09-20T11:00:00Z', 5],
+  ])
+  await getCostOverview({ now: NOW }) // everything stored
+
+  const kwh: Record<string, number> = {}
+  for (const vehicle of ['ours', 'other', 'all'] as const) {
+    // A mixed state: some sessions stored, one bumped since.
+    await sessionCostService.bumpSessions([plain, guest])
+    kwh[vehicle] = (await pricedTwice({ now: NOW, vehicle })).tiles.allTime.kwh
+  }
+  expect(kwh).toEqual({ ours: 8, other: 4, all: 12 })
 })

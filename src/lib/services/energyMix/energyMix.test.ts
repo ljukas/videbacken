@@ -415,3 +415,31 @@ test('replaceForSessions bumps the sessions it replaces, and nothing on a refuse
   ).rejects.toThrow(RangeError)
   expect(await generationOf(a)).toBe(1)
 })
+
+test('a mix row the table refuses after the bump rolls the bump back', async () => {
+  const a = await insertSession()
+  await replaceForSessions([a], rowsOf(a, [slot('2026-01-01T10:00:00Z')]))
+  expect(await generationOf(a)).toBe(1)
+  // kwh 0 fails ev_charge_energy_mix_kwh_nonneg_check on the insert after bumpSessions.
+  await expect(
+    replaceForSessions([a], rowsOf(a, [slot('2026-01-01T10:00:00Z', { kwh: 0, gridKwh: 0 })])),
+  ).rejects.toThrow()
+  expect(await generationOf(a)).toBe(1)
+  expect((await listForSessions([a])).get(a)).toHaveLength(1)
+})
+
+test('pruneUncounted changes no stored-cost generation', async () => {
+  const counted = await insertSession()
+  const voided = await insertSession({
+    startAt: new Date('2026-01-05T12:00:00Z'),
+    endAt: new Date('2026-01-05T13:00:00Z'),
+  })
+  await replaceForSessions(
+    [counted, voided],
+    [counted, voided].flatMap((id) => rowsOf(id, [slot('2026-01-01T10:00:00Z')])),
+  )
+  await db.update(evChargeSession).set({ voided: true }).where(eq(evChargeSession.id, voided))
+  const before = await db.select().from(evSessionCost).orderBy(evSessionCost.sessionId)
+  expect(await pruneUncounted()).toBe(1)
+  expect(await db.select().from(evSessionCost).orderBy(evSessionCost.sessionId)).toEqual(before)
+})
