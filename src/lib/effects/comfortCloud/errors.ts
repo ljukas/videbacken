@@ -1,11 +1,11 @@
-import type { CredentialFieldName } from '~/lib/integrationCredentials'
+import type { CredentialField } from '~/lib/integrationCredentials'
 import type { IntegrationErrorCode } from '~/lib/integrationHealth'
 import { IntegrationError } from '../integrationError'
 
 export type ComfortCloudOp = 'login' | 'units' | 'history'
 
-/** The credential fields a Comfort Cloud answer can point at; 1b narrows it to CredentialField<'comfortCloud'>. */
-export type ComfortCloudCredentialField = Extract<CredentialFieldName, 'user' | 'password'>
+/** The credential fields a Comfort Cloud answer can point at. */
+export type ComfortCloudCredentialField = CredentialField<'comfortCloud'>
 
 /**
  * The one error the Comfort Cloud client throws. `status` is the HTTP status when there was one.

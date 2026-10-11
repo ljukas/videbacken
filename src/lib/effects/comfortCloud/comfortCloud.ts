@@ -4,10 +4,12 @@
  * when someone is home and heating: never log or echo them. Unit guids are shortened wherever
  * they are shown and never appear in an error.
  *
- * Step 1a builds the client only. The `comfortCloud` facade (keyedAdapter + notConfigured +
- * adapter selection) arrives with the source literal in step 1b: keyedAdapter takes a
- * CredentialSource.
+ * The keyed, fail-closed `comfortCloud` facade (keyedAdapter + notConfigured + adapter
+ * selection) sits at the bottom of this file.
  */
+import type { CredentialValues } from '~/lib/integrationCredentials'
+import { keyedAdapter } from '../keyedAdapter'
+
 export type ComfortCloudUnit = {
   guid: string
   name: string
@@ -72,4 +74,45 @@ export interface ComfortCloudClient {
     utcMonth: string,
     o?: ComfortCloudCallOpts,
   ): Promise<ComfortCloudHistory<ComfortCloudDay>>
+}
+
+/**
+ * The heat pumps' facade (ADR-0027). Credentials come from the resolver
+ * (ADR-0026: stored under Inställningar, else PANASONIC_USER / PANASONIC_PASSWORD),
+ * checked on every call. The client, and the access token in its memory, is
+ * rebuilt only when they change, so a warm instance reuses its login. An
+ * unreadable stored row fails the call as `credentials_unreadable`; under
+ * VITEST every call is `not_configured`.
+ */
+/** `http` only when both fields resolve. */
+export function selectComfortCloudAdapter(
+  values: CredentialValues<'comfortCloud'>,
+): 'notConfigured' | 'http' {
+  return values.user && values.password ? 'http' : 'notConfigured'
+}
+
+const getAdapter = keyedAdapter({
+  source: 'comfortCloud',
+  unavailable: async (code) => (await import('./adapters/notConfigured')).unavailable(code),
+  build: async (values): Promise<ComfortCloudClient> => {
+    const { user, password } = values
+    if (selectComfortCloudAdapter(values) === 'http' && user && password) {
+      const { createComfortCloudClient } = await import('./client')
+      return createComfortCloudClient({ fetch: globalThis.fetch, user, password })
+    }
+    return (await import('./adapters/notConfigured')).notConfigured
+  },
+})
+
+// Forwards each call's options ({ signal, stats }) untouched.
+export const comfortCloud: ComfortCloudClient = {
+  async units(o) {
+    return (await getAdapter()).units(o)
+  },
+  async dayHours(guid, utcDay, o) {
+    return (await getAdapter()).dayHours(guid, utcDay, o)
+  },
+  async monthDays(guid, utcMonth, o) {
+    return (await getAdapter()).monthDays(guid, utcMonth, o)
+  },
 }
