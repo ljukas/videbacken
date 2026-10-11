@@ -75,18 +75,19 @@ A library swap is a refactor *only if behavior stays the same*, and libraries ra
 **What:** Make the smallest structural change, **run tests, confirm green, commit**, then the next. Many tiny verified steps compose into the large transformation without ever leaving working code. **One hat per commit. Diffs small enough to actually review.**
 - Fan out *independent mechanical* edits (renames, extractions across files); that's where agents are strong.
 - A step that unexpectedly goes red means behavior moved. Debug it; don't paper over it.
-- Planned/large refactors run the same **per-task adversarial review loop** as features ([feature-workflow.md → Phase 4](./feature-workflow.md#4-build-task-by-task)): after each step, two reviewers told to assume the step changed behavior.
+- Planned/large refactors run the same **task loop** as features ([feature-workflow.md → Phase 4](./feature-workflow.md#4-build-task-by-task)): one step at a time, git evidence checked, no reviewer in between (except the schema gate). Review happens once, over the whole branch, in Phase 7.
 - An autonomous loop is allowed **only** once the safety net is green (the passing suite *is* its success criterion), with a hard iteration cap, and never for the design target.
 
 ### 6. Verify behavior preservation
 **What:** The whole point: *prove* nothing observable changed, don't assert it. Run the full suite and the [pre-PR gate](./feature-workflow.md#pre-pr-gate); diff outputs where you used characterization tests; for visual code, compare the UI before/after in a real browser.
 
 ### 7. Review & ship
-**What:** Review the whole branch, then integrate.
-- Always → `code-reviewer` (ADR adherence) and a general correctness pass, told to look for behavior that moved.
+**What:** Review the whole branch, then integrate. Same shape as the feature workflow's [step review](./feature-workflow.md#5-review-the-step): every reviewer in parallel, each told to *assume the refactor changed behavior*; verify each finding before fixing it.
+- Core, always → `code-reviewer` (ADR adherence), a correctness reviewer looking for behavior that moved, and a target reviewer: did the change reach the target decided in Phase 2, and nothing beyond it?
 - Touched `drizzle/` or schema → `migration-guard` **and** the schema-design review (mandatory).
 - Moved services / effects / `errors.ts` → `test-completeness`.
 - Moved auth, session, file-access or `adminProcedure`/`protectedProcedure` gating → a dedicated security pass, told to check that no boundary moved.
+- Moved UI → a reviewer loading `web-design-guidelines` + `vercel-react-best-practices`, told to look for rendering or interaction that changed.
 - `security-guidance` reviews at commit/push; clear or consciously dismiss its findings before the PR.
 - Open the PR with the template; `refactor(<scope>): …` title; squash-merge.
 
@@ -135,6 +136,6 @@ Ousterhout is skeptical of strict TDD; Beck/Fowler treat tests as the indispensa
 | 2. Decide target | *(human/judgment — APOSD)* | `improve-codebase-architecture` |
 | 3. Pick strategy | `superpowers:writing-plans` *(planned/large)* | `Plan` *(agent)*; Context7 *(library docs for a swap's gap list)* |
 | 4. Isolate | `superpowers:using-git-worktrees` | — |
-| 5. Small steps | `code-simplifier:code-simplifier` *(agent)* / `/simplify` *(mechanical cleanup; quality only, no bug hunting)* | `superpowers:subagent-driven-development`; `superpowers:dispatching-parallel-agents`; `superpowers:systematic-debugging`; reviewers per [feature pairings](./feature-workflow.md#reviewer-pairings); `ralph-loop:ralph-loop` *(safety net green only; `--completion-promise DONE --max-iterations N`)*; `vercel-composition-patterns`; `vercel-react-best-practices`; `supabase-postgres-best-practices` |
+| 5. Small steps | `code-simplifier:code-simplifier` *(agent)* / `/simplify` *(mechanical cleanup; quality only, no bug hunting)* | `superpowers:subagent-driven-development`; `superpowers:dispatching-parallel-agents`; `superpowers:systematic-debugging`; `ralph-loop:ralph-loop` *(safety net green only; `--completion-promise DONE --max-iterations N`)*; `vercel-composition-patterns`; `vercel-react-best-practices`; `supabase-postgres-best-practices` |
 | 6. Verify preservation | `superpowers:verification-before-completion` | `/run`; `claude-in-chrome` or the `playwright` plugin *(visual before/after)*; `vercel:verification` *(user-level plugin)* |
 | 7. Review & ship | `code-reviewer`, `migration-guard`, `test-completeness` *(agents)*; schema-design reviewer *(`general-purpose` agent loading `supabase-postgres-best-practices`)* | `/simplify`; `/code-review` (`--fix` to apply); `/security-review`; `security-guidance` *(commit/push review)*; `superpowers:requesting-code-review` / `superpowers:receiving-code-review`; `superpowers:finishing-a-development-branch` |
