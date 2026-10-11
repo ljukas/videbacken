@@ -1,8 +1,21 @@
+import { eq } from 'drizzle-orm'
 import { expect, test } from 'vitest'
+import { db } from '~/lib/db'
+import { evSessionCost } from '~/lib/db/schema'
+import { bumpSessions } from '~/lib/services/sessionCost/invalidate'
+import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { create, list, remove, type TariffInput, update } from './tariff'
 
 setupDatabase()
+
+async function generationOf(sessionId: string): Promise<number | undefined> {
+  const [row] = await db
+    .select({ generation: evSessionCost.generation })
+    .from(evSessionCost)
+    .where(eq(evSessionCost.sessionId, sessionId))
+  return row?.generation
+}
 
 const AUG_2026: TariffInput = {
   validFrom: '2026-08-01',
@@ -126,4 +139,20 @@ test('writes only the tariff columns, ignoring extra fields on the input', async
   const row = await create(sneaky)
   expect(row.id).not.toBe(sneaky.id)
   expect(row.createdAt.getTime()).toBeGreaterThan(0)
+})
+
+test('every tariff write bumps every stored session; a refused write bumps nothing', async () => {
+  const a = await insertSession()
+  const b = await insertSession()
+  await bumpSessions([a]) // a has a row, b has none: bumpAll must create b's
+  const created = await create(AUG_2026)
+  expect(await generationOf(a)).toBe(2)
+  expect(await generationOf(b)).toBe(1)
+  await update(created.id, { ...AUG_2026, gridTransferOre: AUG_2026.gridTransferOre + 1 })
+  expect(await generationOf(a)).toBe(3)
+  await remove(created.id)
+  expect(await generationOf(a)).toBe(4)
+
+  await expect(remove(created.id)).rejects.toMatchObject({ code: 'TARIFF_NOT_FOUND' })
+  expect(await generationOf(a)).toBe(4)
 })

@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { energyMixDeriveRequest, spotPrice, spotPriceDay } from '~/lib/db/schema'
+import { energyMixDeriveRequest, evSessionCost, spotPrice, spotPriceDay } from '~/lib/db/schema'
 import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
+import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { SpotPriceDomainError } from './errors'
 import { dailyAverageSpot, daysStored, listSlotsOverlapping, replaceDay } from './spotPrice'
@@ -18,6 +19,14 @@ vi.mock('~/lib/services/energyMix/deriveRequest', async (importOriginal) => {
 })
 
 setupDatabase()
+
+async function generationOf(sessionId: string): Promise<number | undefined> {
+  const [row] = await db
+    .select({ generation: evSessionCost.generation })
+    .from(evSessionCost)
+    .where(eq(evSessionCost.sessionId, sessionId))
+  return row?.generation
+}
 
 const utc = (iso: string) => new Date(iso).getTime()
 
@@ -389,4 +398,21 @@ test('replacing a day queues an energy-mix derive from that day', async () => {
     .select({ fromDay: energyMixDeriveRequest.fromDay })
     .from(energyMixDeriveRequest)
   expect(queued).toEqual([{ fromDay: '2026-09-28' }])
+})
+
+const chargeSession = (startIso: string, endIso: string) =>
+  insertSession({ startAt: new Date(startIso), endAt: new Date(endIso) })
+
+test('replaceDay bumps sessions charging that Stockholm day, and only those', async () => {
+  const inDay = await chargeSession('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z')
+  const dayBefore = await chargeSession('2026-09-19T08:00:00Z', '2026-09-19T09:00:00Z')
+  await replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 15))
+  expect(await generationOf(inDay)).toBe(1)
+  expect(await generationOf(dayBefore)).toBeUndefined()
+})
+
+test('a rejected day bumps nothing', async () => {
+  const inDay = await chargeSession('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z')
+  await expect(replaceDay('SE3', '2026-09-20', [])).rejects.toThrow()
+  expect(await generationOf(inDay)).toBeUndefined()
 })

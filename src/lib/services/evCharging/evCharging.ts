@@ -4,6 +4,7 @@ import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
 import { logger } from '~/lib/logger/server'
 import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
+import { bumpSessions } from '~/lib/services/sessionCost/invalidate'
 import { isStockholmDay, stockholmDayOf } from '~/lib/time/stockholm'
 
 // Chargers: `id` is the Zaptec charger id itself, so this is a plain upsert by
@@ -255,6 +256,10 @@ export async function importSessions(
 
     const sessionIdByZaptecId = new Map(sessionRows.map((r) => [r.zaptecSessionId, r.id]))
     const sessionDbIds = sessionRows.map((r) => r.id)
+
+    // Every upserted session may have new energy (ADR-0020, amended
+    // 2026-10-11): its stored cost goes stale with this commit.
+    await bumpSessions(sessionDbIds, tx)
 
     // Delete + re-insert intervals rather than diffing: cheap at Zaptec's
     // per-session interval counts, and guarantees no stale rows survive a

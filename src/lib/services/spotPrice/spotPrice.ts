@@ -2,6 +2,7 @@ import { and, eq, gte, lt, lte, sql } from 'drizzle-orm'
 import { type DbOrTx, db } from '~/lib/db'
 import { spotPrice, spotPriceDay } from '~/lib/db/schema'
 import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
+import { bumpOverlapping } from '~/lib/services/sessionCost/invalidate'
 import { type DailySpot, type PriceSlot, validateDaySlots } from '~/lib/spotPrice/slots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
 import { stockholmDayBounds } from '~/lib/time/stockholm'
@@ -64,6 +65,8 @@ export async function replaceDay(
         SET avg_sek_per_kwh = excluded.avg_sek_per_kwh,
             covered_seconds = excluded.covered_seconds
     `)
+    // Sessions charging this day are priced from these slots (ADR-0020, amended 2026-10-11).
+    await bumpOverlapping({ startMs, endMs }, tx)
     // Queued with the prices (ADR-0023): if the run dies before its derive,
     // the next derive still re-prices the battery from this day.
     await requestDerive(day, tx)

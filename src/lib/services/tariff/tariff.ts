@@ -3,6 +3,7 @@ import { db } from '~/lib/db'
 import { isUniqueViolation } from '~/lib/db/pgError'
 import { electricityTariff } from '~/lib/db/schema'
 import { TARIFF_LIMITS, type TariffAmountField } from '~/lib/evCharging/tariff'
+import { bumpAll } from '~/lib/services/sessionCost/invalidate'
 import { isStockholmDay } from '~/lib/time/stockholm'
 import { TariffDomainError } from './errors'
 
@@ -84,10 +85,14 @@ export async function create(input: TariffInput): Promise<TariffRow> {
   if (await validFromTaken(input.validFrom)) {
     throw new TariffDomainError('TARIFF_VALID_FROM_TAKEN')
   }
-  return mapValidFromRace(async () => {
-    const [row] = await db.insert(electricityTariff).values(columns(input)).returning()
-    return row
-  })
+  // A tariff period reaches every day from its validFrom on: every stored cost goes stale.
+  return mapValidFromRace(() =>
+    db.transaction(async (tx) => {
+      const [row] = await tx.insert(electricityTariff).values(columns(input)).returning()
+      await bumpAll(tx)
+      return row
+    }),
+  )
 }
 
 export async function update(id: string, input: TariffInput): Promise<TariffRow> {
@@ -96,14 +101,18 @@ export async function update(id: string, input: TariffInput): Promise<TariffRow>
   if (await validFromTaken(input.validFrom, id)) {
     throw new TariffDomainError('TARIFF_VALID_FROM_TAKEN')
   }
-  const row = await mapValidFromRace(async () => {
-    const [updated] = await db
-      .update(electricityTariff)
-      .set(columns(input))
-      .where(eq(electricityTariff.id, id))
-      .returning()
-    return updated
-  })
+  // A tariff period reaches every day from its validFrom on: every stored cost goes stale.
+  const row = await mapValidFromRace(() =>
+    db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(electricityTariff)
+        .set(columns(input))
+        .where(eq(electricityTariff.id, id))
+        .returning()
+      if (updated) await bumpAll(tx)
+      return updated
+    }),
+  )
   // Deleted between the existence check and the write.
   if (!row) throw new TariffDomainError('TARIFF_NOT_FOUND')
   return row
@@ -114,9 +123,13 @@ export async function update(id: string, input: TariffInput): Promise<TariffRow>
  * for the days it covered.
  */
 export async function remove(id: string): Promise<void> {
-  const deleted = await db
-    .delete(electricityTariff)
-    .where(eq(electricityTariff.id, id))
-    .returning({ id: electricityTariff.id })
-  if (deleted.length === 0) throw new TariffDomainError('TARIFF_NOT_FOUND')
+  await db.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(electricityTariff)
+      .where(eq(electricityTariff.id, id))
+      .returning({ id: electricityTariff.id })
+    if (deleted.length === 0) throw new TariffDomainError('TARIFF_NOT_FOUND')
+    // A tariff period reaches every day from its validFrom on: every stored cost goes stale.
+    await bumpAll(tx)
+  })
 }

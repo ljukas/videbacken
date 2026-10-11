@@ -6,6 +6,7 @@ import {
   evChargeInterval,
   evCharger,
   evChargeSession,
+  evSessionCost,
 } from '~/lib/db/schema'
 import type { ZaptecCharger, ZaptecSession } from '~/lib/evCharging/types'
 import { expectConstraintViolation } from '~test/expectConstraintViolation'
@@ -14,6 +15,14 @@ import { setupDatabase } from '~test/setup'
 import { findLiveCharger, importSessions, listChargers, upsertChargers } from './evCharging'
 
 setupDatabase()
+
+async function generationOf(sessionId: string): Promise<number | undefined> {
+  const [row] = await db
+    .select({ generation: evSessionCost.generation })
+    .from(evSessionCost)
+    .where(eq(evSessionCost.sessionId, sessionId))
+  return row?.generation
+}
 
 function session(overrides: Partial<ZaptecSession> = {}): ZaptecSession {
   return {
@@ -530,4 +539,19 @@ describe('importSessions reports the earliest change for the energy-mix derive',
     expect(result.upserted).toBe(1)
     expect(await db.select().from(energyMixDeriveRequest)).toEqual([])
   })
+})
+
+test('importSessions bumps the stored cost of every session it upserts', async () => {
+  const CTX = { installationId: 'install-1' }
+  await importSessions([session({ id: 'z-1' }), session({ id: 'z-2' })], CTX)
+  const ids = await db
+    .select({ id: evChargeSession.id })
+    .from(evChargeSession)
+    .orderBy(evChargeSession.zaptecSessionId)
+  expect(await generationOf(ids[0].id)).toBe(1)
+  expect(await generationOf(ids[1].id)).toBe(1)
+
+  await importSessions([session({ id: 'z-1' })], CTX)
+  expect(await generationOf(ids[0].id)).toBe(2)
+  expect(await generationOf(ids[1].id)).toBe(1)
 })
