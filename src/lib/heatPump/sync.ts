@@ -17,6 +17,7 @@ import {
   newestHour,
   oldestDay,
   replaceDay,
+  setBackfillCursor,
   setRegisteredOn,
   upsertUnits,
 } from '~/lib/services/heatPump'
@@ -230,6 +231,8 @@ type Unit = {
   name: string
   registeredOn: string | null
   complete: boolean
+  /** The persisted walk position (`backfill_cursor`), or null. */
+  backfillCursor: string | null
 }
 
 type Progress = { step: () => Promise<void>; shrink: (unused: number) => Promise<void> }
@@ -240,6 +243,7 @@ const toUnit = (row: HeatPump): Unit => ({
   name: row.name,
   registeredOn: row.registeredOn,
   complete: row.historyCompleteAt !== null,
+  backfillCursor: row.backfillCursor,
 })
 
 // Recent days first, for every unit (they matter most, and a long backfill
@@ -271,25 +275,40 @@ async function syncUnits(
   if (recent.skipped > 0) {
     ctx.log.warn('comfort cloud catch-up capped', { skippedDays: recent.skipped })
   }
-  run.since = utcStart(recent.days[0])
+  // The earliest day this run fetched: the recent window's first, lowered by the backfill.
+  let sinceDay = recent.days[0]
+  run.since = utcStart(sinceDay)
+  const lowerSince = (day: string) => {
+    if (day < sinceDay) {
+      sinceDay = day
+      run.since = utcStart(day)
+    }
+  }
   const initiallyIncomplete = units.filter((u) => !u.complete).length
   const progress = newProgress(
     ctx.reportProgress,
     units.length * recent.days.length + initiallyIncomplete * BACKFILL_DAYS_PER_UNIT,
   )
 
-  // Units that answered no hours for yesterday, the newest complete UTC day.
-  // A unit registered after yesterday has no yesterday to miss.
+  // Units that answered no hours for yesterday, the newest complete UTC day (a
+  // unit registered after yesterday has no yesterday to miss), and units whose
+  // yesterday failed validation.
   const quiet: Unit[] = []
+  const rejected: string[] = []
   for (const unit of units) {
-    let yesterdayHours = 0
     for (const day of recent.days) {
-      const hours = await syncDay(client, run, ctx, unit, day)
-      if (day === yesterday) yesterdayHours = hours
+      const answer = await syncDay(client, run, ctx, unit, day)
+      if (day === yesterday) {
+        if (answer.rejected) rejected.push(unit.name)
+        else if (
+          answer.hours === 0 &&
+          unit.registeredOn !== null &&
+          unit.registeredOn <= yesterday
+        ) {
+          quiet.push(unit)
+        }
+      }
       await progress.step()
-    }
-    if (yesterdayHours === 0 && unit.registeredOn !== null && unit.registeredOn <= yesterday) {
-      quiet.push(unit)
     }
   }
 
@@ -299,14 +318,19 @@ async function syncUnits(
   if (backfilling.length > initiallyIncomplete) {
     await progress.shrink(-(backfilling.length - initiallyIncomplete) * BACKFILL_DAYS_PER_UNIT)
   }
-  for (const unit of backfilling) await backfillUnit(client, run, ctx, unit, today, progress)
+  for (const unit of backfilling) {
+    await backfillUnit(client, run, ctx, unit, { today, progress, lowerSince })
+  }
 
   // After the backfill, so its progress still lands. Comfort Cloud returns past
   // hours reliably, so a quiet yesterday means the unit (or its Wi-Fi adapter)
   // is offline: the run fails — Comfort Cloud's failure (`failed`), not ours —
   // every run until data returns, so an outage never reads as "recovered". A
   // unit without data for over 14 days (removed, or long dead) only warns, so it
-  // stops alerting after two weeks.
+  // stops alerting after two weeks. A rejected yesterday fails the run too, with
+  // no 14-day rule (a rejection is a fresh answer, not silence): a change on
+  // Panasonic's side (a unit, a range) must fail the source closed, not pile up
+  // as rejected days under a green tile (ADR-0027). Older rejected days only warn.
   const offline: string[] = []
   for (const unit of quiet) {
     const newest = await newestHour(unit.id)
@@ -320,31 +344,50 @@ async function syncUnits(
       })
     }
   }
+  const problems: string[] = []
   if (offline.length > 0) {
+    problems.push(
+      `Comfort Cloud returned no hours for ${yesterday} (UTC) for ${offline.join(' and ')}: the unit or its Wi-Fi adapter may be offline`,
+    )
+  }
+  if (rejected.length > 0) {
+    // Names and the day only: never a value.
+    problems.push(
+      `Comfort Cloud hours for ${yesterday} (UTC) failed validation for ${rejected.join(' and ')}`,
+    )
+  }
+  if (problems.length > 0) {
     throw new ComfortCloudError('unexpected_response', 'history', undefined, {
-      message: `Comfort Cloud returned no hours for ${yesterday} (UTC) for ${offline.join(' and ')}: the unit or its Wi-Fi adapter may be offline`,
+      message: problems.join('; '),
     })
   }
 }
 
-// Walks one unit's history newest first from the day before its oldest stored
-// day. The month call says which days have data, so empty days and whole empty
-// months cost no day call. The walk's position lives in memory: a rejected or
-// empty day is passed over in this run (and, being above the next oldest
-// stored day, never fetched again). Done once the walk passes the day before
-// registered_on.
+// Walks one unit's history newest first, from the lower of the day before its
+// oldest stored day and the persisted walk position (`backfill_cursor`). The
+// month call says which days have data, so empty days and whole empty months
+// cost no day call. A walk that stops short (budget, cap, error) persists where
+// it stopped, so a listed day that answered no hours or was rejected is passed
+// over for good: a long such stretch can't wedge the walk run after run. Done
+// once the walk passes the day before registered_on.
 async function backfillUnit(
   client: ComfortCloudClient,
   run: ComfortCloudSyncRun,
   ctx: Ctx,
   unit: Unit,
-  today: string,
-  progress: Progress,
+  a: { today: string; progress: Progress; lowerSince: (day: string) => void },
 ): Promise<void> {
+  const { progress } = a
   const oldest = await oldestDay(unit.id)
-  let cursor = oldest ? addUtcDays(oldest, -1) : addUtcDays(today, -RECENT_DAYS)
+  const belowStored = oldest ? addUtcDays(oldest, -1) : addUtcDays(a.today, -RECENT_DAYS)
+  // 'YYYY-MM-DD' strings compare as days.
+  let cursor =
+    unit.backfillCursor !== null && unit.backfillCursor < belowStored
+      ? unit.backfillCursor
+      : belowStored
   let fetched = 0
   let completed = false
+  let walkError: { error: unknown } | null = null
   const outOfBudget = () => ctx.now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS
   try {
     for (;;) {
@@ -372,36 +415,54 @@ async function backfillUnit(
         await syncDay(client, run, ctx, unit, day)
         fetched++
         cursor = addUtcDays(day, -1)
-        if (run.since === null || utcStart(day) < run.since) run.since = utcStart(day)
+        a.lowerSince(day)
         await progress.step()
       }
       // The month is done: continue with the last day of the month before.
       cursor = addUtcDays(`${month}-01`, -1)
     }
+  } catch (error) {
+    walkError = { error }
+    throw error
   } finally {
-    if (!completed && unit.registeredOn !== null) {
-      run.backfillDaysLeft += Math.max(0, utcDaysBetween(unit.registeredOn, cursor) + 1)
+    if (!completed) {
+      if (unit.registeredOn !== null) {
+        run.backfillDaysLeft += Math.max(0, utcDaysBetween(unit.registeredOn, cursor) + 1)
+      }
+      if (cursor !== unit.backfillCursor) {
+        try {
+          await setBackfillCursor(unit.id, cursor)
+          unit.backfillCursor = cursor
+        } catch (persistError) {
+          // Never mask the walk's own error: it is the run's outcome.
+          if (walkError === null) throw persistError
+          ctx.log.warn('comfort cloud backfill cursor not saved', {
+            unit: unit.name,
+            error: persistError,
+          })
+        }
+      }
     }
   }
 }
 
 // Fetches and stores one UTC day for one unit; returns how many hours Comfort
-// Cloud answered. An empty answer, or hours that fail validation, store nothing
-// and keep what's stored.
+// Cloud answered and whether they failed validation. An empty answer, or hours
+// that fail validation, store nothing and keep what's stored.
 async function syncDay(
   client: ComfortCloudClient,
   run: ComfortCloudSyncRun,
   ctx: Ctx,
   unit: Unit,
   day: string,
-): Promise<number> {
+): Promise<{ hours: number; rejected: boolean }> {
   const answer = await call(ctx, 'history', (o) => client.dayHours(unit.guid, day, o))
   run.daysFetched++
   await noteRegisteredOn(unit, answer.registeredOn)
   // An empty answer never deletes what's stored.
   if (answer.rows.length === 0) {
     run.emptyDays++
-    return 0
+    return { hours: 0, rejected: false }
   }
   const started = performance.now()
   try {
@@ -411,10 +472,11 @@ async function syncDay(
     run.rejectedDays++
     // The code and the day only: the domain message could name a value.
     ctx.log.warn('comfort cloud day rejected', { unit: unit.name, day, code: error.code })
+    return { hours: answer.rows.length, rejected: true }
   } finally {
     run.storeMs += performance.now() - started
   }
-  return answer.rows.length
+  return { hours: answer.rows.length, rejected: false }
 }
 
 // Every history answer carries the unit's first data day; store it when it

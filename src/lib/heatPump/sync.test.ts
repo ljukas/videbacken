@@ -10,6 +10,7 @@ import {
   type ComfortCloudHour,
 } from '~/lib/effects/comfortCloud'
 import { createServerLogger } from '~/lib/logger/server'
+import * as heatPumpService from '~/lib/services/heatPump'
 import { listUnits } from '~/lib/services/heatPump'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, listRecentRuns } from '~/lib/services/integrationSync'
@@ -61,6 +62,8 @@ type FakeUnit = {
   hasData?: (day: string) => boolean
   /** The first day with data (default: registeredOn); earlier for a local register date. */
   dataFrom?: string
+  /** Days monthDays lists but dayHours answers without hours. */
+  emptyHours?: (day: string) => boolean
   kwh?: number
 }
 type History = ComfortCloudHistory<ComfortCloudHour>
@@ -108,7 +111,8 @@ function fakeComfortCloud(
       const scripted = opts.days?.[`${guid}:${day}`]
       if (scripted) return scripted()
       const u = unit(guid)
-      return { registeredOn: u.registeredOn, rows: hasData(u, day) ? hoursOf(day, now, u.kwh) : [] }
+      const hours = hasData(u, day) && !u.emptyHours?.(day)
+      return { registeredOn: u.registeredOn, rows: hours ? hoursOf(day, now, u.kwh) : [] }
     },
     async monthDays(guid, month, o) {
       calls.push(`month:${guid}:${month}`)
@@ -415,6 +419,91 @@ test('no new backfill call once the run is 120 s old; the estimate says what is 
   expect(result).toMatchObject({ outcome: 'ok', unitsCompleted: 0, backfillDaysLeft: 24 })
 })
 
+// Comfort Cloud may keep hourly rows for less time than monthly totals: days
+// listed by the month call can answer no hours. The persisted cursor walks past them.
+test('a long listed-but-empty stretch does not wedge the backfill: it completes over runs', async () => {
+  const unit = matsal('2026-01-01', {
+    emptyHours: (day) => day >= '2026-01-05' && day <= '2026-03-20',
+  })
+  const first = fakeComfortCloud([unit])
+  expect(await run(first.client)).toMatchObject({ outcome: 'ok', unitsCompleted: 0 })
+  const firstDays = backfillCalls(first.calls, MATSAL).filter((c) => c.startsWith('day:'))
+  expect(firstDays).toHaveLength(60)
+  expect(firstDays.at(-1)).toBe(`day:${MATSAL}:2026-01-31`)
+  // The oldest stored day is 2026-03-21, but the walk continues below where it stopped.
+  expect((await unitNamed('Matsal'))?.backfillCursor).toBe('2026-01-30')
+
+  const second = fakeComfortCloud([unit])
+  const result = await run(second.client)
+  expect(backfillCalls(second.calls, MATSAL).slice(0, 2)).toEqual([
+    `month:${MATSAL}:2026-01`,
+    `day:${MATSAL}:2026-01-30`,
+  ])
+  expect(result).toMatchObject({ outcome: 'ok', unitsCompleted: 1, backfillDaysLeft: 0 })
+  for (const day of daysFrom('2026-01-01', '2026-01-04')) {
+    expect(await hoursStored('Matsal', day)).toBe(24)
+  }
+  expect((await unitNamed('Matsal'))?.historyCompleteAt).toEqual(NOW)
+})
+
+test('the walk position persists across a budget stop: the next run starts below the last day walked', async () => {
+  let clock = NOW.getTime()
+  const unit = matsal('2026-03-01', { emptyHours: (day) => day === '2026-03-25' })
+  const first = fakeComfortCloud([unit], {
+    onCall: () => {
+      clock += 10_000
+    },
+  })
+  await run(first.client, { now: () => new Date(clock) })
+  // As in the 120 s test, the last backfill day is 2026-03-25 — here it answered
+  // no hours, so the oldest stored day is 2026-03-26.
+  expect(backfillCalls(first.calls, MATSAL).at(-1)).toBe(`day:${MATSAL}:2026-03-25`)
+  expect(await hoursStored('Matsal', '2026-03-25')).toBe(0)
+
+  const second = fakeComfortCloud([unit])
+  await run(second.client)
+  expect(backfillCalls(second.calls, MATSAL).slice(0, 2)).toEqual([
+    `month:${MATSAL}:2026-03`,
+    `day:${MATSAL}:2026-03-24`,
+  ])
+})
+
+test('a backfill call that fails keeps the walk position at that day, for the next run to retry', async () => {
+  const { client } = fakeComfortCloud(
+    [matsal('2026-03-25', { emptyHours: (d) => d === '2026-03-28' })],
+    {
+      days: {
+        [`${MATSAL}:2026-03-27`]: () => {
+          throw new ComfortCloudError('rate_limited', 'history', 429)
+        },
+      },
+    },
+  )
+  expect(await run(client)).toMatchObject({ outcome: 'failed', code: 'rate_limited' })
+  expect((await unitNamed('Matsal'))?.backfillCursor).toBe('2026-03-27')
+})
+
+test('a cursor that cannot be saved never masks the walk error', async () => {
+  vi.spyOn(heatPumpService, 'setBackfillCursor').mockRejectedValue(new Error('db down'))
+  const cap = capturingLogger()
+  const { client } = fakeComfortCloud([matsal('2026-03-25')], {
+    days: {
+      [`${MATSAL}:2026-03-27`]: () => {
+        throw new ComfortCloudError('rate_limited', 'history', 429)
+      },
+    },
+  })
+  expect(await run(client, { log: cap.log })).toMatchObject({
+    outcome: 'failed',
+    code: 'rate_limited',
+  })
+  expect(
+    cap.entries().find((e) => e.msg === 'comfort cloud backfill cursor not saved'),
+  ).toMatchObject({
+    unit: 'Matsal',
+  })
+})
+
 test('a rejected backfill day is skipped, warned without values, and the walk still completes', async () => {
   const bad = '2026-03-28'
   const cap = capturingLogger()
@@ -483,6 +572,68 @@ test('yesterday empty fails the run, after the rest has landed', async () => {
   expect(health.adminDetail?.lastErrorMessage).toContain('Övervåning')
   expect(health.adminDetail?.lastErrorMessage).toContain('2026-04-02')
   expect(health.adminDetail?.lastErrorMessage).not.toContain('Matsal')
+})
+
+test('a rejected yesterday fails the run as unexpected_response, after the rest has landed', async () => {
+  const cap = capturingLogger()
+  const { client } = fakeComfortCloud([matsal('2026-03-25'), overvaning('2026-03-28')], {
+    days: {
+      // 7.654321 kWh in an hour is outside the reading CHECK (< 5): INVALID_READING.
+      [`${OVERVANING}:2026-04-02`]: () => ({
+        registeredOn: '2026-03-28',
+        rows: hoursOf('2026-04-02', NOW, 7.654321),
+      }),
+    },
+  })
+
+  const result = await run(client, { log: cap.log })
+
+  expect(result).toMatchObject({
+    outcome: 'failed',
+    code: 'unexpected_response',
+    rejectedDays: 1,
+    unitsCompleted: 2,
+  })
+  expect(await hoursStored('Matsal', '2026-03-25')).toBe(24)
+  expect(await hoursStored('Övervåning', '2026-03-28')).toBe(24)
+  expect(await hoursStored('Övervåning', '2026-04-02')).toBe(0)
+  const message = (await getHealth('comfortCloud', { now: NOW, includeAdminDetail: true }))
+    .adminDetail?.lastErrorMessage
+  expect(message).toContain('Övervåning')
+  expect(message).toContain('2026-04-02')
+  expect(message).toContain('failed validation')
+  expect(message).not.toContain('Matsal')
+  expect(message).not.toContain('7.654321')
+  expect(message).not.toContain(OVERVANING)
+  expect(cap.raw()).not.toContain('7.654321')
+  expect(cap.raw()).not.toContain(OVERVANING)
+})
+
+test('a rejected older recent day only warns', async () => {
+  await run(fakeComfortCloud([matsal('2026-03-25')]).client) // complete: no backfill below
+  const { client } = fakeComfortCloud([matsal('2026-03-25')], {
+    days: {
+      [`${MATSAL}:2026-04-01`]: () => ({
+        registeredOn: '2026-03-25',
+        rows: hoursOf('2026-04-01', NOW, 7.654321),
+      }),
+    },
+  })
+  expect(await run(client)).toMatchObject({ outcome: 'ok', rejectedDays: 1 })
+})
+
+test('a unit that never stored an hour only warns, without a day count', async () => {
+  const cap = capturingLogger()
+  const { client } = fakeComfortCloud([matsal('2026-03-25', { hasData: () => false })])
+  expect(await run(client, { log: cap.log })).toMatchObject({
+    outcome: 'ok',
+    emptyDays: 3,
+    unitsCompleted: 1,
+  })
+  expect(cap.entries().find((e) => e.msg === 'comfort cloud unit without data')).toMatchObject({
+    unit: 'Matsal',
+    daysWithoutData: null,
+  })
 })
 
 // No false "recovered" email: day after day without data keeps the source failing.
@@ -576,6 +727,21 @@ test('a complete unit whose registered_on moves earlier is backfilled again', as
   })
 })
 
+test('a reopened unit adds its 60 days to the progress total', async () => {
+  await run(fakeComfortCloud([matsal('2026-03-28')]).client)
+  const spy = vi.spyOn(integrationSyncService, 'reportProgress')
+  // One second per clock read, so the 1 s throttle passes every write.
+  let clock = NOW.getTime()
+  await run(fakeComfortCloud([matsal('2026-03-25')]).client, {
+    now: () => new Date((clock += 1_000)),
+  })
+  const reports = spy.mock.calls.map(([, , p]) => p)
+  // Complete at the start: 3 recent days; reopened: + 60; done after 3 backfill days.
+  expect(reports[0]).toEqual({ done: 1, total: 3 })
+  expect(reports).toContainEqual({ done: 3, total: 63 })
+  expect(reports.at(-1)).toEqual({ done: 6, total: 6 })
+})
+
 test('a later registered_on is stored and keeps the unit complete', async () => {
   await run(fakeComfortCloud([matsal('2026-03-27')]).client)
   const { client, calls } = fakeComfortCloud([matsal('2026-03-28')])
@@ -625,6 +791,22 @@ test('a call that outlives the deadline fails as unreachable', async () => {
     deps: { comfortCloud: client, log: capturingLogger().log, sleep: async () => {} },
   })
   expect(result).toMatchObject({ outcome: 'failed', code: 'unreachable' })
+})
+
+test('a day call that outlives the deadline mid-run fails as unreachable and keeps what landed', async () => {
+  const { client } = fakeComfortCloud([matsal('2026-03-25')], {
+    days: { [`${MATSAL}:${TODAY}`]: () => new Promise<History>(() => {}) },
+  })
+  const result = await runComfortCloudSync({
+    trigger: 'admin',
+    now: () => NOW,
+    deadlineMs: 1_000,
+    deps: { comfortCloud: client, log: capturingLogger().log, sleep: async () => {} },
+  })
+  expect(result).toMatchObject({ outcome: 'failed', code: 'unreachable', daysFetched: 2 })
+  expect(await unitNamed('Matsal')).toBeDefined()
+  expect(await hoursStored('Matsal', '2026-04-01')).toBe(24)
+  expect(await hoursStored('Matsal', '2026-04-02')).toBe(24)
 })
 
 test('a held lease skips the run without calling Comfort Cloud', async () => {
