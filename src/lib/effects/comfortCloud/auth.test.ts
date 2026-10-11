@@ -298,6 +298,7 @@ describe('statuses and the network', () => {
         status,
         message: `Comfort Cloud login failed: ${code} (HTTP ${status})`,
       })
+      expect(secretsIn(err)).toEqual([])
     }
   })
 
