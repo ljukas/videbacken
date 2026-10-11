@@ -56,7 +56,7 @@
   "charging_health_never_synced_elpris": "Inga elpriser har hämtats ännu. De hämtas varje eftermiddag, när morgondagens priser har publicerats.",
   "charging_health_never_synced_skoda": "Bilens status har inte hämtats ännu. Den hämtas var 15:e minut.",
   "charging_health_never_synced_emaldo": "Husets energidata (sol, batteri och elnät) har inte hämtats ännu. Den hämtas varje timme.",
-  "charging_health_never_synced_comfortCloud": "Värmepumparnas data har inte hämtats ännu. Den hämtas var sjätte timme.",
+  "charging_health_never_synced_comfortCloud": "Värmepumparnas data har inte hämtats ännu. Den hämtas var 6:e timme.",
   "charging_health_stale": "Synkningen har inte lyckats på ett tag. Siffrorna kan vara inaktuella.",
   "charging_health_stale_elpris": "Elpriserna har inte kunnat hämtas på ett tag. Kostnader kan sakna de senaste dagarnas priser.",
   "charging_health_stale_skoda": "Bilens status har inte kunnat hämtas på ett tag. Nya laddningar räknas som vår bil tills det fungerar igen.",

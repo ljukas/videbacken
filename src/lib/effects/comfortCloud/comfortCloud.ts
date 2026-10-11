@@ -76,14 +76,6 @@ export interface ComfortCloudClient {
   ): Promise<ComfortCloudHistory<ComfortCloudDay>>
 }
 
-/**
- * The heat pumps' facade (ADR-0027). Credentials come from the resolver
- * (ADR-0026: stored under Inställningar, else PANASONIC_USER / PANASONIC_PASSWORD),
- * checked on every call. The client, and the access token in its memory, is
- * rebuilt only when they change, so a warm instance reuses its login. An
- * unreadable stored row fails the call as `credentials_unreadable`; under
- * VITEST every call is `not_configured`.
- */
 /** `http` only when both fields resolve. */
 export function selectComfortCloudAdapter(
   values: CredentialValues<'comfortCloud'>,
@@ -104,7 +96,15 @@ const getAdapter = keyedAdapter({
   },
 })
 
-// Forwards each call's options ({ signal, stats }) untouched.
+/**
+ * The heat pumps' facade (ADR-0027). Credentials come from the resolver
+ * (ADR-0026: stored under Inställningar, else PANASONIC_USER / PANASONIC_PASSWORD),
+ * checked on every call. The client, and the access token in its memory, is
+ * rebuilt only when they change, so a warm instance reuses its login. An
+ * unreadable stored row fails the call as `credentials_unreadable`; under
+ * VITEST every call is `not_configured`. Forwards each call's options
+ * ({ signal, stats }) untouched.
+ */
 export const comfortCloud: ComfortCloudClient = {
   async units(o) {
     return (await getAdapter()).units(o)
