@@ -162,6 +162,20 @@
       "when": 1791710444825,
       "tag": "0022_heat_pump",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791714767851,
+      "tag": "0023_spot_price_day",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791714773633,
+      "tag": "0024_backfill_spot_price_day",
+      "breakpoints": true
     }
   ]
 }

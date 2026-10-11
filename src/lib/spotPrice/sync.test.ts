@@ -7,7 +7,7 @@ import type { deriveFrom } from '~/lib/houseEnergy/derive'
 import { createServerLogger } from '~/lib/logger/server'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, listRecentRuns } from '~/lib/services/integrationSync'
-import { daysWithSlots } from '~/lib/services/spotPrice'
+import { dailyAverageSpot, daysStored } from '~/lib/services/spotPrice'
 import type { PriceSlot } from '~/lib/spotPrice/slots'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import { addDays } from '~/lib/time/stockholm'
@@ -120,7 +120,28 @@ test('with no sessions yet it fetches just today and tomorrow', async () => {
 
   expect(requested).toEqual([TOMORROW, TODAY])
   expect(result).toMatchObject({ outcome: 'ok', days: 2, daysFetched: 2, upserted: 192 })
-  expect(await daysWithSlots('SE3', TODAY, TOMORROW)).toEqual(new Set([TODAY, TOMORROW]))
+  expect(await daysStored('SE3', TODAY, TOMORROW)).toEqual(new Set([TODAY, TOMORROW]))
+})
+
+test("re-fetches a day whose slots were stored without the day's average", async () => {
+  // E.g. slots written by code from before spot_price_day (a rollback): the day
+  // counts as missing, and replaceDay rewrites its slots and average together.
+  await db.insert(spotPrice).values(
+    daySlots(TODAY, 15, () => 9).map((s) => ({
+      zone: 'SE3',
+      slotStart: new Date(s.startMs),
+      slotEnd: new Date(s.endMs),
+      sekPerKwh: s.sekPerKwh,
+    })),
+  )
+  const { client, requested } = fakeElpris({ publishedThrough: TOMORROW })
+  const result = await run(client)
+
+  expect(requested).toEqual([TOMORROW, TODAY])
+  expect(result).toMatchObject({ outcome: 'ok', daysFetched: 2, upserted: 192 })
+  expect(await dailyAverageSpot('SE3', TODAY, TODAY)).toEqual([
+    { day: TODAY, avgSekPerKwh: 0.5, coveredMs: 24 * 3_600_000 },
+  ])
 })
 
 test('backfills from the first counted session; an unpublished tomorrow is fine', async () => {
@@ -179,7 +200,7 @@ test('a missing today fails the run as unexpected_response — after storing the
   const health = await getHealth('elpris', { now: NOW, includeAdminDetail: true })
   expect(health).toMatchObject({ state: 'failing', code: 'unexpected_response' })
   expect(health.adminDetail?.lastErrorMessage).toBe(`No spot prices published for ${TODAY}`)
-  expect(await daysWithSlots('SE3', '2026-09-25', '2026-09-27')).toHaveProperty('size', 3)
+  expect(await daysStored('SE3', '2026-09-25', '2026-09-27')).toHaveProperty('size', 3)
   expect(runLines()).toEqual([expect.objectContaining({ level: 40, source: 'elpris' })])
   expect(publish).not.toHaveBeenCalled() // no admins in this test DB
 })
