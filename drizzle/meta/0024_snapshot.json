@@ -1,6 +1,6 @@
 {
-  "id": "ed8b6b1a-db05-46fe-8708-b7cbc451a583",
-  "prevId": "b7c65dc0-13bc-42c0-b84b-d7880a1c177b",
+  "id": "d40071a6-ce4e-4d98-9353-580c8ae21213",
+  "prevId": "947cd0a2-5991-4bed-860c-e67987df2ed7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -48,10 +48,10 @@
       "uniqueConstraints": {
         "approved_email_email_unique": {
           "name": "approved_email_email_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -155,24 +155,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "account_user_id_user_id_fk": {
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -217,10 +217,10 @@
       "uniqueConstraints": {
         "rate_limit_key_unique": {
           "name": "rate_limit_key_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "key"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -300,34 +300,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "session_user_id_user_id_fk": {
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "session_token_unique": {
           "name": "session_token_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "token"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -440,10 +440,10 @@
       "uniqueConstraints": {
         "user_email_unique": {
           "name": "user_email_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -506,9 +506,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -580,10 +580,10 @@
       "uniqueConstraints": {
         "electricity_tariff_valid_from_unique": {
           "name": "electricity_tariff_valid_from_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "valid_from"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -633,15 +633,15 @@
         "ev_charge_interval_session_id_ev_charge_session_id_fk": {
           "name": "ev_charge_interval_session_id_ev_charge_session_id_fk",
           "tableFrom": "ev_charge_interval",
-          "tableTo": "ev_charge_session",
           "columnsFrom": [
             "session_id"
           ],
+          "tableTo": "ev_charge_session",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -794,9 +794,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "ev_charge_session_charger_id_start_at_idx": {
           "name": "ev_charge_session_charger_id_start_at_idx",
@@ -815,34 +815,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "ev_charge_session_charger_id_ev_charger_id_fk": {
           "name": "ev_charge_session_charger_id_ev_charger_id_fk",
           "tableFrom": "ev_charge_session",
-          "tableTo": "ev_charger",
           "columnsFrom": [
             "charger_id"
           ],
+          "tableTo": "ev_charger",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ev_charge_session_zaptec_session_id_unique": {
           "name": "ev_charge_session_zaptec_session_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "zaptec_session_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -995,9 +995,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "file_access_idx": {
           "name": "file_access_idx",
@@ -1010,34 +1010,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "file_owner_id_user_id_fk": {
           "name": "file_owner_id_user_id_fk",
           "tableFrom": "file",
-          "tableTo": "user",
           "columnsFrom": [
             "owner_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "file_pathname_unique": {
           "name": "file_pathname_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "pathname"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1090,12 +1090,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "backfill_cursor": {
-          "name": "backfill_cursor",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
         "first_seen_at": {
           "name": "first_seen_at",
           "type": "timestamp with time zone",
@@ -1115,10 +1109,10 @@
       "uniqueConstraints": {
         "heat_pump_guid_unique": {
           "name": "heat_pump_guid_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "guid"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1183,15 +1177,15 @@
         "heat_pump_reading_heat_pump_id_heat_pump_id_fk": {
           "name": "heat_pump_reading_heat_pump_id_heat_pump_id_fk",
           "tableFrom": "heat_pump_reading",
-          "tableTo": "heat_pump",
           "columnsFrom": [
             "heat_pump_id"
           ],
+          "tableTo": "heat_pump",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -1342,15 +1336,15 @@
           "primaryKey": true,
           "notNull": true,
           "identity": {
-            "type": "always",
             "name": "energy_mix_derive_request_id_seq",
-            "schema": "public",
             "increment": "1",
-            "startWith": "1",
             "minValue": "1",
             "maxValue": "9223372036854775807",
+            "startWith": "1",
             "cache": "1",
-            "cycle": false
+            "cycle": false,
+            "schema": "public",
+            "type": "always"
           }
         },
         "from_day": {
@@ -1451,15 +1445,15 @@
         "ev_charge_energy_mix_session_id_ev_charge_session_id_fk": {
           "name": "ev_charge_energy_mix_session_id_ev_charge_session_id_fk",
           "tableFrom": "ev_charge_energy_mix",
-          "tableTo": "ev_charge_session",
           "columnsFrom": [
             "session_id"
           ],
+          "tableTo": "ev_charge_session",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -1652,15 +1646,15 @@
         "integration_credential_updated_by_user_id_fk": {
           "name": "integration_credential_updated_by_user_id_fk",
           "tableFrom": "integration_credential",
-          "tableTo": "user",
           "columnsFrom": [
             "updated_by"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1669,7 +1663,7 @@
       "checkConstraints": {
         "integration_credential_source_check": {
           "name": "integration_credential_source_check",
-          "value": "\"integration_credential\".\"source\" IN ('zaptec', 'skoda', 'emaldo', 'comfortCloud', 'gridTariff')"
+          "value": "\"integration_credential\".\"source\" IN ('zaptec', 'skoda', 'emaldo', 'gridTariff')"
         },
         "integration_credential_ciphertext_check": {
           "name": "integration_credential_ciphertext_check",
@@ -1816,7 +1810,7 @@
       "checkConstraints": {
         "integration_sync_source_check": {
           "name": "integration_sync_source_check",
-          "value": "\"integration_sync\".\"source\" IN ('zaptec', 'elpris', 'skoda', 'emaldo', 'comfortCloud')"
+          "value": "\"integration_sync\".\"source\" IN ('zaptec', 'elpris', 'skoda', 'emaldo')"
         },
         "integration_sync_consecutive_failures_nonneg_check": {
           "name": "integration_sync_consecutive_failures_nonneg_check",
@@ -2006,9 +2000,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -2018,7 +2012,7 @@
       "checkConstraints": {
         "integration_sync_run_source_check": {
           "name": "integration_sync_run_source_check",
-          "value": "\"integration_sync_run\".\"source\" IN ('zaptec', 'elpris', 'skoda', 'emaldo', 'comfortCloud')"
+          "value": "\"integration_sync_run\".\"source\" IN ('zaptec', 'elpris', 'skoda', 'emaldo')"
         },
         "integration_sync_run_trigger_check": {
           "name": "integration_sync_run_trigger_check",
@@ -2116,10 +2110,10 @@
       "uniqueConstraints": {
         "sensor_device_mac_unique": {
           "name": "sensor_device_mac_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "mac"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -2187,24 +2181,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sensor_reading_device_id_sensor_device_id_fk": {
           "name": "sensor_reading_device_id_sensor_device_id_fk",
           "tableFrom": "sensor_reading",
-          "tableTo": "sensor_device",
           "columnsFrom": [
             "device_id"
           ],
+          "tableTo": "sensor_device",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -2291,6 +2285,60 @@
       },
       "isRLSEnabled": true
     },
+    "public.spot_price_day": {
+      "name": "spot_price_day",
+      "schema": "",
+      "columns": {
+        "zone": {
+          "name": "zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "avg_sek_per_kwh": {
+          "name": "avg_sek_per_kwh",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "covered_seconds": {
+          "name": "covered_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "spot_price_day_pk": {
+          "name": "spot_price_day_pk",
+          "columns": [
+            "zone",
+            "day"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "spot_price_day_zone_check": {
+          "name": "spot_price_day_zone_check",
+          "value": "\"spot_price_day\".\"zone\" IN ('SE3')"
+        },
+        "spot_price_day_covered_seconds_check": {
+          "name": "spot_price_day_covered_seconds_check",
+          "value": "\"spot_price_day\".\"covered_seconds\" > 0 AND \"spot_price_day\".\"covered_seconds\" <= 90000"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "public.vehicle_charge_record": {
       "name": "vehicle_charge_record",
       "schema": "",
@@ -2371,11 +2419,11 @@
       "uniqueConstraints": {
         "vehicle_charge_record_source_session_id_unique": {
           "name": "vehicle_charge_record_source_session_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "source",
             "source_session_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -2493,9 +2541,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -2546,11 +2594,10 @@
     }
   },
   "schemas": {},
-  "sequences": {},
-  "roles": {},
-  "policies": {},
   "views": {
     "public.house_energy_month": {
+      "name": "house_energy_month",
+      "schema": "public",
       "columns": {
         "year": {
           "name": "year",
@@ -2637,12 +2684,13 @@
           "notNull": false
         }
       },
-      "name": "house_energy_month",
-      "schema": "public",
-      "isExisting": true,
-      "materialized": true
+      "materialized": true,
+      "isExisting": true
     }
   },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
   "_meta": {
     "columns": {},
     "schemas": {},

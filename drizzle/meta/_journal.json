@@ -166,15 +166,15 @@
     {
       "idx": 23,
       "version": "7",
-      "when": 1791715320883,
-      "tag": "0023_comfort_cloud_source",
+      "when": 1791714767851,
+      "tag": "0023_spot_price_day",
       "breakpoints": true
     },
     {
       "idx": 24,
       "version": "7",
-      "when": 1791716202493,
-      "tag": "0024_heat_pump_backfill_cursor",
+      "when": 1791714773633,
+      "tag": "0024_backfill_spot_price_day",
       "breakpoints": true
     }
   ]

@@ -1,5 +1,5 @@
 {
-  "id": "b7c65dc0-13bc-42c0-b84b-d7880a1c177b",
+  "id": "947cd0a2-5991-4bed-860c-e67987df2ed7",
   "prevId": "c6d0021d-c0b0-4c1a-bb78-7b69a07b6a8e",
   "version": "7",
   "dialect": "postgresql",
@@ -1663,7 +1663,7 @@
       "checkConstraints": {
         "integration_credential_source_check": {
           "name": "integration_credential_source_check",
-          "value": "\"integration_credential\".\"source\" IN ('zaptec', 'skoda', 'emaldo', 'comfortCloud', 'gridTariff')"
+          "value": "\"integration_credential\".\"source\" IN ('zaptec', 'skoda', 'emaldo', 'gridTariff')"
         },
         "integration_credential_ciphertext_check": {
           "name": "integration_credential_ciphertext_check",
@@ -1810,7 +1810,7 @@
       "checkConstraints": {
         "integration_sync_source_check": {
           "name": "integration_sync_source_check",
-          "value": "\"integration_sync\".\"source\" IN ('zaptec', 'elpris', 'skoda', 'emaldo', 'comfortCloud')"
+          "value": "\"integration_sync\".\"source\" IN ('zaptec', 'elpris', 'skoda', 'emaldo')"
         },
         "integration_sync_consecutive_failures_nonneg_check": {
           "name": "integration_sync_consecutive_failures_nonneg_check",
@@ -2012,7 +2012,7 @@
       "checkConstraints": {
         "integration_sync_run_source_check": {
           "name": "integration_sync_run_source_check",
-          "value": "\"integration_sync_run\".\"source\" IN ('zaptec', 'elpris', 'skoda', 'emaldo', 'comfortCloud')"
+          "value": "\"integration_sync_run\".\"source\" IN ('zaptec', 'elpris', 'skoda', 'emaldo')"
         },
         "integration_sync_run_trigger_check": {
           "name": "integration_sync_run_trigger_check",
@@ -2281,6 +2281,60 @@
         "spot_price_sek_per_kwh_check": {
           "name": "spot_price_sek_per_kwh_check",
           "value": "\"spot_price\".\"sek_per_kwh\" > -100 AND \"spot_price\".\"sek_per_kwh\" < 100"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.spot_price_day": {
+      "name": "spot_price_day",
+      "schema": "",
+      "columns": {
+        "zone": {
+          "name": "zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "avg_sek_per_kwh": {
+          "name": "avg_sek_per_kwh",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "covered_seconds": {
+          "name": "covered_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "spot_price_day_pk": {
+          "name": "spot_price_day_pk",
+          "columns": [
+            "zone",
+            "day"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "spot_price_day_zone_check": {
+          "name": "spot_price_day_zone_check",
+          "value": "\"spot_price_day\".\"zone\" IN ('SE3')"
+        },
+        "spot_price_day_covered_seconds_check": {
+          "name": "spot_price_day_covered_seconds_check",
+          "value": "\"spot_price_day\".\"covered_seconds\" > 0 AND \"spot_price_day\".\"covered_seconds\" <= 90000"
         }
       },
       "isRLSEnabled": true

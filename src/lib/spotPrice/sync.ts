@@ -12,7 +12,7 @@ import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/ru
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import { earliestCountedStartAt } from '~/lib/services/evCharging'
-import { daysWithSlots, replaceDay } from '~/lib/services/spotPrice'
+import { daysStored, replaceDay } from '~/lib/services/spotPrice'
 import { addDays, stockholmDayBounds, stockholmDayOf } from '~/lib/time/stockholm'
 import { SPOT_ZONE } from './zones'
 
@@ -208,7 +208,7 @@ async function fetchMissingDays(
   const tomorrow = addDays(today, 1)
   const earliest = await earliestCountedStartAt()
   const first = earliest ? stockholmDayOf(earliest.getTime()) : today
-  const have = await daysWithSlots(SPOT_ZONE, first < FLOOR_DAY ? FLOOR_DAY : first, tomorrow)
+  const have = await daysStored(SPOT_ZONE, first < FLOOR_DAY ? FLOOR_DAY : first, tomorrow)
   const planned = planDays({ today, first, have, max: MAX_DAYS_PER_RUN })
   run.days = planned.length
 
