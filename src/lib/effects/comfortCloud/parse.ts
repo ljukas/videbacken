@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { issuePath, summarizeIssuePaths } from '~/lib/issuePaths'
-import { isUtcDay, utcDayBounds } from '~/lib/time/utc'
+import { isUtcDay, isUtcMonth, utcDayBounds } from '~/lib/time/utc'
 import type {
   ComfortCloudDay,
   ComfortCloudHistory,
@@ -66,9 +66,10 @@ const deviceSchema = z.object({
   deviceModuleNumber: optionalText(100),
   parameters: z.record(z.string(), z.unknown()).nullish(),
 })
+const deviceListSchema = z.array(deviceSchema.nullable()).max(MAX_DEVICES).nullish()
 const groupsSchema = z.object({
   groupList: z
-    .array(z.object({ deviceList: z.array(deviceSchema.nullable()).max(MAX_DEVICES).nullish() }))
+    .array(z.object({ deviceList: deviceListSchema, deviceIdList: deviceListSchema }))
     .max(MAX_GROUPS)
     .nullish(),
 })
@@ -78,9 +79,12 @@ export function parseUnits(value: unknown): ComfortCloudUnit[] {
   const { groupList } = parse('units', groupsSchema, value)
   const units = new Map<string, ComfortCloudUnit>()
   for (const group of groupList ?? []) {
-    for (const device of group.deviceList ?? []) {
-      // Upstream's `is_valid`: an air conditioner reports `parameters`; Aquarea and HWS are skipped.
-      if (!device?.parameters || NON_AC_DEVICE_TYPES.has(device.deviceType ?? '')) continue
+    // Upstream: `deviceList or deviceIdList`.
+    for (const device of group.deviceList ?? group.deviceIdList ?? []) {
+      // Upstream's `is_valid`: an air conditioner has the `parameters` key (its value may be null);
+      // Aquarea and HWS are skipped.
+      if (!device || !('parameters' in device) || NON_AC_DEVICE_TYPES.has(device.deviceType ?? ''))
+        continue
       if (units.has(device.deviceGuid)) continue
       const model = device.deviceModuleNumber?.trim() ?? ''
       const name = device.deviceName?.trim() || model || 'Comfort Cloud'
@@ -180,6 +184,7 @@ export function parseMonthHistory(
   utcMonth: string,
   value: unknown,
 ): ComfortCloudHistory<ComfortCloudDay> {
+  if (!isUtcMonth(utcMonth)) throw new RangeError(`Not a YYYY-MM month: ${utcMonth}`)
   const compact = utcMonth.replace('-', '')
   const { registeredOn, rows } = readHistory(value)
   const seen = new Set<string>()

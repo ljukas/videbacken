@@ -61,6 +61,25 @@ describe('units', () => {
     expect(parseUnits(body).some((u) => u.guid === AQUAREA_GUID)).toBe(false)
   })
 
+  test('reads deviceIdList when deviceList is absent, and keeps `parameters: null` on an AC', () => {
+    const ac = (deviceGuid: string, parameters: unknown) => ({
+      deviceGuid,
+      deviceType: '1',
+      deviceName: 'X',
+      deviceModuleNumber: MODEL,
+      parameters,
+    })
+    expect(
+      parseUnits({ groupList: [{ deviceIdList: [ac('ID+1', {})] }] }).map((u) => u.guid),
+    ).toEqual(['ID+1'])
+    expect(
+      parseUnits({ groupList: [{ deviceList: [ac('NULLP+1', null)] }] }).map((u) => u.guid),
+    ).toEqual(['NULLP+1'])
+    const absent = { ...ac('ABSENT+1', {}) } as Record<string, unknown>
+    delete absent.parameters
+    expect(parseUnits({ groupList: [{ deviceList: [absent] }] })).toEqual([])
+  })
+
   test('a nameless unit is named by its model', () => {
     const body = deviceGroupBody() as unknown as {
       groupList: { deviceList: { deviceName: string | null }[] }[]
@@ -148,6 +167,15 @@ describe('day history', () => {
     expect(rows[1].outsideC).toBe(-40.5)
   })
 
+  test('a real consumption of 0 is kept (an idle hour is data)', () => {
+    const body = dayHistoryBody('2026-06-10', {
+      row: (row, h) => (h === 4 ? { ...row, consumption: 0 } : row),
+    })
+    const rows = parseDayHistory('2026-06-10', body).rows
+    expect(rows).toHaveLength(24)
+    expect(rows[4].energyKwh).toBe(0)
+  })
+
   test('rows arrive in any order and come back ascending', () => {
     const body = dayHistoryBody('2026-06-10')
     body.historyDataList.reverse()
@@ -220,6 +248,18 @@ describe('day history', () => {
     expect(caught(() => parseDayHistory('2026-06-10', body)).code).toBe('unexpected_response')
     expect(caught(() => parseDayHistory('2026-06-10', 'x')).code).toBe('unexpected_response')
   })
+
+  test('the row limit alone fails, naming the shape path', () => {
+    // 41 distinct, valid month rows: only the limit can reject them.
+    const body = monthHistoryBody('2026-06')
+    body.historyDataList = Array.from({ length: 41 }, (_, i) => ({
+      ...body.historyDataList[0],
+      dataTime: `2026${String(Math.floor(i / 28) + 1).padStart(2, '0')}${String((i % 28) + 1).padStart(2, '0')}`,
+    }))
+    const err = caught(() => parseMonthHistory('2026-06', body))
+    expect(err).toMatchObject({ code: 'unexpected_response', op: 'history' })
+    expect(err.message).toContain('historyDataList')
+  })
 })
 
 describe('month history', () => {
@@ -249,10 +289,36 @@ describe('month history', () => {
       body.historyDataList[2] = { ...body.historyDataList[2], dataTime }
       const err = caught(() => parseMonthHistory('2026-06', body))
       expect(err, dataTime).toMatchObject({ code: 'unexpected_response', op: 'history' })
+      expect(err.message).not.toContain(dataTime)
     }
     const body = monthHistoryBody('2026-06')
     body.historyDataList[3] = { ...body.historyDataList[3], dataTime: '20260603' }
     expect(caught(() => parseMonthHistory('2026-06', body)).message).toContain('repeats a day')
+  })
+})
+
+describe('month history edge cases', () => {
+  test('a real consumption of 0 is kept', () => {
+    const body = monthHistoryBody('2026-06')
+    body.historyDataList[1] = { ...body.historyDataList[1], consumption: 0 }
+    const rows = parseMonthHistory('2026-06', body).rows
+    expect(rows).toHaveLength(30)
+    expect(rows[1]).toEqual({ day: '2026-06-02', energyKwh: 0 })
+  })
+
+  test('rows arrive in any order and come back ascending', () => {
+    const body = monthHistoryBody('2026-06')
+    body.historyDataList.reverse()
+    const days = parseMonthHistory('2026-06', body).rows.map((r) => r.day)
+    expect(days).toEqual([...days].sort())
+    expect(days[0]).toBe('2026-06-01')
+    expect(days).toHaveLength(30)
+  })
+
+  test('a month that is not a real YYYY-MM is a RangeError', () => {
+    for (const month of ['2026-13', '2026-6', '2026-00', 'x', '2026-06-01']) {
+      expect(() => parseMonthHistory(month, monthHistoryBody('2026-06')), month).toThrow(RangeError)
+    }
   })
 })
 
