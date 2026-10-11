@@ -143,16 +143,31 @@ export async function priceSessions(
   return priced
 }
 
-/** Stores priced sessions under the generations read before pricing them (see `writePriced`). */
+/**
+ * Stores priced sessions under the generations read before pricing them (see
+ * `writePriced`). A session with a non-finite month total is left out (and
+ * stays stale) with a warning, so one pricing bug can't fail every write-back;
+ * the table's CHECK stays the backstop.
+ */
 export async function storePriced(
   stale: readonly SessionGeneration[],
   priced: readonly PricedSessionCost[],
+  opts: { lockTimeoutMs?: number } = {},
 ): Promise<{ written: number }> {
   const generation = new Map(stale.map((s) => [s.sessionId, s.generation]))
+  const finite = (p: PricedSessionCost) =>
+    [...p.months.values()].every((t) => Object.values(t).every(Number.isFinite))
+  const notFinite = priced.filter((p) => !finite(p)).map((p) => p.sessionId)
+  if (notFinite.length > 0) {
+    logger.warn('session costs: not stored, a month total is not finite', {
+      sessionIds: notFinite,
+    })
+  }
   return sessionCostService.writePriced({
     pricingVersion: PRICING_VERSION,
+    lockTimeoutMs: opts.lockTimeoutMs,
     sessions: priced
-      .filter((p) => generation.has(p.sessionId))
+      .filter((p) => generation.has(p.sessionId) && finite(p))
       .map((p) => ({
         sessionId: p.sessionId,
         generation: generation.get(p.sessionId) ?? null,
@@ -166,6 +181,12 @@ export async function storePriced(
   })
 }
 
+/**
+ * How long a read's write-back waits for a row lock: a derive can hold bumped
+ * rows for seconds, and the reader already has its figures.
+ */
+const READ_WRITE_BACK_LOCK_TIMEOUT_MS = 200
+
 // A read's write-back: best effort, the figures are already priced.
 async function writeBack(
   stale: readonly SessionGeneration[],
@@ -173,7 +194,9 @@ async function writeBack(
   timings?: CostTimings,
 ): Promise<void> {
   try {
-    await timed(timings, 'writeBackMs', () => storePriced(stale, priced))
+    await timed(timings, 'writeBackMs', () =>
+      storePriced(stale, priced, { lockTimeoutMs: READ_WRITE_BACK_LOCK_TIMEOUT_MS }),
+    )
   } catch (error) {
     logger.warn('session costs: write-back failed; figures priced on read', {
       sessions: priced.length,

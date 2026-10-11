@@ -1,7 +1,8 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import { Client } from 'pg'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { evChargeSession, evSessionCost } from '~/lib/db/schema'
+import { evChargeSession, evSessionCost, evSessionCostMonth } from '~/lib/db/schema'
 import { type CostTotals, emptyTotals } from '~/lib/evCharging/cost'
 import { insertInterval, insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
@@ -310,4 +311,49 @@ test('listCurrentMonths: the month rows of current counted sessions only', async
     },
   ])
   expect(await listCurrentMonths({ pricingVersion: V + 1 })).toEqual([])
+})
+
+test('a duplicate session in one write-back is stored once', async () => {
+  const a = await session('2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
+  const { written } = await writePriced({
+    pricingVersion: V,
+    sessions: [
+      priced(a, null, [[2026, 9, totals(5, 10)]]),
+      priced(a, null, [[2026, 9, totals(5, 10)]]),
+    ],
+  })
+  expect(written).toBe(1)
+  expect((await readMonthSums({ pricingVersion: V })).months).toEqual([
+    { year: 2026, month: 9, totals: totals(5, 10) },
+  ])
+})
+
+test('a write-back gives up on a locked row after its lock timeout and writes nothing', async () => {
+  const a = await session('2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
+  await bumpSessions([a])
+  const { rows } = await db.execute<{ schema: string }>(sql`select current_schema() as schema`)
+  const other = new Client({ connectionString: process.env.DATABASE_URL })
+  await other.connect()
+  try {
+    await other.query(`set search_path to "${rows[0].schema}", public`)
+    await other.query('begin')
+    await other.query('select 1 from ev_session_cost where session_id = $1 for update', [a])
+
+    const started = performance.now()
+    await expect(
+      writePriced({
+        pricingVersion: V,
+        sessions: [priced(a, 1, [[2026, 9, totals(5, 10)]])],
+        lockTimeoutMs: 200,
+      }),
+    ).rejects.toThrow()
+    expect(performance.now() - started).toBeLessThan(800)
+    await other.query('rollback')
+  } finally {
+    await other.end()
+  }
+  expect(
+    await db.select().from(evSessionCostMonth).where(eq(evSessionCostMonth.sessionId, a)),
+  ).toEqual([])
+  expect(await state(a)).toMatchObject({ generation: 1, pricedGeneration: null })
 })

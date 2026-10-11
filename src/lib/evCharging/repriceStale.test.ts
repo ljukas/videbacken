@@ -1,5 +1,6 @@
-import { expect, test, vi } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import type { Logger } from '~/lib/logger'
+import * as sessionCostService from '~/lib/services/sessionCost'
 import { listStale } from '~/lib/services/sessionCost'
 import { insertSession as insertFixtureSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
@@ -7,6 +8,10 @@ import { PRICING_VERSION } from './cost'
 import { repriceStale } from './repriceStale'
 
 setupDatabase()
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 function fakeLog() {
   const log: Logger = {
@@ -58,6 +63,22 @@ test('a failing reprice is a warning, never a throw', async () => {
     trigger: 'tariff',
     error: expect.any(Error),
   })
+})
+
+test('a failing write-back on the real path is a warning; the session stays stale', async () => {
+  await insertSession('2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
+  const spy = vi
+    .spyOn(sessionCostService, 'writePriced')
+    .mockRejectedValueOnce(new Error('lock timeout'))
+  const log = fakeLog()
+  await expect(repriceStale({ trigger: 'zaptec', log })).resolves.toBeTypeOf('number')
+  // The default lock timeout: an eager reprice isn't holding up a reader.
+  expect(spy.mock.calls[0][0].lockTimeoutMs).toBeUndefined()
+  expect(log.warn).toHaveBeenCalledWith('session cost reprice failed', {
+    trigger: 'zaptec',
+    error: expect.any(Error),
+  })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toHaveLength(1)
 })
 
 test('a reprice past its budget is given up on with a warning', async () => {

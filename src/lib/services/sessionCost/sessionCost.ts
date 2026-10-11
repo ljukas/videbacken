@@ -206,23 +206,34 @@ export async function listCurrentMonths(input: {
  * inserted unless a writer created one meanwhile (generation ≥ 1 then). One
  * transaction, and one upsert that locks the state rows in session_id order,
  * the order every bump uses, so a write-back and a writer never deadlock. A
- * session deleted meanwhile is skipped, and one already current at this
- * generation is not rewritten. Waits at most 1 s for a lock (a writer's
- * transaction, e.g. a derive, can hold bumped rows for seconds): a timeout
- * throws, and the callers treat a failed write-back as best effort. Returns
- * how many sessions were written.
+ * session deleted meanwhile is skipped, one already current at this
+ * generation is not rewritten, and a duplicate id is stored once (its first
+ * entry). Waits at most `lockTimeoutMs` (default 1 s) for a lock (a writer's
+ * transaction, e.g. a derive, can hold bumped rows for seconds), 5 s for a
+ * statement and 5 s idle inside the transaction, so a write-back abandoned
+ * past its caller's budget can't hold row locks: a timeout throws, and the
+ * callers treat a failed write-back as best effort. Returns how many sessions
+ * were written.
  */
 export async function writePriced(input: {
   pricingVersion: number
   sessions: readonly PricedForStore[]
+  lockTimeoutMs?: number
 }): Promise<{ written: number }> {
-  const sorted = [...input.sessions].sort((a, b) => (a.sessionId < b.sessionId ? -1 : 1))
+  // Deduped: a second proposed row for one session would fail the upsert
+  // ("ON CONFLICT DO UPDATE command cannot affect row a second time").
+  const unique = new Map<string, PricedForStore>()
+  for (const s of input.sessions) if (!unique.has(s.sessionId)) unique.set(s.sessionId, s)
+  const sorted = [...unique.values()].sort((a, b) => (a.sessionId < b.sessionId ? -1 : 1))
   if (sorted.length === 0) return { written: 0 }
   const pgArray = (xs: readonly (string | number | boolean)[]) => `{${xs.join(',')}}`
+  const lockTimeout = `${Math.round(input.lockTimeoutMs ?? 1000)}ms`
 
   return db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL lock_timeout = '1s'`)
-    await tx.execute(sql`SET LOCAL statement_timeout = '5s'`)
+    // Transaction-local (set_config's `true`), in one round trip.
+    await tx.execute(sql`SELECT set_config('lock_timeout', ${lockTimeout}, true),
+      set_config('statement_timeout', '5s', true),
+      set_config('idle_in_transaction_session_timeout', '5s', true)`)
     // EXCLUDED.generation carries the generation read before pricing.
     const { rows } = await tx.execute<{ session_id: string }>(sql`
       INSERT INTO ${evSessionCost}

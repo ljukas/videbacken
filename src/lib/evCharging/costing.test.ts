@@ -13,9 +13,10 @@ import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import { mixSlot } from '~test/fixtures/energyMix'
 import { reading } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
+import { emptyTotals, PRICING_VERSION } from './cost'
 import { loadMix } from './costInputs'
 import type { CostOverview } from './costing'
-import { getCostOverview, getSessionCosts } from './costing'
+import { getCostOverview, getSessionCosts, storePriced } from './costing'
 
 /** |a − b| ≤ 1e-9 · max(1, |a|) for every number in two equal-shaped values. */
 function expectClose(actual: unknown, expected: unknown, path = '$'): void {
@@ -269,6 +270,8 @@ test('a failed write-back still returns the figures priced on read', async () =>
   const cost = await getCostOverview({ now: NOW })
   expect(cost.months[8].kwh).toBeCloseTo(2)
   expect(spy).toHaveBeenCalledOnce()
+  // A read waits briefly for a lock (a derive can hold bumped rows for seconds).
+  expect(spy).toHaveBeenCalledWith(expect.objectContaining({ lockTimeoutMs: 200 }))
   expect(warn).toHaveBeenCalledWith(
     'session costs: write-back failed; figures priced on read',
     expect.objectContaining({ sessions: 1 }),
@@ -277,6 +280,52 @@ test('a failed write-back still returns the figures priced on read', async () =>
   const timings: Record<string, number> = {}
   await getCostOverview({ now: NOW, timings })
   expect(timings.staleSessions).toBe(1)
+})
+
+test('a failed session-list write-back still returns the costs priced on read', async () => {
+  const id = await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
+  const warn = vi.spyOn(logger, 'warn')
+  const spy = vi
+    .spyOn(sessionCostService, 'writePriced')
+    .mockRejectedValueOnce(new Error('db down'))
+  const costs = await getSessionCosts({ sessionIds: [id] })
+  expect(costs).toEqual([expect.objectContaining({ sessionId: id, kwh: 2 })])
+  expect(spy).toHaveBeenCalledWith(expect.objectContaining({ lockTimeoutMs: 200 }))
+  expect(warn).toHaveBeenCalledWith(
+    'session costs: write-back failed; figures priced on read',
+    expect.objectContaining({ sessions: 1 }),
+  )
+  // Still stale: the next read prices it again.
+  const timings: Record<string, number> = {}
+  await getSessionCosts({ sessionIds: [id], timings })
+  expect(timings.staleSessions).toBe(1)
+})
+
+test('storePriced drops a session with a non-finite total and stores the rest', async () => {
+  const bad = await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
+  const good = await session('2026-09-24T08:00:00Z', '2026-09-24T09:00:00Z', 3)
+  const warn = vi.spyOn(logger, 'warn')
+  const month = (kwh: number) => new Map([[202609, { ...emptyTotals(), kwh }]])
+  const { written } = await storePriced(
+    [
+      { sessionId: bad, generation: null },
+      { sessionId: good, generation: null },
+    ],
+    [
+      { sessionId: bad, estimated: true, months: month(Number.NaN) },
+      { sessionId: good, estimated: true, months: month(3) },
+    ],
+  )
+  expect(written).toBe(1)
+  expect(warn).toHaveBeenCalledWith('session costs: not stored, a month total is not finite', {
+    sessionIds: [bad],
+  })
+  const read = await sessionCostService.readSessionSums({
+    sessionIds: [bad, good],
+    pricingVersion: PRICING_VERSION,
+  })
+  expect(read.current.map((c) => c.sessionId)).toEqual([good])
+  expect(read.stale).toEqual([{ sessionId: bad, generation: null }])
 })
 
 test('session costs: stored and on-read agree, and a read writes back', async () => {
