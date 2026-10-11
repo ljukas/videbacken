@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { energyMixDeriveRequest, spotPrice } from '~/lib/db/schema'
+import { energyMixDeriveRequest, spotPrice, spotPriceDay } from '~/lib/db/schema'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
 import { setupDatabase } from '~test/setup'
@@ -13,6 +13,22 @@ const utc = (iso: string) => new Date(iso).getTime()
 
 async function storedCount() {
   return (await db.select().from(spotPrice)).length
+}
+
+async function storedDays() {
+  return db.select().from(spotPriceDay).orderBy(spotPriceDay.day)
+}
+
+/** Writes a day's slots past `replaceDay` (no writer does this): no day row. */
+async function insertSlotsOnly(day: string) {
+  await db.insert(spotPrice).values(
+    daySlots(day, 60).map((s) => ({
+      zone: 'SE3',
+      slotStart: new Date(s.startMs),
+      slotEnd: new Date(s.endMs),
+      sekPerKwh: s.sekPerKwh,
+    })),
+  )
 }
 
 test('replaceDay stores a validated day and reports what it wrote', async () => {
@@ -75,6 +91,85 @@ test('stores DST days of 92 and 100 slots', async () => {
   expect(await storedCount()).toBe(192)
 })
 
+test("replaceDay stores the day's average beside its slots, on the Stockholm day", async () => {
+  // 2026-09-28 starts at 2026-09-27T22:00Z: the row is the Stockholm day.
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 15, (i) => i / 100),
+  )
+  const rows = await storedDays()
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ zone: 'SE3', day: '2026-09-28', coveredSeconds: 86_400 })
+  expect(rows[0].avgSekPerKwh).toBeCloseTo(0.475) // mean of 0.00 … 0.95
+})
+
+test('re-storing a day replaces its average', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 15, () => 1),
+  )
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 60, () => 2),
+  )
+  const rows = await storedDays()
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ day: '2026-09-28', avgSekPerKwh: 2, coveredSeconds: 86_400 })
+})
+
+test("replacing a day leaves the neighbouring days' averages alone", async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-27',
+    daySlots('2026-09-27', 15, () => 1),
+  )
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 15, () => 2),
+  )
+  await replaceDay(
+    'SE3',
+    '2026-09-29',
+    daySlots('2026-09-29', 15, () => 3),
+  )
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 60, () => 4),
+  )
+  expect((await storedDays()).map((r) => [r.day, r.avgSekPerKwh])).toEqual([
+    ['2026-09-27', 1],
+    ['2026-09-28', 4],
+    ['2026-09-29', 3],
+  ])
+})
+
+test('a rejected day keeps its stored average, and a never-stored day gets none', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-28',
+    daySlots('2026-09-28', 15, () => 1),
+  )
+  const holey = daySlots('2026-09-28', 15, () => 5).filter((_, i) => i !== 40)
+  await expect(replaceDay('SE3', '2026-09-28', holey)).rejects.toThrow(SpotPriceDomainError)
+  const holeyNew = daySlots('2026-09-29', 15, () => 5).filter((_, i) => i !== 40)
+  await expect(replaceDay('SE3', '2026-09-29', holeyNew)).rejects.toThrow(SpotPriceDomainError)
+  expect((await storedDays()).map((r) => [r.day, r.avgSekPerKwh])).toEqual([['2026-09-28', 1]])
+})
+
+test('DST days store 23 and 25 hours', async () => {
+  await replaceDay('SE3', '2026-03-29', daySlots('2026-03-29', 60))
+  await replaceDay('SE3', '2026-10-25', daySlots('2026-10-25', 15))
+  expect((await storedDays()).map((r) => [r.day, r.coveredSeconds])).toEqual([
+    ['2026-03-29', 82_800],
+    ['2026-10-25', 90_000],
+  ])
+})
+
 test('listSlotsOverlapping returns each overlapping slot once, including one starting before the range', async () => {
   await replaceDay(
     'SE3',
@@ -119,6 +214,15 @@ test('daysWithSlots groups by Stockholm day across the UTC boundary', async () =
 test('daysWithSlots sees a whole 25-hour fall-back day as one day', async () => {
   await replaceDay('SE3', '2025-10-26', daySlots('2025-10-26', 15))
   expect(await daysWithSlots('SE3', '2025-10-25', '2025-10-27')).toEqual(new Set(['2025-10-26']))
+})
+
+test('daysWithSlots counts a day without its stored average as missing, so the sync re-fetches it', async () => {
+  // E.g. slots written by code from before spot_price_day (a rollback): the
+  // next sync re-stores the day and replaceDay writes the average with it.
+  await insertSlotsOnly('2026-09-28')
+  expect(await daysWithSlots('SE3', '2026-09-28', '2026-09-28')).toEqual(new Set())
+  await replaceDay('SE3', '2026-09-28', daySlots('2026-09-28', 60))
+  expect(await daysWithSlots('SE3', '2026-09-28', '2026-09-28')).toEqual(new Set(['2026-09-28']))
 })
 
 test('dailyAverageSpot averages each Stockholm day, weighting by slot length', async () => {
@@ -174,26 +278,28 @@ test('dailyAverageSpot bounds the range on both ends, inclusively', async () => 
   expect(days.map((d) => d.day)).toEqual(['2026-09-27', '2026-09-28'])
 })
 
-test('dailyAverageSpot weights unequal slot lengths by duration, not by count', async () => {
-  // 2026-09-20 local 00:00-01:00 (1 kr) and 01:00-01:15 (5 kr): (3600·1 + 900·5) / 4500 = 1.8,
-  // where a plain mean of the slots would be 3.
-  await db.insert(spotPrice).values([
-    {
-      zone: 'SE3',
-      slotStart: new Date('2026-09-19T22:00:00Z'),
-      slotEnd: new Date('2026-09-19T23:00:00Z'),
-      sekPerKwh: 1,
-    },
-    {
-      zone: 'SE3',
-      slotStart: new Date('2026-09-19T23:00:00Z'),
-      slotEnd: new Date('2026-09-19T23:15:00Z'),
-      sekPerKwh: 5,
-    },
+test("dailyAverageSpot carries each day's covered time, whatever its slot length", async () => {
+  // A 23-hour hourly day beside a 24-hour quarter-hour day: the covered time is
+  // what weights days against each other (averageSpotOre).
+  await replaceDay(
+    'SE3',
+    '2026-03-29',
+    daySlots('2026-03-29', 60, () => 1),
+  )
+  await replaceDay(
+    'SE3',
+    '2026-03-30',
+    daySlots('2026-03-30', 15, () => 3),
+  )
+  expect(await dailyAverageSpot('SE3', '2026-03-29', '2026-03-30')).toEqual([
+    { day: '2026-03-29', avgSekPerKwh: 1, coveredMs: 23 * 3_600_000 },
+    { day: '2026-03-30', avgSekPerKwh: 3, coveredMs: 24 * 3_600_000 },
   ])
-  const [d] = await dailyAverageSpot('SE3', '2026-09-20', '2026-09-20')
-  expect(d.avgSekPerKwh).toBeCloseTo(1.8)
-  expect(d.coveredMs).toBe(75 * 60_000)
+})
+
+test('dailyAverageSpot reads the stored day averages, not raw slots', async () => {
+  await insertSlotsOnly('2026-09-28')
+  expect(await dailyAverageSpot('SE3', '2026-09-28', '2026-09-28')).toEqual([])
 })
 
 test('dailyAverageSpot counts a 23-hour spring DST day as 23 hours', async () => {

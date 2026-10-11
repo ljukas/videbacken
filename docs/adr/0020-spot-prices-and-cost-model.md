@@ -35,6 +35,12 @@ Zaptec reports each session's energy as roughly **hourly intervals**; prices com
   SEK/kWh ex VAT (may be negative). Filled by the `elpris` integration (ADR-0019) from elprisetjustnu.se.
   A day is stored **whole**: `replaceDay` deletes the Stockholm day's range and inserts, in one transaction, so a day
   re-split at another granularity can never leave overlapping slots (which would double-count energy).
+- **`spot_price_day`** (amended 2026-10-11, server-latency step 6) — per stored Stockholm day, the time-weighted
+  average SEK/kWh and the covered seconds, PK `(zone, day)`. `replaceDay` rewrites the day's row in the same
+  transaction as its slots (the only writer), so it is never staler than they are. It is also the record of which
+  days are stored: the elpris sync plans the days without a row, so a day whose slots exist without one (e.g. after
+  a rollback past this change) is re-fetched and healed. Stored because the economy page's on-read grouping of a
+  year's slots cost 56–247 ms on prod. The cost math itself stays on read.
 - **`electricity_tariff`** — admin-managed periods keyed by a unique Stockholm `valid_from` date: retail markup
   (may be negative), grid transfer, energy tax (öre/kWh ex VAT) and VAT %. A period applies until the next begins,
   so editing today's tariff never re-prices history. Fixed monthly fees are deliberately out of scope.
@@ -95,7 +101,7 @@ window hours if higher), and prices the result with `priceIntervals`:
   the other way: it is built from **hourly averages**, so a car that drew 11 kW for 30 min of an hour gets a 5,5 kW
   cap and the optimum is more constrained than the real charger, which understates "left on the table". The two
   biases are unquantified and roughly offsetting; the page says "somewhat over- or understated".
-- Month average spot comes from `dailyAverageSpot` (per-day time-weighted average, aggregated in Postgres). The same
+- Month average spot comes from `dailyAverageSpot` (per-day time-weighted average, stored in `spot_price_day`). The same
   average feeds the year tile, and days without a tariff are skipped.
 - A session's `actualComplete` flag (`isComplete(actual)`) tells consumers whether `actual` prices every kWh; an
   excluded `no_price` session can carry a partial actual, so kronor figures are shown only when it is set, and
