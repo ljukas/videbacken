@@ -13,10 +13,10 @@ start of its session.
 | 2 | Cache the Stockholm day/month per UTC hour in the cost pricing (`stockholmDayOf` / `stockholmYearMonth` are ~70% of `costComputeMs`; Stockholm's offset is always whole hours) | [plan](../plans/2026-10-07-server-latency-2-tz-cache.md) | [#139](https://github.com/ljukas/videbacken/pull/139) | checkpoint passed | 2026-10-08: prod `costComputeMs` median 73 → 26.5 (−64%); repeat visits 68–84 → 21–25. `economyComputeMs` 72–100 → 13–27. `/charging` figures unchanged (owner). See [checkpoint 2 result](#checkpoint-2-result). |
 | 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | — | — | needs shaping | — |
 | 4 | Cold instances in a burst: when Vercel starts an extra instance for a navigation's burst, its requests show `queue` ~800 ms plus ~260 ms of first-request work before the handler (`app` minus `rpc`). Find what the boot and first-request load cost (function bundle, module init) and what Fluid offers against scale-out cold starts | — | — | needs shaping | — |
-| 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | [#143](https://github.com/ljukas/videbacken/pull/143) | PR open | — |
+| 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | [#143](https://github.com/ljukas/videbacken/pull/143) | checkpoint passed | 2026-10-11: `economy` + `economySessions` 2.7 kB in DevTools (12.8 before); hovered and next pages render with no request on the click; `economySessions` `totalMs` 24–31 warm against `economy`'s 245. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converts and groups every slot of the year (24 476 rows, 61 ms in prod `EXPLAIN ANALYZE`, all buffer hits: CPU). Recommended: a `spot_price_day` table written by `replaceDay` in the same transaction (its only writer) + a backfill, read by PK (~255 rows). Open: that vs a trigger on `spot_price`. Needs the schema-design review | — | — | needs shaping | — |
 
-Order (owner, 2026-10-08): checkpoint 2 (passed), then 5, then 6. Rows 3 and 4 follow unless reordered.
+Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6. Rows 3 and 4 follow unless reordered.
 
 The warm pool (keep three pooled connections; removes most `poolOpened` spikes) is client-performance step 8,
 [#135](https://github.com/ljukas/videbacken/pull/135), merged 2026-10-07; its checkpoint lives in
@@ -92,6 +92,25 @@ the step needs a brainstorm before its plan.
 - **Measuring tip:** a page refresh renders `costOverview` during SSR, because it is critical in the `/charging`
   loader. That call never reaches `/api/rpc`, so it logs no `rpc timing` line. To get lines, navigate in the
   browser: leave the page, wait out the 20 s `staleTime`, then come back.
+
+## Checkpoint 5 result
+
+2026-10-11, after the #143 deploy (merged 08:10 UTC, live ~08:16). The owner opened `/charging/economy` from the
+sidebar with DevTools open, then paged through the session list.
+
+| | Before | After |
+|---|---|---|
+| DevTools Size, `economy` + `economySessions` | 12.8 kB | 2.7 kB (1.1 + 1.6) |
+| `economy` `totalMs` | 94 / 181 / 433 (n = 10) | 245 (n = 1) |
+| `economySessions` `totalMs` | — | 24–31 warm (n = 7); 79 on a second instance that opened a connection |
+
+- **Passed:** the payload is under 3 kB; hovering page 2, 3 and on and then clicking renders at once, with no
+  request on the click (owner). The next page arrives right after each page (~1.6 kB, ~60 ms).
+- **`economySessions`** spends its time on the year's session energy (`economySessionsEnergyMs` 12–20) and tariffs
+  (4–26); slots and compute for one page are 4–7 and 0–5 ms.
+- **`economy` is no faster:** 205 of its 245 ms was `economyDailySpotMs`, the full-year slot grouping that step 6
+  removes. This step shrank the payload, not the compute.
+- `/charging` after a reload makes one `sessions` request (2.4 kB): the eager next page.
 
 ## Baseline (2026-10-07)
 
