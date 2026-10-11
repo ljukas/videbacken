@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import {
   HEAT_PUMP_HOUR_KWH_MAX,
@@ -15,6 +15,7 @@ import {
   type HeatPumpHourInput,
   listUnits,
   markHistoryComplete,
+  newestHour,
   oldestDay,
   replaceDay,
   setRegisteredOn,
@@ -452,4 +453,39 @@ test('setRegisteredOn and markHistoryComplete of an unknown unit are UNKNOWN_HEA
 test('setRegisteredOn refuses a day that is not a real date', async () => {
   const { matsal } = await twoUnits()
   await expect(setRegisteredOn(matsal.id, '2024-13-01')).rejects.toThrow(RangeError)
+})
+
+describe('newestHour', () => {
+  const hour = (iso: string) => ({
+    hourStart: new Date(iso),
+    energyKwh: 0.03,
+    heatShare: 1,
+    coolShare: 0,
+    setpointC: 21,
+    insideC: 21.5,
+    outsideC: 4,
+  })
+
+  test('null without readings, then the newest stored hour of that unit only', async () => {
+    const [a, b] = await upsertUnits(
+      [
+        { guid: 'CS-HZ25ZKE+0000000001', name: 'Matsal', model: 'CS-HZ25ZKE' },
+        { guid: 'CS-HZ25ZKE+0000000002', name: 'Övervåning', model: 'CS-HZ25ZKE' },
+      ],
+      new Date('2026-04-03T10:00:00Z'),
+    )
+    expect(await newestHour(a.id)).toBeNull()
+    await replaceDay(a.id, '2026-04-01', [
+      hour('2026-04-01T05:00:00Z'),
+      hour('2026-04-01T22:00:00Z'),
+    ])
+    await replaceDay(a.id, '2026-03-30', [hour('2026-03-30T23:00:00Z')])
+    await replaceDay(b.id, '2026-04-02', [hour('2026-04-02T01:00:00Z')])
+    expect(await newestHour(a.id)).toEqual(new Date('2026-04-01T22:00:00Z'))
+    expect(await newestHour(b.id)).toEqual(new Date('2026-04-02T01:00:00Z'))
+  })
+
+  test('an id that cannot be a heat pump has no newest hour', async () => {
+    expect(await newestHour('not-a-uuid')).toBeNull()
+  })
 })

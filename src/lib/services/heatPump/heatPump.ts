@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lt, min, type SQL, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, lt, max, min, type SQL, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { pgErrorSummary } from '~/lib/db/pgError'
 import {
@@ -192,6 +192,21 @@ export async function oldestDay(heatPumpId: string): Promise<string | null> {
       .where(eq(heatPumpReading.heatPumpId, heatPumpId)),
   )
   return row?.first ? utcDayOf(row.first.getTime()) : null
+}
+
+/**
+ * The unit's newest stored hour (`hour_start`), or null with none — one max() over the
+ * (heat_pump_id, hour_start) primary key. The sync's offline rule reads it.
+ */
+export async function newestHour(heatPumpId: string): Promise<Date | null> {
+  if (!UUID_RE.test(heatPumpId)) return null
+  const [row] = await guarded('Reading the newest heat pump hour', () =>
+    db
+      .select({ newest: max(heatPumpReading.hourStart) })
+      .from(heatPumpReading)
+      .where(eq(heatPumpReading.heatPumpId, heatPumpId)),
+  )
+  return row?.newest ?? null
 }
 
 /**
