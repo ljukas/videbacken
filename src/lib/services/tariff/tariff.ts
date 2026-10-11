@@ -1,7 +1,7 @@
-import { and, asc, eq, ne } from 'drizzle-orm'
-import { db } from '~/lib/db'
+import { and, asc, eq, ne, sql } from 'drizzle-orm'
+import { type DbOrTx, db } from '~/lib/db'
 import { isUniqueViolation } from '~/lib/db/pgError'
-import { electricityTariff } from '~/lib/db/schema'
+import { electricityTariff, evChargeSession } from '~/lib/db/schema'
 import { TARIFF_LIMITS, type TariffAmountField } from '~/lib/evCharging/tariff'
 import { bumpAll } from '~/lib/services/sessionCost/invalidate'
 import { isStockholmDay } from '~/lib/time/stockholm'
@@ -75,6 +75,20 @@ async function mapValidFromRace<T>(write: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * The first statement of every tariff write. `bumpAll` picks the sessions to
+ * bump from this transaction's snapshot, so a session inserted by a session
+ * import that hasn't committed yet would never be bumped, and a repricer
+ * could store it as current with the old tariff. SHARE waits for an
+ * in-flight import (its ROW EXCLUSIVE) and holds new ones off for the few ms
+ * of the tariff write; it doesn't conflict with readers or the cost
+ * write-back's FK KEY SHARE row locks. Tables before cost rows, as every
+ * writer takes them: no lock cycle.
+ */
+async function waitOutSessionImports(tx: DbOrTx): Promise<void> {
+  await tx.execute(sql`LOCK TABLE ${evChargeSession} IN SHARE MODE`)
+}
+
 /** All tariff periods, oldest first (the order the cost math needs). */
 export async function list(): Promise<TariffRow[]> {
   return db.select().from(electricityTariff).orderBy(asc(electricityTariff.validFrom))
@@ -88,6 +102,7 @@ export async function create(input: TariffInput): Promise<TariffRow> {
   // A tariff period reaches every day from its validFrom on: every stored cost goes stale.
   return mapValidFromRace(() =>
     db.transaction(async (tx) => {
+      await waitOutSessionImports(tx) // before bumpAll chooses its sessions
       const [row] = await tx.insert(electricityTariff).values(columns(input)).returning()
       await bumpAll(tx)
       return row
@@ -104,6 +119,7 @@ export async function update(id: string, input: TariffInput): Promise<TariffRow>
   // A tariff period reaches every day from its validFrom on: every stored cost goes stale.
   const row = await mapValidFromRace(() =>
     db.transaction(async (tx) => {
+      await waitOutSessionImports(tx) // before bumpAll chooses its sessions
       const [updated] = await tx
         .update(electricityTariff)
         .set(columns(input))
@@ -124,6 +140,7 @@ export async function update(id: string, input: TariffInput): Promise<TariffRow>
  */
 export async function remove(id: string): Promise<void> {
   await db.transaction(async (tx) => {
+    await waitOutSessionImports(tx) // before bumpAll chooses its sessions
     const deleted = await tx
       .delete(electricityTariff)
       .where(eq(electricityTariff.id, id))

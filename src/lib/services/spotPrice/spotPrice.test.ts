@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { eq, sql } from 'drizzle-orm'
+import { Client } from 'pg'
 import { expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { energyMixDeriveRequest, evSessionCost, spotPrice, spotPriceDay } from '~/lib/db/schema'
@@ -409,6 +410,37 @@ test('replaceDay bumps sessions charging that Stockholm day, and only those', as
   await replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 15))
   expect(await generationOf(inDay)).toBe(1)
   expect(await generationOf(dayBefore)).toBeUndefined()
+})
+
+test('replaceDay waits for an in-flight session import, then bumps its session', async () => {
+  const { rows } = await db.execute<{ schema: string }>(sql`select current_schema() as schema`)
+  const other = new Client({ connectionString: process.env.DATABASE_URL })
+  await other.connect()
+  try {
+    await other.query(`set search_path to "${rows[0].schema}", public`)
+    await other.query('begin')
+    await other.query(
+      `insert into ev_charger (id, name, installation_id) values ('charger-1', 'Charger', 'install-1')`,
+    )
+    const inserted = await other.query<{ id: string }>(
+      `insert into ev_charge_session (zaptec_session_id, charger_id, start_at, end_at, energy_kwh)
+       values ('zap-import', 'charger-1', '2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 5)
+       returning id`,
+    )
+
+    let resolved = false
+    const pending = replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 15)).then(() => {
+      resolved = true
+    })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(resolved).toBe(false)
+
+    await other.query('commit')
+    await pending
+    expect(await generationOf(inserted.rows[0].id)).toBe(1)
+  } finally {
+    await other.end()
+  }
 })
 
 test('a rejected day bumps nothing', async () => {

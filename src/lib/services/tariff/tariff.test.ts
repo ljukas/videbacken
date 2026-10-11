@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import { Client } from 'pg'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { evSessionCost } from '~/lib/db/schema'
@@ -155,4 +156,36 @@ test('every tariff write bumps every stored session; a refused write bumps nothi
 
   await expect(remove(created.id)).rejects.toMatchObject({ code: 'TARIFF_NOT_FOUND' })
   expect(await generationOf(a)).toBe(4)
+})
+
+test('a tariff write waits for an in-flight session import, then bumps its session', async () => {
+  const { rows } = await db.execute<{ schema: string }>(sql`select current_schema() as schema`)
+  const other = new Client({ connectionString: process.env.DATABASE_URL })
+  await other.connect()
+  try {
+    await other.query(`set search_path to "${rows[0].schema}", public`)
+    await other.query('begin')
+    await other.query(
+      `insert into ev_charger (id, name, installation_id) values ('charger-1', 'Charger', 'install-1')`,
+    )
+    const inserted = await other.query<{ id: string }>(
+      `insert into ev_charge_session (zaptec_session_id, charger_id, start_at, end_at, energy_kwh)
+       values ('zap-import', 'charger-1', '2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z', 5)
+       returning id`,
+    )
+
+    let resolved = false
+    const pending = create(AUG_2026).then((row) => {
+      resolved = true
+      return row
+    })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(resolved).toBe(false)
+
+    await other.query('commit')
+    await pending
+    expect(await generationOf(inserted.rows[0].id)).toBe(1)
+  } finally {
+    await other.end()
+  }
 })
