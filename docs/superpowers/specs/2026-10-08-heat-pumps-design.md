@@ -167,7 +167,7 @@ All tables end with `.enableRLS()`; schema-design review + `migration-guard` bef
 | `name` | text, not null | as in Comfort Cloud, refreshed every sync |
 | `model` | text, not null | e.g. `CS-HZ25ZKE` |
 | `registered_on` | date, null | `deviceRegisterTime` from the latest history response: the first day with data |
-| `history_complete_at` | timestamptz, null | set when the backfill has stored every day back to `registered_on` |
+| `history_complete_at` | timestamptz, null | set when the backfill walk has passed `registered_on − 1` (days that answered nothing or were rejected are passed over, not stored) |
 | `backfill_cursor` | date, null | the next UTC day the backfill walk looks at (the walk passed over every listed day above it); null = start below the oldest stored day. Added in step 1b (migration 0024) |
 | `first_seen_at`, `last_seen_at` | timestamptz, not null | |
 
@@ -260,10 +260,12 @@ Per run:
 4. Progress: days done / days planned. Counters on the run line: units, days and months fetched, hours stored, empty
    days, rejected days, units completed, backfill days left (an estimate).
 
-A day is **rejected** when its hours fail validation (`INVALID_READING`) or the client can't parse its answer
-(`unexpected_response` from `dayHours`: a repeated hour, a row outside the day): nothing is stored, what's stored is
-kept, it counts in `rejectedDays` and warns `comfort cloud day rejected` with the unit name, day and code only. Every
-other day error (login, unreachable, rate limited, …) fails the run.
+A day is **rejected** when its hours fail validation (`INVALID_READING`) or the client rejects the day's own rows
+(`ComfortCloudDayError`: a repeated hour, a row outside the day, a row of the wrong shape): nothing is stored, what's
+stored is kept, it counts in `rejectedDays` and warns `comfort cloud day rejected` with the unit name, day and code
+only. An answer the client can't read at all (an HTTP 400/404, a body that isn't JSON, a bad envelope, temperatures
+not in °C, terms to accept) is about the account, not the day: it fails the run, like every other day error (login,
+unreachable, rate limited, …), and the backfill cursor stays at that day.
 
 `STALE_AFTER_MS.comfortCloud` = 13 h (two missed runs); `ALERT_AFTER_FAILURES.comfortCloud` = 2.
 
@@ -451,12 +453,12 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
 | Partial current hour | Stored; corrected by the next run's re-fetch |
 | A unit offline for hours | Missing hours → "data saknas för N h" (Värmepumpar) and "värmepumpsdata saknas för N h" (Användning). Hours after a unit's newest stored hour count as missing only once that trailing gap is ≥ 13 h (the stale threshold), so the 6-hourly sync's normal lag shows no note; gaps inside the stored range always count |
 | A unit offline for a whole day | Yesterday empty → the run fails (`unexpected_response`, naming the unit and day) every run until data returns, as long as the unit had data within 14 days; after 14 days without data it only logs a warning (a removed unit stops alerting). A unit already answering today only warns (yesterday's hole won't fill). Either way its backfill is held until yesterday answers |
-| Yesterday's hours fail validation (e.g. a changed unit), or its answer can't be parsed | The run fails (`unexpected_response`, naming the unit and day) every run while it lasts; the unit's backfill is held; other rejected days are skipped with a warning |
-| A day answer the client can't parse (a repeated hour, a row outside the day) | Rejected like a day that fails validation: skipped with a warning (unit, day, code), counted in `rejectedDays`; the catch-up and the backfill move past it |
+| Yesterday's hours fail validation (e.g. a changed unit), or the client rejects its rows | The run fails (`unexpected_response`, naming the unit and day) every run while it lasts; the unit's backfill is held; other rejected days are skipped with a warning |
+| A day whose rows the client rejects (a repeated hour, a row outside the day, a row of the wrong shape) | Rejected like a day that fails validation: skipped with a warning (unit, day, code), counted in `rejectedDays`; the catch-up and the backfill move past it. An answer the client can't read at all (HTTP 400/404, not JSON, a bad envelope) fails the run instead and the backfill retries that day |
 | Σ heat pumps > load − laddning (meter noise, or heat pump hours present where house buckets are missing) | Heat pumps scaled down to fit; övrigt hus 0 |
 | A unit renamed in Comfort Cloud | Name refreshed on the next sync; history kept (keyed by guid) |
 | A third unit added | Discovered, backfilled, a third colour (a fourth gets a neutral colour; colours never cycle) |
-| A gap of a whole month in a unit's history | The backfill continues to `registered_on`; empty months cost one month call each |
+| A gap of a whole month in a unit's history | The backfill continues to `registered_on − 1`; empty months cost one month call each |
 | Fewer than 14 qualifying days before/after | The signature says so; no number |
 
 ## Testing
@@ -469,8 +471,9 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
   month and day sums across a month boundary and both DST days (2025-10-26, 2026-03-29), expected hours clipped to
   the first reading and the newest hour, events CRUD with every domain error code.
 - **Sync**: recent days and the capped catch-up, backfill order and budget, stop at `registered_on − 1` → complete,
-  the persisted cursor across runs, a gap month skipped, a rejected day counted (failed validation or unparsed), a
-  quiet or rejected yesterday failing the run and holding the backfill, progress, `not_configured`.
+  the persisted cursor across runs, a gap month skipped, a rejected day counted (failed validation or bad rows), an
+  account-wide error failing the run with the cursor kept, a quiet or rejected yesterday failing the run and holding
+  the backfill, progress, `not_configured`.
 - **`figures.ts`**: the heat pump cap, shares, `restOfHouse`, missing hours; Summering's figures unchanged.
 - **`signature.ts`**: qualifying-day rules, before/after windows around events, the fit on known data, the
   extrapolation exclusion, the margin, the not-enough-data states.

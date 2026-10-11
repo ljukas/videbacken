@@ -101,10 +101,11 @@ Each must pass, with the result recorded in the table, before the next step star
 - 2026-10-11: step 1b built. Reviews added: a persisted backfill cursor (`heat_pump.backfill_cursor`, migration 0024)
   so listed-but-empty days can't stall the walk across runs; the walk reaches `registered_on − 1` (the 1a
   carry-forward); a rejected yesterday fails the run (fail closed on a changed API) and holds that unit's backfill, as
-  does a quiet yesterday. A day answer the client can't parse counts as rejected (it no longer fails every catch-up
-  run or pins the cursor); the catch-up resumes the day before the last success's day; a unit that answers today
-  after a quiet yesterday only warns, and a unit quiet for more than 14 days (warn-only) keeps its backfill held until
-  data returns.
+  does a quiet yesterday. A day whose own rows the client rejects (`ComfortCloudDayError`: a repeated hour, a row
+  outside the day) counts as rejected (it no longer fails every catch-up run or pins the cursor), while an answer it
+  can't read at all (HTTP 400/404, not JSON, a bad envelope) still fails the run and keeps the cursor at that day; the
+  catch-up resumes the day before the last success's day; a unit that answers today after a quiet yesterday only
+  warns, and a unit quiet for more than 14 days (warn-only) keeps its backfill held until data returns.
 - 2026-10-11: carried forward from step 1b. **Step 2**: a removed unit keeps its `heat_pump` row (`listUnits` returns
   it), so `heatPumpMissingHours` must clip expected hours at the unit's `last_seen_at` (or leave out units not listed
   recently), else "data saknas" forever. **Step 3**: the heat pump procedures map rows to `{ id, name, model, … }` and
