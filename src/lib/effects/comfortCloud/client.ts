@@ -33,10 +33,14 @@ type Auth = { token: string; clientId?: string }
 /** An API answer with its body read ('' for a body-less copy after exhausted retries). */
 type Answer = { status: number; text: string }
 
+/** The JSON `code` field only: a timestamp or id containing the digits is not the code. */
+const OUTDATED_CODE_RE = /"code"\s*:\s*"?4106"?(?!\d)/
+const TERMS_CODE_RE = /"code"\s*:\s*"?4103"?(?!\d)/
+
 /** 401 whose body names 4106: a newer app version is published (upstream's helpers.py). */
-const isOutdatedApp = (a: Answer) => a.status === 401 && a.text.includes('4106')
+const isOutdatedApp = (a: Answer) => a.status === 401 && OUTDATED_CODE_RE.test(a.text)
 /** 4103: updated terms wait for acceptance in the app (upstream's AgreementNotAcceptedError). */
-const isTermsPending = (a: Answer) => a.text.includes('4103')
+const isTermsPending = (a: Answer) => TERMS_CODE_RE.test(a.text)
 
 /**
  * Real Comfort Cloud client (ADR-0027). Logs in lazily with the password (`passwordLogin`, then
@@ -74,7 +78,14 @@ export function createComfortCloudClient(deps: {
       },
       o,
     )
-    return { status: res.status, text: await res.text() }
+    try {
+      return { status: res.status, text: await res.text() }
+    } catch (err) {
+      throw new ComfortCloudError('unreachable', op, res.status, {
+        cause: networkCause(err),
+        message: `Comfort Cloud ${op} answer was cut off`,
+      })
+    }
   }
 
   async function refreshAppVersion(op: ComfortCloudOp, stats: ComfortCloudCallStats) {
@@ -88,7 +99,7 @@ export function createComfortCloudClient(deps: {
         op,
         PLAY_STORE_URL,
         { headers: { 'user-agent': AUTH_BROWSER_USER_AGENT } },
-        { stats },
+        { stats, redirect: 'follow' },
       )
     } catch {
       throw failed
@@ -218,9 +229,12 @@ export function createComfortCloudClient(deps: {
       s = await sessionFor(sendOpts.stats, s)
       answer = await apiCall(op, method, path, body, s, sendOpts)
       if (answer.status === 401 && !isTermsPending(answer)) {
-        throw new ComfortCloudError('auth_failed', op, 401, {
+        const refused = new ComfortCloudError('auth_failed', op, 401, {
           message: `Comfort Cloud refused the ${op} call right after a fresh login`,
         })
+        session = null
+        loginBlock = { error: refused, until: now().getTime() + AUTH_FAILURE_TTL_MS }
+        throw refused
       }
     }
     if (answer.status !== 200) throw answerError(op, answer)

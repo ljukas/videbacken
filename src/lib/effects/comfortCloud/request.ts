@@ -11,6 +11,8 @@ export type SendOpts = {
   signal?: AbortSignal
   /** `false` for a non-idempotent POST (the password step, the single-use code exchange): no retry. */
   retry?: boolean
+  /** Default 'manual'; 'follow' only for the Play Store lookup, which carries nothing secret. */
+  redirect?: RequestRedirect
 }
 
 /**
@@ -30,7 +32,7 @@ export async function send(
   try {
     return await fetchWithRetry(
       url,
-      { ...init, redirect: 'manual' },
+      { ...init, redirect: o.redirect ?? 'manual' },
       {
         fetch,
         timeoutMs: TIMEOUT_MS,
