@@ -9,6 +9,7 @@ import {
   bumpAll,
   bumpOverlapping,
   bumpSessions,
+  listCurrentMonths,
   listStale,
   type PricedForStore,
   readMonthSums,
@@ -278,4 +279,35 @@ test('a write-back skips a session deleted meanwhile', async () => {
     sessions: [priced(a, null, [[2026, 9, totals(5, 10)]])],
   })
   expect(written).toBe(0)
+})
+
+test('listCurrentMonths: the month rows of current counted sessions only', async () => {
+  const a = await session('2026-09-30T21:00:00Z', '2026-09-30T23:00:00Z')
+  const stale = await session('2026-09-02T10:00:00Z', '2026-09-02T11:00:00Z')
+  const voided = await session('2026-09-03T10:00:00Z', '2026-09-03T11:00:00Z', { voided: true })
+  await session('2026-09-04T10:00:00Z', '2026-09-04T11:00:00Z') // no row: stale
+  await writePriced({
+    pricingVersion: V,
+    sessions: [
+      priced(a, null, [
+        [2026, 9, totals(2, 4)],
+        [2026, 10, totals(3, 6)],
+      ]),
+      priced(stale, null, [[2026, 9, totals(1, 2)]]),
+      priced(voided, null, [[2026, 9, totals(1, 1)]]),
+    ],
+  })
+  await bumpSessions([stale])
+
+  const read = await listCurrentMonths({ pricingVersion: V })
+  expect(read).toEqual([
+    {
+      sessionId: a,
+      months: [
+        { year: 2026, month: 9, totals: totals(2, 4) },
+        { year: 2026, month: 10, totals: totals(3, 6) },
+      ],
+    },
+  ])
+  expect(await listCurrentMonths({ pricingVersion: V + 1 })).toEqual([])
 })

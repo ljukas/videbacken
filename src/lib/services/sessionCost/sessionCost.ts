@@ -51,6 +51,14 @@ function sums() {
   ) as Record<(typeof TOTAL_FIELDS)[number], SQL<number | null>>
 }
 
+/** Every total's month column, keyed by field. */
+function totalColumns() {
+  return Object.fromEntries(TOTAL_FIELDS.map((f) => [f, evSessionCostMonth[f]])) as Pick<
+    typeof evSessionCostMonth,
+    (typeof TOTAL_FIELDS)[number]
+  >
+}
+
 function toTotals(row: Record<(typeof TOTAL_FIELDS)[number], number | null>): CostTotals {
   const totals = emptyTotals()
   for (const f of TOTAL_FIELDS) totals[f] = row[f] ?? 0
@@ -151,6 +159,44 @@ export async function listStale(input: { pricingVersion: number }): Promise<Sess
     .leftJoin(evSessionCost, eq(evSessionCost.sessionId, evChargeSession.id))
     .where(and(countedSessionFilter(), not(isCurrent(input.pricingVersion))))
     .orderBy(asc(evChargeSession.startAt), asc(evChargeSession.id))
+}
+
+/**
+ * The stored month rows of every current counted session (any vehicle), from
+ * one statement: what `scripts/checkSessionCosts.ts` compares with on-read
+ * pricing. A current session without month rows (nothing to price) is absent.
+ */
+export async function listCurrentMonths(input: {
+  pricingVersion: number
+}): Promise<{ sessionId: string; months: MonthTotals[] }[]> {
+  const rows = await db
+    .select({
+      sessionId: evSessionCostMonth.sessionId,
+      year: evSessionCostMonth.year,
+      month: evSessionCostMonth.month,
+      ...totalColumns(),
+    })
+    .from(evChargeSession)
+    .innerJoin(evSessionCost, eq(evSessionCost.sessionId, evChargeSession.id))
+    .innerJoin(evSessionCostMonth, eq(evSessionCostMonth.sessionId, evChargeSession.id))
+    .where(and(countedSessionFilter(), isCurrent(input.pricingVersion)))
+    .orderBy(
+      asc(evChargeSession.startAt),
+      asc(evChargeSession.id),
+      asc(evSessionCostMonth.year),
+      asc(evSessionCostMonth.month),
+    )
+
+  const out: { sessionId: string; months: MonthTotals[] }[] = []
+  for (const row of rows) {
+    let last = out.at(-1)
+    if (last?.sessionId !== row.sessionId) {
+      last = { sessionId: row.sessionId, months: [] }
+      out.push(last)
+    }
+    last.months.push({ year: row.year, month: row.month, totals: toTotals(row) })
+  }
+  return out
 }
 
 /**
