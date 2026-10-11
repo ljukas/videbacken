@@ -1096,3 +1096,39 @@ test('economySessions rejects a page size it does not offer, and an out-of-range
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   }
 })
+
+test('syncNow with source comfortCloud runs only the heat pump sync and returns counts only', async () => {
+  await signIn('admin')
+  const timings: Record<string, number> = {}
+  const result = await call(
+    evChargingRouter.syncNow,
+    { source: 'comfortCloud' },
+    { context: { ...baseContext(), timings } },
+  )
+  // Not configured under VITEST.
+  expect(result).toEqual({ outcome: 'failed', code: 'not_configured', upserted: 0 })
+  for (const key of ['comfortCloudSyncMs', 'comfortCloudFetchMs', 'comfortCloudStoreMs'])
+    expect(typeof timings[key]).toBe('number')
+  const emaldo = await integrationSyncService.getHealth('emaldo', {
+    now: new Date(),
+    includeAdminDetail: false,
+  })
+  expect(emaldo.state).toBe('never_synced')
+})
+
+test('syncNow with source comfortCloud is forbidden for a non-admin user', async () => {
+  await signIn('user')
+  await expect(
+    call(evChargingRouter.syncNow, { source: 'comfortCloud' }, { context: baseContext() }),
+  ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+})
+
+test('syncStatuses and recentRuns report Comfort Cloud’s own health and runs', async () => {
+  await signIn('admin')
+  await call(evChargingRouter.syncNow, { source: 'comfortCloud' }, { context: baseContext() })
+  const health = await call(evChargingRouter.syncStatuses, undefined, { context: baseContext() })
+  expect(health.comfortCloud).toMatchObject({ source: 'comfortCloud', state: 'not_configured' })
+  const runs = await call(evChargingRouter.recentRuns, {}, { context: baseContext() })
+  expect(runs.comfortCloud).toHaveLength(1)
+  expect(runs.comfortCloud[0]).toMatchObject({ trigger: 'admin', errorCode: 'not_configured' })
+})
