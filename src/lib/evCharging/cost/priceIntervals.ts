@@ -185,6 +185,15 @@ export function unitPrice(
 }
 
 /**
+ * The pricing math's version (ADR-0020, amended 2026-10-11). Bump it with any
+ * change to anything `priceSessions` (costing.ts) computes or depends on the
+ * shape of: `priceIntervals`, `toIntervals` (costInputs.ts), `bucketStartMs`
+ * and the month keying, and how `listSessionEnergy` builds stretches and
+ * `estimated`. Every stored session cost then reads as stale and is repriced.
+ */
+export const PRICING_VERSION = 1
+
+/**
  * Prices intervals against spot slots and tariffs. Each interval's bought kWh
  * is split into pieces by the slots it overlaps (kWh × overlap / duration); an
  * uncovered stretch is a no-price piece. A priced piece takes the tariff of its

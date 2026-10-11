@@ -1,11 +1,13 @@
 import { readFile } from 'node:fs/promises'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import { Client } from 'pg'
 import { expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { energyMixDeriveRequest, spotPrice, spotPriceDay } from '~/lib/db/schema'
+import { energyMixDeriveRequest, evSessionCost, spotPrice, spotPriceDay } from '~/lib/db/schema'
 import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
+import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { SpotPriceDomainError } from './errors'
 import { dailyAverageSpot, daysStored, listSlotsOverlapping, replaceDay } from './spotPrice'
@@ -18,6 +20,14 @@ vi.mock('~/lib/services/energyMix/deriveRequest', async (importOriginal) => {
 })
 
 setupDatabase()
+
+async function generationOf(sessionId: string): Promise<number | undefined> {
+  const [row] = await db
+    .select({ generation: evSessionCost.generation })
+    .from(evSessionCost)
+    .where(eq(evSessionCost.sessionId, sessionId))
+  return row?.generation
+}
 
 const utc = (iso: string) => new Date(iso).getTime()
 
@@ -389,4 +399,64 @@ test('replacing a day queues an energy-mix derive from that day', async () => {
     .select({ fromDay: energyMixDeriveRequest.fromDay })
     .from(energyMixDeriveRequest)
   expect(queued).toEqual([{ fromDay: '2026-09-28' }])
+})
+
+const chargeSession = (startIso: string, endIso: string) =>
+  insertSession({ startAt: new Date(startIso), endAt: new Date(endIso) })
+
+test('replaceDay bumps sessions charging that Stockholm day, and only those', async () => {
+  const inDay = await chargeSession('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z')
+  const dayBefore = await chargeSession('2026-09-19T08:00:00Z', '2026-09-19T09:00:00Z')
+  await replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 15))
+  expect(await generationOf(inDay)).toBe(1)
+  expect(await generationOf(dayBefore)).toBeUndefined()
+})
+
+test('replaceDay waits for an in-flight session import, then bumps its session', async () => {
+  const { rows } = await db.execute<{ schema: string }>(sql`select current_schema() as schema`)
+  const other = new Client({ connectionString: process.env.DATABASE_URL })
+  await other.connect()
+  try {
+    await other.query(`set search_path to "${rows[0].schema}", public`)
+    await other.query('begin')
+    await other.query(
+      `insert into ev_charger (id, name, installation_id) values ('charger-1', 'Charger', 'install-1')`,
+    )
+    const inserted = await other.query<{ id: string }>(
+      `insert into ev_charge_session (zaptec_session_id, charger_id, start_at, end_at, energy_kwh)
+       values ('zap-import', 'charger-1', '2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 5)
+       returning id`,
+    )
+
+    let resolved = false
+    const pending = replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 15)).then(() => {
+      resolved = true
+    })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(resolved).toBe(false)
+
+    await other.query('commit')
+    await pending
+    expect(await generationOf(inserted.rows[0].id)).toBe(1)
+  } finally {
+    await other.end()
+  }
+})
+
+test("a failure after replaceDay's bump rolls the bump back", async () => {
+  const inDay = await chargeSession('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z')
+  await replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 15))
+  expect(await generationOf(inDay)).toBe(1)
+  // requestDerive runs after bumpOverlapping in the same transaction.
+  vi.mocked(requestDerive).mockRejectedValueOnce(new Error('derive queue down'))
+  await expect(replaceDay('SE3', '2026-09-20', daySlots('2026-09-20', 60))).rejects.toThrow(
+    'derive queue down',
+  )
+  expect(await generationOf(inDay)).toBe(1)
+})
+
+test('a rejected day bumps nothing', async () => {
+  const inDay = await chargeSession('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z')
+  await expect(replaceDay('SE3', '2026-09-20', [])).rejects.toThrow()
+  expect(await generationOf(inDay)).toBeUndefined()
 })

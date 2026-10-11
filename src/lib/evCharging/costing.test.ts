@@ -2,18 +2,54 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { evChargeInterval, evCharger, evChargeSession } from '~/lib/db/schema'
 import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
+import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import { replaceForSessions } from '~/lib/services/energyMix'
+import * as evChargingService from '~/lib/services/evCharging'
 import { getOverview, listSessionEnergy } from '~/lib/services/evCharging'
 import { replaceDay as replaceHouseDay } from '~/lib/services/houseEnergy'
+import * as sessionCostService from '~/lib/services/sessionCost'
 import { replaceDay } from '~/lib/services/spotPrice'
 import * as tariffService from '~/lib/services/tariff'
 import { daySlots } from '~/lib/spotPrice/testing/daySlots'
 import { mixSlot } from '~test/fixtures/energyMix'
 import { reading } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
+import { emptyTotals, PRICING_VERSION } from './cost'
 import { loadMix } from './costInputs'
-import { getCostOverview, getSessionCosts } from './costing'
+import type { CostOverview } from './costing'
+import { getCostOverview, getSessionCosts, storePriced } from './costing'
+
+/** |a − b| ≤ 1e-9 · max(1, |a|) for every number in two equal-shaped values. */
+function expectClose(actual: unknown, expected: unknown, path = '$'): void {
+  if (typeof expected === 'number' && typeof actual === 'number') {
+    const ok = Math.abs(actual - expected) <= 1e-9 * Math.max(1, Math.abs(expected))
+    if (!ok) throw new Error(`${path}: ${actual} ≠ ${expected}`)
+    return
+  }
+  if (expected !== null && typeof expected === 'object' && !(expected instanceof Date)) {
+    expect(Object.keys(actual as object).sort(), path).toEqual(Object.keys(expected).sort())
+    for (const [k, v] of Object.entries(expected)) {
+      expectClose((actual as Record<string, unknown>)[k], v, `${path}.${k}`)
+    }
+    return
+  }
+  expect(actual, path).toEqual(expected)
+}
+
+/**
+ * The overview twice: priced on read (everything stale, written back), then
+ * from the store. Asserts they agree and that the second read priced nothing.
+ */
+async function pricedTwice(input: Parameters<typeof getCostOverview>[0]): Promise<CostOverview> {
+  const first = await getCostOverview(input)
+  const timings: Record<string, number> = {}
+  const second = await getCostOverview({ ...input, timings })
+  expectClose(second, first)
+  expect(timings.staleSessions).toBe(0)
+  expect(timings.slotsMs).toBeUndefined()
+  return second
+}
 
 setupDatabase()
 
@@ -82,7 +118,7 @@ test('cost kWh per month equals the overview’s kWh per month (same bucketing)'
 
   const [kwh, cost] = await Promise.all([
     getOverview({ year: 2026, now: NOW }),
-    getCostOverview({ year: 2026, now: NOW }),
+    pricedTwice({ year: 2026, now: NOW }),
   ])
 
   for (const month of kwh.months) {
@@ -106,7 +142,7 @@ test('a fully priced month: spot + fees incl VAT, average öre/kWh, complete', a
     ['2026-09-20T19:00:00Z', '2026-09-20T20:00:00Z', 6],
   ])
 
-  const cost = await getCostOverview({ now: NOW })
+  const cost = await pricedTwice({ now: NOW })
   const sep = cost.months[8]
 
   expect(sep.complete).toBe(true)
@@ -123,7 +159,7 @@ test('missing prices or tariff are partial, never 0 kr', async () => {
     ['2026-09-21T18:00:00Z', '2026-09-21T19:00:00Z', 5],
   ])
 
-  const noPrices = await getCostOverview({ now: NOW })
+  const noPrices = await pricedTwice({ now: NOW })
   expect(noPrices.months[8]).toMatchObject({
     kwh: 5,
     fullKwh: 0,
@@ -134,12 +170,12 @@ test('missing prices or tariff are partial, never 0 kr', async () => {
   })
 
   await replaceDay('SE3', '2026-09-21', daySlots('2026-09-21', 15))
-  const noTariff = await getCostOverview({ now: NOW })
+  const noTariff = await pricedTwice({ now: NOW })
   expect(noTariff.months[8]).toMatchObject({ noPriceKwh: 0, noTariffKwh: 5, complete: false })
 })
 
 test('an empty history is 12 zero months and zero tiles', async () => {
-  const cost = await getCostOverview({ year: 2025, now: NOW })
+  const cost = await pricedTwice({ year: 2025, now: NOW })
   expect(cost.year).toBe(2025)
   expect(cost.months).toHaveLength(12)
   expect(cost.months.every((m) => m.kwh === 0 && m.totalSek === 0 && m.avgOre === null)).toBe(true)
@@ -174,18 +210,149 @@ test('session costs price each session, flag estimated ones, and skip uncounted 
   expect(await getSessionCosts({ sessionIds: [] })).toEqual([])
 })
 
-test('records sub-timings when asked', async () => {
+test('records sub-timings: pricing only when something was stale', async () => {
   await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
-  const timings = {}
-  await getCostOverview({ now: NOW, timings })
-  expect(timings).toEqual({
+  const cold: Record<string, number> = {}
+  await getCostOverview({ now: NOW, timings: cold })
+  expect(cold).toEqual({
+    storedMs: expect.any(Number),
+    houseFromMs: expect.any(Number),
+    staleSessions: 1,
     energyMs: expect.any(Number),
     slotsMs: expect.any(Number),
     tariffMs: expect.any(Number),
     mixMs: expect.any(Number),
-    houseFromMs: expect.any(Number),
     computeMs: expect.any(Number),
+    writeBackMs: expect.any(Number),
   })
+  const warm: Record<string, number> = {}
+  await getCostOverview({ now: NOW, timings: warm })
+  expect(warm).toEqual({
+    storedMs: expect.any(Number),
+    houseFromMs: expect.any(Number),
+    staleSessions: 0,
+  })
+})
+
+test('a bumped session is repriced on the next read; the others stay stored', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-20',
+    daySlots('2026-09-20', 15, () => 0.5),
+  )
+  await tariffService.create(TARIFF)
+  await session('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 2, [
+    ['2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 2],
+  ])
+  await session('2026-09-21T08:00:00Z', '2026-09-21T09:00:00Z', 3, [
+    ['2026-09-21T08:00:00Z', '2026-09-21T09:00:00Z', 3],
+  ])
+  const before = await pricedTwice({ now: NOW })
+  expect(before.months[8]).toMatchObject({ kwh: 5, noPriceKwh: 3 })
+
+  // The 21st's prices arrive: only that session is bumped and repriced.
+  await replaceDay(
+    'SE3',
+    '2026-09-21',
+    daySlots('2026-09-21', 15, () => 0.5),
+  )
+  const timings: Record<string, number> = {}
+  const after = await getCostOverview({ now: NOW, timings })
+  expect(timings.staleSessions).toBe(1)
+  expect(after.months[8]).toMatchObject({ kwh: 5, noPriceKwh: 0, complete: true })
+  await pricedTwice({ now: NOW })
+})
+
+test('a failed write-back still returns the figures priced on read', async () => {
+  await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
+  const warn = vi.fn()
+  const log: Logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn(), child: () => log }
+  const singletonWarn = vi.spyOn(logger, 'warn')
+  const spy = vi
+    .spyOn(sessionCostService, 'writePriced')
+    .mockRejectedValueOnce(new Error('db down'))
+  const cost = await getCostOverview({ now: NOW, log })
+  expect(cost.months[8].kwh).toBeCloseTo(2)
+  expect(singletonWarn).not.toHaveBeenCalled()
+  expect(spy).toHaveBeenCalledOnce()
+  // A read waits briefly for a lock (a derive can hold bumped rows for seconds).
+  expect(spy).toHaveBeenCalledWith(expect.objectContaining({ lockTimeoutMs: 200 }))
+  expect(warn).toHaveBeenCalledWith(
+    'session costs: write-back failed; figures priced on read',
+    expect.objectContaining({ sessions: 1 }),
+  )
+  // Still stale: the next read prices it again (and stores it).
+  const timings: Record<string, number> = {}
+  await getCostOverview({ now: NOW, timings })
+  expect(timings.staleSessions).toBe(1)
+})
+
+test('a failed session-list write-back still returns the costs priced on read', async () => {
+  const id = await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
+  const warn = vi.spyOn(logger, 'warn')
+  const spy = vi
+    .spyOn(sessionCostService, 'writePriced')
+    .mockRejectedValueOnce(new Error('db down'))
+  const costs = await getSessionCosts({ sessionIds: [id] })
+  expect(costs).toEqual([expect.objectContaining({ sessionId: id, kwh: 2 })])
+  expect(spy).toHaveBeenCalledWith(expect.objectContaining({ lockTimeoutMs: 200 }))
+  expect(warn).toHaveBeenCalledWith(
+    'session costs: write-back failed; figures priced on read',
+    expect.objectContaining({ sessions: 1 }),
+  )
+  // Still stale: the next read prices it again.
+  const timings: Record<string, number> = {}
+  await getSessionCosts({ sessionIds: [id], timings })
+  expect(timings.staleSessions).toBe(1)
+})
+
+test('storePriced drops a session with a non-finite total and stores the rest', async () => {
+  const bad = await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
+  const good = await session('2026-09-24T08:00:00Z', '2026-09-24T09:00:00Z', 3)
+  const warn = vi.spyOn(logger, 'warn')
+  const month = (kwh: number) => new Map([[202609, { ...emptyTotals(), kwh }]])
+  const { written } = await storePriced(
+    [
+      { sessionId: bad, generation: null },
+      { sessionId: good, generation: null },
+    ],
+    [
+      { sessionId: bad, estimated: true, months: month(Number.NaN) },
+      { sessionId: good, estimated: true, months: month(3) },
+    ],
+  )
+  expect(written).toBe(1)
+  expect(warn).toHaveBeenCalledWith('session costs: not stored, a month total is not finite', {
+    sessionIds: [bad],
+  })
+  const read = await sessionCostService.readSessionSums({
+    sessionIds: [bad, good],
+    pricingVersion: PRICING_VERSION,
+  })
+  expect(read.current.map((c) => c.sessionId)).toEqual([good])
+  expect(read.stale).toEqual([{ sessionId: bad, generation: null }])
+})
+
+test('session costs: stored and on-read agree, and a read writes back', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-22',
+    daySlots('2026-09-22', 15, () => 1),
+  )
+  await tariffService.create(TARIFF)
+  const a = await session('2026-09-22T08:00:00Z', '2026-09-22T09:00:00Z', 2, [
+    ['2026-09-22T08:00:00Z', '2026-09-22T09:00:00Z', 2],
+  ])
+  const b = await session('2026-09-22T10:00:00Z', '2026-09-22T12:00:00Z', 4)
+  const cold: Record<string, number> = {}
+  const first = await getSessionCosts({ sessionIds: [a, b], timings: cold })
+  expect(cold.staleSessions).toBe(2)
+  const warm: Record<string, number> = {}
+  const second = await getSessionCosts({ sessionIds: [a, b], timings: warm })
+  expect(warm).toEqual({ storedMs: expect.any(Number), staleSessions: 0 })
+  const byId = (xs: typeof first) => Object.fromEntries([...xs].map((c) => [c.sessionId, c]))
+  expectClose(byId(second), byId(first))
+  expect(byId(second)[b]).toMatchObject({ estimated: true, kwh: 4 })
 })
 
 test('a tariff change mid-month prices each side with its own period', async () => {
@@ -208,7 +375,7 @@ test('a tariff change mid-month prices each side with its own period', async () 
     ['2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 1],
   ])
 
-  const sep = (await getCostOverview({ now: NOW })).months[8]
+  const sep = (await pricedTwice({ now: NOW })).months[8]
   expect(sep.feesSek).toBeCloseTo(((FEES_ORE + (FEES_ORE + 100)) / 100) * 1.25)
 })
 
@@ -216,7 +383,7 @@ test('months follow the selected year; tiles stay on now’s year; all time span
   await session('2025-06-10T08:00:00Z', '2025-06-10T09:00:00Z', 3)
   await session('2026-09-10T08:00:00Z', '2026-09-10T09:00:00Z', 5)
 
-  const cost = await getCostOverview({ year: 2025, now: NOW })
+  const cost = await pricedTwice({ year: 2025, now: NOW })
 
   expect(cost.year).toBe(2025)
   expect(cost.months[5].kwh).toBe(3) // June 2025
@@ -233,7 +400,7 @@ test('a single interval across a month boundary is bucketed by its start, like t
   ])
   const [kwh, cost] = await Promise.all([
     getOverview({ year: 2026, now: NOW }),
-    getCostOverview({ year: 2026, now: NOW }),
+    pricedTwice({ year: 2026, now: NOW }),
   ])
   expect(cost.months[7].kwh).toBe(2)
   expect(cost.months[8].kwh).toBe(0)
@@ -249,7 +416,7 @@ test('an interval-less session is priced over its whole span in the overview', a
   await tariffService.create(TARIFF)
   await session('2026-09-24T08:00:00Z', '2026-09-24T10:00:00Z', 4)
 
-  const sep = (await getCostOverview({ now: NOW })).months[8]
+  const sep = (await pricedTwice({ now: NOW })).months[8]
   expect(sep).toMatchObject({ kwh: 4, complete: true })
   expect(sep.spotSek).toBeCloseTo(4 * 2 * 1.25)
 })
@@ -261,7 +428,7 @@ test('getCostOverview follows the vehicle scope', async () => {
     vehicleSource: 'admin',
   })
   const allTimeKwh = async (vehicle?: 'ours' | 'other' | 'all') =>
-    (await getCostOverview({ now: NOW, vehicle })).tiles.allTime.kwh
+    (await pricedTwice({ now: NOW, vehicle })).tiles.allTime.kwh
   expect(await allTimeKwh('ours')).toBeCloseTo(10)
   expect(await allTimeKwh('other')).toBeCloseTo(4)
   expect(await allTimeKwh('all')).toBeCloseTo(14)
@@ -325,7 +492,7 @@ test('a session with a stored mix costs its cash: own solar 0 kr, battery at its
     mixSlot('2026-09-20T18:15:00Z', { gridKwh: 0.5, batteryGridKwh: 1, batteryGridSpotSek: 0.2 }),
   ])
 
-  const sep = (await getCostOverview({ now: NOW })).months[8]
+  const sep = (await pricedTwice({ now: NOW })).months[8]
   expect(sep).toMatchObject({
     kwh: 3,
     solarKwh: 0.5,
@@ -339,7 +506,7 @@ test('a session with a stored mix costs its cash: own solar 0 kr, battery at its
   expect(sep.solarValueSek).toBeCloseTo(0.5 * 0.5)
   expect(sep.avgOre).toBeCloseTo((sep.totalSek / 3) * 100)
 
-  const tiles = (await getCostOverview({ now: NOW })).tiles
+  const tiles = (await pricedTwice({ now: NOW })).tiles
   for (const tile of [tiles.thisMonth, tiles.thisYear, tiles.allTime]) {
     expect(tile).toMatchObject({ solarKwh: 0.5, batteryKwh: 1 })
     expect(tile.totalSek).toBeCloseTo(sep.totalSek, 9)
@@ -349,13 +516,7 @@ test('a session with a stored mix costs its cash: own solar 0 kr, battery at its
   const [cost] = await getSessionCosts({ sessionIds: [id], timings })
   expect(cost.totalSek).toBeCloseTo(sep.totalSek, 9)
   expect(cost.solarKwh).toBeCloseTo(0.5)
-  expect(timings).toEqual({
-    energyMs: expect.any(Number),
-    tariffMs: expect.any(Number),
-    slotsMs: expect.any(Number),
-    mixMs: expect.any(Number),
-    computeMs: expect.any(Number),
-  })
+  expect(timings).toEqual({ storedMs: expect.any(Number), staleSessions: 0 })
 })
 
 test('a session without a mix is all grid, labelled as without house data', async () => {
@@ -368,7 +529,7 @@ test('a session without a mix is all grid, labelled as without house data', asyn
   await session('2026-09-20T18:00:00Z', '2026-09-20T19:00:00Z', 4, [
     ['2026-09-20T18:00:00Z', '2026-09-20T19:00:00Z', 4],
   ])
-  const sep = (await getCostOverview({ now: NOW })).months[8]
+  const sep = (await pricedTwice({ now: NOW })).months[8]
   expect(sep).toMatchObject({
     kwh: 4,
     noHouseDataKwh: 4,
@@ -392,9 +553,9 @@ test('a mix that no longer matches the session falls back to all grid', async ()
     'cost: energy mix ignored, kWh differs from the session',
     expect.objectContaining({ sessionId: id }),
   )
-  const sep = (await getCostOverview({ now: NOW })).months[8]
+  const sep = (await pricedTwice({ now: NOW })).months[8]
   expect(sep).toMatchObject({ kwh: 3, solarKwh: 0, noHouseDataKwh: 3 })
-  expect(warn).toHaveBeenCalledTimes(2) // once per pricing call
+  expect(warn).toHaveBeenCalledTimes(1) // priced once, then read from the store
 })
 
 test('mix pieces count in the month of their own interval, like the kWh overview', async () => {
@@ -413,7 +574,7 @@ test('mix pieces count in the month of their own interval, like the kWh overview
   ])
   const [kwh, cost] = await Promise.all([
     getOverview({ year: 2026, now: NOW }),
-    getCostOverview({ year: 2026, now: NOW }),
+    pricedTwice({ year: 2026, now: NOW }),
   ])
   expect(cost.months[7].kwh).toBeCloseTo(kwh.months[7].kwh, 9) // August: 4
   expect(cost.months[8].kwh).toBeCloseTo(kwh.months[8].kwh, 9) // September: 6
@@ -429,13 +590,13 @@ test('an interval-less session with a mix stays whole in its start month', async
       mixSlot(`2026-08-31T${hm}:00Z`, { gridKwh: 0.25, solarKwh: 0.25 }),
     ),
   )
-  const cost = await getCostOverview({ year: 2026, now: NOW })
+  const cost = await pricedTwice({ year: 2026, now: NOW })
   expect(cost.months[7]).toMatchObject({ kwh: 2, solarKwh: 1 })
   expect(cost.months[8].kwh).toBe(0)
 })
 
 test('reports when house data starts: the first reading (null before any)', async () => {
-  expect((await getCostOverview({ now: NOW })).houseDataFrom).toBeNull()
+  expect((await pricedTwice({ now: NOW })).houseDataFrom).toBeNull()
   const first = new Date('2026-09-01T05:00:00Z')
   await replaceHouseDay(
     { dayStart: new Date('2026-08-31T22:00:00Z'), dayEnd: new Date('2026-09-01T22:00:00Z') },
@@ -444,7 +605,7 @@ test('reports when house data starts: the first reading (null before any)', asyn
       reading(new Date('2026-09-01T06:00:00Z')),
     ],
   )
-  expect((await getCostOverview({ now: NOW })).houseDataFrom).toEqual(first)
+  expect((await pricedTwice({ now: NOW })).houseDataFrom).toEqual(first)
 })
 
 test('a guest session’s mix stays out of the “ours” scope', async () => {
@@ -460,7 +621,7 @@ test('a guest session’s mix stays out of the “ours” scope', async () => {
     mixSlot('2026-09-11T10:15:00Z', { solarKwh: 1 }),
   ])
   const solar = async (vehicle: 'ours' | 'other' | 'all') =>
-    (await getCostOverview({ now: NOW, vehicle })).tiles.allTime.solarKwh
+    (await pricedTwice({ now: NOW, vehicle })).tiles.allTime.solarKwh
   expect(await solar('ours')).toBe(0)
   expect(await solar('other')).toBeCloseTo(2)
   expect(await solar('all')).toBeCloseTo(2)
@@ -476,7 +637,7 @@ test('the slot a session starts inside counts in its first interval’s month', 
   )
   const [kwh, cost] = await Promise.all([
     getOverview({ year: 2026, now: NOW }),
-    getCostOverview({ year: 2026, now: NOW }),
+    pricedTwice({ year: 2026, now: NOW }),
   ])
   expect(cost.months[7]).toMatchObject({ kwh: 1.5, solarKwh: 1.5 })
   expect(cost.months[8].kwh).toBe(0)
@@ -496,10 +657,75 @@ test('an interval across local midnight keeps its pieces in its start month; the
   )
   const [kwh, cost] = await Promise.all([
     getOverview({ year: 2026, now: NOW }),
-    getCostOverview({ year: 2026, now: NOW }),
+    pricedTwice({ year: 2026, now: NOW }),
   ])
   expect(cost.months[7].kwh).toBeCloseTo(2)
   expect(cost.months[8].kwh).toBeCloseTo(1)
   expect(cost.months[7].kwh).toBeCloseTo(kwh.months[7].kwh, 9)
   expect(cost.months[8].kwh).toBeCloseTo(kwh.months[8].kwh, 9)
+})
+
+test('a session bumped while the overview prices it is still shown, and stays stale', async () => {
+  const id = await session('2026-09-23T08:00:00Z', '2026-09-23T09:00:00Z', 2)
+  const real = evChargingService.listSessionEnergy
+  vi.spyOn(evChargingService, 'listSessionEnergy').mockImplementation(async (input) => {
+    await sessionCostService.bumpSessions([id]) // a writer commits mid-read
+    return real(input)
+  })
+  const cost = await getCostOverview({ now: NOW })
+  expect(cost.months[8].kwh).toBeCloseTo(2)
+  expect(await sessionCostService.listStale({ pricingVersion: PRICING_VERSION })).toEqual([
+    { sessionId: id, generation: 1 },
+  ])
+})
+
+test('session costs of a page: current and stale ids priced, uncounted dropped, only the stale written back', async () => {
+  const current = await session('2026-09-22T08:00:00Z', '2026-09-22T09:00:00Z', 2)
+  await getSessionCosts({ sessionIds: [current] })
+  const stale = await session('2026-09-22T10:00:00Z', '2026-09-22T11:00:00Z', 3)
+  const voided = await session('2026-09-22T12:00:00Z', '2026-09-22T13:00:00Z', 4, [], {
+    voided: true,
+  })
+  const write = vi.spyOn(sessionCostService, 'writePriced')
+  const costs = await getSessionCosts({ sessionIds: [current, stale, voided] })
+  expect(costs.map((c) => [c.sessionId, c.kwh]).sort()).toEqual(
+    [
+      [current, 2],
+      [stale, 3],
+    ].sort(),
+  )
+  expect(write).toHaveBeenCalledOnce()
+  expect(write.mock.calls[0][0].sessions.map((s) => s.sessionId)).toEqual([stale])
+})
+
+test('stored and on-read agree in every scope with a mix, a guest and a session bumped after a read', async () => {
+  await replaceDay(
+    'SE3',
+    '2026-09-20',
+    daySlots('2026-09-20', 15, () => 0.5),
+  )
+  await tariffService.create(TARIFF)
+  const withMix = await session('2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3, [
+    ['2026-09-20T18:00:00Z', '2026-09-20T18:30:00Z', 3],
+  ])
+  await storeMix(withMix, [
+    mixSlot('2026-09-20T18:00:00Z', { gridKwh: 1, solarKwh: 0.5 }),
+    mixSlot('2026-09-20T18:15:00Z', { gridKwh: 0.5, batteryGridKwh: 1, batteryGridSpotSek: 0.2 }),
+  ])
+  const guest = await session('2026-09-20T08:00:00Z', '2026-09-20T09:00:00Z', 4, [], {
+    vehicle: 'other',
+    vehicleSource: 'admin',
+  })
+  const plain = await session('2026-09-20T10:00:00Z', '2026-09-20T11:00:00Z', 5, [
+    ['2026-09-20T10:00:00Z', '2026-09-20T11:00:00Z', 5],
+  ])
+  await getCostOverview({ now: NOW }) // everything stored
+
+  const kwh: Record<string, number> = {}
+  for (const vehicle of ['ours', 'other', 'all'] as const) {
+    // A mixed state: some sessions stored, one bumped since.
+    await sessionCostService.bumpSessions([plain, guest])
+    kwh[vehicle] = (await pricedTwice({ now: NOW, vehicle })).tiles.allTime.kwh
+  }
+  expect(kwh).toEqual({ ours: 8, other: 4, all: 12 })
 })

@@ -9,8 +9,10 @@ import { createServerLogger, logger } from '~/lib/logger/server'
 import * as evChargingService from '~/lib/services/evCharging'
 import * as integrationSyncService from '~/lib/services/integrationSync'
 import { beginAttempt, getHealth, getLastSuccessStartedAt } from '~/lib/services/integrationSync'
+import { listStale } from '~/lib/services/sessionCost'
 import { insertVehicleRecord } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
+import { PRICING_VERSION } from './cost'
 import { runZaptecSync } from './sync'
 
 setupDatabase()
@@ -1030,4 +1032,11 @@ test('a failed vehicle re-match still derives', async () => {
   })
   expect(run.outcome).toBe('ok')
   expect(derive).toHaveBeenCalledTimes(1)
+})
+
+test('a sync run leaves the sessions it imported repriced', async () => {
+  const { client } = fakeZaptec([session('s1', new Date('2026-09-18T12:00:00Z'))])
+  const { log } = capturingLogger()
+  await runZaptecSync({ trigger: 'cron', now: () => T1, deps: { zaptec: client, log } })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
 })

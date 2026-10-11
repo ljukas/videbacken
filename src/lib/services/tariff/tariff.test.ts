@@ -1,8 +1,28 @@
-import { expect, test } from 'vitest'
+import { eq, sql } from 'drizzle-orm'
+import { Client } from 'pg'
+import { expect, test, vi } from 'vitest'
+import { db } from '~/lib/db'
+import { evSessionCost } from '~/lib/db/schema'
+import { bumpAll, bumpSessions } from '~/lib/services/sessionCost/invalidate'
+import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { create, list, remove, type TariffInput, update } from './tariff'
 
+// The real bumps, wrapped so a test can fail bumpAll inside a tariff write.
+vi.mock('~/lib/services/sessionCost/invalidate', async (importOriginal) => {
+  const real = await importOriginal<typeof import('~/lib/services/sessionCost/invalidate')>()
+  return { ...real, bumpAll: vi.fn(real.bumpAll) }
+})
+
 setupDatabase()
+
+async function generationOf(sessionId: string): Promise<number | undefined> {
+  const [row] = await db
+    .select({ generation: evSessionCost.generation })
+    .from(evSessionCost)
+    .where(eq(evSessionCost.sessionId, sessionId))
+  return row?.generation
+}
 
 const AUG_2026: TariffInput = {
   validFrom: '2026-08-01',
@@ -126,4 +146,67 @@ test('writes only the tariff columns, ignoring extra fields on the input', async
   const row = await create(sneaky)
   expect(row.id).not.toBe(sneaky.id)
   expect(row.createdAt.getTime()).toBeGreaterThan(0)
+})
+
+test('every tariff write bumps every stored session; a refused write bumps nothing', async () => {
+  const a = await insertSession()
+  const b = await insertSession()
+  await bumpSessions([a]) // a has a row, b has none: bumpAll must create b's
+  const created = await create(AUG_2026)
+  expect(await generationOf(a)).toBe(2)
+  expect(await generationOf(b)).toBe(1)
+  await update(created.id, { ...AUG_2026, gridTransferOre: AUG_2026.gridTransferOre + 1 })
+  expect(await generationOf(a)).toBe(3)
+  await remove(created.id)
+  expect(await generationOf(a)).toBe(4)
+
+  await expect(remove(created.id)).rejects.toMatchObject({ code: 'TARIFF_NOT_FOUND' })
+  expect(await generationOf(a)).toBe(4)
+})
+
+test('a tariff write waits for an in-flight session import, then bumps its session', async () => {
+  const { rows } = await db.execute<{ schema: string }>(sql`select current_schema() as schema`)
+  const other = new Client({ connectionString: process.env.DATABASE_URL })
+  await other.connect()
+  try {
+    await other.query(`set search_path to "${rows[0].schema}", public`)
+    await other.query('begin')
+    await other.query(
+      `insert into ev_charger (id, name, installation_id) values ('charger-1', 'Charger', 'install-1')`,
+    )
+    const inserted = await other.query<{ id: string }>(
+      `insert into ev_charge_session (zaptec_session_id, charger_id, start_at, end_at, energy_kwh)
+       values ('zap-import', 'charger-1', '2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z', 5)
+       returning id`,
+    )
+
+    let resolved = false
+    const pending = create(AUG_2026).then((row) => {
+      resolved = true
+      return row
+    })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(resolved).toBe(false)
+
+    await other.query('commit')
+    await pending
+    expect(await generationOf(inserted.rows[0].id)).toBe(1)
+  } finally {
+    await other.end()
+  }
+})
+
+test('a failed bump rolls the tariff write back', async () => {
+  const session = await insertSession()
+  const real = await vi.importActual<typeof import('~/lib/services/sessionCost/invalidate')>(
+    '~/lib/services/sessionCost/invalidate',
+  )
+  // The bump itself succeeds; the transaction fails right after it.
+  vi.mocked(bumpAll).mockImplementationOnce(async (tx) => {
+    await real.bumpAll(tx)
+    throw new Error('bump failed')
+  })
+  await expect(create(AUG_2026)).rejects.toThrow('bump failed')
+  expect(await list()).toEqual([])
+  expect(await generationOf(session)).toBeUndefined()
 })

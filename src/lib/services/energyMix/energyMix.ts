@@ -3,6 +3,7 @@ import { type DbOrTx, type DbTransaction, db } from '~/lib/db'
 import { energyMixDeriveRequest, evChargeEnergyMix, evChargeSession } from '~/lib/db/schema'
 import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
 import { countedSessionFilter } from '~/lib/services/evCharging'
+import { bumpSessions } from '~/lib/services/sessionCost/invalidate'
 
 // The stored energy mix of charging sessions (ADR-0023): per session × 15-min
 // slot, kWh by origin. Written only by the derive; read by the cost model.
@@ -55,6 +56,7 @@ export async function replaceForSessions(
   if (ids.size === 0) return
   const write = async (tx: DbOrTx) => {
     await tx.delete(evChargeEnergyMix).where(inArray(evChargeEnergyMix.sessionId, [...ids]))
+    await bumpSessions([...ids], tx)
     for (let i = 0; i < rows.length; i += MIX_INSERT_BATCH) {
       await tx.insert(evChargeEnergyMix).values(rows.slice(i, i + MIX_INSERT_BATCH))
     }
@@ -93,6 +95,8 @@ export async function pruneUncounted(dbOrTx: DbOrTx = db): Promise<number> {
     .select({ id: evChargeSession.id })
     .from(evChargeSession)
     .where(not(countedSessionFilter()))
+  // No cost bump (ADR-0020, amended 2026-10-11): uncounted sessions are never
+  // priced, and one counted again returns through importSessions, which bumps it.
   const deleted = await dbOrTx
     .delete(evChargeEnergyMix)
     .where(inArray(evChargeEnergyMix.sessionId, uncounted))

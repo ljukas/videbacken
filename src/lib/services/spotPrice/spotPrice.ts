@@ -1,7 +1,8 @@
 import { and, eq, gte, lt, lte, sql } from 'drizzle-orm'
 import { type DbOrTx, db } from '~/lib/db'
-import { spotPrice, spotPriceDay } from '~/lib/db/schema'
+import { evChargeInterval, evChargeSession, spotPrice, spotPriceDay } from '~/lib/db/schema'
 import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
+import { bumpOverlapping } from '~/lib/services/sessionCost/invalidate'
 import { type DailySpot, type PriceSlot, validateDaySlots } from '~/lib/spotPrice/slots'
 import type { PriceZone } from '~/lib/spotPrice/zones'
 import { stockholmDayBounds } from '~/lib/time/stockholm'
@@ -29,6 +30,15 @@ export async function replaceDay(
   }
   const { startMs, endMs } = stockholmDayBounds(day)
   await db.transaction(async (tx) => {
+    // First: `bumpOverlapping` picks the sessions to bump from this
+    // transaction's snapshot, so a session or interval inserted by a session
+    // import that hasn't committed yet would never be bumped, and a repricer
+    // could store it as current with the old slots. SHARE waits for an
+    // in-flight import (its ROW EXCLUSIVE) and holds new ones off for the few
+    // ms of this write, without blocking readers or the cost write-back's FK
+    // KEY SHARE row locks. Sessions first, the order the import takes them;
+    // tables before cost rows, so no lock cycle.
+    await tx.execute(sql`LOCK TABLE ${evChargeSession}, ${evChargeInterval} IN SHARE MODE`)
     await tx
       .delete(spotPrice)
       .where(
@@ -64,6 +74,8 @@ export async function replaceDay(
         SET avg_sek_per_kwh = excluded.avg_sek_per_kwh,
             covered_seconds = excluded.covered_seconds
     `)
+    // Sessions charging this day are priced from these slots (ADR-0020, amended 2026-10-11).
+    await bumpOverlapping({ startMs, endMs }, tx)
     // Queued with the prices (ADR-0023): if the run dies before its derive,
     // the next derive still re-prices the battery from this day.
     await requestDerive(day, tx)

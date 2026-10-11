@@ -5,6 +5,7 @@ import {
   elpris,
   newCallStats,
 } from '~/lib/effects/elpris'
+import { repriceStale } from '~/lib/evCharging/repriceStale'
 import type { deriveFrom } from '~/lib/houseEnergy/derive'
 import { deriveAfterSync } from '~/lib/houseEnergy/deriveAfterSync'
 import type { SyncTrigger } from '~/lib/integrationHealth'
@@ -137,6 +138,9 @@ export async function runElprisSync(opts: {
           log,
           derive: opts.deps?.deriveFrom,
         })
+        // ADR-0020 (amended 2026-10-11): reprice what this run made stale, so
+        // the next cost read is stored sums only. Best effort, own budget.
+        await repriceStale({ trigger: 'elpris', log, signal })
       }
     },
     toRunStats: (run) => ({

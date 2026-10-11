@@ -2,7 +2,7 @@ import { eq, inArray, sql } from 'drizzle-orm'
 import { Client } from 'pg'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { evChargeEnergyMix, evChargeSession } from '~/lib/db/schema'
+import { evChargeEnergyMix, evChargeSession, evSessionCost } from '~/lib/db/schema'
 import type { MixSlot } from '~/lib/houseEnergy/mix/carMix'
 import { expectConstraintViolation } from '~test/expectConstraintViolation'
 import { insertSession } from '~test/fixtures/evCharging'
@@ -18,6 +18,14 @@ import {
 } from './energyMix'
 
 setupDatabase()
+
+async function generationOf(sessionId: string): Promise<number | undefined> {
+  const [row] = await db
+    .select({ generation: evSessionCost.generation })
+    .from(evSessionCost)
+    .where(eq(evSessionCost.sessionId, sessionId))
+  return row?.generation
+}
 
 const QUARTER = 15 * 60_000
 
@@ -392,4 +400,46 @@ test('requestDerive refuses a malformed day', async () => {
 
 test('requestDerive refuses a day the derive math cannot handle', async () => {
   await expect(requestDerive('0001-01-01')).rejects.toThrow(RangeError)
+})
+
+test('replaceForSessions bumps the sessions it replaces, and nothing on a refused write', async () => {
+  const a = await insertSession()
+  const b = await insertSession()
+  await replaceForSessions([a], [{ ...slot('2026-01-01T10:00:00Z'), sessionId: a }])
+  expect(await generationOf(a)).toBe(1)
+  expect(await generationOf(b)).toBeUndefined()
+
+  // A row for a session outside the list is refused before anything is written.
+  await expect(
+    replaceForSessions([a], [{ ...slot('2026-01-01T10:00:00Z'), sessionId: b }]),
+  ).rejects.toThrow(RangeError)
+  expect(await generationOf(a)).toBe(1)
+})
+
+test('a mix row the table refuses after the bump rolls the bump back', async () => {
+  const a = await insertSession()
+  await replaceForSessions([a], rowsOf(a, [slot('2026-01-01T10:00:00Z')]))
+  expect(await generationOf(a)).toBe(1)
+  // kwh 0 fails ev_charge_energy_mix_kwh_nonneg_check on the insert after bumpSessions.
+  await expect(
+    replaceForSessions([a], rowsOf(a, [slot('2026-01-01T10:00:00Z', { kwh: 0, gridKwh: 0 })])),
+  ).rejects.toThrow()
+  expect(await generationOf(a)).toBe(1)
+  expect((await listForSessions([a])).get(a)).toHaveLength(1)
+})
+
+test('pruneUncounted changes no stored-cost generation', async () => {
+  const counted = await insertSession()
+  const voided = await insertSession({
+    startAt: new Date('2026-01-05T12:00:00Z'),
+    endAt: new Date('2026-01-05T13:00:00Z'),
+  })
+  await replaceForSessions(
+    [counted, voided],
+    [counted, voided].flatMap((id) => rowsOf(id, [slot('2026-01-01T10:00:00Z')])),
+  )
+  await db.update(evChargeSession).set({ voided: true }).where(eq(evChargeSession.id, voided))
+  const before = await db.select().from(evSessionCost).orderBy(evSessionCost.sessionId)
+  expect(await pruneUncounted()).toBe(1)
+  expect(await db.select().from(evSessionCost).orderBy(evSessionCost.sessionId)).toEqual(before)
 })

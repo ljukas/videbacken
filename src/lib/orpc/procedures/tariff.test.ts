@@ -3,9 +3,13 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
 import { user } from '~/lib/db/schema'
+import { PRICING_VERSION } from '~/lib/evCharging/cost'
 import type { Logger } from '~/lib/logger'
+import * as sessionCostService from '~/lib/services/sessionCost'
+import { listStale } from '~/lib/services/sessionCost'
 import * as tariffService from '~/lib/services/tariff'
 import { TariffDomainError } from '~/lib/services/tariff'
+import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
 import { evChargingRouter } from './evCharging'
 import { tariffRouter } from './tariff'
@@ -107,6 +111,20 @@ test('an admin creates, updates and removes a period', async () => {
   expect(await call(tariffRouter.list, undefined, { context: baseContext() })).toEqual([])
 })
 
+test('tariff writes record the reprice as a sub-timing', async () => {
+  await signIn('admin')
+  const context = () => ({ ...baseContext(), timings: {} as Record<string, number> })
+  const created = context()
+  const row = await call(tariffRouter.create, AUG, { context: created })
+  expect(created.timings.repriceMs).toEqual(expect.any(Number))
+  const updated = context()
+  await call(tariffRouter.update, { ...AUG, id: row.id }, { context: updated })
+  expect(updated.timings.repriceMs).toEqual(expect.any(Number))
+  const removed = context()
+  await call(tariffRouter.remove, { id: row.id }, { context: removed })
+  expect(removed.timings.repriceMs).toEqual(expect.any(Number))
+})
+
 test('domain errors surface as typed codes', async () => {
   await signIn('admin')
   await call(tariffRouter.create, AUG, { context: baseContext() })
@@ -140,6 +158,8 @@ test('out-of-range amounts are rejected at the input boundary', async () => {
 
 test('costOverview is readable by users and records cost sub-timings', async () => {
   await signIn('user')
+  // A stale session makes the read path price it (the cost sub-timings).
+  await insertSession()
   const timings: Record<string, number> = {}
   const overview = await call(
     evChargingRouter.costOverview,
@@ -149,6 +169,8 @@ test('costOverview is readable by users and records cost sub-timings', async () 
   expect(overview.months).toHaveLength(12)
   expect(overview.houseDataFrom).toBeNull()
   expect(timings).toMatchObject({
+    costStoredMs: expect.any(Number),
+    costStaleSessions: 1,
     costEnergyMs: expect.any(Number),
     costSlotsMs: expect.any(Number),
     costTariffMs: expect.any(Number),
@@ -224,4 +246,41 @@ test('cost procedures reject anonymous callers and out-of-range input', async ()
   await expect(
     call(evChargingRouter.costOverview, { year: 1999 }, { context: baseContext() }),
   ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+})
+
+test('a tariff edit leaves every session repriced', async () => {
+  await signIn('admin')
+  await insertSession()
+  await call(tariffRouter.create, AUG, { context: baseContext() })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
+})
+
+test('tariff update and remove leave every session repriced', async () => {
+  await signIn('admin')
+  await insertSession()
+  await insertSession({
+    startAt: new Date('2026-08-02T10:00:00Z'),
+    endAt: new Date('2026-08-02T11:00:00Z'),
+  })
+  const row = await call(tariffRouter.create, AUG, { context: baseContext() })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
+
+  await call(
+    tariffRouter.update,
+    { ...AUG, id: row.id, gridTransferOre: 40 },
+    { context: baseContext() },
+  )
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
+  await call(tariffRouter.remove, { id: row.id }, { context: baseContext() })
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
+})
+
+test('a tariff write still succeeds when the reprice cannot store', async () => {
+  await signIn('admin')
+  await insertSession()
+  vi.spyOn(sessionCostService, 'writePriced').mockRejectedValue(new Error('lock timeout'))
+  const row = await call(tariffRouter.create, AUG, { context: baseContext() })
+  expect(row).toMatchObject(AUG)
+  expect(await tariffService.list()).toEqual([expect.objectContaining({ id: row.id })])
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toHaveLength(1)
 })

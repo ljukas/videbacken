@@ -10,6 +10,7 @@ import {
   EmaldoError,
   type HouseBucket,
 } from '~/lib/effects/emaldo'
+import { PRICING_VERSION } from '~/lib/evCharging/cost'
 import { createServerLogger } from '~/lib/logger/server'
 import { listReadings, replaceDay } from '~/lib/services/houseEnergy'
 import * as integrationSyncService from '~/lib/services/integrationSync'
@@ -21,6 +22,7 @@ import {
   recordOutcome,
 } from '~/lib/services/integrationSync'
 import { LEASE_DURATION_MS } from '~/lib/services/integrationSync/policy'
+import { listStale } from '~/lib/services/sessionCost'
 import { addDays, stockholmDayBounds } from '~/lib/time/stockholm'
 import { insertSession } from '~test/fixtures/evCharging'
 import { setupDatabase } from '~test/setup'
@@ -875,4 +877,11 @@ test('a run whose deadline fired before the finally still refreshes the days tha
   expect(result).toMatchObject({ outcome: 'failed', code: 'unreachable' })
   expect(result.earliestReplacedDay).not.toBeNull()
   expect(refresh).toHaveBeenCalledTimes(1)
+})
+
+test('a run leaves no session cost stale (the reprice after the derive)', async () => {
+  await sessionOn(YESTERDAY)
+  const result = await run(fakeEmaldo().client)
+  expect(result.outcome).toBe('ok')
+  expect(await listStale({ pricingVersion: PRICING_VERSION })).toEqual([])
 })

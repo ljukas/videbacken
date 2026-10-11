@@ -43,7 +43,8 @@ server/plugins/                 Nitro plugins, registered in vite.config.ts (not
                                 seedApprovedEmails.ts (first admin), queueConsumer.ts (Vercel Queues → lib/queue)
 scripts/                        patchBetterAuthSchema.mjs (auth:schema), devQueueWorker.ts (dev:worker), loadEnv.ts, LAN-IP helpers,
                                 chunkGraph.ts (client chunk import graph + cycle finder), checkChunkCycles.ts (run by `build`),
-                                deriveEnergyMix.ts (one-off energy-mix re-derive; bun --no-env-file + explicit DATABASE_URL)
+                                deriveEnergyMix.ts (one-off energy-mix re-derive; bun --no-env-file + explicit DATABASE_URL),
+                                checkSessionCosts.ts (read-only: stored session costs vs on-read pricing; same invocation)
 src/
   router.tsx / routeTree.gen.ts createRouter (+ codegen — DO NOT hand-edit)
   server.ts                     custom entry; wraps each request in the Server-Timing collector + the Paraglide locale scope
@@ -62,14 +63,14 @@ src/
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
-    db/                         drizzle({ client: pg Pool(DATABASE_URL), schema, casing: 'snake_case' }); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,heatPump,integrationSync,integrationCredential,spotPrice,electricityTariff}.ts + index barrel; houseEnergy.ts also declares the `house_energy_month` materialized view (custom migration, `.existing()`); pgError (unique-violation mapping, `pgErrorSummary`); connectionString (Supabase env bridge)
-    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, heatPump, energyMix, dbPool (pool gauges for the rpc timing line) — own all DB access + domain rules (ADR-0002)
+    db/                         drizzle({ client: pg Pool(DATABASE_URL), schema, casing: 'snake_case' }); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,heatPump,integrationSync,integrationCredential,spotPrice,electricityTariff,sessionCost}.ts + index barrel; houseEnergy.ts also declares the `house_energy_month` materialized view (custom migration, `.existing()`); pgError (unique-violation mapping, `pgErrorSummary`); connectionString (Supabase env bridge)
+    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, heatPump, energyMix, sessionCost (stored cost per session and month: sums, stale ids, guarded write-back; its `invalidate.ts` is the bump leaf every cost-input writer calls in its transaction, ADR-0020 amendment), dbPool (pool gauges for the rpc timing line) — own all DB access + domain rules (ADR-0002)
     effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023; keyedAdapter.ts rebuilds their client only when the resolved credentials change, ADR-0026), comfortCloud (Panasonic heat pumps, ADR-0027: Auth0 PKCE password login — tough-cookie jar + htmlparser2 hidden inputs — x-cfc-api-key, UTC hours; facade via keyedAdapter, fail closed), eltariff (keyless catalogue client for the gridTariff watcher), geocoder (keyless Nominatim address search for the home-position picker: proxied, 1 req/s, 10-min cache, no retries, ADR-0026); http.ts + testing/fakeFetch shared by the pulled clients
     credentials/                server-only (ADR-0026): crypto (AES-256-GCM envelope, CREDENTIALS_ENCRYPTION_KEY), env (reads env values; the names live in `integrationCredentials.ts`), cache (60 s stored read), resolve (`resolveCredentials`: stored → env per field)
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
     sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
-    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts: prices each session's stored solar/battery mix, ADR-0023) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, `paging.ts` session-list paging vocabulary (page sizes, URL params, page links, `pageSlice`), `skodaExport.ts` client-safe MySkoda CSV parser (papaparse lazy-loaded), tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
+    evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts: reads the stored per-session month sums and prices only stale sessions, writing them back; prices each session's stored solar/battery mix, ADR-0020 amendment, ADR-0023) + `repriceStale.ts` (eager reprice after syncs and tariff edits) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, `paging.ts` session-list paging vocabulary (page sizes, URL params, page links, `pageSlice`), `skodaExport.ts` client-safe MySkoda CSV parser (papaparse lazy-loaded), tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
     vehicleState/               Škoda live-state poll: geofence (home point → boolean), sync + cron (ADR-0022)
     houseEnergy/                Emaldo house-energy readings sync (sync.ts: recent days + backfill, day watermark) + cron (ADR-0019, ADR-0023) — no index barrel;
                                 energy-mix derivation (ADR-0023): pure client-safe mix/ (supply, shape, pool + SoC cap, carMix, houseTimeline),
@@ -150,7 +151,7 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
 | **Authentication** (Google + magic-link, allowlist, admin-only mutation, onboarding) | **0017** |
 | Polled sync replaces realtime SSE | 0018 |
 | External data integrations (fail-closed sync, health tracking, lease) | **0019** |
-| Spot prices & charging cost model (on-read, missing ≠ 0 kr, gridShare seam) | **0020** |
+| Spot prices & charging cost model (stored per session and month with generations, missing ≠ 0 kr, gridShare seam) | **0020** |
 | Charging-session vehicle attribution (sessions ours by default, views show all, Škoda log re-match, admin wins) | **0021** |
 | Live vehicle-state attribution (Škoda poll, majority of known time, geofence) | **0022** |
 | Solar-aware charging cost (Emaldo energy mix, battery pool, cash + solar value) | **0023** |
@@ -246,6 +247,14 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
   sync fetches only days without a row, and the economy page reads its averages. Write `spot_price` only through
   `spotPrice.replaceDay`, which rewrites the day's slots and row together. To re-fetch a day, delete its
   `spot_price_day` row; deleting only its slots leaves the row, so the day is never fetched again.
+- **`ev_session_cost` holds each session's priced cost per month** (ADR-0020, amended 2026-10-11): a stored total
+  is read only while its `generation` matches. Anything that writes intervals, the energy mix, spot slots or
+  tariffs must bump the affected sessions in the same transaction (`~/lib/services/sessionCost/invalidate`); a
+  set-wide bump (tariffs, `replaceDay`) first takes `LOCK TABLE … IN SHARE MODE` on the session (and interval)
+  table so an in-flight import isn't missed. Exempt by design: `pruneUncounted` and vehicle attribution. Any change
+  to what `priceSessions` computes or depends on the shape of (`priceIntervals`, `toIntervals`, `bucketStartMs` and
+  the month keying, how `listSessionEnergy` builds stretches and `estimated`) must bump `PRICING_VERSION`.
+  Otherwise the pages show stale costs.
 - **`src/routeTree.gen.ts`, `src/paraglide/`, `drizzle/meta/` and `betterAuth.ts` are generated** — regenerate, never edit.
 - **Client chunk groups (`config/clientChunkGroups.ts`) have two rules.** Never group a module the entry reaches: the entry then imports the whole group and every page, `/login` included, loads it (check `bun run bundle:measure`'s `entry:` line against the reference numbers in ADR-0025 §6). And never let a group and a chunk outside it import each other: a `button`↔`ui` cycle crashed `/login`'s hydration at module init, and any cycle is the same trap; sizes and tests don't show it. Both `build` and `vercel-build` fail on a cycle or on the entry reaching a group (`scripts/checkChunkCycles.ts`).
 - **`src/bones/` is generated by `bun run bones:capture`** — re-capture, never hand-edit. It needs the dev server on :14610 (see `scripts/captureBones.ts`) and takes ~1–2 min per page. The CLI skips a skeleton whose DOM is unchanged: after changing the breakpoints or CSS-only layout, pass `--force`. A path subset (`bun run bones:capture /charging/economy`) is safe. Pages import their own bones, so the script deletes the registry the CLI writes; `test/sectionSkeletonBones.test.ts` fails if a captured section isn't passed its bones.

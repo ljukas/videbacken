@@ -665,6 +665,18 @@ test('session returns one counted session with its economy for a signed-in user'
     costMixMs: expect.any(Number),
     sessionCostsMs: expect.any(Number),
   })
+  const warmTimings: Record<string, number> = {}
+  const again = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
+    { context: { ...baseContext(), timings: warmTimings } },
+  )
+  expect(again.costs?.find((c) => c.sessionId === row.id)?.totalSek).toBeCloseTo(
+    result.cost.totalSek,
+    9,
+  )
+  expect(warmTimings.costStaleSessions).toBe(0)
+  expect(warmTimings.costMixMs).toBeUndefined()
   // Aggregates only: no raw house readings ride along.
   expect(Object.keys(result).sort()).toEqual(
     [
@@ -719,6 +731,18 @@ test('sessions keeps its rows when costing fails: costs is null, never 0 kr', as
   expect(page.sessions).toHaveLength(1)
   expect(page.costs).toBeNull()
   expect(warnings).toEqual(['session costs failed; the list shows none'])
+})
+
+test("sessions and costOverview hand the request's logger to the cost read", async () => {
+  await signIn('user')
+  await insertSession()
+  const sessionCosts = vi.spyOn(costing, 'getSessionCosts')
+  const overview = vi.spyOn(costing, 'getCostOverview')
+  const context = baseContext()
+  await call(evChargingRouter.sessions, { page: 1, pageSize: 10 }, { context })
+  await call(evChargingRouter.costOverview, {}, { context })
+  expect(sessionCosts).toHaveBeenCalledWith(expect.objectContaining({ log: context.log }))
+  expect(overview).toHaveBeenCalledWith(expect.objectContaining({ log: context.log }))
 })
 
 const importRow = (id: string, start = '2026-02-01T10:00:00Z', end = '2026-02-01T11:00:00Z') => ({

@@ -10,7 +10,8 @@
 **Spec**: [solar-aware cost design](../superpowers/specs/2026-10-03-ev-charging-solar-cost-design.md).
 **Roadmap**: [solar-aware cost roadmap](../superpowers/roadmaps/2026-10-03-ev-charging-solar-cost.md).
 **Builds on**: [ADR-0019](./0019-external-data-integrations.md) (a pulled, health-tracked source),
-[ADR-0020](./0020-spot-prices-and-cost-model.md) (on-read cost, the `gridShare` seam).
+[ADR-0020](./0020-spot-prices-and-cost-model.md) (on-read cost, stored per session and month since the ADR-0020
+amendment of 2026-10-11; the `gridShare` seam).
 
 ---
 
@@ -51,7 +52,8 @@ The probe also showed:
    2026-10-04, below). A daily checkpoint lets a re-derive restart from the first changed day.
 6. **Inside a Zaptec interval, the car's kWh are shaped by the house load's rise above its pre-session baseline**;
    the interval's kWh stay exact. Without a usable shape the spread stays uniform.
-7. **Pricing stays on read** (ADR-0020). Cash cost = grid kWh at (slot spot + fees) × VAT, battery-from-grid kWh at
+7. **Pricing stays on read** (ADR-0020; stored per session and month since the ADR-0020 amendment of
+   2026-10-11). Cash cost = grid kWh at (slot spot + fees) × VAT, battery-from-grid kWh at
    (stored spot + the use day's fees) × VAT, solar 0 kr. **Value of own solar used** = solar kWh × slot spot +
    battery-from-solar kWh × stored spot, ex VAT, no fees — what export would have paid. Energy without house data
    is counted as grid-bought and shown as such.
