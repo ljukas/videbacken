@@ -74,6 +74,12 @@ ON CONFLICT (zone, day) DO UPDATE
 day`, with `coveredMs = covered_seconds * 1000`. Nothing above the service changes: `getEconomyOverview`,
 `averageSpotOre` and the `economyDailySpotMs` timing keep their shape.
 
+**Stored days** (added in review, 2026-10-11). The sync's probe for which days it already has, `daysWithSlots`
+(renamed `daysStored`), reads `spot_price_day` instead of grouping slots. A day whose slots exist without a row
+(written by code from before the table: a rollback past this change, or a merge inside the cron window) then counts
+as missing, and the next sync re-fetches it and writes slots and average together. Without this, such a day would
+never be fetched again and would stay out of the average for good.
+
 ### Migration
 
 1. `bun run db:generate --name=spot_price_day`: the table, CHECKs, PK, RLS.
@@ -84,8 +90,7 @@ day`, with `coveredMs = covered_seconds * 1000`. Nothing above the service chang
 **Deploy window.** `vercel-build` migrates before the new code serves. If the old code's elpris sync stored a day
 between the backfill and the cutover, that day would have no row, and the page would quietly leave it out of the
 average (missing ≠ 0). The sync runs at 12:30 and 15:30 UTC only: merge outside 12:25–12:45 and 15:25–15:45 UTC.
-The checkpoint's day-count check catches a gap; the fix is re-running the backfill statement on prod (a write, owner
-approval) or the next sync of that day.
+The checkpoint's day-count check catches a gap, and the next sync heals it (see Stored days above).
 
 ## Tests (`src/lib/services/spotPrice/spotPrice.test.ts`)
 
@@ -98,6 +103,9 @@ approval) or the next sync of that day.
   checking `coveredMs` carries the weight across days.
 - New: slots inserted without `replaceDay` are not visible to `dailyAverageSpot` (pins the read path).
 - `chargingEconomy.test.ts` already stores prices through `replaceDay`; its overview figures stay unchanged.
+- Added in review: a failure later in `replaceDay`'s transaction keeps the old slots and average together; the 0024
+  backfill SQL, run in a test, writes exactly the rows `replaceDay` wrote; the sync re-fetches a day whose slots have
+  no row (`sync.test.ts`).
 - **Equivalence (in the migration task, not a test):** on a local DB with a year of slots, the old aggregate query
   and the backfilled table agree. Same SQL over the same PK-ordered rows, so exact equality is expected; any float
   difference is reported with its size.
@@ -110,4 +118,4 @@ After the deploy:
    about as much. Get lines by navigating in the browser, not by reloading (a reload renders `economy` during SSR).
 2. `/charging/economy` figures are unchanged (owner).
 3. A read-only SELECT on prod: every Stockholm day in `spot_price` has a `spot_price_day` row, and each row equals the
-   old aggregate for that day.
+   old aggregate for that day within 1e-12 (the old sum had no fixed order).
