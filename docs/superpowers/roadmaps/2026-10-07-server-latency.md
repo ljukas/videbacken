@@ -11,12 +11,12 @@ start of its session.
 |---|---|---|---|---|---|
 | 1 | `Server-Timing` header on every response: `queue` (Vercel edge → our code, from `x-vercel-id`), `app` (our code → response headers) and, for a signed-in `/api/rpc` caller, the `rpc timing` line's sub-timings + pool gauges; `queueMs` on the log line | bounded (in-chat design) | [#137](https://github.com/ljukas/videbacken/pull/137) | checkpoint passed | 2026-10-07: prod RPC and SSR responses carry the header (`/login`: `queue;dur=22, app;dur=29.5`); `rpc timing` lines carry `queueMs`. Warm `queue` is 20–35 ms; a cold instance started mid-burst shows ~800 ms, now row 4. See [checkpoint 1 result](#checkpoint-1-result). |
 | 2 | Cache the Stockholm day/month per UTC hour in the cost pricing (`stockholmDayOf` / `stockholmYearMonth` are ~70% of `costComputeMs`; Stockholm's offset is always whole hours) | [plan](../plans/2026-10-07-server-latency-2-tz-cache.md) | [#139](https://github.com/ljukas/videbacken/pull/139) | checkpoint passed | 2026-10-08: prod `costComputeMs` median 73 → 26.5 (−64%); repeat visits 68–84 → 21–25. `economyComputeMs` 72–100 → 13–27. `/charging` figures unchanged (owner). See [checkpoint 2 result](#checkpoint-2-result). |
-| 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | — | — | needs shaping | — |
+| 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | [spec](../specs/2026-10-11-session-cost-store-design.md), [plan](../plans/2026-10-11-server-latency-3-session-cost-store.md) | — | in progress | — |
 | 4 | Cold instances in a burst: when Vercel starts an extra instance for a navigation's burst, its requests show `queue` ~800 ms plus ~260 ms of first-request work before the handler (`app` minus `rpc`). Find what the boot and first-request load cost (function bundle, module init) and what Fluid offers against scale-out cold starts | — | — | needs shaping | — |
 | 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | [#143](https://github.com/ljukas/videbacken/pull/143) | checkpoint passed | 2026-10-11: `economy` + `economySessions` 2.7 kB in DevTools (12.8 before); hovered and next pages render with no request on the click; `economySessions` `totalMs` 24–31 warm against `economy`'s 245. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converted and grouped every slot of the year (24 764 rows, 50 ms in prod `EXPLAIN ANALYZE` on 2026-10-11, all buffer hits: CPU). Now each day's average is stored in `spot_price_day`, written by `replaceDay` in the same transaction as the slots (its only writer) and backfilled by migration; `dailyAverageSpot` reads ~255 rows by PK, and the sync's stored-days probe reads the same table, so a day missing its row is re-fetched. Amends ADR-0020 | [spec](../specs/2026-10-11-spot-price-day-design.md), [plan](../plans/2026-10-11-server-latency-6-spot-price-day.md) | [#148](https://github.com/ljukas/videbacken/pull/148) | checkpoint passed | 2026-10-11: prod `economyDailySpotMs` 5–7 (56–247 before); `economy` `totalMs` 43–57 warm (181 median before). Every stored day equals the old aggregate exactly; figures unchanged (owner). See [checkpoint 6 result](#checkpoint-6-result). |
 
-Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed). Rows 3 and 4 follow unless reordered.
+Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed), then 3 (2026-10-11). Row 4 follows unless reordered.
 
 The warm pool (keep three pooled connections; removes most `poolOpened` spikes) is client-performance step 8,
 [#135](https://github.com/ljukas/videbacken/pull/135), merged 2026-10-07; its checkpoint lives in
@@ -44,7 +44,16 @@ the step needs a brainstorm before its plan.
 2. **After step 2 (prod).** `costComputeMs` on `evCharging/costOverview` (baseline below: usually 65–100 ms, up to 159)
    drops by at least half; the cost figures on `/charging` are unchanged. Also read `economyComputeMs` on
    `evCharging/economy` (75–77 ms at checkpoint 1): if it uses the same Stockholm helpers it should drop too.
-3. **After step 3 (prod).** Defined when the step is shaped.
+3. **After step 3 (prod).** Warm `costOverview` `totalMs` ≤ 40 ms (117–125 at checkpoint 2) with
+   `costStaleSessions` 0 and no `costSlots`/`costMix`/`costCompute` on the line; `sessionCostsMs` on `sessions`
+   drops by a similar amount. Navigate, don't reload (a reload renders `costOverview` during SSR). The read-only
+   `scripts/checkSessionCosts.ts` against prod finds no current session off by more than 1e-9, and a
+   `session costs repriced` line follows the first syncs after the deploy. The `/charging` figures are unchanged
+   (owner). Baseline before the deploy (prod `rpc timing`, 72 h to 2026-10-11 18:45 UTC, min / median / max):
+   `costOverview` n = 7, `totalMs` 70 / 145 / 461, `costSlotsMs` 26 / 30 / 168, `costMixMs` 29 / 57 / 83,
+   `costComputeMs` 10 / 30 / 41 (current code, n = 2: `totalMs` 85–109); `sessions` n = 32, `totalMs`
+   36 / 46 / 252, `sessionCostsMs` 12 / 19.5 / 89 (current code 18–27). Details in the
+   [spec](../specs/2026-10-11-session-cost-store-design.md#checkpoint-3-prod).
 5. **After step 5 (prod).** In DevTools, `economy` + `economySessions` together are under 3 kB in the Size column
    (12.8 kB before); a hovered or next page renders with no new request; `economySessions`'s `totalMs` is well under
    `economy`'s. Details in the [spec](../specs/2026-10-08-economy-paged-sessions-design.md#checkpoint-5-prod).

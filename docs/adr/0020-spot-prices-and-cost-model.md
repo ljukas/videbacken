@@ -3,10 +3,12 @@
 - **Status**: Accepted
 - **Date**: 2026-09-29
 - **Deciders**: Lukas
-- **Decision in one line**: Charging cost is computed **on read** by a pure TypeScript function over each
-  session's energy intervals, the SE3 day-ahead price slots they overlap, and admin-managed per-kWh tariff periods —
-  never materialized — with missing prices or tariffs counted as missing energy (never 0 kr), and a per-interval
-  `gridShare` as the seam for solar/battery later.
+- **Decision in one line**: Charging cost is computed by a pure TypeScript function over each
+  session's energy intervals, the SE3 day-ahead price slots they overlap, and admin-managed per-kWh tariff periods,
+  and **stored per session and Stockholm month** (amended 2026-10-11): each write to a cost input bumps the
+  session's generation, the stored totals are read only while current, and stale sessions are priced on read and
+  written back. Missing prices or tariffs count as missing energy (never 0 kr), and a per-interval
+  `gridShare` is the seam for solar/battery later.
 
 **Spec**: [EV charging Phase 2 design](../superpowers/specs/2026-09-29-ev-charging-phase2-design.md).
 **Plan**: [Phase 2 plan](../superpowers/plans/2026-09-29-ev-charging-phase2.md).
@@ -73,6 +75,32 @@ It backs `costOverview`, a **separate procedure** from `overview`, and the costs
 (`costs: null` when costing throws, ADR-0025 §5), so a price or tariff problem degrades the cost figures and never
 the energy ones; the page prefetches `costOverview` best-effort, and a session page brings its own costs.
 
+**Stored totals (amended 2026-10-11, server latency step 3).** Two tables hold the priced cost:
+`ev_session_cost` (one row per session: `generation`, `pricing_version`) and `ev_session_cost_month` (one row per
+session and Stockholm month: the totals plus `noPriceKwh` / `noTariffKwh`). A session's stored totals are
+**current** when its `generation` matches the one the totals were priced at and its `pricing_version` equals
+`PRICING_VERSION`; otherwise it is **stale**. A change to `priceIntervals` or `toIntervals` must bump
+`PRICING_VERSION`.
+
+- **Writers bump.** Every writer of a cost input bumps the affected sessions' generation in its own transaction
+  (`sessionCost/invalidate.ts`): `importSessions` and `replaceForSessions` (the session's intervals and mix) bump
+  those sessions, `replaceDay` (spot slots) bumps the sessions overlapping the day, and tariff create/update/remove
+  bumps the sessions overlapping the period (`bumpAll` upserts every session). `pruneUncounted` and attribution are
+  exempt by design: they don't change a counted session's priced cost.
+- **Generation guard.** A pricer reads the generations first, then the inputs, and writes back with
+  `WHERE generation = g` (one sorted upsert, 1 s lock timeout). If an input changed meanwhile, the write is skipped
+  and the session stays stale.
+- **Repricing.** `repriceStale` runs after the Zaptec, elpris and Emaldo syncs and after tariff edits, with a 10 s
+  budget. Whatever it doesn't reach is priced on the next read.
+- **Reads.** `costOverview` and the sessions list read the stored sums and the stale ids in one statement, and price
+  only the stale sessions. A stored total carries `noPriceKwh` / `noTariffKwh` exactly as before, so "missing
+  ≠ 0 kr" is unchanged. The session page's hero and the economy page still price on read.
+- **Spec**: [session cost store design](../superpowers/specs/2026-10-11-session-cost-store-design.md).
+- **Operating notes.** After rolling prod back past this change and forward again, bump `PRICING_VERSION`: code
+  written before it doesn't bump, so rows priced before the rollback would still read as current. A new total column
+  must be `NOT NULL DEFAULT 0` (the migration runs while the old deployment still writes back) and comes with a
+  `PRICING_VERSION` bump.
+
 ### Energy tax is built in
 
 Energy tax is statutory and the same for the whole price area, so a small table (`ENERGY_TAX_ORE_BY_YEAR`) pre-fills
@@ -115,6 +143,11 @@ window hours if higher), and prices the result with `priceIntervals`:
   numbers are stale" bookkeeping. Data is tiny (~100 sessions/yr); on-read stays well under a ~300 ms budget for the
   whole read for years (estimated ~100–150 ms at 5 years). The `rpc timing` line records `costEnergyMs`, `costSlotsMs`,
   `costTariffMs` and `costComputeMs`; revisit with a monthly rollup if `costSlotsMs` grows.
+- **Writers recompute, reads trust the rows (amended 2026-10-11, rejected).** Every writer would have to price the
+  affected sessions itself, so a spot-price sync or a tariff edit does the heaviest work inside its transaction, and
+  a missed writer leaves wrong numbers with no way to notice. Generations make a miss show up as a stale session.
+- **In-memory cache (amended 2026-10-11, rejected).** Per instance, so each cold instance pays the full price, and
+  Vercel starts instances often. It also needs its own invalidation.
 - **All in SQL.** An overlap join × lateral tariff lookup works, but DST/15-min edge cases are hard to test in SQL,
   and Phase 4 counterfactuals price intervals that don't exist in any table. The hybrid keeps SQL for the narrow fetch.
 - **Price by the interval's start slot only.** Simpler, but an hour spans four 15-min prices; the overlap split is
