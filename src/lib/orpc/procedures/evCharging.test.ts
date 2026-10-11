@@ -665,6 +665,18 @@ test('session returns one counted session with its economy for a signed-in user'
     costMixMs: expect.any(Number),
     sessionCostsMs: expect.any(Number),
   })
+  const warmTimings: Record<string, number> = {}
+  const again = await call(
+    evChargingRouter.sessions,
+    { page: 1, pageSize: 10 },
+    { context: { ...baseContext(), timings: warmTimings } },
+  )
+  expect(again.costs?.find((c) => c.sessionId === row.id)?.totalSek).toBeCloseTo(
+    result.cost.totalSek,
+    9,
+  )
+  expect(warmTimings.costStaleSessions).toBe(0)
+  expect(warmTimings.costMixMs).toBeUndefined()
   // Aggregates only: no raw house readings ride along.
   expect(Object.keys(result).sort()).toEqual(
     [

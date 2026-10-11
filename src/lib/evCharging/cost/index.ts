@@ -12,6 +12,7 @@ export {
   mergeTotals,
   ownSolarShare,
   type PieceMix,
+  PRICING_VERSION,
   priceIntervals,
   supplySplit,
   type TariffPeriod,
