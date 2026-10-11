@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { electricityTariff } from '~/lib/db/schema'
 import { setupDatabase } from '~test/setup'
-import { isUniqueViolation } from './pgError'
+import { isUniqueViolation, pgErrorSummary } from './pgError'
 
 setupDatabase()
 
@@ -36,4 +36,28 @@ test('ignores other errors and non-errors', async () => {
   expect(isUniqueViolation(checkError, 'electricity_tariff_valid_from_unique')).toBe(false)
   expect(isUniqueViolation(new Error('x'), 'electricity_tariff_valid_from_unique')).toBe(false)
   expect(isUniqueViolation(null, 'electricity_tariff_valid_from_unique')).toBe(false)
+})
+
+test('pgErrorSummary names the SQLSTATE and constraint only, through drizzle’s wrapper', () => {
+  const pg = Object.assign(new Error('duplicate key; Failing row contains (0.123456)'), {
+    code: '23505',
+    constraint: 'x_pkey',
+    detail: 'Failing row contains (0.123456)',
+  })
+  const drizzle = Object.assign(new Error('Failed query: insert …\nparams: 0.123456'), {
+    cause: pg,
+  })
+  expect(pgErrorSummary(drizzle)).toBe(' (Postgres 23505, x_pkey)')
+  expect(pgErrorSummary(Object.assign(new Error('timeout'), { code: '57014' }))).toBe(
+    ' (Postgres 57014)',
+  )
+  expect(pgErrorSummary(new Error('plain'))).toBe('')
+  expect(pgErrorSummary(null)).toBe('')
+})
+
+test('pgErrorSummary stops at depth 3 and omits a non-string constraint', () => {
+  const deep = { cause: { cause: { cause: { code: '23505' } } } }
+  expect(pgErrorSummary(deep)).toBe('')
+  const shallow = { cause: { cause: { code: '23505', constraint: 42 } } }
+  expect(pgErrorSummary(shallow)).toBe(' (Postgres 23505)')
 })

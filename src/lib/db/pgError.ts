@@ -10,3 +10,19 @@ export function isUniqueViolation(error: unknown, constraint: string): boolean {
   }
   return false
 }
+
+/**
+ * " (Postgres <code>, <constraint>)" from a pg error under drizzle's wrapper, or "". Never the
+ * message, detail or parameters: drizzle quotes every bound value and pg's detail the failing row.
+ */
+export function pgErrorSummary(error: unknown): string {
+  for (let e: unknown = error, depth = 0; e && depth < 3; depth++) {
+    const pg = e as { code?: unknown; constraint?: unknown; cause?: unknown }
+    if (typeof pg.code === 'string') {
+      const constraint = typeof pg.constraint === 'string' ? `, ${pg.constraint}` : ''
+      return ` (Postgres ${pg.code}${constraint})`
+    }
+    e = pg.cause
+  }
+  return ''
+}

@@ -155,6 +155,13 @@
       "when": 1791364701804,
       "tag": "0021_house_energy_month_view",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791710444825,
+      "tag": "0022_heat_pump",
+      "breakpoints": true
     }
   ]
 }

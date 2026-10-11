@@ -43,6 +43,8 @@ export async function fetchWithRetry(
       retry: {
         limit: p.retryStatuses.size > 0 ? (p.retryLimit ?? 2) : 0,
         // `post`: the Zaptec login and every Emaldo call — reads, or a login (resending only replaces the token we keep).
+        // Callers that send a single-use or non-idempotent POST opt out per request (retryLimit 0):
+        // Comfort Cloud's password, callback and token steps, via its `send({ retry: false })`.
         methods: ['get', 'post'],
         statusCodes: [...p.retryStatuses],
         afterStatusCodes: [...p.retryStatuses],
