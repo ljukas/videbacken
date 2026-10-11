@@ -1,7 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { afterEach, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { HEAT_PUMP_HOUR_KWH_MAX, heatPump, heatPumpReading } from '~/lib/db/schema'
+import {
+  HEAT_PUMP_HOUR_KWH_MAX,
+  HEAT_PUMP_TEMP_MAX_C,
+  HEAT_PUMP_TEMP_MIN_C,
+  heatPump,
+  heatPumpReading,
+} from '~/lib/db/schema'
 import { utcDayBounds } from '~/lib/time/utc'
 import { setupDatabase } from '~test/setup'
 import { HeatPumpDomainError } from './errors'
@@ -76,6 +82,7 @@ test('upsertUnits inserts new units, stamping both seen times', async () => {
 test('a later upsert refreshes name, model and last_seen_at, keeping id and first_seen_at', async () => {
   const { matsal } = await twoUnits()
   await setRegisteredOn(matsal.id, '2024-10-31')
+  await markHistoryComplete(matsal.id, NOW)
   const [renamed] = await upsertUnits(
     [{ ...MATSAL, name: 'Matsalen', model: 'CS-HZ25ZKE-2' }],
     LATER,
@@ -87,6 +94,7 @@ test('a later upsert refreshes name, model and last_seen_at, keeping id and firs
     firstSeenAt: NOW,
     lastSeenAt: LATER,
     registeredOn: '2024-10-31',
+    historyCompleteAt: NOW,
   })
   expect(await listUnits()).toHaveLength(2)
 })
@@ -175,26 +183,28 @@ test('rejects hours outside the day, off the hour, repeated, or with a value out
   await replaceDay(matsal.id, '2026-06-10', fullDay('2026-06-10'))
   const { startMs, endMs } = utcDayBounds('2026-06-10')
   const at = (overrides: Partial<HeatPumpHourInput>) => ({ ...hour(startMs), ...overrides })
-  const bad: [string, HeatPumpHourInput[]][] = [
-    ['before the day', [hour(startMs - HOUR)]],
-    ['at the next midnight', [hour(endMs)]],
-    ['off the hour', [hour(startMs + 30 * 60_000)]],
-    ['a repeated hour', [hour(startMs), hour(startMs)]],
-    ['an invalid date', [hour(new Date(Number.NaN))]],
-    ['negative kWh', [at({ energyKwh: -0.001 })]],
-    ['5 kWh', [at({ energyKwh: HEAT_PUMP_HOUR_KWH_MAX })]],
-    ['NaN kWh', [at({ energyKwh: Number.NaN })]],
-    ['a share above 1', [at({ heatShare: 1.01 })]],
-    ['a negative share', [at({ coolShare: -0.1 })]],
-    ['an infinite share', [at({ heatShare: Number.POSITIVE_INFINITY })]],
-    ['a hot indoor', [at({ insideC: 60.25 })]],
-    ['a frozen outdoor', [at({ outsideC: -60.25 })]],
-    ['a NaN setpoint', [at({ setpointC: Number.NaN })]],
+  const bad: [string, HeatPumpHourInput[], string][] = [
+    ['one good hour and one bad', [hour(startMs), hour(startMs + HOUR, -1)], 'hour 1: energyKwh'],
+    ['before the day', [hour(startMs - HOUR)], 'outside the day'],
+    ['at the next midnight', [hour(endMs)], 'outside the day'],
+    ['off the hour', [hour(startMs + 30 * 60_000)], 'not on a whole hour'],
+    ['a repeated hour', [hour(startMs), hour(startMs)], 'repeats an hour'],
+    ['an invalid date', [hour(new Date(Number.NaN))], 'outside the day'],
+    ['negative kWh', [at({ energyKwh: -0.001 })], 'energyKwh'],
+    ['5 kWh', [at({ energyKwh: HEAT_PUMP_HOUR_KWH_MAX })], 'energyKwh'],
+    ['NaN kWh', [at({ energyKwh: Number.NaN })], 'energyKwh'],
+    ['a share above 1', [at({ heatShare: 1.01 })], 'heatShare'],
+    ['a negative share', [at({ coolShare: -0.1 })], 'coolShare'],
+    ['an infinite share', [at({ heatShare: Number.POSITIVE_INFINITY })], 'heatShare'],
+    ['a hot indoor', [at({ insideC: 60.25 })], 'insideC'],
+    ['a frozen outdoor', [at({ outsideC: -60.25 })], 'outsideC'],
+    ['a NaN setpoint', [at({ setpointC: Number.NaN })], 'setpointC'],
   ]
-  for (const [label, hours] of bad) {
+  for (const [label, hours, fragment] of bad) {
     await expect(replaceDay(matsal.id, '2026-06-10', hours), label).rejects.toMatchObject({
       name: 'HeatPumpDomainError',
       code: 'INVALID_READING',
+      message: expect.stringContaining(fragment),
     })
   }
   expect(await readingsOf(matsal.id)).toHaveLength(24)
@@ -226,6 +236,124 @@ test('replaceDay of an unknown unit is UNKNOWN_HEAT_PUMP, whatever the id looks 
 test('a day that is not a real YYYY-MM-DD is a RangeError (a caller bug)', async () => {
   const { matsal } = await twoUnits()
   await expect(replaceDay(matsal.id, '2026-02-30', [])).rejects.toThrow(RangeError)
+})
+
+test('accepted bounds: 0 and just under the kWh cap, both shares at 0 and 1, temperatures at the limits', async () => {
+  const { matsal } = await twoUnits()
+  const start = utcDayBounds('2026-06-10').startMs
+  const min = HEAT_PUMP_TEMP_MIN_C
+  const max = HEAT_PUMP_TEMP_MAX_C
+  const hours: HeatPumpHourInput[] = [
+    {
+      ...hour(start),
+      energyKwh: 0,
+      heatShare: 0,
+      coolShare: 1,
+      setpointC: min,
+      insideC: min,
+      outsideC: min,
+    },
+    {
+      ...hour(start + HOUR),
+      energyKwh: 4.999,
+      heatShare: 1,
+      coolShare: 0,
+      setpointC: max,
+      insideC: max,
+      outsideC: max,
+    },
+  ]
+  expect(await replaceDay(matsal.id, '2026-06-10', hours)).toEqual({ stored: 2 })
+  expect(await readingsOf(matsal.id)).toEqual(hours.map((h) => ({ heatPumpId: matsal.id, ...h })))
+})
+
+test('each temperature field rejects a value just past either limit', async () => {
+  const { matsal } = await twoUnits()
+  const start = utcDayBounds('2026-06-10').startMs
+  for (const field of ['setpointC', 'insideC', 'outsideC'] as const) {
+    for (const v of [HEAT_PUMP_TEMP_MIN_C - 0.01, HEAT_PUMP_TEMP_MAX_C + 0.01]) {
+      await expect(
+        replaceDay(matsal.id, '2026-06-10', [{ ...hour(start), [field]: v }]),
+        `${field} ${v}`,
+      ).rejects.toMatchObject({ code: 'INVALID_READING', message: expect.stringContaining(field) })
+    }
+  }
+  await expect(
+    replaceDay(matsal.id, '2026-06-10', [{ ...hour(start), heatShare: -0.01 }]),
+  ).rejects.toMatchObject({ code: 'INVALID_READING' })
+})
+
+test('an INVALID_READING message quotes at most five problems, then counts the rest', async () => {
+  const { matsal } = await twoUnits()
+  const start = utcDayBounds('2026-06-10').startMs
+  const badHours = (n: number) => Array.from({ length: n }, (_, i) => hour(start + i * HOUR, -1))
+  const seven = await caught(replaceDay(matsal.id, '2026-06-10', badHours(7)))
+  expect(seven.message.split('; ')).toHaveLength(5)
+  expect(seven.message).toMatch(/\(\+2 more\)$/)
+  const five = await caught(replaceDay(matsal.id, '2026-06-10', badHours(5)))
+  expect(five.message.split('; ')).toHaveLength(5)
+  expect(five.message).not.toContain('more')
+})
+
+// A real transaction whose insert fails after the delete ran: the stored day must survive.
+test('a failing insert rolls the delete back, keeping the stored day', async () => {
+  const { matsal } = await twoUnits()
+  await replaceDay(matsal.id, '2026-06-10', fullDay('2026-06-10'))
+  const real = db.transaction.bind(db)
+  vi.spyOn(db, 'transaction').mockImplementationOnce(((cb: (tx: unknown) => Promise<unknown>) =>
+    real(async (tx) =>
+      cb(
+        new Proxy(tx, {
+          get(target, prop) {
+            if (prop === 'insert') {
+              return () => {
+                throw new Error('insert failed')
+              }
+            }
+            const v = Reflect.get(target, prop)
+            return typeof v === 'function' ? v.bind(target) : v
+          },
+        }),
+      ),
+    )) as never)
+  const start = utcDayBounds('2026-06-10').startMs
+  await expect(replaceDay(matsal.id, '2026-06-10', [hour(start, 0.9)])).rejects.toThrow(
+    'Storing heat pump readings failed',
+  )
+  const rows = await readingsOf(matsal.id)
+  expect(rows).toHaveLength(24)
+  expect(rows[0].energyKwh).toBe(0.1)
+})
+
+test('a failing unit query is rethrown without any guid or name in it', async () => {
+  const { matsal } = await twoUnits()
+  const pg = Object.assign(new Error('boom'), { code: '57014' })
+  const drizzle = Object.assign(new Error(`Failed query: params: ${MATSAL.guid}, Matsal`), {
+    params: [MATSAL.guid],
+    cause: pg,
+  })
+  const calls: [string, () => Promise<unknown>][] = [
+    ['upsertUnits', () => upsertUnits([MATSAL], NOW)],
+    ['listUnits', () => listUnits()],
+    ['oldestDay', () => oldestDay(matsal.id)],
+    ['setRegisteredOn', () => setRegisteredOn(matsal.id, '2024-10-31')],
+    ['markHistoryComplete', () => markHistoryComplete(matsal.id, NOW)],
+  ]
+  for (const [label, call] of calls) {
+    const method =
+      label === 'upsertUnits'
+        ? 'insert'
+        : label === 'listUnits' || label === 'oldestDay'
+          ? 'select'
+          : 'update'
+    vi.spyOn(db, method).mockImplementationOnce(() => {
+      throw drizzle
+    })
+    const err = await caught(call())
+    expect(err.message, label).toContain('(Postgres 57014)')
+    expect(err.cause, label).toBeUndefined()
+    expect(`${err.message} ${err.stack} ${JSON.stringify(err)}`, label).not.toContain(MATSAL.guid)
+  }
 })
 
 // drizzle's query error carries every bound parameter in its message and `.params`, and pg's

@@ -33,10 +33,20 @@ export type HeatPumpHourInput = {
 const HOUR_MS = 3_600_000
 /** Problems quoted in one error message. */
 const MAX_PROBLEMS = 5
-/** Any hex UUID Postgres accepts; anything else can't be a heat_pump id. */
+/** The canonical 8-4-4-4-12 form only (ids come from the database); anything else can't be a heat_pump id. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SHARE_FIELDS = ['heatShare', 'coolShare'] as const
 const TEMP_FIELDS = ['setpointC', 'insideC', 'outsideC'] as const
+
+// Runs one query; a failure is rethrown with only the SQLSTATE and constraint, since drizzle's
+// error quotes every bound value (guids, names) and chains the pg error as its cause.
+async function guarded<T>(what: string, query: () => Promise<T>): Promise<T> {
+  try {
+    return await query()
+  } catch (error) {
+    throw new Error(`${what} failed${pgErrorSummary(error)}`)
+  }
+}
 
 /**
  * Inserts the units Comfort Cloud lists, or refreshes name, model and last_seen_at of known ones
@@ -46,33 +56,37 @@ const TEMP_FIELDS = ['setpointC', 'insideC', 'outsideC'] as const
 export async function upsertUnits(units: HeatPumpUnitInput[], now: Date): Promise<HeatPump[]> {
   const byGuid = new Map(units.map((u) => [u.guid, u]))
   if (byGuid.size === 0) return []
-  const rows = await db
-    .insert(heatPump)
-    .values(
-      [...byGuid.values()].map((u) => ({
-        guid: u.guid,
-        name: u.name,
-        model: u.model,
-        firstSeenAt: now,
-        lastSeenAt: now,
-      })),
-    )
-    .onConflictDoUpdate({
-      target: heatPump.guid,
-      set: {
-        name: sql`excluded.name`,
-        model: sql`excluded.model`,
-        lastSeenAt: sql`excluded.last_seen_at`,
-      },
-    })
-    .returning()
+  const rows = await guarded('Upserting heat pump units', () =>
+    db
+      .insert(heatPump)
+      .values(
+        [...byGuid.values()].map((u) => ({
+          guid: u.guid,
+          name: u.name,
+          model: u.model,
+          firstSeenAt: now,
+          lastSeenAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: heatPump.guid,
+        set: {
+          name: sql`excluded.name`,
+          model: sql`excluded.model`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+        },
+      })
+      .returning(),
+  )
   const byStoredGuid = new Map(rows.map((r) => [r.guid, r]))
   return [...byGuid.keys()].flatMap((guid) => byStoredGuid.get(guid) ?? [])
 }
 
 /** Every unit, by name (then guid, for a stable order). */
 export async function listUnits(): Promise<HeatPump[]> {
-  return db.select().from(heatPump).orderBy(asc(heatPump.name), asc(heatPump.guid))
+  return guarded('Listing heat pump units', () =>
+    db.select().from(heatPump).orderBy(asc(heatPump.name), asc(heatPump.guid)),
+  )
 }
 
 // What's wrong with `hours` as one unit's readings of `[startMs, endMs)`. Messages name the hour
@@ -171,10 +185,12 @@ export async function replaceDay(
 /** The UTC day of the unit's oldest stored hour (the backfill's cursor), or null with none. */
 export async function oldestDay(heatPumpId: string): Promise<string | null> {
   if (!UUID_RE.test(heatPumpId)) return null
-  const [row] = await db
-    .select({ first: min(heatPumpReading.hourStart) })
-    .from(heatPumpReading)
-    .where(eq(heatPumpReading.heatPumpId, heatPumpId))
+  const [row] = await guarded('Reading the oldest heat pump day', () =>
+    db
+      .select({ first: min(heatPumpReading.hourStart) })
+      .from(heatPumpReading)
+      .where(eq(heatPumpReading.heatPumpId, heatPumpId)),
+  )
   return row?.first ? utcDayOf(row.first.getTime()) : null
 }
 
@@ -202,10 +218,8 @@ async function updateUnit(
   set: { registeredOn?: string; historyCompleteAt?: Date | SQL },
 ): Promise<void> {
   if (!UUID_RE.test(heatPumpId)) throw new HeatPumpDomainError('UNKNOWN_HEAT_PUMP')
-  const rows = await db
-    .update(heatPump)
-    .set(set)
-    .where(eq(heatPump.id, heatPumpId))
-    .returning({ id: heatPump.id })
+  const rows = await guarded('Updating a heat pump unit', () =>
+    db.update(heatPump).set(set).where(eq(heatPump.id, heatPumpId)).returning({ id: heatPump.id }),
+  )
   if (rows.length === 0) throw new HeatPumpDomainError('UNKNOWN_HEAT_PUMP')
 }

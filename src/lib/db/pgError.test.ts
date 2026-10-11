@@ -54,3 +54,10 @@ test('pgErrorSummary names the SQLSTATE and constraint only, through drizzle’s
   expect(pgErrorSummary(new Error('plain'))).toBe('')
   expect(pgErrorSummary(null)).toBe('')
 })
+
+test('pgErrorSummary stops at depth 3 and omits a non-string constraint', () => {
+  const deep = { cause: { cause: { cause: { code: '23505' } } } }
+  expect(pgErrorSummary(deep)).toBe('')
+  const shallow = { cause: { cause: { code: '23505', constraint: 42 } } }
+  expect(pgErrorSummary(shallow)).toBe(' (Postgres 23505)')
+})
