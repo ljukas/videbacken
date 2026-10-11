@@ -387,9 +387,9 @@ async function backfillUnit(
       : belowStored
   let fetched = 0
   let completed = false
-  let walkError: { error: unknown } | null = null
   const outOfBudget = () => ctx.now().getTime() - run.startedAt.getTime() >= DAY_BUDGET_MS
-  try {
+  // Returns when the walk completes or stops short (cap, budget); throws on a failed call.
+  const walk = async (): Promise<void> => {
     for (;;) {
       if (unit.registeredOn !== null && cursor < addUtcDays(unit.registeredOn, -1)) {
         await markHistoryComplete(unit.id, ctx.now())
@@ -421,29 +421,33 @@ async function backfillUnit(
       // The month is done: continue with the last day of the month before.
       cursor = addUtcDays(`${month}-01`, -1)
     }
+  }
+
+  let walkFailure: { error: unknown } | null = null
+  try {
+    await walk()
   } catch (error) {
-    walkError = { error }
-    throw error
-  } finally {
-    if (!completed) {
-      if (unit.registeredOn !== null) {
-        run.backfillDaysLeft += Math.max(0, utcDaysBetween(unit.registeredOn, cursor) + 1)
-      }
-      if (cursor !== unit.backfillCursor) {
-        try {
-          await setBackfillCursor(unit.id, cursor)
-          unit.backfillCursor = cursor
-        } catch (persistError) {
-          // Never mask the walk's own error: it is the run's outcome.
-          if (walkError === null) throw persistError
-          ctx.log.warn('comfort cloud backfill cursor not saved', {
-            unit: unit.name,
-            error: persistError,
-          })
-        }
+    walkFailure = { error }
+  }
+  if (!completed) {
+    if (unit.registeredOn !== null) {
+      run.backfillDaysLeft += Math.max(0, utcDaysBetween(unit.registeredOn, cursor) + 1)
+    }
+    if (cursor !== unit.backfillCursor) {
+      try {
+        await setBackfillCursor(unit.id, cursor)
+        unit.backfillCursor = cursor
+      } catch (persistError) {
+        // Never mask the walk's own error: it is the run's outcome.
+        if (walkFailure === null) throw persistError
+        ctx.log.warn('comfort cloud backfill cursor not saved', {
+          unit: unit.name,
+          error: persistError,
+        })
       }
     }
   }
+  if (walkFailure !== null) throw walkFailure.error
 }
 
 // Fetches and stores one UTC day for one unit; returns how many hours Comfort

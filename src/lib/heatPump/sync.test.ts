@@ -733,7 +733,10 @@ test('a reopened unit adds its 60 days to the progress total', async () => {
   // One second per clock read, so the 1 s throttle passes every write.
   let clock = NOW.getTime()
   await run(fakeComfortCloud([matsal('2026-03-25')]).client, {
-    now: () => new Date((clock += 1_000)),
+    now: () => {
+      clock += 1_000
+      return new Date(clock)
+    },
   })
   const reports = spy.mock.calls.map(([, , p]) => p)
   // Complete at the start: 3 recent days; reopened: + 60; done after 3 backfill days.
