@@ -65,9 +65,10 @@ Comfort Cloud reports only electricity in, not heat out, so the units' true effi
 4. **Hourly rows, stored as UTC hours.** `heat_pump` (one row per unit, named as in Comfort Cloud) and
    `heat_pump_reading` (unit × `hour_start`: kWh, heating and cooling share, average setpoint, indoor and outdoor
    °C). `-255` is never stored. Every request uses `osTimezone: "+00:00"`.
-5. **Sync four times a day, with a backfill.** Each run replaces today and the two previous UTC days for each unit
-   (the current hour is partial and gets corrected), then backfills each unit backwards from its oldest stored day,
-   using the month call to skip days without data, until Comfort Cloud has no earlier data.
+5. **Sync four times a day, with a backfill.** Each run replaces, for each unit, today and every previous UTC day back
+   to the last successful run (at least two, at most 14; the current hour is partial and gets corrected), then
+   backfills each unit backwards from its oldest stored day, using the month call to skip days without data, down to
+   the unit's registration date (`deviceRegisterTime`, the first data day).
 6. **Only daily sums reach the browser.** Hourly rows tell when someone is home and heating; like the Emaldo
    readings they stay on the server. The service sums per Stockholm month and day on read. At ≈ 17.5k rows a year
    no view or rollup is needed.
@@ -107,7 +108,8 @@ Comfort Cloud reports only electricity in, not heat out, so the units' true effi
 ## Consequences
 
 - One new source: a migration widens the source CHECKs (`integration_sync`, `integration_sync_run`,
-  `integration_credential`) and the `suspect_fields` CHECK; every exhaustive per-source switch (health copy,
+  `integration_credential`; the `suspect_fields` CHECK stays, as `user` and `password` already exist); every
+  exhaustive per-source switch (health copy,
   credential copy, Datakällor, Synka nu, source marks) gets an entry.
 - Three new tables. Readings grow by ≈ 17.5k rows a year for two units.
 - A dependency on an unofficial API. A change on Panasonic's side fails the source closed (health tile, alert);

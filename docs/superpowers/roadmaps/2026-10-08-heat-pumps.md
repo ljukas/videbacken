@@ -84,3 +84,8 @@ Each must pass, with the result recorded in the table, before the next step star
   2024-10-31 / 2024-11-27, status reads flaky (`5005`). The probe's logins didn't log the owner's app out.
 - 2026-10-08: shaped in a brainstorm (owner decisions in the spec's table); ADR-0027, spec and this roadmap written.
   The units were serviced on 2026-10-08 (the first event to log, step 4a).
+- 2026-10-11: step plans written (one planner per step against a shared interface brief). Planning rulings folded into
+  the spec and ADR: SCREAMING_SNAKE domain codes, `created_by` uuid, `registered_on` ends the backfill, the recent
+  window re-fetches back to the last successful run (≤ 14 days), the offline rule fails every run while yesterday is
+  empty (14-day cut-off), trailing heat pump lag < 13 h isn't "missing", `byHeatPumpName` orders units everywhere,
+  the signature excludes off days (owner) and fetches its window in ≤ 800-day chunks.
