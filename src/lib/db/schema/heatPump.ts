@@ -37,6 +37,10 @@ export const heatPump = pgTable('heat_pump', {
   model: text('model').notNull(),
   registeredOn: date('registered_on', { mode: 'string' }),
   historyCompleteAt: timestamp('history_complete_at', { withTimezone: true }),
+  // The next UTC day the backfill walk looks at: every day above it, down to the oldest stored
+  // day, has been fetched or passed over (listed but empty, or rejected). Null: start below the
+  // oldest stored day. Read with the unit row, so no index.
+  backfillCursor: date('backfill_cursor', { mode: 'string' }),
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
 }).enableRLS()

@@ -1,0 +1,1 @@
+ALTER TABLE "heat_pump" ADD COLUMN "backfill_cursor" date;

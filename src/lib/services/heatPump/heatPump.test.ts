@@ -18,6 +18,7 @@ import {
   newestHour,
   oldestDay,
   replaceDay,
+  setBackfillCursor,
   setRegisteredOn,
   upsertUnits,
 } from './heatPump'
@@ -75,6 +76,7 @@ test('upsertUnits inserts new units, stamping both seen times', async () => {
     ...MATSAL,
     registeredOn: null,
     historyCompleteAt: null,
+    backfillCursor: null,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
   })
@@ -448,6 +450,28 @@ test('setRegisteredOn and markHistoryComplete of an unknown unit are UNKNOWN_HEA
     })
     await expect(markHistoryComplete(id, NOW)).rejects.toMatchObject({ code: 'UNKNOWN_HEAT_PUMP' })
   }
+})
+
+test('setBackfillCursor stores the walk position of that unit only, and moves it either way', async () => {
+  const { matsal } = await twoUnits()
+  await setBackfillCursor(matsal.id, '2026-01-30')
+  expect(await listUnits()).toEqual([
+    expect.objectContaining({ name: 'Matsal', backfillCursor: '2026-01-30' }),
+    expect.objectContaining({ name: 'Övervåning', backfillCursor: null }),
+  ])
+  await setBackfillCursor(matsal.id, '2026-02-14')
+  expect((await listUnits())[0].backfillCursor).toBe('2026-02-14')
+})
+
+test('setBackfillCursor of an unknown unit is UNKNOWN_HEAT_PUMP; a day that is not real is a RangeError', async () => {
+  for (const id of [UNKNOWN_ID, 'not-a-uuid']) {
+    await expect(setBackfillCursor(id, '2026-01-30')).rejects.toMatchObject({
+      code: 'UNKNOWN_HEAT_PUMP',
+    })
+  }
+  const { matsal } = await twoUnits()
+  await expect(setBackfillCursor(matsal.id, '2026-02-30')).rejects.toThrow(RangeError)
+  expect((await listUnits())[0].backfillCursor).toBeNull()
 })
 
 test('setRegisteredOn refuses a day that is not a real date', async () => {

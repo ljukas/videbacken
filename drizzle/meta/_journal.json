@@ -169,6 +169,13 @@
       "when": 1791715320883,
       "tag": "0023_comfort_cloud_source",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791716202493,
+      "tag": "0024_heat_pump_backfill_cursor",
+      "breakpoints": true
     }
   ]
 }

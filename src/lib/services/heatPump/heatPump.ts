@@ -228,9 +228,19 @@ export async function markHistoryComplete(heatPumpId: string, now: Date): Promis
   await updateUnit(heatPumpId, { historyCompleteAt: now })
 }
 
+/**
+ * Records where the unit's backfill walk continues ('YYYY-MM-DD'): the next UTC day it looks
+ * at. The sync persists it when a walk stops short, so days listed but answering no hours (or
+ * rejected) are passed over for good instead of re-walked every run.
+ */
+export async function setBackfillCursor(heatPumpId: string, day: string): Promise<void> {
+  if (!isUtcDay(day)) throw new RangeError(`Not a YYYY-MM-DD day: ${day}`)
+  await updateUnit(heatPumpId, { backfillCursor: day })
+}
+
 async function updateUnit(
   heatPumpId: string,
-  set: { registeredOn?: string; historyCompleteAt?: Date | SQL },
+  set: { registeredOn?: string; historyCompleteAt?: Date | SQL; backfillCursor?: string },
 ): Promise<void> {
   if (!UUID_RE.test(heatPumpId)) throw new HeatPumpDomainError('UNKNOWN_HEAT_PUMP')
   const rows = await guarded('Updating a heat pump unit', () =>
