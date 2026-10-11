@@ -27,8 +27,9 @@ const tempMax = sql.raw(String(HEAT_PUMP_TEMP_MAX_C))
 
 // One row per Panasonic Comfort Cloud air-to-air heat pump (ADR-0027), keyed by Comfort Cloud's
 // device guid. `name` and `model` are refreshed by every sync (a rename keeps the history).
-// `registered_on` is the unit's first data day, from the latest history answer's
-// `deviceRegisterTime`: the backfill stops there and sets `history_complete_at`.
+// `registered_on` is the unit's first data day (a UTC day, as parse.ts reads
+// `deviceRegisterTime`), from the latest history answer: the backfill stops there and
+// sets `history_complete_at`.
 export const heatPump = pgTable('heat_pump', {
   id: uuid('id').primaryKey().defaultRandom(),
   guid: text('guid').notNull().unique(),
