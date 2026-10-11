@@ -183,6 +183,13 @@
       "when": 1791720139129,
       "tag": "0025_comfort_cloud_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791744538099,
+      "tag": "0026_session_cost",
+      "breakpoints": true
     }
   ]
 }
