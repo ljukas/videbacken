@@ -19,7 +19,7 @@ design it needs, at the start of its session, because steps 3–6 depend on what
 | 5c | ClimateChart on visx lines; recharts, `ui/chart.tsx` and the old `ChartFrame` deleted; checkpoint 5 | [plan](../plans/2026-10-06-client-perf-5c-climate-chart.md) | [#118](https://github.com/ljukas/videbacken/pull/118) | checkpoint passed | 2026-10-06: the owner reviewed the converted charts live on prod and they look good. On `main` at `b63da3b`, no page's `packages:` line lists recharts, redux, immer or decimal.js-light, and `bun.lock` has none of them. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | Small items: load exifreader on file pick, find what pulls `jose` into the upload chunk, preload the body font, re-merge the shell's chunks split by step 4's lazy dialogs (rolldown `codeSplitting.groups`; shell 248 → 253 KB gz, +9 modulepreloads, same modules; measure `/login` too), keep route search parsing out of the shell (`/energy`'s month parsing puts `date-fns` + `@date-fns/tz` there, see [checkpoint 4 result](#checkpoint-4-result)) (search parsing: recorded, not changed) | [plan](../plans/2026-10-06-client-perf-6-small-items.md) | [#127](https://github.com/ljukas/videbacken/pull/127) | checkpoint passed | 2026-10-07, `main` at `a409a97`: no exifreader, `@vercel/blob` or jose on `/account/profile` or `/onboarding` (AvatarUpload 72 → 10 KB gz), the prod SSR `<head>` of `/login` carries the Switzer preload, and the prod build's chunk check passed. Against `main` just before #127, no page grew. Against the step notes' final column, 5 figures read 0.3–2 above; the rebuilt branch head reads the same as `main`. See [checkpoint 6 result](#checkpoint-6-result). |
 | 7 | Layout shifts after deferred loading: the owner points out where (seen after step 1); see [notes](#step-7-notes) | — | — (no change needed) | checkpoint passed | 2026-10-07: the owner navigated the app and found no layout shifts left. Other PRs and design changes since step 1 had already fixed the ones they saw, so the step needed no PR of its own. See [checkpoint 7 result](#checkpoint-7-result). |
-| 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool): `min: 3` in production, a 5 min idle cap at checkout, an `'error'` listener on every client (ADR-0025 §5 amendment); see [notes](#step-8-notes) | [plan](../plans/2026-10-07-client-perf-8-warm-pool.md) | [#135](https://github.com/ljukas/videbacken/pull/135) | PR open | — |
+| 8 | Keep pooled connections warm between navigations (`poolOpened` 1–4 per burst; pg's 10 s idle timeout empties the pool): `min: 3` in production, a 5 min idle cap at checkout, an `'error'` listener on every client (ADR-0025 §5 amendment); see [notes](#step-8-notes) | [plan](../plans/2026-10-07-client-perf-8-warm-pool.md) | [#135](https://github.com/ljukas/videbacken/pull/135) | checkpoint passed | 2026-10-11, about 93 h of prod logs since the #135 deploy: 28% of requests opened a connection (68% before), a lone request's first query 4 ms p50 (21 before), and no request failed from a dead connection. The 5 min cap discarded 77 connections (idle 301–1,531 s), mostly in crons, all without error. See [checkpoint 8 result](#checkpoint-8-result). |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. `needs shaping` means
 the step needs a short brainstorm before its plan.
@@ -658,9 +658,12 @@ by request id). Cold: the request found the pool empty and opened a connection. 
   empty and opened one themselves. Checkpoint 8 compares the first figure. The most common gap between requests is
   60 s (the polls).
 - Peak connections per burst (280 bursts, requests under 1.5 s apart): 1 in 218, 2 in 5, 3 in 55, 4 in 2.
-- How to pull the logs: `vercel logs` caps a call at 5,000 lines and repeats each line many times, so fetch in
-  one-hour windows (`--since`/`--until`) with `--environment production --no-branch -q "rpc timing" --json --limit 5000`, then
-  de-duplicate by `requestId`.
+- How to pull the logs: `vercel logs` caps a call at 5,000 lines and can repeat lines, so fetch in short windows
+  (`--since`/`--until`; split any window that hits the cap) with
+  `--environment production --no-branch -q "rpc timing" --json --limit 5000`, then de-duplicate by `requestId`.
+  Read every line in an entry's `logs` array, not only its `message`: an entry is a request, and its `message` can
+  be another of its lines. `--level` doesn't help: the app's pino lines go to stdout, which Vercel files as `info`
+  whatever their pino level, so search the text (`-q`).
 
 **Why 5 min** (from the review, Supavisor's source): the pooler sends idle clients a heartbeat every 60 s and only
 notices a dead client when TCP gives up retransmitting, about 15 min with Linux defaults (inferred, not measured).
@@ -675,3 +678,39 @@ AWS NAT gateways and NLBs drop an idle flow after 350 s, but the heartbeats keep
 - If checkpoint 8 shows dead-connection errors at ages under 5 min: validate on checkout (`select 1` with a ~2 s
   `query_timeout`, only for connections idle more than a few seconds) instead of trusting the age.
 - Optional: `keepAlive: true`, so a running instance doesn't depend on the pooler's heartbeat setting.
+
+### Checkpoint 8 result
+
+Recorded 2026-10-11. #135 reached prod on 2026-10-07 at 14:39 UTC (`f836d16`). The window is 14:40 that day to
+2026-10-11 10:32 UTC, about 93 h across 8 production deployments. #137 (Server-Timing) changed the timing line in that
+window but kept the pool fields, and nothing since #135 changed the pool.
+
+| | Baseline (30 h, 614 requests) | After #135 (93 h, 495 requests) |
+|---|---|---|
+| Requests with `poolOpened` > 0 | 68% | **28%** (137) |
+| Found the pool empty and opened one | 59% (361) | 19% (93) |
+| Lone request's first query (`findActiveById`) p50 / p90 | 21 / 32 ms cold, 4 / 5 warm | **4 / 12 ms** (99 lone requests, none found the pool empty) |
+| Every request's first query p50 / p90 | — | 4 / 23 ms |
+
+| Procedure `totalMs` p50 / p90 | Baseline cold | Baseline warm | After #135 (all) |
+|---|---|---|---|
+| `sensor/series` | 39 / 152 | 13 / 18 | 29 / 73 |
+| `sensor/listDevices` | 39 / 141 | 16 / 21 | 22 / 72 |
+| `tariff/list` | 85 / 156 | 11 / 20 | 16 / 134 |
+| `evCharging/syncStatuses` | 34 / 154 | 15 / 61 | 17 / 151 |
+
+- **Share: pass.** 28% is under the ~30% bar.
+- **First query: pass.** 4 ms p50, against 21 ms before.
+- **Dead connections: none.** A text search of all production runtime logs since the deploy found no
+  `Connection terminated`, `ECONNRESET`, `EPIPE`, `Query read timeout`, `not queryable`, `getSession failed`,
+  `uncaughtException`, `orpc handler error`, `idle postgres client error` or `Runtime exited`. A scan of every line in
+  the fetched requests' entries (1,220 lines) agrees. All 495 `rpc timing` lines have status 200.
+- **The cap fired 77 times, all quietly.** 77 `pool connection expired` lines in 60 requests (one checkout can
+  discard several), idle 301–1,531 s: 56 in crons (the Škoda sync runs every 15 min), 15 in 9 `/api/rpc` requests
+  (matching their `poolExpired` sum) and 6 in the Shelly webhook. Every one of those requests succeeded. The oldest
+  connection reused was 298 s old.
+- **Burst p90s stay high** (73–151 ms). The pool isn't queueing (`poolWaiting` 0 at every start, `poolPeakWaiting`
+  at most 2, the one-tick hand-off). Since #137, sidebar hover prefetches about 11 RPCs at once and can briefly open
+  up to 10 connections; that's the server-latency roadmap's ground, not this step's.
+- **Caveats.** Traffic was light (495 requests over 93 h against 614 over 30 h), and the cap discards a connection
+  before anyone can see whether it was dead, so this window can't say whether one older than 5 min would have failed.
