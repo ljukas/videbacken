@@ -1,6 +1,7 @@
 import { millisecondsInHour, millisecondsInMinute } from 'date-fns/constants'
 import { and, asc, gte, lt, min, sql } from 'drizzle-orm'
 import { type DbOrTx, db } from '~/lib/db'
+import { pgErrorSummary } from '~/lib/db/pgError'
 import { HOUSE_BUCKET_KWH_MAX, houseEnergyMonth, houseEnergyReading } from '~/lib/db/schema'
 import { requestDerive } from '~/lib/services/energyMix/deriveRequest'
 import { stockholmDayOf } from '~/lib/time/stockholm'
@@ -137,21 +138,8 @@ async function writeDay(day: { dayStart: Date; dayEnd: Date }, buckets: readonly
   try {
     await insertDay(day, buckets)
   } catch (error) {
-    throw new Error(`Storing house energy readings failed${pgSummary(error)}`)
+    throw new Error(`Storing house energy readings failed${pgErrorSummary(error)}`)
   }
-}
-
-/** " (Postgres <code>, <constraint>)" from the pg error under drizzle's wrapper, or "". */
-function pgSummary(error: unknown): string {
-  for (let e: unknown = error, depth = 0; e && depth < 3; depth++) {
-    const pg = e as { code?: unknown; constraint?: unknown; cause?: unknown }
-    if (typeof pg.code === 'string') {
-      const constraint = typeof pg.constraint === 'string' ? `, ${pg.constraint}` : ''
-      return ` (Postgres ${pg.code}${constraint})`
-    }
-    e = pg.cause
-  }
-  return ''
 }
 
 async function insertDay(day: { dayStart: Date; dayEnd: Date }, buckets: readonly HouseReading[]) {
