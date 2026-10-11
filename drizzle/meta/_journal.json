@@ -176,6 +176,13 @@
       "when": 1791714773633,
       "tag": "0024_backfill_spot_price_day",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791720139129,
+      "tag": "0025_comfort_cloud_sync",
+      "breakpoints": true
     }
   ]
 }
