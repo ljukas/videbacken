@@ -98,7 +98,7 @@ Each must pass, with the result recorded in the table, before the next step star
   but that stores no rows or is rejected. **Step 2**: the whole-history month read measured ≈ 11 ms at today's 35k
   rows and ≈ 43 ms at 131k, and an index doesn't help, so plan a `heat_pump_month` materialized view like
   `house_energy_month` (ADR-0024) or a `heatPumpMs` threshold for adding one.
-- 2026-10-11: step 1b built. Reviews added: a persisted backfill cursor (`heat_pump.backfill_cursor`, migration 0024)
+- 2026-10-11: step 1b built. Reviews added: a persisted backfill cursor (`heat_pump.backfill_cursor`, migration 0025)
   so listed-but-empty days can't stall the walk across runs; the walk reaches `registered_on − 1` (the 1a
   carry-forward); a rejected yesterday fails the run (fail closed on a changed API) and holds that unit's backfill, as
   does a quiet yesterday. A day whose own rows the client rejects (`ComfortCloudDayError`: a repeated hour, a row

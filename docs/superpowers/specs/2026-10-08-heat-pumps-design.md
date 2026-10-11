@@ -168,7 +168,7 @@ All tables end with `.enableRLS()`; schema-design review + `migration-guard` bef
 | `model` | text, not null | e.g. `CS-HZ25ZKE` |
 | `registered_on` | date, null | `deviceRegisterTime` from the latest history response: the first day with data |
 | `history_complete_at` | timestamptz, null | set when the backfill walk has passed `registered_on − 1` (days that answered nothing or were rejected are passed over, not stored) |
-| `backfill_cursor` | date, null | the next UTC day the backfill walk looks at (the walk passed over every listed day above it); null = start below the oldest stored day. Added in step 1b (migration 0024) |
+| `backfill_cursor` | date, null | the next UTC day the backfill walk looks at (the walk passed over every listed day above it); null = start below the oldest stored day. Added in step 1b (migration 0025) |
 | `first_seen_at`, `last_seen_at` | timestamptz, not null | |
 
 **`heat_pump_reading`** (step 1a)
