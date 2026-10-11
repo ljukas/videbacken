@@ -656,6 +656,90 @@ test('a rejected older recent day only warns', async () => {
   expect(await run(client)).toMatchObject({ outcome: 'ok', rejectedDays: 1 })
 })
 
+// What the client throws for a day answer it can't parse (a repeated hour, a
+// row outside the day). A day like that must not wedge the run for 14 days of
+// catch-up, nor the backfill cursor: it counts as rejected, like INVALID_READING.
+const unparsed = (guid: string) => () => {
+  throw new ComfortCloudError('unexpected_response', 'history', undefined, {
+    message: `Comfort Cloud day history for ${guid} row 3 repeats an hour (0.654321)`,
+  })
+}
+
+test('a recent day the client cannot parse is rejected: warned without the message, the run still lands', async () => {
+  await run(fakeComfortCloud([matsal('2026-03-25')]).client) // complete: no backfill below
+  const cap = capturingLogger()
+  const { client, calls } = fakeComfortCloud([matsal('2026-03-25'), overvaning('2026-03-28')], {
+    days: { [`${MATSAL}:2026-04-01`]: unparsed(MATSAL) },
+  })
+
+  const result = await run(client, { log: cap.log })
+
+  expect(result).toMatchObject({ outcome: 'ok', rejectedDays: 1, unitsCompleted: 1 })
+  expect(calls).toContain(`day:${MATSAL}:${TODAY}`)
+  expect(await hoursStored('Matsal', '2026-04-01')).toBe(24) // what's stored is kept
+  for (const day of daysFrom('2026-03-28', '2026-04-02')) {
+    expect(await hoursStored('Övervåning', day)).toBe(24)
+  }
+  expect(await hoursStored('Övervåning', TODAY)).toBe(11)
+  expect(cap.entries().find((e) => e.msg === 'comfort cloud day rejected')).toMatchObject({
+    unit: 'Matsal',
+    day: '2026-04-01',
+    code: 'unexpected_response',
+  })
+  expect(cap.raw()).not.toContain('repeats an hour')
+  expect(cap.raw()).not.toContain('0.654321')
+  expect(cap.raw()).not.toContain(MATSAL)
+})
+
+test('a backfill day the client cannot parse is passed over and the walk completes', async () => {
+  const { client } = fakeComfortCloud([matsal('2026-03-25')], {
+    days: { [`${MATSAL}:2026-03-28`]: unparsed(MATSAL) },
+  })
+
+  const result = await run(client)
+
+  expect(result).toMatchObject({ outcome: 'ok', rejectedDays: 1, unitsCompleted: 1 })
+  expect(await hoursStored('Matsal', '2026-03-28')).toBe(0)
+  expect(await hoursStored('Matsal', '2026-03-27')).toBe(24)
+  expect((await unitNamed('Matsal'))?.historyCompleteAt).toEqual(NOW)
+})
+
+test('a yesterday the client cannot parse fails the run as a rejected yesterday', async () => {
+  const cap = capturingLogger()
+  const { client, calls } = fakeComfortCloud([matsal('2026-03-25'), overvaning('2026-03-28')], {
+    days: { [`${OVERVANING}:2026-04-02`]: unparsed(OVERVANING) },
+  })
+
+  const result = await run(client, { log: cap.log })
+
+  expect(result).toMatchObject({
+    outcome: 'failed',
+    code: 'unexpected_response',
+    rejectedDays: 1,
+    unitsCompleted: 1, // Övervåning's backfill waits for a healthy yesterday
+  })
+  expect(backfillCalls(calls, OVERVANING)).toEqual([])
+  expect(await hoursStored('Matsal', '2026-03-25')).toBe(24)
+  const message = (await getHealth('comfortCloud', { now: NOW, includeAdminDetail: true }))
+    .adminDetail?.lastErrorMessage
+  expect(message).toContain('Övervåning')
+  expect(message).toContain('2026-04-02')
+  expect(message).not.toContain('repeats an hour')
+  expect(message).not.toContain(OVERVANING)
+  expect(cap.raw()).not.toContain(OVERVANING)
+})
+
+test('any other day error still fails the run with its own code', async () => {
+  const { client } = fakeComfortCloud([matsal('2026-03-25')], {
+    days: {
+      [`${MATSAL}:2026-04-01`]: () => {
+        throw new ComfortCloudError('unreachable', 'history')
+      },
+    },
+  })
+  expect(await run(client)).toMatchObject({ outcome: 'failed', code: 'unreachable' })
+})
+
 test('a unit that never stored an hour only warns, without a day count', async () => {
   const cap = capturingLogger()
   const { client } = fakeComfortCloud([matsal('2026-03-25', { hasData: () => false })])

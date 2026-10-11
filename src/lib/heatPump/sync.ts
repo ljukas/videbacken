@@ -3,6 +3,8 @@ import {
   type ComfortCloudClient,
   type ComfortCloudDay,
   ComfortCloudError,
+  type ComfortCloudHistory,
+  type ComfortCloudHour,
   comfortCloud,
   newCallStats,
 } from '~/lib/effects/comfortCloud'
@@ -47,7 +49,10 @@ export type ComfortCloudSyncRun = RunBase & {
   hoursStored: number
   /** Day answers without hours; what's stored is kept. */
   emptyDays: number
-  /** Days whose hours failed validation (INVALID_READING); skipped and warned. */
+  /**
+   * Days whose hours failed validation (INVALID_READING) or that the client
+   * could not parse (`unexpected_response` on a day call); skipped and warned.
+   */
   rejectedDays: number
   /** Units whose backfill reached registered_on in this run. */
   unitsCompleted: number
@@ -467,8 +472,11 @@ async function backfillUnit(
 }
 
 // Fetches and stores one UTC day for one unit; returns how many hours Comfort
-// Cloud answered and whether they failed validation. An empty answer, or hours
-// that fail validation, store nothing and keep what's stored.
+// Cloud answered and whether the day was rejected. An empty answer, hours that
+// fail validation, or an answer the client can't parse (a repeated hour, a row
+// outside the day) store nothing and keep what's stored. Rejecting the
+// unparsed day, rather than failing the run on it, keeps one bad day from
+// failing every run of the 14-day catch-up and from pinning the backfill cursor.
 async function syncDay(
   client: ComfortCloudClient,
   run: ComfortCloudSyncRun,
@@ -476,7 +484,20 @@ async function syncDay(
   unit: Unit,
   day: string,
 ): Promise<{ hours: number; rejected: boolean }> {
-  const answer = await call(ctx, 'history', (o) => client.dayHours(unit.guid, day, o))
+  let answer: ComfortCloudHistory<ComfortCloudHour>
+  try {
+    answer = await call(ctx, 'history', (o) => client.dayHours(unit.guid, day, o))
+  } catch (error) {
+    if (
+      !(error instanceof ComfortCloudError) ||
+      error.code !== 'unexpected_response' ||
+      error.op !== 'history'
+    ) {
+      throw error
+    }
+    run.daysFetched++
+    return reject(run, ctx, unit, day, error.code, 0)
+  }
   run.daysFetched++
   await noteRegisteredOn(unit, answer.registeredOn)
   // An empty answer never deletes what's stored.
@@ -489,14 +510,25 @@ async function syncDay(
     run.hoursStored += (await replaceDay(unit.id, day, answer.rows)).stored
   } catch (error) {
     if (!(error instanceof HeatPumpDomainError) || error.code !== 'INVALID_READING') throw error
-    run.rejectedDays++
-    // The code and the day only: the domain message could name a value.
-    ctx.log.warn('comfort cloud day rejected', { unit: unit.name, day, code: error.code })
-    return { hours: answer.rows.length, rejected: true }
+    return reject(run, ctx, unit, day, error.code, answer.rows.length)
   } finally {
     run.storeMs += performance.now() - started
   }
   return { hours: answer.rows.length, rejected: false }
+}
+
+function reject(
+  run: ComfortCloudSyncRun,
+  ctx: Ctx,
+  unit: Unit,
+  day: string,
+  code: string,
+  hours: number,
+): { hours: number; rejected: true } {
+  run.rejectedDays++
+  // The code and the day only: the error's message could name a value.
+  ctx.log.warn('comfort cloud day rejected', { unit: unit.name, day, code })
+  return { hours, rejected: true }
 }
 
 // Every history answer carries the unit's first data day; store it when it
