@@ -35,8 +35,10 @@ Status values: `not started` → `in progress` → `PR open` → `merged` → `c
      the result here (in a small `docs(heat-pumps): …` PR, or in the next step's PR if the owner says so).
 2. Open that step's plan. Its first task checks that `main` still matches the plan's assumptions (file names,
    signatures, the source lists); fix the plan before building if not.
-3. Follow `docs/feature-workflow.md` from **Phase 3 (Isolate)**: worktree → task-by-task build with the two paired
-   reviewers → branch review → pre-PR gate → PR. Shaping and planning are already done here.
+3. Follow `docs/feature-workflow.md` from **Phase 3 (Isolate)**: worktree → task-by-task build (schema gate right
+   after a schema task) → step review (core three + every triggered specialist) → pre-PR gate → PR. Shaping and
+   planning are already done here. The plans predate per-step review: a task's **Reviewers:** line no longer runs
+   after that task, it names a specialist to add to the step review; the plan's branch-review task is the step review.
 4. In the same PR, update this roadmap's row: PR link and status `PR open`; after merge, `merged`.
 5. Stop at the end of the step. Don't start the next step in the same session.
 

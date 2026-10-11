@@ -8,13 +8,15 @@ Companions — one hat per commit, pick the doc by the hat:
 
 > **Run it:** `/feature-workflow <idea>` (`.claude/skills/feature-workflow/`) loads this doc and starts at Phase 0. Edit the process here, not in the skill.
 
-> **Where the tools are.** The phases say *what* and *why*. *Which* skill or agent to use lives in [Current toolchain mapping](#current-toolchain-mapping): look up each phase's row there, and update that table (not the prose) when tooling changes. Entries tagged *(agent)* go through the `Agent` tool with that exact type; everything else is a skill for the `Skill` tool. Two exceptions name tools in the prose on purpose: the mandatory review gates (they're rules, not suggestions) and the [reviewer pairings](#reviewer-pairings) table.
+> **Where the tools are.** The phases say *what* and *why*. *Which* skill or agent to use lives in [Current toolchain mapping](#current-toolchain-mapping): look up each phase's row there, and update that table (not the prose) when tooling changes. Entries tagged *(agent)* go through the `Agent` tool with that exact type; everything else is a skill for the `Skill` tool. Two exceptions name tools in the prose on purpose: the mandatory review gates (they're rules, not suggestions) and the [step reviewers](#step-reviewers) table.
+
+> **Roadmap → step → task.** A feature bigger than one PR gets a roadmap (`docs/superpowers/roadmaps/`) split into **steps** (sometimes called stages): one plan, one session, one PR each. A step's plan is split into **tasks**. A feature that fits in one PR is a single step. **Review happens per step, not per task** (Phase 5); the one exception is the schema gate (Phase 4).
 
 ---
 
 ## The shape in one line
 
-**Shape → Understand the seams → Plan → Isolate → Build (task by task, each reviewed) → Review the branch → Verify → Ship.** Brainstorm at the start and verify at the end, *always*, however small the feature feels.
+**Shape → Understand the seams → Plan → Isolate → Build (task by task) → Review the step → Verify → Ship.** Brainstorm at the start and verify at the end, *always*, however small the feature feels.
 
 ---
 
@@ -49,7 +51,7 @@ Companions — one hat per commit, pick the doc by the hat:
 
 **Slice into PRs, one concern each.** Each PR must be shippable on its own and reviewable in one sitting. Big features become a **stack**: EV-charging phase 2 shipped as #23 (preparatory refactor) → #24 (RLS, from the schema review) → #25 (storage + pure cost math, nothing calls it yet) → #26 (spot-price sync) → #29 (cost UI + tariff admin). Put the slicing in the plan.
 
-**Pair reviewers per task.** For each task, the plan names the two reviewers Phase 4 will dispatch (see [pairings](#reviewer-pairings)).
+**Name the step's reviewers.** The plan lists the specialists Phase 5 will add to the core three (see [step reviewers](#step-reviewers)), and a **Review Focus** section: the few places most likely to be wrong, which every reviewer gets. Tasks don't name reviewers.
 **Output:** A plan in `docs/superpowers/plans/`.
 
 ### 3. Isolate
@@ -58,34 +60,41 @@ Companions — one hat per commit, pick the doc by the hat:
 ### 4. Build, task by task
 **What:** Execute the plan **one task at a time**, each through the same loop:
 1. **Implement** the task. Testable layers (services, pure helpers, effect adapters) go **test-first**: ADR-0002 mandates colocated service tests, and `test-completeness` requires every `<Entity>DomainError.code` literal to be exercised. Visual/client-only UI is built, then verified live (Phase 6).
-2. **Commit** it (one hat, conventional message).
-3. **Adversarial review:** dispatch **two reviewers in parallel**, each told to *start from the assumption that the task is incorrect and not up to spec*, and each wired to that layer's skills ([pairings](#reviewer-pairings)).
-4. **Fix** every confirmed finding (or rule on it explicitly), then move to the next task.
+2. **Commit** it (one hat, conventional message; `git add <paths>`, never `-A`).
+3. **Check the evidence:** a subagent implementer pastes `git log --oneline -N` and `git show --stat HEAD` into its report, and you check `HEAD` yourself before the next task. Reports of commits that don't exist happen.
 
-This loop stays a per-task checkpoint in the conversation. Don't collapse it into one autonomous run.
+There's no reviewer between tasks: review is per step (Phase 5). The loop still stays a per-task checkpoint in the conversation. Don't collapse it into one autonomous run, and never run two implementers at once in one worktree.
+
+**The schema gate is the one mid-step review.** When a task adds or changes schema or a migration, dispatch `migration-guard` and the schema-design reviewer (a `general-purpose` agent loading `supabase-postgres-best-practices`, judging against the queries that will actually run) right after that task, and fix or rule on every finding **before any later task builds on the schema** (Non-negotiable). Phase 5 reviews the schema again in its final state.
 
 **Honor the architectural rules** (CLAUDE.md → "How we write code"): services own DB access; effects run after success; logging via `~/lib/logger`; heavier RPCs record `context.timings` sub-timings; **never hold a connection open** (poll with `refetchInterval`, ADR-0018); forms via `useAppForm`. Plus the [Non-negotiables](../CLAUDE.md#non-negotiables).
 **Parallelize the leaves, respect the spine.** Schema → services → procedures is sequential; pure helpers, i18n strings and static registries can be farmed out.
 **When something breaks:** debug systematically, never guess-patch.
 
-#### Reviewer pairings
-| Task touches | Reviewer A | Reviewer B |
-|---|---|---|
-| Schema / migration | `migration-guard` | schema-design reviewer (subagent loading `supabase-postgres-best-practices`, judging against the queries that will actually run) |
-| Service / `errors.ts` / effect adapter | `code-reviewer` | `test-completeness` |
-| Procedure / auth / permission boundary | `code-reviewer` | reviewer loading `better-auth-security-best-practices` |
-| UI component / route | `code-reviewer` | reviewer loading `web-design-guidelines` + `vercel-react-best-practices` |
-| Email template | `code-reviewer` | reviewer loading `react-email` + `email-best-practices` |
+### 5. Review the step
+**What:** Once every task is built and committed, one adversarial review of the step's whole diff (`git diff origin/main...HEAD`); there's no separate branch review. **It must finish before merge**, and its findings are fixed *in this PR*. #21 merged before its multi-agent review finished, and #22 had to fix 10 findings after the fact, including a sync that could fail silently.
 
-### 5. Review the branch
-**What:** The per-task reviews catch local mistakes; this pass catches what only shows across the whole diff. **It must finish before merge**, and its findings are fixed *in this PR*. #21 merged before its multi-agent review finished, and #22 had to fix 10 findings after the fact, including a sync that could fail silently.
-**Gates** (the schema one is a Non-negotiable; the rest are house rules):
-- Schema or `drizzle/` changed → `migration-guard` **and** the schema-design review, with every finding fixed or explicitly ruled on (Non-negotiable).
-- Service / effect / `errors.ts` changed → `test-completeness`.
-- Always → `code-reviewer` (ADR adherence) plus a general correctness pass, scaled to the diff.
-- Auth, sessions, file access or permission boundaries → a dedicated security pass. The `security-guidance` plugin also reviews continuously and at commit/push; address or consciously dismiss its findings.
+1. **Dispatch every reviewer in parallel** (`Agent` tool, one message): the core three plus every specialist the diff triggers ([step reviewers](#step-reviewers)), no cap. Each gets the diff range, the plan, the spec/ADR, and the plan's Review Focus, and is told to *start from the assumption that the step is incorrect and not up to spec*. Reviewers are read-only and must not run vitest while anything else does (shared local DB).
+2. **Verify each finding** against the code before fixing it: confirm it, or rule it out with a reason. More skeptical reviewers means more false positives; don't perform agreement.
+3. **Fix** every confirmed finding in this PR, one commit per concern, then re-run the pre-PR gate (Phase 6).
 
-Receive feedback with rigor: verify each finding, don't perform agreement.
+#### Step reviewers
+**Core, always (3):**
+- `code-reviewer` *(agent)*: ADR adherence and the Non-negotiables.
+- **Correctness reviewer** (`general-purpose`): bugs, edge cases, failure paths, races, across the whole diff.
+- **Spec reviewer** (`general-purpose`): does the step do what the plan and spec say, all of it and nothing more? Missing tasks, silent design changes, scope creep.
+
+**Specialists, one per layer the diff touches:**
+
+| Diff touches | Add |
+|---|---|
+| Schema / `drizzle/` | `migration-guard` *(agent)* **and** the schema-design reviewer (`general-purpose` loading `supabase-postgres-best-practices`, judging against the queries that will actually run). Mandatory (Non-negotiable), on top of the [Phase 4 gate](#4-build-task-by-task) |
+| Service / `errors.ts` / effect adapter | `test-completeness` *(agent)* |
+| Procedure / auth / session / file access / permission boundary | reviewer loading `better-auth-security-best-practices` (or `/security-review`) |
+| UI component / route | reviewer loading `web-design-guidelines` + `vercel-react-best-practices` |
+| Email template | reviewer loading `react-email` + `email-best-practices` |
+
+The `security-guidance` plugin also reviews continuously and at commit/push; address or consciously dismiss its findings.
 
 ### 6. Verify end-to-end
 **What:** Evidence before any "done" claim. Run the [pre-PR gate](#pre-pr-gate). For **visual/client-only** features (the payoff is something you *see*), drive the real app in a browser at desktop, tablet and mobile widths.
@@ -149,7 +158,7 @@ Paste the output (or say what you checked) in the PR's *Verification* section. U
 | 1. Understand seams | `feature-dev:code-explorer` *(agent)* | `Explore` *(agent)*; `superpowers:dispatching-parallel-agents`; Context7 (installed-library docs); `find-skills` *(user-level)*; `feature-dev:code-architect` *(agent; blank-page design only)* |
 | 2. Plan | `superpowers:writing-plans` | `Plan` *(agent; smaller features)* |
 | 3. Isolate | `superpowers:using-git-worktrees` | — |
-| 4. Build | `superpowers:subagent-driven-development` (this session) / `superpowers:executing-plans` (inline, no subagents) | `superpowers:test-driven-development`; `superpowers:systematic-debugging`; `superpowers:dispatching-parallel-agents` *(leaves)*; `ralph-loop:ralph-loop` *(only a task whose tests are already written: the prompt says to print `<promise>DONE</promise>` only once the suite and `check:ci` are green; run with `--completion-promise DONE --max-iterations N`)*; reviewers per [pairings](#reviewer-pairings); domain skills: `shadcn`, `vercel-react-best-practices`, `vercel-composition-patterns`, `supabase-postgres-best-practices`, `better-auth-best-practices`, `better-auth-security-best-practices`, `react-email`, `email-best-practices`, `frontend-design`, `web-design-guidelines` |
-| 5. Review branch | `code-reviewer`, `migration-guard`, `test-completeness` *(agents)*; schema-design reviewer *(`general-purpose` agent loading `supabase-postgres-best-practices`)* | `/code-review` (`high`+ for large diffs; `--fix` to apply); `/security-review`; `security-guidance` *(automatic)*; `superpowers:requesting-code-review` / `superpowers:receiving-code-review`; the `Workflow` tool for a multi-agent review *(only when the user opts in)* |
+| 4. Build | `superpowers:subagent-driven-development` (this session) / `superpowers:executing-plans` (inline, no subagents) | `superpowers:test-driven-development`; `superpowers:systematic-debugging`; `superpowers:dispatching-parallel-agents` *(leaves)*; `ralph-loop:ralph-loop` *(only a task whose tests are already written: the prompt says to print `<promise>DONE</promise>` only once the suite and `check:ci` are green; run with `--completion-promise DONE --max-iterations N`)*; the schema gate (`migration-guard` + schema-design reviewer, schema tasks only); domain skills: `shadcn`, `vercel-react-best-practices`, `vercel-composition-patterns`, `supabase-postgres-best-practices`, `better-auth-best-practices`, `better-auth-security-best-practices`, `react-email`, `email-best-practices`, `frontend-design`, `web-design-guidelines` |
+| 5. Review step | Core: `code-reviewer` *(agent)*, correctness + spec reviewers *(`general-purpose` agents)*; specialists per [step reviewers](#step-reviewers): `migration-guard`, `test-completeness` *(agents)*, schema-design / security / UI / email reviewers *(`general-purpose` agents loading the named skills)* | `/code-review` (`high`+ for large diffs; `--fix` to apply); `/security-review`; `security-guidance` *(automatic)*; `superpowers:requesting-code-review` / `superpowers:receiving-code-review`; the `Workflow` tool for a multi-agent review *(only when the user opts in)* |
 | 6. Verify | `superpowers:verification-before-completion` | `/run`; `claude-in-chrome` or the `playwright` plugin (drive the browser, resize for responsive); `vercel:verification` *(user-level plugin)* |
 | 7. Ship | `superpowers:finishing-a-development-branch` | `security-guidance` *(commit/push review)*; `claude-md-management:revise-claude-md` *(capture session learnings)* |

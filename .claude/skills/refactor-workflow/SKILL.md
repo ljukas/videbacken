@@ -9,7 +9,7 @@ argument-hint: "[code or area to refactor]"
 The process lives in `docs/refactor-workflow.md`, the single source of truth. This skill only loads it.
 
 1. **Read `docs/refactor-workflow.md` in full** (repo root) before doing anything else. Don't work from memory; the phases and toolchain mapping change.
-2. Follow it phase by phase, starting at **Phase 0 (Confirm it's a refactor, and size it)**. For each phase, invoke the skills and agents its row in the doc's **Current toolchain mapping** table names (`Skill` / `Agent` tool). Follow links into `docs/feature-workflow.md` for shared sections (pre-PR gate, per-task review loop).
+2. Follow it phase by phase, starting at **Phase 0 (Confirm it's a refactor, and size it)**. For each phase, invoke the skills and agents its row in the doc's **Current toolchain mapping** table names (`Skill` / `Agent` tool). Follow links into `docs/feature-workflow.md` for shared sections (pre-PR gate, task loop, step review).
 3. Keep to the prime directive: **one hat per commit**. If the change alters behavior, stop and switch to the `feature-workflow` or `bugfix-workflow` skill.
 
 The refactor target: $ARGUMENTS
