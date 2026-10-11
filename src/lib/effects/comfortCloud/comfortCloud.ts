@@ -34,7 +34,7 @@ export type ComfortCloudDay = {
 }
 
 export type ComfortCloudHistory<T> = {
-  /** 'YYYY-MM-DD' from `deviceRegisterTime`: the unit's first data day (the backfill's end). */
+  /** 'YYYY-MM-DD' from `deviceRegisterTime` (a UTC day): the unit's first data day (the backfill's end). */
   registeredOn: string
   /** Ascending; only rows with a value. */
   rows: T[]
