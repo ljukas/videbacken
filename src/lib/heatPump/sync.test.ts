@@ -5,6 +5,7 @@ import { queue } from '~/lib/effects'
 import {
   type ComfortCloudCallStats,
   type ComfortCloudClient,
+  ComfortCloudDayError,
   ComfortCloudError,
   type ComfortCloudHistory,
   type ComfortCloudHour,
@@ -694,13 +695,13 @@ test('a rejected older recent day only warns', async () => {
   expect(await run(client)).toMatchObject({ outcome: 'ok', rejectedDays: 1 })
 })
 
-// What the client throws for a day answer it can't parse (a repeated hour, a
-// row outside the day). A day like that must not wedge the run for 14 days of
+// What the client throws for a day whose own rows it rejects (a repeated hour,
+// a row outside the day). A day like that must not wedge the run for 14 days of
 // catch-up, nor the backfill cursor: it counts as rejected, like INVALID_READING.
 const unparsed = (guid: string) => () => {
-  throw new ComfortCloudError('unexpected_response', 'history', undefined, {
-    message: `Comfort Cloud day history for ${guid} row 3 repeats an hour (0.654321)`,
-  })
+  throw new ComfortCloudDayError(
+    `Comfort Cloud day history for ${guid} row 3 repeats an hour (0.654321)`,
+  )
 }
 
 test('a recent day the client cannot parse is rejected: warned without the message, the run still lands', async () => {
@@ -765,6 +766,36 @@ test('a yesterday the client cannot parse fails the run as a rejected yesterday'
   expect(message).not.toContain('repeats an hour')
   expect(message).not.toContain(OVERVANING)
   expect(cap.raw()).not.toContain(OVERVANING)
+})
+
+// An answer the client can't read at all (HTTP 400/404, a maintenance page,
+// terms to accept) is about the account, not the day: passing over the day would
+// walk the cursor below real history and lose it.
+test('an account-wide unexpected_response on a backfill day fails the run and keeps the cursor at that day', async () => {
+  const { client } = fakeComfortCloud([matsal('2026-03-25')], {
+    days: {
+      [`${MATSAL}:2026-03-28`]: () => {
+        throw new ComfortCloudError('unexpected_response', 'history', 404)
+      },
+    },
+  })
+  expect(await run(client)).toMatchObject({
+    outcome: 'failed',
+    code: 'unexpected_response',
+    rejectedDays: 0,
+  })
+  expect(await unitNamed('Matsal')).toMatchObject({
+    backfillCursor: '2026-03-28',
+    historyCompleteAt: null,
+  })
+
+  const second = fakeComfortCloud([matsal('2026-03-25')])
+  expect(await run(second.client)).toMatchObject({ outcome: 'ok', unitsCompleted: 1 })
+  expect(backfillCalls(second.calls, MATSAL).slice(0, 2)).toEqual([
+    `month:${MATSAL}:2026-03`,
+    `day:${MATSAL}:2026-03-28`,
+  ])
+  expect(await hoursStored('Matsal', '2026-03-28')).toBe(24)
 })
 
 test('any other day error still fails the run with its own code', async () => {

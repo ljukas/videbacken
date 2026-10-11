@@ -7,7 +7,7 @@ import type {
   ComfortCloudHour,
   ComfortCloudUnit,
 } from './comfortCloud'
-import { ComfortCloudError, type ComfortCloudOp } from './errors'
+import { ComfortCloudDayError, ComfortCloudError, type ComfortCloudOp } from './errors'
 
 /** Comfort Cloud's "no value" in any numeric history field (hours not reached, `cost` without a tariff). */
 export const NO_VALUE = -255
@@ -25,11 +25,18 @@ function unexpected(op: ComfortCloudOp, message: string): ComfortCloudError {
   return new ComfortCloudError('unexpected_response', op, undefined, { message })
 }
 
-function parse<T>(op: ComfortCloudOp, schema: z.ZodType<T>, value: unknown): T {
+function parse<T>(
+  op: ComfortCloudOp,
+  schema: z.ZodType<T>,
+  value: unknown,
+  o: { at?: readonly PropertyKey[]; fail?: (message: string) => ComfortCloudError } = {},
+): T {
   const parsed = schema.safeParse(value)
   if (parsed.success) return parsed.data
-  const at = summarizeIssuePaths(parsed.error.issues.map((i) => issuePath(i.path)))
-  throw unexpected(op, `Comfort Cloud ${op} response has an unexpected shape at: ${at}`)
+  const prefix = o.at ?? []
+  const at = summarizeIssuePaths(parsed.error.issues.map((i) => issuePath([...prefix, ...i.path])))
+  const message = `Comfort Cloud ${op} response has an unexpected shape at: ${at}`
+  throw (o.fail ?? ((m) => unexpected(op, m)))(message)
 }
 
 export function parseJson(op: ComfortCloudOp, text: string): unknown {
@@ -106,10 +113,11 @@ const rowSchema = z.object({
   averageInsideTemp: numeric.nullish(),
   averageOutsideTemp: numeric.nullish(),
 })
+// The rows are checked one by one (`readRow`), so a bad row can be told from a bad envelope.
 const historySchema = z.object({
   temperatureUnit: z.int(),
   deviceRegisterTime: z.string().regex(/^\d{8}$/),
-  historyDataList: z.array(rowSchema).max(MAX_HISTORY_ROWS),
+  historyDataList: z.array(z.unknown()).max(MAX_HISTORY_ROWS),
 })
 
 /** null for "no value" or an absent field; anything else as sent (the service range-checks it). */
@@ -136,9 +144,17 @@ function readHistory(value: unknown) {
   return { registeredOn, rows: history.historyDataList }
 }
 
+/** Row `i` against the row schema; a failure is thrown by `fail` (a day's own row, or a month's). */
+const readRow = (i: number, row: unknown, fail?: (message: string) => ComfortCloudError) =>
+  parse('history', rowSchema, row, { at: ['historyDataList', i], fail })
+
+/** A day's own bad row: the sync rejects the day, not the run (`ComfortCloudDayError`). */
+const dayRowError = (message: string) => new ComfortCloudDayError(message)
+
 /**
  * A `dataMode` 0 answer for UTC `utcDay`. Every row must be one hour of that day, once; rows
- * with `consumption < 0` (an hour not reached yet) are dropped.
+ * with `consumption < 0` (an hour not reached yet) are dropped. A bad row throws
+ * `ComfortCloudDayError`; a bad envelope a plain `ComfortCloudError`.
  */
 export function parseDayHistory(
   utcDay: string,
@@ -149,17 +165,14 @@ export function parseDayHistory(
   const { registeredOn, rows } = readHistory(value)
   const seen = new Set<number>()
   const hours: ComfortCloudHour[] = []
-  for (const [i, row] of rows.entries()) {
+  for (const [i, raw] of rows.entries()) {
+    const row = readRow(i, raw, dayRowError)
     const match = /^(\d{8}) (\d{2})$/.exec(row.dataTime)
     const hour = match ? Number(match[2]) : Number.NaN
     if (!match || match[1] !== compact || !(hour <= 23)) {
-      throw unexpected(
-        'history',
-        `Comfort Cloud day history row ${i} is not an hour of the requested day`,
-      )
+      throw dayRowError(`Comfort Cloud day history row ${i} is not an hour of the requested day`)
     }
-    if (seen.has(hour))
-      throw unexpected('history', `Comfort Cloud day history row ${i} repeats an hour`)
+    if (seen.has(hour)) throw dayRowError(`Comfort Cloud day history row ${i} repeats an hour`)
     seen.add(hour)
     if (row.consumption < 0) continue
     hours.push({
@@ -189,7 +202,8 @@ export function parseMonthHistory(
   const { registeredOn, rows } = readHistory(value)
   const seen = new Set<string>()
   const days: ComfortCloudDay[] = []
-  for (const [i, row] of rows.entries()) {
+  for (const [i, raw] of rows.entries()) {
+    const row = readRow(i, raw)
     const day = dashed(row.dataTime)
     if (!/^\d{8}$/.test(row.dataTime) || !row.dataTime.startsWith(compact) || !isUtcDay(day)) {
       throw unexpected(

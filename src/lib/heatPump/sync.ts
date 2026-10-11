@@ -2,6 +2,7 @@ import {
   type ComfortCloudCallStats,
   type ComfortCloudClient,
   type ComfortCloudDay,
+  ComfortCloudDayError,
   ComfortCloudError,
   type ComfortCloudHistory,
   type ComfortCloudHour,
@@ -50,8 +51,8 @@ export type ComfortCloudSyncRun = RunBase & {
   /** Day answers without hours; what's stored is kept. */
   emptyDays: number
   /**
-   * Days whose hours failed validation (INVALID_READING) or that the client
-   * could not parse (`unexpected_response` on a day call); skipped and warned.
+   * Days whose hours failed validation (INVALID_READING) or whose own rows the
+   * client rejected (`ComfortCloudDayError`); skipped and warned.
    */
   rejectedDays: number
   /** Units whose backfill reached registered_on in this run. */
@@ -482,10 +483,13 @@ async function backfillUnit(
 
 // Fetches and stores one UTC day for one unit; returns how many hours Comfort
 // Cloud answered and whether the day was rejected. An empty answer, hours that
-// fail validation, or an answer the client can't parse (a repeated hour, a row
-// outside the day) store nothing and keep what's stored. Rejecting the
-// unparsed day, rather than failing the run on it, keeps one bad day from
-// failing every run of the 14-day catch-up and from pinning the backfill cursor.
+// fail validation, or rows the client rejects (a repeated hour, a row outside
+// the day: `ComfortCloudDayError`) store nothing and keep what's stored.
+// Rejecting such a day, rather than failing the run on it, keeps one bad day
+// from failing every run of the 14-day catch-up and from pinning the backfill
+// cursor. An answer the client can't read at all (an HTTP status, a body that
+// isn't JSON, the envelope) is about the account, not the day: it fails the run,
+// so the backfill never walks past history it could still fetch.
 async function syncDay(
   client: ComfortCloudClient,
   run: ComfortCloudSyncRun,
@@ -497,13 +501,7 @@ async function syncDay(
   try {
     answer = await call(ctx, 'history', (o) => client.dayHours(unit.guid, day, o))
   } catch (error) {
-    if (
-      !(error instanceof ComfortCloudError) ||
-      error.code !== 'unexpected_response' ||
-      error.op !== 'history'
-    ) {
-      throw error
-    }
+    if (!(error instanceof ComfortCloudDayError)) throw error
     run.daysFetched++
     return reject(run, ctx, unit, day, error.code, 0)
   }

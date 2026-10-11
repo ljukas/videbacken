@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { ComfortCloudError } from './errors'
+import { ComfortCloudDayError, ComfortCloudError } from './errors'
 import {
   AQUAREA_GUID,
   dayHistoryBody,
@@ -303,6 +303,88 @@ describe('day history', () => {
     const err = caught(() => parseMonthHistory('2026-06', body))
     expect(err).toMatchObject({ code: 'unexpected_response', op: 'history' })
     expect(err.message).toContain('historyDataList')
+  })
+})
+
+// The sync rejects a day only for its own bad rows (ComfortCloudDayError) and
+// fails the run on anything else: an envelope or transport failure is about the
+// account or the API, and passing over a day for it would lose that day's history.
+describe('day history: a day error or an account error', () => {
+  const dayError = (body: unknown) => caught(() => parseDayHistory('2026-06-10', body))
+  const withRow5 = (patch: (row: Record<string, unknown>) => unknown) =>
+    dayHistoryBody('2026-06-10', {
+      row: (row, h) => (h === 5 ? (patch(row) as Record<string, unknown>) : row),
+    })
+
+  test("each check of one day's own rows throws ComfortCloudDayError", () => {
+    const cases: [string, unknown][] = [
+      ['another day', withRow5((row) => ({ ...row, dataTime: '20260611 00' }))],
+      ['an impossible hour', withRow5((row) => ({ ...row, dataTime: '20260610 24' }))],
+      [
+        'a repeated hour',
+        dayHistoryBody('2026-06-10', {
+          row: (row, h) => (h === 5 ? dayRow('2026-06-10', 4) : row),
+        }),
+      ],
+      ['a null consumption', withRow5((row) => ({ ...row, consumption: null }))],
+      ['a text temperature', withRow5((row) => ({ ...row, averageInsideTemp: '21' }))],
+      ['a row that is not an object', withRow5(() => null)],
+    ]
+    for (const [name, body] of cases) {
+      const err = dayError(body)
+      expect(err, name).toBeInstanceOf(ComfortCloudDayError)
+      expect(err, name).toMatchObject({ code: 'unexpected_response', op: 'history' })
+      // Row 5 by index: "row 5" for the day checks, the shape path for the schema.
+      expect(err.message, name).toMatch(/row 5 |historyDataList\.5\b/)
+    }
+  })
+
+  test('a bad row names its path, never its value', () => {
+    const err = dayError(withRow5((row) => ({ ...row, consumption: 'x0.654321' })))
+    expect(err).toBeInstanceOf(ComfortCloudDayError)
+    expect(err.message).toContain('historyDataList.5.consumption')
+    expect(err.message).not.toContain('0.654321')
+  })
+
+  test('the envelope, the account setting and a body that is not JSON stay plain ComfortCloudErrors', () => {
+    const tooMany = dayHistoryBody('2026-06-10')
+    tooMany.historyDataList = [...tooMany.historyDataList, ...tooMany.historyDataList]
+    const cases: [string, () => unknown][] = [
+      ['not JSON', () => parseJson('history', '<html>maintenance</html>')],
+      ['not an object', () => parseDayHistory('2026-06-10', 'x')],
+      [
+        'no row list',
+        () =>
+          parseDayHistory('2026-06-10', { ...dayHistoryBody('2026-06-10'), historyDataList: null }),
+      ],
+      ['more rows than a day has', () => parseDayHistory('2026-06-10', tooMany)],
+      [
+        'Fahrenheit',
+        () => parseDayHistory('2026-06-10', dayHistoryBody('2026-06-10', { temperatureUnit: 1 })),
+      ],
+      [
+        'an impossible deviceRegisterTime',
+        () =>
+          parseDayHistory('2026-06-10', dayHistoryBody('2026-06-10', { registerTime: '20241332' })),
+      ],
+    ]
+    for (const [name, fn] of cases) {
+      const err = caught(fn)
+      expect(err, name).toBeInstanceOf(ComfortCloudError)
+      expect(err, name).not.toBeInstanceOf(ComfortCloudDayError)
+      expect(err, name).toMatchObject({ code: 'unexpected_response', op: 'history' })
+    }
+  })
+
+  test("a month's bad rows stay plain ComfortCloudErrors", () => {
+    const month = monthHistoryBody('2026-06')
+    const rows: unknown[] = month.historyDataList.map((row, i) =>
+      i === 3 ? { ...row, consumption: null } : row,
+    )
+    const err = caught(() => parseMonthHistory('2026-06', { ...month, historyDataList: rows }))
+    expect(err).toBeInstanceOf(ComfortCloudError)
+    expect(err).not.toBeInstanceOf(ComfortCloudDayError)
+    expect(err.message).toContain('historyDataList.3.consumption')
   })
 })
 

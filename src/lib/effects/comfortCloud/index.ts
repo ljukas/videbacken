@@ -11,4 +11,9 @@ export {
   newCallStats,
   selectComfortCloudAdapter,
 } from './comfortCloud'
-export { type ComfortCloudCredentialField, ComfortCloudError, type ComfortCloudOp } from './errors'
+export {
+  type ComfortCloudCredentialField,
+  ComfortCloudDayError,
+  ComfortCloudError,
+  type ComfortCloudOp,
+} from './errors'
