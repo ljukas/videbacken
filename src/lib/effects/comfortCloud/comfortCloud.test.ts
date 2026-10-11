@@ -308,9 +308,17 @@ describe('errors', () => {
     expect(err).toMatchObject({ code: 'unreachable', op: 'units', status: 503 })
     expect(f.callsTo(ROUTES.group)).toHaveLength(2)
     expect(stats).toMatchObject({ retries: 1, requests: 6 + 1 + 2, logins: 1 })
-    expect(Number.isFinite(stats.fetchMs)).toBe(true)
-    expect(stats.fetchMs).toBeGreaterThanOrEqual(0)
     clean(err)
+  })
+
+  test('fetchMs adds up the time requests take', async () => {
+    const { client } = server({
+      [ROUTES.group]: () =>
+        new Promise<Response>((r) => setTimeout(() => r(deviceGroupReply()), 250)),
+    })
+    const stats = newCallStats()
+    await client.units({ stats })
+    expect(stats.fetchMs).toBeGreaterThanOrEqual(250)
   })
 
   test.each([
@@ -420,7 +428,8 @@ describe('a refused fresh token', () => {
     expect(f.callsTo(ROUTES.authorize)).toHaveLength(2)
     const sent = f.calls.length
     vi.setSystemTime(NOW.getTime() + 5 * 60_000 - 1)
-    expect(await caught(client.units())).toBe(first)
+    const blocked = await caught(client.units())
+    expect(blocked).toMatchObject({ code: 'auth_failed', op: 'login' })
     expect(f.calls).toHaveLength(sent)
     vi.setSystemTime(NOW.getTime() + 5 * 60_000)
     await caught(client.units())
@@ -498,17 +507,62 @@ describe('which failed logins block', () => {
   })
 
   test('a successful login clears the block state', async () => {
+    let refused = ''
     const { f, client } = server({
       [ROUTES.password]: (_req, call) => (call === 0 ? rejectedPassword() : callbackForm()),
-      [ROUTES.group]: (req) => (oldToken(req) ? apiError(401, 4100) : deviceGroupReply()),
+      [ROUTES.group]: (req) => (bearer(req) === refused ? apiError(401, 4100) : deviceGroupReply()),
     })
-    await caught(client.units())
+    await caught(client.units()) // blocks until NOW + 5 min
     vi.setSystemTime(NOW.getTime() + 5 * 60_000)
-    await client.units() // the block has expired; this login succeeds and clears it
-    // Back inside the old block window: a refused token needs a re-login, which must not be blocked.
+    await client.units() // the block has expired; this login succeeds and must clear it
+    // Back inside the old block window, the live token is refused: the re-login must be allowed.
     vi.setSystemTime(NOW.getTime() + 60_000)
+    refused = `Bearer ${TEST_ACCESS_TOKEN}`
     expect(await client.units()).toHaveLength(2)
-    expect(f.callsTo(ROUTES.authorize).length).toBeGreaterThanOrEqual(2)
+    expect(f.callsTo(ROUTES.authorize)).toHaveLength(3)
+    expect(bearer(f.callsTo(ROUTES.group).at(-1) as Request)).toBe(`Bearer ${TEST_ACCESS_TOKEN_2}`)
+  })
+})
+
+describe('the block left by a refused fresh token', () => {
+  test('is a login error for every later call, whatever its op', async () => {
+    const { f, client } = server({ [ROUTES.group]: () => apiError(401, 4100) })
+    expect(await caught(client.units())).toMatchObject({ code: 'auth_failed', op: 'units' })
+    const sent = f.calls.length
+    const later = await caught(client.dayHours(MATSAL_GUID, '2026-06-10'))
+    expect(later).toMatchObject({ code: 'auth_failed', op: 'login', status: 401 })
+    clean(later)
+    expect(f.calls).toHaveLength(sent)
+  })
+
+  test('does not drop a newer session another caller already holds', async () => {
+    const T3 = 'test-access-token-0003'
+    let onToken2 = 0
+    let second: Promise<unknown[]> | undefined
+    const { f, client } = server({
+      ...authRoutes([TEST_ACCESS_TOKEN, TEST_ACCESS_TOKEN_2, T3]),
+      [ROUTES.group]: (req) => {
+        const token = bearer(req)
+        if (token === `Bearer ${TEST_ACCESS_TOKEN}`) return apiError(401, 4100)
+        if (token === `Bearer ${TEST_ACCESS_TOKEN_2}`) {
+          if (onToken2++ > 0) return apiError(401, 4100)
+          // The first caller is refused late; meanwhile a second caller, refused at once on the
+          // same token, logs in again and holds the newer session.
+          second = client.units()
+          return new Promise<Response>((r) => setTimeout(() => r(apiError(401, 4100)), 500))
+        }
+        return deviceGroupReply()
+      },
+    })
+    const first = await caught(client.units())
+    expect(first).toMatchObject({ code: 'auth_failed', op: 'units' })
+    clean(first)
+    expect(await second).toHaveLength(2)
+    const logins = f.callsTo(ROUTES.authorize).length
+    expect(logins).toBe(3)
+    expect(await client.units()).toHaveLength(2) // the newer session is still in use
+    expect(f.callsTo(ROUTES.authorize)).toHaveLength(logins)
+    expect(bearer(f.callsTo(ROUTES.group).at(-1) as Request)).toBe(`Bearer ${T3}`)
   })
 })
 

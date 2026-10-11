@@ -232,8 +232,15 @@ export function createComfortCloudClient(deps: {
         const refused = new ComfortCloudError('auth_failed', op, 401, {
           message: `Comfort Cloud refused the ${op} call right after a fresh login`,
         })
-        session = null
-        loginBlock = { error: refused, until: now().getTime() + AUTH_FAILURE_TTL_MS }
+        // Only the session this call was refused on; another caller may hold a newer one.
+        if (session === s) session = null
+        // Later callers get a login error, not this call's op.
+        loginBlock = {
+          error: new ComfortCloudError('auth_failed', 'login', 401, {
+            message: 'Comfort Cloud refused a fresh token',
+          }),
+          until: now().getTime() + AUTH_FAILURE_TTL_MS,
+        }
         throw refused
       }
     }
