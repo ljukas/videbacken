@@ -65,8 +65,9 @@ Roadmap: [server latency](../roadmaps/2026-10-07-server-latency.md), row 3. One 
    by float order. Task 4 runs every existing costing test through both paths (`pricedTwice`), so any bucketing
    difference fails a test that already pins figures (month boundary, interval-less sessions, mix pieces, vehicle
    scope).
-5. **Deadlocks between a sync's bump and a write-back.** Both lock several `ev_session_cost` rows. Every path locks in
-   `session_id` order (Global Constraints). Reviewers check `bumpSessions`, `bumpOverlapping`, `bumpAll` and
+5. **Deadlocks between a sync's bump and a write-back.** Both lock several `ev_session_cost` rows. Every path is one
+   statement that locks in `session_id` order (Global Constraints; the write-back is a single sorted upsert, not
+   lock-then-insert, per the schema review). Reviewers check `bumpSessions`, `bumpOverlapping`, `bumpAll` and
    `writePriced`.
 
 ---
@@ -566,13 +567,40 @@ test('bumpOverlapping bumps sessions with energy in the range, by interval or wi
   expect(await state(after)).toBeUndefined()
 })
 
-test('bumpAll bumps every row and creates none', async () => {
+test('bumpAll bumps every session, creating the missing rows', async () => {
   const a = await session('2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
   const b = await session('2026-09-02T10:00:00Z', '2026-09-02T11:00:00Z')
   await writePriced({ pricingVersion: V, sessions: [priced(a, null, [[2026, 9, totals(5, 10)]])] })
   await bumpAll()
   expect((await state(a))?.generation).toBe(1)
-  expect(await state(b)).toBeUndefined()
+  expect(await state(b)).toMatchObject({ generation: 1, pricedGeneration: null })
+})
+
+test('a repricer that read a session without a row loses to a tariff edit', async () => {
+  const a = await session('2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
+  // Read as "no row" (generation null), priced with the old tariff, then a tariff edit commits.
+  await bumpAll()
+  const { written } = await writePriced({
+    pricingVersion: V,
+    sessions: [priced(a, null, [[2026, 9, totals(5, 10)]])],
+  })
+  expect(written).toBe(0)
+  expect((await readSessionSums({ sessionIds: [a], pricingVersion: V })).stale).toEqual([
+    { sessionId: a, generation: 1 },
+  ])
+})
+
+test('a second write-back of the same generation rewrites nothing', async () => {
+  const a = await session('2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
+  await writePriced({ pricingVersion: V, sessions: [priced(a, null, [[2026, 9, totals(5, 10)]])] })
+  const again = await writePriced({
+    pricingVersion: V,
+    sessions: [priced(a, 0, [[2026, 9, totals(5, 10)]])],
+  })
+  expect(again.written).toBe(0)
+  expect((await readMonthSums({ pricingVersion: V })).months).toEqual([
+    { year: 2026, month: 9, totals: totals(5, 10) },
+  ])
 })
 
 test('deleting a session deletes its stored cost', async () => {
@@ -659,13 +687,17 @@ export async function bumpOverlapping(
   `)
 }
 
-/** Bumps every stored session (a tariff edit); a session without a row is stale already. */
+/**
+ * Bumps every session (a tariff edit), creating rows as needed: a session
+ * without a row must get one too, or a repricer that read it without a row
+ * before this commit could store its old-tariff price as current.
+ */
 export async function bumpAll(dbOrTx: DbOrTx = db): Promise<void> {
   await dbOrTx.execute(sql`
-    UPDATE ${evSessionCost} SET generation = generation + 1
-     WHERE session_id IN (
-       SELECT session_id FROM ${evSessionCost} ORDER BY session_id FOR UPDATE
-     )
+    INSERT INTO ${evSessionCost} (session_id, generation)
+    SELECT ${evChargeSession.id}, 1 FROM ${evChargeSession}
+    ORDER BY ${evChargeSession.id}
+    ON CONFLICT (session_id) DO UPDATE SET generation = ${evSessionCost.generation} + 1
   `)
 }
 ```
@@ -832,9 +864,15 @@ export async function listStale(input: { pricingVersion: number }): Promise<Sess
 /**
  * Stores priced sessions, each only if its generation is still the one read
  * before pricing (a bump since then means newer inputs: the session stays
- * stale). One transaction; rows locked in session_id order. A session read
- * without a row is inserted only if nobody created one meanwhile, and only
- * while the session exists. Returns how many sessions were written.
+ * stale). A session read without a row counts as generation 0: its row is
+ * inserted unless a writer created one meanwhile (generation ≥ 1 then). One
+ * transaction, and one upsert that locks the state rows in session_id order,
+ * the order every bump uses, so a write-back and a writer never deadlock. A
+ * session deleted meanwhile is skipped, and one already current at this
+ * generation is not rewritten. Waits at most 1 s for a lock (a writer's
+ * transaction, e.g. a derive, can hold bumped rows for seconds): a timeout
+ * throws, and the callers treat a failed write-back as best effort. Returns
+ * how many sessions were written.
  */
 export async function writePriced(input: {
   pricingVersion: number
@@ -845,50 +883,30 @@ export async function writePriced(input: {
   const pgArray = (xs: readonly (string | number | boolean)[]) => `{${xs.join(',')}}`
 
   return db.transaction(async (tx) => {
-    const won = new Set<string>()
-    const existing = sorted.filter((s) => s.generation !== null)
-    const fresh = sorted.filter((s) => s.generation === null)
-
-    if (existing.length > 0) {
-      const ids = pgArray(existing.map((s) => s.sessionId))
-      await tx.execute(sql`
-        SELECT 1 FROM ${evSessionCost}
-         WHERE session_id = ANY(${ids}::uuid[])
-         ORDER BY session_id
-         FOR UPDATE
-      `)
-      const { rows } = await tx.execute<{ session_id: string }>(sql`
-        UPDATE ${evSessionCost} AS c
-           SET priced_generation = v.generation,
-               pricing_version = ${input.pricingVersion},
-               estimated = v.estimated
-          FROM unnest(
-                 ${ids}::uuid[],
-                 ${pgArray(existing.map((s) => s.generation as number))}::int[],
-                 ${pgArray(existing.map((s) => s.estimated))}::boolean[]
-               ) AS v(session_id, generation, estimated)
-         WHERE c.session_id = v.session_id AND c.generation = v.generation
-        RETURNING c.session_id
-      `)
-      for (const r of rows) won.add(r.session_id)
-    }
-
-    if (fresh.length > 0) {
-      const { rows } = await tx.execute<{ session_id: string }>(sql`
-        INSERT INTO ${evSessionCost}
-               (session_id, generation, priced_generation, pricing_version, estimated)
-        SELECT v.session_id, 0, 0, ${input.pricingVersion}, v.estimated
-          FROM unnest(
-                 ${pgArray(fresh.map((s) => s.sessionId))}::uuid[],
-                 ${pgArray(fresh.map((s) => s.estimated))}::boolean[]
-               ) AS v(session_id, estimated)
-          JOIN ${evChargeSession} ON ${evChargeSession.id} = v.session_id
-         ORDER BY v.session_id
-        ON CONFLICT (session_id) DO NOTHING
-        RETURNING session_id
-      `)
-      for (const r of rows) won.add(r.session_id)
-    }
+    await tx.execute(sql`SET LOCAL lock_timeout = '1s'`)
+    await tx.execute(sql`SET LOCAL statement_timeout = '5s'`)
+    // EXCLUDED.generation carries the generation read before pricing.
+    const { rows } = await tx.execute<{ session_id: string }>(sql`
+      INSERT INTO ${evSessionCost}
+             (session_id, generation, priced_generation, pricing_version, estimated)
+      SELECT v.session_id, v.generation, v.generation, ${input.pricingVersion}, v.estimated
+        FROM unnest(
+               ${pgArray(sorted.map((s) => s.sessionId))}::uuid[],
+               ${pgArray(sorted.map((s) => s.generation ?? 0))}::int[],
+               ${pgArray(sorted.map((s) => s.estimated))}::boolean[]
+             ) AS v(session_id, generation, estimated)
+        JOIN ${evChargeSession} ON ${evChargeSession.id} = v.session_id
+       ORDER BY v.session_id
+      ON CONFLICT (session_id) DO UPDATE
+         SET priced_generation = EXCLUDED.priced_generation,
+             pricing_version = EXCLUDED.pricing_version,
+             estimated = EXCLUDED.estimated
+       WHERE ${evSessionCost.generation} = EXCLUDED.generation
+         AND (${evSessionCost.pricedGeneration} IS DISTINCT FROM EXCLUDED.priced_generation
+           OR ${evSessionCost.pricingVersion} IS DISTINCT FROM EXCLUDED.pricing_version)
+      RETURNING session_id
+    `)
+    const won = new Set(rows.map((r) => r.session_id))
 
     if (won.size > 0) {
       await tx.delete(evSessionCostMonth).where(inArray(evSessionCostMonth.sessionId, [...won]))
@@ -1038,9 +1056,11 @@ In `src/lib/services/tariff/tariff.test.ts` (its tariff input constant is `AUG_2
 ```ts
 test('every tariff write bumps every stored session; a refused write bumps nothing', async () => {
   const a = await insertSession()
-  await bumpSessions([a]) // give it a row: bumpAll bumps rows only
+  const b = await insertSession()
+  await bumpSessions([a]) // a has a row, b has none: bumpAll must create b's
   const created = await create(AUG_2026)
   expect(await generationOf(a)).toBe(2)
+  expect(await generationOf(b)).toBe(1)
   await update(created.id, { ...AUG_2026, gridTransferOre: AUG_2026.gridTransferOre + 1 })
   expect(await generationOf(a)).toBe(3)
   await remove(created.id)
@@ -1994,7 +2014,10 @@ In `docs/adr/0020-*.md`:
   two tables and the current/stale rule (`PRICING_VERSION`); the four writers and what each bumps; the generation
   guard (generations read before inputs; `WHERE generation = g`); `repriceStale` after each sync and tariff edit
   (10 s budget); the reads (one statement for sums + stale ids); what stays on read (the session page's hero and the
-  economy); the spec link. Keep the "missing ≠ 0 kr" rules unchanged: a stored total carries `noPriceKwh` /
+  economy); the spec link; **operating notes:** after rolling prod back past this change and forward again, bump
+  `PRICING_VERSION` (code written before it doesn't bump, so rows priced before the rollback would still read as
+  current); a new total column must be `NOT NULL DEFAULT 0` (the migration runs while the old deployment still
+  writes back) and comes with a `PRICING_VERSION` bump. Keep the "missing ≠ 0 kr" rules unchanged: a stored total carries `noPriceKwh` /
   `noTariffKwh` exactly as before.
 - **Alternatives considered:** add B (writers recompute, reads trust rows) and C (in-memory cache) with the spec's
   one-line reasons.
