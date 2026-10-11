@@ -14,9 +14,9 @@ start of its session.
 | 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | — | — | needs shaping | — |
 | 4 | Cold instances in a burst: when Vercel starts an extra instance for a navigation's burst, its requests show `queue` ~800 ms plus ~260 ms of first-request work before the handler (`app` minus `rpc`). Find what the boot and first-request load cost (function bundle, module init) and what Fluid offers against scale-out cold starts | — | — | needs shaping | — |
 | 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | [#143](https://github.com/ljukas/videbacken/pull/143) | checkpoint passed | 2026-10-11: `economy` + `economySessions` 2.7 kB in DevTools (12.8 before); hovered and next pages render with no request on the click; `economySessions` `totalMs` 24–31 warm against `economy`'s 245. See [checkpoint 5 result](#checkpoint-5-result). |
-| 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converted and grouped every slot of the year (24 764 rows, 50 ms in prod `EXPLAIN ANALYZE` on 2026-10-11, all buffer hits: CPU). Now each day's average is stored in `spot_price_day`, written by `replaceDay` in the same transaction as the slots (its only writer) and backfilled by migration; `dailyAverageSpot` reads ~255 rows by PK, and the sync's stored-days probe reads the same table, so a day missing its row is re-fetched. Amends ADR-0020 | [spec](../specs/2026-10-11-spot-price-day-design.md), [plan](../plans/2026-10-11-server-latency-6-spot-price-day.md) | [#148](https://github.com/ljukas/videbacken/pull/148) | PR open | — |
+| 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converted and grouped every slot of the year (24 764 rows, 50 ms in prod `EXPLAIN ANALYZE` on 2026-10-11, all buffer hits: CPU). Now each day's average is stored in `spot_price_day`, written by `replaceDay` in the same transaction as the slots (its only writer) and backfilled by migration; `dailyAverageSpot` reads ~255 rows by PK, and the sync's stored-days probe reads the same table, so a day missing its row is re-fetched. Amends ADR-0020 | [spec](../specs/2026-10-11-spot-price-day-design.md), [plan](../plans/2026-10-11-server-latency-6-spot-price-day.md) | [#148](https://github.com/ljukas/videbacken/pull/148) | checkpoint passed | 2026-10-11: prod `economyDailySpotMs` 5–7 (56–247 before); `economy` `totalMs` 43–57 warm (181 median before). Every stored day equals the old aggregate exactly; figures unchanged (owner). See [checkpoint 6 result](#checkpoint-6-result). |
 
-Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6. Rows 3 and 4 follow unless reordered.
+Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed). Rows 3 and 4 follow unless reordered.
 
 The warm pool (keep three pooled connections; removes most `poolOpened` spikes) is client-performance step 8,
 [#135](https://github.com/ljukas/videbacken/pull/135), merged 2026-10-07; its checkpoint lives in
@@ -119,6 +119,27 @@ sidebar with DevTools open, then paged through the session list.
 - **`economy` is no faster:** 205 of its 245 ms was `economyDailySpotMs`, the full-year slot grouping that step 6
   removes. This step shrank the payload, not the compute.
 - `/charging` after a reload makes one `sessions` request (2.4 kB): the eager next page.
+
+## Checkpoint 6 result
+
+2026-10-11, after the #148 deploy (merged 11:20 UTC, live 11:21). Read on deploy `78611db` (#151, which carries
+#148). The owner hard-reloaded another page, then opened `/charging/economy` from the sidebar three times.
+
+| | Before | After (17:12, 17:13, 17:13 UTC) |
+|---|---|---|
+| `economyDailySpotMs` | 56 / 89.5 / 170 (n = 10); 205 at checkpoint 5 | 7, 6, 5 |
+| `economy` `totalMs` | 94 / 181 / 433 (n = 10); 245 at checkpoint 5 | 177, 57, 43 |
+
+- **Passed:** the daily spot read is at most 7 ms, and warm `economy` calls take 43–57 ms. The first call (177)
+  opened two connections and spent 101 ms in `economySlotsMs`; warm, that read is 15–29 ms.
+- **Figures:** the owner checked `/charging/economy`: unchanged, and fast.
+- **Backfill:** a read-only SELECT on prod (the plan's Task 1 Step 6 query) found 258 Stockholm days in
+  `spot_price` and 258 `spot_price_day` rows: none missing, none different, max difference 0 (not just within 1e-12).
+- **Measuring tip:** an `economy` line at 12:05 UTC still showed `economyDailySpotMs` 226. It came from deploy
+  `57640b6` (#144), which a tab opened before the deploy was still using. Check a line's `deploymentId` against the
+  commit before reading it as post-deploy.
+- **What is left:** `economySlotsMs` (15–29 warm, 101 cold) and `economyYearsMs` (8–10 warm) are now the largest
+  parts of `economy`; neither is a step yet.
 
 ## Baseline (2026-10-07)
 
