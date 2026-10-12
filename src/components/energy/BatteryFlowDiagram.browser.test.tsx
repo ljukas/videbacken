@@ -19,6 +19,7 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   lastSocPct: 20,
   buckets: 8640,
   expectedBuckets: 8640,
+  heatPumps: [],
   ...over,
 })
 // February: in 274,45, out 156,97, Δstored −0,83 → loss ≈ 118,3 (43 % of what stayed).

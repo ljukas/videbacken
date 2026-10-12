@@ -19,6 +19,7 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   lastSocPct: 100,
   buckets: 1568,
   expectedBuckets: 1568,
+  heatPumps: [],
   ...over,
 })
 const draw = (s: PeriodSums, width = 1006, showValues = true) =>

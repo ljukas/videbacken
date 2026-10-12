@@ -45,6 +45,7 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   lastSocPct: 30,
   buckets: 100,
   expectedBuckets: 100,
+  heatPumps: [],
   ...over,
 })
 

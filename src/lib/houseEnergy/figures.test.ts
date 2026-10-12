@@ -1,8 +1,11 @@
 import { expect, test } from 'vitest'
 import {
   addPeriodSums,
+  byHeatPumpName,
+  type EnergyFigures,
   energyFigures,
   gapHours,
+  type HeatPumpPeriod,
   type PeriodSums,
   WINTER_LOSS_SHARE,
 } from './figures'
@@ -21,6 +24,7 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   lastSocPct: null,
   buckets: 0,
   expectedBuckets: 0,
+  heatPumps: [],
   ...over,
 })
 
@@ -358,4 +362,135 @@ test('the winter threshold: the February loss share (43 %) is above it, the Augu
   )
   expect(feb.lossShare).toBeGreaterThan(WINTER_LOSS_SHARE)
   expect(aug.lossShare).toBeLessThan(WINTER_LOSS_SHARE)
+})
+
+const unit = (over: Partial<HeatPumpPeriod> = {}): HeatPumpPeriod => ({
+  id: 'hp-a',
+  name: 'Matsal',
+  kwh: 0,
+  hours: 744,
+  expectedHours: 744,
+  ...over,
+})
+const matsal = (kwh: number, over: Partial<HeatPumpPeriod> = {}) => unit({ kwh, ...over })
+const overvaning = (kwh: number, over: Partial<HeatPumpPeriod> = {}) =>
+  unit({ id: 'hp-b', name: 'Övervåning', kwh, ...over })
+
+test('heat pumps: their kWh and share of the load; the rest of the house excludes them', () => {
+  const f = energyFigures(
+    sums({ loadKwh: 900, carKwh: 300, heatPumps: [matsal(150), overvaning(60)] }),
+  )
+  expect(f.heatPumps).toEqual([
+    { id: 'hp-a', name: 'Matsal', kwh: 150, share: 150 / 900 },
+    { id: 'hp-b', name: 'Övervåning', kwh: 60, share: 60 / 900 },
+  ])
+  expect(f.car).toBe(300)
+  expect(f.restOfHouse).toBe(390)
+})
+
+test('heat pumps above load − laddning are scaled down to fit; övrigt hus is exactly 0', () => {
+  // 100 kWh left after the car, 200 kWh of heat pumps: each halved.
+  const f = energyFigures(
+    sums({ loadKwh: 400, carKwh: 300, heatPumps: [matsal(150), overvaning(50)] }),
+  )
+  expect(f.heatPumps.map((u) => u.kwh)).toEqual([75, 25])
+  expect(f.restOfHouse).toBe(0)
+  expect(f.car + f.heatPumps.reduce((a, u) => a + u.kwh, 0) + f.restOfHouse).toBeCloseTo(400, 9)
+  expect(Math.max(...f.heatPumps.map((u) => u.share ?? 0))).toBeLessThanOrEqual(1)
+})
+
+test('laddning at or above the load leaves no room: heat pumps 0, övrigt hus 0', () => {
+  const f = energyFigures(sums({ loadKwh: 2, carKwh: 3, heatPumps: [matsal(1)] }))
+  expect(f.car).toBe(2)
+  expect(f.heatPumps).toEqual([{ id: 'hp-a', name: 'Matsal', kwh: 0, share: 0 }])
+  expect(f.restOfHouse).toBe(0)
+})
+
+test('without load the heat pumps have no share; with 0 kWh no division by zero', () => {
+  expect(energyFigures(sums({ heatPumps: [matsal(5)] })).heatPumps[0]).toEqual({
+    id: 'hp-a',
+    name: 'Matsal',
+    kwh: 0,
+    share: null,
+  })
+  const zero = energyFigures(sums({ loadKwh: 10, heatPumps: [matsal(0), overvaning(0)] }))
+  expect(zero.heatPumps.map((u) => u.kwh)).toEqual([0, 0])
+  expect(zero.heatPumps.map((u) => u.share)).toEqual([0, 0])
+  expect(zero.restOfHouse).toBe(10)
+})
+
+test('no heat pumps: no heat pump figures, övrigt hus as before step 2', () => {
+  const f = energyFigures(sums({ loadKwh: 947, carKwh: 312 }))
+  expect(f.heatPumps).toEqual([])
+  expect(f.heatPumpMissingHours).toBe(0)
+  expect(f.restOfHouse).toBe(635)
+})
+
+test('heatPumpMissingHours is the most hours any unit misses, never negative', () => {
+  const f = energyFigures(
+    sums({
+      loadKwh: 900,
+      heatPumps: [
+        matsal(10, { hours: 700, expectedHours: 744 }),
+        overvaning(10, { hours: 745, expectedHours: 740 }),
+      ],
+    }),
+  )
+  expect(f.heatPumpMissingHours).toBe(44)
+  expect(
+    energyFigures(sums({ heatPumps: [matsal(1, { hours: 745, expectedHours: 744 })] }))
+      .heatPumpMissingHours,
+  ).toBe(0)
+})
+
+test("Summering's figures don't change with heat pumps", () => {
+  const base = sums({
+    gridImportKwh: 561,
+    gridExportKwh: 114,
+    solarKwh: 509,
+    loadKwh: 947,
+    batteryDischargeKwh: 225,
+    batteryChargeSolarKwh: 173,
+    batteryChargeGridKwh: 68,
+    carKwh: 312,
+    firstSocPct: 30,
+    lastSocPct: 40,
+    buckets: 8600,
+    expectedBuckets: 8640,
+  })
+  const without = energyFigures(base)
+  const withUnits = energyFigures({ ...base, heatPumps: [matsal(150), overvaning(60)] })
+  const strip = ({
+    heatPumps: _h,
+    heatPumpMissingHours: _m,
+    restOfHouse: _r,
+    ...rest
+  }: EnergyFigures) => rest
+  expect(strip(withUnits)).toEqual(strip(without))
+})
+
+test('addPeriodSums merges heat pumps by id, in name order; the later name wins', () => {
+  const jan = sums({ heatPumps: [matsal(10, { hours: 100, expectedHours: 110 })] })
+  const feb = sums({
+    heatPumps: [
+      overvaning(5, { hours: 50, expectedHours: 60 }),
+      matsal(20, { name: 'Matsalen', hours: 200, expectedHours: 210 }),
+    ],
+  })
+  expect(addPeriodSums(jan, feb).heatPumps).toEqual([
+    { id: 'hp-a', name: 'Matsalen', kwh: 30, hours: 300, expectedHours: 320 },
+    { id: 'hp-b', name: 'Övervåning', kwh: 5, hours: 50, expectedHours: 60 },
+  ])
+  // Inputs are not mutated.
+  expect(jan.heatPumps[0].kwh).toBe(10)
+})
+
+test('byHeatPumpName sorts by Swedish name, then id', () => {
+  const names = [
+    { id: 'b', name: 'Övervåning' },
+    { id: 'c', name: 'Matsal' },
+    { id: 'a', name: 'Matsal' },
+    { id: 'd', name: 'Ateljé' },
+  ].sort(byHeatPumpName)
+  expect(names.map((u) => u.id)).toEqual(['d', 'a', 'c', 'b'])
 })

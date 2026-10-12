@@ -34,7 +34,7 @@ export type EnergyOverview = {
 type MonthRow = {
   year: number
   month: number
-  sums: Omit<PeriodSums, 'carKwh' | 'expectedBuckets'>
+  sums: Omit<PeriodSums, 'carKwh' | 'expectedBuckets' | 'heatPumps'>
   firstBucket: Date
   lastBucket: Date
 }
@@ -119,7 +119,12 @@ export async function getEnergyOverview(
     const startMs = Math.max(bounds.startMs, coverageStartMs)
     const endMs = row === newest ? row.lastBucket.getTime() + BUCKET_MS : bounds.endMs
     const expected = Math.round((endMs - startMs) / BUCKET_MS)
-    return { ...row.sums, carKwh: 0, expectedBuckets: Math.max(expected, row.sums.buckets) }
+    return {
+      ...row.sums,
+      carKwh: 0,
+      expectedBuckets: Math.max(expected, row.sums.buckets),
+      heatPumps: [],
+    }
   }
   const newestEndMs = newest.lastBucket.getTime() + BUCKET_MS
   // A total's expected buckets come from its period bounds, so a month without
