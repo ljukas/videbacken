@@ -114,14 +114,49 @@ export function useFittedSize(
     const el = ref.current
     if (!el || size <= minSize) return
     const b = el.getBBox()
-    if (b.x + b.width > x + room) setFit({ key, size: size - 2 })
+    if (b.x + b.width > x + room) setFit({ key, size: Math.max(minSize, size - 2) })
   }, [ref, key, size, minSize, room, x])
   return size
 }
 
+/** `text` cut to its first `length` characters and "…" (at least one character); the whole text at full length. */
+function cutText(text: string, length: number): string {
+  return length >= text.length ? text : `${text.slice(0, Math.max(1, length)).trimEnd()}…`
+}
+
 /**
- * `text`, cut with "…" one character at a time until it fits `room` px from `x` (a user-set name on a phone node),
- * measured before paint and again once the body font has loaded. The full text stays in the tooltip and the table.
+ * The longest cut of `text` (in characters) that ends within `right`, found by a binary search that writes each
+ * candidate into `el`'s text node and measures it, then puts the shown text back: one layout pass, however long.
+ */
+function fittedLength(el: SVGTextElement, text: string, right: number): number {
+  const node = el.firstChild
+  if (!(node instanceof Text)) return text.length
+  const shown = node.data
+  const fits = (s: string) => {
+    node.data = s
+    const b = el.getBBox()
+    return b.x + b.width <= right
+  }
+  try {
+    if (fits(text)) return text.length
+    // The largest length whose cut fits; 1 when none does (the name's first character and "…").
+    let lo = 1
+    let hi = text.length - 1
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2)
+      if (fits(cutText(text, mid))) lo = mid
+      else hi = mid - 1
+    }
+    return lo
+  } finally {
+    node.data = shown
+  }
+}
+
+/**
+ * `text`, cut with "…" until it fits `room` px from `x` (a user-set name on a node; Comfort Cloud allows 200
+ * characters), measured before paint in one pass and again once the body font has loaded. The full text stays in the
+ * tooltip and the table.
  */
 export function useFittedText(
   ref: React.RefObject<SVGTextElement | null>,
@@ -130,16 +165,16 @@ export function useFittedText(
   room: number,
 ): string {
   const fontsLoaded = useFontsReady()
-  const key = `${text}|${room}|${fontsLoaded}`
-  const [fit, setFit] = useState({ key, length: text.length })
-  const length = fit.key === key ? fit.length : text.length
-  const shown = length >= text.length ? text : `${text.slice(0, Math.max(1, length)).trimEnd()}…`
+  // A new text, place, room or font shows the whole text again and measures it.
+  const key = `${text}|${x}|${room}|${fontsLoaded}`
+  const [fit, setFit] = useState<{ key: string; length: number } | null>(null)
+  const measured = fit?.key === key
+  const shown = cutText(text, measured ? fit.length : text.length)
   useLayoutEffect(() => {
     const el = ref.current
-    if (!el || length <= 1) return
-    const b = el.getBBox()
-    if (b.x + b.width > x + room) setFit({ key, length: length - 1 })
-  }, [ref, key, length, room, x])
+    if (!el || measured) return
+    setFit({ key, length: fittedLength(el, text, x + room) })
+  }, [ref, key, measured, text, x, room])
   return shown
 }
 

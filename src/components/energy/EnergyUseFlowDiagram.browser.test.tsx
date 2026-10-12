@@ -155,6 +155,49 @@ test('a long unit name is cut with … inside its node on a phone; the tooltip n
   await userEvent.hover(document.body)
 })
 
+test('a 150-character unit name renders in one fitting pass, cut with … on phone and wide nodes', async () => {
+  // Comfort Cloud allows names up to 200 characters; cutting one character per render threw React's update-depth
+  // error past ~55 characters.
+  const long = `Värmepump ${'vid trappan i vardagsrummet '.repeat(6)}`.slice(0, 150)
+  expect(long).toHaveLength(150)
+  const u = [{ id: 'hp-a', name: long }]
+  for (const width of [311, 1006]) {
+    const { screen } = await draw(sums({ heatPumps: [unit('hp-a', long, 150)] }), width, true, u)
+    const node = screen.container.querySelector('[data-flow-node="hp:hp-a"]') as SVGGElement
+    const label = node.querySelector('text') as SVGTextElement
+    await expect.poll(() => label.textContent?.endsWith('…')).toBe(true)
+    expect(label.textContent?.length).toBeLessThan(long.length)
+    const right = (node.querySelector('rect') as SVGRectElement).getBoundingClientRect().right
+    expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(right - NODE_PADDING + 1)
+    const hit = screen.container.querySelector('[data-flow-hit="load>hp:hp-a"]') as SVGPathElement
+    await userEvent.hover(hit.ownerSVGElement as SVGSVGElement, { position: onStroke(hit) })
+    await expect
+      .element(
+        screen.getByText(
+          m.energy_flow_arrow({
+            from: m.energy_tile_load(),
+            to: m.energy_heat_pump_name({ name: long }),
+          }),
+        ),
+      )
+      .toBeVisible()
+    await userEvent.hover(document.body)
+  }
+})
+
+test('a figure too wide for its node steps down to its 13 px floor, never below', async () => {
+  const { screen } = await draw(
+    sums({ carKwh: 999_999_999_999, loadKwh: 1_000_000_000_000, heatPumps: [] }),
+    311,
+  )
+  const figure = () =>
+    screen.container.querySelector('[data-flow-node="car"] tspan')?.getAttribute('font-size')
+  await expect.poll(figure).toBe('13')
+  // Once more after the body font has loaded (the hook measures again then).
+  await document.fonts.ready
+  await expect.poll(figure).toBe('13')
+})
+
 test('the svg is one image named by its description', async () => {
   const { screen } = await draw(sums())
   await expect.element(screen.getByRole('img', { name: m.energy_use_description() })).toBeVisible()
