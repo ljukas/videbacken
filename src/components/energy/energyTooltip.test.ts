@@ -1,6 +1,12 @@
 import { expect, test } from 'vitest'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
-import { chartRows, energyTooltipRows } from './energyTooltip'
+import {
+  chartRows,
+  chartUnits,
+  energyTooltipRows,
+  METRIC_SERIES,
+  metricSeries,
+} from './energyTooltip'
 
 const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   gridImportKwh: 500,
@@ -114,4 +120,75 @@ test('a zero total gives no shares', () => {
       sums({ solarKwh: 0, batteryChargeSolarKwh: 0, gridExportKwh: 0 }),
     ).parts.every((r) => r.share === null),
   ).toBe(true)
+})
+
+const hp = (id: string, name: string, kwh: number) => ({
+  id,
+  name,
+  kwh,
+  hours: 720,
+  expectedHours: 720,
+})
+
+test('load rows with heat pumps: laddning, each unit by name, övrigt hus; the parts add up to the load', () => {
+  const p = sums({
+    loadKwh: 800,
+    carKwh: 250,
+    heatPumps: [hp('hp-a', 'Matsal', 150), hp('hp-b', 'Övervåning', 60)],
+  })
+  const { parts, totalKwh } = energyTooltipRows('load', p)
+  expect(parts).toEqual([
+    { key: 'car', kwh: 250, share: 0.3125 },
+    { key: 'heatPump:hp-a', kwh: 150, share: 0.1875 },
+    { key: 'heatPump:hp-b', kwh: 60, share: 0.075 },
+    { key: 'house', kwh: 340, share: 0.425 },
+  ])
+  expect(parts.reduce((a, r) => a + r.kwh, 0)).toBeCloseTo(totalKwh, 9)
+})
+
+test('load rows when the heat pumps exceed load − laddning: scaled, övrigt hus 0, still adding up to the load', () => {
+  const p = sums({
+    loadKwh: 400,
+    carKwh: 300,
+    heatPumps: [hp('hp-a', 'Matsal', 150), hp('hp-b', 'Övervåning', 50)],
+  })
+  const { parts, totalKwh } = energyTooltipRows('load', p)
+  expect(parts.map((r) => r.kwh)).toEqual([300, 75, 25, 0])
+  expect(parts.reduce((a, r) => a + r.kwh, 0)).toBeCloseTo(totalKwh, 9)
+  expect(parts.every((r) => (r.share ?? 0) <= 1)).toBe(true)
+})
+
+test('metricSeries: Förbrukning puts the units between laddning and övrigt hus; Solel and Nät unchanged', () => {
+  expect(metricSeries('load', [{ id: 'hp-a' }, { id: 'hp-b' }])).toEqual([
+    'car',
+    'heatPump:hp-a',
+    'heatPump:hp-b',
+    'house',
+  ])
+  expect(metricSeries('load', [])).toEqual(['car', 'house'])
+  expect(metricSeries('solar', [{ id: 'hp-a' }])).toEqual(METRIC_SERIES.solar)
+  expect(metricSeries('grid', [{ id: 'hp-a' }])).toEqual(METRIC_SERIES.grid)
+})
+
+test('chartUnits: every unit with a figure in any month, once, in name order', () => {
+  const months = [
+    null,
+    sums({ heatPumps: [hp('hp-b', 'Övervåning', 1)] }),
+    sums({ heatPumps: [hp('hp-a', 'Matsal', 1), hp('hp-b', 'Övervåning', 1)] }),
+  ]
+  expect(chartUnits(months)).toEqual([
+    { id: 'hp-a', name: 'Matsal' },
+    { id: 'hp-b', name: 'Övervåning' },
+  ])
+  expect(chartUnits([null])).toEqual([])
+})
+
+test('chartRows: a unit absent in a month is null there, never 0', () => {
+  const rows = chartRows('load', [
+    sums({ heatPumps: [hp('hp-a', 'Matsal', 10)] }),
+    sums({ heatPumps: [hp('hp-a', 'Matsal', 10), hp('hp-b', 'Övervåning', 5)] }),
+  ])
+  expect(rows[0]['heatPump:hp-b']).toBeNull()
+  expect(rows[1]['heatPump:hp-b']).toBe(5)
+  expect(rows[0]['heatPump:hp-a']).toBe(10)
 })

@@ -28,6 +28,10 @@ import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
 
+// No colour order yet: the chart falls back to the year's own units. A module constant, so the
+// chart's series memo isn't rebuilt on every render.
+const NO_HEAT_PUMP_UNITS: readonly { id: string; name: string }[] = []
+
 export const Route = createFileRoute('/_authenticated/energy/')({
   head: () => ({
     meta: seo({ title: m.meta_energy_title(), description: m.meta_energy_description() }),
@@ -136,6 +140,7 @@ function EnergyOverviewPage() {
                       onSelectMonth={(month) =>
                         e.setPeriod({ kind: 'month', year: overview.year, month })
                       }
+                      heatPumpUnits={NO_HEAT_PUMP_UNITS}
                     />
                   </CardContent>
                 </Card>
