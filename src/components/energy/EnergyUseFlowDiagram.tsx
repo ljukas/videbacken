@@ -1,7 +1,7 @@
 import { Group } from '@visx/group'
 import { AirVentIcon, CarIcon, HouseIcon, HousePlugIcon, type LucideIcon } from 'lucide-react'
 import type * as React from 'react'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
 import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
 import type { EnergyFigures, PeriodSums } from '~/lib/houseEnergy/figures'
@@ -88,6 +88,12 @@ export function EnergyUseFlowDiagram({
       if (e.pointerType !== 'touch') hide()
     },
   }
+  // A new period (or new data) redraws the arrows: close a popover that belongs to the old ones, so an arrow that is
+  // gone can't keep the rest dimmed or its stale values on screen.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sums is the trigger
+  useEffect(() => {
+    hide()
+  }, [sums, hide])
   const active = popover.open ? popover.data?.id : undefined
   const dim = (id: string) => (active !== undefined && active !== id ? 'opacity-25' : undefined)
   const fade = 'transition-opacity motion-reduce:transition-none'

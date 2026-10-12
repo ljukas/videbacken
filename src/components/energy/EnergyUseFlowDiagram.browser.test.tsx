@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { userEvent } from 'vitest/browser'
+import { render } from 'vitest-browser-react'
 import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
 import { energyFigures, type HeatPumpPeriod, type PeriodSums } from '~/lib/houseEnergy/figures'
 import { NODE_PADDING } from '~/lib/houseEnergy/flowLayout'
@@ -196,6 +197,32 @@ test('a figure too wide for its node steps down to its 13 px floor, never below'
   // Once more after the body font has loaded (the hook measures again then).
   await document.fonts.ready
   await expect.poll(figure).toBe('13')
+})
+
+test('a new period closes an open popover, so a vanished arrow leaves nothing dimmed', async () => {
+  const diagram = (s: PeriodSums) => (
+    <EnergyUseFlowDiagram
+      sums={s}
+      figures={energyFigures(s)}
+      units={units}
+      width={1006}
+      showValues
+    />
+  )
+  // No query client needed: vitest-browser-react's own render, for its rerender.
+  const screen = await render(diagram(sums()))
+  const name = m.energy_flow_arrow({
+    from: m.energy_tile_load(),
+    to: m.energy_heat_pump_name({ name: 'Matsal' }),
+  })
+  await userEvent.hover(screen.container.querySelector('[data-flow-hit="load>hp:hp-a"]') as Element)
+  await expect.element(screen.getByText(name)).toBeVisible()
+  expect(screen.container.querySelectorAll('.opacity-25').length).toBeGreaterThan(0)
+  // The next period has no Matsal: its arrow is gone.
+  await screen.rerender(diagram(sums({ heatPumps: [unit('hp-b', 'Övervåning', 60)] })))
+  await expect.element(screen.getByText(name)).not.toBeInTheDocument()
+  expect(screen.container.querySelectorAll('.opacity-25')).toHaveLength(0)
+  await userEvent.hover(document.body)
 })
 
 test('the svg is one image named by its description', async () => {
