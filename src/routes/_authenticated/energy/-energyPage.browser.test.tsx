@@ -11,6 +11,7 @@ import { render } from 'vitest-browser-react'
 import { energyOverviewQuery } from '~/components/energy/energyQueries'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
+import { integrationHealthTitle, integrationSourceName } from '~/lib/integrationHealthMessage'
 import { m } from '~/paraglide/messages'
 import { bars, clickOn, legendText, xTickTexts } from '~test/browser/chartDom'
 import { makeTestQueryClient } from '~test/browser/render'
@@ -19,6 +20,17 @@ import { Route as Battery } from './battery'
 import { Route as Overview } from './index'
 
 type AnyRoute = typeof Overview | typeof Battery
+
+const hp = (id: string, name: string, kwh: number) => ({
+  id,
+  name,
+  kwh,
+  hours: 720,
+  expectedHours: 720,
+})
+const hpA = (i: number) => hp('hp-a', 'Matsal', 100 + i)
+const hpB = hp('hp-b', 'Övervåning', 40)
+const units = (i: number) => (i === 5 ? [] : [hpA(i), hpB])
 
 const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   gridImportKwh: 561,
@@ -52,9 +64,11 @@ const withData = {
     '2026-08',
     '2026-09',
   ],
-  yearTotal: sums({ solarKwh: 5000 }),
-  allTime: sums({ solarKwh: 6000 }),
-  months: Array.from({ length: 12 }, (_, i) => (i < 9 ? sums({ solarKwh: 100 + i }) : null)),
+  yearTotal: sums({ solarKwh: 5000, heatPumps: [hp('hp-a', 'Matsal', 900), hpB] }),
+  allTime: sums({ solarKwh: 6000, heatPumps: [hp('hp-a', 'Matsal', 1500), hpB] }),
+  months: Array.from({ length: 12 }, (_, i) =>
+    i < 9 ? sums({ solarKwh: 100 + i, heatPumps: units(i) }) : null,
+  ),
 }
 const empty = {
   year: 2026,
@@ -551,7 +565,12 @@ test('a failed read of another year keeps the period control, so the user can st
   await expect.poll(() => tiles.querySelector('[aria-hidden="true"].invisible')).not.toBeNull()
   expect(figure(screen, '100,0 kWh').elements()).toHaveLength(0)
   expect(screen.getByText(m.energy_period_no_data()).elements()).toHaveLength(0)
-  expect(document.querySelectorAll('section')).toHaveLength(1) // the tiles; the chart is gone
+  // The tiles and Användning (its period is Summering's); the chart is gone.
+  expect(document.querySelectorAll('section')).toHaveLength(2)
+  expect(screen.getByRole('region', { name: m.energy_tiles_heading() }).elements()).toHaveLength(1)
+  expect(screen.getByRole('region', { name: m.energy_use_heading() }).elements()).toHaveLength(1)
+  // Användning's diagram goes blank with the tiles' readouts.
+  expect(screen.getByLabelText(m.energy_use_description()).elements()).toHaveLength(0)
   await screen.getByRole('button', { name: m.energy_period_next_month() }).click()
   await expect
     .element(screen.getByRole('heading', { name: m.energy_chart_title({ year: '2026' }) }))
@@ -652,4 +671,90 @@ test('Batteri: empty and failed reads', async () => {
   expect(skeleton('energy-battery-flow')).toBeNull()
   expect(skeleton('energy-battery-chart')).toBeNull()
   expect(failed.screen.getByText(/7,58 kWh per 100/).elements()).toHaveLength(0)
+})
+
+// --- Användning and the Comfort Cloud alert (heat pumps step 2) ---------------
+
+const use = (screen: Awaited<ReturnType<typeof renderPage>>['screen']) =>
+  screen.getByRole('region', { name: m.energy_use_heading() })
+
+test('Användning sits below Summering with the period’s consumers and the period’s label', async () => {
+  const { screen } = await renderPage(Overview, '/energy', seedOverview(withData))
+  const card = use(screen)
+  await expect.element(card).toBeVisible()
+  await expect.element(card.getByText(/september 2026/i)).toBeVisible()
+  const diagram = screen.getByLabelText(m.energy_use_description())
+  await expect.element(diagram.getByText(m.energy_heat_pump_name({ name: 'Matsal' }))).toBeVisible()
+  await expect.element(diagram.getByText(m.energy_use_house())).toBeVisible()
+  // Below Summering.
+  const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
+  expect(
+    tiles.compareDocumentPosition(card.element()) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+  expect(skeleton('energy-use')).toBeNull()
+})
+
+test('stepping into a month without heat pumps: their nodes go, the use box keeps its rect, no request', async () => {
+  const { screen, qc } = await renderPage(
+    Overview,
+    '/energy?period=2026-07',
+    seedOverview(withData),
+  )
+  const diagram = screen.getByLabelText(m.energy_use_description())
+  await expect.element(diagram.getByText(m.energy_heat_pump_name({ name: 'Matsal' }))).toBeVisible()
+  const boxEl = () => screen.container.querySelector('[data-slot="energy-use-box"]') as HTMLElement
+  expect(boxEl().className).toContain('h-[436px]')
+  expect(boxEl().className).toContain('@[860px]:h-[312px]')
+  const before = boxEl().getBoundingClientRect()
+  const fetches = recordFetches(qc)
+  await screen.getByRole('button', { name: m.energy_period_prev_month() }).click() // June: no heat pumps
+  await expect
+    .poll(() => screen.container.querySelectorAll('[data-flow-node^="hp:"]').length)
+    .toBe(0)
+  const after = boxEl().getBoundingClientRect()
+  expect(after.height).toBe(before.height)
+  expect(after.top).toBe(before.top)
+  fetches.stop()
+  expect(fetches.fetched).toEqual([])
+})
+
+test('the month chart’s Förbrukning stacks the heat pumps', async () => {
+  const { screen } = await renderPage(Overview, '/energy', seedOverview(withData))
+  await screen.getByRole('radio', { name: m.energy_metric_load() }).click()
+  await vi.waitFor(() =>
+    expect(legendText(screen.container)).toContain(m.energy_heat_pump_name({ name: 'Övervåning' })),
+  )
+})
+
+test.each([
+  [Overview, '/energy'],
+  [Battery, '/energy/battery'],
+] as const)('%#: a failing Comfort Cloud shows its alert; Emaldo’s heading stays', async (route, path) => {
+  const { screen } = await renderPage(route, path, (qc) => {
+    seedOverview(withData)(qc)
+    seedSourcesHealth(qc, {
+      comfortCloud: {
+        state: 'failing',
+        code: 'auth_failed',
+        failingSince: new Date('2026-09-15T06:20:00Z'),
+        consecutiveFailures: 2,
+      },
+    })
+  })
+  await expect
+    .element(
+      screen.getByText(
+        m.charging_health_title({
+          source: integrationSourceName('comfortCloud'),
+          state: integrationHealthTitle('failing'),
+        }),
+      ),
+    )
+    .toBeVisible()
+})
+
+test('a healthy Comfort Cloud shows no alert', async () => {
+  const { screen } = await renderPage(Overview, '/energy', seedOverview(withData))
+  await expect.element(use(screen)).toBeVisible()
+  expect(screen.container.textContent).not.toContain(integrationSourceName('comfortCloud'))
 })

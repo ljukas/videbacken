@@ -8,11 +8,11 @@ import { BatteryMonthlyChart } from '~/components/energy/BatteryMonthlyChart'
 import { EnergyEmpty } from '~/components/energy/EnergyEmpty'
 import { EnergyHeading } from '~/components/energy/EnergyHeading'
 import { EnergySummaryCard } from '~/components/energy/EnergySummaryCard'
+import { EnergySyncAlerts } from '~/components/energy/EnergySyncAlerts'
 import { energyOverviewQueryFor } from '~/components/energy/energyQueries'
 import { energySearchSchema, periodOfSearch } from '~/components/energy/energySearch'
 import { type EnergySearchWrite, useEnergyPeriod } from '~/components/energy/useEnergyPeriod'
 import { formatDecimal } from '~/components/evCharging/format'
-import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { LoadErrorAlert } from '~/components/layout/LoadErrorAlert'
@@ -50,6 +50,7 @@ function EnergyBatteryPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   const syncNow = useSyncNow()
+  // Every source's health (one read); this page shows Emaldo's and Comfort Cloud's.
   const { data: sourcesHealth } = useQuery({ ...syncHealthQuery, refetchInterval: 60_000 })
   const health = sourcesHealth?.emaldo
   const navigate = Route.useNavigate()
@@ -67,14 +68,7 @@ function EnergyBatteryPage() {
         description={m.energy_battery_description()}
         lastSuccessAt={health?.lastSuccessAt}
       />
-      {health ? (
-        <SyncHealthAlert
-          health={health}
-          isAdmin={isAdmin}
-          onRetry={() => syncNow.syncSource('emaldo')}
-          retrying={syncNow.isPendingFor('emaldo')}
-        />
-      ) : null}
+      <EnergySyncAlerts health={sourcesHealth} isAdmin={isAdmin} syncNow={syncNow} />
       {overview?.firstReadingDay === null ? (
         <EnergyEmpty />
       ) : (

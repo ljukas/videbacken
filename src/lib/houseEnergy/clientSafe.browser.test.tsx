@@ -32,3 +32,10 @@ test('the battery flow geometry is importable client-side', async () => {
   const mod = await import('~/lib/houseEnergy/batteryFlowLayout')
   expect(typeof mod.batteryFlowLayout).toBe('function')
 })
+
+test('the usage flow geometry and the heat pump colours are importable client-side', async () => {
+  const layout = await import('~/lib/houseEnergy/usageFlowLayout')
+  expect(typeof layout.usageFlowLayout).toBe('function')
+  const colours = await import('~/lib/houseEnergy/heatPumpColors')
+  expect(typeof colours.heatPumpColor).toBe('function')
+})
