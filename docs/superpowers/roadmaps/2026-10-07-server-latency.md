@@ -11,12 +11,12 @@ start of its session.
 |---|---|---|---|---|---|
 | 1 | `Server-Timing` header on every response: `queue` (Vercel edge → our code, from `x-vercel-id`), `app` (our code → response headers) and, for a signed-in `/api/rpc` caller, the `rpc timing` line's sub-timings + pool gauges; `queueMs` on the log line | bounded (in-chat design) | [#137](https://github.com/ljukas/videbacken/pull/137) | checkpoint passed | 2026-10-07: prod RPC and SSR responses carry the header (`/login`: `queue;dur=22, app;dur=29.5`); `rpc timing` lines carry `queueMs`. Warm `queue` is 20–35 ms; a cold instance started mid-burst shows ~800 ms, now row 4. See [checkpoint 1 result](#checkpoint-1-result). |
 | 2 | Cache the Stockholm day/month per UTC hour in the cost pricing (`stockholmDayOf` / `stockholmYearMonth` are ~70% of `costComputeMs`; Stockholm's offset is always whole hours) | [plan](../plans/2026-10-07-server-latency-2-tz-cache.md) | [#139](https://github.com/ljukas/videbacken/pull/139) | checkpoint passed | 2026-10-08: prod `costComputeMs` median 73 → 26.5 (−64%); repeat visits 68–84 → 21–25. `economyComputeMs` 72–100 → 13–27. `/charging` figures unchanged (owner). See [checkpoint 2 result](#checkpoint-2-result). |
-| 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | [spec](../specs/2026-10-11-session-cost-store-design.md), [plan](../plans/2026-10-11-server-latency-3-session-cost-store.md) | [#154](https://github.com/ljukas/videbacken/pull/154) | PR open | — |
+| 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | [spec](../specs/2026-10-11-session-cost-store-design.md), [plan](../plans/2026-10-11-server-latency-3-session-cost-store.md) | [#154](https://github.com/ljukas/videbacken/pull/154) | checkpoint passed | 2026-10-12: prod `costOverview` `totalMs` 25 warm (145 median before), `costStaleSessions` 0, no pricing sub-timings; `sessionCostsMs` 5–8 (19.5 median before). A copy of prod's inputs matches the stored totals within 4.6e-15; figures unchanged (owner). See [checkpoint 3 result](#checkpoint-3-result). |
 | 4 | Cold instances in a burst: when Vercel starts an extra instance for a navigation's burst, its requests show `queue` ~800 ms plus ~260 ms of first-request work before the handler (`app` minus `rpc`). Find what the boot and first-request load cost (function bundle, module init) and what Fluid offers against scale-out cold starts | — | — | needs shaping | — |
 | 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | [#143](https://github.com/ljukas/videbacken/pull/143) | checkpoint passed | 2026-10-11: `economy` + `economySessions` 2.7 kB in DevTools (12.8 before); hovered and next pages render with no request on the click; `economySessions` `totalMs` 24–31 warm against `economy`'s 245. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converted and grouped every slot of the year (24 764 rows, 50 ms in prod `EXPLAIN ANALYZE` on 2026-10-11, all buffer hits: CPU). Now each day's average is stored in `spot_price_day`, written by `replaceDay` in the same transaction as the slots (its only writer) and backfilled by migration; `dailyAverageSpot` reads ~255 rows by PK, and the sync's stored-days probe reads the same table, so a day missing its row is re-fetched. Amends ADR-0020 | [spec](../specs/2026-10-11-spot-price-day-design.md), [plan](../plans/2026-10-11-server-latency-6-spot-price-day.md) | [#148](https://github.com/ljukas/videbacken/pull/148) | checkpoint passed | 2026-10-11: prod `economyDailySpotMs` 5–7 (56–247 before); `economy` `totalMs` 43–57 warm (181 median before). Every stored day equals the old aggregate exactly; figures unchanged (owner). See [checkpoint 6 result](#checkpoint-6-result). |
 
-Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed), then 3 (2026-10-11). Row 4 follows unless reordered.
+Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed), then 3 (checkpoint passed). Row 4 follows unless reordered.
 
 The warm pool (keep three pooled connections; removes most `poolOpened` spikes) is client-performance step 8,
 [#135](https://github.com/ljukas/videbacken/pull/135), merged 2026-10-07; its checkpoint lives in
@@ -109,6 +109,36 @@ the step needs a brainstorm before its plan.
 - **Measuring tip:** a page refresh renders `costOverview` during SSR, because it is critical in the `/charging`
   loader. That call never reaches `/api/rpc`, so it logs no `rpc timing` line. To get lines, navigate in the
   browser: leave the page, wait out the 20 s `staleTime`, then come back.
+
+## Checkpoint 3 result
+
+2026-10-12, after the #154 deploy (merged 2026-10-11 19:45 UTC, live 19:46, deploy `dpl_7JLCUE…`). Migration 0026
+ran on deploy; the tables started empty, so every session was stale until the first sync.
+
+- **Reprice:** the 20:00 UTC Zaptec sync logged `session costs repriced` with `stale` 101, `written` 101,
+  `repriceMs` 350: every counted session (the other 89 of 190 are voided, replaced or under the noise threshold).
+  Every Zaptec and Emaldo sync since has repriced 2–3 sessions in 50–96 ms, with no failure or skip.
+- **Latency:** the owner opened `/charging` from the sidebar three times (05:29–05:30 UTC):
+
+| | Before (72 h to 2026-10-11 18:45 UTC) | After |
+|---|---|---|
+| `costOverview` `totalMs` | 70 / 145 / 461 (n = 7) | 25 warm; 34 and 52 with a connection opened (n = 3) |
+| `costSlots` / `costMix` / `costCompute` | 26–168 / 29–83 / 10–41 | absent; `costStaleSessions` 0 on every line |
+| `sessions` `sessionCostsMs` | 12 / 19.5 / 89 (n = 32) | 5–8 (n = 6) |
+| `sessions` `totalMs` | 36 / 46 / 252 | 28–46 |
+
+- **Correctness:** the prod database password can't be read (Vercel stores it as sensitive, and Supabase only
+  resets it). Instead, one read-only statement through the Supabase Management API
+  (`/database/query/read-only`, a personal access token, `supabase_read_only_user`) copied the cost inputs and the
+  stored rows (sessions, intervals, energy mix, tariffs, spot slots, `ev_session_cost` + month rows, snapshot
+  05:35:59 UTC) into a separate local database migrated to the same 27 migrations. `scripts/checkSessionCosts.ts`
+  against that copy compared 101 current sessions, 0 stale, largest relative difference 4.6e-15 (exit 0). Control:
+  adding 0.01 kr to one stored `total_sek` made it exit 1 naming that session.
+- **Figures:** the owner checked `/charging` (tiles, months, the session list's costs): unchanged.
+- **What is left:**
+  - Each hourly Zaptec and Emaldo sync rewrites the same recent sessions (now at `generation` 29) and bumps them
+    even when nothing changed. Harmless (≤ 100 ms in a cron), but a bump only on a real change would avoid it.
+  - `costHouseFromMs` (7–22 ms) is now the largest part of `costOverview`.
 
 ## Checkpoint 5 result
 
