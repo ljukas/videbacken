@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { energyFigures, type PeriodSums } from './figures'
 import { ARROW_LENGTH, flowCurve, NODE_PADDING } from './flowLayout'
 import {
+  fitPortWidths,
   stackPorts,
   USE_LANE,
   USE_NARROW_HEIGHT,
@@ -63,12 +64,27 @@ test('usageConsumers: laddning, the units in figure order, övrigt hus', () => {
   expect(usageConsumers(energyFigures(s))).toEqual(four)
 })
 
-test('stackPorts lays widths side by side, 2 px apart, centred; squeezes evenly when they do not fit', () => {
+test('stackPorts lays widths side by side, 2 px apart, centred; spreads evenly what cannot fit', () => {
   expect(stackPorts([10, 4], 30)).toEqual([12, 21]) // 16 wide in 30: starts at 7 → centres 7 + 5 and 19 + 2
   expect(stackPorts([], 30)).toEqual([])
-  const squeezed = stackPorts([20, 20, 20], 40)
-  expect(squeezed[0]).toBe(10)
-  expect(squeezed[2]).toBe(30)
+  expect(stackPorts(fitPortWidths([20, 20, 20], 40), 40)).toEqual([6, 20, 34])
+  const unfitted = stackPorts([20, 20, 20], 40)
+  expect(unfitted[0]).toBe(10)
+  expect(unfitted[2]).toBe(30)
+})
+
+test('fitPortWidths keeps widths that fit and scales them all by one factor when they do not', () => {
+  expect(fitPortWidths([10, 4], 30)).toEqual([10, 4])
+  expect(fitPortWidths([], 30)).toEqual([])
+  // 60 + 2 × 2 gaps in 40: the 36 px left are shared in proportion.
+  expect(fitPortWidths([20, 20, 20], 40)).toEqual([12, 12, 12])
+  const scaled = fitPortWidths([16, 8, 4], 20)
+  expect(scaled[0] / scaled[1]).toBeCloseTo(2, 9)
+  expect(scaled.reduce((a, b) => a + b, 0) + 4).toBeCloseTo(20, 9)
+  // A width one factor would take below 1 px keeps 1 px; the others share the rest.
+  const floored = fitPortWidths([30, 30, 0.5], 24)
+  expect(floored[2]).toBe(1)
+  expect(floored[0] + floored[1] + 1 + 4).toBeCloseTo(24, 9)
 })
 
 test('the 860 px rule: 859 is narrow, 860 is wide', () => {
@@ -184,4 +200,93 @@ describe.each([256, 311, 1006])('node text at %i px', (width) => {
       expect(t.value.room).toBeGreaterThanOrEqual(90)
     }
   })
+})
+
+/** The least distance between two arrows' strokes over the samples kept by `keep` (centre lines less half widths). */
+const strokeGap = (
+  layout: ReturnType<typeof usageFlowLayout>,
+  a: (typeof layout.flows)[number],
+  b: (typeof layout.flows)[number],
+  keep: (p: P) => boolean,
+) => {
+  const pts = (f: typeof a) => {
+    const c = flowCurve(layout, f.spec)
+    return Array.from({ length: 401 }, (_, i) => c.at(i / 400)).filter(keep)
+  }
+  const pa = pts(a)
+  const pb = pts(b)
+  let least = Number.POSITIVE_INFINITY
+  for (const p of pa) for (const q of pb) least = Math.min(least, Math.hypot(p.x - q.x, p.y - q.y))
+  return least - (a.width + b.width) / 2
+}
+
+describe.each([
+  // January-like: two large units next to the car and the house.
+  [
+    'January-like',
+    [
+      { key: 'car', kwh: 400 },
+      { key: 'hp:hp-a', kwh: 386 },
+      { key: 'hp:hp-b', kwh: 165 },
+      { key: 'house', kwh: 600 },
+    ],
+  ],
+  [
+    'near-equal',
+    [
+      { key: 'car', kwh: 300 },
+      { key: 'hp:hp-a', kwh: 300 },
+      { key: 'hp:hp-b', kwh: 200 },
+      { key: 'house', kwh: 300 },
+    ],
+  ],
+] as [string, UseConsumer[]][])('narrow, a full lane (%s)', (_name, consumers) => {
+  test.each([
+    256, 311, 859,
+  ])('at %i px the arrows keep 2 px apart at the load and down the lane', (width) => {
+    const layout = usageFlowLayout(width, consumers)
+    expect(layout.flows).toHaveLength(4)
+    for (let i = 1; i < layout.flows.length; i++) {
+      const upper = layout.flows[i - 1]
+      const lower = layout.flows[i]
+      // At the load: the lower consumer's arrow sits further left.
+      expect(upper.spec.fromOffset - lower.spec.fromOffset).toBeGreaterThanOrEqual(
+        (upper.width + lower.width) / 2 + 2 - 1e-9,
+      )
+      // Down the lane, until the upper arrow reaches its node's row.
+      const row = layout.nodes[upper.spec.to]
+      expect(
+        strokeGap(layout, upper, lower, (p) => p.y <= row.y - row.h / 2),
+        `${upper.spec.to}/${lower.spec.to}`,
+      ).toBeGreaterThanOrEqual(2 - 0.05)
+    }
+    // Proportions kept: the widths are still the data, one scale for all.
+    const k = layout.flows[0].width / consumers[0].kwh
+    for (const [i, f] of layout.flows.entries())
+      expect(f.width).toBeCloseTo(k * consumers[i].kwh, 9)
+  })
+})
+
+test('wide, five near-equal consumers: the arrows keep 2 px apart at the load and all the way', () => {
+  const consumers: UseConsumer[] = [
+    { key: 'car', kwh: 300 },
+    { key: 'hp:hp-a', kwh: 290 },
+    { key: 'hp:hp-b', kwh: 280 },
+    { key: 'hp:hp-c', kwh: 270 },
+    { key: 'house', kwh: 300 },
+  ]
+  for (const width of [860, 1006]) {
+    const layout = usageFlowLayout(width, consumers)
+    const load = layout.nodes.load
+    for (let i = 1; i < layout.flows.length; i++) {
+      const a = layout.flows[i - 1]
+      const b = layout.flows[i]
+      expect(b.spec.fromOffset - a.spec.fromOffset).toBeGreaterThanOrEqual(
+        (a.width + b.width) / 2 + 2 - 1e-9,
+      )
+      expect(strokeGap(layout, a, b, () => true)).toBeGreaterThanOrEqual(2 - 0.05)
+    }
+    for (const f of layout.flows)
+      expect(Math.abs(f.spec.fromOffset) + f.width / 2).toBeLessThanOrEqual(load.h / 2)
+  }
 })

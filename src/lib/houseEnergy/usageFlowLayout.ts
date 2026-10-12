@@ -1,9 +1,10 @@
 // Client-safe, pure (heat pumps step 2, ADR-0027). The Användning flow diagram's geometry: the period's load (one node)
 // split into its consumers (laddning, each heat pump, övrigt hus). Wide: the load on the left, the consumers in a
 // column on the right. Narrow: the load across the top, the consumers in a column below, the arrows down an 88 px lane
-// on the left. The arrows leave the load side by side, each as wide as its kWh (Sankey-like), so they never overlap
-// at the source and never cross. Built on step 1c's primitives; the box height is fixed for up to five consumers so
-// the card never changes size with the period.
+// on the left. The arrows leave the load side by side, 2 px apart, each as wide as its kWh (Sankey-like); when they
+// don't fit the room (a full narrow lane in winter, five near-equal consumers) all are scaled by one factor, so they
+// never overlap at the source and never cross. Built on step 1c's primitives; the box height is fixed for up to five
+// consumers so the card never changes size with the period.
 import type { EnergyFigures } from './figures'
 import {
   ARROW_LENGTH,
@@ -47,15 +48,37 @@ export function usageConsumers(f: EnergyFigures): UseConsumer[] {
   ]
 }
 
+/** The narrowest an arrow gets when the widths are scaled to fit. */
+const MIN_FITTED_WIDTH = 1
+
 /**
- * Centres for `widths` laid side by side PORT_GAP apart and centred in [0, room]. When they don't fit (several
- * consumers near the largest), the centres are spread evenly and the arrows overlap a little at the source.
+ * The drawn widths: `widths` as they are when they fit side by side PORT_GAP apart in `room`; otherwise every one
+ * scaled by one factor so they fill it exactly (the proportions stay the data). A width that factor would take below
+ * MIN_FITTED_WIDTH keeps that floor and the others share what is left.
+ */
+export function fitPortWidths(widths: readonly number[], room: number): number[] {
+  const n = widths.length
+  const space = room - PORT_GAP * Math.max(0, n - 1)
+  if (widths.reduce((sum, w) => sum + w, 0) <= space) return [...widths]
+  const floored = new Set<number>()
+  for (;;) {
+    const free = widths.reduce((sum, w, i) => (floored.has(i) ? sum : sum + w), 0)
+    const k = (space - floored.size * MIN_FITTED_WIDTH) / free
+    const next = widths.findIndex((w, i) => !floored.has(i) && w * k < MIN_FITTED_WIDTH)
+    if (next < 0) return widths.map((w, i) => (floored.has(i) ? MIN_FITTED_WIDTH : w * k))
+    floored.add(next)
+  }
+}
+
+/**
+ * Centres for `widths` laid side by side PORT_GAP apart and centred in [0, room]. Widths from `fitPortWidths` always
+ * fit; if some don't (more arrows than the room holds at the floor), the centres are spread evenly instead.
  */
 export function stackPorts(widths: readonly number[], room: number): number[] {
   const n = widths.length
   if (n === 0) return []
   const total = widths.reduce((sum, w) => sum + w, 0) + PORT_GAP * (n - 1)
-  if (total <= room) {
+  if (total <= room + 1e-9) {
     let at = (room - total) / 2
     return widths.map((w) => {
       const centre = at + w / 2
@@ -74,7 +97,7 @@ export function usageFlowLayout(width: number, consumers: readonly UseConsumer[]
   const n = Math.max(1, consumers.length)
   const drawn = consumers.filter((c) => c.kwh >= MIN_FLOW_KWH)
   const max = Math.max(0, ...drawn.map((c) => c.kwh))
-  const widths = drawn.map((c) => flowWidth(c.kwh, max, narrow))
+  const dataWidths = drawn.map((c) => flowWidth(c.kwh, max, narrow))
   const nodes = {} as Record<UseNodeKey, FlowNode>
   let flows: UseFlow[]
   if (!narrow) {
@@ -90,6 +113,7 @@ export function usageFlowLayout(width: number, consumers: readonly UseConsumer[]
     })
     // The arrows leave the load's right side top to bottom in consumer order.
     const room = load.h - 24
+    const widths = fitPortWidths(dataWidths, room)
     const centres = stackPorts(widths, room)
     flows = drawn.map((c, i) => ({
       spec: flowEdge<UseNodeKey>('load', c.key, 'r', centres[i] - room / 2, 'l', 0, 0.5, 0.5, 0.65),
@@ -110,6 +134,7 @@ export function usageFlowLayout(width: number, consumers: readonly UseConsumer[]
     // The arrows leave the load's bottom inside the lane, the lowest consumer's outermost (left): each turns right
     // into its node below the ones above it, so none crosses another. Down first, then a late turn (k1 1, k2 0).
     const room = USE_LANE - ARROW_LENGTH - TURN - LANE_START // 44 px, from x = 11
+    const widths = fitPortWidths(dataWidths, room)
     const centres = stackPorts([...widths].reverse(), room).reverse()
     flows = drawn.map((c, i) => ({
       spec: flowEdge<UseNodeKey>(
