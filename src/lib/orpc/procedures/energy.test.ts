@@ -6,6 +6,7 @@ import { user } from '~/lib/db/schema'
 import type { Logger } from '~/lib/logger'
 import { refreshMonthSums, replaceDay } from '~/lib/services/houseEnergy'
 import { stockholmDayBounds, stockholmYearMonth } from '~/lib/time/stockholm'
+import { seedUnits, storeHours } from '~test/fixtures/heatPumpHours'
 import { syntheticDay } from '~test/fixtures/houseEnergy'
 import { setupDatabase } from '~test/setup'
 import { energyRouter } from './energy'
@@ -89,6 +90,17 @@ test('rejects a year outside 2020–2100 and a non-integer year', async () => {
   }
 })
 
+// Every period is a flat object of numbers, plus its heat pumps: flat objects of an id, a name and numbers.
+const flatUnit = (u: unknown) =>
+  Object.entries(u as object).every(([k, v]) =>
+    k === 'id' || k === 'name' ? typeof v === 'string' : typeof v === 'number',
+  )
+const flat = (p: unknown) =>
+  p === null ||
+  Object.entries(p as object).every(([k, v]) =>
+    k === 'heatPumps' ? Array.isArray(v) && v.every(flatUnit) : v === null || typeof v === 'number',
+  )
+
 test('privacy: the output holds period sums only, never buckets', async () => {
   const day = '2026-02-10'
   const { startMs, endMs } = stockholmDayBounds(day)
@@ -105,9 +117,7 @@ test('privacy: the output holds period sums only, never buckets', async () => {
     'year',
     'yearTotal',
   ])
-  // The only arrays are the 12 months, the years and the month keys; every period is a flat object of numbers.
-  const flat = (p: unknown) =>
-    p === null || Object.values(p as object).every((v) => v === null || typeof v === 'number')
+  // The only arrays are the 12 months, the years and the month keys; every period is flat (see `flat`).
   // Real sums are present, so the flatness check is not vacuous.
   expect(o.months.some((p) => p !== null)).toBe(true)
   expect(o.allTime).not.toBeNull()
@@ -117,6 +127,28 @@ test('privacy: the output holds period sums only, never buckets', async () => {
   expect(o.monthsWithReadings.every((k) => /^\d{4}-\d{2}$/.test(k))).toBe(true)
   expect(flat(o.yearTotal)).toBe(true)
   expect(flat(o.allTime)).toBe(true)
+})
+
+test('privacy: the heat pumps reach the output as period sums only, and their timing is recorded', async () => {
+  const day = '2026-02-10'
+  const { startMs, endMs } = stockholmDayBounds(day)
+  await replaceDay({ dayStart: new Date(startMs), dayEnd: new Date(endMs) }, syntheticDay(day))
+  await refreshMonthSums()
+  const id = await seedUnits('Matsal')
+  await storeHours(id.Matsal, '2026-02-09T23:00:00Z', '2026-02-10T23:00:00Z')
+  await signIn('user')
+  const timings: Record<string, number> = {}
+  const o = await call(energyRouter.overview, { year: 2026 }, { context: context(timings) })
+  const [unit] = o.months[1]?.heatPumps ?? []
+  const keys = ['expectedHours', 'hours', 'id', 'kwh', 'name']
+  expect(Object.keys(unit).sort()).toEqual(keys)
+  for (const total of [o.yearTotal, o.allTime]) {
+    const [u] = total?.heatPumps ?? []
+    expect(Object.keys(u).sort()).toEqual(keys)
+  }
+  expect(unit.hours).toBe(24)
+  expect([o.months[1], o.yearTotal, o.allTime].every(flat)).toBe(true)
+  expect(typeof timings.heatPumpMs).toBe('number')
 })
 
 test('without a year it opens on the current Stockholm year', async () => {

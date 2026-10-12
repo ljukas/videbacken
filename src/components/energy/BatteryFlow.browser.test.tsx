@@ -20,6 +20,7 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   lastSocPct: 20,
   buckets: 8640,
   expectedBuckets: 8640,
+  heatPumps: [],
   ...over,
 })
 const node = (key: string) => document.querySelector(`[data-flow-node="${key}"]`)?.textContent ?? ''

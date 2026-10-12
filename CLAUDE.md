@@ -75,7 +75,7 @@ src/
     houseEnergy/                Emaldo house-energy readings sync (sync.ts: recent days + backfill, day watermark) + cron (ADR-0019, ADR-0023) — no index barrel;
                                 energy-mix derivation (ADR-0023): pure client-safe mix/ (supply, shape, pool + SoC cap, carMix, houseTimeline),
                                 derive.ts (deriveFrom: one locked transaction) + deriveAfterSync.ts (queue + best-effort derive after the Emaldo, Zaptec, elpris syncs);
-                                client-safe figures.ts (period figures, ADR-0024) + flowLayout.ts (the Summering flow diagram's geometry)
+                                client-safe figures.ts (period figures, ADR-0024) + flowLayout.ts (the Summering flow diagram's geometry) + usageFlowLayout.ts (the Användning diagram's, heat pumps step 2) + heatPumpColors.ts
     heatPump/                   Comfort Cloud sync (sync.ts: recent UTC days + catch-up ≤ 14 d + per-unit backfill to registered_on (persisted cursor)) + cron (ADR-0019, ADR-0027) — no index barrel
     integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019)
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel

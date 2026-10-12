@@ -10,14 +10,18 @@ import {
 } from '~/components/evCharging/format'
 import type { MetricOption } from '~/components/evCharging/MetricToggle'
 import { energyFigures, gapHours, type PeriodSums } from '~/lib/houseEnergy/figures'
+import { heatPumpColor } from '~/lib/houseEnergy/heatPumpColors'
 import { m } from '~/paraglide/messages'
 import {
   type ChartRow,
   chartRows,
+  chartUnits,
   type EnergyMetric,
   energyTooltipRows,
+  type HeatPumpSeriesKey,
   isBelowAxis,
-  METRIC_SERIES,
+  isHeatPumpSeries,
+  metricSeries,
   type SeriesKey,
 } from './energyTooltip'
 
@@ -31,7 +35,10 @@ export function energyMetricOptions(): MetricOption<EnergyMetric>[] {
   ]
 }
 
-function seriesConfig(): Record<SeriesKey, { label: string; color: string }> {
+function fixedSeries(): Record<
+  Exclude<SeriesKey, HeatPumpSeriesKey>,
+  { label: string; color: string }
+> {
   return {
     solarDirect: { label: m.energy_series_solar_direct(), color: 'var(--energy-solar)' },
     solarBattery: { label: m.energy_series_solar_battery(), color: 'var(--energy-battery)' },
@@ -41,6 +48,22 @@ function seriesConfig(): Record<SeriesKey, { label: string; color: string }> {
     exported: { label: m.energy_series_export(), color: 'var(--energy-export)' },
     car: { label: m.energy_series_car(), color: 'var(--energy-car)' },
     house: { label: m.energy_series_house(), color: 'var(--energy-house)' },
+  }
+}
+
+// A series' legend label and colour. A heat pump is named from the data; its colour is its all-time place
+// (`colourUnits`), so it isn't repainted in a year where an earlier-named unit has no data.
+function seriesStyle(
+  key: SeriesKey,
+  units: readonly { id: string; name: string }[],
+  colourUnits: readonly { id: string }[],
+): { label: string; color: string } {
+  if (!isHeatPumpSeries(key)) return fixedSeries()[key]
+  const id = key.slice('heatPump:'.length)
+  const name = units.find((u) => u.id === id)?.name ?? ''
+  return {
+    label: m.energy_heat_pump_name({ name }),
+    color: heatPumpColor(colourUnits.length > 0 ? colourUnits : units, id),
   }
 }
 
@@ -70,6 +93,7 @@ export function EnergyMonthlyChart({
   currentMonth,
   selectedMonth,
   onSelectMonth,
+  heatPumpUnits,
 }: {
   year: number
   months: (PeriodSums | null)[]
@@ -79,25 +103,31 @@ export function EnergyMonthlyChart({
   /** The month (1–12) of `year` shown in the summary, else null. */
   selectedMonth: number | null
   onSelectMonth: (month: number) => void
+  /** Every unit in its all-time order (overview.allTime.heatPumps): the heat pump colour order. */
+  heatPumpUnits: readonly { id: string; name: string }[]
 }) {
-  const keys = METRIC_SERIES[metric]
+  // From the data: the year's units, memoised with the months so the chart's geometry survives re-renders.
+  const units = useMemo(() => chartUnits(months), [months])
+  const keys = useMemo(() => metricSeries(metric, units), [metric, units])
   // Memoised, like the rows (and with the module-level accessors), so the
   // chart's geometry survives page re-renders (polls, selection).
   const series = useMemo<BarSeries[]>(() => {
-    const config = seriesConfig()
     // The stack's top is rounded; on Nät that's the purchase's top (export hangs below).
     const top = keys[keys.length - (metric === 'grid' ? 2 : 1)]
-    return keys.map((key) => ({
-      key,
-      label: config[key].label,
-      color: config[key].color,
-      stack: 'kwh',
-      ...(key === top || isBelowAxis(metric, key) ? { radius: 2, roundEndOnly: true } : {}),
-      // A 2 px surface gap between stacked segments.
-      stroke: 'var(--card)',
-      strokeWidth: 2,
-    }))
-  }, [keys, metric])
+    return keys.map((key) => {
+      const style = seriesStyle(key, units, heatPumpUnits)
+      return {
+        key,
+        label: style.label,
+        color: style.color,
+        stack: 'kwh',
+        ...(key === top || isBelowAxis(metric, key) ? { radius: 2, roundEndOnly: true } : {}),
+        // A 2 px surface gap between stacked segments.
+        stroke: 'var(--card)',
+        strokeWidth: 2,
+      }
+    })
+  }, [keys, metric, units, heatPumpUnits])
   const rows = useMemo(() => chartRows(metric, months), [metric, months])
   if (months.every((p) => p === null)) {
     return (
@@ -136,7 +166,14 @@ export function EnergyMonthlyChart({
         tooltipClassName="min-w-56 gap-1 border-border px-3 py-2 text-sm [&>div]:gap-1"
         tooltip={(r) =>
           r.sums ? (
-            <EnergyTooltip row={r} sums={r.sums} metric={metric} currentMonth={currentMonth} />
+            <EnergyTooltip
+              row={r}
+              sums={r.sums}
+              metric={metric}
+              currentMonth={currentMonth}
+              units={units}
+              heatPumpUnits={heatPumpUnits}
+            />
           ) : null
         }
         label={m.energy_chart_title({ year: String(year) })}
@@ -157,15 +194,20 @@ function EnergyTooltip({
   sums,
   metric,
   currentMonth,
+  units,
+  heatPumpUnits,
 }: {
   row: ChartRow
   sums: PeriodSums
   metric: EnergyMetric
   currentMonth: number | null
+  units: readonly { id: string; name: string }[]
+  heatPumpUnits: readonly { id: string; name: string }[]
 }) {
   const { parts, totalKwh } = energyTooltipRows(metric, sums)
-  const gap = gapHours(energyFigures(sums))
-  const config = seriesConfig()
+  const figures = energyFigures(sums)
+  const gap = gapHours(figures)
+  const style = (key: SeriesKey) => seriesStyle(key, units, heatPumpUnits)
   // Nät's export is a separate flow: it follows the total instead of adding to it.
   const stacked = parts.filter((p) => !isBelowAxis(metric, p.key))
   const after = parts.filter((p) => isBelowAxis(metric, p.key))
@@ -173,8 +215,8 @@ function EnergyTooltip({
   const rowFor = ({ key, kwh, share }: (typeof parts)[number]) => (
     <TooltipRow
       key={key}
-      label={config[key].label}
-      color={config[key].color}
+      label={style(key).label}
+      color={style(key).color}
       share={share === null ? '' : formatShare(share)}
     >
       {formatOneDecimal(kwh)} kWh
@@ -196,6 +238,11 @@ function EnergyTooltip({
           {m.energy_missing_hours({ hours: String(gap) })}
         </span>
       )}
+      {metric === 'load' && figures.heatPumpMissingHours >= 1 ? (
+        <span className="text-muted-foreground">
+          {m.energy_use_missing_hours({ hours: String(figures.heatPumpMissingHours) })}
+        </span>
+      ) : null}
     </>
   )
 }

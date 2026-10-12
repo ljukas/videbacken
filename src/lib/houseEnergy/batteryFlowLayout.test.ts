@@ -24,6 +24,7 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   lastSocPct: 20,
   buckets: 8603,
   expectedBuckets: 8640,
+  heatPumps: [],
   ...over,
 })
 const KEYS: BatteryNodeKey[] = ['sol', 'imp', 'bat', 'out', 'loss']

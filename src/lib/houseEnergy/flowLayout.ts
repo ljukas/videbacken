@@ -40,7 +40,7 @@ export const NARROW_HEIGHT = 490
 export const MIN_FLOW_KWH = 0.05
 /** Below this (or negative) the loss reads "≈ 0" and has no stub (house energy design, display rules). */
 export const MIN_LOSS_KWH = 0.5
-const ARROW_LENGTH = 9
+export const ARROW_LENGTH = 9
 /** A node's inner margin: its text starts this far in and may run to this far from the right edge. */
 export const NODE_PADDING = 12
 /** Smallest sizes a node figure / the battery's loss figure steps down to so it fits its node. */

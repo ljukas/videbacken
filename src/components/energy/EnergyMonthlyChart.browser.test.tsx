@@ -45,6 +45,7 @@ const sums = (over: Partial<PeriodSums> = {}): PeriodSums => ({
   lastSocPct: 30,
   buckets: 100,
   expectedBuckets: 100,
+  heatPumps: [],
   ...over,
 })
 
@@ -58,6 +59,7 @@ const renderChart = ({
   selectedMonth = null,
   onSelectMonth = vi.fn(),
   width = 720,
+  heatPumpUnits = [],
 }: {
   metric?: EnergyMetric
   data?: (PeriodSums | null)[]
@@ -65,6 +67,7 @@ const renderChart = ({
   selectedMonth?: number | null
   onSelectMonth?: (month: number) => void
   width?: number
+  heatPumpUnits?: { id: string; name: string }[]
 } = {}) =>
   renderWithProviders(
     <div style={{ width, height: 340 }}>
@@ -75,6 +78,7 @@ const renderChart = ({
         currentMonth={currentMonth}
         selectedMonth={selectedMonth}
         onSelectMonth={onSelectMonth}
+        heatPumpUnits={heatPumpUnits}
       />
     </div>,
   )
@@ -429,6 +433,7 @@ test('switching the metric with a card open shows the new metric', async () => {
     currentMonth: null,
     selectedMonth: null,
     onSelectMonth: vi.fn(),
+    heatPumpUnits: [],
   }
   const ui = (metric: EnergyMetric) => (
     <div style={{ width: 720, height: 340 }}>
@@ -468,4 +473,76 @@ test('a 320 px phone: initials, and the outline stays inside the chart at both e
   // The widest y label is inside the chart.
   const yLabels = [...screen.container.querySelectorAll('[data-axis="y"] text')]
   for (const t of yLabels) expect(t.getBoundingClientRect().left).toBeGreaterThanOrEqual(svg.left)
+})
+
+const hp = (id: string, name: string, kwh: number) => ({
+  id,
+  name,
+  kwh,
+  hours: 720,
+  expectedHours: 720,
+})
+const allUnits = [
+  { id: 'hp-a', name: 'Matsal' },
+  { id: 'hp-b', name: 'Övervåning' },
+]
+const withUnits = months.map((p) =>
+  p ? { ...p, heatPumps: [hp('hp-a', 'Matsal', 120), hp('hp-b', 'Övervåning', 50)] } : p,
+)
+
+test('Förbrukning: laddning, one series per heat pump, övrigt hus, in the legend in stack order', async () => {
+  const { screen } = await renderChart({ metric: 'load', data: withUnits, heatPumpUnits: allUnits })
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(9 * 4))
+  await vi.waitFor(() =>
+    inOrder(legendText(screen.container), [
+      m.energy_series_car(),
+      m.energy_heat_pump_name({ name: 'Matsal' }),
+      m.energy_heat_pump_name({ name: 'Övervåning' }),
+      m.energy_series_house(),
+    ]),
+  )
+  const fill = (key: string) =>
+    screen.container.querySelector(`[data-series="${key}"] [data-bar]`)?.getAttribute('fill')
+  expect(fill('heatPump:hp-a')).toBe('var(--energy-heat-pump-1)')
+  expect(fill('heatPump:hp-b')).toBe('var(--energy-heat-pump-2)')
+})
+
+test('a year where only the later-named unit has data: it keeps its all-time colour', async () => {
+  const onlyB = months.map((p) => (p ? { ...p, heatPumps: [hp('hp-b', 'Övervåning', 50)] } : p))
+  const { screen } = await renderChart({ metric: 'load', data: onlyB, heatPumpUnits: allUnits })
+  await vi.waitFor(() =>
+    expect(
+      screen.container
+        .querySelector('[data-series="heatPump:hp-b"] [data-bar]')
+        ?.getAttribute('fill'),
+    ).toBe('var(--energy-heat-pump-2)'),
+  )
+  expect(legendText(screen.container)).not.toContain(m.energy_heat_pump_name({ name: 'Matsal' }))
+})
+
+test('the Förbrukning tooltip lists the heat pumps and their missing hours', async () => {
+  const gappy = withUnits.map((p, i) =>
+    i === 3 && p
+      ? {
+          ...p,
+          heatPumps: [{ ...hp('hp-a', 'Matsal', 120), hours: 700 }, hp('hp-b', 'Övervåning', 50)],
+        }
+      : p,
+  )
+  const { screen } = await renderChart({ metric: 'load', data: gappy, heatPumpUnits: allUnits })
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(0))
+  await hoverBar(screen.container, 0)
+  await vi.waitFor(() =>
+    expect(tooltipText()).toContain(m.energy_heat_pump_name({ name: 'Övervåning' })),
+  )
+  const tip = tooltipText()
+  const order = [
+    m.energy_series_car(),
+    m.energy_heat_pump_name({ name: 'Matsal' }),
+    m.energy_heat_pump_name({ name: 'Övervåning' }),
+    m.energy_series_house(),
+    m.energy_chart_total_load(),
+    m.energy_use_missing_hours({ hours: '20' }),
+  ]
+  inOrder(tip, order)
 })

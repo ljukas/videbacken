@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useId, useState } from 'react'
 import energyChartBones from '~/bones/energy-chart.bones.json'
 import energyTilesBones from '~/bones/energy-tiles.bones.json'
+import energyUseBones from '~/bones/energy-use.bones.json'
 import { EnergyEmpty } from '~/components/energy/EnergyEmpty'
 import { EnergyFlow } from '~/components/energy/EnergyFlow'
 import { EnergyHeading } from '~/components/energy/EnergyHeading'
@@ -12,11 +13,13 @@ import {
   energyMetricOptions,
 } from '~/components/energy/EnergyMonthlyChart'
 import { EnergySummaryCard } from '~/components/energy/EnergySummaryCard'
+import { EnergySyncAlerts } from '~/components/energy/EnergySyncAlerts'
+import { EnergyUseFlow } from '~/components/energy/EnergyUseFlow'
 import { energyOverviewQueryFor } from '~/components/energy/energyQueries'
 import { energySearchSchema, periodOfSearch } from '~/components/energy/energySearch'
+import { periodLabel } from '~/components/energy/PeriodControl'
 import { type EnergySearchWrite, useEnergyPeriod } from '~/components/energy/useEnergyPeriod'
 import { MetricToggle } from '~/components/evCharging/MetricToggle'
-import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { LoadErrorAlert } from '~/components/layout/LoadErrorAlert'
@@ -27,6 +30,10 @@ import { loadRouteData } from '~/lib/query/routeData'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { seo } from '~/utils/seo'
+
+// The heat pumps' colour order is the all-time units'; before the first read there are none. A module constant, so
+// the chart's series memo isn't rebuilt on every render.
+const NO_HEAT_PUMP_UNITS: readonly { id: string; name: string }[] = []
 
 export const Route = createFileRoute('/_authenticated/energy/')({
   head: () => ({
@@ -54,7 +61,7 @@ function EnergyOverviewPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   const syncNow = useSyncNow()
-  // Every source's health (one read); this page shows Emaldo's. Not suspending:
+  // Every source's health (one read); this page shows Emaldo's and Comfort Cloud's. Not suspending:
   // a client navigation doesn't wait for it (ADR-0025 §3).
   const { data: sourcesHealth } = useQuery({ ...syncHealthQuery, refetchInterval: 60_000 })
   const health = sourcesHealth?.emaldo
@@ -67,18 +74,13 @@ function EnergyOverviewPage() {
   const { overview } = e
   const [metric, setMetric] = useState<EnergyMetric>('solar')
   const chartHeadingId = useId()
+  const useHeadingId = useId()
+  const heatPumpUnits = e.tiles?.allTime?.heatPumps ?? NO_HEAT_PUMP_UNITS
 
   return (
     <PageContainer>
       <EnergyHeading title={m.energy_title()} lastSuccessAt={health?.lastSuccessAt} />
-      {health ? (
-        <SyncHealthAlert
-          health={health}
-          isAdmin={isAdmin}
-          onRetry={() => syncNow.syncSource('emaldo')}
-          retrying={syncNow.isPendingFor('emaldo')}
-        />
-      ) : null}
+      <EnergySyncAlerts health={sourcesHealth} isAdmin={isAdmin} syncNow={syncNow} />
       {/* A skeleton is not an empty state (ADR-0016): only data says there are
           no readings. */}
       {overview?.firstReadingDay === null ? (
@@ -101,6 +103,27 @@ function EnergyOverviewPage() {
               >
                 <EnergyFlow sums={e.sums} />
               </EnergySummaryCard>
+            ) : null}
+          </SectionSkeleton>
+          <SectionSkeleton bones={energyUseBones} loading={e.pending} fallbackHeight="36rem">
+            {e.tiles && e.period ? (
+              <section aria-labelledby={useHeadingId}>
+                <Card>
+                  {/* The period is Summering's: its label here, no second control. */}
+                  <CardHeader className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 id={useHeadingId} className="font-semibold text-lg">
+                      {m.energy_use_heading()}
+                    </h2>
+                    <p className="text-muted-foreground text-sm">{periodLabel(e.period, e.now)}</p>
+                  </CardHeader>
+                  <CardContent
+                    className={cn('transition-opacity', e.sumsDimmed && 'opacity-60')}
+                    aria-busy={e.sumsStale || undefined}
+                  >
+                    <EnergyUseFlow sums={e.sums} units={heatPumpUnits} />
+                  </CardContent>
+                </Card>
+              </section>
             ) : null}
           </SectionSkeleton>
           <SectionSkeleton bones={energyChartBones} loading={e.pending} fallbackHeight="22rem">
@@ -136,6 +159,7 @@ function EnergyOverviewPage() {
                       onSelectMonth={(month) =>
                         e.setPeriod({ kind: 'month', year: overview.year, month })
                       }
+                      heatPumpUnits={heatPumpUnits}
                     />
                   </CardContent>
                 </Card>

@@ -8,19 +8,21 @@ export const energyRouter = {
   // plus the chart year's total, all time and the months with readings. Any signed-in member: read-only.
   // Reads the month sums view (houseScanMs, name kept for before/after
   // comparison) plus the charging overview's queries → its own timing, plus
-  // the service's two sub-timings (houseScanMs, carMs).
+  // the service's sub-timings (houseScanMs, carMs, heatPumpMs; the car and
+  // heat pump reads run in parallel).
   overview: protectedProcedure
     .input(
       z.object({ year: z.number().int().min(OVERVIEW_MIN_YEAR).max(OVERVIEW_MAX_YEAR).optional() }),
     )
     .handler(async ({ input, context }) => {
       const startedAt = performance.now()
-      const timings: { houseScanMs?: number; carMs?: number } = {}
+      const timings: { houseScanMs?: number; carMs?: number; heatPumpMs?: number } = {}
       const overview = await getEnergyOverview({ year: input.year, timings })
       if (context.timings) {
         context.timings.getEnergyOverviewMs = Math.round(performance.now() - startedAt)
         if (timings.houseScanMs !== undefined) context.timings.houseScanMs = timings.houseScanMs
         if (timings.carMs !== undefined) context.timings.carMs = timings.carMs
+        if (timings.heatPumpMs !== undefined) context.timings.heatPumpMs = timings.heatPumpMs
       }
       return overview
     }),

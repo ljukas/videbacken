@@ -222,7 +222,20 @@ colocated tests with `setupDatabase()`):
   house bucket on Översikt (`energyOverview`, step 2), now floored to the hour on Värmepumpar (`heatPumpRead.ts`,
   step 3). Hours after a unit's newest stored hour count as missing only once that trailing gap is ≥ 13 h
   (`STALE_AFTER_MS.comfortCloud`); gaps inside the stored range always count. So a stall of both units shows as
-  missing on both pages, and the 6-hourly sync's normal lag shows on neither.
+  missing on both pages, and the 6-hourly sync's normal lag shows on neither. Amended in step 2:
+  - **A unit Comfort Cloud no longer lists** is one whose `last_seen_at` is older than the newest of any unit's (one
+    sync run upserts every listed unit with one timestamp). Its trailing gap counts only up to the later of its
+    newest stored hour's end and when it was last listed (never past the period's clipped end), so a removed unit
+    isn't missing forever. When the whole source fails, every `last_seen_at` freezes together, no unit counts as
+    removed and the gap still counts. Limits: a lone remaining unit can't be detected as removed (its gap keeps
+    counting), and a unit dropped from one listing and back later counts its gap only up to that listing.
+  - **A unit still listed but sending no data** keeps counting as missing ("värmepumpsdata saknas") while Datakällor
+    turns green again after 14 days (the sync then only warns): intended, the data is missing.
+  - **A unit appears in a period** when it has hours or expected hours there, or (unless removed) when its first
+    reading lies before the period's clipped end: in a new month's first hours, before the next run, it shows
+    0 kWh with nothing missing rather than vanishing (and övrigt hus silently holding its kWh).
+  - **The cap is per period**: Σ heat pumps > load − laddning scales the heat pumps of that period, so a year's
+    figures are not the sum of its capped months when a month's house data has gaps (known; a follow-up).
 - Events (step 4a): `listEvents()`, `createEvent`, `updateEvent`, `deleteEvent`, with `HeatPumpDomainError` codes
   `UNKNOWN_HEAT_PUMP`, `FUTURE_DATE`, `EVENT_NOT_FOUND`, `NOTE_TOO_LONG`.
 
@@ -455,7 +468,10 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
 | A unit offline for a whole day | Yesterday empty → the run fails (`unexpected_response`, naming the unit and day) every run until data returns, as long as the unit had data within 14 days; after 14 days without data it only logs a warning (a removed unit stops alerting). A unit already answering today only warns (yesterday's hole won't fill). Either way its backfill is held until yesterday answers |
 | Yesterday's hours fail validation (e.g. a changed unit), or the client rejects its rows | The run fails (`unexpected_response`, naming the unit and day) every run while it lasts; the unit's backfill is held; other rejected days are skipped with a warning |
 | A day whose rows the client rejects (a repeated hour, a row outside the day, a row of the wrong shape) | Rejected like a day that fails validation: skipped with a warning (unit, day, code), counted in `rejectedDays`; the catch-up and the backfill move past it. An answer the client can't read at all (HTTP 400/404, not JSON, a bad envelope) fails the run instead and the backfill retries that day |
-| Σ heat pumps > load − laddning (meter noise, or heat pump hours present where house buckets are missing) | Heat pumps scaled down to fit; övrigt hus 0 |
+| Σ heat pumps > load − laddning (meter noise, or heat pump hours present where house buckets are missing) | Heat pumps scaled down to fit; övrigt hus 0. Per period: a year is capped as a whole, not as the sum of its capped months, so with a house-data gap in one month the year's övrigt hus can read lower (known) |
+| A unit Comfort Cloud no longer lists (another unit was listed after it last was) | Its trailing gap counts only up to the later of its newest stored hour's end and its last listing; no node in a later period. The whole source failing freezes every listing together, so the gap still counts. A lone remaining unit can't be detected as removed; a unit dropped from one listing and back counts its gap only to that listing |
+| A unit still listed but sending no data for more than 14 days | Still counted as missing ("värmepumpsdata saknas för N h") while Datakällor is green again (warn-only after 14 days): intended, the data is missing |
+| A new month's first hours, before the next 6-hourly run | Each listed unit with earlier readings keeps its node at 0 kWh, nothing missing |
 | A unit renamed in Comfort Cloud | Name refreshed on the next sync; history kept (keyed by guid) |
 | A third unit added | Discovered, backfilled, a third colour (a fourth gets a neutral colour; colours never cycle) |
 | A gap of a whole month in a unit's history | The backfill continues to `registered_on − 1`; empty months cost one month call each |
