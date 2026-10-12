@@ -84,12 +84,13 @@ type Span = { startMs: number; endMs: number }
  * day and the unit's first hour, to the earlier of the period's end and the unit's end, in whole hours (a partly
  * covered last hour counts). A unit's end is the newest house bucket's end, but a trailing gap after its newest stored
  * hour counts as missing only from the source's stale threshold (13 h, two missed 6-hourly runs): shorter, it is the
- * sync's normal lag, so the unit ends at its newest stored hour (so in a new month's first hours, before the next run,
- * a unit may have no node in the new month yet). A unit Comfort Cloud stopped listing (another unit was listed after
- * it last was) ends no later than its newest stored hour or its last listing, whichever is later, so a removed unit
- * isn't missing forever; when the whole source fails every unit's last listing freezes together and the gap counts.
- * Gaps inside the stored hours always count. A unit with nothing stored and nothing expected is left out, so a period
- * before its first reading has no heat pump. Name order (`byHeatPumpName`).
+ * sync's normal lag, so the unit ends at its newest stored hour. A unit Comfort Cloud stopped listing (another unit was
+ * listed after it last was) ends no later than its newest stored hour or its last listing, whichever is later, so a
+ * removed unit isn't missing forever; when the whole source fails every unit's last listing freezes together and the
+ * gap counts. Gaps inside the stored hours always count. A unit appears in a period when it has hours or expected hours
+ * there, or (unless removed) when its first hour lies before the period's clipped end: in a new month's first hours,
+ * before the next run, it shows 0 kWh with nothing missing rather than vanishing. So a period before its first reading,
+ * or after a removed unit's end, has no node for it. Name order (`byHeatPumpName`).
  */
 function heatPumpPeriods(rows: HeatPumpMonthRow[], coverageStartMs: number, newestEndMs: number) {
   const units = new Map<
@@ -110,13 +111,13 @@ function heatPumpPeriods(rows: HeatPumpMonthRow[], coverageStartMs: number, newe
     })
   }
   const newestSeenMs = Math.max(...[...units.values()].map((u) => u.lastSeenMs))
+  const removed = (u: { lastSeenMs: number }) => u.lastSeenMs < newestSeenMs
   const unitEndMs = (u: { lastMs: number; lastSeenMs: number }) => {
     const storedEndMs = u.lastMs + HOUR_MS
     if (newestEndMs - storedEndMs < STALE_AFTER_MS.comfortCloud) {
       return Math.min(newestEndMs, storedEndMs)
     }
-    const removed = u.lastSeenMs < newestSeenMs
-    return removed ? Math.min(newestEndMs, Math.max(storedEndMs, u.lastSeenMs)) : newestEndMs
+    return removed(u) ? Math.min(newestEndMs, Math.max(storedEndMs, u.lastSeenMs)) : newestEndMs
   }
   const ordered = [...units.values()].sort(byHeatPumpName)
   return (period: Span, inPeriod: (r: HeatPumpMonthRow) => boolean): HeatPumpPeriod[] => {
@@ -131,7 +132,8 @@ function heatPumpPeriods(rows: HeatPumpMonthRow[], coverageStartMs: number, newe
       }
       const startMs = Math.max(period.startMs, coverageStartMs, u.firstMs)
       const expected = endMs > startMs ? Math.ceil((endMs - startMs) / HOUR_MS) : 0
-      if (expected === 0 && hours === 0) return []
+      const begun = !removed(u) && u.firstMs < Math.min(period.endMs, newestEndMs)
+      if (expected === 0 && hours === 0 && !begun) return []
       return [{ id: u.id, name: u.name, kwh, hours, expectedHours: Math.max(expected, hours) }]
     })
   }

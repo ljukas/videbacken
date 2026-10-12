@@ -528,3 +528,113 @@ test('the whole source failing: every unit’s trailing gap counts', async () =>
   ])
   expect(energyFigures(o.months[5] as PeriodSums).heatPumpMissingHours).toBe(36)
 })
+
+test('a new month’s first hours before the next run: the unit keeps its node with 0 kWh and nothing missing', async () => {
+  await storeDay('2026-05-31', { loadKwh: 0.1 })
+  await storeDay('2026-06-01', { loadKwh: 0.1 }, 24) // to 1 June 02:00 Stockholm (2026-06-01T00:00Z)
+  const id = await seedUnits('Matsal')
+  // Stored to 31 May 23:00 Stockholm: the 2 h lag is the sync's normal delay.
+  await storeHours(id.Matsal, '2026-05-30T22:00:00Z', '2026-05-31T22:00:00Z')
+  const o = await overview({ year: 2026, now: new Date('2026-06-01T00:10:00Z') })
+  expect(o.months[5]?.heatPumps).toEqual([
+    { id: id.Matsal, name: 'Matsal', kwh: 0, hours: 0, expectedHours: 0 },
+  ])
+  expect(energyFigures(o.months[5] as PeriodSums).heatPumpMissingHours).toBe(0)
+  expect(o.months[4]?.heatPumps.map((u) => [u.hours, u.expectedHours])).toEqual([[24, 24]])
+  expect(o.yearTotal?.heatPumps.map((u) => [u.hours, u.expectedHours])).toEqual([[24, 24]])
+  expect(o.allTime?.heatPumps.map((u) => [u.hours, u.expectedHours])).toEqual([[24, 24]])
+})
+
+test('a new month with a 13 h or longer trailing gap: the unit’s node has 0 h of the expected ones', async () => {
+  await storeDay('2026-05-31', { loadKwh: 0.1 })
+  await storeDay('2026-06-01', { loadKwh: 0.1 }, 168) // to 1 June 14:00 Stockholm (2026-06-01T12:00Z)
+  const id = await seedUnits('Matsal')
+  await storeHours(id.Matsal, '2026-05-30T22:00:00Z', '2026-05-31T22:00:00Z')
+  const o = await overview({ year: 2026, now: new Date('2026-06-01T12:10:00Z') })
+  expect(o.months[5]?.heatPumps).toEqual([
+    { id: id.Matsal, name: 'Matsal', kwh: 0, hours: 0, expectedHours: 14 },
+  ])
+})
+
+/** Two units, the second (Övervåning) stored 2026-05-31T22:00Z → `storedTo` and last listed at `seenAt`; Matsal
+ * stored throughout and listed by a later run (so Övervåning was removed). */
+async function removedUnit(
+  storedTo: string,
+  seenAt: string,
+  matsalSeenAt = '2026-06-04T00:00:00Z',
+) {
+  const id = await seedUnits('Matsal', 'Övervåning')
+  await storeHours(id.Matsal, '2026-05-31T22:00:00Z', '2026-06-02T22:00:00Z')
+  await storeHours(id.Övervåning, '2026-05-31T22:00:00Z', storedTo)
+  await upsertUnits(
+    [{ guid: 'CS-HZ25ZKE+0000000002', name: 'Övervåning', model: 'CS-HZ25ZKE' }],
+    new Date(seenAt),
+  )
+  await upsertUnits(
+    [{ guid: 'CS-HZ25ZKE+0000000001', name: 'Matsal', model: 'CS-HZ25ZKE' }],
+    new Date(matsalSeenAt),
+  )
+  return id
+}
+
+test('a removed unit last listed after its newest stored hour is expected until that listing', async () => {
+  await storeDay('2026-06-01', { loadKwh: 0.1 })
+  await storeDay('2026-06-02', { loadKwh: 0.1 }) // newest bucket ends 2026-06-02T22:00Z
+  await removedUnit('2026-06-01T10:00:00Z', '2026-06-01T16:00:00Z')
+  const o = await overview({ year: 2026, now: new Date('2026-06-02T22:30:00Z') })
+  expect(o.months[5]?.heatPumps.map((u) => [u.name, u.hours, u.expectedHours])).toEqual([
+    ['Matsal', 48, 48],
+    ['Övervåning', 12, 18],
+  ])
+})
+
+test('a removed unit last listed before its newest stored hour is expected until that hour', async () => {
+  await storeDay('2026-06-01', { loadKwh: 0.1 })
+  await storeDay('2026-06-02', { loadKwh: 0.1 })
+  await removedUnit('2026-06-01T10:00:00Z', '2026-06-01T06:00:00Z')
+  const o = await overview({ year: 2026, now: new Date('2026-06-02T22:30:00Z') })
+  expect(o.months[5]?.heatPumps.map((u) => [u.name, u.hours, u.expectedHours])).toEqual([
+    ['Matsal', 48, 48],
+    ['Övervåning', 12, 12],
+  ])
+})
+
+test('a removed unit last listed after the newest house bucket is expected until that bucket', async () => {
+  await storeDay('2026-06-01', { loadKwh: 0.1 })
+  await storeDay('2026-06-02', { loadKwh: 0.1 }) // newest bucket ends 2026-06-02T22:00Z
+  await removedUnit('2026-06-01T10:00:00Z', '2026-06-03T00:00:00Z', '2026-06-03T06:00:00Z')
+  const o = await overview({ year: 2026, now: new Date('2026-06-03T06:30:00Z') })
+  expect(o.months[5]?.heatPumps.map((u) => [u.name, u.hours, u.expectedHours])).toEqual([
+    ['Matsal', 48, 48],
+    ['Övervåning', 12, 48],
+  ])
+})
+
+test('a unit removed in May has no node in June; the year and all time expect it until its removal', async () => {
+  await storeDay('2026-05-30', { loadKwh: 0.1 }) // coverage starts 2026-05-29T22:00Z
+  await storeDay('2026-05-31', { loadKwh: 0.1 })
+  await storeDay('2026-06-30', { loadKwh: 0.1 }) // newest bucket ends 2026-06-30T22:00Z
+  const id = await seedUnits('Matsal', 'Övervåning')
+  await storeHours(id.Matsal, '2026-05-29T22:00:00Z', '2026-06-30T22:00:00Z')
+  // Övervåning: 36 h stored, last listed six hours later, on 31 May; Matsal listed on 1 July.
+  await storeHours(id.Övervåning, '2026-05-29T22:00:00Z', '2026-05-31T10:00:00Z')
+  await upsertUnits(
+    [{ guid: 'CS-HZ25ZKE+0000000002', name: 'Övervåning', model: 'CS-HZ25ZKE' }],
+    new Date('2026-05-31T16:00:00Z'),
+  )
+  await upsertUnits(
+    [{ guid: 'CS-HZ25ZKE+0000000001', name: 'Matsal', model: 'CS-HZ25ZKE' }],
+    new Date('2026-07-01T00:00:00Z'),
+  )
+  const o = await overview({ year: 2026, now: new Date('2026-06-30T22:30:00Z') })
+  expect(o.months[4]?.heatPumps.map((u) => [u.name, u.hours, u.expectedHours])).toEqual([
+    ['Matsal', 48, 48],
+    ['Övervåning', 36, 42],
+  ])
+  expect(o.months[5]?.heatPumps.map((u) => u.name)).toEqual(['Matsal'])
+  for (const total of [o.yearTotal, o.allTime])
+    expect(total?.heatPumps.map((u) => [u.name, u.hours, u.expectedHours])).toEqual([
+      ['Matsal', 768, 768],
+      ['Övervåning', 36, 42],
+    ])
+})
