@@ -9,7 +9,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1a | Adapter + storage, nothing calls it yet: the TypeScript Comfort Cloud client (login, units, UTC day and month history), `heat_pump` + `heat_pump_reading`, the service's writes | [plan](../plans/2026-10-08-heat-pumps-1a-adapter-storage.md) | [#146](https://github.com/ljukas/videbacken/pull/146) | checkpoint passed | passed 2026-10-11: live login (1 login, 10 requests, 0 retries), both units listed (Matsal, Övervåning, `CS-HZ25ZKE`, registered 2024-10-31 / 2024-11-27), UTC day 2026-10-10 stored through `replaceDay`: 24/24 hours per unit equal the Python probe; run output clean of password, user, tokens, api key, HTML and full guids |
-| 1b | Sync live: the `comfortCloud` source (CHECK migration), credentials, sync + backfill + 6-hour cron, Datakällor tile, Synka nu, health copy | [plan](../plans/2026-10-08-heat-pumps-1b-sync.md) | [#151](https://github.com/ljukas/videbacken/pull/151) | PR open | |
+| 1b | Sync live: the `comfortCloud` source (CHECK migration), credentials, sync + backfill + 6-hour cron, Datakällor tile, Synka nu, health copy | [plan](../plans/2026-10-08-heat-pumps-1b-sync.md) | [#151](https://github.com/ljukas/videbacken/pull/151) | checkpoint passed | passed 2026-10-12: backfill complete (first stored UTC day = `registered_on`: 2024-10-31 / 2024-11-27, both `history_complete_at` set); 2025-11, 2026-02 and 2026-09 per unit match the app to the whole kWh, every hour of each month stored (2025-11 replaced 2025-02: the app shows months only a year back); 2025-10-26 and 2026-03-29 have 24 distinct hours per unit; 14 runs `ok` (12 admin backfill runs ≈ 120 s each, then 5.9 s and the 00:20 cron at 7.3 s, 0 retries, matching the runtime log). The owner accepted one cron run instead of four over 24 h |
 | 2 | Energi › Översikt: the Användning flow diagram, the month chart's four-part Förbrukning, the Comfort Cloud health alert | [plan](../plans/2026-10-08-heat-pumps-2-overview.md) | | not started | |
 | 3 | Energi › Värmepumpar, consumption: page, nav, period control, month and day charts with last year and outdoor temperature, tiles | [plan](../plans/2026-10-08-heat-pumps-3-page.md) | | not started | |
 | 4a | Händelser: `heat_pump_event`, admin CRUD dialog, markers on the day chart | [plan](../plans/2026-10-08-heat-pumps-4a-events.md) | | not started | |
@@ -118,3 +118,9 @@ Each must pass, with the result recorded in the table, before the next step star
   line; a second run started 2 min later got HTTP 429 after 90 more days (≈ 210 day calls in 4.5 min) and failed
   cleanly as `rate_limited`, keeping what it stored. One run per 6 h stays far below that; two "Synka nu" in a row may
   hit it. A run 15 min later recovered (`ok`, 126 days) and resumed from the saved backfill cursor.
+- 2026-10-12: checkpoint 2 (prod). The owner ran "Synka nu" 12 times in ≈ 90 min (2026-10-11 17:11–18:38 UTC):
+  every run `ok`, ≈ 120 day calls each, no HTTP 429 (unlike the local runs), and the backfill completed. The 18:20 cron
+  fired while an admin run held the lease and logged `skipped`, as designed. After the backfill a run fetches only the
+  recent days (6 day calls, 14 requests, ≈ 6–7 s). `backfill_cursor` keeps its last pre-completion value; harmless,
+  `history_complete_at` stops the walk. A handful of days per unit have fewer than 24 hours (mostly the same days on
+  both units, i.e. outages): step 2's and step 3's "data saknas" notes will show them.
