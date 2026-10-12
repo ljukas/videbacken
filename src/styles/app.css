@@ -66,6 +66,9 @@
     --color-energy-house: var(--energy-house);
     --color-energy-car: var(--energy-car);
     --color-energy-loss: var(--energy-loss);
+    --color-energy-heat-pump-1: var(--energy-heat-pump-1);
+    --color-energy-heat-pump-2: var(--energy-heat-pump-2);
+    --color-energy-heat-pump-3: var(--energy-heat-pump-3);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-selected-foreground: var(--selected-foreground);
@@ -147,6 +150,11 @@
   --energy-car: #4a3aa7;
   /* The battery's loss (step 2): red, validated with solar, grid and battery (--pairs all) in both themes; hatched in charts. */
   --energy-loss: #b91c1c;
+  /* The heat pumps (ADR-0027 step 2), by unit order: validated with laddning and övrigt hus in stack order for one,
+     two and three units (light on #fff / dark on #1c1c1f), each ≥ 3:1. */
+  --energy-heat-pump-1: #1597ad;
+  --energy-heat-pump-2: #a1286a;
+  --energy-heat-pump-3: #3d5fd6;
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -229,6 +237,9 @@
   --energy-house: #d95926;
   --energy-car: #9085e9;
   --energy-loss: #dc3c3c;
+  --energy-heat-pump-1: #1a9db0;
+  --energy-heat-pump-2: #b33c86;
+  --energy-heat-pump-3: #5b7be8;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
