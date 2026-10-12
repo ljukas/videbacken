@@ -34,6 +34,25 @@ test('sums each unit per Stockholm month across a month edge, in name order', as
   expect(rows[0].lastHour).toEqual(new Date('2026-03-31T21:00:00Z'))
 })
 
+test('two units with one name: ordered by id, each one’s months in order', async () => {
+  const rows = await upsertUnits(
+    [
+      { guid: 'CS-HZ25ZKE+0000000001', name: 'Matsal', model: 'CS-HZ25ZKE' },
+      { guid: 'CS-HZ25ZKE+0000000002', name: 'Matsal', model: 'CS-HZ25ZKE' },
+    ],
+    new Date('2026-10-08T12:00:00Z'),
+  )
+  const [low, high] = rows.map((r) => r.id).sort()
+  // Each across the March/April edge (31 March 22:00Z is 00:00 on 1 April); the higher id stored first.
+  for (const id of [high, low]) await storeHours(id, '2026-03-31T21:00:00Z', '2026-03-31T23:00:00Z')
+  expect((await monthSums(all)).map((r) => [r.heatPumpId, r.month])).toEqual([
+    [low, 3],
+    [low, 4],
+    [high, 3],
+    [high, 4],
+  ])
+})
+
 test('both DST days: October 2025 has 745 hours, March 2026 743, none spill into a neighbour month', async () => {
   const id = await seedUnits('Matsal')
   // Stockholm October 2025: 2025-09-30T22:00Z (CEST) → 2025-10-31T23:00Z (CET), the 26th has 25 h.

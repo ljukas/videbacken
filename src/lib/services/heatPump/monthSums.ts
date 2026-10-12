@@ -33,7 +33,10 @@ export type HeatPumpMonthRow = {
  * A reading is already one whole UTC hour (the table's primary key and hour CHECK), so ADR-0024's rule (sum per UTC
  * hour, then convert the hour to Stockholm time) is one GROUP BY here: Stockholm offsets are whole hours, so every UTC
  * hour lies in exactly one Stockholm month, DST days included. Each row is one hour, so `avg` is the hour-weighted
- * mean. It aggregates the readings before joining the unit, so the sort sees one row per unit and month instead of spilling every wide joined reading row to disk. Sums only: an hour never leaves this function (ADR-0027 decision 6). The name is the unit's current one.
+ * mean. It aggregates the readings before joining the unit, so the sort sees one row per unit and month instead of
+ * spilling every wide joined reading row to disk. Sums only: a row's `firstHour`, `lastHour` and `lastSeenAt` are for
+ * `getEnergyOverview`'s expected hours, and an hour never leaves the service (ADR-0027 decision 6). The name is the
+ * unit's current one.
  */
 export async function monthSums({
   from,

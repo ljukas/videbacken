@@ -753,6 +753,34 @@ test.each([
     .toBeVisible()
 })
 
+test('both sources failing: Emaldo’s alert comes before Comfort Cloud’s', async () => {
+  const { screen } = await renderPage(Overview, '/energy', (qc) => {
+    seedOverview(withData)(qc)
+    seedSourcesHealth(qc, {
+      emaldo: failingHealth,
+      comfortCloud: {
+        state: 'failing',
+        code: 'auth_failed',
+        failingSince: new Date('2026-09-15T06:20:00Z'),
+        consecutiveFailures: 2,
+      },
+    })
+  })
+  const title = (source: 'emaldo' | 'comfortCloud') =>
+    screen.getByText(
+      m.charging_health_title({
+        source: integrationSourceName(source),
+        state: integrationHealthTitle('failing'),
+      }),
+    )
+  await expect.element(title('emaldo')).toBeVisible()
+  await expect.element(title('comfortCloud')).toBeVisible()
+  expect(
+    title('emaldo').element().compareDocumentPosition(title('comfortCloud').element()) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+})
+
 test('a healthy Comfort Cloud shows no alert', async () => {
   const { screen } = await renderPage(Overview, '/energy', seedOverview(withData))
   await expect.element(use(screen)).toBeVisible()

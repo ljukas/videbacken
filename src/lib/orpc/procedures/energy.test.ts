@@ -140,7 +140,12 @@ test('privacy: the heat pumps reach the output as period sums only, and their ti
   const timings: Record<string, number> = {}
   const o = await call(energyRouter.overview, { year: 2026 }, { context: context(timings) })
   const [unit] = o.months[1]?.heatPumps ?? []
-  expect(Object.keys(unit).sort()).toEqual(['expectedHours', 'hours', 'id', 'kwh', 'name'])
+  const keys = ['expectedHours', 'hours', 'id', 'kwh', 'name']
+  expect(Object.keys(unit).sort()).toEqual(keys)
+  for (const total of [o.yearTotal, o.allTime]) {
+    const [u] = total?.heatPumps ?? []
+    expect(Object.keys(u).sort()).toEqual(keys)
+  }
   expect(unit.hours).toBe(24)
   expect([o.months[1], o.yearTotal, o.allTime].every(flat)).toBe(true)
   expect(typeof timings.heatPumpMs).toBe('number')
