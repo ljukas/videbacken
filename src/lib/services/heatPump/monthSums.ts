@@ -33,7 +33,7 @@ export type HeatPumpMonthRow = {
  * A reading is already one whole UTC hour (the table's primary key and hour CHECK), so ADR-0024's rule (sum per UTC
  * hour, then convert the hour to Stockholm time) is one GROUP BY here: Stockholm offsets are whole hours, so every UTC
  * hour lies in exactly one Stockholm month, DST days included. Each row is one hour, so `avg` is the hour-weighted
- * mean. Sums only: an hour never leaves this function (ADR-0027 decision 6). The name is the unit's current one.
+ * mean. It aggregates the readings before joining the unit, so the sort sees one row per unit and month instead of spilling every wide joined reading row to disk. Sums only: an hour never leaves this function (ADR-0027 decision 6). The name is the unit's current one.
  */
 export async function monthSums({
   from,
@@ -42,33 +42,58 @@ export async function monthSums({
   from: Date
   to: Date
 }): Promise<HeatPumpMonthRow[]> {
-  const local = sql`(${heatPumpReading.hourStart} AT TIME ZONE 'Europe/Stockholm')`
-  return db
+  const s = db
     .select({
       heatPumpId: heatPumpReading.heatPumpId,
-      name: heatPump.name,
-      year: sql<number>`extract(year from ${local})::int`,
-      month: sql<number>`extract(month from ${local})::int`,
-      kwh: sql<number>`sum(${heatPumpReading.energyKwh})`.mapWith(Number),
+      m: sql<Date>`date_trunc('month', ${heatPumpReading.hourStart} AT TIME ZONE 'Europe/Stockholm')`.as(
+        'm',
+      ),
+      kwh: sql<number>`sum(${heatPumpReading.energyKwh})`.mapWith(Number).as('kwh'),
       heatKwh:
-        sql<number>`sum(${heatPumpReading.energyKwh} * coalesce(${heatPumpReading.heatShare}, 0))`.mapWith(
-          Number,
-        ),
+        sql<number>`sum(${heatPumpReading.energyKwh} * coalesce(${heatPumpReading.heatShare}, 0))`
+          .mapWith(Number)
+          .as('heat_kwh'),
       coolKwh:
-        sql<number>`sum(${heatPumpReading.energyKwh} * coalesce(${heatPumpReading.coolShare}, 0))`.mapWith(
-          Number,
-        ),
-      insideC: sql<number | null>`avg(${heatPumpReading.insideC})`.mapWith(Number),
-      outsideC: sql<number | null>`avg(${heatPumpReading.outsideC})`.mapWith(Number),
-      setpointC: sql<number | null>`avg(${heatPumpReading.setpointC})`.mapWith(Number),
-      hours: sql<number>`count(*)::int`,
-      firstHour: sql<Date>`min(${heatPumpReading.hourStart})`.mapWith(heatPumpReading.hourStart),
-      lastHour: sql<Date>`max(${heatPumpReading.hourStart})`.mapWith(heatPumpReading.hourStart),
-      lastSeenAt: sql<Date>`max(${heatPump.lastSeenAt})`.mapWith(heatPump.lastSeenAt),
+        sql<number>`sum(${heatPumpReading.energyKwh} * coalesce(${heatPumpReading.coolShare}, 0))`
+          .mapWith(Number)
+          .as('cool_kwh'),
+      insideC: sql<number | null>`avg(${heatPumpReading.insideC})`.mapWith(Number).as('inside_c'),
+      outsideC: sql<number | null>`avg(${heatPumpReading.outsideC})`
+        .mapWith(Number)
+        .as('outside_c'),
+      setpointC: sql<number | null>`avg(${heatPumpReading.setpointC})`
+        .mapWith(Number)
+        .as('setpoint_c'),
+      hours: sql<number>`count(*)::int`.as('hours'),
+      firstHour: sql<Date>`min(${heatPumpReading.hourStart})`
+        .mapWith(heatPumpReading.hourStart)
+        .as('first_hour'),
+      lastHour: sql<Date>`max(${heatPumpReading.hourStart})`
+        .mapWith(heatPumpReading.hourStart)
+        .as('last_hour'),
     })
     .from(heatPumpReading)
-    .innerJoin(heatPump, eq(heatPump.id, heatPumpReading.heatPumpId))
     .where(and(gte(heatPumpReading.hourStart, from), lt(heatPumpReading.hourStart, to)))
-    .groupBy(sql`1, 2, 3, 4`)
-    .orderBy(sql`2, 1, 3, 4`)
+    .groupBy(heatPumpReading.heatPumpId, sql`m`)
+    .as('s')
+  return db
+    .select({
+      heatPumpId: s.heatPumpId,
+      name: heatPump.name,
+      year: sql<number>`extract(year from ${s.m})::int`,
+      month: sql<number>`extract(month from ${s.m})::int`,
+      kwh: s.kwh,
+      heatKwh: s.heatKwh,
+      coolKwh: s.coolKwh,
+      insideC: s.insideC,
+      outsideC: s.outsideC,
+      setpointC: s.setpointC,
+      hours: s.hours,
+      firstHour: s.firstHour,
+      lastHour: s.lastHour,
+      lastSeenAt: heatPump.lastSeenAt,
+    })
+    .from(s)
+    .innerJoin(heatPump, eq(heatPump.id, s.heatPumpId))
+    .orderBy(heatPump.name, s.heatPumpId, s.m)
 }
