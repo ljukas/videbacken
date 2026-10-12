@@ -5,7 +5,7 @@ import { type EnergyFigures, energyFigures, type PeriodSums } from '~/lib/houseE
 import { m } from '~/paraglide/messages'
 import { SHOW_FLOW_VALUES_KEY } from './EnergyFlow'
 import { EnergyUseFlowDiagram } from './EnergyUseFlowDiagram'
-import { FlowTableFrame, FlowValuesSwitch } from './flowParts'
+import { FlowTableFrame, type FlowTableRow, FlowValuesSwitch } from './flowParts'
 
 // The Användning card's body (heat pumps step 2, spec "Energi › Översikt: Användning"): the diagram in a box whose
 // height is reserved per layout by a container query (content 860 px wide → 312 px, else 436 px) whatever the number
@@ -70,17 +70,20 @@ export function EnergyUseFlow({
 }
 
 function UseTable({ sums: s, f }: { sums: PeriodSums; f: EnergyFigures }) {
-  const kwh = (v: number) => `${formatOneDecimal(v)} kWh`
-  const share = (v: number) => (s.loadKwh > 0 ? formatShare(v / s.loadKwh) : '—')
-  const rows: string[][] = [
-    [m.energy_series_car(), kwh(f.car), share(f.car)],
-    ...f.heatPumps.map((u) => [
-      m.energy_heat_pump_name({ name: u.name }),
-      kwh(u.kwh),
-      share(u.kwh),
-    ]),
-    [m.energy_use_house(), kwh(f.restOfHouse), share(f.restOfHouse)],
-    [m.energy_tile_load(), kwh(s.loadKwh), s.loadKwh > 0 ? formatShare(1) : '—'],
+  const kwh = (v: number) => `${formatOneDecimal(v)}\u00a0kWh`
+  const share = (v: number | null) => (v === null ? '—' : formatShare(v))
+  // Keyed by consumer: two units may share a name.
+  const rows: FlowTableRow[] = [
+    { key: 'car', cells: [m.energy_series_car(), kwh(f.car), share(f.carShare)] },
+    ...f.heatPumps.map((u) => ({
+      key: `hp:${u.id}`,
+      cells: [m.energy_heat_pump_name({ name: u.name }), kwh(u.kwh), share(u.share)],
+    })),
+    { key: 'house', cells: [m.energy_use_house(), kwh(f.restOfHouse), share(f.restOfHouseShare)] },
+    {
+      key: 'load',
+      cells: [m.energy_tile_load(), kwh(s.loadKwh), s.loadKwh > 0 ? formatShare(1) : '—'],
+    },
   ]
   return (
     <FlowTableFrame

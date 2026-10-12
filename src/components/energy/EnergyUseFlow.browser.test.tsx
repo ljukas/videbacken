@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { formatOneDecimal, formatShare } from '~/components/evCharging/format'
 import type { HeatPumpPeriod, PeriodSums } from '~/lib/houseEnergy/figures'
@@ -86,6 +86,28 @@ test('the table: consumer, energy and share, with the total', async () => {
   expect(row(m.energy_heat_pump_name({ name: 'Matsal' }))).toContain(formatShare(150 / 900))
   expect(row(m.energy_use_house())).toContain(formatOneDecimal(390))
   expect(row(m.energy_tile_load())).toContain(formatOneDecimal(900))
+})
+
+test('the table keys its rows by unit, so two units with one name both show; kWh is kept on its figure', async () => {
+  const error = vi.spyOn(console, 'error')
+  const twins = [unit('hp-a', 'Matsal', 150), unit('hp-c', 'Matsal', 40)]
+  const { screen } = await renderWithProviders(
+    <EnergyUseFlow
+      sums={sums({ heatPumps: twins })}
+      units={[...units, { id: 'hp-c', name: 'Matsal' }]}
+    />,
+  )
+  await screen.getByText(m.energy_flow_table_toggle()).click()
+  const rows = [...screen.getByRole('table').element().querySelectorAll('tbody tr')].map(
+    (r) => r.textContent ?? '',
+  )
+  const matsal = m.energy_heat_pump_name({ name: 'Matsal' })
+  expect(rows.filter((r) => r.startsWith(matsal))).toEqual([
+    expect.stringContaining(`${formatOneDecimal(150)}\u00a0kWh`),
+    expect.stringContaining(`${formatOneDecimal(40)}\u00a0kWh`),
+  ])
+  expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/)
+  error.mockRestore()
 })
 
 test('a failed read or a period without data draws no diagram; only the latter says so', async () => {

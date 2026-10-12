@@ -323,14 +323,17 @@ export function FlowValuesSwitch({
   )
 }
 
-/** The Flöde / Värde table (or `columns`): `rows` first (the first cell names the row), then `children`. */
+/** A table row's cells (the first names the row), keyed by that name unless it carries its own `key`. */
+export type FlowTableRow = string[] | { key: string; cells: string[] }
+
+/** The Flöde / Värde table (or `columns`): `rows` first, then `children`. */
 export function FlowTableFrame({
   columns = [m.energy_flow_table_flow(), m.energy_flow_table_value()],
   rows,
   children,
 }: {
   columns?: string[]
-  rows: string[][]
+  rows: FlowTableRow[]
   children?: React.ReactNode
 }) {
   return (
@@ -352,19 +355,22 @@ export function FlowTableFrame({
           </tr>
         </thead>
         <tbody>
-          {rows.map(([name, ...values]) => (
-            <tr key={name} className="border-b">
-              <th scope="row" className="py-1.5 pr-4 text-left font-normal">
-                {name}
-              </th>
-              {values.map((v, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: a row's cells are positional
-                <td key={i} className="py-1.5 pl-4 text-right tabular-nums">
-                  {v}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const [name, ...values] = Array.isArray(row) ? row : row.cells
+            return (
+              <tr key={Array.isArray(row) ? name : row.key} className="border-b">
+                <th scope="row" className="py-1.5 pr-4 text-left font-normal">
+                  {name}
+                </th>
+                {values.map((v, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: a row's cells are positional
+                  <td key={i} className="py-1.5 pl-4 text-right tabular-nums">
+                    {v}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
           {children}
         </tbody>
       </table>

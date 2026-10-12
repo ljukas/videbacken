@@ -386,6 +386,36 @@ test('heat pumps: their kWh and share of the load; the rest of the house exclude
   ])
   expect(f.car).toBe(300)
   expect(f.restOfHouse).toBe(390)
+  expect(f.carShare).toBe(300 / 900)
+  expect(f.restOfHouseShare).toBe(390 / 900)
+})
+
+test('the car’s and the rest of the house’s shares of the load; null without load', () => {
+  const none = energyFigures(sums({ carKwh: 5, heatPumps: [matsal(5)] }))
+  expect(none.carShare).toBeNull()
+  expect(none.restOfHouseShare).toBeNull()
+  const capped = energyFigures(sums({ loadKwh: 400, carKwh: 300, heatPumps: [matsal(200)] }))
+  expect(capped.carShare).toBe(0.75)
+  expect(capped.restOfHouseShare).toBe(0)
+})
+
+test('heat pumps exactly filling the room: unscaled, övrigt hus exactly 0', () => {
+  const f = energyFigures(
+    sums({ loadKwh: 400, carKwh: 300, heatPumps: [matsal(60), overvaning(40)] }),
+  )
+  expect(f.heatPumps.map((u) => u.kwh)).toEqual([60, 40])
+  expect(f.heatPumps.map((u) => u.share)).toEqual([60 / 400, 40 / 400])
+  expect(f.restOfHouse).toBe(0)
+  expect(f.restOfHouseShare).toBe(0)
+})
+
+test('no heat pumps and laddning above the load: the car is the whole load, övrigt hus 0', () => {
+  const f = energyFigures(sums({ loadKwh: 2, carKwh: 3 }))
+  expect(f.car).toBe(2)
+  expect(f.carShare).toBe(1)
+  expect(f.heatPumps).toEqual([])
+  expect(f.restOfHouse).toBe(0)
+  expect(f.restOfHouseShare).toBe(0)
 })
 
 test('heat pumps above load − laddning are scaled down to fit; övrigt hus is exactly 0', () => {
@@ -464,6 +494,7 @@ test("Summering's figures don't change with heat pumps", () => {
     heatPumps: _h,
     heatPumpMissingHours: _m,
     restOfHouse: _r,
+    restOfHouseShare: _rs,
     ...rest
   }: EnergyFigures) => rest
   expect(strip(withUnits)).toEqual(strip(without))

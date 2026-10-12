@@ -60,8 +60,12 @@ export type EnergyFigures = {
   /** 0–1, or null without load. */
   selfSufficiency: number | null
   car: number
+  /** `car` as a share of the load, 0–1; null without load. */
+  carShare: number | null
   /** Load minus laddning and the heat pumps, never negative (heat pumps step 2: excludes the heat pumps). */
   restOfHouse: number
+  /** `restOfHouse` as a share of the load, 0–1; null without load. */
+  restOfHouseShare: number | null
   /**
    * Each heat pump's kWh and share of the load, in name order. Capped: laddning + heat pumps never exceed the load
    * (meter noise, or heat pump hours where house buckets are missing), so övrigt hus is never negative.
@@ -149,11 +153,14 @@ export function energyFigures(p: PeriodSums, capacityKwh = BATTERY_CAPACITY_KWH)
   const unitsKwh = p.heatPumps.reduce((sum, u) => sum + u.kwh, 0)
   const room = Math.max(0, p.loadKwh - car)
   const scale = unitsKwh > 0 ? Math.min(1, room / unitsKwh) : 1
+  const shareOfLoad = (kwh: number) => (p.loadKwh > 0 ? kwh / p.loadKwh : null)
   const heatPumps = p.heatPumps.map((u) => {
     const kwh = u.kwh * scale
-    return { id: u.id, name: u.name, kwh, share: p.loadKwh > 0 ? kwh / p.loadKwh : null }
+    return { id: u.id, name: u.name, kwh, share: shareOfLoad(kwh) }
   })
   const heatPumpKwh = heatPumps.reduce((sum, u) => sum + u.kwh, 0)
+  // Capped heat pumps fill the room exactly: 0, not a floating-point crumb.
+  const restOfHouse = scale < 1 ? 0 : Math.max(0, p.loadKwh - car - heatPumpKwh)
   return {
     solarToBattery,
     solarExported,
@@ -162,8 +169,9 @@ export function energyFigures(p: PeriodSums, capacityKwh = BATTERY_CAPACITY_KWH)
     importDirect: p.gridImportKwh - importToBattery,
     selfSufficiency: p.loadKwh > 0 ? Math.max(0, 1 - p.gridImportKwh / p.loadKwh) : null,
     car,
-    // Capped heat pumps fill the room exactly: 0, not a floating-point crumb.
-    restOfHouse: scale < 1 ? 0 : Math.max(0, p.loadKwh - car - heatPumpKwh),
+    carShare: shareOfLoad(car),
+    restOfHouse,
+    restOfHouseShare: shareOfLoad(restOfHouse),
     heatPumps,
     heatPumpMissingHours: p.heatPumps.reduce(
       (most, u) => Math.max(most, u.expectedHours - u.hours),

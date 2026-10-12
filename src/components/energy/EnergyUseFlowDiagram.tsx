@@ -33,18 +33,16 @@ type Tip = { id: string; label: string; color: string; kwh: number; share: numbe
 const kwh = (v: number) => formatOneDecimal(v)
 
 function consumersOf(
-  sums: PeriodSums,
   f: EnergyFigures,
   units: readonly { id: string }[],
 ): Map<UseConsumerKey, Consumer> {
-  const share = (v: number) => (sums.loadKwh > 0 ? v / sums.loadKwh : null)
   const map = new Map<UseConsumerKey, Consumer>()
   map.set('car', {
     label: m.energy_series_car(),
     color: 'var(--energy-car)',
     Icon: CarIcon,
     kwh: f.car,
-    share: share(f.car),
+    share: f.carShare,
   })
   for (const u of f.heatPumps)
     map.set(`hp:${u.id}`, {
@@ -59,7 +57,7 @@ function consumersOf(
     color: 'var(--energy-house)',
     Icon: HousePlugIcon,
     kwh: f.restOfHouse,
-    share: share(f.restOfHouse),
+    share: f.restOfHouseShare,
   })
   return map
 }
@@ -79,7 +77,7 @@ export function EnergyUseFlowDiagram({
   showValues: boolean
 }) {
   const layout = usageFlowLayout(width, usageConsumers(f))
-  const consumers = consumersOf(sums, f, units)
+  const consumers = consumersOf(f, units)
   const popover = useChartPopover<Tip>()
   const { markProps, containerProps, hide } = popover
   // A mouse leaving an arrow closes its popover (touch keeps it until a tap outside, as in Summering).
