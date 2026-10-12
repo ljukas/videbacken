@@ -5,6 +5,7 @@ import { formatShare, formatSignedOneDecimal } from '~/components/evCharging/for
 import { Switch } from '~/components/ui/switch'
 import type { EnergyFigures, PeriodSums } from '~/lib/houseEnergy/figures'
 import type { FlowNode, NodeText } from '~/lib/houseEnergy/flowLayout'
+import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
 // The drawing parts the Energi flow diagrams share (Översikt's and the battery's): node frame, value pill, fitted
@@ -79,6 +80,21 @@ export function ValuePill({
   )
 }
 
+/** True once the body font has loaded (it changes text widths after first paint). */
+export function useFontsReady(): boolean {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    let live = true
+    document.fonts?.ready.then(() => {
+      if (live) setReady(true)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  return ready
+}
+
 /**
  * The font size that lets a node's figure (or the battery's loss) fit its `room`: from `size`, 2 px down at a
  * time to `minSize`, measured before paint and again once the body font has loaded. Only the size changes; the
@@ -89,16 +105,7 @@ export function useFittedSize(
   text: string,
   { x, size: base, minSize, room }: { x: number; size: number; minSize: number; room: number },
 ) {
-  const [fontsLoaded, setFontsLoaded] = useState(false)
-  useEffect(() => {
-    let live = true
-    document.fonts?.ready.then(() => {
-      if (live) setFontsLoaded(true)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
+  const fontsLoaded = useFontsReady()
   // A new text, room or font starts again from the full size.
   const key = `${text}|${base}|${room}|${fontsLoaded}`
   const [fit, setFit] = useState({ key, size: base })
@@ -112,12 +119,37 @@ export function useFittedSize(
   return size
 }
 
+/**
+ * `text`, cut with "…" one character at a time until it fits `room` px from `x` (a user-set name on a phone node),
+ * measured before paint and again once the body font has loaded. The full text stays in the tooltip and the table.
+ */
+export function useFittedText(
+  ref: React.RefObject<SVGTextElement | null>,
+  text: string,
+  x: number,
+  room: number,
+): string {
+  const fontsLoaded = useFontsReady()
+  const key = `${text}|${room}|${fontsLoaded}`
+  const [fit, setFit] = useState({ key, length: text.length })
+  const length = fit.key === key ? fit.length : text.length
+  const shown = length >= text.length ? text : `${text.slice(0, Math.max(1, length)).trimEnd()}…`
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || length <= 1) return
+    const b = el.getBBox()
+    if (b.x + b.width > x + room) setFit({ key, length: length - 1 })
+  }, [ref, key, length, room, x])
+  return shown
+}
+
 /** A node's box, icon tile, icon and label; the node's figures follow as children. */
 export function NodeFrame({
   node: n,
   tile,
   label,
   labelText,
+  labelRef,
   Icon,
   tint,
   children,
@@ -127,6 +159,7 @@ export function NodeFrame({
   tile: NodeText['tile']
   label: { x: number; y: number }
   labelText: string
+  labelRef?: React.Ref<SVGTextElement>
   Icon: LucideIcon
   /** The arrow colour the tile is tinted with (sources); neutral without. */
   tint?: string
@@ -163,7 +196,14 @@ export function NodeFrame({
         height={tile.icon}
         className="text-foreground"
       />
-      <text x={label.x} y={label.y} fontSize={14} fontWeight={500} className="fill-foreground">
+      <text
+        ref={labelRef}
+        x={label.x}
+        y={label.y}
+        fontSize={14}
+        fontWeight={500}
+        className="fill-foreground"
+      >
         {labelText}
       </text>
       {children}
@@ -226,10 +266,12 @@ export function FlowValuesSwitch({
   checked,
   onCheckedChange,
   hint,
+  switchClassName,
 }: {
   checked: boolean
   onCheckedChange: (on: boolean) => void
   hint: string
+  switchClassName?: string
 }) {
   const switchId = useId()
   return (
@@ -237,7 +279,7 @@ export function FlowValuesSwitch({
       <p className="text-muted-foreground text-sm">{hint}</p>
       <label
         htmlFor={switchId}
-        className="flex min-h-10 cursor-pointer items-center gap-2.5 text-sm"
+        className={cn('flex min-h-10 cursor-pointer items-center gap-2.5 text-sm', switchClassName)}
       >
         <Switch id={switchId} checked={checked} onCheckedChange={onCheckedChange} />
         {m.energy_flow_show_values()}
@@ -246,12 +288,14 @@ export function FlowValuesSwitch({
   )
 }
 
-/** The Flöde / Värde table: `rows` first, then `children` (extra `<tr>`s). */
+/** The Flöde / Värde table (or `columns`): `rows` first (the first cell names the row), then `children`. */
 export function FlowTableFrame({
+  columns = [m.energy_flow_table_flow(), m.energy_flow_table_value()],
   rows,
   children,
 }: {
-  rows: [string, string][]
+  columns?: string[]
+  rows: string[][]
   children?: React.ReactNode
 }) {
   return (
@@ -259,21 +303,31 @@ export function FlowTableFrame({
       <table className="min-w-full border-collapse">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
-            <th scope="col" className="py-1.5 pr-4 font-medium">
-              {m.energy_flow_table_flow()}
-            </th>
-            <th scope="col" className="py-1.5 text-right font-medium">
-              {m.energy_flow_table_value()}
-            </th>
+            {columns.map((c, i) => (
+              <th
+                key={c}
+                scope="col"
+                className={
+                  i === 0 ? 'py-1.5 pr-4 font-medium' : 'py-1.5 pl-4 text-right font-medium'
+                }
+              >
+                {c}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map(([name, value]) => (
+          {rows.map(([name, ...values]) => (
             <tr key={name} className="border-b">
               <th scope="row" className="py-1.5 pr-4 text-left font-normal">
                 {name}
               </th>
-              <td className="py-1.5 text-right tabular-nums">{value}</td>
+              {values.map((v, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: a row's cells are positional
+                <td key={i} className="py-1.5 pl-4 text-right tabular-nums">
+                  {v}
+                </td>
+              ))}
             </tr>
           ))}
           {children}
