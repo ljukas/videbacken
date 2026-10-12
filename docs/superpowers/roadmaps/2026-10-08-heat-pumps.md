@@ -65,7 +65,8 @@ Each must pass, with the result recorded in the table, before the next step star
      month; laddning equals `/charging`'s *Alla*; övrigt hus = load − laddning − heat pumps.
    - The month chart's Förbrukning parts add up to the load.
    - Switching periods moves nothing (both cards keep their boxes at 1440, 820, 390 px).
-   - `rpc timing` for `energy.overview`: `heatPumpMs` logged, the warm `totalMs` within 20 ms of before step 2.
+   - `rpc timing` for `energy.overview`: `heatPumpMs` logged, the warm `totalMs` within 20 ms of before step 2, and
+     `heatPumpMs` below the view trigger (ADR-0027 decision 6).
    - The owner reviews Översikt live (desktop + phone) and accepts it.
 4. **After step 3 (prod).**
    - A month view (2026-02) and a day view (one day in 2026-01) equal SQL per unit; last year's outline equals
@@ -124,3 +125,14 @@ Each must pass, with the result recorded in the table, before the next step star
   recent days (6 day calls, 14 requests, ≈ 6–7 s). `backfill_cursor` keeps its last pre-completion value; harmless,
   `history_complete_at` stops the walk. A handful of days per unit have fewer than 24 hours (mostly the same days on
   both units, i.e. outages): step 2's and step 3's "data saknas" notes will show them.
+- 2026-10-12: step 2 built. Rulings: a unit Comfort Cloud no longer lists (an older `last_seen_at` than the newest)
+  counts its missing hours only up to its last listing, and the whole source failing still counts every gap (the
+  1b carry-forward; spec "Expected hours"); the month read aggregates before joining the unit (≈ 13 ms over ≈ 33k
+  rows, no spill), so no view yet, with a `heatPumpMs` trigger for adding one (ADR-0027 decision 6); the heat pump
+  scale falls back to 1 without heat pumps; a unit with earlier readings keeps its node (0 kWh) in a new month's
+  first hours before the next run; the usage arrows are scaled together when they don't fit the lane, so they never
+  overlap; a long unit name is fitted in one measuring pass (one character per render crashed React past ≈ 55
+  characters). Parked: capping a year as the sum of capped months, the rounded top of capped Förbrukning bars,
+  colour by all-time name order. Carried forward to **step 3**: `heatPumpRead.ts` must use the same expected-hours
+  rule, including the removed-unit clip; reuse or extract `heatPumpPeriods`'s unit end from `energyOverview.ts`
+  rather than re-deriving it.

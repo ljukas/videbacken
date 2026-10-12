@@ -73,8 +73,12 @@ Comfort Cloud reports only electricity in, not heat out, so the units' true effi
    `registered_on − 1` (the register day may be a local date), and a unit's backfill pauses while its latest day is
    bad.
 6. **Only daily sums reach the browser.** Hourly rows tell when someone is home and heating; like the Emaldo
-   readings they stay on the server. The service sums per Stockholm month and day on read. At ≈ 17.5k rows a year
-   no view or rollup is needed.
+   readings they stay on the server. The service sums per Stockholm month and day on read. Measured in step 2: the
+   month read aggregates the readings before joining the unit (≈ 13 ms over ≈ 33k rows locally, no sort spill), so
+   no view yet. Add a `heat_pump_month` materialized view (like `house_energy_month`, ADR-0024) when the warm
+   `heatPumpMs` in `rpc timing` exceeds `carMs` (the two reads run in parallel, so only the slower shows in
+   `totalMs`) or 25 ms. A unit Comfort Cloud no longer lists counts its missing hours only up to its last listing
+   (the spec's "Expected hours" rule).
 7. **Energi › Översikt gets a second flow diagram, "Användning"**: the period's load split into laddning, each
    heat pump and övrigt hus, beside Summering ("energy in"). The month chart's Förbrukning stacks the same parts.
    The definitions live in `figures.ts` (ADR-0024 decision 4): the heat pumps are capped at load − laddning, and
