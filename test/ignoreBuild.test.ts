@@ -6,14 +6,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 // Vercel's Ignored Build Step (vercel.json `ignoreCommand`): exit 0 skips the
 // build, exit 1 builds. Each test runs the script in a throwaway git repo.
-const SCRIPT = resolve(__dirname, '../scripts/ignoreBuild.sh')
+const SCRIPT = resolve(import.meta.dirname, '../scripts/ignoreBuild.sh')
 const SKIP = 0
 const BUILD = 1
 
 let repo: string
 
+// Without the caller's GIT_* variables (a git hook sets GIT_DIR), so git works on the temp repo.
+const gitEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+)
+
 const git = (...args: string[]) => {
-  const out = spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+  const out = spawnSync('git', args, { cwd: repo, env: gitEnv, encoding: 'utf8' })
   if (out.status !== 0) throw new Error(`git ${args.join(' ')}: ${out.stderr}`)
   return out.stdout.trim()
 }
@@ -81,8 +86,15 @@ describe('ignoreBuild.sh', () => {
     expect(run(base).status).toBe(SKIP)
   })
 
-  it('skips when nothing changed since the previous deployment', () => {
-    expect(run(base).status).toBe(SKIP)
+  it('builds a redeploy of the deployed commit (nothing changed)', () => {
+    const result = run(base)
+    expect(result.status).toBe(BUILD)
+    expect(result.stdout).toContain('redeploy')
+  })
+
+  it('builds an empty commit', () => {
+    git('commit', '-q', '--allow-empty', '-m', 'redeploy')
+    expect(run(base).status).toBe(BUILD)
   })
 
   it('builds when code changed', () => {
