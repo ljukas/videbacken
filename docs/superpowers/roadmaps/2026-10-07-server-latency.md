@@ -12,22 +12,24 @@ start of its session.
 | 1 | `Server-Timing` header on every response: `queue` (Vercel edge → our code, from `x-vercel-id`), `app` (our code → response headers) and, for a signed-in `/api/rpc` caller, the `rpc timing` line's sub-timings + pool gauges; `queueMs` on the log line | bounded (in-chat design) | [#137](https://github.com/ljukas/videbacken/pull/137) | checkpoint passed | 2026-10-07: prod RPC and SSR responses carry the header (`/login`: `queue;dur=22, app;dur=29.5`); `rpc timing` lines carry `queueMs`. Warm `queue` is 20–35 ms; a cold instance started mid-burst shows ~800 ms, now row 4. See [checkpoint 1 result](#checkpoint-1-result). |
 | 2 | Cache the Stockholm day/month per UTC hour in the cost pricing (`stockholmDayOf` / `stockholmYearMonth` are ~70% of `costComputeMs`; Stockholm's offset is always whole hours) | [plan](../plans/2026-10-07-server-latency-2-tz-cache.md) | [#139](https://github.com/ljukas/videbacken/pull/139) | checkpoint passed | 2026-10-08: prod `costComputeMs` median 73 → 26.5 (−64%); repeat visits 68–84 → 21–25. `economyComputeMs` 72–100 → 13–27. `/charging` figures unchanged (owner). See [checkpoint 2 result](#checkpoint-2-result). |
 | 3 | Store priced cost totals per session and month, written after each derive, spot-price sync and tariff edit by the existing TS pricing (one implementation); `costOverview` and the sessions list read sums. Amends ADR-0020 (cost on read → on write); needs the schema-design review | [spec](../specs/2026-10-11-session-cost-store-design.md), [plan](../plans/2026-10-11-server-latency-3-session-cost-store.md) | [#154](https://github.com/ljukas/videbacken/pull/154) | checkpoint passed | 2026-10-12: prod `costOverview` `totalMs` 25 warm (145 median before), `costStaleSessions` 0, no pricing sub-timings; `sessionCostsMs` 5–8 (19.5 median before). A copy of prod's inputs matches the stored totals within 4.6e-15; figures unchanged (owner). See [checkpoint 3 result](#checkpoint-3-result). |
-| 4 | Cold instances in a burst: when Vercel starts an extra instance for a navigation's burst, its requests show `queue` ~800 ms plus ~260 ms of first-request work before the handler (`app` minus `rpc`). Find what the boot and first-request load cost (function bundle, module init) and what Fluid offers against scale-out cold starts | — | — | needs shaping | — |
+| 4 | Cold instances: what a cold instance costs, how often prod hits one, and what Vercel and the bundle offer against it (spike: findings, no code) | spike (in-chat probe) | [#158](https://github.com/ljukas/videbacken/pull/158) | done | 2026-10-12: a cold RPC costs ~1.1 s more than a warm one (`queue` 770, module loading 264, first connection 127 ms; medians). 16 cold bursts in 72 h: 9 on a deployment already replaced (skew-protection cookie), 3 on a fresh deploy, 3 on the current one after a break. Vercel offers no setting against it. Led to rows 7 and 8. See [row 4 spike result](#row-4-spike-result). |
 | 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | [#143](https://github.com/ljukas/videbacken/pull/143) | checkpoint passed | 2026-10-11: `economy` + `economySessions` 2.7 kB in DevTools (12.8 before); hovered and next pages render with no request on the click; `economySessions` `totalMs` 24–31 warm against `economy`'s 245. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converted and grouped every slot of the year (24 764 rows, 50 ms in prod `EXPLAIN ANALYZE` on 2026-10-11, all buffer hits: CPU). Now each day's average is stored in `spot_price_day`, written by `replaceDay` in the same transaction as the slots (its only writer) and backfilled by migration; `dailyAverageSpot` reads ~255 rows by PK, and the sync's stored-days probe reads the same table, so a day missing its row is re-fetched. Amends ADR-0020 | [spec](../specs/2026-10-11-spot-price-day-design.md), [plan](../plans/2026-10-11-server-latency-6-spot-price-day.md) | [#148](https://github.com/ljukas/videbacken/pull/148) | checkpoint passed | 2026-10-11: prod `economyDailySpotMs` 5–7 (56–247 before); `economy` `totalMs` 43–57 warm (181 median before). Every stored day equals the old aggregate exactly; figures unchanged (owner). See [checkpoint 6 result](#checkpoint-6-result). |
+| 7 | Skip Vercel builds for docs-only commits (Ignored Build Step: build only when something outside `docs/` and `*.md` changed since `VERCEL_GIT_PREVIOUS_SHA`; build when it is unset). 7 of the 15 prod deploys before 2026-10-12 were docs-only, and every deploy strands open tabs on the old deployment, where each return is cold | — | — | not started | — |
+| 8 | Open the first DB connection while modules load: on an instance's first request, start warming the pool (inside the request, handed to `waitUntil`; no I/O at module init), so the connection overlaps the ~264 ms of first-request module loading instead of following it in `getSession` (127 ms median on a cold instance, 2 warm) | — | — | not started | — |
 
-Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed), then 3 (checkpoint passed). Row 4 follows unless reordered.
+Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed), then 3 (checkpoint passed), then the row 4 spike (done). From the spike (owner, 2026-10-12): 7, then 8. Parked, not a row: moving tabs off a replaced deployment (shorter skew-protection max age, or the app noticing it is on an old release), which needs shaping; and routing `/api/rpc` past TanStack Start (~60 ms per cold request, est.).
 
 The warm pool (keep three pooled connections; removes most `poolOpened` spikes) is client-performance step 8,
 [#135](https://github.com/ljukas/videbacken/pull/135), merged 2026-10-07; its checkpoint lives in
 [that roadmap](./2026-10-05-client-performance.md).
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. `needs shaping` means
-the step needs a brainstorm before its plan.
+the step needs a brainstorm before its plan. A spike (findings only, no code) ends at `done`.
 
 ## How a session runs a step
 
-1. Read this roadmap. Find the first step whose status isn't `checkpoint passed`.
+1. Read this roadmap. Find the first step whose status isn't `checkpoint passed` (or `done`, for a spike).
    - If it is `merged` but its checkpoint hasn't passed, **run the checkpoint, don't start the next step**.
 2. No plan yet? Shape it (`superpowers:brainstorming`), then plan it, starting with a task that re-measures the
    baseline on current `main`.
@@ -69,6 +71,15 @@ the step needs a brainstorm before its plan.
    [spec](../specs/2026-10-11-spot-price-day-design.md#checkpoint-6-prod). Before the deploy: prod `EXPLAIN ANALYZE`
    of the old query 50.3 ms (seq scan + sort of 24 764 slots into 258 days); locally `dailyAverageSpot` for 2026
    went from 17–22 ms to ~1 ms warm (239 days).
+
+7. **After step 7 (prod).** The next docs-only merge to `main` builds no deployment (Vercel shows it canceled by the
+   Ignored Build Step), and the next merge that touches code still deploys and migrates. Baseline: 7 of the 15
+   production deploys from 2026-10-11 08:10 to 2026-10-12 07:50 UTC were docs-only.
+8. **After step 8 (prod).** On a cold instance's first RPCs (`queueMs` > 300 with `poolTotal` 0), `getSessionMs` drops
+   from 127 to close to warm (≤ 20 ms), and a cold RPC's time from the edge stamp to its log line drops by about as much.
+   Warm lines are unchanged. Baseline (prod, 72 h to 2026-10-12 ~18:00 UTC, min / median / max over 49 cold RPCs):
+   `getSessionMs` 17 / 127 / 162, module loading before the handler (log time − edge stamp − `queueMs` − `totalMs`)
+   246 / 264 / 378, `queueMs` 325 / 770 / 953. Cold instances come by themselves a few times a day; read a few days of lines.
 
 ## Checkpoint 1 result
 
@@ -179,6 +190,48 @@ sidebar with DevTools open, then paged through the session list.
   commit before reading it as post-deploy.
 - **What is left:** `economySlotsMs` (15–29 warm, 101 cold) and `economyYearsMs` (8–10 warm) are now the largest
   parts of `economy`; neither is a step yet.
+
+## Row 4 spike result
+
+2026-10-12. Prod `rpc timing` lines for 72 h (374 RPCs), every prod request for 24 h, the deployment list, and a local
+build of the Vercel function (`NITRO_PRESET=vercel`, booted under Node with a CPU profile and a module-load hook).
+
+**What a cold RPC costs.** A cold line has `queueMs` > 300 and `poolTotal` 0; module loading before the handler is the
+log line's time − the `x-vercel-id` edge stamp − `queueMs` − `totalMs`.
+
+| Median | `queueMs` | Module loading before the handler | `getSessionMs` |
+|---|---|---|---|
+| Cold (n = 49, 13% of RPCs) | 770 | 264 | 127 (the first connection) |
+| Warm (n = 300) | 29 | 1 | 2 |
+
+**When it happens.** 16 cold bursts in 72 h, each the first burst after a break; none followed an SSR request:
+
+- **9 on a deployment already replaced.** A full page load sets the `__vdpl` cookie (skew protection, max age 12 h), so
+  every RPC from that browser goes to the deployment the page loaded from until the next full load. Vercel keeps only
+  the current production deployment warm.
+- **3 on a fresh deployment's first burst.** 7 of the 15 production deploys from 2026-10-11 08:10 to 2026-10-12
+  07:50 UTC were docs-only.
+- **3 on the current deployment after a break.** Cold after 5.7, 6.9 and 7.0 min idle, even with a cron on the same
+  deployment ~6 min before; warm after 5.2, 11.8 and 29.4 min. The open tab's 1-minute `syncStatuses` poll keeps it warm.
+- Mid-burst scale-out (checkpoint 1's case) shows up too, as a few cold requests in an otherwise warm burst (08:45 and
+  12:05 UTC on 2026-10-11).
+
+**What Vercel offers** (docs, 2026-10-12): no setting for per-instance concurrency or a minimum instance count, and no
+way to make a request wait for a busy warm instance. Pre-warming keeps one instance of the current production deployment
+and doesn't help sudden bursts. Bytecode caching is automatic in production; whether it covers ESM server code (ours) is
+unconfirmed. Runtime Logs show a start type per invocation in the dashboard only.
+
+**What the first request loads** (local; prod runs about 5× slower):
+
+- Import 35 ms (1.4 MB, 15 files: zod, drizzle, pino). The first `/api/rpc` request then loads 3.3 MB in 107 files
+  (54 ms of `app`), the whole React route tree included: Rolldown puts Paraglide's `getLocale` in the SSR entry chunk
+  (`_ssr/ssr.mjs`), which imports `@tanstack/react-router` and Radix, and the oRPC router imports `getLocale`.
+- A throwaway prototype that routes `/api/rpc` in `src/server.ts` straight to the oRPC handler and imports TanStack's
+  server entry lazily cut that to 1.7 MB and 41 ms: about 60 ms per cold request on prod (estimate). Parked.
+- Node's compile cache (`NODE_COMPILE_CACHE`) cut boot plus first request by ~25% locally. Shipping one built at deploy
+  time needs the build's V8 to match the runtime's exactly; not pursued.
+- The rest of `queueMs` (~600 ms of 770) is Vercel starting the instance and Node; the function is 34 MB, half of it
+  `sharp`'s libvips. Not measured further.
 
 ## Baseline (2026-10-07)
 
