@@ -685,7 +685,7 @@ test('Användning sits below Summering with the period’s consumers and the per
   await expect.element(card.getByText(/september 2026/i)).toBeVisible()
   const diagram = screen.getByLabelText(m.energy_use_description())
   await expect.element(diagram.getByText(m.energy_heat_pump_name({ name: 'Matsal' }))).toBeVisible()
-  await expect.element(diagram.getByText(m.energy_use_house())).toBeVisible()
+  await expect.element(diagram.getByText(m.energy_series_house())).toBeVisible()
   // Below Summering.
   const tiles = screen.getByRole('region', { name: m.energy_tiles_heading() }).element()
   expect(

@@ -53,7 +53,7 @@ function consumersOf(
       share: u.share,
     })
   map.set('house', {
-    label: m.energy_use_house(),
+    label: m.energy_series_house(),
     color: 'var(--energy-house)',
     Icon: HousePlugIcon,
     kwh: f.restOfHouse,

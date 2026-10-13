@@ -978,7 +978,6 @@
   "energy_use_heading": "Usage",
   "energy_use_description": "The period's consumption split into charging, heat pumps and the rest of the house. The values are also in the table below the diagram.",
   "energy_use_hint": "The arrow's width shows the amount of energy.",
-  "energy_use_house": "Rest of the house",
   "energy_use_missing_hours": "Heat pump data missing for {hours} h",
   "energy_use_table_consumer": "Consumer",
   "energy_use_table_energy": "Energy",
