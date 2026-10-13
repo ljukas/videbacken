@@ -200,22 +200,30 @@ test('a figure too wide for its node steps down to its 13 px floor, never below'
 })
 
 test('a new period closes an open popover, so a vanished arrow leaves nothing dimmed', async () => {
+  // A tap keeps its popover open (a mouse closes it on leaving the arrow), so a touch press opens it here. The mouse
+  // waits above the diagram: resting on the svg, the redrawn layout can put another arrow under it, and Chromium then
+  // enters that arrow and opens its popover.
   const diagram = (s: PeriodSums) => (
-    <EnergyUseFlowDiagram
-      sums={s}
-      figures={energyFigures(s)}
-      units={units}
-      width={1006}
-      showValues
-    />
+    <div>
+      <div data-testid="away" style={{ height: 40 }} />
+      <EnergyUseFlowDiagram
+        sums={s}
+        figures={energyFigures(s)}
+        units={units}
+        width={1006}
+        showValues
+      />
+    </div>
   )
   // No query client needed: vitest-browser-react's own render, for its rerender.
   const screen = await render(diagram(sums()))
+  await userEvent.hover(screen.getByTestId('away'))
   const name = m.energy_flow_arrow({
     from: m.energy_tile_load(),
     to: m.energy_heat_pump_name({ name: 'Matsal' }),
   })
-  await userEvent.hover(screen.container.querySelector('[data-flow-hit="load>hp:hp-a"]') as Element)
+  const hit = screen.container.querySelector('[data-flow-hit="load>hp:hp-a"]') as Element
+  hit.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))
   await expect.element(screen.getByText(name)).toBeVisible()
   expect(screen.container.querySelectorAll('.opacity-25').length).toBeGreaterThan(0)
   // The next period has no Matsal: its arrow is gone.
