@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } from 'vitest'
 import { db } from '~/lib/db'
-import { heatPumpReading, integrationSyncRun, user } from '~/lib/db/schema'
+import { heatPumpDay, heatPumpReading, integrationSyncRun, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import {
   type ComfortCloudCallStats,
@@ -152,6 +152,7 @@ type RunExtra = {
   log?: ReturnType<typeof capturingLogger>['log']
   now?: () => Date
   sleep?: (ms: number) => Promise<void>
+  refreshDaySums?: () => Promise<void>
 }
 const run = (client: ComfortCloudClient, extra: RunExtra = {}) =>
   runComfortCloudSync({
@@ -161,6 +162,7 @@ const run = (client: ComfortCloudClient, extra: RunExtra = {}) =>
       comfortCloud: client,
       log: extra.log ?? capturingLogger().log,
       sleep: extra.sleep ?? (async () => {}),
+      refreshDaySums: extra.refreshDaySums,
     },
   })
 
@@ -1085,6 +1087,7 @@ test('one run row and one run line, counts only, never an hourly value', async (
     rejectedDays: 0,
     unitsCompleted: 1,
     backfillDaysLeft: 0,
+    refreshMs: expect.any(Number),
   })
   const lines = cap.entries().filter((e) => e.msg === 'integration sync run')
   expect(lines).toHaveLength(1)
@@ -1097,4 +1100,83 @@ test('one run row and one run line, counts only, never an hourly value', async (
   })
   expect(cap.raw()).not.toContain('0.123456')
   expect(cap.raw()).not.toContain(MATSAL)
+})
+
+describe('the day view refresh (ADR-0027 decision 6)', () => {
+  test('a run that stored hours leaves the day view fresh and logs refreshMs', async () => {
+    const captured = capturingLogger()
+    const { client } = fakeComfortCloud([matsal('2026-03-25')])
+
+    const result = await run(client, { log: captured.log })
+
+    expect(result).toMatchObject({ outcome: 'ok', refreshMs: expect.any(Number) })
+    const days = await db.select().from(heatPumpDay)
+    expect(days.length).toBeGreaterThan(0)
+    expect(days.reduce((n, d) => n + d.hours, 0)).toBe(await hoursStored('Matsal'))
+    const line = captured.entries().find((e) => e.msg === 'integration sync run')
+    expect(line).toMatchObject({ refreshMs: expect.any(Number) })
+  })
+
+  test('a run that stored nothing does not refresh', async () => {
+    const refresh = vi.fn(async () => {})
+    // As "a unit that never stored an hour only warns": every day answers empty.
+    const { client } = fakeComfortCloud([matsal('2026-03-25', { hasData: () => false })])
+
+    const result = await run(client, { refreshDaySums: refresh })
+
+    expect(result).toMatchObject({ outcome: 'ok', hoursStored: 0, refreshMs: 0 })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  test('a run that fails part-way still refreshes for the hours that landed', async () => {
+    const refresh = vi.fn(async () => {})
+    const quiet = () => ({ registeredOn: '2026-03-28', rows: [] })
+    const { client } = fakeComfortCloud([matsal('2026-03-25'), overvaning('2026-03-28')], {
+      days: { [`${OVERVANING}:2026-04-02`]: quiet, [`${OVERVANING}:${TODAY}`]: quiet },
+    })
+
+    const result = await run(client, { refreshDaySums: refresh })
+
+    expect(result.outcome).toBe('failed')
+    expect(result.hoursStored).toBeGreaterThan(0)
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  test('a failed refresh only warns, without values: the run is still ok', async () => {
+    const captured = capturingLogger()
+    const { client } = fakeComfortCloud([matsal('2026-03-25')])
+
+    const result = await run(client, {
+      log: captured.log,
+      refreshDaySums: async () => Promise.reject(new Error('refresh boom')),
+    })
+
+    expect(result.outcome).toBe('ok')
+    const warnings = captured.entries().filter((e) => e.msg === 'heat pump day refresh failed')
+    expect(warnings).toHaveLength(1)
+    expect(JSON.stringify(warnings[0])).not.toContain('0.03') // no reading value
+  })
+
+  test('a run whose deadline fired before the finally still refreshes the hours that landed', async () => {
+    const refresh = vi.fn(async () => {})
+    // The first recent day (2026-04-01) lands, then the next day call hangs past the run deadline.
+    const { client } = fakeComfortCloud([matsal('2026-03-25')], {
+      days: { [`${MATSAL}:2026-04-02`]: () => new Promise<never>(() => {}) },
+    })
+
+    const result = await runComfortCloudSync({
+      trigger: 'cron',
+      now: () => NOW,
+      deadlineMs: 1_000,
+      deps: {
+        comfortCloud: client,
+        log: capturingLogger().log,
+        sleep: async () => {},
+        refreshDaySums: refresh,
+      },
+    })
+
+    expect(result).toMatchObject({ outcome: 'failed', hoursStored: 24 })
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
 })

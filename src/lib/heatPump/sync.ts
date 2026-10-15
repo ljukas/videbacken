@@ -10,6 +10,7 @@ import {
   newCallStats,
 } from '~/lib/effects/comfortCloud'
 import type { SyncTrigger } from '~/lib/integrationHealth'
+import { refreshAfterSync } from '~/lib/integrations/refreshAfterSync'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
@@ -19,6 +20,7 @@ import {
   markHistoryComplete,
   newestHour,
   oldestDay,
+  refreshDaySums,
   replaceDay,
   setBackfillCursor,
   setRegisteredOn,
@@ -66,6 +68,8 @@ export type ComfortCloudSyncRun = RunBase & {
   /** Request retries inside the client's shared `fetchWithRetry`. */
   retries: number
   logins: number
+  /** Time spent refreshing `heat_pump_day` (0 when the run stored nothing), ms. */
+  refreshMs: number
 }
 
 const SOURCE = 'comfortCloud'
@@ -145,6 +149,7 @@ export async function runComfortCloudSync(opts: {
     comfortCloud?: ComfortCloudClient
     log?: Logger
     sleep?: (ms: number) => Promise<void>
+    refreshDaySums?: () => Promise<void>
   }
 }): Promise<ComfortCloudSyncRun> {
   const client = opts.deps?.comfortCloud ?? comfortCloud
@@ -173,9 +178,22 @@ export async function runComfortCloudSync(opts: {
       requests: 0,
       retries: 0,
       logins: 0,
+      refreshMs: 0,
     }),
-    execute: ({ run, signal, now, log, reportProgress }) =>
-      syncUnits(client, run, { signal, stats, now, sleep, log, reportProgress }),
+    execute: async ({ run, signal, now, log, reportProgress }) => {
+      try {
+        await syncUnits(client, run, { signal, stats, now, sleep, log, reportProgress })
+      } finally {
+        // ADR-0027 decision 6: the sum reads take whole days from the day view; refresh it
+        // whenever hours landed (also when the run then fails part-way or hit its deadline).
+        run.refreshMs = await refreshAfterSync({
+          stored: run.hoursStored > 0,
+          label: 'heat pump day',
+          refresh: opts.deps?.refreshDaySums ?? refreshDaySums,
+          log,
+        })
+      }
+    },
     // Sees `run` before `finalize`: the call stats come from the sink directly.
     toRunStats: (run) => ({
       since: run.since,
@@ -197,6 +215,7 @@ export async function runComfortCloudSync(opts: {
         rejectedDays: run.rejectedDays,
         unitsCompleted: run.unitsCompleted,
         backfillDaysLeft: run.backfillDaysLeft,
+        refreshMs: run.refreshMs,
       },
     }),
     finalize: (run) => {
@@ -220,6 +239,7 @@ export async function runComfortCloudSync(opts: {
       requests: run.requests,
       retries: run.retries,
       logins: run.logins,
+      refreshMs: run.refreshMs,
     }),
   })
 }
