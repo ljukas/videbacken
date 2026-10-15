@@ -12,23 +12,21 @@ export function formatChange(change: number): string {
   }).format(rounded === 0 ? 0 : rounded)
 }
 
-// `signDisplay: 'negative'`: a value that rounds to zero (−0,04) reads "0,0", never "−0,0".
+// A value Intl rounds to zero at one decimal (|c| < 0,05; Intl rounds half away from zero) is passed as +0, so
+// −0,04 reads "0,0", never "−0,0". Not Intl's `signDisplay: 'negative'`: engines before Intl.NumberFormat v3
+// (Firefox 115 ESR) throw on it.
+const zeroIfRoundsToZero = (c: number) => (Math.abs(c) < 0.05 ? 0 : c)
+
 /** A temperature with one decimal ("−2,6 °C"). */
 export function formatCelsius(c: number): string {
-  const n = new Intl.NumberFormat(getIntlLocale(), {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-    signDisplay: 'negative',
-  }).format(c)
-  return `${n} °C`
+  return `${formatOneDecimal(zeroIfRoundsToZero(c))} °C`
 }
 
 /** A right-axis tick ("−5°", "2,5°"). */
 export function formatCelsiusTick(c: number): string {
-  const n = new Intl.NumberFormat(getIntlLocale(), {
-    maximumFractionDigits: 1,
-    signDisplay: 'negative',
-  }).format(c)
+  const n = new Intl.NumberFormat(getIntlLocale(), { maximumFractionDigits: 1 }).format(
+    zeroIfRoundsToZero(c),
+  )
   return `${n}°`
 }
 
