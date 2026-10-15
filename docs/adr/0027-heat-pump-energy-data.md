@@ -75,10 +75,19 @@ Comfort Cloud reports only electricity in, not heat out, so the units' true effi
 6. **Only daily sums reach the browser.** Hourly rows tell when someone is home and heating; like the Emaldo
    readings they stay on the server. The service sums per Stockholm month and day on read. Measured in step 2: the
    month read aggregates the readings before joining the unit (≈ 13 ms over ≈ 33k rows locally, no sort spill), so
-   no view yet. Add a `heat_pump_month` materialized view (like `house_energy_month`, ADR-0024) when the warm
+   no view yet. Add a materialized view (like `house_energy_month`, ADR-0024) when the warm
    `heatPumpMs` in `rpc timing` exceeds `carMs` (the two reads run in parallel, so only the slower shows in
    `totalMs`) or 25 ms. A unit Comfort Cloud no longer lists counts its missing hours only up to its last listing
    (the spec's "Expected hours" rule).
+   **Amended 2026-10-15 (step 2b):** checkpoint 3 met the trigger (warm `heatPumpMs` 24 ms, `carMs` 16 ms), so the
+   sums read **`heat_pump_day`**, a materialized view with one row per unit and Stockholm day (sums, plus a sum and an
+   hour count per temperature so any range of days gets the exact hour-weighted mean), refreshed after every
+   Comfort Cloud run that stored hours. Per day, not per month: the ranges the pages read start or end mid-month
+   (Översikt from the house data's first day to its newest bucket, step 3's last year up to the same hour), and
+   step 3's day chart and step 4b's signature read days. Whole days come from the view; a range's partial first and
+   last day come from the readings by primary key, unit by unit (≈ 0.2 ms on prod), in the same statement. Rejected:
+   a `heat_pump_month` view with per-unit reads of the edge months (steps 3 and 4b would still scan the readings, and
+   the edges are whole months), and both views (grouping ≈ 1,400 day rows into months takes under a millisecond).
 7. **Energi › Översikt gets a second flow diagram, "Användning"**: the period's load split into laddning, each
    heat pump and övrigt hus, beside Summering ("energy in"). The month chart's Förbrukning stacks the same parts.
    The definitions live in `figures.ts` (ADR-0024 decision 4): the heat pumps are capped at load − laddning, and
