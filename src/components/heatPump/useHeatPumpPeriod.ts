@@ -19,6 +19,8 @@ import { stockholmDayOf, stockholmYearMonth } from '~/lib/time/stockholm'
 import { heatPumpDaysQuery, heatPumpMonthsQueryFor } from './heatPumpQueries'
 import { heatPumpView } from './heatPumpView'
 
+const ALL: EnergyPeriod = { kind: 'all' }
+
 // The Värmepumpar page's state (heat pumps step 3), on the Energi pages' rules (useEnergyPeriod): the requested
 // period, the months read (one cache entry per year, or the history for Totalt), the days read for a month, the
 // period shown, the view built from them, and the URL rewrite of a period the data can't show. While another read
@@ -26,9 +28,13 @@ import { heatPumpView } from './heatPumpView'
 /** `writeSearch` must be referentially stable (wrap it in `useCallback`). */
 export function useHeatPumpPeriod(search: EnergySearch, writeSearch: EnergySearchWrite) {
   const requested = periodOfSearch(search)
+  // Nothing asked for: the default resolves from the months read and can be Totalt (no readings in the current year
+  // yet: a new year's first hours, a stall over New Year, the integration off), which only the history read answers.
+  // Once a read resolves the default to Totalt, read the history, as `?period=all` would; the URL stays.
+  const [defaultAll, setDefaultAll] = useState(false)
   // Hourly data, synced every six hours: focus refetch only, no polling (ADR-0018).
   const monthsResult = useQuery({
-    ...heatPumpMonthsQueryFor(requested),
+    ...heatPumpMonthsQueryFor(requested ?? (defaultAll ? ALL : null)),
     placeholderData: keepPreviousData,
   })
   const failed = loadFailed(monthsResult)
@@ -42,6 +48,8 @@ export function useHeatPumpPeriod(search: EnergySearch, writeSearch: EnergySearc
   const now = stockholmYearMonth(Date.now())
   const today = stockholmDayOf(Date.now())
   const period = shown ? resolvePeriod(requested, shown.monthsWithReadings, now) : null
+  const wantsAll = requested === null && period?.kind === 'all'
+  if (shown && wantsAll !== defaultAll) setDefaultAll(wantsAll)
   const periodKey = period ? formatPeriod(period) : null
   const setPeriod = useCallback(
     (p: EnergyPeriod) => writeSearch({ period: periodSearchValue(p) }),
@@ -98,6 +106,7 @@ export function useHeatPumpPeriod(search: EnergySearch, writeSearch: EnergySearc
     /** Nothing to show yet and nothing failed: the section's skeleton. One-way per key (see SectionSkeleton). */
     pending:
       firstLoadPending(monthsResult) ||
+      (stale && !failed && lastView === null) ||
       (isMonth && firstLoadPending(daysResult) && lastView === null),
   }
 }

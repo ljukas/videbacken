@@ -123,6 +123,26 @@ test('Totalt reads the whole history: a bar per month, no comparison', async () 
   expect(screen.container.textContent).not.toMatch(/mot 20\d\d/)
 })
 
+test("a new year's first hours, no readings in it yet: the default is Totalt, and the card shows Totalt's bars", async () => {
+  vi.setSystemTime(new Date('2026-12-31T23:30:00Z')) // 2027-01-01 00:30 Stockholm
+  const { screen, router } = await renderPage('/energy/heat-pumps', (qc) => {
+    const year = monthsPayload()
+    qc.setQueryData(
+      heatPumpMonthsQuery(2027).queryKey,
+      monthsPayload({
+        year: 2027,
+        availableYears: [2027, 2026, 2025],
+        months: [],
+        lastYear: year.months,
+        lastYearSoFar: null,
+      }) as never,
+    )
+    qc.setQueryData(heatPumpMonthsQuery(undefined).queryKey, allPayload() as never)
+  })
+  await vi.waitFor(() => expect(seriesBars(screen.container, 0)).toHaveLength(21))
+  expect(router.state.location.search).toEqual({})
+})
+
 test('stepping to another month keeps the last chart, dimmed and busy, until its days land', async () => {
   const { screen, qc } = await renderPage('/energy/heat-pumps', (qc) => {
     seedYear(qc)
