@@ -1,12 +1,71 @@
-import { expect, test } from 'vitest'
+import { eq, sql } from 'drizzle-orm'
+import { describe, expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { heatPumpDay } from '~/lib/db/schema'
+import { heatPump, heatPumpDay } from '~/lib/db/schema'
 import { seedUnits, storeHours } from '~test/fixtures/heatPumpHours'
 import { setupDatabase } from '~test/setup'
 import { upsertUnits } from './heatPump'
-import { monthSums, refreshDaySums } from './monthSums'
+import { monthSums, refreshDaySums, splitRange } from './monthSums'
 
 setupDatabase()
+
+describe('splitRange', () => {
+  const d = (iso: string) => new Date(iso)
+  test('midnight to midnight: whole days only', () => {
+    // Stockholm 2026-01-20 00:00 = 2026-01-19T23:00Z; 2026-02-01 00:00 = 2026-01-31T23:00Z.
+    expect(splitRange(d('2026-01-19T23:00:00Z'), d('2026-01-31T23:00:00Z'))).toEqual({
+      wholeDays: { from: '2026-01-20', to: '2026-02-01' },
+      partials: [],
+    })
+  })
+  test('midnight to mid-day (Översikt): whole days, then the last day up to `to`', () => {
+    expect(splitRange(d('2026-01-19T23:00:00Z'), d('2026-10-15T06:00:00Z'))).toEqual({
+      wholeDays: { from: '2026-01-20', to: '2026-10-15' },
+      partials: [{ from: d('2026-10-14T22:00:00Z'), to: d('2026-10-15T06:00:00Z') }],
+    })
+  })
+  test('mid-day to mid-day: a partial first day, whole days, a partial last day', () => {
+    expect(splitRange(d('2026-01-15T05:00:00Z'), d('2026-01-18T05:00:00Z'))).toEqual({
+      wholeDays: { from: '2026-01-16', to: '2026-01-18' },
+      partials: [
+        { from: d('2026-01-15T05:00:00Z'), to: d('2026-01-15T23:00:00Z') },
+        { from: d('2026-01-17T23:00:00Z'), to: d('2026-01-18T05:00:00Z') },
+      ],
+    })
+  })
+  test('within one day, or across one midnight with no whole day: one partial', () => {
+    expect(splitRange(d('2026-03-01T00:00:00Z'), d('2026-03-01T07:00:00Z'))).toEqual({
+      wholeDays: null,
+      partials: [{ from: d('2026-03-01T00:00:00Z'), to: d('2026-03-01T07:00:00Z') }],
+    })
+    expect(splitRange(d('2026-03-01T10:00:00Z'), d('2026-03-02T07:00:00Z'))).toEqual({
+      wholeDays: null,
+      partials: [{ from: d('2026-03-01T10:00:00Z'), to: d('2026-03-02T07:00:00Z') }],
+    })
+  })
+  test('DST: the 23-hour and 25-hour days are split at local midnight', () => {
+    // 2026-03-29 runs 2026-03-28T23:00Z → 2026-03-29T22:00Z; 2026-03-30 ends 2026-03-30T22:00Z.
+    expect(splitRange(d('2026-03-29T10:00:00Z'), d('2026-03-30T22:00:00Z'))).toEqual({
+      wholeDays: { from: '2026-03-30', to: '2026-03-31' },
+      partials: [{ from: d('2026-03-29T10:00:00Z'), to: d('2026-03-29T22:00:00Z') }],
+    })
+    // 2025-10-26 runs 2025-10-25T22:00Z → 2025-10-26T23:00Z (25 h).
+    expect(splitRange(d('2025-10-25T22:00:00Z'), d('2025-10-26T23:00:00Z'))).toEqual({
+      wholeDays: { from: '2025-10-26', to: '2025-10-27' },
+      partials: [],
+    })
+  })
+  test('an empty or inverted range: nothing', () => {
+    expect(splitRange(d('2026-03-01T00:00:00Z'), d('2026-03-01T00:00:00Z'))).toEqual({
+      wholeDays: null,
+      partials: [],
+    })
+    expect(splitRange(d('2026-03-02T00:00:00Z'), d('2026-03-01T00:00:00Z'))).toEqual({
+      wholeDays: null,
+      partials: [],
+    })
+  })
+})
 
 const viewRows = async () =>
   (await db.select().from(heatPumpDay)).sort(
@@ -221,4 +280,107 @@ test('privacy: a row holds sums only, never an hour', async () => {
     'setpointC',
     'year',
   ])
+})
+
+/** The pre-step-2b read, straight over the readings: what `monthSums` must equal. */
+async function reference(from: Date, to: Date) {
+  const { rows } = await db.execute<{
+    heat_pump_id: string
+    y: number
+    m: number
+    kwh: number
+    heat: number
+    inside: number | null
+    hours: number
+  }>(sql`
+    SELECT heat_pump_id,
+      extract(year from date_trunc('month', hour_start AT TIME ZONE 'Europe/Stockholm'))::int AS y,
+      extract(month from date_trunc('month', hour_start AT TIME ZONE 'Europe/Stockholm'))::int AS m,
+      sum(energy_kwh)::float8 AS kwh, sum(energy_kwh * coalesce(heat_share, 0))::float8 AS heat,
+      avg(inside_c)::float8 AS inside, count(*)::int AS hours
+    FROM heat_pump_reading
+    WHERE hour_start >= ${from.toISOString()}::timestamptz AND hour_start < ${to.toISOString()}::timestamptz
+    GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`)
+  return rows.map((r) => ({
+    id: r.heat_pump_id,
+    y: r.y,
+    m: r.m,
+    kwh: r.kwh,
+    heat: r.heat,
+    inside: r.inside,
+    hours: r.hours,
+  }))
+}
+
+test.each([
+  ['midnight → mid-day (Översikt)', '2025-10-19T22:00:00Z', '2026-04-02T07:00:00Z'],
+  ['mid-day → mid-day across both DST days', '2025-10-25T10:00:00Z', '2026-03-29T10:00:00Z'],
+  ['a partial last day on the 23-hour day', '2026-03-01T00:00:00Z', '2026-03-29T05:00:00Z'],
+  ['same day (lastYearSoFar on the 1st)', '2026-03-31T22:00:00Z', '2026-04-01T06:00:00Z'],
+  ['across a month edge without a whole day', '2026-03-31T20:00:00Z', '2026-04-01T03:00:00Z'],
+])('equals the raw read: %s', async (_name, fromIso, toIso) => {
+  const id = await seedUnits('Matsal', 'Övervåning')
+  // Varying values (synthetic) so a lost or doubled hour shows; Övervåning has gaps.
+  const vary = (_t: number, i: number) => ({
+    energyKwh: 0.01 + (i % 7) * 0.01,
+    insideC: 18 + (i % 5),
+    heatShare: (i % 3) / 2,
+  })
+  await storeHours(id.Matsal, '2025-10-01T00:00:00Z', '2026-04-03T00:00:00Z', vary)
+  await storeHours(id.Övervåning, '2025-10-01T00:00:00Z', '2026-04-03T00:00:00Z', (t, i) =>
+    i % 50 === 0 ? null : vary(t, i),
+  )
+  const from = new Date(fromIso)
+  const to = new Date(toIso)
+  const got = (await monthSums({ from, to })).map((r) => ({
+    id: r.heatPumpId,
+    y: r.year,
+    m: r.month,
+    kwh: r.kwh,
+    heat: r.heatKwh,
+    inside: r.insideC,
+    hours: r.hours,
+  }))
+  const want = await reference(from, to)
+  const key = (x: { id: string; y: number; m: number; hours: number }) =>
+    `${x.id} ${x.y}-${x.m} ${x.hours}`
+  expect(got.map(key).sort()).toEqual(want.map(key).sort())
+  for (const w of want) {
+    const g = got.find((x) => x.id === w.id && x.y === w.y && x.m === w.m)
+    expect(g?.kwh).toBeCloseTo(w.kwh, 9)
+    expect(g?.heat).toBeCloseTo(w.heat, 9)
+    expect(g?.inside).toBeCloseTo(w.inside as number, 9) // every stored hour has an inside value
+  }
+})
+
+test('hours stored after the refresh: a partial day counts them at once, a whole day only after the next refresh', async () => {
+  const id = await seedUnits('Matsal')
+  // Stockholm 2026-01-15 whole (24 h: 2026-01-14T23:00Z … 2026-01-15T22:00Z), refreshed.
+  await storeHours(id.Matsal, '2026-01-14T23:00:00Z', '2026-01-15T23:00:00Z')
+  // Without a refresh, re-store the UTC day 2026-01-15 as 00:00Z–09:00Z (10 h) plus 23:00Z, which is the
+  // first hour of Stockholm 2026-01-16. Raw now: the 15th has 1 + 10 = 11 h, the 16th 1 h.
+  const keep = (t: number) => {
+    const h = new Date(t).getUTCHours()
+    return h <= 9 || h === 23 ? {} : null
+  }
+  await storeHours(id.Matsal, '2026-01-15T00:00:00Z', '2026-01-16T00:00:00Z', keep, {
+    refresh: false,
+  })
+  // Whole day: the 15th (from the view); partial: [2026-01-15T23:00Z, 2026-01-16T05:00Z) (live).
+  const range = { from: new Date('2026-01-14T23:00:00Z'), to: new Date('2026-01-16T05:00:00Z') }
+  expect((await monthSums(range))[0].hours).toBe(24 + 1) // the stale 15th, the new 16th hour
+  await refreshDaySums()
+  expect((await monthSums(range))[0].hours).toBe(11 + 1)
+})
+
+test('a unit deleted before the refresh never shows', async () => {
+  const id = await seedUnits('Matsal', 'Övervåning')
+  await storeHours(id.Matsal, '2026-01-14T23:00:00Z', '2026-01-15T23:00:00Z')
+  await storeHours(id.Övervåning, '2026-01-14T23:00:00Z', '2026-01-15T23:00:00Z')
+  await db.delete(heatPump).where(eq(heatPump.id, id.Övervåning)) // cascades its readings; the view is stale
+  const rows = await monthSums({
+    from: new Date('2026-01-14T23:00:00Z'),
+    to: new Date('2026-01-15T23:00:00Z'),
+  })
+  expect(rows.map((r) => r.name)).toEqual(['Matsal'])
 })
