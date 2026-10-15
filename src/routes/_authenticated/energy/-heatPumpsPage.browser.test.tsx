@@ -40,7 +40,8 @@ const seedSeptember = (qc: QueryClient) =>
 
 // As -energyPage.browser.test.tsx: anything unseeded fails (no /api/rpc in the test server).
 // `validateSearch` stands in for a later step's wider schema (step 4a extends the route's with `dialog`, `eventId`).
-async function renderPage(
+// The route's loader runs (on the client's path: it starts its reads and awaits none).
+async function loadPage(
   path: string,
   prepare: (qc: QueryClient) => void,
   health: Parameters<typeof seedSourcesHealth>[1] = {},
@@ -67,6 +68,11 @@ async function renderPage(
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   await router.load()
+  return { router, qc }
+}
+
+async function renderPage(...args: Parameters<typeof loadPage>) {
+  const { router, qc } = await loadPage(...args)
   const screen = await render(
     <QueryClientProvider client={qc}>
       <RouterProvider router={router} />
@@ -141,6 +147,28 @@ test("a new year's first hours, no readings in it yet: the default is Totalt, an
   })
   await vi.waitFor(() => expect(seriesBars(screen.container, 0)).toHaveLength(21))
   expect(router.state.location.search).toEqual({})
+})
+
+test("the loader reads the days of the month the page shows: the last one, in a new month's first hours", async () => {
+  vi.setSystemTime(new Date('2026-10-01T01:30:00Z')) // 03:30 Stockholm: no October hour stored yet
+  const { qc } = await loadPage('/energy/heat-pumps', (qc) => seedYear(qc))
+  const started = (range: { from: string; to: string }) =>
+    qc.getQueryCache().find({ queryKey: heatPumpDaysQuery(range).queryKey, exact: true })
+  expect(started({ from: '2026-09-01', to: '2026-09-30' })).toBeDefined()
+  expect(started({ from: '2026-10-01', to: '2026-10-31' })).toBeUndefined()
+})
+
+test('the loader reads the history when the default resolves to Totalt', async () => {
+  vi.setSystemTime(new Date('2026-12-31T23:30:00Z')) // 2027-01-01 00:30 Stockholm
+  const { qc } = await loadPage('/energy/heat-pumps', (qc) =>
+    qc.setQueryData(
+      heatPumpMonthsQuery(2027).queryKey,
+      monthsPayload({ year: 2027, months: [], lastYearSoFar: null }) as never,
+    ),
+  )
+  expect(
+    qc.getQueryCache().find({ queryKey: heatPumpMonthsQuery(undefined).queryKey, exact: true }),
+  ).toBeDefined()
 })
 
 test('stepping to another month keeps the last chart, dimmed and busy, until its days land', async () => {

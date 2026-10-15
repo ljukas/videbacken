@@ -11,12 +11,16 @@ import { useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
 import { HeatPumpConsumption } from '~/components/heatPump/HeatPumpConsumption'
 import { HeatPumpEmpty } from '~/components/heatPump/HeatPumpEmpty'
-import { heatPumpDaysQueryFor, heatPumpMonthsQueryFor } from '~/components/heatPump/heatPumpQueries'
+import {
+  heatPumpDaysQueryFor,
+  heatPumpMonthsQuery,
+  heatPumpMonthsQueryFor,
+} from '~/components/heatPump/heatPumpQueries'
 import { useHeatPumpPeriod } from '~/components/heatPump/useHeatPumpPeriod'
 import { LoadErrorAlert } from '~/components/layout/LoadErrorAlert'
 import { PageContainer } from '~/components/layout/PageContainer'
 import { SectionSkeleton } from '~/components/layout/SectionSkeleton'
-import type { EnergyPeriod } from '~/lib/houseEnergy/period'
+import { type EnergyPeriod, resolvePeriod } from '~/lib/houseEnergy/period'
 import { loadRouteData } from '~/lib/query/routeData'
 import { stockholmYearMonth } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
@@ -31,17 +35,24 @@ export const Route = createFileRoute('/_authenticated/energy/heat-pumps')({
   }),
   validateSearch: energySearchSchema,
   // ADR-0025: the card is above the fold, so its reads are critical on the server; a client navigation awaits
-  // nothing. The period is read here, not a loader dep (see energy/index.tsx). No period asked for: the default is
-  // the current month (when it has readings), so its days load with it.
-  loader: ({ context: { queryClient }, location }) => {
+  // nothing. The period is read here, not a loader dep (see energy/index.tsx). The days (or, for a default that
+  // resolves to Totalt, the history) are those of the period the page will show, resolved from the months read as
+  // useHeatPumpPeriod does: the server awaits that read first (one more round trip, server only); the client uses
+  // what the cache holds, else the period asked for or the current month.
+  loader: async ({ context: { queryClient }, location }) => {
     const requested = periodOfSearch(energySearchSchema.parse(location.search))
     const now = stockholmYearMonth(Date.now())
-    const dayPeriod: EnergyPeriod = requested ?? { kind: 'month', year: now.year, month: now.month }
-    return loadRouteData(queryClient, {
+    const monthsQuery = heatPumpMonthsQueryFor(requested)
+    await loadRouteData(queryClient, { critical: [monthsQuery, syncHealthQuery] })
+    const months = queryClient.getQueryData(monthsQuery.queryKey)
+    if (months?.firstReadingDay === null) return // the empty state: nothing more to read
+    const shown: EnergyPeriod = months
+      ? resolvePeriod(requested, months.monthsWithReadings, now)
+      : (requested ?? { kind: 'month', year: now.year, month: now.month })
+    await loadRouteData(queryClient, {
       critical: [
-        heatPumpMonthsQueryFor(requested),
-        heatPumpDaysQueryFor(dayPeriod),
-        syncHealthQuery,
+        heatPumpDaysQueryFor(shown),
+        requested === null && shown.kind === 'all' && heatPumpMonthsQuery(undefined),
       ],
     })
   },
