@@ -1012,5 +1012,8 @@
   "energy_battery_tooltip_from_solar": "from solar",
   "energy_battery_tooltip_from_grid": "from the grid",
   "energy_battery_chart_hint": "Each bar is what passed through the battery: green came back out, red was lost. Click a month to see it in the summary.",
-  "energy_battery_note": "More is lost in winter: the battery heats itself and draws power while idle when it is cold. Loss is in − out − change in stored energy, at {capacity} kWh per 100 % charge."
+  "energy_battery_note": "More is lost in winter: the battery heats itself and draws power while idle when it is cold. Loss is in − out − change in stored energy, at {capacity} kWh per 100 % charge.",
+  "heat_pump_chart_title_year": "The heat pumps' consumption per month, {year}",
+  "heat_pump_chart_title_month": "The heat pumps' consumption per day, {period}",
+  "heat_pump_chart_title_all": "The heat pumps' consumption per month since {since}"
 }
