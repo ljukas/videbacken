@@ -8,10 +8,12 @@ import { PeriodControl, periodLabel } from './PeriodControl'
 
 type YearMonth = { year: number; month: number }
 
-// The Energi pages' Summering card (steps 1b, 1c, 2): the heading, the period
+// The Energi pages' period card (Summering on Översikt and Batteri, Förbrukning on
+// Värmepumpar): the heading, the period
 // control, a polite announcement of each period change, and the body, dimmed
 // while another year loads or after a failed read. The control stays live.
 export function EnergySummaryCard({
+  title = m.energy_tiles_heading(),
   period,
   monthsWithReadings,
   now,
@@ -20,6 +22,8 @@ export function EnergySummaryCard({
   busy,
   children,
 }: {
+  /** The card's heading (default Summering). */
+  title?: string
   period: EnergyPeriod
   monthsWithReadings: string[]
   now: YearMonth
@@ -36,7 +40,7 @@ export function EnergySummaryCard({
         {/* As tall for every period: the control's label cell is as wide as its widest label, its buttons a fixed 40 px. */}
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <h2 id={headingId} className="font-semibold text-lg">
-            {m.energy_tiles_heading()}
+            {title}
           </h2>
           <PeriodControl
             period={period}
