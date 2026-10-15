@@ -255,8 +255,9 @@ colocated tests with `setupDatabase()`):
   readings and then read sums refresh first.
 - **Expected hours** (DST-aware, from `stockholmDayBounds`) are added by the read models, not the sums: from the
   later of the period start and the unit's first reading, to the period's end, clipped to an end point: the newest
-  house bucket on Översikt (`energyOverview`, step 2), now floored to the hour on Värmepumpar (`heatPumpRead.ts`,
-  step 3). Hours after a unit's newest stored hour count as missing only once that trailing gap is ≥ 13 h
+  house bucket on Översikt (`energyOverview`, step 2), the later of the newest stored hour's end and now floored to
+  the hour on Värmepumpar (`heatPumpRead.ts`, step 3), in whole hours rounded up. Both pages take a unit's end from one
+  shared rule (`services/heatPump/unitEnd.ts`, extracted in step 3). Hours after a unit's newest stored hour count as missing only once that trailing gap is ≥ 13 h
   (`STALE_AFTER_MS.comfortCloud`); gaps inside the stored range always count. So a stall of both units shows as
   missing on both pages, and the 6-hourly sync's normal lag shows on neither. Amended in step 2:
   - **A unit Comfort Cloud no longer lists** is one whose `last_seen_at` is older than the newest of any unit's (one
@@ -378,13 +379,14 @@ chart's `house` series, which step 2 changes anyway. Summering is unaffected (it
 
 | Procedure | Gate | Input | Returns |
 |---|---|---|---|
-| `months` | protected | `{ year?: int }` | units; per unit 12 months of the year and of the year before (kWh, heating/cooling kWh, mean outdoor °C, hours, expected hours); year omitted → every month of the history (`year: null`, for Totalt); `availableYears`, `firstReadingDay`, `monthsWithReadings`, `newestMonth`, `lastYearSoFar` |
+| `months` | protected | `{ year?: int }` | units; per unit the months of the year and of the year before that lie inside its history (kWh, heating/cooling kWh, mean outdoor °C, hours, expected hours, span hours); year omitted → every month of the history (`year: null`, for Totalt); `availableYears`, `firstReadingDay`, `monthsWithReadings`, `newestMonth`, `lastYearSoFar` |
 | `days` | protected | `{ from: date, to: date }` (≤ 800 days) | per unit per Stockholm day: kWh, heating/cooling kWh, mean indoor/outdoor/setpoint °C, hours, expected hours |
 | `events.list` | protected | — | all events, newest first |
 | `events.create` / `update` / `delete` | admin | Zod schemas | the event; domain errors mapped via `.errors(heatPumpErrors)` |
 
-Each records `context.timings` (`heatPumpMonthsMs`, `heatPumpDaysMs`). No hourly rows in any output (a procedure test
-pins it).
+Each records `context.timings` (`heatPumpMonthsMs`, `heatPumpDaysMs`, plus the read's sub-timings
+`heatPumpCoverageMs`, `heatPumpMonthSumsMs`, `heatPumpSoFarMs`, `heatPumpDaySumsMs`). No hourly rows in any output (a
+procedure test pins it).
 
 ## Energi › Översikt: Användning (step 2)
 
@@ -449,14 +451,23 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
 
 **Förbrukning** (step 3):
 - Period control and `?period=` as on Översikt (the Energi `PeriodControl`): a year → 12 month bars; a month → one bar
-  per day; Totalt → one bar per month over the whole history. Clicking a month bar selects that month.
+  per day; Totalt → one bar per month over the whole history. Clicking a month bar selects that month. No period asked
+  for: the current month, else the newest month with readings this year, else Totalt (then the history is read).
 - Bars: units stacked, in the Användning colours. Last year: a faint outline bar beside each month (year view only).
-  Outdoor temperature: a line of the hour-weighted mean on a right-hand °C axis (the visx `BarChart` gets a line
-  overlay; the plan decides whether that's an extension of `src/components/chart/` or a sibling component).
-- Tiles: kWh per unit for the period; the change vs the same period a year earlier, shown only when both periods have
-  ≥ 99 % of their expected hours; the mean outdoor temperature. "hittills" on a running period.
-- Missing hours: the same "data saknas för N h" note as Energi.
-- Data: `heatPump.months` for year views; `heatPump.days` for the chosen month.
+  Outdoor temperature: a line of the hour-weighted mean on a right-hand °C axis (`BarChart` gained two opt-in options,
+  a right-axis line and an outline series; no axis when no row has a value).
+- Tiles: kWh per unit for the period; the mean outdoor temperature; "hittills" on a running period. **The change vs
+  the same period a year earlier** (amended in step 3) compares equal spans, per unit: it shows only when, in both
+  periods, the unit has every month of the period (12 for a past year, January … the running month, or the one month)
+  and its stored hours are ≥ 99 % of the period's **calendar** hours (`spanHours`, never clipped to the unit's first
+  hour or end, so a unit's first partial month or a removed unit never compares), and ≥ 99 % of its expected hours (so
+  a stall hides it). A running period ends where the unit's own data ends (a still-listed unit lagging under 13 h is
+  compared over its own span; a removed unit isn't clipped and so never compares), and last year is cut at the same
+  Stockholm wall-clock hour a year earlier (`lastYearSoFar`; 29 February → 28 February).
+- Missing hours: the same "data saknas för N h" note as Energi. Every tile line keeps its height, so switching
+  period moves nothing.
+- Data: `heatPump.months` for year views; `heatPump.days` for the chosen month. Unlike Översikt, a unit's months are
+  those inside its history up to its end: the "a unit appears in a period" rule (Expected hours) is Översikt's.
 
 **Händelser** (step 4a):
 - A list, newest first. Admins add, edit and delete through a responsive dialog (`useUrlDialog`, `useAppForm`,
