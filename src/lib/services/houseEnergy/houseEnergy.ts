@@ -119,7 +119,7 @@ export async function replaceDay(
  *
  * Bounded on the server: the sync's `withDeadline` only stops waiting, it does
  * not cancel the query. The timeouts (a lock wait 5 s, the refresh 8 s, both
- * under the sync's 10 s `REFRESH_BUDGET_MS`) end a stuck refresh and release its
+ * under the 10 s `REFRESH_BUDGET_MS` in `~/lib/integrations/refreshAfterSync`) end a stuck refresh and release its
  * lock, so the next run's refresh is not queued behind it.
  */
 export async function refreshMonthSums(): Promise<void> {

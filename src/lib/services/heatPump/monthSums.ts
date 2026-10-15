@@ -129,6 +129,8 @@ export async function monthSums({
         setpoint_c, (setpoint_c IS NOT NULL)::int,
         1, hour_start, hour_start
       FROM heat_pump_reading
+      -- Every unit, named so the primary key (heat_pump_id, hour_start) serves the range: without it PG 17 scans
+      -- all readings (no skip scan). Same rows either way, so no test can pin it; keep it.
       WHERE heat_pump_id = ANY(ARRAY(SELECT id FROM heat_pump))
         AND hour_start >= ${p.from.toISOString()}::timestamptz
         AND hour_start < ${p.to.toISOString()}::timestamptz`)
