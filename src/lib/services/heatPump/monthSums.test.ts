@@ -282,7 +282,7 @@ test('privacy: a row holds sums only, never an hour', async () => {
   ])
 })
 
-/** The pre-step-2b read, straight over the readings: what `monthSums` must equal. */
+/** The pre-step-2b read, straight over the readings: what `monthSums` must equal, column for column. */
 async function reference(from: Date, to: Date) {
   const { rows } = await db.execute<{
     heat_pump_id: string
@@ -290,14 +290,21 @@ async function reference(from: Date, to: Date) {
     m: number
     kwh: number
     heat: number
+    cool: number
     inside: number | null
+    outside: number | null
+    setpoint: number | null
     hours: number
+    first: Date | string
+    last: Date | string
   }>(sql`
     SELECT heat_pump_id,
       extract(year from date_trunc('month', hour_start AT TIME ZONE 'Europe/Stockholm'))::int AS y,
       extract(month from date_trunc('month', hour_start AT TIME ZONE 'Europe/Stockholm'))::int AS m,
       sum(energy_kwh)::float8 AS kwh, sum(energy_kwh * coalesce(heat_share, 0))::float8 AS heat,
-      avg(inside_c)::float8 AS inside, count(*)::int AS hours
+      sum(energy_kwh * coalesce(cool_share, 0))::float8 AS cool,
+      avg(inside_c)::float8 AS inside, avg(outside_c)::float8 AS outside, avg(setpoint_c)::float8 AS setpoint,
+      count(*)::int AS hours, min(hour_start) AS first, max(hour_start) AS last
     FROM heat_pump_reading
     WHERE hour_start >= ${from.toISOString()}::timestamptz AND hour_start < ${to.toISOString()}::timestamptz
     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`)
@@ -307,9 +314,20 @@ async function reference(from: Date, to: Date) {
     m: r.m,
     kwh: r.kwh,
     heat: r.heat,
+    cool: r.cool,
     inside: r.inside,
+    outside: r.outside,
+    setpoint: r.setpoint,
     hours: r.hours,
+    first: new Date(r.first),
+    last: new Date(r.last),
   }))
+}
+
+/** A mean equals the reference's: both null (no hour with a value), or equal to 9 places. */
+function expectMean(got: number | null | undefined, want: number | null) {
+  if (want === null) expect(got).toBeNull()
+  else expect(got).toBeCloseTo(want, 9)
 }
 
 test.each([
@@ -317,18 +335,31 @@ test.each([
   ['mid-day → mid-day across both DST days', '2025-10-25T10:00:00Z', '2026-03-29T10:00:00Z'],
   ['a partial last day on the 23-hour day', '2026-03-01T00:00:00Z', '2026-03-29T05:00:00Z'],
   ['same day (lastYearSoFar on the 1st)', '2026-03-31T22:00:00Z', '2026-04-01T06:00:00Z'],
-  ['across a month edge without a whole day', '2026-03-31T20:00:00Z', '2026-04-01T03:00:00Z'],
+  [
+    'across a summer month edge without a whole day',
+    '2026-03-31T20:00:00Z',
+    '2026-04-01T03:00:00Z',
+  ],
+  [
+    'across a winter month edge without a whole day',
+    '2026-01-31T20:00:00Z',
+    '2026-02-01T03:00:00Z',
+  ],
 ])('equals the raw read: %s', async (_name, fromIso, toIso) => {
   const id = await seedUnits('Matsal', 'Övervåning')
-  // Varying values (synthetic) so a lost or doubled hour shows; Övervåning has gaps.
+  // Varying values (synthetic) so a lost or doubled hour, a swapped column or a null counted as a value shows:
+  // shares and temperatures are sometimes null. Övervåning has gaps and never a setpoint (a null mean).
   const vary = (_t: number, i: number) => ({
     energyKwh: 0.01 + (i % 7) * 0.01,
-    insideC: 18 + (i % 5),
-    heatShare: (i % 3) / 2,
+    heatShare: i % 11 === 0 ? null : (i % 3) / 2,
+    coolShare: i % 13 === 0 ? null : (i % 4) / 4,
+    insideC: i % 9 === 0 ? null : 18 + (i % 5),
+    outsideC: i % 6 === 0 ? null : -5 + (i % 8),
+    setpointC: i % 4 === 0 ? null : 19 + (i % 3),
   })
   await storeHours(id.Matsal, '2025-10-01T00:00:00Z', '2026-04-03T00:00:00Z', vary)
   await storeHours(id.Övervåning, '2025-10-01T00:00:00Z', '2026-04-03T00:00:00Z', (t, i) =>
-    i % 50 === 0 ? null : vary(t, i),
+    i % 50 === 0 ? null : { ...vary(t, i), setpointC: null },
   )
   const from = new Date(fromIso)
   const to = new Date(toIso)
@@ -338,19 +369,29 @@ test.each([
     m: r.month,
     kwh: r.kwh,
     heat: r.heatKwh,
+    cool: r.coolKwh,
     inside: r.insideC,
+    outside: r.outsideC,
+    setpoint: r.setpointC,
     hours: r.hours,
+    first: r.firstHour,
+    last: r.lastHour,
   }))
   const want = await reference(from, to)
-  const key = (x: { id: string; y: number; m: number; hours: number }) =>
-    `${x.id} ${x.y}-${x.m} ${x.hours}`
+  const key = (x: { id: string; y: number; m: number; hours: number; first: Date; last: Date }) =>
+    `${x.id} ${x.y}-${x.m} ${x.hours} ${x.first.toISOString()} ${x.last.toISOString()}`
   expect(got.map(key).sort()).toEqual(want.map(key).sort())
   for (const w of want) {
     const g = got.find((x) => x.id === w.id && x.y === w.y && x.m === w.m)
     expect(g?.kwh).toBeCloseTo(w.kwh, 9)
     expect(g?.heat).toBeCloseTo(w.heat, 9)
-    expect(g?.inside).toBeCloseTo(w.inside as number, 9) // every stored hour has an inside value
+    expect(g?.cool).toBeCloseTo(w.cool, 9)
+    expectMean(g?.inside, w.inside)
+    expectMean(g?.outside, w.outside)
+    expectMean(g?.setpoint, w.setpoint)
   }
+  // The null-mean path is exercised: Övervåning's setpoint is null in every month.
+  expect(want.some((w) => w.id === id.Övervåning && w.setpoint === null)).toBe(true)
 })
 
 test('hours stored after the refresh: a partial day counts them at once, a whole day only after the next refresh', async () => {
