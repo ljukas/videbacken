@@ -252,52 +252,62 @@ export async function getHeatPumpMonths(
         ? input.year
         : current.year
   // The running month is the newest stored hour's: this year's data ends there (0–6 h before now with the 6-hourly
-  // sync), so last year is cut at the same point, and each unit's expected hours no later than its own end a year back.
+  // sync). Each unit's comparison runs to its own end in it (`spanEndMs`: the newest stored end, or the unit's cap
+  // when earlier: a unit lagging under 13 h, or removed), and last year to that same Stockholm hour, so both sides
+  // span the same hours per unit.
   const running = stockholmYearMonth(cov.newestEndMs - 1)
-  const cutMs = stockholmYearBefore(cov.newestEndMs)
+  const runningBounds = stockholmMonthBounds(running.year, running.month)
+  const spanEndMs = (u: Covered) => Math.min(cov.newestEndMs, u.capMs)
+  const cutOf = (u: Covered) => stockholmYearBefore(spanEndMs(u))
   const soFarYm = { year: running.year - 1, month: running.month }
   const soFarBounds = stockholmMonthBounds(soFarYm.year, soFarYm.month)
+  // One read per distinct cut (units syncing together share one), none for a cut before the month starts.
+  const cuts = [...new Set(cov.units.map(cutOf))].filter((c) => c > soFarBounds.startMs)
   // Independent reads, side by side: the history and (a running year only) last year's running month.
-  const [rows, soFar] = await Promise.all([
+  const [rows, soFarByCut] = await Promise.all([
     timed(input.timings, 'heatPumpMonthSumsMs', () =>
       monthSums({ from: new Date(firstMs), to: new Date(cov.endMs) }),
     ),
     year === running.year
-      ? timed(input.timings, 'heatPumpSoFarMs', () =>
-          monthSums({ from: new Date(soFarBounds.startMs), to: new Date(cutMs) }),
-        )
+      ? timed(input.timings, 'heatPumpSoFarMs', async () => {
+          const reads = await Promise.all(
+            cuts.map((c) => monthSums({ from: new Date(soFarBounds.startMs), to: new Date(c) })),
+          )
+          return new Map(cuts.map((c, i) => [c, reads[i]]))
+        })
       : null,
   ])
   const byKey = new Map(rows.map((r) => [rowKey(r.heatPumpId, r.year, r.month), r]))
   // Each unit's months from its first through the newest: a month without hours inside them is a gap. A month the
   // unit's cap doesn't reach (a new month's first hours, the sync not run yet) has nothing to say: left out.
-  // A cell's span runs to the newest stored hour's end (any unit): this year's side of the comparison cut.
+  // A cell's span is its whole month, the running month's up to the unit's `spanEndMs` (this year's side of the
+  // comparison); a month past the running one (a stall) up to the newest stored end: none.
   const cells = cov.units
     .flatMap((u) =>
       monthsFrom(stockholmYearMonth(u.firstMs), newest).map((ym) => {
         const bounds = stockholmMonthBounds(ym.year, ym.month)
+        const spanEnd = bounds.startMs === runningBounds.startMs ? spanEndMs(u) : cov.newestEndMs
         return cellOf(
           u.id,
           ym,
           byKey.get(rowKey(u.id, ym.year, ym.month)),
           expectedHours(bounds, u.firstMs, u.capMs),
-          spanHoursOf(bounds, cov.newestEndMs),
+          spanHoursOf(bounds, spanEnd),
         )
       }),
     )
     .filter((c) => c.expectedHours > 0 || c.hours > 0)
   const lastYearSoFar =
-    soFar === null
+    soFarByCut === null
       ? null
       : cov.units.flatMap((u) => {
-          const expected = expectedHours(
-            soFarBounds,
-            u.firstMs,
-            Math.min(cutMs, stockholmYearBefore(u.capMs)),
-          )
-          const row = soFar.find(
-            (r) => r.heatPumpId === u.id && r.year === soFarYm.year && r.month === soFarYm.month,
-          )
+          const cutMs = cutOf(u)
+          const expected = expectedHours(soFarBounds, u.firstMs, cutMs)
+          const row = soFarByCut
+            .get(cutMs)
+            ?.find(
+              (r) => r.heatPumpId === u.id && r.year === soFarYm.year && r.month === soFarYm.month,
+            )
           return expected === 0 && !row
             ? []
             : [cellOf(u.id, soFarYm, row, expected, spanHoursOf(soFarBounds, cutMs))]

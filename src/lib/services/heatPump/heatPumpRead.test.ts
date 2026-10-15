@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { heatPumpView } from '~/components/heatPump/heatPumpView'
 import { seedUnits, storeHours } from '~test/fixtures/heatPumpHours'
 import { setupDatabase } from '~test/setup'
 import { upsertUnits } from './heatPump'
@@ -214,13 +215,14 @@ test("months: each cell's span is the month's calendar hours, never clipped to t
   // Whole months: February 2026 (672 h), March 2025 (743 h, DST on the 30th), however few hours the unit had there.
   expect(cellOf(o.months, ids.Matsal, 2026, 2)?.spanHours).toBe(672)
   expect(cellOf(o.lastYear, ids.Matsal, 2025, 3)?.spanHours).toBe(743)
-  // The running month runs to the newest stored hour's end: 2026-02-28 23:00 Z (March 1, Stockholm) … 12:00 Z = 13 h,
-  // for Övervåning too, though its first hour is 05:00 Z (expected 3, span 13: its partial first month).
+  // The running month runs to each unit's own end: Matsal's 2026-02-28 23:00 Z (March 1, Stockholm) … 12:00 Z = 13 h;
+  // Övervåning's (it lags 4 h) … 08:00 Z = 9 h, though its first hour is 05:00 Z (expected 3, span 9: its partial
+  // first month).
   expect(cellOf(o.months, ids.Matsal, 2026, 3)?.spanHours).toBe(13)
   expect(cellOf(o.months, ids.Övervåning, 2026, 3)).toMatchObject({
     hours: 3,
     expectedHours: 3,
-    spanHours: 13,
+    spanHours: 9,
   })
   // Last year's running month runs to the cut: 2025-02-28 23:00 Z … 2025-03-01 12:00 Z.
   expect(o.lastYearSoFar?.[0]?.spanHours).toBe(13)
@@ -248,11 +250,11 @@ test("months: the running comparison is cut where this year's data ends, not at 
     expectedHours: 3,
     spanHours: 3,
   })
-  // Övervåning's expected hours stop at its own end a year back (2025-09-30 23:00 Z): 1 h, stored.
+  // Övervåning's comparison stops at its own end a year back (2025-09-30 23:00 Z): 1 h, stored.
   expect(cellOf(o.lastYearSoFar ?? [], ids.Övervåning, 2025, 10)).toMatchObject({
     hours: 1,
     expectedHours: 1,
-    spanHours: 3,
+    spanHours: 1,
   })
 })
 
@@ -368,4 +370,41 @@ test("a removed unit's last listing mid-hour: its partly covered last hour count
       .filter((d) => d.heatPumpId === ids.Övervåning)
       .map((d) => [d.day, d.hours, d.expectedHours]),
   ).toEqual([['2026-10-08', 2, 15]])
+})
+
+test("a unit lagging under 13 h compares its own span: this year to its own end, last year to that end's hour", async () => {
+  // 2026-10-03 08:10 Stockholm. Matsal's newest hour ends 06:00 Z; Övervåning lags 5 h (ends 01:00 Z), a normal sync
+  // delay. A year earlier both have whole days. October (Stockholm) starts 09-30 22:00 Z.
+  const ids = await seedUnits('Matsal', 'Övervåning')
+  for (const id of [ids.Matsal, ids.Övervåning])
+    await storeHours(id, '2025-09-30T22:00:00Z', '2025-10-04T00:00:00Z')
+  await storeHours(ids.Matsal, '2026-09-30T22:00:00Z', '2026-10-03T06:00:00Z')
+  await storeHours(ids.Övervåning, '2026-09-30T22:00:00Z', '2026-10-03T01:00:00Z')
+  const now = new Date('2026-10-03T06:10:00Z')
+  const months = await getHeatPumpMonths({ year: 2026, now })
+  const pick = (cells: HeatPumpMonthCell[] | null, id: string, year: number) =>
+    cellOf(cells ?? [], id, year, 10)
+  expect(pick(months.months, ids.Matsal, 2026)).toMatchObject({ hours: 56, spanHours: 56 })
+  expect(pick(months.months, ids.Övervåning, 2026)).toMatchObject({
+    hours: 51,
+    expectedHours: 51,
+    spanHours: 51,
+  })
+  expect(pick(months.lastYearSoFar, ids.Matsal, 2025)).toMatchObject({ hours: 56, spanHours: 56 })
+  expect(pick(months.lastYearSoFar, ids.Övervåning, 2025)).toMatchObject({
+    hours: 51,
+    expectedHours: 51,
+    spanHours: 51,
+  })
+  // So the month view compares both units (the same 0,1 kWh an hour both years: no change).
+  const days = await getHeatPumpDays({ from: '2026-10-01', to: '2026-10-31', now })
+  const v = heatPumpView({
+    months,
+    days,
+    period: { kind: 'month', year: 2026, month: 10 },
+    now: { year: 2026, month: 10 },
+    today: '2026-10-03',
+  })
+  for (const u of v?.tiles.units ?? []) expect(u.change).toBeCloseTo(0, 9)
+  expect(v?.tiles.units).toHaveLength(2)
 })
