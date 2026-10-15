@@ -7,16 +7,16 @@ import {
 } from '~/lib/effects/emaldo'
 import { repriceStale } from '~/lib/evCharging/repriceStale'
 import type { SyncTrigger } from '~/lib/integrationHealth'
+import { refreshAfterSync } from '~/lib/integrations/refreshAfterSync'
 import { type RunBase, runPulledSync, withDeadline } from '~/lib/integrations/runPulledSync'
 import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import { earliestCountedStartAt } from '~/lib/services/evCharging'
-import { HouseEnergyDomainError, replaceDay } from '~/lib/services/houseEnergy'
+import { HouseEnergyDomainError, refreshMonthSums, replaceDay } from '~/lib/services/houseEnergy'
 import { getLastSuccessStartedAt } from '~/lib/services/integrationSync'
 import { addDays, daysBetween, stockholmDayBounds, stockholmDayOf } from '~/lib/time/stockholm'
 import type { deriveFrom } from './derive'
 import { deriveAfterSync } from './deriveAfterSync'
-import { refreshAfterSync } from './refreshAfterSync'
 
 // Server-only (db, effects). Never import it from client code — and keep
 // `src/lib/houseEnergy/` free of an index barrel, so the client-safe modules
@@ -170,8 +170,9 @@ export async function runEmaldoSync(opts: {
         // whenever a day landed (also when the run then fails part-way).
         run.refreshMs = await refreshAfterSync({
           stored: run.earliestReplacedDay !== null,
+          label: 'house energy month',
+          refresh: opts.deps?.refreshMonthSums ?? refreshMonthSums,
           log,
-          refresh: opts.deps?.refreshMonthSums,
         })
         // ADR-0023: new readings change the house mix and the pool from the
         // earliest replaced day on — also when the run then fails part-way.
