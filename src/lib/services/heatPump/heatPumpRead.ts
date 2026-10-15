@@ -36,6 +36,12 @@ export type HeatPumpMonthCell = {
   outsideC: number | null
   hours: number
   expectedHours: number
+  /**
+   * The month's calendar hours the comparison must see stored: the whole month, or, for the running month (the newest
+   * stored hour's) and `lastYearSoFar`, the hours up to the comparison cut. Never clipped to the unit's first hour or
+   * end, so a unit's partial first or last month doesn't pass for complete.
+   */
+  spanHours: number
 }
 
 export type HeatPumpMonths = {
@@ -96,7 +102,9 @@ export function expectedHours(
 // The units with readings (byHeatPumpName order, never SQL's), the coverage end (the newest stored hour's end or
 // `now` floored to the hour, whichever is later), and each unit's cap: `unitEndRule`'s end against that coverage end
 // (Översikt's rule, over the same units: those with readings).
-async function coverage(nowMs: number): Promise<{ units: Covered[]; endMs: number } | null> {
+async function coverage(
+  nowMs: number,
+): Promise<{ units: Covered[]; endMs: number; newestEndMs: number } | null> {
   const [units, spans] = await Promise.all([listUnits(), readingSpans()])
   if (spans.length === 0) return null
   const newestEndMs = Math.max(...spans.map((s) => s.lastHour.getTime())) + millisecondsInHour
@@ -121,7 +129,7 @@ async function coverage(nowMs: number): Promise<{ units: Covered[]; endMs: numbe
   const covered = withReadings
     .map((u) => ({ id: u.id, name: u.name, firstMs: u.firstMs, capMs: rule.endMs(u) }))
     .sort(byHeatPumpName)
-  return { units: covered, endMs }
+  return { units: covered, endMs, newestEndMs }
 }
 
 const dto = (u: Covered): HeatPumpUnitDto => ({ id: u.id, name: u.name })
@@ -140,11 +148,16 @@ function monthsFrom(from: YearMonth, to: YearMonth): YearMonth[] {
   return out
 }
 
+// The calendar hours of `bounds` up to `endMs`.
+const spanHoursOf = (bounds: { startMs: number; endMs: number }, endMs: number) =>
+  expectedHours(bounds, Number.NEGATIVE_INFINITY, endMs)
+
 function cellOf(
   unitId: string,
   ym: YearMonth,
   row: HeatPumpMonthRow | undefined,
   expected: number,
+  spanHours: number,
 ): HeatPumpMonthCell {
   return row
     ? {
@@ -157,6 +170,7 @@ function cellOf(
         outsideC: row.outsideC,
         hours: row.hours,
         expectedHours: Math.max(expected, row.hours),
+        spanHours,
       }
     : {
         heatPumpId: unitId,
@@ -168,6 +182,7 @@ function cellOf(
         outsideC: null,
         hours: 0,
         expectedHours: expected,
+        spanHours,
       }
 }
 
@@ -204,16 +219,19 @@ export async function getHeatPumpMonths(
   const byKey = new Map(rows.map((r) => [rowKey(r.heatPumpId, r.year, r.month), r]))
   // Each unit's months from its first through the newest: a month without hours inside them is a gap. A month the
   // unit's cap doesn't reach (a new month's first hours, the sync not run yet) has nothing to say: left out.
+  // A cell's span runs to the newest stored hour's end (any unit): this year's side of the comparison cut.
   const cells = cov.units
     .flatMap((u) =>
-      monthsFrom(stockholmYearMonth(u.firstMs), newest).map((ym) =>
-        cellOf(
+      monthsFrom(stockholmYearMonth(u.firstMs), newest).map((ym) => {
+        const bounds = stockholmMonthBounds(ym.year, ym.month)
+        return cellOf(
           u.id,
           ym,
           byKey.get(rowKey(u.id, ym.year, ym.month)),
-          expectedHours(stockholmMonthBounds(ym.year, ym.month), u.firstMs, u.capMs),
-        ),
-      ),
+          expectedHours(bounds, u.firstMs, u.capMs),
+          spanHoursOf(bounds, cov.newestEndMs),
+        )
+      }),
     )
     .filter((c) => c.expectedHours > 0 || c.hours > 0)
   const first = stockholmYearMonth(firstMs)
@@ -237,7 +255,9 @@ export async function getHeatPumpMonths(
       const row = soFar.find(
         (r) => r.heatPumpId === u.id && r.year === ym.year && r.month === ym.month,
       )
-      return expected === 0 && !row ? [] : [cellOf(u.id, ym, row, expected)]
+      return expected === 0 && !row
+        ? []
+        : [cellOf(u.id, ym, row, expected, spanHoursOf(bounds, cutMs))]
     })
   }
 

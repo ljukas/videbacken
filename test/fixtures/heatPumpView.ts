@@ -8,7 +8,7 @@ const UNITS = [MATSAL, OVERVANING]
 const pad = (n: number) => String(n).padStart(2, '0')
 export const span = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i)
 
-/** A complete month cell: 100 kWh, all heating, 2 °C outside, 720 of 720 hours, unless overridden. */
+/** A complete month cell: 100 kWh, all heating, 2 °C outside, 720 of 720 hours (a 720-hour month), unless overridden. */
 export const cell = (
   unit: { id: string },
   year: number,
@@ -24,6 +24,7 @@ export const cell = (
   outsideC: 2,
   hours: 720,
   expectedHours: 720,
+  spanHours: 720,
   ...over,
 })
 
@@ -44,10 +45,12 @@ export function monthsPayload(over: Partial<HeatPumpMonths> = {}): HeatPumpMonth
     newestMonth: '2026-09',
     months: UNITS.flatMap((u) => [
       ...span(1, 8).map((mo) => cell(u, 2026, mo)),
-      cell(u, 2026, 9, { kwh: 50, hours: 360, expectedHours: 360 }),
+      cell(u, 2026, 9, { kwh: 50, hours: 360, expectedHours: 360, spanHours: 360 }),
     ]),
     lastYear: UNITS.flatMap((u) => span(1, 12).map((mo) => cell(u, 2025, mo))),
-    lastYearSoFar: UNITS.map((u) => cell(u, 2025, 9, { kwh: 50, hours: 360, expectedHours: 360 })),
+    lastYearSoFar: UNITS.map((u) =>
+      cell(u, 2025, 9, { kwh: 50, hours: 360, expectedHours: 360, spanHours: 360 }),
+    ),
     ...over,
   }
 }

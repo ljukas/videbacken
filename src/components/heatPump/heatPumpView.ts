@@ -56,7 +56,7 @@ export type HeatPumpTile = {
   /** Step 2's `heatPumpColor(units, id)`. */
   color: string
   kwh: number | null
-  /** (this − before) ÷ before; null unless both periods are ≥ 99 % complete. */
+  /** (this − before) ÷ before; null unless both periods are ≥ 99 % complete over the same months (`complete`). */
   change: number | null
 }
 
@@ -93,6 +93,22 @@ const covered = (cells: readonly Sums[]) => {
   const expected = sum(cells.map((c) => c.expectedHours))
   return expected > 0 && sum(cells.map((c) => c.hours)) / expected >= COVERAGE_COMPLETE
 }
+/**
+ * A unit's cells answer for the whole of `months` (a period, or its comparison): a cell for each month, and stored
+ * hours ≥ 99 % both of the months' calendar hours (`spanHours`: a partial first or last month of the unit fails) and of
+ * the unit's expected hours (a stall fails).
+ */
+const complete = (cells: readonly HeatPumpMonthCell[], months: readonly YearMonth[]) => {
+  const span = sum(cells.map((c) => c.spanHours))
+  return (
+    months.every((ym) => at(cells, ym).length > 0) &&
+    span > 0 &&
+    sum(cells.map((c) => c.hours)) / span >= COVERAGE_COMPLETE &&
+    covered(cells)
+  )
+}
+const monthsOf = (year: number, through: number): YearMonth[] =>
+  Array.from({ length: through }, (_, i) => ({ year, month: i + 1 }))
 /** The cells' kWh, or null when none has an hour. */
 const kwhOf = (cells: readonly Sums[]) =>
   cells.some((c) => c.hours > 0) ? sum(cells.map((c) => c.kwh)) : null
@@ -212,31 +228,39 @@ function dayRows(
 }
 
 // The period's cells and what each unit is compared with. A running period (it holds the newest stored hour)
-// compares with the same span a year earlier: last year's months before the newest month plus `lastYearSoFar`.
+// compares with the same span a year earlier: last year's months before the newest month plus `lastYearSoFar`. A
+// change needs both sides complete over the same months (`complete`): Jan … the newest month of a running year, all 12
+// of a past one, or the one month.
 function tilesOf(data: HeatPumpMonths, period: EnergyPeriod, now: YearMonth): HeatPumpTiles {
   const newest = data.newestMonth
   let cells: HeatPumpMonthCell[]
   let before: HeatPumpMonthCell[] | null
+  let comparedMonths: { mine: YearMonth[]; theirs: YearMonth[] } | null
   let comparedWith: string | null
   let running: boolean
   if (period.kind === 'all') {
     cells = data.months
     before = null
+    comparedMonths = null
     comparedWith = null
     running = false
   } else if (period.kind === 'year') {
     cells = data.months.filter((c) => c.year === period.year)
     const soFar = newest?.startsWith(`${period.year}-`) ? data.lastYearSoFar : null
-    const newestMonth = newest ? Number(newest.slice(5, 7)) : 13
-    before = soFar
-      ? [...data.lastYear.filter((c) => c.month < newestMonth), ...soFar]
-      : data.lastYear
+    const through = soFar && newest ? Number(newest.slice(5, 7)) : 12
+    before = soFar ? [...data.lastYear.filter((c) => c.month < through), ...soFar] : data.lastYear
+    comparedMonths = {
+      mine: monthsOf(period.year, through),
+      theirs: monthsOf(period.year - 1, through),
+    }
     comparedWith = String(period.year - 1)
     running = period.year === now.year
   } else {
     cells = at(data.months, period)
     const soFar = newest === monthKey(period.year, period.month) ? data.lastYearSoFar : null
-    before = soFar ?? at(data.lastYear, { year: period.year - 1, month: period.month })
+    const lastYear = { year: period.year - 1, month: period.month }
+    before = soFar ?? at(data.lastYear, lastYear)
+    comparedMonths = { mine: [period], theirs: [lastYear] }
     comparedWith = m.energy_period_month({
       month: monthLabel(period.month),
       year: String(period.year - 1),
@@ -249,7 +273,12 @@ function tilesOf(data: HeatPumpMonths, period: EnergyPeriod, now: YearMonth): He
     const kwh = kwhOf(mine)
     const base = kwhOf(theirs)
     const change =
-      kwh !== null && base !== null && base > 0 && covered(mine) && covered(theirs)
+      kwh !== null &&
+      base !== null &&
+      base > 0 &&
+      comparedMonths !== null &&
+      complete(mine, comparedMonths.mine) &&
+      complete(theirs, comparedMonths.theirs)
         ? (kwh - base) / base
         : null
     return { id: u.id, name: u.name, color: heatPumpColor(data.units, u.id), kwh, change }

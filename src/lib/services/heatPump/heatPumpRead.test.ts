@@ -197,6 +197,24 @@ test('months: the newest month a year earlier is cut at the same Stockholm hour 
   expect((await getHeatPumpMonths({ year: 2025, now: NOW })).lastYearSoFar).toBeNull()
 })
 
+test("months: each cell's span is the month's calendar hours, never clipped to the unit's first hour or end", async () => {
+  const ids = await seedSpring()
+  const o = await getHeatPumpMonths({ year: 2026, now: NOW })
+  // Whole months: February 2026 (672 h), March 2025 (743 h, DST on the 30th), however few hours the unit had there.
+  expect(cellOf(o.months, ids.Matsal, 2026, 2)?.spanHours).toBe(672)
+  expect(cellOf(o.lastYear, ids.Matsal, 2025, 3)?.spanHours).toBe(743)
+  // The running month runs to the newest stored hour's end: 2026-02-28 23:00 Z (March 1, Stockholm) … 12:00 Z = 13 h,
+  // for Övervåning too, though its first hour is 05:00 Z (expected 3, span 13: its partial first month).
+  expect(cellOf(o.months, ids.Matsal, 2026, 3)?.spanHours).toBe(13)
+  expect(cellOf(o.months, ids.Övervåning, 2026, 3)).toMatchObject({
+    hours: 3,
+    expectedHours: 3,
+    spanHours: 13,
+  })
+  // Last year's running month runs to the cut: 2025-02-28 23:00 Z … 2025-03-01 12:00 Z.
+  expect(o.lastYearSoFar?.[0]?.spanHours).toBe(13)
+})
+
 test("months, Totalt (no year): every month of each unit's history, no last year", async () => {
   const ids = await seedSpring()
   const o = await getHeatPumpMonths({ now: NOW })

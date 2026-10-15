@@ -159,6 +159,68 @@ describe('tiles', () => {
     expect(t?.units[1]).toMatchObject({ kwh: null, change: null })
   })
 
+  // Year 2025 read in September 2026: 2025 complete; 2024 is the units' first year (Matsal from 31 October, one day of
+  // it; Övervåning from 27 November). Each of last year's cells is complete against its own expected hours.
+  const firstYearPayload = () =>
+    monthsPayload({
+      year: 2025,
+      months: [MATSAL, OVERVANING].flatMap((u) => span(1, 12).map((mo) => cell(u, 2025, mo))),
+      lastYear: [
+        cell(MATSAL, 2024, 10, { kwh: 3, hours: 24, expectedHours: 24, spanHours: 745 }),
+        cell(MATSAL, 2024, 11),
+        cell(MATSAL, 2024, 12),
+        cell(OVERVANING, 2024, 11, { kwh: 12, hours: 96, expectedHours: 96 }),
+        cell(OVERVANING, 2024, 12),
+      ],
+      lastYearSoFar: null,
+    })
+
+  test("a year against the units' first, partial year: no change (12 months aren't compared with 2)", () => {
+    const t = view({ months: firstYearPayload(), period: { kind: 'year', year: 2025 } })?.tiles
+    expect(t?.units.map((u) => [u.name, u.kwh, u.change])).toEqual([
+      ['Matsal', 1200, null],
+      ['Övervåning', 1200, null],
+    ])
+  })
+
+  test("a month against the unit's first, partial month: no change; a whole month still compares", () => {
+    const october = view({
+      months: firstYearPayload(),
+      days: daysPayload(2025, 10, 31),
+      period: { kind: 'month', year: 2025, month: 10 },
+    })?.tiles
+    expect(october?.units.map((u) => u.change)).toEqual([null, null])
+    const december = view({
+      months: firstYearPayload(),
+      days: daysPayload(2025, 12, 31),
+      period: { kind: 'month', year: 2025, month: 12 },
+    })?.tiles
+    expect(december?.units.map((u) => u.change)).toEqual([0, 0])
+  })
+
+  test('a unit with cells this period but none last year: no change for it, the other unit keeps its own', () => {
+    const p = monthsPayload()
+    p.lastYear = p.lastYear.filter((c) => c.heatPumpId === MATSAL.id)
+    p.lastYearSoFar = (p.lastYearSoFar ?? []).filter((c) => c.heatPumpId === MATSAL.id)
+    const t = view({ months: p, period: { kind: 'year', year: 2026 } })?.tiles
+    expect(t?.units.find((u) => u.id === OVERVANING.id)).toMatchObject({ kwh: 850, change: null })
+    expect(t?.units.find((u) => u.id === MATSAL.id)?.change).toBeCloseTo(0, 9)
+  })
+
+  test('a unit removed in March: its January–March are complete to its end, but no change for the year', () => {
+    const p = monthsPayload()
+    p.months = p.months
+      .filter((c) => c.heatPumpId !== OVERVANING.id || c.month <= 3)
+      .map((c) =>
+        c.heatPumpId === OVERVANING.id && c.month === 3
+          ? { ...c, kwh: 40, hours: 300, expectedHours: 300 }
+          : c,
+      )
+    const t = view({ months: p, period: { kind: 'year', year: 2026 } })?.tiles
+    expect(t?.units.find((u) => u.id === OVERVANING.id)).toMatchObject({ kwh: 240, change: null })
+    expect(t?.units.find((u) => u.id === MATSAL.id)?.change).toBeCloseTo(0, 9)
+  })
+
   test("missing hours: the worst unit's, rounded; none when complete", () => {
     const p = monthsPayload()
     p.months = p.months.map((c) =>

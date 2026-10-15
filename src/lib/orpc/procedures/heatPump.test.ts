@@ -142,6 +142,7 @@ test('privacy: only month and day sums leave; no hour and no timestamp in any ou
     'kwh',
     'month',
     'outsideC',
+    'spanHours',
     'year',
   ]
   expect(months.months.length).toBeGreaterThan(0) // the key check is not vacuous
