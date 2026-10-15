@@ -35,8 +35,8 @@ export function splitRange(
  * writing (the Comfort Cloud sync, once per run that stored hours). Bounded on the server like
  * `houseEnergy.refreshMonthSums`: the sync's budget only stops waiting, so a lock wait (5 s) and the refresh (8 s)
  * time out here and release the lock. Serial: a parallel aggregate adds the floats in a varying order, and
- * CONCURRENTLY would then rewrite every row whose sum moved in the last bit (once the readings outgrow
- * `min_parallel_table_scan_size`).
+ * CONCURRENTLY would then rewrite every row whose sum moved in the last bit (should the planner ever pick a
+ * parallel plan as the readings grow; it doesn't at today's size).
  */
 export async function refreshDaySums(): Promise<void> {
   await db.transaction(async (tx) => {
@@ -115,7 +115,7 @@ export async function monthSums({
   const parts: SQL[] = []
   if (wholeDays) {
     parts.push(sql`
-      SELECT heat_pump_id, date_trunc('month', day)::date AS m, kwh, heat_kwh, cool_kwh,
+      SELECT heat_pump_id, date_trunc('month', day::timestamp)::date AS m, kwh, heat_kwh, cool_kwh,
         inside_c_sum, inside_c_hours, outside_c_sum, outside_c_hours, setpoint_c_sum, setpoint_c_hours,
         hours, first_hour, last_hour
       FROM heat_pump_day
