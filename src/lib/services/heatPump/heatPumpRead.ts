@@ -54,15 +54,18 @@ export type HeatPumpMonths = {
   firstReadingDay: string | null
   /** 'YYYY-MM' of every month with readings (any unit), oldest first: the period control's months. */
   monthsWithReadings: string[]
-  /** 'YYYY-MM' of the coverage end (the newest stored hour or now): the running period the comparison cuts. */
+  /**
+   * 'YYYY-MM' of the newest stored hour (any unit): the running period, which the comparison cuts where this year's
+   * data ends. Cells can run past it to the coverage end (a stall), never complete.
+   */
   newestMonth: string | null
   /** A year: each unit's months of it inside the unit's history; Totalt: every month of the history. Oldest first. */
   months: HeatPumpMonthCell[]
   /** A year: the same for the year before (the outline, the comparison); Totalt: []. */
   lastYear: HeatPumpMonthCell[]
   /**
-   * The newest month a year earlier, cut at the same Stockholm hour (the running period's comparison); null unless
-   * `year` holds the coverage end.
+   * The newest month a year earlier, cut at the same Stockholm hour as the newest stored hour's end (the running
+   * period's comparison); null unless `year` holds the newest stored hour.
    */
   lastYearSoFar: HeatPumpMonthCell[] | null
 }
@@ -244,14 +247,21 @@ export async function getHeatPumpMonths(
         ? input.year
         : current.year
 
+  // The running month is the newest stored hour's: this year's data ends there (0–6 h before now with the 6-hourly
+  // sync), so last year is cut at the same point, and each unit's expected hours no later than its own end a year back.
+  const running = stockholmYearMonth(cov.newestEndMs - 1)
   let lastYearSoFar: HeatPumpMonthCell[] | null = null
-  if (year === newest.year) {
-    const cutMs = stockholmYearBefore(cov.endMs)
-    const ym = { year: newest.year - 1, month: newest.month }
+  if (year === running.year) {
+    const cutMs = stockholmYearBefore(cov.newestEndMs)
+    const ym = { year: running.year - 1, month: running.month }
     const bounds = stockholmMonthBounds(ym.year, ym.month)
     const soFar = await monthSums({ from: new Date(bounds.startMs), to: new Date(cutMs) })
     lastYearSoFar = cov.units.flatMap((u) => {
-      const expected = expectedHours(bounds, u.firstMs, cutMs)
+      const expected = expectedHours(
+        bounds,
+        u.firstMs,
+        Math.min(cutMs, stockholmYearBefore(u.capMs)),
+      )
       const row = soFar.find(
         (r) => r.heatPumpId === u.id && r.year === ym.year && r.month === ym.month,
       )
@@ -269,7 +279,7 @@ export async function getHeatPumpMonths(
     monthsWithReadings: [
       ...new Set(rows.filter((r) => r.hours > 0).map((r) => monthKey(r.year, r.month))),
     ].sort(),
-    newestMonth: monthKey(newest.year, newest.month),
+    newestMonth: monthKey(running.year, running.month),
     months: year === null ? cells : cells.filter((c) => c.year === year),
     lastYear: year === null ? [] : cells.filter((c) => c.year === year - 1),
     lastYearSoFar,

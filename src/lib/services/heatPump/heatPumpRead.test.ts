@@ -215,6 +215,49 @@ test("months: each cell's span is the month's calendar hours, never clipped to t
   expect(o.lastYearSoFar?.[0]?.spanHours).toBe(13)
 })
 
+test("months: the running comparison is cut where this year's data ends, not at now", async () => {
+  // 2026-10-01 08:10 Stockholm, before the 06:20 Z run: the 00:20 Z run stored Matsal's 2026-09-30 22:00, 23:00 and
+  // 10-01 00:00 Z (October so far: 3 h). Övervåning lags 2 h (its newest, 22:00 Z). A year earlier both have whole
+  // days, except Övervåning's 2025-09-30 23:00 Z hour onwards.
+  const ids = await seedUnits('Matsal', 'Övervåning')
+  await storeHours(ids.Matsal, '2025-09-30T00:00:00Z', '2025-10-02T00:00:00Z')
+  await storeHours(ids.Matsal, '2026-09-30T00:00:00Z', '2026-10-01T01:00:00Z')
+  await storeHours(ids.Övervåning, '2025-09-30T00:00:00Z', '2025-09-30T23:00:00Z')
+  await storeHours(ids.Övervåning, '2026-09-30T00:00:00Z', '2026-09-30T23:00:00Z')
+  const o = await getHeatPumpMonths({ year: 2026, now: new Date('2026-10-01T06:10:00Z') })
+  expect(o.newestMonth).toBe('2026-10')
+  expect(cellOf(o.months, ids.Matsal, 2026, 10)).toMatchObject({
+    hours: 3,
+    expectedHours: 3,
+    spanHours: 3,
+  })
+  // Cut at 2025-10-01 01:00 Z (the newest stored hour's end a year back), not at 06:00 Z (now floored): 3 h, not 8.
+  expect(cellOf(o.lastYearSoFar ?? [], ids.Matsal, 2025, 10)).toMatchObject({
+    hours: 3,
+    expectedHours: 3,
+    spanHours: 3,
+  })
+  // Övervåning's expected hours stop at its own end a year back (2025-09-30 23:00 Z): 1 h, stored.
+  expect(cellOf(o.lastYearSoFar ?? [], ids.Övervåning, 2025, 10)).toMatchObject({
+    hours: 1,
+    expectedHours: 1,
+    spanHours: 3,
+  })
+})
+
+test("months: in a new month's first hours, before its data, the running month is still the last one", async () => {
+  // 2026-10-01 03:30 Stockholm: the newest stored hour is 2026-09-30 21:00 Z (23:00 Stockholm), the end of September.
+  const ids = await seedUnits('Matsal')
+  await storeHours(ids.Matsal, '2025-08-31T22:00:00Z', '2025-10-02T00:00:00Z')
+  await storeHours(ids.Matsal, '2026-09-20T00:00:00Z', '2026-09-30T22:00:00Z')
+  const o = await getHeatPumpMonths({ year: 2026, now: new Date('2026-10-01T01:30:00Z') })
+  expect(o.newestMonth).toBe('2026-09')
+  // The whole of September 2025 (720 h): the cut is 2025-10-01 00:00 Stockholm.
+  expect(o.lastYearSoFar).toEqual([
+    expect.objectContaining({ year: 2025, month: 9, spanHours: 720, expectedHours: 720 }),
+  ])
+})
+
 test("months, Totalt (no year): every month of each unit's history, no last year", async () => {
   const ids = await seedSpring()
   const o = await getHeatPumpMonths({ now: NOW })
