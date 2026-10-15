@@ -85,3 +85,13 @@ test("a period without data: the no-data line at the chart's height", async () =
     .element(screen.getByText(m.heat_pump_chart_no_data({ period: '2026' })))
     .toBeVisible()
 })
+
+test('no outdoor temperature in any row: no line, no right axis, no legend entry (never a 0°–1° axis)', async () => {
+  const p = monthsPayload()
+  p.months = p.months.map((c) => ({ ...c, outsideC: null }))
+  const { screen } = await render(viewOf({ months: p, period: { kind: 'year', year: 2026 } }))
+  await vi.waitFor(() => expect(seriesBars(screen.container, 0)).toHaveLength(9))
+  expect(rightTicks(screen.container)).toHaveLength(0)
+  expect(lineDots(screen.container)).toHaveLength(0)
+  expect(legendLabels(screen.container)).not.toContain(m.heat_pump_series_outdoor())
+})

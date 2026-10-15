@@ -73,6 +73,8 @@ export function HeatPumpConsumptionChart({
     }),
     [],
   )
+  // No outdoor value in any row: no line, so no right axis (an empty one would read 0°–1°).
+  const hasOutdoor = view.rows.some((r) => r.outdoorC !== null)
   const selectable = kind !== 'month'
   const hint = (
     <p
@@ -103,7 +105,7 @@ export function HeatPumpConsumptionChart({
         category={rowLabel}
         shortCategory={kind === 'year' ? rowShort : undefined}
         series={series}
-        line={line}
+        line={hasOutdoor ? line : undefined}
         value={rowValue}
         yTickFormat={formatCount}
         yIntegers

@@ -17,3 +17,10 @@ test('temperatures and kWh', () => {
   expect(formatKwh(42.26)).toBe('42,3 kWh')
   expect(formatKwh(1512.4)).toMatch(/^1\s512 kWh$/)
 })
+
+test('a temperature that rounds to zero reads 0, never −0', () => {
+  expect(formatCelsius(-0.04)).toMatch(/^0,0\s°C$/)
+  expect(formatCelsius(-0.05)).toMatch(/^−0,1\s°C$/)
+  expect(formatCelsiusTick(-0.04)).toBe('0°')
+  expect(formatCelsiusTick(-0)).toBe('0°')
+})
