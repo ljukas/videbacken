@@ -2,6 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Amended by step 2b (2026-10-15).** Nothing changes in this plan's tasks: its day reads come through step 3's
+> `daySums` (`heatPump.days`), which now reads the `heat_pump_day` materialized view (ADR-0027 decision 6, amended).
+> Tests that store readings refresh the view (the `storeHours` fixture does).
+
 **Goal:** An Energisignatur card on Energi › Värmepumpar that, per unit and around a logged event, fits the days
 before the event (daily kWh against indoor − outdoor ΔT) and says how the days after compare at the same ΔT, or says
 plainly that there isn't enough data yet.

@@ -248,7 +248,9 @@ colocated tests with `setupDatabase()`):
   to the hour, which no stored hour passes). The partial days see an hour as soon as it is stored; whole days lag
   until the run's refresh.
 - `refreshDaySums()` (step 2b): `REFRESH MATERIALIZED VIEW CONCURRENTLY heat_pump_day` in a transaction with
-  `lock_timeout` 5 s and `statement_timeout` 8 s, like `houseEnergy.refreshMonthSums`. Every writer of
+  `lock_timeout` 5 s and `statement_timeout` 8 s, like `houseEnergy.refreshMonthSums`, and without parallel workers
+  (a parallel aggregate adds the floats in a varying order, so CONCURRENTLY would rewrite every row). Months in the
+  read are keyed as dates, so no value passes through the session time zone. Every writer of
   `heat_pump_reading` calls it after writing (today only the Comfort Cloud sync, once per run). Tests that write
   readings and then read sums refresh first.
 - **Expected hours** (DST-aware, from `stockholmDayBounds`) are added by the read models, not the sums: from the
