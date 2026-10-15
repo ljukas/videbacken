@@ -17,7 +17,7 @@ import { m } from '~/paraglide/messages'
 import { clickOn, parkPointer, seriesBars } from '~test/browser/chartDom'
 import { makeTestQueryClient } from '~test/browser/render'
 import { seedSourcesHealth } from '~test/browser/syncHealth'
-import { allPayload, daysPayload, MATSAL, monthsPayload } from '~test/fixtures/heatPumpView'
+import { allPayload, cell, daysPayload, MATSAL, monthsPayload } from '~test/fixtures/heatPumpView'
 import { Route } from './heat-pumps'
 
 // The default month is September 2026 (the fixture's newest month). Only `Date` is faked.
@@ -147,6 +147,36 @@ test("a new year's first hours, no readings in it yet: the default is Totalt, an
   })
   await vi.waitFor(() => expect(seriesBars(screen.container, 0)).toHaveLength(21))
   expect(router.state.location.search).toEqual({})
+})
+
+test('the year read and a newer history read disagree on the new year: the year read decides, no render loop', async () => {
+  // 2027-01-01 08:00 Stockholm: the cached year read (from before a sync) has no 2027 month; the history, refetched
+  // after the sync, has January's first hours.
+  vi.setSystemTime(new Date('2027-01-01T07:00:00Z'))
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const all = allPayload()
+  const { screen } = await renderPage('/energy/heat-pumps', (qc) => {
+    qc.setQueryData(
+      heatPumpMonthsQuery(2027).queryKey,
+      monthsPayload({
+        year: 2027,
+        availableYears: [2027, 2026, 2025],
+        months: [],
+        lastYear: monthsPayload().months,
+        lastYearSoFar: null,
+      }) as never,
+    )
+    qc.setQueryData(heatPumpMonthsQuery(undefined).queryKey, {
+      ...all,
+      monthsWithReadings: [...all.monthsWithReadings, '2027-01'],
+      newestMonth: '2027-01',
+      months: [...all.months, cell(MATSAL, 2027, 1, { kwh: 1, hours: 7, expectedHours: 7 })],
+    } as never)
+  })
+  await vi.waitFor(() => expect(seriesBars(screen.container, 0).length).toBeGreaterThan(20))
+  await expect.element(screen.getByRole('button', { name: /totalt|all time/i })).toBeVisible()
+  expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).not.toMatch(/Too many re-renders/)
+  errors.mockRestore()
 })
 
 test("the loader reads the days of the month the page shows: the last one, in a new month's first hours", async () => {

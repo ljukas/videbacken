@@ -16,7 +16,7 @@ import {
   resolvePeriod,
 } from '~/lib/houseEnergy/period'
 import { stockholmDayOf, stockholmYearMonth } from '~/lib/time/stockholm'
-import { heatPumpDaysQuery, heatPumpMonthsQueryFor } from './heatPumpQueries'
+import { heatPumpDaysQuery, heatPumpMonthsQuery, heatPumpMonthsQueryFor } from './heatPumpQueries'
 import { heatPumpView } from './heatPumpView'
 
 const ALL: EnergyPeriod = { kind: 'all' }
@@ -28,15 +28,29 @@ const ALL: EnergyPeriod = { kind: 'all' }
 /** `writeSearch` must be referentially stable (wrap it in `useCallback`). */
 export function useHeatPumpPeriod(search: EnergySearch, writeSearch: EnergySearchWrite) {
   const requested = periodOfSearch(search)
-  // Nothing asked for: the default resolves from the months read and can be Totalt (no readings in the current year
-  // yet: a new year's first hours, a stall over New Year, the integration off), which only the history read answers.
-  // Once a read resolves the default to Totalt, read the history, as `?period=all` would; the URL stays.
-  const [defaultAll, setDefaultAll] = useState(false)
+  // Read during render on the server and the client alike (see useEnergyPeriod).
+  const now = stockholmYearMonth(Date.now())
+  const today = stockholmDayOf(Date.now())
   // Hourly data, synced every six hours: focus refetch only, no polling (ADR-0018).
-  const monthsResult = useQuery({
-    ...heatPumpMonthsQueryFor(requested ?? (defaultAll ? ALL : null)),
+  const yearResult = useQuery({
+    ...heatPumpMonthsQueryFor(requested),
     placeholderData: keepPreviousData,
   })
+  // Nothing asked for: the default can be Totalt (no readings in the current year yet: a new year's first hours, a
+  // stall over New Year, the integration off), which only the history read answers. The current year's read alone
+  // decides (the loader resolves it the same way); the history read never does, so a history newer than the year
+  // read can't send the default back and forth between them. The year read stays observed, so a refetch updates it.
+  const yearData =
+    requested === null && !yearResult.isPlaceholderData && !loadFailed(yearResult)
+      ? yearResult.data
+      : undefined
+  // No readings at all is the empty state, which the year read answers itself.
+  const defaultAll =
+    yearData !== undefined &&
+    yearData.firstReadingDay !== null &&
+    resolvePeriod(null, yearData.monthsWithReadings, now).kind === 'all'
+  const allResult = useQuery({ ...heatPumpMonthsQuery(undefined), enabled: defaultAll })
+  const monthsResult = defaultAll ? allResult : yearResult
   const failed = loadFailed(monthsResult)
   const months = monthsResult.data && !failed ? monthsResult.data : undefined
   const stale = monthsResult.isPlaceholderData
@@ -44,12 +58,11 @@ export function useHeatPumpPeriod(search: EnergySearch, writeSearch: EnergySearc
   const [lastShown, setLastShown] = useState(months)
   if (months && months.firstReadingDay !== null && months !== lastShown) setLastShown(months)
   const shown = months ?? lastShown
-  // Read during render on the server and the client alike (see useEnergyPeriod).
-  const now = stockholmYearMonth(Date.now())
-  const today = stockholmDayOf(Date.now())
-  const period = shown ? resolvePeriod(requested, shown.monthsWithReadings, now) : null
-  const wantsAll = requested === null && period?.kind === 'all'
-  if (shown && wantsAll !== defaultAll) setDefaultAll(wantsAll)
+  const period = defaultAll
+    ? ALL
+    : shown
+      ? resolvePeriod(requested, shown.monthsWithReadings, now)
+      : null
   const periodKey = period ? formatPeriod(period) : null
   const setPeriod = useCallback(
     (p: EnergyPeriod) => writeSearch({ period: periodSearchValue(p) }),
