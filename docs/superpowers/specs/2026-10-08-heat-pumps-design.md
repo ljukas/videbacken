@@ -154,7 +154,7 @@ both required); `CREDENTIAL_ENV_VARS.comfortCloud = { user: 'PANASONIC_USER', pa
 Field copy and hints in `integrationCredentialsMessage.ts`. Both field names already exist, so the `suspect_fields`
 CHECK doesn't change; the source CHECK does.
 
-## Schema (steps 1a, 4a)
+## Schema (steps 1a, 2b, 4a)
 
 All tables end with `.enableRLS()`; schema-design review + `migration-guard` before merge (Non-negotiable).
 
@@ -184,6 +184,27 @@ All tables end with `.enableRLS()`; schema-design review + `migration-guard` bef
 PK (`heat_pump_id`, `hour_start`). The reads filter by time across both units, so the plan checks whether an index on
 `hour_start` pays (the schema review decides against the real queries).
 
+**`heat_pump_day`** (step 2b): a materialized view of `heat_pump_reading`, one row per unit and Stockholm day with
+readings. The sum reads use it, so a request never scans the readings (ADR-0027 decision 6, met at checkpoint 3: warm
+`heatPumpMs` 24 ms against `carMs` 16 ms). Defined in a custom migration and declared `.existing()` in
+`schema/heatPump.ts`, like `house_energy_month` (ADR-0024): drizzle-kit can't declare its unique index, and changing it
+means a new custom migration (drop, create, index, the guarded `REVOKE`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `heat_pump_id` | uuid | |
+| `day` | date | Stockholm calendar day: `(hour_start AT TIME ZONE 'Europe/Stockholm')::date`. Offsets are whole hours, so each UTC hour lies in one day, DST days included (23 or 25 hours) |
+| `kwh`, `heat_kwh`, `cool_kwh` | double precision | Σ kWh; Σ kWh × share, a null share counting 0 |
+| `inside_c_sum`, `outside_c_sum`, `setpoint_c_sum` | double precision, null | Σ over the hours that have a value |
+| `inside_c_hours`, `outside_c_hours`, `setpoint_c_hours` | int | how many hours have a value. A sum and a count, not a mean, so a month (or any range of days) gets the exact hour-weighted mean: Σ sum ÷ Σ hours, the same figure as `avg()` over the hours |
+| `hours` | int | hours with a reading |
+| `first_hour`, `last_hour` | timestamptz | the day's first and newest stored hour (the read models' expected hours) |
+
+Unique index (`heat_pump_id`, `day`) (`REFRESH … CONCURRENTLY` needs one; ≈ 730 rows a year, so no other index). No
+RLS on a materialized view: the migration revokes `anon` and `authenticated`, guarded as in migration 0021. Measured
+on prod (2026-10-15, 33.5k readings): building it takes ≈ 28 ms (1,403 rows); today's month read scans the readings in
+≈ 11 ms.
+
 **`heat_pump_event`** (step 4a)
 
 | Column | Type | Notes |
@@ -199,7 +220,7 @@ PK (`heat_pump_id`, `hour_start`). The reads filter by time across both units, s
 Index on `occurred_on`. The source CHECK migration (step 1b) widens `integration_sync_source_check`,
 `integration_sync_run_source_check` and `integration_credential_source_check`.
 
-## Service (steps 1a, 1b, 2, 3, 4a)
+## Service (steps 1a, 1b, 2, 2b, 3, 4a)
 
 `src/lib/services/heatPump/` (`heatPump.ts`, `monthSums.ts`, `daySums.ts`, `heatPumpRead.ts`, `errors.ts`, `index.ts`,
 colocated tests with `setupDatabase()`):
@@ -217,6 +238,21 @@ colocated tests with `setupDatabase()`):
   then convert the hour; Stockholm offsets are whole hours). They return kWh, heating kWh (Σ kWh × heat share, a
   null share counting 0), cooling kWh, the hour-weighted mean indoor / outdoor / setpoint temperature and the hour
   count.
+- **Both read `heat_pump_day`** (amended in step 2b). `monthSums({ from, to })` keeps its signature and rows; `from`
+  and `to` may be any instants. In one statement it takes the whole Stockholm days inside [from, to) from the view,
+  and a partial first day [from, next midnight) and a partial last day [last midnight, to) from the readings, then
+  groups the three parts by unit and Stockholm month. The partial days filter `heat_pump_id = ANY(the units)` so they
+  run on the primary key (≈ 0.2 ms on prod), never a scan. Översikt's range starts at a Stockholm midnight and ends at
+  the newest house bucket, so it only has a partial last day; step 3's `lastYearSoFar` (a month a year back, cut at
+  the same hour) is the same call. Step 3's `daySums` reads whole days from the view (Värmepumpar ends at now floored
+  to the hour, which no stored hour passes). The partial days see an hour as soon as it is stored; whole days lag
+  until the run's refresh.
+- `refreshDaySums()` (step 2b): `REFRESH MATERIALIZED VIEW CONCURRENTLY heat_pump_day` in a transaction with
+  `lock_timeout` 5 s and `statement_timeout` 8 s, like `houseEnergy.refreshMonthSums`, and without parallel workers
+  (a parallel aggregate adds the floats in a varying order, so CONCURRENTLY would rewrite every row). Months in the
+  read are keyed as dates, so no value passes through the session time zone. Every writer of
+  `heat_pump_reading` calls it after writing (today only the Comfort Cloud sync, once per run). Tests that write
+  readings and then read sums refresh first.
 - **Expected hours** (DST-aware, from `stockholmDayBounds`) are added by the read models, not the sums: from the
   later of the period start and the unit's first reading, to the period's end, clipped to an end point: the newest
   house bucket on Översikt (`energyOverview`, step 2), now floored to the hour on Värmepumpar (`heatPumpRead.ts`,
@@ -241,7 +277,7 @@ colocated tests with `setupDatabase()`):
 
 Every code literal is exercised in the tests (`test-completeness`).
 
-## Sync (step 1b)
+## Sync (steps 1b, 2b)
 
 `src/lib/heatPump/sync.ts` + `comfortCloudSyncCron.ts`, `src/routes/api/cron/comfort-cloud-sync.ts`, cron
 `{ path: '/api/cron/comfort-cloud-sync', schedule: '20 */6 * * *' }` in `vite.config.ts` (no collision with
@@ -295,6 +331,13 @@ The backfill's position is `backfill_cursor` (below the oldest stored day when t
 `history_complete_at` says when it is done. Zero units listed fails the run (`unexpected_response`); a rejected
 **yesterday** fails it too (`unexpected_response`, naming the unit and day — a changed unit or range on Panasonic's
 side must fail closed); any other rejected day only warns and counts (`rejectedDays`).
+
+**Refreshing `heat_pump_day`** (step 2b). After the units are synced, in a `finally` (so also when the run then fails
+or hits its deadline), a run that stored at least one hour (`hoursStored > 0`) refreshes the view through the shared
+`refreshAfterSync` (moved from `houseEnergy/` to `src/lib/integrations/refreshAfterSync.ts`, taking the view's name for
+its warning). Best effort with a 10 s budget: a failure is a warning (`heat pump day refresh failed`), never a failed
+run, and the next run's refresh repairs it. A run that stored nothing doesn't refresh. `refreshMs` goes into the run
+stats and the `integration sync run` line.
 
 **Per-source wiring** (exhaustive switches the compiler flags; the full list is in the step 1b plan):
 `INTEGRATION_SOURCES`, `policy.ts`, `integrationHealthMessage.ts`, `integrationCredentialsMessage.ts`, the
@@ -485,7 +528,12 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
   `unexpected_response`), `monthDays`, error mapping per status, nothing secret in logged messages.
 - **Service** (`setupDatabase()` first): `replaceDay` (replace, reject out-of-day and out-of-range rows), `upsertUnits`,
   month and day sums across a month boundary and both DST days (2025-10-26, 2026-03-29), expected hours clipped to
-  the first reading and the newest hour, events CRUD with every domain error code.
+  the first reading and the newest hour, events CRUD with every domain error code. Step 2b: after a refresh,
+  `monthSums` over `heat_pump_day` equals a raw reference sum over the readings for ranges with a mid-day `from`, a
+  mid-day `to`, both DST days and a month boundary (UTC 22:00 / 23:00); a partial day stored after the refresh is
+  counted, a whole day stored after it is not until the next refresh.
+- **Sync** (step 2b): a run that stored hours refreshes once (also when it then fails), one that stored none doesn't,
+  a failed refresh warns without failing the run, `refreshMs` is in the run line.
 - **Sync**: recent days and the capped catch-up, backfill order and budget, stop at `registered_on − 1` → complete,
   the persisted cursor across runs, a gap month skipped, a rejected day counted (failed validation or bad rows), an
   account-wide error failing the run with the cursor kept, a quiet or rejected yesterday failing the run and holding

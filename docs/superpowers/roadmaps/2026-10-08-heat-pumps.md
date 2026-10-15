@@ -11,7 +11,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | 1a | Adapter + storage, nothing calls it yet: the TypeScript Comfort Cloud client (login, units, UTC day and month history), `heat_pump` + `heat_pump_reading`, the service's writes | [plan](../plans/2026-10-08-heat-pumps-1a-adapter-storage.md) | [#146](https://github.com/ljukas/videbacken/pull/146) | checkpoint passed | passed 2026-10-11: live login (1 login, 10 requests, 0 retries), both units listed (Matsal, Övervåning, `CS-HZ25ZKE`, registered 2024-10-31 / 2024-11-27), UTC day 2026-10-10 stored through `replaceDay`: 24/24 hours per unit equal the Python probe; run output clean of password, user, tokens, api key, HTML and full guids |
 | 1b | Sync live: the `comfortCloud` source (CHECK migration), credentials, sync + backfill + 6-hour cron, Datakällor tile, Synka nu, health copy | [plan](../plans/2026-10-08-heat-pumps-1b-sync.md) | [#151](https://github.com/ljukas/videbacken/pull/151) | checkpoint passed | passed 2026-10-12: backfill complete (first stored UTC day = `registered_on`: 2024-10-31 / 2024-11-27, both `history_complete_at` set); 2025-11, 2026-02 and 2026-09 per unit match the app to the whole kWh, every hour of each month stored (2025-11 replaced 2025-02: the app shows months only a year back); 2025-10-26 and 2026-03-29 have 24 distinct hours per unit; 14 runs `ok` (12 admin backfill runs ≈ 120 s each, then 5.9 s and the 00:20 cron at 7.3 s, 0 retries, matching the runtime log). The owner accepted one cron run instead of four over 24 h |
 | 2 | Energi › Översikt: the Användning flow diagram, the month chart's four-part Förbrukning, the Comfort Cloud health alert | [plan](../plans/2026-10-08-heat-pumps-2-overview.md) | [#157](https://github.com/ljukas/videbacken/pull/157) | checkpoint passed | 2026-10-13: Användning for 2026-02, 2026-09 and 2026-10 equals prod SQL per unit to the Wh (Matsal 454,1 / 55,5 / 38,8, Övervåning 158,0 / 36,0 / 19,8 kWh), laddning equals `/charging`'s Alla, övrigt hus = load − laddning − heat pumps; every month's Förbrukning stack sums to its load; no box moved over 11 period switches at 500 px (prod; the three widths were checked locally in #157); warm `totalMs` median 35 ms against 35.5 before (n = 19 / 20). **Failed:** warm `heatPumpMs` (median 24) exceeds `carMs` (16), the view trigger → step 2b (owner). Owner accepted Översikt; "Övrigt hus" and "Övrigt i huset" become one string. See [checkpoint 3 result](#checkpoint-3-result) |
-| 2b | `heat_pump_month` materialized view (ADR-0027 decision 6's trigger, met at checkpoint 3): the overview's heat pump read from the view, refreshed after each Comfort Cloud run that stored hours; the edge months handled (see [checkpoint 3 result](#checkpoint-3-result)); schema review | — | | needs shaping | |
+| 2b | `heat_pump_day` materialized view (ADR-0027 decision 6's trigger, met at checkpoint 3): the heat pump sums read whole Stockholm days from the view and a range's partial first and last day from the readings by primary key, refreshed after each Comfort Cloud run that stored hours; schema review | [plan](../plans/2026-10-15-heat-pumps-2b-day-view.md) | [#164](https://github.com/ljukas/videbacken/pull/164) | PR open | |
 | 3 | Energi › Värmepumpar, consumption: page, nav, period control, month and day charts with last year and outdoor temperature, tiles | [plan](../plans/2026-10-08-heat-pumps-3-page.md) | | not started | |
 | 4a | Händelser: `heat_pump_event`, admin CRUD dialog, markers on the day chart | [plan](../plans/2026-10-08-heat-pumps-4a-events.md) | | not started | |
 | 4b | Energisignatur: `signature.ts`, the scatter, the before/after readout | [plan](../plans/2026-10-08-heat-pumps-4b-signature.md) | | not started | |
@@ -75,7 +75,9 @@ Each must pass, with the result recorded in the table, before the next step star
      figures recorded at checkpoint 3 (the current month: prod SQL at the time of the check).
    - Warm `heatPumpMs` below `carMs` and under 25 ms (ADR-0027 decision 6), warm `totalMs` not above checkpoint
      3's 35 ms median; at least 15 samples.
-   - The Comfort Cloud run line logs the refresh's time, and a run that stored no hours doesn't refresh.
+   - The Comfort Cloud run line logs `refreshMs`, and a run that stored no hours logs `refreshMs` 0.
+   - `anon` and `authenticated` can't read the view: `has_table_privilege('anon', 'heat_pump_day', 'SELECT')` and
+     the same for `authenticated` are both false (read-only SQL).
 4. **After step 3 (prod).**
    - A month view (2026-02) and a day view (one day in 2026-01) equal SQL per unit; last year's outline equals
      2025's sums; the outdoor line equals the hour-weighted mean.
@@ -192,3 +194,14 @@ browser, read-only SQL, `vercel logs`.
   and the owner accepted Översikt. Warm `heatPumpMs` (median 24 ms) exceeds `carMs` (16 ms), ADR-0027 decision 6's
   trigger, so the owner added **step 2b**, the `heat_pump_month` view, before step 3. The two "övrigt" labels become
   one string ("Övrigt i huset") in a separate fix PR. See [checkpoint 3 result](#checkpoint-3-result).
+- 2026-10-15: step 2b shaped, planned and built. A per-day view (`heat_pump_day`), not per month: Översikt's range
+  ends mid-day, step 3's `lastYearSoFar` is a part month, and its day chart and step 4b read days. Prod `EXPLAIN
+  ANALYZE` (33.5k readings): the month read's scan 11.3 ms warm, building the day sums 28 ms (1,403 rows), a partial
+  day by primary key 0.22 ms. `refreshAfterSync` moved to `integrations/` (owner). Schema review rulings: months keyed
+  as dates (no session time zone in the cast), the refresh runs serially (a parallel aggregate would make
+  CONCURRENTLY rewrite every row), the unique index stays (`heat_pump_id`, `day`) (every read is a near-whole-view
+  day range, a 25-page scan). Carried forward: **step 3**: `daySums` reads whole days from `heat_pump_day` (means =
+  `*_c_sum / nullif(*_c_hours, 0)`), joins `heat_pump` (a unit deleted since the last refresh must not show) and
+  keys days and months as dates; `lastYearSoFar` is a `monthSums` call with the mid-day cut; tests store through the
+  `storeHours` fixture (it refreshes) or call `refreshDaySums()`. **Step 4b**: its day reads go through step 3's
+  `daySums`, so they read the view.

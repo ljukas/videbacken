@@ -2,6 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Amended by step 2b (2026-10-15).** The heat pump sums now read the `heat_pump_day` materialized view
+> (`heatPumpDay` in `schema/heatPump.ts`; ADR-0027 decision 6, amended). Task 2 builds `daySums` as a select from
+> `heat_pump_day`, not a GROUP BY over `heat_pump_reading`: means = `*_c_sum / nullif(*_c_hours, 0)`, join
+> `heat_pump` (a unit deleted since the last refresh must not show), key days and months as dates. Its tests store
+> through the `storeHours` fixture (which refreshes the view) or call `refreshDaySums()`. `lastYearSoFar` calls
+> `monthSums({ from, to })` with the mid-day cut; `monthSums` handles the partial day. The task code blocks below
+> predate this; Task 1's "check main" step catches the rest. See the roadmap's 2026-10-15 log entry.
+
 **Goal:** A third Energi sub-page, `/energy/heat-pumps`, whose Förbrukning card shows the chosen period's heat pump
 consumption: tiles (kWh per unit, the change against the same period a year earlier, the mean outdoor temperature),
 and a chart of the units' stacked kWh per month (a year, or the whole history) or per day (a month), with last year

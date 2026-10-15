@@ -64,7 +64,7 @@ src/
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
-    db/                         drizzle({ client: pg Pool(DATABASE_URL), schema, casing: 'snake_case' }); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,heatPump,integrationSync,integrationCredential,spotPrice,electricityTariff,sessionCost}.ts + index barrel; houseEnergy.ts also declares the `house_energy_month` materialized view (custom migration, `.existing()`); pgError (unique-violation mapping, `pgErrorSummary`); connectionString (Supabase env bridge)
+    db/                         drizzle({ client: pg Pool(DATABASE_URL), schema, casing: 'snake_case' }); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,heatPump,integrationSync,integrationCredential,spotPrice,electricityTariff,sessionCost}.ts + index barrel; houseEnergy.ts also declares the `house_energy_month` materialized view and heatPump.ts the `heat_pump_day` one (custom migrations, `.existing()`); pgError (unique-violation mapping, `pgErrorSummary`); connectionString (Supabase env bridge)
     services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, heatPump, energyMix, sessionCost (stored cost per session and month: sums, stale ids, guarded write-back; its `invalidate.ts` is the bump leaf every cost-input writer calls in its transaction, ADR-0020 amendment), dbPool (pool gauges for the rpc timing line) — own all DB access + domain rules (ADR-0002)
     effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023; keyedAdapter.ts rebuilds their client only when the resolved credentials change, ADR-0026), comfortCloud (Panasonic heat pumps, ADR-0027: Auth0 PKCE password login — tough-cookie jar + htmlparser2 hidden inputs — x-cfc-api-key, UTC hours; facade via keyedAdapter, fail closed), eltariff (keyless catalogue client for the gridTariff watcher), geocoder (keyless Nominatim address search for the home-position picker: proxied, 1 req/s, 10-min cache, no retries, ADR-0026); http.ts + testing/fakeFetch shared by the pulled clients
     credentials/                server-only (ADR-0026): crypto (AES-256-GCM envelope, CREDENTIALS_ENCRYPTION_KEY), env (reads env values; the names live in `integrationCredentials.ts`), cache (60 s stored read), resolve (`resolveCredentials`: stored → env per field)
@@ -78,7 +78,7 @@ src/
                                 derive.ts (deriveFrom: one locked transaction) + deriveAfterSync.ts (queue + best-effort derive after the Emaldo, Zaptec, elpris syncs);
                                 client-safe figures.ts (period figures, ADR-0024) + flowLayout.ts (the Summering flow diagram's geometry) + usageFlowLayout.ts (the Användning diagram's, heat pumps step 2) + heatPumpColors.ts
     heatPump/                   Comfort Cloud sync (sync.ts: recent UTC days + catch-up ≤ 14 d + per-unit backfill to registered_on (persisted cursor)) + cron (ADR-0019, ADR-0027) — no index barrel
-    integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019)
+    integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019) + refreshAfterSync (a sync's best-effort materialized-view refresh)
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts
     time/stockholm.ts           client-safe Stockholm calendar helpers (DST-aware day bounds)
@@ -244,6 +244,12 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
   and it is only as fresh as its last refresh. Anything that writes readings must call
   `houseEnergy.refreshMonthSums()` afterwards (today only the Emaldo sync, once per run). Tests that write readings and
   read the overview refresh first. Changing its definition = a new `db:generate --custom` migration (drop + create + the unique index + the guarded REVOKE).
+- **`heat_pump_day` is a materialized view of `heat_pump_reading`** (ADR-0027 decision 6): the heat pump sums read
+  whole Stockholm days from it and a range's partial first and last day from the readings (by primary key). Anything
+  that writes readings must call `heatPump.refreshDaySums()` afterwards (today only the Comfort Cloud sync, once per
+  run that stored hours). The `storeHours` test fixture refreshes; a test that writes with `replaceDay` directly
+  refreshes before reading sums. Changing its definition = a new `db:generate --custom` migration (drop + create +
+  the unique index + the guarded REVOKE).
 - **`spot_price_day` is the record of which spot-price days are stored** (ADR-0020, amended 2026-10-11): the elpris
   sync fetches only days without a row, and the economy page reads its averages. Write `spot_price` only through
   `spotPrice.replaceDay`, which rewrites the day's slots and row together. To re-fetch a day, delete its
