@@ -198,6 +198,52 @@ test('a month without readings moves the URL to the default month', async () => 
   await vi.waitFor(() => expect(router.state.location.search).toEqual({ period: '2026-09' }))
 })
 
+test('a year without readings moves the URL to the default month', async () => {
+  // 2024 is a valid year (2020–2100; outside it the param is dropped), before the first reading (2025).
+  const { router } = await renderPage('/energy/heat-pumps?period=2024', (qc) => {
+    // The read answers a year without readings with the current year's months.
+    qc.setQueryData(heatPumpMonthsQuery(2024).queryKey, monthsPayload() as never)
+    seedYear(qc)
+    seedSeptember(qc)
+  })
+  await vi.waitFor(() => expect(router.state.location.search).toEqual({ period: '2026-09' }))
+})
+
+const periodControl = /Välj period|Choose period/
+
+test('from a month to its whole year, then to Totalt, through the period control', async () => {
+  const { screen, router } = await renderPage('/energy/heat-pumps', (qc) => {
+    seedYear(qc)
+    seedSeptember(qc)
+    qc.setQueryData(heatPumpMonthsQuery(undefined).queryKey, allPayload() as never)
+  })
+  await vi.waitFor(() => expect(seriesBars(screen.container, 0)).toHaveLength(15))
+  await screen.getByRole('button', { name: periodControl }).click()
+  await screen.getByRole('button', { name: m.energy_period_whole_year({ year: '2026' }) }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toEqual({ period: 2026 }))
+  await vi.waitFor(() => expect(seriesBars(screen.container, 2)).toHaveLength(12)) // last year's outline
+  await screen.getByRole('button', { name: periodControl }).click()
+  await screen.getByRole('button', { name: m.charging_tile_all_time(), exact: true }).click()
+  await vi.waitFor(() => expect(router.state.location.search).toEqual({ period: 'all' }))
+  await vi.waitFor(() => expect(seriesBars(screen.container, 0)).toHaveLength(21))
+})
+
+test('from a year to a month whose days are still loading: the year stays, dimmed and busy', async () => {
+  const { screen, qc } = await renderPage('/energy/heat-pumps?period=2026', (qc) => seedYear(qc))
+  // March's days never arrive.
+  void qc.prefetchQuery({
+    queryKey: heatPumpDaysQuery({ from: '2026-03-01', to: '2026-03-31' }).queryKey,
+    queryFn: () => new Promise(() => {}),
+  })
+  await vi.waitFor(() => expect(seriesBars(screen.container, 2)).toHaveLength(12))
+  await clickOn(screen.container, seriesBars(screen.container, 0)[2])
+  await expect.element(screen.getByRole('button', { name: /mars 2026/i })).toBeVisible()
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('[aria-busy="true"]')).not.toBeNull(),
+  )
+  expect(seriesBars(screen.container, 2)).toHaveLength(12) // the year's chart, dimmed
+})
+
 test('no readings: the empty state', async () => {
   const { screen } = await renderPage('/energy/heat-pumps', (qc) =>
     seedYear(

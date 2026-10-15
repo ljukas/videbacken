@@ -1,4 +1,7 @@
+import { eq } from 'drizzle-orm'
 import { expect, test } from 'vitest'
+import { db } from '~/lib/db'
+import { heatPump } from '~/lib/db/schema'
 import { seedUnits, storeHours } from '~test/fixtures/heatPumpHours'
 import { setupDatabase } from '~test/setup'
 import { daySums, type HeatPumpDayRow, readingSpans } from './daySums'
@@ -100,4 +103,15 @@ test('the reads come from the day view: hours stored after a refresh show only o
     ['2026-01-16', 3],
   ])
   expect((await readingSpans())[0].lastHour).toEqual(new Date('2026-01-16T02:00:00Z'))
+})
+
+test('a unit deleted since the last refresh drops out with the join (its day rows linger in the view)', async () => {
+  const ids = await seedUnits('Matsal', 'Övervåning')
+  await storeHours(ids.Matsal, '2026-01-15T00:00:00Z', '2026-01-15T05:00:00Z')
+  await storeHours(ids.Övervåning, '2026-01-15T00:00:00Z', '2026-01-15T05:00:00Z')
+  // Deleted after the refresh, and the view not refreshed again: its rows are still in heat_pump_day.
+  await db.delete(heatPump).where(eq(heatPump.id, ids.Övervåning))
+  const rows = await daySums({ from: '2026-01-15', to: '2026-01-15' })
+  expect(rows.map((r) => r.heatPumpId)).toEqual([ids.Matsal])
+  expect((await readingSpans()).map((s) => s.heatPumpId)).toEqual([ids.Matsal])
 })

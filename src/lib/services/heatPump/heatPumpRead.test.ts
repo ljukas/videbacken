@@ -136,6 +136,17 @@ test('days: no future days, and nothing without readings', async () => {
   expect(out.days.every((d) => d.day <= '2025-10-28')).toBe(true)
 })
 
+test('days: a range wholly after today has no days, but still its units', async () => {
+  const ids = await seedAutumn()
+  expect(await getHeatPumpDays({ from: '2025-11-05', to: '2025-11-30', now: AUTUMN_NOW })).toEqual({
+    units: [
+      { id: ids.Matsal, name: 'Matsal' },
+      { id: ids.Övervåning, name: 'Övervåning' },
+    ],
+    days: [],
+  })
+})
+
 // Matsal: Stockholm 2025-03-01 and -02 (48 h), then 2026-02-28 20:00 Z … 2026-03-01 11:00 Z (16 h; its end, 12:00 Z,
 // is also `now` floored). Övervåning: 2026-03-01 05:00–07:00 Z only.
 async function seedSpring() {

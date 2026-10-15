@@ -113,6 +113,15 @@ test('rejects an unauthenticated caller', async () => {
   ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
 })
 
+test('months: the years 2020 and 2100 are accepted', async () => {
+  await signIn('user')
+  for (const year of [2020, 2100]) {
+    await expect(
+      call(heatPumpRouter.months, { year }, { context: context() }),
+    ).resolves.toBeDefined()
+  }
+})
+
 test('months: a year outside 2020–2100 or not whole is a bad request', async () => {
   await signIn('user')
   for (const year of [2019, 2101, 2026.5]) {
