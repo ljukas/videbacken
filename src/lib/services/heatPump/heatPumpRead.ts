@@ -91,7 +91,11 @@ type YearMonth = { year: number; month: number }
 /** A unit with readings: its first stored hour and where its expected hours end (`capMs`). */
 type Covered = HeatPumpUnitDto & { firstMs: number; capMs: number }
 
-/** Whole hours of `[bounds)` from `firstMs` to `endCapMs`; 0 when they don't overlap. Every bound is a whole UTC hour. */
+/**
+ * Hours of `[bounds)` from `firstMs` to `endCapMs`, a partly covered last hour counted whole (Översikt's rule,
+ * `energyOverview`); 0 when they don't overlap. Every bound is a whole UTC hour except a removed unit's end, its last
+ * listing (the sync's run time, hh:20).
+ */
 export function expectedHours(
   bounds: { startMs: number; endMs: number },
   firstMs: number,
@@ -99,7 +103,7 @@ export function expectedHours(
 ): number {
   const start = Math.max(bounds.startMs, firstMs)
   const end = Math.min(bounds.endMs, endCapMs)
-  return end > start ? Math.round((end - start) / millisecondsInHour) : 0
+  return end > start ? Math.ceil((end - start) / millisecondsInHour) : 0
 }
 
 // The units with readings (byHeatPumpName order, never SQL's), the coverage end (the newest stored hour's end or

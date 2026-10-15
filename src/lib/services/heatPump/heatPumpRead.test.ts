@@ -332,3 +332,29 @@ test('a unit Comfort Cloud no longer lists, silent for over 13 h: its missing ho
     expectedHours: 96,
   })
 })
+
+test("a removed unit's last listing mid-hour: its partly covered last hour counts, as on Översikt", async () => {
+  // As above, but listed by the sync at :20:41 (its run time), not on a whole hour: Övervåning ends at 10-08
+  // 12:20:41 Z, so Stockholm's 10-08 (from 10-07 22:00 Z) expects 14,34 h, rounded up to 15 (energyOverview's ceil).
+  const ids = await seedUnits('Matsal', 'Övervåning')
+  await upsertUnits(
+    [
+      { guid: 'CS-HZ25ZKE+0000000001', name: 'Matsal', model: 'CS-HZ25ZKE' },
+      { guid: 'CS-HZ25ZKE+0000000002', name: 'Övervåning', model: 'CS-HZ25ZKE' },
+    ],
+    new Date('2026-10-08T12:20:41Z'),
+  )
+  await upsertUnits(
+    [{ guid: 'CS-HZ25ZKE+0000000001', name: 'Matsal', model: 'CS-HZ25ZKE' }],
+    new Date('2026-10-09T12:20:41Z'),
+  )
+  await storeHours(ids.Matsal, '2026-10-06T00:00:00Z', '2026-10-10T00:00:00Z')
+  await storeHours(ids.Övervåning, '2026-10-06T00:00:00Z', '2026-10-08T00:00:00Z')
+  const now = new Date('2026-10-10T00:30:00Z')
+  const days = await getHeatPumpDays({ from: '2026-10-08', to: '2026-10-08', now })
+  expect(
+    days.days
+      .filter((d) => d.heatPumpId === ids.Övervåning)
+      .map((d) => [d.day, d.hours, d.expectedHours]),
+  ).toEqual([['2026-10-08', 2, 15]])
+})
