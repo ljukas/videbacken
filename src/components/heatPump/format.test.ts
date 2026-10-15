@@ -14,8 +14,9 @@ test('temperatures and kWh', () => {
   expect(formatCelsius(3)).toMatch(/^3,0\s°C$/)
   expect(formatCelsiusTick(-5)).toBe('−5°')
   expect(formatCelsiusTick(2.5)).toBe('2,5°')
-  expect(formatKwh(42.26)).toBe('42,3 kWh')
-  expect(formatKwh(1512.4)).toMatch(/^1\s512 kWh$/)
+  // A no-break space before the unit, as Översikt: "1 512" and "kWh" never wrap apart.
+  expect(formatKwh(42.26)).toBe('42,3\u00a0kWh')
+  expect(formatKwh(1512.4)).toMatch(/^1\s512\u00a0kWh$/)
 })
 
 test('a temperature that rounds to zero reads 0, never −0', () => {

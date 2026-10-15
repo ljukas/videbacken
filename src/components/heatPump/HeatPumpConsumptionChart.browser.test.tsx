@@ -1,6 +1,14 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { m } from '~/paraglide/messages'
-import { clickOn, legendLabels, lineDots, parkPointer, seriesBars } from '~test/browser/chartDom'
+import {
+  clickOn,
+  hoverBar,
+  legendLabels,
+  lineDots,
+  parkPointer,
+  seriesBars,
+  tooltipText,
+} from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { allPayload, daysPayload, monthsPayload } from '~test/fixtures/heatPumpView'
 import { HeatPumpConsumptionChart } from './HeatPumpConsumptionChart'
@@ -94,4 +102,12 @@ test('no outdoor temperature in any row: no line, no right axis, no legend entry
   expect(rightTicks(screen.container)).toHaveLength(0)
   expect(lineDots(screen.container)).toHaveLength(0)
   expect(legendLabels(screen.container)).not.toContain(m.heat_pump_series_outdoor())
+})
+
+test("the tooltip's kWh never break from their number", async () => {
+  const { screen } = await render(viewOf({ period: { kind: 'year', year: 2026 } }))
+  await hoverBar(screen.container, 0)
+  await vi.waitFor(() => expect(tooltipText()).toMatch(/kWh/))
+  expect(tooltipText()).toMatch(/\d\u00a0kWh/)
+  expect(tooltipText()).not.toMatch(/ kWh/)
 })

@@ -28,7 +28,7 @@ test('a tile per unit with its kWh and "hittills", the change against last year,
   const { screen } = await renderWithProviders(<HeatPumpTiles tiles={tilesFor(p)} />)
   const matsal = tile(screen.container, MATSAL.id)
   expect(matsal?.textContent).toContain('Matsal')
-  expect(matsal?.textContent).toMatch(/850 kWh/)
+  expect(matsal?.textContent).toMatch(/850\u00a0kWh/)
   expect(matsal?.textContent).toContain(m.energy_chart_so_far())
   expect(matsal?.textContent).toMatch(/−19\s%\smot 2025/)
   expect(tile(screen.container, 'outdoor')?.textContent).toMatch(/2,0\s°C/)

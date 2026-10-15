@@ -1,11 +1,11 @@
 import { useMemo } from 'react'
 import { BarChart, type BarSeries, type LineSeries } from '~/components/chart/BarChart'
 import { CHART_HEIGHT, TooltipRow } from '~/components/chart/ChartParts'
-import { formatCount, formatOneDecimal } from '~/components/evCharging/format'
+import { formatCount } from '~/components/evCharging/format'
 import { heatPumpColor } from '~/lib/houseEnergy/heatPumpColors'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
-import { formatCelsius, formatCelsiusTick } from './format'
+import { formatCelsius, formatCelsiusTick, formatKwhOneDecimal } from './format'
 import {
   type HeatPumpChartRow,
   type HeatPumpView,
@@ -21,7 +21,7 @@ const rowLabel = (r: HeatPumpChartRow) => r.label
 const rowShort = (r: HeatPumpChartRow) => r.short
 const rowValue = (r: HeatPumpChartRow, key: string) =>
   key === LAST_YEAR_KEY ? r.lastYear : key === OUTDOOR_KEY ? r.outdoorC : (r.kwh[key] ?? null)
-const kwhText = (v: number | null | undefined) => (v == null ? '—' : `${formatOneDecimal(v)} kWh`)
+const kwhText = (v: number | null | undefined) => (v == null ? '—' : formatKwhOneDecimal(v))
 
 // The Förbrukning chart (spec "Energi › Värmepumpar"): the units stacked (step 2's colours, name order), last year
 // as an outline beside each month (year view), the hour-weighted outdoor temperature as a line on a right-hand

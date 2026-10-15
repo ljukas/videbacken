@@ -32,7 +32,12 @@ export function formatCelsiusTick(c: number): string {
   return `${n}°`
 }
 
-/** A tile's kWh: one decimal under 100 ("42,3 kWh"), whole from 100 ("1 512 kWh"). */
+/** kWh with one decimal ("42,3 kWh"), a no-break space before the unit (as Översikt). */
+export function formatKwhOneDecimal(kwh: number): string {
+  return `${formatOneDecimal(kwh)} kWh`
+}
+
+/** A tile's kWh: one decimal under 100 ("42,3 kWh"), whole from 100 ("1 512 kWh"); a no-break space before the unit. */
 export function formatKwh(kwh: number): string {
-  return `${kwh < 100 ? formatOneDecimal(kwh) : formatCount(Math.round(kwh))} kWh`
+  return kwh < 100 ? formatKwhOneDecimal(kwh) : `${formatCount(Math.round(kwh))} kWh`
 }
