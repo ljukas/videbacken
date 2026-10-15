@@ -1,6 +1,21 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
-import { heatPump, heatPumpReading } from '~/lib/db/schema'
+import { heatPump, heatPumpDay, heatPumpReading } from '~/lib/db/schema'
+
+/**
+ * Recomputes the day sums view (`heat_pump_day`, ADR-0027 decision 6) from the readings. CONCURRENTLY: readers keep
+ * the previous rows until it commits; a second refresh waits for the first. Every writer of readings calls it after
+ * writing (the Comfort Cloud sync, once per run that stored hours). Bounded on the server like
+ * `houseEnergy.refreshMonthSums`: the sync's budget only stops waiting, so a lock wait (5 s) and the refresh (8 s)
+ * time out here and release the lock.
+ */
+export async function refreshDaySums(): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL lock_timeout = '5s'`)
+    await tx.execute(sql`SET LOCAL statement_timeout = '8s'`)
+    await tx.refreshMaterializedView(heatPumpDay).concurrently()
+  })
+}
 
 /** One unit's sums over one Stockholm month (ADR-0027). */
 export type HeatPumpMonthRow = {

@@ -4,6 +4,8 @@ import {
   check,
   date,
   doublePrecision,
+  integer,
+  pgMaterializedView,
   pgTable,
   primaryKey,
   text,
@@ -92,3 +94,29 @@ export const heatPumpReading = pgTable(
     tempCheck('outside_c', table.outsideC),
   ],
 ).enableRLS()
+
+// Per-unit Stockholm day sums of heat_pump_reading (ADR-0027 decision 6, amended 2026-10-15): what the
+// heat pump sum reads take whole days from, so a request never scans the readings. A materialized view,
+// defined in the custom migration 0027 (Drizzle can't declare its unique index, which REFRESH …
+// CONCURRENTLY needs), hence `.existing()`: drizzle-kit never generates or drops it. Changing it = a new
+// custom migration (drop, create, index + the guarded REVOKE). It is only as fresh as its last refresh:
+// every writer of heat_pump_reading must call `heatPump.refreshDaySums()` after it writes (today: the
+// Comfort Cloud sync, once per run that stored hours).
+export const heatPumpDay = pgMaterializedView('heat_pump_day', {
+  heatPumpId: uuid('heat_pump_id').notNull(),
+  /** Stockholm calendar day. */
+  day: date('day', { mode: 'string' }).notNull(),
+  kwh: doublePrecision('kwh').notNull(),
+  heatKwh: doublePrecision('heat_kwh').notNull(),
+  coolKwh: doublePrecision('cool_kwh').notNull(),
+  /** Σ over the hours with a value (null when none has); `…Hours` counts those hours. */
+  insideCSum: doublePrecision('inside_c_sum'),
+  insideCHours: integer('inside_c_hours').notNull(),
+  outsideCSum: doublePrecision('outside_c_sum'),
+  outsideCHours: integer('outside_c_hours').notNull(),
+  setpointCSum: doublePrecision('setpoint_c_sum'),
+  setpointCHours: integer('setpoint_c_hours').notNull(),
+  hours: integer('hours').notNull(),
+  firstHour: timestamp('first_hour', { withTimezone: true }).notNull(),
+  lastHour: timestamp('last_hour', { withTimezone: true }).notNull(),
+}).existing()

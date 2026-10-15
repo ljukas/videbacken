@@ -1,10 +1,85 @@
 import { expect, test } from 'vitest'
+import { db } from '~/lib/db'
+import { heatPumpDay } from '~/lib/db/schema'
 import { seedUnits, storeHours } from '~test/fixtures/heatPumpHours'
 import { setupDatabase } from '~test/setup'
 import { upsertUnits } from './heatPump'
-import { monthSums } from './monthSums'
+import { monthSums, refreshDaySums } from './monthSums'
 
 setupDatabase()
+
+const viewRows = async () =>
+  (await db.select().from(heatPumpDay)).sort(
+    (a, b) => a.heatPumpId.localeCompare(b.heatPumpId) || a.day.localeCompare(b.day),
+  )
+
+test('refreshDaySums over no readings leaves the view empty', async () => {
+  await refreshDaySums()
+  expect(await viewRows()).toEqual([])
+})
+
+test('the view sums each unit per Stockholm day: DST days have 25 and 23 hours, 22:00Z/23:00Z start a day', async () => {
+  const id = await seedUnits('Matsal')
+  // 2025-10-26 (CET from 03:00 local): 2025-10-25T22:00Z → 2025-10-26T23:00Z, 25 hours.
+  // 2026-03-29 (CEST from 02:00 local): 2026-03-28T23:00Z → 2026-03-29T22:00Z, 23 hours.
+  await storeHours(id.Matsal, '2025-10-25T21:00:00Z', '2025-10-27T00:00:00Z', undefined, {
+    refresh: false,
+  })
+  await storeHours(id.Matsal, '2026-03-28T22:00:00Z', '2026-03-29T23:00:00Z', undefined, {
+    refresh: false,
+  })
+  expect(await viewRows()).toEqual([]) // not refreshed yet
+  await refreshDaySums()
+  expect((await viewRows()).map((r) => [r.day, r.hours])).toEqual([
+    ['2025-10-25', 1],
+    ['2025-10-26', 25],
+    ['2025-10-27', 1],
+    ['2026-03-28', 1],
+    ['2026-03-29', 23],
+    ['2026-03-30', 1],
+  ])
+})
+
+test('the view keeps temperature sums and hour counts, and a null share counts 0', async () => {
+  const id = await seedUnits('Matsal')
+  const hours = [
+    { energyKwh: 0.2, heatShare: 1, coolShare: 0, insideC: 20, outsideC: -2, setpointC: null },
+    {
+      energyKwh: 0.4,
+      heatShare: null,
+      coolShare: null,
+      insideC: null,
+      outsideC: 4,
+      setpointC: null,
+    },
+  ]
+  await storeHours(id.Matsal, '2026-01-15T10:00:00Z', '2026-01-15T12:00:00Z', (_t, i) => hours[i])
+  const [row] = await viewRows()
+  expect(row).toMatchObject({
+    day: '2026-01-15',
+    hours: 2,
+    insideCHours: 1,
+    outsideCHours: 2,
+    setpointCHours: 0,
+    setpointCSum: null,
+    firstHour: new Date('2026-01-15T10:00:00Z'),
+    lastHour: new Date('2026-01-15T11:00:00Z'),
+  })
+  expect(row.kwh).toBeCloseTo(0.6, 9)
+  expect(row.heatKwh).toBeCloseTo(0.2, 9)
+  expect(row.coolKwh).toBeCloseTo(0, 9)
+  expect(row.insideCSum).toBeCloseTo(20, 9)
+  expect(row.outsideCSum).toBeCloseTo(2, 9)
+})
+
+test('a re-stored day that shrinks goes down after the refresh (recomputed, not added)', async () => {
+  const id = await seedUnits('Matsal')
+  await storeHours(id.Matsal, '2026-01-15T00:00:00Z', '2026-01-15T10:00:00Z')
+  await storeHours(id.Matsal, '2026-01-15T00:00:00Z', '2026-01-15T04:00:00Z') // replaces the UTC day
+  const [row] = await viewRows()
+  expect(row.hours).toBe(4)
+  expect(row.kwh).toBeCloseTo(0.4, 9)
+})
 
 const all = { from: new Date('2020-01-01T00:00:00Z'), to: new Date('2030-01-01T00:00:00Z') }
 
