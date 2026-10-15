@@ -38,7 +38,7 @@ const SHELL_UI =
   /[\\/]src[\\/]components[\\/]ui[\\/](sidebar|button-group|command|dialog|sheet|tooltip)\.tsx$/
 const SHELL_PACKAGES = /[\\/]node_modules[\\/](@radix-ui[\\/]react-(dialog|tooltip)|cmdk)[\\/]/
 const SHELL_ICONS =
-  /[\\/]node_modules[\\/]lucide-react[\\/]dist[\\/]esm[\\/]icons[\\/](house|menu|piggy-bank|search|thermometer|user|zap)\.mjs$/
+  /[\\/]node_modules[\\/]lucide-react[\\/]dist[\\/]esm[\\/]icons[\\/](air-vent|house|menu|piggy-bank|search|thermometer|user|zap)\.mjs$/
 
 const SHARED_SRC = /[\\/]src[\\/]components[\\/](ui[\\/]dropdown-menu|Logo|flags)\.tsx$/
 const SHARED_PACKAGES = new RegExp(
