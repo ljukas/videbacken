@@ -986,9 +986,13 @@
   "nav_energy_overview": "Overview",
   "nav_energy_battery": "Battery",
   "nav_energy_battery_long": "Home battery",
+  "nav_energy_heat_pumps": "Heat pumps",
   "cmd_kw_energy_battery": "battery home battery loss efficiency charge discharge stored winter emaldo",
+  "cmd_kw_energy_heat_pumps": "heat pump heat pumps air source panasonic comfort cloud consumption outdoor temperature last year",
   "meta_energy_battery_title": "Home battery",
   "meta_energy_battery_description": "What the home battery took in, gave back and lost.",
+  "meta_energy_heat_pumps_title": "Heat pumps",
+  "meta_energy_heat_pumps_description": "The heat pumps' electricity use per month and day, against last year and the outdoor temperature.",
   "energy_battery_title": "Home battery",
   "energy_battery_description": "What the home battery took in, gave back and lost, from Emaldo. Synced every hour.",
   "energy_battery_efficiency": "Efficiency",
@@ -1025,5 +1029,9 @@
   "heat_pump_series_outdoor": "Outdoors, °C",
   "heat_pump_tooltip_total": "Total",
   "heat_pump_chart_hint": "Click a month to see its days.",
-  "heat_pump_chart_no_data": "No heat pump data for {period}"
+  "heat_pump_chart_no_data": "No heat pump data for {period}",
+  "heat_pump_title": "Heat pumps",
+  "heat_pump_description": "Consumption and temperature from Panasonic Comfort Cloud. The data syncs every six hours.",
+  "heat_pump_consumption_heading": "Consumption",
+  "heat_pump_error_title": "The heat pump data couldn't be loaded"
 }

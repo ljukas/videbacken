@@ -1,5 +1,6 @@
 import { linkOptions } from '@tanstack/react-router'
 import {
+  AirVentIcon,
   BatteryChargingIcon,
   CalendarClockIcon,
   HomeIcon,
@@ -81,6 +82,13 @@ export const NAVIGATE_COMMANDS = linkOptions([
     label: m.nav_energy_battery_long,
     keywords: m.cmd_kw_energy_battery,
     icon: BatteryChargingIcon,
+    adminOnly: false,
+  },
+  {
+    to: '/energy/heat-pumps',
+    label: m.nav_energy_heat_pumps,
+    keywords: m.cmd_kw_energy_heat_pumps,
+    icon: AirVentIcon,
     adminOnly: false,
   },
   {

@@ -27,6 +27,7 @@ import { Route as AuthenticatedChargingPatternsRouteImport } from './routes/_aut
 import { Route as AuthenticatedChargingSettingsRouteImport } from './routes/_authenticated/charging/settings'
 import { Route as AuthenticatedEnergyIndexRouteImport } from './routes/_authenticated/energy/index'
 import { Route as AuthenticatedEnergyBatteryRouteImport } from './routes/_authenticated/energy/battery'
+import { Route as AuthenticatedEnergyHeatPumpsRouteImport } from './routes/_authenticated/energy/heat-pumps'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiCronComfortCloudSyncRouteImport } from './routes/api/cron/comfort-cloud-sync'
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
@@ -135,6 +136,12 @@ const AuthenticatedEnergyBatteryRoute =
     path: '/energy/battery',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedEnergyHeatPumpsRoute =
+  AuthenticatedEnergyHeatPumpsRouteImport.update({
+    id: '/energy/heat-pumps',
+    path: '/energy/heat-pumps',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -203,6 +210,7 @@ export interface FileRoutesByFullPath {
   '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/energy/battery': typeof AuthenticatedEnergyBatteryRoute
+  '/energy/heat-pumps': typeof AuthenticatedEnergyHeatPumpsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/comfort-cloud-sync': typeof ApiCronComfortCloudSyncRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
@@ -231,6 +239,7 @@ export interface FileRoutesByTo {
   '/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/energy/battery': typeof AuthenticatedEnergyBatteryRoute
+  '/energy/heat-pumps': typeof AuthenticatedEnergyHeatPumpsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/comfort-cloud-sync': typeof ApiCronComfortCloudSyncRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
@@ -262,6 +271,7 @@ export interface FileRoutesById {
   '/_authenticated/charging/patterns': typeof AuthenticatedChargingPatternsRoute
   '/_authenticated/charging/settings': typeof AuthenticatedChargingSettingsRoute
   '/_authenticated/energy/battery': typeof AuthenticatedEnergyBatteryRoute
+  '/_authenticated/energy/heat-pumps': typeof AuthenticatedEnergyHeatPumpsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/comfort-cloud-sync': typeof ApiCronComfortCloudSyncRoute
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
@@ -293,6 +303,7 @@ export interface FileRouteTypes {
     | '/charging/patterns'
     | '/charging/settings'
     | '/energy/battery'
+    | '/energy/heat-pumps'
     | '/api/auth/$'
     | '/api/cron/comfort-cloud-sync'
     | '/api/cron/elpris-sync'
@@ -321,6 +332,7 @@ export interface FileRouteTypes {
     | '/charging/patterns'
     | '/charging/settings'
     | '/energy/battery'
+    | '/energy/heat-pumps'
     | '/api/auth/$'
     | '/api/cron/comfort-cloud-sync'
     | '/api/cron/elpris-sync'
@@ -351,6 +363,7 @@ export interface FileRouteTypes {
     | '/_authenticated/charging/patterns'
     | '/_authenticated/charging/settings'
     | '/_authenticated/energy/battery'
+    | '/_authenticated/energy/heat-pumps'
     | '/api/auth/$'
     | '/api/cron/comfort-cloud-sync'
     | '/api/cron/elpris-sync'
@@ -511,6 +524,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEnergyBatteryRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/energy/heat-pumps': {
+      id: '/_authenticated/energy/heat-pumps'
+      path: '/energy/heat-pumps'
+      fullPath: '/energy/heat-pumps'
+      preLoaderRoute: typeof AuthenticatedEnergyHeatPumpsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -607,6 +627,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedChargingPatternsRoute: typeof AuthenticatedChargingPatternsRoute
   AuthenticatedChargingSettingsRoute: typeof AuthenticatedChargingSettingsRoute
   AuthenticatedEnergyBatteryRoute: typeof AuthenticatedEnergyBatteryRoute
+  AuthenticatedEnergyHeatPumpsRoute: typeof AuthenticatedEnergyHeatPumpsRoute
   AuthenticatedChargingIndexRoute: typeof AuthenticatedChargingIndexRoute
   AuthenticatedEnergyIndexRoute: typeof AuthenticatedEnergyIndexRoute
   AuthenticatedChargingSessionsSessionIdRoute: typeof AuthenticatedChargingSessionsSessionIdRoute
@@ -622,6 +643,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedChargingPatternsRoute: AuthenticatedChargingPatternsRoute,
   AuthenticatedChargingSettingsRoute: AuthenticatedChargingSettingsRoute,
   AuthenticatedEnergyBatteryRoute: AuthenticatedEnergyBatteryRoute,
+  AuthenticatedEnergyHeatPumpsRoute: AuthenticatedEnergyHeatPumpsRoute,
   AuthenticatedChargingIndexRoute: AuthenticatedChargingIndexRoute,
   AuthenticatedEnergyIndexRoute: AuthenticatedEnergyIndexRoute,
   AuthenticatedChargingSessionsSessionIdRoute:

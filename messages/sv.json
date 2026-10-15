@@ -956,7 +956,7 @@
   "energy_flow_battery": "Batteri",
   "energy_flow_loss": "Förlust",
   "energy_flow_about_zero": "≈ 0",
-  "energy_flow_charge_level": "laddnivå {from} → {to} %",
+  "energy_flow_charge_level": "laddnivå {from} → {to}\u00a0%",
   "energy_flow_stored": "Lager {kwh} kWh",
   "energy_flow_car": "varav laddning",
   "energy_flow_arrow": "{from} → {to}",
@@ -986,9 +986,13 @@
   "nav_energy_overview": "Översikt",
   "nav_energy_battery": "Batteri",
   "nav_energy_battery_long": "Hemmabatteri",
+  "nav_energy_heat_pumps": "Värmepumpar",
   "cmd_kw_energy_battery": "batteri hemmabatteri förlust verkningsgrad laddning urladdning lager vinter emaldo",
+  "cmd_kw_energy_heat_pumps": "värmepump värmepumpar luftvärmepump panasonic comfort cloud förbrukning utetemperatur förra året",
   "meta_energy_battery_title": "Hemmabatteri",
   "meta_energy_battery_description": "Vad hemmabatteriet laddade in, gav tillbaka och förlorade.",
+  "meta_energy_heat_pumps_title": "Värmepumpar",
+  "meta_energy_heat_pumps_description": "Värmepumparnas elförbrukning per månad och dag, mot förra året och utetemperaturen.",
   "energy_battery_title": "Hemmabatteri",
   "energy_battery_description": "Vad hemmabatteriet laddade in, gav tillbaka och förlorade, från Emaldo. Datan synkas varje timme.",
   "energy_battery_efficiency": "Verkningsgrad",
@@ -1025,5 +1029,9 @@
   "heat_pump_series_outdoor": "Ute, °C",
   "heat_pump_tooltip_total": "Totalt",
   "heat_pump_chart_hint": "Klicka på en månad för att se dess dagar.",
-  "heat_pump_chart_no_data": "Ingen värmepumpsdata för {period}"
+  "heat_pump_chart_no_data": "Ingen värmepumpsdata för {period}",
+  "heat_pump_title": "Värmepumpar",
+  "heat_pump_description": "Förbrukning och temperatur från Panasonic Comfort Cloud. Datan synkas var sjätte timme.",
+  "heat_pump_consumption_heading": "Förbrukning",
+  "heat_pump_error_title": "Värmepumpsdatan kunde inte hämtas"
 }

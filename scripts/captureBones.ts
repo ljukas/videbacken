@@ -32,6 +32,7 @@ const DEFAULT_PATHS = [
   '/charging/settings',
   '/energy',
   '/energy/battery',
+  '/energy/heat-pumps',
   '/sensors',
   '/users',
 ]
