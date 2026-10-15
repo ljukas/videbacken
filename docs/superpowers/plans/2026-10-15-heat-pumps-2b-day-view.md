@@ -23,6 +23,19 @@ lines). ADR: [ADR-0027](../../adr/0027-heat-pump-energy-data.md) decision 6 (ame
 [heat pumps](../roadmaps/2026-10-08-heat-pumps.md), step 2b, checkpoint 3b. Precedent:
 [the house month view plan](./2026-10-07-energy-month-sums-view.md) and `drizzle/0021_house_energy_month_view.sql`.
 
+**As built (2026-10-15):** differences from the plan text below (the code is the reference).
+
+- `splitRange`'s first DST case: [2026-03-29T10:00Z, 2026-03-30T22:00Z) holds the whole day 2026-03-30, so it is
+  `wholeDays` 03-30..03-31 plus a partial 29th (the plan expected one partial).
+- `refreshDaySums` also sets `max_parallel_workers_per_gather = 0` (schema review: a parallel aggregate's float order
+  would make CONCURRENTLY rewrite every row).
+- Month keys are dates without the session time zone: `date_trunc('month', day::timestamp)::date` in the view branch
+  and `date_trunc('month', hour_start AT TIME ZONE 'Europe/Stockholm')::date` in the partial branch. (A bare
+  `date_trunc('month', day)` resolves to the timestamptz overload, so the plan's note about it is wrong.)
+- The reference-equality tests compare every column (cooling kWh, all three means, first and last hour) over data
+  with nulls, and add a winter (23:00Z) month edge; the sync tests pin `refreshMs` (step review).
+- The unique index stays (`heat_pump_id`, `day`) (schema review ruling: every read is a near-whole-view day range).
+
 ## Global Constraints
 
 - One PR, one concern: `perf(heat-pumps): read heat pump sums from a day view` (≤ 72 chars, Conventional Commits).
