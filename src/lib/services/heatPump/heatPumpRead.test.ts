@@ -408,3 +408,28 @@ test("a unit lagging under 13 h compares its own span: this year to its own end,
   for (const u of v?.tiles.units ?? []) expect(u.change).toBeCloseTo(0, 9)
   expect(v?.tiles.units).toHaveLength(2)
 })
+
+test('a unit removed during the running month keeps the whole span: no change on its month or year tile', async () => {
+  // 2026-10-15 08:10 Stockholm. Both units complete from 2025-01-01 (Stockholm); Övervåning stops on 2026-10-05 at
+  // 12:00 Z, is last listed at 12:20 Z, and a later run (10-15) lists only Matsal: removed. Its stored hours reach
+  // its cap (99 % of it), but not the running month's span: no change, unlike Matsal.
+  const ids = await seedUnits('Matsal', 'Övervåning')
+  const units = [
+    { guid: 'CS-HZ25ZKE+0000000001', name: 'Matsal', model: 'CS-HZ25ZKE' },
+    { guid: 'CS-HZ25ZKE+0000000002', name: 'Övervåning', model: 'CS-HZ25ZKE' },
+  ]
+  await upsertUnits(units, new Date('2026-10-05T12:20:00Z'))
+  await upsertUnits(units.slice(0, 1), new Date('2026-10-15T00:20:00Z'))
+  await storeHours(ids.Matsal, '2024-12-31T23:00:00Z', '2026-10-15T06:00:00Z')
+  await storeHours(ids.Övervåning, '2024-12-31T23:00:00Z', '2026-10-05T12:00:00Z')
+  const now = new Date('2026-10-15T06:10:00Z')
+  const months = await getHeatPumpMonths({ year: 2026, now })
+  const days = await getHeatPumpDays({ from: '2026-10-01', to: '2026-10-31', now })
+  const base = { months, now: { year: 2026, month: 10 }, today: '2026-10-15' }
+  const october = heatPumpView({ ...base, days, period: { kind: 'month', year: 2026, month: 10 } })
+  const year = heatPumpView({ ...base, days: null, period: { kind: 'year', year: 2026 } })
+  for (const tiles of [october?.tiles, year?.tiles]) {
+    expect(tiles?.units.find((u) => u.id === ids.Övervåning)?.change).toBeNull()
+    expect(tiles?.units.find((u) => u.id === ids.Matsal)?.change).toBeCloseTo(0, 9)
+  }
+}, 60_000)

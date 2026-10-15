@@ -89,7 +89,7 @@ export type HeatPumpDaysOutput = {
 
 type YearMonth = { year: number; month: number }
 /** A unit with readings: its first stored hour and where its expected hours end (`capMs`). */
-type Covered = HeatPumpUnitDto & { firstMs: number; capMs: number }
+type Covered = HeatPumpUnitDto & { firstMs: number; capMs: number; removed: boolean }
 
 /**
  * Hours of `[bounds)` from `firstMs` to `endCapMs`, a partly covered last hour counted whole (Översikt's rule,
@@ -134,7 +134,13 @@ async function coverage(
   if (withReadings.length === 0) return null
   const rule = unitEndRule(withReadings, endMs)
   const covered = withReadings
-    .map((u) => ({ id: u.id, name: u.name, firstMs: u.firstMs, capMs: rule.endMs(u) }))
+    .map((u) => ({
+      id: u.id,
+      name: u.name,
+      firstMs: u.firstMs,
+      capMs: rule.endMs(u),
+      removed: rule.removed(u),
+    }))
     .sort(byHeatPumpName)
   return { units: covered, endMs, newestEndMs }
 }
@@ -252,12 +258,13 @@ export async function getHeatPumpMonths(
         ? input.year
         : current.year
   // The running month is the newest stored hour's: this year's data ends there (0–6 h before now with the 6-hourly
-  // sync). Each unit's comparison runs to its own end in it (`spanEndMs`: the newest stored end, or the unit's cap
-  // when earlier: a unit lagging under 13 h, or removed), and last year to that same Stockholm hour, so both sides
-  // span the same hours per unit.
+  // sync). Each unit's comparison runs to its own end in it (`spanEndMs`: the newest stored end, or a unit lagging
+  // under 13 h's own end), and last year to that same Stockholm hour, so both sides span the same hours per unit. A
+  // removed unit isn't clipped: its span runs to the newest stored end, so its partial month shows no change (F1).
   const running = stockholmYearMonth(cov.newestEndMs - 1)
   const runningBounds = stockholmMonthBounds(running.year, running.month)
-  const spanEndMs = (u: Covered) => Math.min(cov.newestEndMs, u.capMs)
+  const spanEndMs = (u: Covered) =>
+    u.removed ? cov.newestEndMs : Math.min(cov.newestEndMs, u.capMs)
   const cutOf = (u: Covered) => stockholmYearBefore(spanEndMs(u))
   const soFarYm = { year: running.year - 1, month: running.month }
   const soFarBounds = stockholmMonthBounds(soFarYm.year, soFarYm.month)
