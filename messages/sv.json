@@ -956,7 +956,7 @@
   "energy_flow_battery": "Batteri",
   "energy_flow_loss": "Förlust",
   "energy_flow_about_zero": "≈ 0",
-  "energy_flow_charge_level": "laddnivå {from} → {to}\u00a0%",
+  "energy_flow_charge_level": "laddnivå {from} → {to} %",
   "energy_flow_stored": "Lager {kwh} kWh",
   "energy_flow_car": "varav laddning",
   "energy_flow_arrow": "{from} → {to}",
@@ -1015,5 +1015,15 @@
   "energy_battery_note": "Vintertid förloras mer: batteriet värmer sig självt och drar ström i vila när det är kallt. Förlusten räknas som in − ut − ändrat lager, med {capacity} kWh per 100 % laddnivå.",
   "heat_pump_chart_title_year": "Värmepumparnas förbrukning per månad {year}",
   "heat_pump_chart_title_month": "Värmepumparnas förbrukning per dag, {period}",
-  "heat_pump_chart_title_all": "Värmepumparnas förbrukning per månad sedan {since}"
+  "heat_pump_chart_title_all": "Värmepumparnas förbrukning per månad sedan {since}",
+  "heat_pump_empty_title": "Ingen värmepumpsdata ännu",
+  "heat_pump_empty_description": "Siffrorna visas när Comfort Cloud-synken har hämtat värmepumparnas första dag.",
+  "heat_pump_tile_change": "{change} mot {period}",
+  "heat_pump_tile_outdoor": "Ute",
+  "heat_pump_tile_outdoor_detail": "Medeltemperatur",
+  "heat_pump_series_last_year": "Förra året ({year})",
+  "heat_pump_series_outdoor": "Ute, °C",
+  "heat_pump_tooltip_total": "Totalt",
+  "heat_pump_chart_hint": "Klicka på en månad för att se dess dagar.",
+  "heat_pump_chart_no_data": "Ingen värmepumpsdata för {period}"
 }
