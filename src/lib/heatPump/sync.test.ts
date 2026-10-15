@@ -1117,15 +1117,34 @@ describe('the day view refresh (ADR-0027 decision 6)', () => {
     expect(line).toMatchObject({ refreshMs: expect.any(Number) })
   })
 
-  test('a run that stored nothing does not refresh', async () => {
+  test('refreshMs is the refresh’s own time, in the run, its stats and its line', async () => {
+    const captured = capturingLogger()
+    const { client } = fakeComfortCloud([matsal('2026-03-25')])
+    const slow = async () => {
+      await new Promise((r) => setTimeout(r, 30))
+    }
+
+    const result = await run(client, { log: captured.log, refreshDaySums: slow })
+
+    expect(result.refreshMs).toBeGreaterThanOrEqual(25)
+    const [stored] = await db.select().from(integrationSyncRun)
+    expect(stored.timings).toMatchObject({ refreshMs: result.refreshMs })
+    const line = captured.entries().find((e) => e.msg === 'integration sync run')
+    expect(line).toMatchObject({ refreshMs: result.refreshMs })
+  })
+
+  test('a run that stored nothing does not refresh and logs refreshMs 0', async () => {
+    const captured = capturingLogger()
     const refresh = vi.fn(async () => {})
     // As "a unit that never stored an hour only warns": every day answers empty.
     const { client } = fakeComfortCloud([matsal('2026-03-25', { hasData: () => false })])
 
-    const result = await run(client, { refreshDaySums: refresh })
+    const result = await run(client, { log: captured.log, refreshDaySums: refresh })
 
     expect(result).toMatchObject({ outcome: 'ok', hoursStored: 0, refreshMs: 0 })
     expect(refresh).not.toHaveBeenCalled()
+    const line = captured.entries().find((e) => e.msg === 'integration sync run')
+    expect(line).toMatchObject({ refreshMs: 0 })
   })
 
   test('a run that fails part-way still refreshes for the hours that landed', async () => {
