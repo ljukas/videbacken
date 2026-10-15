@@ -193,20 +193,40 @@ function cellOf(
       }
 }
 
+/** Sub-timings (ms) for the RPC's `context.timings`, filled when passed. */
+export type HeatPumpReadTimings = {
+  heatPumpCoverageMs?: number
+  heatPumpMonthSumsMs?: number
+  heatPumpSoFarMs?: number
+  heatPumpDaySumsMs?: number
+}
+
+/** `read`, its duration recorded as `timings[key]` when `timings` is passed. */
+async function timed<T>(
+  timings: HeatPumpReadTimings | undefined,
+  key: keyof HeatPumpReadTimings,
+  read: () => Promise<T>,
+): Promise<T> {
+  const startedAt = performance.now()
+  const out = await read()
+  if (timings) timings[key] = Math.round(performance.now() - startedAt)
+  return out
+}
+
 const rowKey = (heatPumpId: string, year: number, month: number) =>
   `${heatPumpId}|${monthKey(year, month)}`
 
 /**
  * Month sums for a year and the year before (`year` given), or for the whole history (`year` omitted: Totalt). One
- * grouped read over the history (`monthSums`, ≈ 17,5k rows a year for two units), plus one month for the running
- * comparison when `year` holds the coverage end.
+ * grouped read over the history (`monthSums`, ≈ 17,5k rows a year for two units), plus, beside it, one month for the
+ * running comparison when `year` holds the newest stored hour.
  */
 export async function getHeatPumpMonths(
-  input: { year?: number; now?: Date } = {},
+  input: { year?: number; now?: Date; timings?: HeatPumpReadTimings } = {},
 ): Promise<HeatPumpMonths> {
   const now = input.now ?? new Date()
   const current = stockholmYearMonth(now.getTime())
-  const cov = await coverage(now.getTime())
+  const cov = await timed(input.timings, 'heatPumpCoverageMs', () => coverage(now.getTime()))
   if (!cov) {
     return {
       units: [],
@@ -222,7 +242,32 @@ export async function getHeatPumpMonths(
   }
   const firstMs = Math.min(...cov.units.map((u) => u.firstMs))
   const newest = stockholmYearMonth(cov.endMs - 1)
-  const rows = await monthSums({ from: new Date(firstMs), to: new Date(cov.endMs) })
+  const first = stockholmYearMonth(firstMs)
+  const availableYears: number[] = []
+  for (let y = Math.max(current.year, newest.year); y >= first.year; y--) availableYears.push(y)
+  const year =
+    input.year === undefined
+      ? null
+      : availableYears.includes(input.year)
+        ? input.year
+        : current.year
+  // The running month is the newest stored hour's: this year's data ends there (0–6 h before now with the 6-hourly
+  // sync), so last year is cut at the same point, and each unit's expected hours no later than its own end a year back.
+  const running = stockholmYearMonth(cov.newestEndMs - 1)
+  const cutMs = stockholmYearBefore(cov.newestEndMs)
+  const soFarYm = { year: running.year - 1, month: running.month }
+  const soFarBounds = stockholmMonthBounds(soFarYm.year, soFarYm.month)
+  // Independent reads, side by side: the history and (a running year only) last year's running month.
+  const [rows, soFar] = await Promise.all([
+    timed(input.timings, 'heatPumpMonthSumsMs', () =>
+      monthSums({ from: new Date(firstMs), to: new Date(cov.endMs) }),
+    ),
+    year === running.year
+      ? timed(input.timings, 'heatPumpSoFarMs', () =>
+          monthSums({ from: new Date(soFarBounds.startMs), to: new Date(cutMs) }),
+        )
+      : null,
+  ])
   const byKey = new Map(rows.map((r) => [rowKey(r.heatPumpId, r.year, r.month), r]))
   // Each unit's months from its first through the newest: a month without hours inside them is a gap. A month the
   // unit's cap doesn't reach (a new month's first hours, the sync not run yet) has nothing to say: left out.
@@ -241,39 +286,22 @@ export async function getHeatPumpMonths(
       }),
     )
     .filter((c) => c.expectedHours > 0 || c.hours > 0)
-  const first = stockholmYearMonth(firstMs)
-  const availableYears: number[] = []
-  for (let y = Math.max(current.year, newest.year); y >= first.year; y--) availableYears.push(y)
-  const year =
-    input.year === undefined
+  const lastYearSoFar =
+    soFar === null
       ? null
-      : availableYears.includes(input.year)
-        ? input.year
-        : current.year
-
-  // The running month is the newest stored hour's: this year's data ends there (0–6 h before now with the 6-hourly
-  // sync), so last year is cut at the same point, and each unit's expected hours no later than its own end a year back.
-  const running = stockholmYearMonth(cov.newestEndMs - 1)
-  let lastYearSoFar: HeatPumpMonthCell[] | null = null
-  if (year === running.year) {
-    const cutMs = stockholmYearBefore(cov.newestEndMs)
-    const ym = { year: running.year - 1, month: running.month }
-    const bounds = stockholmMonthBounds(ym.year, ym.month)
-    const soFar = await monthSums({ from: new Date(bounds.startMs), to: new Date(cutMs) })
-    lastYearSoFar = cov.units.flatMap((u) => {
-      const expected = expectedHours(
-        bounds,
-        u.firstMs,
-        Math.min(cutMs, stockholmYearBefore(u.capMs)),
-      )
-      const row = soFar.find(
-        (r) => r.heatPumpId === u.id && r.year === ym.year && r.month === ym.month,
-      )
-      return expected === 0 && !row
-        ? []
-        : [cellOf(u.id, ym, row, expected, spanHoursOf(bounds, cutMs))]
-    })
-  }
+      : cov.units.flatMap((u) => {
+          const expected = expectedHours(
+            soFarBounds,
+            u.firstMs,
+            Math.min(cutMs, stockholmYearBefore(u.capMs)),
+          )
+          const row = soFar.find(
+            (r) => r.heatPumpId === u.id && r.year === soFarYm.year && r.month === soFarYm.month,
+          )
+          return expected === 0 && !row
+            ? []
+            : [cellOf(u.id, soFarYm, row, expected, spanHoursOf(soFarBounds, cutMs))]
+        })
 
   return {
     units: cov.units.map(dto),
@@ -298,14 +326,20 @@ export async function getHeatPumpDays(input: {
   from: string
   to: string
   now?: Date
+  timings?: HeatPumpReadTimings
 }): Promise<HeatPumpDaysOutput> {
   const nowMs = (input.now ?? new Date()).getTime()
   const today = stockholmDayOf(nowMs)
   const to = input.to < today ? input.to : today
-  const cov = await coverage(nowMs)
+  // The sums don't depend on the coverage: read side by side.
+  const [cov, rows] = await Promise.all([
+    timed(input.timings, 'heatPumpCoverageMs', () => coverage(nowMs)),
+    to < input.from
+      ? []
+      : timed(input.timings, 'heatPumpDaySumsMs', () => daySums({ from: input.from, to })),
+  ])
   if (!cov) return { units: [], days: [] }
   if (to < input.from) return { units: cov.units.map(dto), days: [] }
-  const rows = await daySums({ from: input.from, to })
   const byKey = new Map(rows.map((r) => [`${r.heatPumpId}|${r.day}`, r]))
   const days: HeatPumpDaysOutput['days'] = []
   for (const u of cov.units) {

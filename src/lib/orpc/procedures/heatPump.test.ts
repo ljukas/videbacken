@@ -79,6 +79,31 @@ test('a member reads months and days; both record their timing', async () => {
   expect(typeof timings.heatPumpDaysMs).toBe('number')
 })
 
+test('each read records its sub-timings beside its total', async () => {
+  await seedDay()
+  await signIn('user')
+  const months: Record<string, number> = {}
+  // 2026 holds the newest stored hour (February 2026), so the running comparison is read too.
+  await call(heatPumpRouter.months, { year: 2026 }, { context: context(months) })
+  // The session guard records its own (getSessionMs, findActiveByIdMs).
+  const ours = (t: Record<string, number>) => Object.keys(t).filter((k) => k.startsWith('heatPump'))
+  expect(ours(months).sort()).toEqual([
+    'heatPumpCoverageMs',
+    'heatPumpMonthSumsMs',
+    'heatPumpMonthsMs',
+    'heatPumpSoFarMs',
+  ])
+  const days: Record<string, number> = {}
+  await call(
+    heatPumpRouter.days,
+    { from: '2026-02-01', to: '2026-02-28' },
+    { context: context(days) },
+  )
+  expect(ours(days).sort()).toEqual(['heatPumpCoverageMs', 'heatPumpDaySumsMs', 'heatPumpDaysMs'])
+  for (const ms of [...Object.values(months), ...Object.values(days)])
+    expect(Number.isInteger(ms)).toBe(true)
+})
+
 test('rejects an unauthenticated caller', async () => {
   await expect(call(heatPumpRouter.months, {}, { context: context() })).rejects.toMatchObject({
     code: 'UNAUTHORIZED',
