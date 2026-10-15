@@ -10,12 +10,14 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 |---|---|---|---|---|---|
 | 1a | Adapter + storage, nothing calls it yet: the TypeScript Comfort Cloud client (login, units, UTC day and month history), `heat_pump` + `heat_pump_reading`, the service's writes | [plan](../plans/2026-10-08-heat-pumps-1a-adapter-storage.md) | [#146](https://github.com/ljukas/videbacken/pull/146) | checkpoint passed | passed 2026-10-11: live login (1 login, 10 requests, 0 retries), both units listed (Matsal, Övervåning, `CS-HZ25ZKE`, registered 2024-10-31 / 2024-11-27), UTC day 2026-10-10 stored through `replaceDay`: 24/24 hours per unit equal the Python probe; run output clean of password, user, tokens, api key, HTML and full guids |
 | 1b | Sync live: the `comfortCloud` source (CHECK migration), credentials, sync + backfill + 6-hour cron, Datakällor tile, Synka nu, health copy | [plan](../plans/2026-10-08-heat-pumps-1b-sync.md) | [#151](https://github.com/ljukas/videbacken/pull/151) | checkpoint passed | passed 2026-10-12: backfill complete (first stored UTC day = `registered_on`: 2024-10-31 / 2024-11-27, both `history_complete_at` set); 2025-11, 2026-02 and 2026-09 per unit match the app to the whole kWh, every hour of each month stored (2025-11 replaced 2025-02: the app shows months only a year back); 2025-10-26 and 2026-03-29 have 24 distinct hours per unit; 14 runs `ok` (12 admin backfill runs ≈ 120 s each, then 5.9 s and the 00:20 cron at 7.3 s, 0 retries, matching the runtime log). The owner accepted one cron run instead of four over 24 h |
-| 2 | Energi › Översikt: the Användning flow diagram, the month chart's four-part Förbrukning, the Comfort Cloud health alert | [plan](../plans/2026-10-08-heat-pumps-2-overview.md) | [#157](https://github.com/ljukas/videbacken/pull/157) | PR open | |
+| 2 | Energi › Översikt: the Användning flow diagram, the month chart's four-part Förbrukning, the Comfort Cloud health alert | [plan](../plans/2026-10-08-heat-pumps-2-overview.md) | [#157](https://github.com/ljukas/videbacken/pull/157) | checkpoint passed | 2026-10-13: Användning for 2026-02, 2026-09 and 2026-10 equals prod SQL per unit to the Wh (Matsal 454,1 / 55,5 / 38,8, Övervåning 158,0 / 36,0 / 19,8 kWh), laddning equals `/charging`'s Alla, övrigt hus = load − laddning − heat pumps; every month's Förbrukning stack sums to its load; no box moved over 11 period switches at 500 px (prod; the three widths were checked locally in #157); warm `totalMs` median 35 ms against 35.5 before (n = 19 / 20). **Failed:** warm `heatPumpMs` (median 24) exceeds `carMs` (16), the view trigger → step 2b (owner). Owner accepted Översikt; "Övrigt hus" and "Övrigt i huset" become one string. See [checkpoint 3 result](#checkpoint-3-result) |
+| 2b | `heat_pump_month` materialized view (ADR-0027 decision 6's trigger, met at checkpoint 3): the overview's heat pump read from the view, refreshed after each Comfort Cloud run that stored hours; the edge months handled (see [checkpoint 3 result](#checkpoint-3-result)); schema review | — | | needs shaping | |
 | 3 | Energi › Värmepumpar, consumption: page, nav, period control, month and day charts with last year and outdoor temperature, tiles | [plan](../plans/2026-10-08-heat-pumps-3-page.md) | | not started | |
 | 4a | Händelser: `heat_pump_event`, admin CRUD dialog, markers on the day chart | [plan](../plans/2026-10-08-heat-pumps-4a-events.md) | | not started | |
 | 4b | Energisignatur: `signature.ts`, the scatter, the before/after readout | [plan](../plans/2026-10-08-heat-pumps-4b-signature.md) | | not started | |
 
-Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`.
+Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. `needs shaping` means
+the step needs a short design pass (and its plan) before it is built.
 
 ## Owner prerequisites
 
@@ -68,6 +70,12 @@ Each must pass, with the result recorded in the table, before the next step star
    - `rpc timing` for `energy.overview`: `heatPumpMs` logged, the warm `totalMs` within 20 ms of before step 2, and
      `heatPumpMs` below the view trigger (ADR-0027 decision 6).
    - The owner reviews Översikt live (desktop + phone) and accepts it.
+3b. **After step 2b (prod).**
+   - Användning for 2026-01 (the house data's first, partial month), 2026-02 and the current month equals the
+     figures recorded at checkpoint 3 (the current month: prod SQL at the time of the check).
+   - Warm `heatPumpMs` below `carMs` and under 25 ms (ADR-0027 decision 6), warm `totalMs` not above checkpoint
+     3's 35 ms median; at least 15 samples.
+   - The Comfort Cloud run line logs the refresh's time, and a run that stored no hours doesn't refresh.
 4. **After step 3 (prod).**
    - A month view (2026-02) and a day view (one day in 2026-01) equal SQL per unit; last year's outline equals
      2025's sums; the outdoor line equals the hour-weighted mean.
@@ -80,6 +88,50 @@ Each must pass, with the result recorded in the table, before the next step star
      unit is reproduced independently (SQL for the daily sums + a separate least-squares fit) within 0.5
      percentage points.
    - The owner judges whether the readout is plausible and the wording clear.
+
+## Checkpoint 3 result
+
+Run 2026-10-13 on prod (`main` at `889b919`; #157 deployed 2026-10-12 07:50 UTC), read-only: the owner's signed-in
+browser, read-only SQL, `vercel logs`.
+
+- **Figures.** `energy.overview` for 2026 and Användning's table, against SQL over the Stockholm month
+  (`heat_pump_reading`, `house_energy_month`) and `evCharging.overview` with `vehicle: 'all'`. None of the three
+  months is capped (the heat pumps are well under load − laddning). Shares are rounded per row, so October's add up to
+  99 %.
+
+  | Month | Matsal | Övervåning | Laddning | Övrigt hus | Load | Hours (Matsal / Övervåning) |
+  |---|---|---|---|---|---|---|
+  | 2026-02 | 454,075 | 157,996 | 60,091 | 1 236,431 | 1 908,593 | 672 / 672 |
+  | 2026-09 | 55,462 | 36,023 | 211,034 | 644,314 | 946,833 | 720 / 720 |
+  | 2026-10 | 38,790 | 19,760 | 64,478 | 340,610 | 463,638 | 303 / 302 (to 2026-10-13) |
+
+- **Förbrukning stack.** In the month chart's Förbrukning view, each month's bar parts (laddning, Matsal,
+  Övervåning, övrigt i huset) add up to the month's load at one scale, 0.09500 px/kWh, January through October.
+- **No layout shift, 500 px only.** Prod sends `X-Frame-Options: DENY` and the browser window couldn't be resized,
+  so the check ran at the window's 500 px: Summering and Användning kept identical boxes over 11 switches (January,
+  February, March, May, August, September, October, År 2026, Totalt, then February and July again), with no
+  horizontal overflow. #157 checked 1440, 820 and 390 px locally (the same split as Energi's checkpoint 1b).
+- **Timing.** Every `energy/overview` line since the deploy has `heatPumpMs`. Warm means no new connection
+  (`poolOpened` 0) and `queueMs` under 200; 20 read-only requests were sent from the owner's session, 2 s apart.
+
+  | Warm `energy/overview` | n | `totalMs` | `carMs` | `heatPumpMs` | `houseScanMs` |
+  |---|---|---|---|---|---|
+  | Before step 2 (2026-10-07 → #154's deploy) | 20 | 35.5 (27–186) | 15.5 | — | 7 |
+  | After step 2 (2026-10-13 15:00 UTC) | 19 | 35 (32–50) | 16 (14–32) | 24 (22–33) | 3 |
+
+  `totalMs` didn't move because the car and heat pump reads run in parallel: the heat pump read is now the slower
+  of the two in 17 of 19 requests. That is ADR-0027 decision 6's trigger for the `heat_pump_month` view (warm
+  `heatPumpMs` over `carMs`), so the checkpoint's "below the view trigger" criterion failed. The owner chose to add
+  the view now, as **step 2b**, before step 3.
+- **Owner (2026-10-13).** Översikt accepted. "Övrigt i huset" (the chart's legend) and "Övrigt hus" (Användning)
+  become one string, "Övrigt i huset", in a small fix PR. Colours stay in all-time name order.
+- **For step 2b's design.** The overview reads the heat pumps over the house data's range, from the first house
+  reading's Stockholm day (2026-01-20, mid-month) to the newest house bucket. Whole-month view rows can't answer those
+  two edge months. Step 3's plan also reads a part month, last year's month up to the same moment a year ago
+  (`lastYearSoFar`). `heat_pump_reading` has no `hour_start` index (the 1a schema review), so a raw read of an edge
+  range scans the table unless it goes unit by unit through the primary key. Decide between per-month rows plus
+  per-unit edge reads, per-day rows (which step 3's day chart could also read), or another shape, with `EXPLAIN`
+  on a copy of prod's readings.
 
 ## Log
 
@@ -136,3 +188,7 @@ Each must pass, with the result recorded in the table, before the next step star
   colour by all-time name order. Carried forward to **step 3**: `heatPumpRead.ts` must use the same expected-hours
   rule, including the removed-unit clip; reuse or extract `heatPumpPeriods`'s unit end from `energyOverview.ts`
   rather than re-deriving it.
+- 2026-10-13: checkpoint 3 (prod). The figures, the Förbrukning stack, the layout (at 500 px) and `totalMs` passed,
+  and the owner accepted Översikt. Warm `heatPumpMs` (median 24 ms) exceeds `carMs` (16 ms), ADR-0027 decision 6's
+  trigger, so the owner added **step 2b**, the `heat_pump_month` view, before step 3. The two "övrigt" labels become
+  one string ("Övrigt i huset") in a separate fix PR. See [checkpoint 3 result](#checkpoint-3-result).
