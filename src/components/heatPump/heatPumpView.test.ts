@@ -101,8 +101,18 @@ describe('tiles', () => {
 
   test('a 48-hour stall in the running month hides the change for both units and names the gap', () => {
     const p = monthsPayload()
-    // September so far: 312 of 360 expected hours (the read model counts a stall to `now`, Task 3); last year's 360 of 360.
-    p.months = p.months.map((c) => (c.month === 9 ? { ...c, hours: 312, expectedHours: 360 } : c))
+    // As the read model sends it: September so far 312 of 360 expected hours (a stall counts to `now`, Task 3), its
+    // span 312 (it runs to the newest stored hour), and last year cut at that same hour: 312 of 312. Only the
+    // expected-hours gate sees the stall.
+    p.months = p.months.map((c) =>
+      c.month === 9 ? { ...c, hours: 312, expectedHours: 360, spanHours: 312 } : c,
+    )
+    p.lastYearSoFar = (p.lastYearSoFar ?? []).map((c) => ({
+      ...c,
+      hours: 312,
+      expectedHours: 312,
+      spanHours: 312,
+    }))
     const t = view({
       months: p,
       days: daysPayload(2026, 9, 13),
