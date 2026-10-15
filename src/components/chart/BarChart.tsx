@@ -168,12 +168,22 @@ export function BarChart<Row>({
   const cursor = useRef<number | null>(null)
   // The cursor's category as it named it: when the rows change under it (a selected month's days in place of the
   // year's months), the card, outline, announcement and cursor point at a category that is gone, so they close below.
-  // A refetch of the same categories keeps them; fewer rows clamp (onKeyDown). Never a remount: focus stays.
-  const [cursorAt, setCursorAt] = useState<{ index: number; category: string } | null>(null)
+  // A refetch of the same categories keeps them; fewer of them (the first category unchanged) clamp (onKeyDown).
+  // Fewer rows that start elsewhere (Totalt's months → a month's days, the cursor past the last day) are other rows
+  // too. Never a remount: focus stays.
+  const [cursorAt, setCursorAt] = useState<{
+    index: number
+    category: string
+    first: string
+  } | null>(null)
   const pin = (i: number) => {
     cursor.current = i
-    if (cursorAt?.index !== i || cursorAt.category !== category(rows[i]))
-      setCursorAt({ index: i, category: category(rows[i]) })
+    if (
+      cursorAt?.index !== i ||
+      cursorAt.category !== category(rows[i]) ||
+      cursorAt.first !== category(rows[0])
+    )
+      setCursorAt({ index: i, category: category(rows[i]), first: category(rows[0]) })
   }
   // The outlined category (selection only): where the pointer or the keys
   // are. From the keyboard one that can't be selected is outlined dashed, so
@@ -183,8 +193,9 @@ export function BarChart<Row>({
   const count = rows.length
   if (
     cursorAt !== null &&
-    cursorAt.index < count &&
-    category(rows[cursorAt.index]) !== cursorAt.category
+    (cursorAt.index < count
+      ? category(rows[cursorAt.index]) !== cursorAt.category
+      : count === 0 || category(rows[0]) !== cursorAt.first)
   ) {
     setCursorAt(null)
     popover.hide()

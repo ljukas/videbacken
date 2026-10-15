@@ -853,6 +853,33 @@ test('rows with other categories (a month selected, its days shown) close the ca
   await vi.waitFor(() => expect(tooltipText()).toBe('1A 0 B 1'))
 })
 
+test('other, fewer rows than the selected index (Totalt past 31 months → a month) start the walk over too', async () => {
+  const queryClient = makeTestQueryClient()
+  const days: Row[] = [
+    { label: '1', a: 0, b: 1 },
+    { label: '2', a: 1, b: 1 },
+  ]
+  const ui = (shown: Row[]) => (
+    <div style={{ width: 480 }}>
+      <button type="button">before</button>
+      <BarChart {...base} {...withSelection(null, vi.fn())} rows={shown} />
+    </div>
+  )
+  const { screen } = await renderWithProviders(ui(rows), { queryClient })
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{End}{Enter}') // April, index 3: past the two new rows
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 30 B 10'))
+  await screen.rerender(<QueryClientProvider client={queryClient}>{ui(days)}</QueryClientProvider>)
+  await vi.waitFor(() => expect(bars(screen.container).length).toBe(3)) // day 1's b, day 2's a and b
+  await settle()
+  expect(tooltipText()).toBe('')
+  expect(outline(screen.container)).toBeNull()
+  // Day 1, not a step from the clamped last day.
+  await userEvent.keyboard('{ArrowRight}')
+  await vi.waitFor(() => expect(tooltipText()).toBe('1A 0 B 1'))
+})
+
 test('a hatched series fills its bars with a pattern in the chart and hatches its legend swatch', async () => {
   const { screen } = await render({
     series: [
