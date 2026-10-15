@@ -166,12 +166,31 @@ export function BarChart<Row>({
   // from the popover, which stays closed on a category without a tooltip: the
   // keyboard walk must step over it, not restart at the first category.
   const cursor = useRef<number | null>(null)
+  // The cursor's category as it named it: when the rows change under it (a selected month's days in place of the
+  // year's months), the card, outline, announcement and cursor point at a category that is gone, so they close below.
+  // A refetch of the same categories keeps them; fewer rows clamp (onKeyDown). Never a remount: focus stays.
+  const [cursorAt, setCursorAt] = useState<{ index: number; category: string } | null>(null)
+  const pin = (i: number) => {
+    cursor.current = i
+    if (cursorAt?.index !== i || cursorAt.category !== category(rows[i]))
+      setCursorAt({ index: i, category: category(rows[i]) })
+  }
   // The outlined category (selection only): where the pointer or the keys
   // are. From the keyboard one that can't be selected is outlined dashed, so
   // focus stays visible; the pointer outlines only selectable ones; never touch.
   const [outline, setOutline] = useState<{ index: number; keyboard: boolean } | null>(null)
   const at = (i: number, key: string) => value(rows[i], key)
   const count = rows.length
+  if (
+    cursorAt !== null &&
+    cursorAt.index < count &&
+    category(rows[cursorAt.index]) !== cursorAt.category
+  ) {
+    setCursorAt(null)
+    popover.hide()
+    setAnnounced(null)
+    setOutline(null)
+  }
   // A label over the tallest bar needs room above the plot.
   const marginTop = barLabel ? MARGIN.top + tickPx + 6 : MARGIN.top
   const tickLabel = { fill: 'var(--muted-foreground)', fontSize: tickPx }
@@ -274,7 +293,7 @@ export function BarChart<Row>({
     }
   }
   const open = (i: number) => {
-    cursor.current = i
+    pin(i)
     if (tooltip(rows[i], i) === null) return popover.hide()
     const { left, top } = anchor(i)
     popover.show(i, left, top)
@@ -291,7 +310,7 @@ export function BarChart<Row>({
     if (i === null) return
     if (selection && e.pointerType === 'touch') {
       // A tap selects (onClick) and shows nothing: the page shows the selection.
-      cursor.current = i
+      pin(i)
       if (popover.open) popover.hide()
       if (outline !== null) setOutline(null)
       return
@@ -314,6 +333,7 @@ export function BarChart<Row>({
 
   const close = () => {
     cursor.current = null
+    setCursorAt(null)
     popover.hide()
     setAnnounced(null)
     setOutline(null)
@@ -332,8 +352,8 @@ export function BarChart<Row>({
     }
     if (count === 0) return
     const last = count - 1
-    // Clamped: a refetch may have returned fewer categories since.
-    const current = Math.min(cursor.current ?? -1, last)
+    // Clamped: a refetch may have returned fewer categories since. Other rows start the walk over (above).
+    const current = cursorAt === null ? -1 : Math.min(cursor.current ?? -1, last)
     const next =
       e.key === 'ArrowRight'
         ? current < 0

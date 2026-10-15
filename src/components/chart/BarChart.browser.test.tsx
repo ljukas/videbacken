@@ -823,6 +823,36 @@ test('fewer rows after a refetch never let Enter select a missing category', asy
   expect(onSelect).not.toHaveBeenCalled()
 })
 
+test('rows with other categories (a month selected, its days shown) close the card and the announcement; focus stays', async () => {
+  const queryClient = makeTestQueryClient()
+  const days: Row[] = Array.from({ length: 6 }, (_, i) => ({ label: String(i + 1), a: i, b: 1 }))
+  const ui = (shown: Row[]) => (
+    <div style={{ width: 480 }}>
+      <button type="button">before</button>
+      <BarChart {...base} {...withSelection(null, vi.fn())} rows={shown} />
+    </div>
+  )
+  const { screen } = await renderWithProviders(ui(rows), { queryClient })
+  await screen.getByRole('button', { name: 'before' }).click()
+  await userEvent.tab()
+  await userEvent.keyboard('{End}{Enter}') // April selected
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 30 B 10'))
+  const announce = () => screen.container.querySelector('[data-chart-announce]')?.textContent
+  expect(announce()).toBe('aprA 30 B 10')
+  const focused = document.activeElement
+  // Same tree (provider included): the page swaps the rows in the same chart.
+  await screen.rerender(<QueryClientProvider client={queryClient}>{ui(days)}</QueryClientProvider>)
+  await vi.waitFor(() => expect(bars(screen.container).length).toBeGreaterThan(4))
+  await settle()
+  expect(tooltipText()).toBe('') // not day 4's card
+  expect(announce()).toBe('')
+  expect(outline(screen.container)).toBeNull()
+  expect(document.activeElement).toBe(focused)
+  // The walk starts over on the new rows.
+  await userEvent.keyboard('{ArrowRight}')
+  await vi.waitFor(() => expect(tooltipText()).toBe('1A 0 B 1'))
+})
+
 test('a hatched series fills its bars with a pattern in the chart and hatches its legend swatch', async () => {
   const { screen } = await render({
     series: [
