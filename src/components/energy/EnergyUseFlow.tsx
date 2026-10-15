@@ -79,7 +79,10 @@ function UseTable({ sums: s, f }: { sums: PeriodSums; f: EnergyFigures }) {
       key: `hp:${u.id}`,
       cells: [m.energy_heat_pump_name({ name: u.name }), kwh(u.kwh), share(u.share)],
     })),
-    { key: 'house', cells: [m.energy_use_house(), kwh(f.restOfHouse), share(f.restOfHouseShare)] },
+    {
+      key: 'house',
+      cells: [m.energy_series_house(), kwh(f.restOfHouse), share(f.restOfHouseShare)],
+    },
     {
       key: 'load',
       cells: [m.energy_tile_load(), kwh(s.loadKwh), s.loadKwh > 0 ? formatShare(1) : '—'],

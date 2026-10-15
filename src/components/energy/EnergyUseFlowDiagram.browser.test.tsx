@@ -65,7 +65,7 @@ test('one node per consumer: laddning, each heat pump by name, övrigt hus', asy
   const { screen } = await draw(sums())
   expect(nodeKeys(screen.container)).toEqual(['load', 'car', 'hp:hp-a', 'hp:hp-b', 'house'])
   await expect.element(screen.getByText(m.energy_heat_pump_name({ name: 'Matsal' }))).toBeVisible()
-  await expect.element(screen.getByText(m.energy_use_house())).toBeVisible()
+  await expect.element(screen.getByText(m.energy_series_house())).toBeVisible()
   await expect.element(screen.getByText(m.energy_tile_load())).toBeVisible()
 })
 

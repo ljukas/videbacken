@@ -84,7 +84,7 @@ test('the table: consumer, energy and share, with the total', async () => {
   const row = (name: string) =>
     table.getByRole('row', { name: new RegExp(`^${name}`) }).element().textContent ?? ''
   expect(row(m.energy_heat_pump_name({ name: 'Matsal' }))).toContain(formatShare(150 / 900))
-  expect(row(m.energy_use_house())).toContain(formatOneDecimal(390))
+  expect(row(m.energy_series_house())).toContain(formatOneDecimal(390))
   expect(row(m.energy_tile_load())).toContain(formatOneDecimal(900))
 })
 
