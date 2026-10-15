@@ -26,12 +26,15 @@ export function TooltipRow({
   color,
   strong = false,
   share,
+  outline,
   children,
 }: {
   label: string
   color?: string
   strong?: boolean
   share?: string
+  /** An outlined swatch (an outline bar series). */
+  outline?: boolean
   children?: React.ReactNode
 }) {
   return (
@@ -41,7 +44,7 @@ export function TooltipRow({
           <span
             aria-hidden
             className="size-2 shrink-0 rounded-[2px]"
-            style={{ background: color }}
+            style={outline ? { boxShadow: `inset 0 0 0 1.5px ${color}` } : { background: color }}
           />
         ) : null}
         {label}
@@ -69,7 +72,13 @@ export function ChartLegend({
   items,
   className,
 }: {
-  items: readonly { key: string; label: string; color: string; pattern?: 'hatch' }[]
+  items: readonly {
+    key: string
+    label: string
+    color: string
+    pattern?: 'hatch'
+    outline?: boolean
+  }[]
   className?: string
 }) {
   return (
@@ -82,9 +91,11 @@ export function ChartLegend({
           <div
             className="h-2 w-2 shrink-0 rounded-[2px]"
             style={
-              item.pattern === 'hatch'
-                ? { backgroundImage: HATCH_SWATCH(item.color) }
-                : { backgroundColor: item.color }
+              item.outline
+                ? { boxShadow: `inset 0 0 0 1.5px ${item.color}` }
+                : item.pattern === 'hatch'
+                  ? { backgroundImage: HATCH_SWATCH(item.color) }
+                  : { backgroundColor: item.color }
             }
           />
           {item.label}

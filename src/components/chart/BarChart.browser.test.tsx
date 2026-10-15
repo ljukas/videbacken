@@ -14,6 +14,7 @@ import {
   hoverBetween,
   legend,
   legendLabels,
+  lineDots,
   moveAt,
   outline,
   parkPointer,
@@ -918,4 +919,61 @@ test('barLabel drawn labels never overlap, and the tallest is always drawn', asy
     (Math.min(...spans.map((b) => b.left)) + Math.max(...spans.map((b) => b.right))) / 2
   const last = boxes[boxes.length - 1]
   expect(Math.abs((last.left + last.right) / 2 - centre)).toBeLessThan(1)
+})
+
+const rightTicks = (root: ParentNode) =>
+  [...root.querySelectorAll('[data-axis="y-right"] .visx-axis-tick')].map(
+    (t) => t.textContent ?? '',
+  )
+
+test('a right-axis line gets its own scale and axis; the bars keep theirs', async () => {
+  const { screen } = await render({
+    series: [{ key: 'a', label: 'Serie A', color: 'red' }],
+    // b: 5, –, 0, 10 against a: 10, –, 0, 30. On the left axis b would sit at a third of the plot.
+    line: { key: 'b', label: 'Temp', color: 'blue', axis: 'right', tickFormat: (v) => `${v}°` },
+  })
+  await vi.waitFor(() => expect(rightTicks(screen.container).length).toBeGreaterThan(1))
+  expect(rightTicks(screen.container).every((t) => t.endsWith('°'))).toBe(true)
+  // April's dot (b = 10, the line's top) sits level with April's bar top (a = 30, the bars' top).
+  const aprBar = bars(screen.container).find((b) => b.getAttribute('data-index') === '3')
+  const dots = lineDots(screen.container)
+  expect(dots).toHaveLength(3)
+  const aprDot = dots[dots.length - 1]
+  expect(Math.abs(centre(aprDot).y - (aprBar?.getBoundingClientRect().top ?? 0))).toBeLessThan(2)
+})
+
+test('the right axis labels stay inside the chart', async () => {
+  const { screen } = await render({
+    line: { key: 'b', label: 'Temp', color: 'blue', axis: 'right', tickFormat: (v) => `${v} °C` },
+  })
+  await vi.waitFor(() => expect(rightTicks(screen.container).length).toBeGreaterThan(1))
+  const box = screen.container.querySelector('[data-chart="bar"]')?.getBoundingClientRect()
+  for (const t of screen.container.querySelectorAll('[data-axis="y-right"] text')) {
+    expect(t.getBoundingClientRect().right).toBeLessThanOrEqual((box?.right ?? 0) + 0.5)
+  }
+})
+
+test('without axis: "right" there is no right axis', async () => {
+  const { screen } = await render({ line: { key: 'b', label: 'Serie B', color: 'blue' } })
+  await vi.waitFor(() => expect(lineDots(screen.container).length).toBeGreaterThan(0))
+  expect(screen.container.querySelector('[data-axis="y-right"]')).toBeNull()
+})
+
+test('an outline series draws unfilled bars in its colour and an outlined legend swatch', async () => {
+  const { screen } = await render({
+    series: [
+      { key: 'a', label: 'Serie A', color: 'red', stack: 's' },
+      { key: 'b', label: 'Förra året', color: 'gray', outline: true },
+    ],
+  })
+  await vi.waitFor(() => expect(seriesBars(screen.container, 1).length).toBeGreaterThan(0))
+  const bar = seriesBars(screen.container, 1)[0]
+  expect(bar.getAttribute('fill')).toBe('none')
+  expect(bar.getAttribute('stroke')).toBe('gray')
+  // Beside the stack, not on it: a slot of its own.
+  const a = seriesBars(screen.container, 0)[0].getBoundingClientRect()
+  expect(bar.getBoundingClientRect().left).toBeGreaterThanOrEqual(a.right - 0.5)
+  const swatch = screen.container.querySelector<HTMLElement>('[data-legend-item="b"] > div')
+  expect(swatch?.style.boxShadow).toContain('inset')
+  expect(swatch?.style.backgroundColor).toBe('')
 })
