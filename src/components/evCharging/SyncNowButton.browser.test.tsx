@@ -20,6 +20,7 @@ vi.mock('~/lib/orpc/client', () => ({
       key: () => ['evCharging'],
     },
     energy: { key: () => ['energy'] },
+    heatPump: { key: () => ['heatPump'] },
   },
 }))
 vi.mock('sonner', () => ({ toast: toastMock }))
@@ -290,7 +291,7 @@ test('a Comfort Cloud success also invalidates the energy and heat pump queries'
   await click(screen)
   await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['evCharging'] }))
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['energy'] })
-  expect(invalidate).toHaveBeenCalledWith({ queryKey: [['heatPump'], {}] })
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['heatPump'] })
 })
 
 test('a failed Comfort Cloud sync leaves the energy and heat pump queries alone', async () => {
@@ -301,7 +302,7 @@ test('a failed Comfort Cloud sync leaves the energy and heat pump queries alone'
   await click(screen)
   await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['evCharging'] }))
   expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['energy'] })
-  expect(invalidate).not.toHaveBeenCalledWith({ queryKey: [['heatPump'], {}] })
+  expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['heatPump'] })
 })
 
 test('a Comfort Cloud retry reports not_configured with its own copy', async () => {

@@ -7,12 +7,6 @@ import { integrationErrorMessage } from '~/lib/integrationHealthMessage'
 import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 
-// oRPC's TanStack keys are `[path, { input?, type? }]`, and TanStack matches a
-// key prefix partially, so `[['heatPump'], {}]` matches every `heatPump.*`
-// query. Step 3 adds that router: until then nothing matches (harmless), and
-// `orpc.heatPump.key()` doesn't type-check yet — switch to it then.
-const HEAT_PUMP_QUERY_PREFIX = [['heatPump'], {}]
-
 type SyncSource = IntegrationSource
 type SyncResult = {
   outcome: 'ok' | 'skipped' | 'failed' | 'error'
@@ -190,9 +184,9 @@ export function useSyncNow() {
         switch (result.outcome) {
           case 'ok':
             toast.success(m.charging_sync_heat_pumps_ok())
-            // energy.overview carries heat pump data (step 2); heatPump.* is step 3's page.
+            // energy.overview carries heat pump data (step 2); heatPump.* is the Värmepumpar page (step 3).
             void queryClient.invalidateQueries({ queryKey: orpc.energy.key() })
-            void queryClient.invalidateQueries({ queryKey: HEAT_PUMP_QUERY_PREFIX })
+            void queryClient.invalidateQueries({ queryKey: orpc.heatPump.key() })
             return
           case 'skipped':
             toast.info(m.charging_sync_skipped())
