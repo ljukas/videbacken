@@ -275,23 +275,44 @@ test('from a year to a month whose days are still loading: the year stays, dimme
   expect(seriesBars(screen.container, 2)).toHaveLength(12) // the year's chart, dimmed
 })
 
+const seedEmpty = (qc: QueryClient) =>
+  seedYear(
+    qc,
+    monthsPayload({
+      units: [],
+      availableYears: [2026],
+      firstReadingDay: null,
+      monthsWithReadings: [],
+      newestMonth: null,
+      months: [],
+      lastYear: [],
+      lastYearSoFar: null,
+    }),
+  )
+
 test('no readings: the empty state', async () => {
-  const { screen } = await renderPage('/energy/heat-pumps', (qc) =>
-    seedYear(
-      qc,
-      monthsPayload({
-        units: [],
-        availableYears: [2026],
-        firstReadingDay: null,
-        monthsWithReadings: [],
-        newestMonth: null,
-        months: [],
-        lastYear: [],
-        lastYearSoFar: null,
-      }),
-    ),
+  const { screen } = await renderPage('/energy/heat-pumps', seedEmpty)
+  await expect.element(screen.getByText(m.heat_pump_empty_title())).toBeVisible()
+})
+
+test('no readings: the events are never asked for', async () => {
+  const { screen, qc } = await renderPage('/energy/heat-pumps', seedEmpty, {}, { role: 'admin' })
+  await expect.element(screen.getByText(m.heat_pump_empty_title())).toBeVisible()
+  const state = qc.getQueryState(heatPumpEventsQuery.queryKey)
+  expect(state?.fetchStatus ?? 'idle').toBe('idle')
+  expect(state?.status ?? 'pending').toBe('pending')
+})
+
+test("no readings: an admin's event dialog link opens nothing and is cleaned", async () => {
+  const { screen, router } = await renderPage(
+    '/energy/heat-pumps?dialog=eventNew',
+    seedEmpty,
+    {},
+    { role: 'admin' },
   )
   await expect.element(screen.getByText(m.heat_pump_empty_title())).toBeVisible()
+  await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
 })
 
 test('a failed read: the heading stays, the alert shows', async () => {
@@ -410,6 +431,31 @@ test('a deep link to a deleted event is cleaned', async () => {
   )
   await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
   expect(router.state.location.search).not.toHaveProperty('eventId')
+})
+
+test('an edit link waits for a refetching list before judging its event gone', async () => {
+  let resolve: (events: unknown) => void = () => {}
+  const { screen, router } = await renderPage(
+    '/energy/heat-pumps?dialog=eventEdit&eventId=e1',
+    (qc) => {
+      seedPage([])(qc) // a stale list from before e1 was logged
+      void qc.fetchQuery({
+        queryKey: eventsKey,
+        queryFn: () => new Promise((r) => (resolve = r)) as never,
+        staleTime: 0,
+      })
+    },
+    {},
+    { role: 'admin' },
+  )
+  await expect
+    .element(screen.getByRole('heading', { name: m.heat_pump_events_title() }))
+    .toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'eventEdit', eventId: 'e1' })
+  resolve([SERVICE])
+  await expect
+    .element(screen.getByRole('dialog', { name: m.heat_pump_event_dialog_edit_title() }))
+    .toBeVisible()
 })
 
 test('events still loading: the card is a skeleton, never "Inga händelser ännu"', async () => {

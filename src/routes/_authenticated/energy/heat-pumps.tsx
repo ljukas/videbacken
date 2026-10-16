@@ -68,7 +68,7 @@ export const Route = createFileRoute('/_authenticated/energy/heat-pumps')({
   // useHeatPumpPeriod does: the server awaits that read first (one more round trip, server only); the client uses
   // what the cache holds, else the period asked for or the current month. The events (step 4a) are deferred: the
   // card is below the fold and the chart's markers aren't first paint. Read with the days, so a page the cache
-  // already knows is empty (no card) doesn't ask for them.
+  // already knows is empty (no card) doesn't ask for them; the page's own read waits on the same check.
   loader: async ({ context: { queryClient }, location }) => {
     const requested = periodOfSearch(energySearchSchema.parse(location.search))
     const now = stockholmYearMonth(Date.now())
@@ -125,14 +125,23 @@ function HeatPumpsPage() {
   })
   // The units in name order (= colour order): the months payload's, present in every period view.
   const units = h.shown?.units
-  const eventsResult = useQuery(heatPumpEventsQuery)
+  // No readings: the empty state, no card, no chart, no dialogs (`units` is then `[]`, still truthy).
+  const empty = h.months?.firstReadingDay === null
+  // Not on the empty page; while the months load, read alongside them.
+  const eventsResult = useQuery({ ...heatPumpEventsQuery, enabled: !empty })
   const events = eventsResult.data
   const selectedEvent = eventId === undefined ? undefined : events?.find((e) => e.id === eventId)
-  // A dialog that can't show (a member's admin link; an event that no longer exists, judged once the events are
-  // known) is cleared from the URL instead of lingering there.
+  // A dialog that can't show (a member's admin link; any link on the empty page; an event that no longer exists,
+  // judged once the events are known and not refetching, so a stale cached list doesn't clean a valid link) is
+  // cleared from the URL instead of lingering there.
   const dialogUnavailable =
     dialog !== undefined &&
-    (!isAdmin || (dialog !== 'eventNew' && events !== undefined && selectedEvent === undefined))
+    (!isAdmin ||
+      empty ||
+      (dialog !== 'eventNew' &&
+        events !== undefined &&
+        !eventsResult.isFetching &&
+        selectedEvent === undefined))
   useEffect(() => {
     // `replace`, so Back doesn't return to the bad URL (and bounce again).
     if (dialogUnavailable) {
@@ -144,11 +153,10 @@ function HeatPumpsPage() {
       })
     }
   }, [dialogUnavailable, navigate])
+  const dialogsMounted = isAdmin && units !== undefined && !empty
   const eventDialogOpen =
-    isAdmin &&
-    units !== undefined &&
-    (isOpen('eventNew') || (isOpen('eventEdit') && selectedEvent !== undefined))
-  const deleteEventOpen = isAdmin && isOpen('eventDelete') && selectedEvent !== undefined
+    dialogsMounted && (isOpen('eventNew') || (isOpen('eventEdit') && selectedEvent !== undefined))
+  const deleteEventOpen = dialogsMounted && isOpen('eventDelete') && selectedEvent !== undefined
   const closeDialog = (o: boolean) => {
     if (!o) void close()
   }
@@ -168,7 +176,7 @@ function HeatPumpsPage() {
         />
       ) : null}
       {/* A skeleton is not an empty state (ADR-0016): only data says there are no readings. */}
-      {h.months?.firstReadingDay === null ? (
+      {empty ? (
         <HeatPumpEmpty />
       ) : (
         // The same element whatever the state, so the server HTML and the first client render agree.
@@ -231,7 +239,7 @@ function HeatPumpsPage() {
           </SectionSkeleton>
         </div>
       )}
-      {isAdmin && units ? (
+      {dialogsMounted ? (
         <>
           <LazyDialogMount open={eventDialogOpen}>
             <HeatPumpEventDialog
