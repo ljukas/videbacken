@@ -1,3 +1,5 @@
+import { extent, sum } from 'd3-array'
+import { linearRegression } from 'simple-statistics'
 import { addDays, stockholmDayBounds } from '~/lib/time/stockholm'
 import type { HeatPumpEventDto } from './events'
 import { HEAT_PUMP_DAYS_MAX } from './period'
@@ -177,4 +179,118 @@ export function signatureChunks(
     chunks.push({ from: start, to: end < to ? end : to })
   }
   return chunks
+}
+
+type Xy = { deltaT: number; kwh: number }
+
+/** OLS kWh = a + b·ΔT. simple-statistics returns { m: slope, b: intercept }: mapped, never passed through. */
+function fitOf(days: readonly Xy[]): SignatureFit {
+  const { m, b } = linearRegression(days.map((d) => [d.deltaT, d.kwh]))
+  return { a: b, b: m }
+}
+
+const predict = (fit: SignatureFit, deltaT: number) => fit.a + fit.b * deltaT
+
+/** [min, max] ΔT of a non-empty set; null for an empty one. */
+function rangeOf(days: readonly Xy[]): [number, number] | null {
+  const [lo, hi] = extent(days, (d) => d.deltaT)
+  return lo === undefined || hi === undefined ? null : [lo, hi]
+}
+
+/**
+ * The before fit's residual standard deviation, √(Σ residual² ÷ (n − 2)): the line
+ * spent two degrees of freedom (the OLS standard error of the regression).
+ */
+function residualSd(days: readonly Xy[], fit: SignatureFit): number {
+  return Math.sqrt(sum(days, (d) => (d.kwh - predict(fit, d.deltaT)) ** 2) / (days.length - 2))
+}
+
+/**
+ * The signature around one event for one unit (spec "Energisignatur"). Before set:
+ * qualifying days after the unit's previous event (or from the first reading) and
+ * before this one, the latest 90. After set: qualifying days after this event and
+ * before the unit's next one. Previous / next are strictly earlier / later days, so
+ * a second event on the same day cuts neither window (its day is an event day anyway).
+ */
+export function energySignature({
+  days,
+  events,
+  heatPumpId,
+  eventId,
+}: {
+  days: readonly SignatureDay[]
+  events: readonly HeatPumpEventDto[]
+  heatPumpId: string
+  eventId: string
+}): SignatureResult {
+  const own = eventsForUnit(events, heatPumpId)
+  const event = own.find((e) => e.id === eventId)
+  if (!event) throw new RangeError(`Event ${eventId} does not apply to heat pump ${heatPumpId}`)
+  const on = event.occurredOn
+  const previous = own.filter((e) => e.occurredOn < on).at(-1)?.occurredOn ?? null
+  const next = own.find((e) => e.occurredOn > on)?.occurredOn ?? null
+
+  const qualifying = qualifyingDays(days, new Set(own.map((e) => e.occurredOn))).sort((p, q) =>
+    p.day.localeCompare(q.day),
+  )
+  const before = qualifying
+    .filter((d) => d.day < on && (previous === null || d.day > previous))
+    .slice(-SIGNATURE_MAX_BEFORE_DAYS)
+  const after = qualifying.filter((d) => d.day > on && (next === null || d.day < next))
+
+  const range = rangeOf(before)
+  // No extrapolation: an after-day outside the before set's ΔT range isn't predicted.
+  const outside = (d: Xy) => range !== null && (d.deltaT < range[0] || d.deltaT > range[1])
+  const points: SignaturePoint[] = [
+    ...before.map((d) => ({
+      day: d.day,
+      deltaT: d.deltaT,
+      kwh: d.kwh,
+      set: 'before' as const,
+      extrapolated: false,
+    })),
+    ...after.map((d) => ({
+      day: d.day,
+      deltaT: d.deltaT,
+      kwh: d.kwh,
+      set: 'after' as const,
+      extrapolated: outside(d),
+    })),
+  ]
+
+  if (
+    range === null ||
+    before.length < SIGNATURE_MIN_DAYS ||
+    range[1] - range[0] < SIGNATURE_MIN_SPAN_C
+  )
+    return { state: 'not_enough_before', before: before.length, points }
+  const fit = fitOf(before)
+  const counted = after.filter((d) => !outside(d))
+  if (counted.length < SIGNATURE_MIN_DAYS)
+    return {
+      state: 'not_enough_after',
+      after: counted.length,
+      needed: SIGNATURE_MIN_DAYS,
+      points,
+      fit,
+    }
+
+  const predicted = sum(counted, (d) => predict(fit, d.deltaT))
+  // A before line that predicts no consumption over these ΔT doesn't describe heating: no ratio.
+  if (!(predicted > 0)) return { state: 'not_enough_before', before: before.length, points }
+  const actual = sum(counted, (d) => d.kwh)
+  const afterRange = rangeOf(counted)
+  return {
+    state: 'ok',
+    points,
+    fit,
+    afterFit:
+      afterRange !== null && afterRange[1] - afterRange[0] >= SIGNATURE_MIN_AFTER_LINE_SPAN_C
+        ? fitOf(counted)
+        : null,
+    change: (actual - predicted) / predicted,
+    margin: (1.96 * residualSd(before, fit) * Math.sqrt(counted.length)) / predicted,
+    beforeDays: before.length,
+    afterDays: counted.length,
+  }
 }
