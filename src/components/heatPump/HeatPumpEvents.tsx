@@ -50,7 +50,8 @@ export function HeatPumpEvents({ events, units, admin }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
+        {/* As the Förbrukning card's heading (EnergySummaryCard), not CardTitle's default size. */}
+        <CardTitle className="font-semibold text-lg">
           <h2>{m.heat_pump_events_title()}</h2>
         </CardTitle>
         <CardDescription>{m.heat_pump_events_description()}</CardDescription>
@@ -102,6 +103,7 @@ export function HeatPumpEvents({ events, units, admin }: Props) {
             {events.map((e) => {
               const kind = eventKindLabel(e.kind)
               const date = formatDay(e.occurredOn)
+              const unit = eventUnitLabel(e.heatPumpId, units)
               return (
                 <li key={e.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -110,7 +112,7 @@ export function HeatPumpEvents({ events, units, admin }: Props) {
                       <span aria-hidden className="text-muted-foreground">
                         ·
                       </span>
-                      <span>{eventUnitLabel(e.heatPumpId, units)}</span>
+                      <span>{unit}</span>
                       <Badge variant="secondary">{kind}</Badge>
                     </div>
                     {e.note ? (
@@ -128,19 +130,23 @@ export function HeatPumpEvents({ events, units, admin }: Props) {
                           variant="ghost"
                           size="icon-sm"
                           className="pointer-coarse:size-11 shrink-0"
-                          aria-label={m.heat_pump_event_actions_for({ kind, date })}
+                          aria-label={m.heat_pump_event_actions_for({ kind, date, unit })}
                           data-no-skeleton
                         >
                           <MoreVerticalIcon />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => admin.onEdit(e.id)}>
+                        <DropdownMenuItem
+                          className="pointer-coarse:min-h-11"
+                          onSelect={() => admin.onEdit(e.id)}
+                        >
                           <PencilIcon />
                           {m.common_edit()}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
+                          className="pointer-coarse:min-h-11"
                           onSelect={() => admin.onDelete(e.id)}
                         >
                           <Trash2Icon />

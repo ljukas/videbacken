@@ -1048,7 +1048,7 @@
   "heat_pump_event_unit_both": "Båda",
   "heat_pump_event_unit_all": "Alla",
   "heat_pump_event_unit_unknown": "Okänd värmepump",
-  "heat_pump_event_actions_for": "Åtgärder för {kind} den {date}",
+  "heat_pump_event_actions_for": "Åtgärder för {kind} den {date} ({unit})",
   "heat_pump_event_dialog_new_title": "Ny händelse",
   "heat_pump_event_dialog_edit_title": "Redigera händelse",
   "heat_pump_event_dialog_description": "Händelsen markeras i dagdiagrammet.",

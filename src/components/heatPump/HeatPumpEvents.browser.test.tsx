@@ -46,6 +46,29 @@ test('a member gets no add button and no row actions', async () => {
   expect(screen.getByRole('button').elements()).toHaveLength(0)
 })
 
+test("two events of one kind on one day tell their menus apart by unit; the heading matches Förbrukning's", async () => {
+  const { screen } = await renderWithProviders(
+    <HeatPumpEvents
+      events={[
+        { ...SERVICE, id: 'e3', heatPumpId: 'a' },
+        { ...SERVICE, id: 'e4', heatPumpId: 'b' },
+      ]}
+      units={UNITS}
+      admin={admin()}
+    />,
+  )
+  const name = (unit: string) =>
+    m.heat_pump_event_actions_for({ kind: 'Service', date: formatDay('2026-10-08'), unit })
+  await expect.element(screen.getByRole('button', { name: name('Matsal') })).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: name('Övervåning') })).toBeVisible()
+  // As EnergySummaryCard's h2 (no app CSS here: pin the classes).
+  const title = screen.getByRole('heading', { name: m.heat_pump_events_title() }).element()
+  const classes = title.closest('[data-slot="card-title"]')?.className.split(' ') ?? []
+  expect(classes).toEqual(expect.arrayContaining(['font-semibold', 'text-lg']))
+  expect(classes).not.toContain('font-medium')
+  expect(classes).not.toContain('text-base')
+})
+
 test('an admin adds from the header and acts on a row from its menu', async () => {
   const actions = admin()
   const { screen } = await renderWithProviders(
@@ -55,9 +78,17 @@ test('an admin adds from the header and acts on a row from its menu', async () =
   expect(actions.onNew).toHaveBeenCalledOnce()
   const menu = () =>
     screen.getByRole('button', {
-      name: m.heat_pump_event_actions_for({ kind: 'Service', date: formatDay('2026-10-08') }),
+      name: m.heat_pump_event_actions_for({
+        kind: 'Service',
+        date: formatDay('2026-10-08'),
+        unit: m.heat_pump_event_unit_both(),
+      }),
     })
   await menu().click()
+  // No app CSS in browser tests: pin the touch-target class.
+  for (const item of screen.getByRole('menuitem').elements()) {
+    expect(item.className).toContain('pointer-coarse:min-h-11')
+  }
   await screen.getByRole('menuitem', { name: m.common_edit() }).click()
   expect(actions.onEdit).toHaveBeenCalledWith('e1')
   await menu().click()

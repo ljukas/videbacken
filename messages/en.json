@@ -1048,7 +1048,7 @@
   "heat_pump_event_unit_both": "Both",
   "heat_pump_event_unit_all": "All",
   "heat_pump_event_unit_unknown": "Unknown heat pump",
-  "heat_pump_event_actions_for": "Actions for {kind} on {date}",
+  "heat_pump_event_actions_for": "Actions for {kind} on {date} ({unit})",
   "heat_pump_event_dialog_new_title": "New event",
   "heat_pump_event_dialog_edit_title": "Edit event",
   "heat_pump_event_dialog_description": "The event is marked on the day chart.",
