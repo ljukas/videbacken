@@ -16,3 +16,8 @@ test('the event vocabulary is importable client-side', async () => {
   const mod = await import('~/lib/heatPump/events')
   expect(typeof mod.dayEventMarkers).toBe('function')
 })
+
+test('the energy signature is importable client-side', async () => {
+  const mod = await import('~/lib/heatPump/signature')
+  expect(typeof mod.qualifyingDays).toBe('function')
+})
