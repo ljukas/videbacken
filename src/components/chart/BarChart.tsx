@@ -124,12 +124,16 @@ export type BarChartProps<Row> = {
   selection?: BarSelection<Row>
   /** A short label above a category's stack (e.g. a winter loss share); null draws none. */
   barLabel?: (row: Row, index: number) => string | null
-  /** Marks on a category (logged events); null or [] draws none. Keep its identity across renders. */
+  /**
+   * Marks on a category (logged events); null or [] draws none. Keep its identity across renders. Its headroom is
+   * above the stack only: it doesn't make room for a `barLabel` too (no chart combines them).
+   */
   markers?: (row: Row, index: number) => readonly BarMarker[] | null
 }
 
 const DOT_R = 3
 const MARKER_W = 8
+const MARKER_MIN_W = 3
 const MARKER_H = 6
 const MARKER_GAP = 2
 
@@ -562,49 +566,6 @@ export function BarChart<Row>({
                 ))
             })()
           : null}
-        {markers ? (
-          // Visual only (the svg is aria-hidden): the caller's tooltip names what a mark means.
-          <g data-markers pointerEvents="none">
-            {range(count).flatMap((i) => {
-              const list = markers(rows[i], i) ?? []
-              if (list.length === 0) return []
-              const tip = stackTop(i) - MARKER_GAP
-              const step = MARKER_W + MARKER_GAP
-              const centre = geometry.centres[i]
-              const first = centre - ((list.length - 1) * step) / 2
-              return list.map((mk, j) => {
-                const cx = first + j * step
-                return (
-                  <g
-                    key={`${i}-${mk.key}`}
-                    data-marker={mk.key}
-                    data-index={i}
-                    data-across={mk.seriesKey === undefined ? true : undefined}
-                  >
-                    {mk.seriesKey === undefined ? (
-                      <line
-                        x1={centre}
-                        x2={centre}
-                        y1={0}
-                        y2={geometry.plotH}
-                        stroke={mk.color}
-                        strokeOpacity={0.6}
-                        strokeDasharray="3 3"
-                      />
-                    ) : null}
-                    {/* ▼ pointing at the category's stack. */}
-                    <path
-                      d={`M${cx - MARKER_W / 2},${tip - MARKER_H} L${cx + MARKER_W / 2},${tip - MARKER_H} L${cx},${tip} Z`}
-                      fill={mk.color}
-                      stroke="var(--card)"
-                      strokeWidth={1}
-                    />
-                  </g>
-                )
-              })
-            })}
-          </g>
-        ) : null}
         {line ? (
           <g data-series={line.key} data-kind="line">
             <LinePath
@@ -632,6 +593,53 @@ export function BarChart<Row>({
                   strokeWidth={2}
                 />
               ))}
+          </g>
+        ) : null}
+        {markers ? (
+          // Visual only (the svg is aria-hidden): the caller's tooltip names what a mark means. After the line, so a
+          // mark stays visible over its dots.
+          <g data-markers pointerEvents="none">
+            {range(count).flatMap((i) => {
+              const list = markers(rows[i], i) ?? []
+              if (list.length === 0) return []
+              const tip = stackTop(i) - MARKER_GAP
+              // Narrowed to the column (the band step), so several marks on a narrow day stay inside it: the mark
+              // shrinks to MARKER_MIN_W, then the gap goes, then the mark shrinks on (the height stays).
+              const step = Math.min(MARKER_W + MARKER_GAP, geometry.x.step() / list.length)
+              const w = Math.min(step, Math.max(MARKER_MIN_W, step - MARKER_GAP))
+              const centre = geometry.centres[i]
+              const first = centre - ((list.length - 1) * step) / 2
+              return list.map((mk, j) => {
+                const cx = first + j * step
+                return (
+                  <g
+                    key={`${i}-${mk.key}`}
+                    data-marker={mk.key}
+                    data-index={i}
+                    data-across={mk.seriesKey === undefined ? true : undefined}
+                  >
+                    {mk.seriesKey === undefined ? (
+                      <line
+                        x1={centre}
+                        x2={centre}
+                        y1={0}
+                        y2={geometry.plotH}
+                        stroke={mk.color}
+                        strokeOpacity={0.6}
+                        strokeDasharray="3 3"
+                      />
+                    ) : null}
+                    {/* ▼ pointing at the category's stack. */}
+                    <path
+                      d={`M${cx - w / 2},${tip - MARKER_H} L${cx + w / 2},${tip - MARKER_H} L${cx},${tip} Z`}
+                      fill={mk.color}
+                      stroke="var(--card)"
+                      strokeWidth={1}
+                    />
+                  </g>
+                )
+              })
+            })}
           </g>
         ) : null}
         {zeroLine ? (

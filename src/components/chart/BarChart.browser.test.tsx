@@ -1117,6 +1117,45 @@ test('two marks on one category sit side by side', async () => {
   expect(left.right).toBeLessThanOrEqual(right.left)
 })
 
+test('in a narrow column, several marks shrink to stay inside it, drawn over the line', async () => {
+  const { screen } = await render(
+    {
+      line: { key: 'b', label: 'Serie B', color: 'blue' },
+      markers: (r) =>
+        r.label === 'jan'
+          ? [
+              { key: 'all', color: 'black' },
+              { key: 'a', seriesKey: 'a', color: 'red' },
+              { key: 'b', seriesKey: 'b', color: 'blue' },
+            ]
+          : [{ key: 'all', color: 'black' }],
+    },
+    110,
+  )
+  await vi.waitFor(() => expect(markerNodes(screen.container)).toHaveLength(6))
+  // The across marks' lines sit on the category centres.
+  const centres = markerNodes(screen.container)
+    .filter((n) => n.dataset.across)
+    .map((n) => n.querySelector('line')?.getBoundingClientRect().left ?? Number.NaN)
+  const step = centres[1] - centres[0]
+  expect(step).toBeLessThan(3 * 10) // narrower than three full-size marks
+  const jan = markerNodes(screen.container).filter((n) => n.dataset.index === '0')
+  expect(jan).toHaveLength(3)
+  for (const n of jan) {
+    const box = markerMark(n).getBoundingClientRect()
+    expect(box.left).toBeGreaterThanOrEqual(centres[0] - step / 2 - 0.5)
+    expect(box.right).toBeLessThanOrEqual(centres[0] + step / 2 + 0.5)
+  }
+  // The marks are on top: their group comes after the line's.
+  const lineGroup = screen.container.querySelector('[data-kind="line"]')
+  const markersGroup = screen.container.querySelector('[data-markers]')
+  expect(lineGroup).not.toBeNull()
+  expect(
+    // biome-ignore lint/style/noNonNullAssertion: asserted just above
+    lineGroup!.compareDocumentPosition(markersGroup!) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+})
+
 test('marks leave the bars, axes and tooltip as they were', async () => {
   // One tree, re-rendered (a second chart after an unmount stays empty in this setup).
   const { screen, queryClient } = await render()
