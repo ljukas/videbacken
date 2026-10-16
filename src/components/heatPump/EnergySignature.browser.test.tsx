@@ -257,3 +257,40 @@ test('switching event closes an open tooltip instead of moving it to another day
   )
   await vi.waitFor(() => expect(tooltipText()).toBe(''))
 })
+
+test('the header follows the sibling cards: title, description, the controls as the card action', async () => {
+  const { screen } = await show().r
+  const title = document.querySelector('[data-slot="card-title"]')
+  expect(title?.querySelector('h2')?.textContent).toBe(m.heat_pump_signature_title())
+  expect(document.querySelector('[data-slot="card-description"]')?.textContent).toBe(
+    m.heat_pump_signature_description(),
+  )
+  const action = document.querySelector('[data-slot="card-action"]') as HTMLElement
+  expect(action.querySelector('[role="radiogroup"]')).not.toBeNull()
+  // The select is named by its visible label, not by a second, hidden name.
+  const trigger = screen.getByRole('combobox', { name: m.heat_pump_signature_event_label() })
+  const el = trigger.element()
+  expect(action.contains(el)).toBe(true)
+  expect(el.getAttribute('aria-label')).toBeNull()
+  const label = document.getElementById(el.getAttribute('aria-labelledby') ?? '')
+  expect(label?.textContent).toBe(m.heat_pump_signature_event_label())
+  expect(label?.closest('[aria-hidden]')).toBeNull()
+})
+
+test('no event: the event control’s place is held, hidden, so the header keeps its height', async () => {
+  await show({ unitEvents: [], eventId: null, result: null }).r
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('no_event'))
+  expect(document.querySelector('[role="combobox"]')).toBeNull()
+  const held = document.querySelector('[data-slot="signature-event-control"]') as HTMLElement
+  expect(held.getAttribute('aria-hidden')).toBe('true')
+  expect(held.className).toMatch(/\binvisible\b/)
+})
+
+test('touch targets: the unit toggle, the select and the table toggle grow to 44 px on touch', async () => {
+  await show().r
+  const coarse = (el: Element | null) => el?.getAttribute('class') ?? ''
+  for (const item of document.querySelectorAll('[role="radio"]'))
+    expect(coarse(item)).toMatch(/pointer-coarse:min-h-11/)
+  expect(coarse(document.querySelector('[role="combobox"]'))).toMatch(/pointer-coarse:min-h-11/)
+  expect(coarse(document.querySelector('summary'))).toMatch(/pointer-coarse:min-h-11/)
+})
