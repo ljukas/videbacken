@@ -20,6 +20,7 @@ For *why* a pattern exists, follow the ADR link.
 - **Hosting:** Vercel Pro, function region pinned to Stockholm `arn1` (see Non-negotiables).
 - **Database:** Supabase Postgres (prod, via Vercel Marketplace) / plain `postgres:17-alpine` (local + CI); Drizzle ORM, `node-postgres` (`pg`) driver — not postgres.js, which pipelines queries that Supabase's transaction pooler drops — snake_case, all timestamps `timestamptz`.
 - **Data layer:** oRPC + TanStack Query; SSR via an in-process router client. Domain rules in services (ADR-0002), effects isolated (ADR-0001).
+- **Statistics:** `simple-statistics` (`linearRegression`, named imports only: the full bundle is 45 KB gz) for the heat pump energy signature.
 - **Auth:** Better Auth, Google OAuth + email magic-link, allowlist-gated — see [Authentication](#authentication--authorization-adr-0017).
 - **Sync:** polled, never pushed (ADR-0018 supersedes 0004 + 0011). No realtime, no presence.
 - **Effects** (`src/lib/effects/`, each prod / dev / test): email Resend / Mailpit-SMTP / devLog + React Email templates (ADR-0008); storage Vercel Blob / RustFS-S3 / devLog, public (avatars) + private stores, client-direct upload (ADR-0006); queue Vercel Queue / BullMQ+Redis / devLog (ADR-0007). Pulled integrations (Zaptec, elpris, Škoda, Emaldo, Comfort Cloud) have **no** devLog adapter — they fail closed (ADR-0019).
@@ -77,7 +78,7 @@ src/
                                 energy-mix derivation (ADR-0023): pure client-safe mix/ (supply, shape, pool + SoC cap, carMix, houseTimeline),
                                 derive.ts (deriveFrom: one locked transaction) + deriveAfterSync.ts (queue + best-effort derive after the Emaldo, Zaptec, elpris syncs);
                                 client-safe figures.ts (period figures, ADR-0024) + flowLayout.ts (the Summering flow diagram's geometry) + usageFlowLayout.ts (the Användning diagram's, heat pumps step 2) + heatPumpColors.ts
-    heatPump/                   Comfort Cloud sync (sync.ts: recent UTC days + catch-up ≤ 14 d + per-unit backfill to registered_on (persisted cursor)) + cron (ADR-0019, ADR-0027); client-safe period.ts (`heatPump.days`' range limit, a month's days) and events.ts (event kinds, DTO, note rule, day markers; the schema imports it, so dependency-free) — no index barrel
+    heatPump/                   Comfort Cloud sync (sync.ts: recent UTC days + catch-up ≤ 14 d + per-unit backfill to registered_on (persisted cursor)) + cron (ADR-0019, ADR-0027); client-safe period.ts (`heatPump.days`' range limit, a month's days), events.ts (event kinds, DTO, note rule, day markers; the schema imports it, so dependency-free) and signature.ts (the energy signature: qualifying days, event windows, fetch range + chunks, OLS fit via simple-statistics; ADR-0027) — no index barrel
     integrations/               runPulledSync (shared sync lifecycle) + cron helper (ADR-0019) + refreshAfterSync (a sync's best-effort materialized-view refresh)
     spotPrice/                  elpris sync + cron (server); client-safe zones.ts, slots.ts — no index barrel
     gridTariff/                 monthly Eltariff catalogue watcher: emails admins once our grid company covers the facility (not a health-tracked source — ADR-0019 amendment); client-safe coverage.ts

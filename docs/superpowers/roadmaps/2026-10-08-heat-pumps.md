@@ -14,7 +14,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | 2b | `heat_pump_day` materialized view (ADR-0027 decision 6's trigger, met at checkpoint 3): the heat pump sums read whole Stockholm days from the view and a range's partial first and last day from the readings by primary key, refreshed after each Comfort Cloud run that stored hours; schema review | [plan](../plans/2026-10-15-heat-pumps-2b-day-view.md) | [#164](https://github.com/ljukas/videbacken/pull/164) | checkpoint passed | passed 2026-10-15 (prod, #164 deployed 13:09 UTC): Användning for 2026-01 (Matsal 158,619 / Övervåning 67,931 kWh), 2026-02 and 2026-09 equal prod SQL, 2026-02 and 2026-09 to the Wh of checkpoint 3, and 2026-10 equals SQL at 13:11 UTC (47,977 / 23,224); warm `energy/overview` (n = 44, all `poolOpened` 0): `heatPumpMs` median 7 ms (6–33) against 24 at checkpoint 3, below `carMs` (median 13) in 44 of 44, `totalMs` median 25 (22–52) against 35; the owner's "Synka nu" run line logs `refreshMs` 92 (`ok`, 122 hours stored, 7.1 s, 0 retries) and the view then held every reading (33 551 hours); `anon` and `authenticated` have no SELECT on `heat_pump_day`. The owner accepted the zero-hours half on the test (`sync.test.ts`: a run that stored nothing logs `refreshMs` 0): every `ok` prod run re-fetches the recent days |
 | 3 | Energi › Värmepumpar, consumption: page, nav, period control, month and day charts with last year and outdoor temperature, tiles | [plan](../plans/2026-10-08-heat-pumps-3-page.md) | [#166](https://github.com/ljukas/videbacken/pull/166) | checkpoint passed | passed 2026-10-16 (prod, #166 deployed 10:52 UTC): `heatPump.months` for 2026 and `heatPump.days` for 2026-01 equal SQL over the raw readings (not the view) in all 106 cells (20 unit-months of 2026, 24 of 2025's outline, 62 unit-days of January): kWh and heating kWh within 0,5 Wh, hours exact, the outdoor mean exact (e.g. 2026-02 Matsal 454,075 / Övervåning 157,996 kWh, 672 h each); the outdoor line equals the hour-weighted mean over both units every month; `lastYearSoFar` (2025-10 cut at the same hour, 367 h per unit) equals SQL (55,610 / 29,777 kWh). The rendered page agrees: 2026-02 tiles 454 / 158 kWh, +37 / +21 %, −4,2 °C; 2026-01 386 / 165 kWh, +14 / +25 %, −1,7 °C; the 15 January tooltip 8,7 + 4,0 = 12,7 kWh, 1,1 °C; År 2026 hittills 1 625 (+5 %) / 759 kWh (+1 %) with "Data saknas för 4 h" (2 h in March, 2 in July); February's outline 462,6 kWh. The owner reviewed Värmepumpar on desktop and phone and accepted it |
 | 4a | Händelser: `heat_pump_event`, admin CRUD dialog, markers on the day chart | [plan](../plans/2026-10-08-heat-pumps-4a-events.md) | [#168](https://github.com/ljukas/videbacken/pull/168) | checkpoint passed | passed 2026-10-16 (prod, #168 deployed 14:49 UTC, migration 0028 applied): the owner entered the 2026-10-08 service for both units through the dialog (read-only SQL: one row, `occurred_on` 2026-10-08, `heat_pump_id` null, kind `service`, created by the admin, edited once) and it shows on October's day chart on the 8th for both units. A temporary member (invited as `user` at `/admin`, signed in in a private window) saw the event in Händelser with no Lägg till button and no row actions, and wrote nothing; it was revoked afterwards (soft-deleted, approval removed, no sessions left) |
-| 4b | Energisignatur: `signature.ts`, the scatter, the before/after readout | [plan](../plans/2026-10-08-heat-pumps-4b-signature.md) | | not started | |
+| 4b | Energisignatur: `signature.ts`, the scatter, the before/after readout | [plan](../plans/2026-10-08-heat-pumps-4b-signature.md) | [#170](https://github.com/ljukas/videbacken/pull/170) | PR open | |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. `needs shaping` means
 the step needs a short design pass (and its plan) before it is built.
@@ -88,7 +88,7 @@ Each must pass, with the result recorded in the table, before the next step star
 6. **After step 4b (prod).**
    - Once at least 14 qualifying heating days after the service exist (expected November 2026): the readout per
      unit is reproduced independently (SQL for the daily sums + a separate least-squares fit) within 0.5
-     percentage points.
+     percentage points — the queries and script are in [step 4b's plan](../plans/2026-10-08-heat-pumps-4b-signature.md#checkpoint-6-independent-reproduction).
    - The owner judges whether the readout is plausible and the wording clear.
 
 ## Checkpoint 3 result
@@ -239,3 +239,15 @@ browser, read-only SQL, `vercel logs`.
 - 2026-10-16: checkpoint 5 (prod) passed; see row 4a. Prod had no member account, so the owner invited a temporary
   one for the member check and revoked it afterwards. Next: step 4b (Energisignatur); its checkpoint 6 waits for
   at least 14 qualifying heating days after the service (expected November 2026).
+- 2026-10-16: step 4b built. The step review (5 reviewers) changed: the card waits for the deferred events (the
+  server render no longer claims "no event yet"), an event whose range lies before the first reading reads "0 av 14"
+  instead of loading forever, a failed day read shows an error in the readout, **today never counts** (a manual sync
+  late in the day stores a partial last hour; spec amended), the after line is dashed and both lines are clipped to
+  the plot (spec amended), one persistent live region, the card keeps its box in every state (no event included),
+  and the light after colour is darkened to 3:1. Colours: violet / aqua, not blue / orange (plan decision 12's own
+  five-colour rule: blue was too close to `--energy-heat-pump-3`). Live (local data, a local-only Matsal filter event
+  on 2026-01-15): −2 % ±4 %, 64 days after, 90 before; `data-change` −0.019961 and `data-margin` 0.034820 equal
+  checkpoint 6's independent SQL + Python fit exactly. Checkpoint 6's script needs Python ≥ 3.10
+  (`statistics.linear_regression`; the system `python3` is 3.9, use `python3.14`). Bundle: `/energy/heat-pumps`
+  +92 KB gz beyond entry + shell against +72 on `main` (the plan's budget was ≤ 6: Radix Select, 8 KB and shared
+  with `/charging`, is new to this page); the entry is unchanged.

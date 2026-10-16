@@ -2558,7 +2558,7 @@ left join heat_pump p on p.id = e.heat_pump_id
 order by e.occurred_on, e.created_at;
 ```
 
-**3. The fit** (`python3 -I $SCRATCH/signature_check.py $SCRATCH/days.json $SCRATCH/events.json`; the script lives in
+**3. The fit** (Python ≥ 3.10 for `statistics.linear_regression`; the system `python3` is 3.9, so use `python3.14`: `python3.14 -I $SCRATCH/signature_check.py $SCRATCH/days.json $SCRATCH/events.json`; the script lives in
 the scratchpad, never committed):
 
 ```python

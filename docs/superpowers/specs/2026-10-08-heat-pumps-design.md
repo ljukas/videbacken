@@ -483,7 +483,8 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
 `src/lib/heatPump/signature.ts` (test-first):
 
 - **Qualifying day** (per unit): every hour of the Stockholm day present (23, 24 or 25; so today's partial day and a
-  unit's first day never count); the unit was heating (heating kWh ≥ 50 % of the day's kWh: a unit that was switched
+  unit's first day never count), and never today, even with every hour stored (a manual sync late in the day stores
+  a partial last hour; amended in step 4b); the unit was heating (heating kWh ≥ 50 % of the day's kWh: a unit that was switched
   off reports a heating share of 0, one that idles in heat mode 1; owner decision 2026-10-11); cooling kWh ≤ 2 % of
   the day's kWh; indoor and outdoor
   means present; ΔT = mean indoor − mean outdoor ≥ 3 °C; the day isn't an event day for that unit.
@@ -502,7 +503,8 @@ Värmepumpar — Förbrukning och temperatur från Panasonic Comfort Cloud. Sena
   before writing the least-squares fit by hand; d3-array (installed) has none.
 - The chart: scatter (visx): before = filled circles, after = filled squares in a second colour, extrapolated
   after-days = hollow squares; each set's fitted line over its ΔT range (the after-line fits the counted after-days,
-  none when they span less than 1 °C). The margin is the residual SD with n − 2 degrees of freedom, rounded up to a
+  none when they span less than 1 °C), the before line solid and the after line dashed, both clipped to the plot
+  (the kWh axis starts at 0; a line that dips below it at low ΔT is cut there; amended in step 4b). The margin is the residual SD with n − 2 degrees of freedom, rounded up to a
   whole percent (at least ±1 %); a change that rounds to 0 % reads "ingen skillnad". Σ predicted ≤ 0 counts as
   not enough data before. A before set of ≥ 14 days that spans < 4 °C says the days give no usable line.
 - Data: `heatPump.days` for (event − 400 days, not before the first reading) to (the next event or today), fetched in
