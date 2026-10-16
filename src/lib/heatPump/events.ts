@@ -1,6 +1,7 @@
 // Client-safe heat pump event vocabulary (ADR-0027 decision 10). Dependency-free on purpose:
 // the schema imports it (drizzle-kit loads that without the `~` alias) and so do the browser
 // components. Copy (labels) lives in components/heatPump/eventCopy.ts.
+// Changing a kind or the note max changes the rendered DB CHECK text: run `bun run db:generate`.
 
 export const HEAT_PUMP_EVENT_KINDS = ['service', 'filter', 'setting', 'other'] as const
 export type HeatPumpEventKind = (typeof HEAT_PUMP_EVENT_KINDS)[number]
