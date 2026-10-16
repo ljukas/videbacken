@@ -1,10 +1,10 @@
-import { AxisBottom, AxisLeft } from '@visx/axis'
+import { AxisBottom, AxisLeft, AxisRight } from '@visx/axis'
 import { GridRows } from '@visx/grid'
 import { Group } from '@visx/group'
 import { useParentSize } from '@visx/responsive'
 import { Bar, BarRounded, LinePath } from '@visx/shape'
 import { range } from 'd3-array'
-import { scaleBand } from 'd3-scale'
+import { type ScaleLinear, scaleBand } from 'd3-scale'
 import type * as React from 'react'
 import { useId, useMemo, useRef, useState } from 'react'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
@@ -34,7 +34,18 @@ import {
 import { CHART_HEIGHT, ChartLegend } from './ChartParts'
 
 export type { BarSeries } from './barLayout'
-export type LineSeries = { key: string; label: string; color: string; dash?: string }
+export type LineSeries = {
+  key: string
+  label: string
+  color: string
+  dash?: string
+  /** 'right': its own scale (0 included) and an axis on the right; the bars' axis ignores it. Default 'left'. */
+  axis?: 'left' | 'right'
+  /** The right axis' tick labels (default `yTickFormat`). */
+  tickFormat?: (v: number) => string
+  /** Default 2. */
+  strokeWidth?: number
+}
 
 /**
  * A selectable chart must also have a `label`: the label makes it a keyboard
@@ -155,12 +166,42 @@ export function BarChart<Row>({
   // from the popover, which stays closed on a category without a tooltip: the
   // keyboard walk must step over it, not restart at the first category.
   const cursor = useRef<number | null>(null)
+  // The cursor's category as it named it: when the rows change under it (a selected month's days in place of the
+  // year's months), the card, outline, announcement and cursor point at a category that is gone, so they close below.
+  // A refetch of the same categories keeps them; fewer of them (the first category unchanged) clamp (onKeyDown).
+  // Fewer rows that start elsewhere (Totalt's months → a month's days, the cursor past the last day) are other rows
+  // too. Never a remount: focus stays.
+  const [cursorAt, setCursorAt] = useState<{
+    index: number
+    category: string
+    first: string
+  } | null>(null)
+  const pin = (i: number) => {
+    cursor.current = i
+    if (
+      cursorAt?.index !== i ||
+      cursorAt.category !== category(rows[i]) ||
+      cursorAt.first !== category(rows[0])
+    )
+      setCursorAt({ index: i, category: category(rows[i]), first: category(rows[0]) })
+  }
   // The outlined category (selection only): where the pointer or the keys
   // are. From the keyboard one that can't be selected is outlined dashed, so
   // focus stays visible; the pointer outlines only selectable ones; never touch.
   const [outline, setOutline] = useState<{ index: number; keyboard: boolean } | null>(null)
   const at = (i: number, key: string) => value(rows[i], key)
   const count = rows.length
+  if (
+    cursorAt !== null &&
+    (cursorAt.index < count
+      ? category(rows[cursorAt.index]) !== cursorAt.category
+      : count === 0 || category(rows[0]) !== cursorAt.first)
+  ) {
+    setCursorAt(null)
+    popover.hide()
+    setAnnounced(null)
+    setOutline(null)
+  }
   // A label over the tallest bar needs room above the plot.
   const marginTop = barLabel ? MARGIN.top + tickPx + 6 : MARGIN.top
   const tickLabel = { fill: 'var(--muted-foreground)', fontSize: tickPx }
@@ -168,7 +209,8 @@ export function BarChart<Row>({
   // biome-ignore lint/correctness/useExhaustiveDependencies: `at` is rows + value, both listed
   const geometry = useMemo(() => {
     if (width <= 0 || plotBoxH <= 0) return null
-    const keys = line ? [...series, { key: line.key, label: '', color: '' }] : series
+    const right = line?.axis === 'right' ? line : undefined
+    const keys = line && !right ? [...series, { key: line.key, label: '', color: '' }] : series
     const measure = measureAt(tickPx)
     const extent = stackExtent({ count, series: keys, value: at, offset: stackOffset })
     const plotH = Math.max(0, plotBoxH - marginTop - MARGIN.bottom - X_AXIS_H)
@@ -176,7 +218,23 @@ export function BarChart<Row>({
     const yLabels = y.ticks.map(yTickFormat)
     const yAxisW = hideYAxis ? 0 : yAxisWidth(yLabels, measure)
     const left = MARGIN.left + yAxisW
-    const plotW = Math.max(0, width - left - MARGIN.right)
+    let yRight: { scale: ScaleLinear<number, number>; ticks: number[] } | null = null
+    let rightW: number = MARGIN.right
+    if (right) {
+      const values = range(count).flatMap((i) => {
+        const v = at(i, right.key)
+        return v === null ? [] : [v]
+      })
+      yRight = yScaleFor({
+        extent: values.length ? [Math.min(...values), Math.max(...values)] : [0, 0],
+        height: plotH,
+      })
+      rightW = Math.max(
+        MARGIN.right,
+        yAxisWidth(yRight.ticks.map(right.tickFormat ?? yTickFormat), measure),
+      )
+    }
+    const plotW = Math.max(0, width - left - rightW)
     const x = scaleBand<number>().domain(range(count)).range([0, plotW])
     const centres = range(count).map((i) => (x(i) ?? 0) + x.bandwidth() / 2)
     const fullWidths = rows.map((r) => measure(category(r)))
@@ -198,7 +256,7 @@ export function BarChart<Row>({
       offset: stackOffset,
       minPx: minBarPx,
     })
-    return { x, y, left, plotW, plotH, xTicks, rects, centres, short }
+    return { x, y, yRight, left, plotW, plotH, xTicks, rects, centres, short }
   }, [
     width,
     plotBoxH,
@@ -224,6 +282,8 @@ export function BarChart<Row>({
   const chosen = selection?.selected
   const selected =
     chosen != null && Number.isInteger(chosen) && chosen >= 0 && chosen < count ? chosen : null
+  // The line's scale: its own on the right axis, else the bars'.
+  const lineScale = (geometry?.yRight ?? geometry?.y)?.scale ?? ((v: number) => v)
   // The outline on screen (range-guarded: a refetch may have dropped its category).
   const outlined = selection && outline !== null && outline.index < count ? outline.index : null
   // Only a keyboard outline is ever dashed: a pointer outline stays solid even
@@ -237,14 +297,14 @@ export function BarChart<Row>({
     const tops = geometry.rects.filter((r) => r.index === i).map((r) => r.y)
     // The line's dot too, so the card never covers it.
     const dot = line ? at(i, line.key) : null
-    if (dot !== null) tops.push(geometry.y.scale(dot) - DOT_R)
+    if (dot !== null) tops.push((geometry.yRight ?? geometry.y).scale(dot) - DOT_R)
     return {
       left: geometry.left + geometry.centres[i],
       top: marginTop + Math.min(geometry.plotH, ...tops),
     }
   }
   const open = (i: number) => {
-    cursor.current = i
+    pin(i)
     if (tooltip(rows[i], i) === null) return popover.hide()
     const { left, top } = anchor(i)
     popover.show(i, left, top)
@@ -261,7 +321,7 @@ export function BarChart<Row>({
     if (i === null) return
     if (selection && e.pointerType === 'touch') {
       // A tap selects (onClick) and shows nothing: the page shows the selection.
-      cursor.current = i
+      pin(i)
       if (popover.open) popover.hide()
       if (outline !== null) setOutline(null)
       return
@@ -284,6 +344,7 @@ export function BarChart<Row>({
 
   const close = () => {
     cursor.current = null
+    setCursorAt(null)
     popover.hide()
     setAnnounced(null)
     setOutline(null)
@@ -302,8 +363,8 @@ export function BarChart<Row>({
     }
     if (count === 0) return
     const last = count - 1
-    // Clamped: a refetch may have returned fewer categories since.
-    const current = Math.min(cursor.current ?? -1, last)
+    // Clamped: a refetch may have returned fewer categories since. Other rows start the walk over (above).
+    const current = cursorAt === null ? -1 : Math.min(cursor.current ?? -1, last)
     const next =
       e.key === 'ArrowRight'
         ? current < 0
@@ -326,7 +387,13 @@ export function BarChart<Row>({
   }
 
   const legendItems = [
-    ...series.map(({ key, label: l, color, pattern }) => ({ key, label: l, color, pattern })),
+    ...series.map(({ key, label: l, color, pattern, outline }) => ({
+      key,
+      label: l,
+      color,
+      pattern,
+      outline,
+    })),
     ...(line ? [{ key: line.key, label: line.label, color: line.color }] : []),
   ]
   const active =
@@ -409,9 +476,13 @@ export function BarChart<Row>({
                   y: r.y,
                   width: r.width,
                   height: r.height,
-                  fill: s.pattern === 'hatch' ? `url(#${patternId}-${s.key})` : s.color,
-                  stroke: s.stroke,
-                  strokeWidth: s.strokeWidth,
+                  fill: s.outline
+                    ? 'none'
+                    : s.pattern === 'hatch'
+                      ? `url(#${patternId}-${s.key})`
+                      : s.color,
+                  stroke: s.outline ? s.color : s.stroke,
+                  strokeWidth: s.outline ? (s.strokeWidth ?? 1.5) : s.strokeWidth,
                 }
                 if (!s.radius) return <Bar key={r.index} {...common} />
                 const end = r.value >= 0 ? { top: true } : { bottom: true }
@@ -473,9 +544,9 @@ export function BarChart<Row>({
               data={range(count)}
               defined={(i) => at(i, line.key) !== null}
               x={(i) => geometry.centres[i]}
-              y={(i) => geometry.y.scale(at(i, line.key) ?? 0)}
+              y={(i) => lineScale(at(i, line.key) ?? 0)}
               stroke={line.color}
-              strokeWidth={2}
+              strokeWidth={line.strokeWidth ?? 2}
               strokeDasharray={line.dash}
               fill="none"
             />
@@ -486,7 +557,7 @@ export function BarChart<Row>({
                   key={i}
                   data-line-dot
                   cx={geometry.centres[i]}
-                  cy={geometry.y.scale(at(i, line.key) ?? 0)}
+                  cy={lineScale(at(i, line.key) ?? 0)}
                   r={DOT_R}
                   fill="#fff"
                   stroke={line.color}
@@ -524,6 +595,26 @@ export function BarChart<Row>({
             />
           </g>
         )}
+        {geometry.yRight && line ? (
+          <g data-axis="y-right">
+            <AxisRight
+              left={geometry.plotW}
+              scale={geometry.yRight.scale}
+              tickValues={geometry.yRight.ticks}
+              tickFormat={(v) => (line.tickFormat ?? yTickFormat)(Number(v))}
+              hideTicks
+              tickLength={TICK_SIZE}
+              hideAxisLine={!yAxisLine}
+              stroke={AXIS_COLOR}
+              tickLabelProps={() => ({
+                ...tickLabel,
+                dx: Y_TICK_MARGIN,
+                dy: '0.32em',
+                textAnchor: 'start' as const,
+              })}
+            />
+          </g>
+        ) : null}
         <g data-axis="x">
           <AxisBottom
             top={geometry.plotH}

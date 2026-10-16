@@ -10,8 +10,7 @@ import {
 } from '~/lib/houseEnergy/figures'
 import { monthKey } from '~/lib/houseEnergy/period'
 import { getOverview as getChargingOverview } from '~/lib/services/evCharging'
-import { type HeatPumpMonthRow, monthSums } from '~/lib/services/heatPump'
-import { STALE_AFTER_MS } from '~/lib/services/integrationSync/policy'
+import { type HeatPumpMonthRow, monthSums, unitEndRule } from '~/lib/services/heatPump'
 import {
   stockholmDayBounds,
   stockholmDayOf,
@@ -82,12 +81,10 @@ type Span = { startMs: number; endMs: number }
  * A period's heat pumps (ADR-0027) from the unit months: each unit's kWh and hours in the period, and its expected
  * hours clipped like the house buckets (ADR-0024): from the latest of the period's start, the first house reading's
  * day and the unit's first hour, to the earlier of the period's end and the unit's end, in whole hours (a partly
- * covered last hour counts). A unit's end is the newest house bucket's end, but a trailing gap after its newest stored
- * hour counts as missing only from the source's stale threshold (13 h, two missed 6-hourly runs): shorter, it is the
- * sync's normal lag, so the unit ends at its newest stored hour. A unit Comfort Cloud stopped listing (another unit was
- * listed after it last was) ends no later than its newest stored hour or its last listing, whichever is later, so a
- * removed unit isn't missing forever; when the whole source fails every unit's last listing freezes together and the
- * gap counts. Gaps inside the stored hours always count. A unit appears in a period when it has hours or expected hours
+ * covered last hour counts). A unit's end is `unitEndRule`'s over the newest house bucket's end: that end, its newest
+ * stored hour's while it trails by less than the stale threshold (13 h), or, for a unit Comfort Cloud stopped listing,
+ * no later than its newest stored hour or its last listing, whichever is later. Gaps inside the stored hours always
+ * count. A unit appears in a period when it has hours or expected hours
  * there, or (unless removed) when its first hour lies before the period's clipped end: in a new month's first hours,
  * before the next run, it shows 0 kWh with nothing missing rather than vanishing. So a period before its first reading,
  * or after a removed unit's end, has no node for it. Name order (`byHeatPumpName`).
@@ -110,15 +107,7 @@ function heatPumpPeriods(rows: HeatPumpMonthRow[], coverageStartMs: number, newe
       lastSeenMs: seen ? Math.max(seen.lastSeenMs, lastSeenMs) : lastSeenMs,
     })
   }
-  const newestSeenMs = Math.max(...[...units.values()].map((u) => u.lastSeenMs))
-  const removed = (u: { lastSeenMs: number }) => u.lastSeenMs < newestSeenMs
-  const unitEndMs = (u: { lastMs: number; lastSeenMs: number }) => {
-    const storedEndMs = u.lastMs + HOUR_MS
-    if (newestEndMs - storedEndMs < STALE_AFTER_MS.comfortCloud) {
-      return Math.min(newestEndMs, storedEndMs)
-    }
-    return removed(u) ? Math.min(newestEndMs, Math.max(storedEndMs, u.lastSeenMs)) : newestEndMs
-  }
+  const { removed, endMs: unitEndMs } = unitEndRule([...units.values()], newestEndMs)
   const ordered = [...units.values()].sort(byHeatPumpName)
   return (period: Span, inPeriod: (r: HeatPumpMonthRow) => boolean): HeatPumpPeriod[] => {
     return ordered.flatMap((u) => {

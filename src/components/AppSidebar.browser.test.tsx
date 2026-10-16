@@ -194,16 +194,19 @@ test('lists the energy views as sub-items under Energi', async () => {
   const { screen } = await renderSidebar()
   expect(subLink(screen, m.nav_energy_overview(), '/energy')).toBeTruthy()
   expect(subLink(screen, m.nav_energy_battery(), '/energy/battery')).toBeTruthy()
+  expect(subLink(screen, m.nav_energy_heat_pumps(), '/energy/heat-pumps')).toBeTruthy()
 })
 
 test.each([
-  ['/energy', true, false],
-  ['/energy/battery', false, true],
-] as const)('on %s marks only that energy view active, and Energi', async (path, overviewOn, batteryOn) => {
+  ['/energy', true, false, false],
+  ['/energy/battery', false, true, false],
+  ['/energy/heat-pumps', false, false, true],
+] as const)('on %s marks only that energy view active, and Energi', async (path, overviewOn, batteryOn, heatPumpsOn) => {
   current.path = path
   const { screen } = await renderSidebar()
   expect(active(subLink(screen, m.nav_energy_overview(), '/energy'))).toBe(overviewOn)
   expect(active(subLink(screen, m.nav_energy_battery(), '/energy/battery'))).toBe(batteryOn)
+  expect(active(subLink(screen, m.nav_energy_heat_pumps(), '/energy/heat-pumps'))).toBe(heatPumpsOn)
   expect(active(screen.getByRole('link', { name: m.nav_energy(), exact: true }).element())).toBe(
     true,
   )
@@ -217,6 +220,7 @@ test('energy links match exactly and carry the period, never the charging year o
     `/energy|${m.nav_energy()}`,
     `/energy|${m.nav_energy_overview()}`,
     `/energy/battery|${m.nav_energy_battery()}`,
+    `/energy/heat-pumps|${m.nav_energy_heat_pumps()}`,
   ]) {
     const props = linkProps.get(key)
     expect(props, key).toBeDefined()

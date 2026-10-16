@@ -8,6 +8,7 @@ import {
   stockholmFirstOfMonth,
   stockholmMonthBounds,
   stockholmNightsOfDay,
+  stockholmYearBefore,
   stockholmYearBounds,
   stockholmYearMonth,
 } from './stockholm'
@@ -478,5 +479,14 @@ describe('daysBetween', () => {
 
   test('rejects a malformed day', () => {
     expect(() => daysBetween('2026-02-30', '2026-03-01')).toThrow(RangeError)
+  })
+})
+
+describe('stockholmYearBefore', () => {
+  test('keeps the Stockholm wall-clock time, across a DST difference and a leap day', () => {
+    expect(stockholmYearBefore(utc('2026-03-01T12:00:00Z'))).toBe(utc('2025-03-01T12:00:00Z')) // 13:00 CET both
+    // 2026-03-29 12:00 CEST (DST day 2026) → 2025-03-29 12:00 CET (DST came on the 30th in 2025)
+    expect(stockholmYearBefore(utc('2026-03-29T10:00:00Z'))).toBe(utc('2025-03-29T11:00:00Z'))
+    expect(stockholmYearBefore(utc('2028-02-29T11:00:00Z'))).toBe(utc('2027-02-28T11:00:00Z'))
   })
 })

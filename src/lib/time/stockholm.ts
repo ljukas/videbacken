@@ -11,6 +11,7 @@ import {
   differenceInCalendarDays,
   formatISO,
   startOfMonth,
+  subYears,
 } from 'date-fns'
 
 /** The IANA zone, for formatters that take one (Intl `timeZone`). */
@@ -159,4 +160,12 @@ export function stockholmNightsOfDay(day: string): { startMs: number; endMs: num
     { startMs, endMs: at(6) },
     { startMs: at(22), endMs },
   ]
+}
+
+/**
+ * The same Stockholm wall-clock time one year earlier (29 February → 28 February): where "the same period a year
+ * earlier" ends for a running period (heat pumps step 3).
+ */
+export function stockholmYearBefore(ms: number): number {
+  return subYears(ms, 1, { in: inStockholm }).getTime()
 }

@@ -6,6 +6,7 @@ import { credentialsRouter } from './procedures/credentials'
 import { energyRouter } from './procedures/energy'
 import { evChargingRouter } from './procedures/evCharging'
 import { healthRouter } from './procedures/health'
+import { heatPumpRouter } from './procedures/heatPump'
 import { imageRouter } from './procedures/image'
 import { sensorRouter } from './procedures/sensor'
 import { tariffRouter } from './procedures/tariff'
@@ -16,6 +17,7 @@ export const appRouter = {
   energy: energyRouter,
   evCharging: evChargingRouter,
   health: healthRouter,
+  heatPump: heatPumpRouter,
   image: imageRouter,
   sensor: sensorRouter,
   tariff: tariffRouter,

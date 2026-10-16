@@ -2,10 +2,10 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useState } from 'react'
 import { firstLoadPending, loadFailed } from '~/components/layout/LoadErrorAlert'
 import type { PeriodSums } from '~/lib/houseEnergy/figures'
-import { type EnergyPeriod, formatPeriod, resolvePeriod } from '~/lib/houseEnergy/period'
+import { type EnergyPeriod, resolvePeriod } from '~/lib/houseEnergy/period'
 import { stockholmYearMonth } from '~/lib/time/stockholm'
 import { energyOverviewQueryFor } from './energyQueries'
-import { type EnergySearch, periodOfSearch, periodSearchValue } from './energySearch'
+import { type EnergySearch, periodOfSearch, periodRewrite, periodSearchValue } from './energySearch'
 
 export type EnergySearchWrite = (search: { period?: string | number }) => void
 
@@ -72,21 +72,13 @@ export function useEnergyPeriod(search: EnergySearch, writeSearch: EnergySearchW
     : sumsStale
       ? lastSums
       : periodSums
-  // A period the data can't show (a stale link, a year without readings, a
-  // legacy ?year=) resolves to the default: once its year's data is in, the URL
-  // follows, so the query (and the chart) move to the shown period's year.
-  // Nothing valid requested (an invalid ?period= or ?year=) is the default
-  // already: the URL drops those params (the page's own path stays).
-  // undefined: the URL stays; null: drop the period params; else the period.
-  const rewriteTo: string | number | null | undefined = requested
-    ? overview && !stale && overview.firstReadingDay !== null && period
-      ? formatPeriod(requested) !== formatPeriod(period)
-        ? periodSearchValue(period)
-        : undefined
-      : undefined
-    : search.period !== undefined || search.year !== undefined
-      ? null
-      : undefined
+  // See `periodRewrite`: undefined leaves the URL, null drops the period params, else the period.
+  const rewriteTo = periodRewrite(
+    search,
+    requested,
+    period,
+    Boolean(overview && !stale && overview.firstReadingDay !== null),
+  )
   useEffect(() => {
     if (rewriteTo === undefined) return
     writeSearch(rewriteTo === null ? {} : { period: rewriteTo })

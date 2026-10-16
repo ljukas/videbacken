@@ -52,6 +52,7 @@ const chargingSubItems = linkOptions([
 const energySubItems = linkOptions([
   { to: '/energy', label: m.nav_energy_overview, link: 'energy', adminOnly: false },
   { to: '/energy/battery', label: m.nav_energy_battery, link: 'energy', adminOnly: false },
+  { to: '/energy/heat-pumps', label: m.nav_energy_heat_pumps, link: 'energy', adminOnly: false },
 ])
 
 const mainNavItems = linkOptions([

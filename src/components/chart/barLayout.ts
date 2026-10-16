@@ -20,6 +20,8 @@ export type BarSeries = {
   stack?: string
   /** 'hatch': 45° stripes of `color` over a 40 % tint (a second cue besides colour, e.g. the battery's loss). */
   pattern?: 'hatch'
+  /** Drawn as an outline: no fill, a `color` stroke (`strokeWidth`, default 1.5), e.g. last year beside this year. */
+  outline?: boolean
   radius?: number
   /** Round only the end away from the axis (a stack's top). Default: every corner. */
   roundEndOnly?: boolean

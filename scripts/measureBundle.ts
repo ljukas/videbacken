@@ -27,6 +27,7 @@ const PAGES: Record<string, string> = {
   '/charging/patterns': 'patterns',
   '/charging/sessions/$id': '_sessionId',
   '/energy': 'energy',
+  '/energy/heat-pumps': 'heat-pumps',
   '/sensors': 'sensors',
   '/users': 'users',
   '/account/profile': 'profile',
