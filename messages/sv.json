@@ -1069,5 +1069,12 @@
   "heat_pump_event_delete_action": "Ta bort",
   "heat_pump_event_deleted": "Händelsen borttagen",
   "heat_pump_event_delete_error": "Händelsen kunde inte tas bort.",
-  "heat_pump_event_tooltip": "{kinds} · {unit}"
+  "heat_pump_event_tooltip": "{kinds} · {unit}",
+  "heat_pump_signature_axis_x": "Inne − ute (°C)",
+  "heat_pump_signature_axis_y": "kWh per dygn",
+  "heat_pump_signature_before": "Före händelsen",
+  "heat_pump_signature_after": "Efter händelsen",
+  "heat_pump_signature_extrapolated": "Utanför temperaturskillnaderna före (räknas inte)",
+  "heat_pump_signature_tooltip_delta": "Inne − ute",
+  "heat_pump_signature_tooltip_kwh": "Förbrukning"
 }

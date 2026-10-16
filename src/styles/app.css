@@ -66,6 +66,8 @@
     --color-energy-house: var(--energy-house);
     --color-energy-car: var(--energy-car);
     --color-energy-loss: var(--energy-loss);
+    --color-signature-before: var(--signature-before);
+    --color-signature-after: var(--signature-after);
     --color-energy-heat-pump-1: var(--energy-heat-pump-1);
     --color-energy-heat-pump-2: var(--energy-heat-pump-2);
     --color-energy-heat-pump-3: var(--energy-heat-pump-3);
@@ -150,6 +152,11 @@
   --energy-car: #4a3aa7;
   /* The battery's loss (step 2): red, validated with solar, grid and battery (--pairs all) in both themes; hatched in charts. */
   --energy-loss: #b91c1c;
+  /* Energisignatur (heat pumps step 4b): before / after an event. Violet + aqua (the dataviz palette's alternate
+     pair; the blue + orange pair clashed with heat pump 3's blue, normal-vision ΔE 6.3 light / 4.1 dark).
+     Validated as a pair --pairs all (light on #fff / dark on #1c1c1f). Shape is the second cue (circle / square). */
+  --signature-before: #4a3aa7;
+  --signature-after: #1baf7a;
   /* The heat pumps (ADR-0027 step 2), by unit order: validated with laddning and övrigt hus in stack order for one,
      two and three units (light on #fff / dark on #1c1c1f), each ≥ 3:1. */
   --energy-heat-pump-1: #1597ad;
@@ -237,6 +244,8 @@
   --energy-house: #d95926;
   --energy-car: #9085e9;
   --energy-loss: #dc3c3c;
+  --signature-before: #9085e9;
+  --signature-after: #199e70;
   --energy-heat-pump-1: #1a9db0;
   --energy-heat-pump-2: #b33c86;
   --energy-heat-pump-3: #5b7be8;

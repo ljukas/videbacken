@@ -1069,5 +1069,12 @@
   "heat_pump_event_delete_action": "Delete",
   "heat_pump_event_deleted": "Event deleted",
   "heat_pump_event_delete_error": "The event couldn't be deleted.",
-  "heat_pump_event_tooltip": "{kinds} · {unit}"
+  "heat_pump_event_tooltip": "{kinds} · {unit}",
+  "heat_pump_signature_axis_x": "Indoor − outdoor (°C)",
+  "heat_pump_signature_axis_y": "kWh per day",
+  "heat_pump_signature_before": "Before the event",
+  "heat_pump_signature_after": "After the event",
+  "heat_pump_signature_extrapolated": "Outside the temperature differences before (not counted)",
+  "heat_pump_signature_tooltip_delta": "Indoor − outdoor",
+  "heat_pump_signature_tooltip_kwh": "Consumption"
 }
