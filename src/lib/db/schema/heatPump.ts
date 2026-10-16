@@ -4,6 +4,7 @@ import {
   check,
   date,
   doublePrecision,
+  index,
   integer,
   pgMaterializedView,
   pgTable,
@@ -12,6 +13,13 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core'
+import {
+  HEAT_PUMP_EVENT_KINDS,
+  HEAT_PUMP_EVENT_NOTE_MAX,
+  type HeatPumpEventKind,
+} from '../../heatPump/events'
+import { sqlList } from '../sqlList'
+import { user } from './betterAuth'
 
 /**
  * Backstop for one unit-hour, kWh: a 2.5 kW unit can't use 5 kWh in an hour (ADR-0027). It
@@ -92,6 +100,37 @@ export const heatPumpReading = pgTable(
     tempCheck('setpoint_c', table.setpointC),
     tempCheck('inside_c', table.insideC),
     tempCheck('outside_c', table.outsideC),
+  ],
+).enableRLS()
+
+// Admin-entered log of what happened to the units (ADR-0027 decision 10): a service, a filter
+// cleaning, a changed setting. Marks the day chart and splits the energy signature (step 4b).
+// `occurred_on` is a Stockholm calendar day (a `date`, not an instant). `heat_pump_id` null =
+// every unit; restrict, so a unit with logged events can't silently vanish (the readings
+// cascade, but an event is the owner's own record). The note's 500-character rule is the
+// service's; the CHECK is its backstop.
+export const heatPumpEvent = pgTable(
+  'heat_pump_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    occurredOn: date('occurred_on', { mode: 'string' }).notNull(),
+    heatPumpId: uuid('heat_pump_id').references(() => heatPump.id, { onDelete: 'restrict' }),
+    kind: text('kind').$type<HeatPumpEventKind>().notNull(),
+    note: text('note'),
+    createdBy: uuid('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    check('heat_pump_event_kind_check', sql`${table.kind} IN (${sqlList(HEAT_PUMP_EVENT_KINDS)})`),
+    check(
+      'heat_pump_event_note_check',
+      sql`char_length(${table.note}) BETWEEN 1 AND ${sql.raw(String(HEAT_PUMP_EVENT_NOTE_MAX))}`,
+    ),
+    index('heat_pump_event_occurred_on_idx').on(table.occurredOn),
   ],
 ).enableRLS()
 

@@ -197,6 +197,13 @@
       "when": 1792062630812,
       "tag": "0027_heat_pump_day_view",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792152531413,
+      "tag": "0028_heat_pump_event",
+      "breakpoints": true
     }
   ]
 }
