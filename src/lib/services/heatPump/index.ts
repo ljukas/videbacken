@@ -1,6 +1,7 @@
 export * from './daySums'
 export * from './errors'
 export * from './heatPump'
+export * from './heatPumpEvents'
 export * from './heatPumpRead'
 export * from './monthSums'
 export * from './unitEnd'
