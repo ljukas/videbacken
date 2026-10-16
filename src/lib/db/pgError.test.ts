@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { electricityTariff } from '~/lib/db/schema'
+import { electricityTariff, heatPumpEvent } from '~/lib/db/schema'
 import { setupDatabase } from '~test/setup'
-import { isUniqueViolation, pgErrorSummary } from './pgError'
+import { isForeignKeyViolation, isUniqueViolation, pgErrorSummary } from './pgError'
 
 setupDatabase()
 
@@ -36,6 +36,24 @@ test('ignores other errors and non-errors', async () => {
   expect(isUniqueViolation(checkError, 'electricity_tariff_valid_from_unique')).toBe(false)
   expect(isUniqueViolation(new Error('x'), 'electricity_tariff_valid_from_unique')).toBe(false)
   expect(isUniqueViolation(null, 'electricity_tariff_valid_from_unique')).toBe(false)
+})
+
+test('recognises a real foreign-key violation on the named constraint only', async () => {
+  const error = await db
+    .insert(heatPumpEvent)
+    .values({
+      occurredOn: '2026-10-08',
+      heatPumpId: '00000000-0000-4000-8000-000000000000',
+      kind: 'service',
+    })
+    .then(() => null)
+    .catch((e: unknown) => e)
+
+  expect(isForeignKeyViolation(error, 'heat_pump_event_heat_pump_id_heat_pump_id_fk')).toBe(true)
+  expect(isForeignKeyViolation(error, 'some_other_fk')).toBe(false)
+  // The same constraint name under the unique-violation SQLSTATE is not a match.
+  expect(isUniqueViolation(error, 'heat_pump_event_heat_pump_id_heat_pump_id_fk')).toBe(false)
+  expect(isForeignKeyViolation(null, 'heat_pump_event_heat_pump_id_heat_pump_id_fk')).toBe(false)
 })
 
 test('pgErrorSummary names the SQLSTATE and constraint only, through drizzle’s wrapper', () => {

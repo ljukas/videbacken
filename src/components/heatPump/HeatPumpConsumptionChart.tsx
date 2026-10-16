@@ -1,11 +1,18 @@
-import { useMemo } from 'react'
-import { BarChart, type BarSeries, type LineSeries } from '~/components/chart/BarChart'
+import { useCallback, useMemo } from 'react'
+import {
+  BarChart,
+  type BarMarker,
+  type BarSeries,
+  type LineSeries,
+} from '~/components/chart/BarChart'
 import { CHART_HEIGHT, TooltipRow } from '~/components/chart/ChartParts'
 import { formatCount } from '~/components/evCharging/format'
+import { type DayEventMarker, dayEventMarkers, type HeatPumpEventDto } from '~/lib/heatPump/events'
 import { heatPumpColor } from '~/lib/houseEnergy/heatPumpColors'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { formatCelsius, formatCelsiusTick, formatKwhOneDecimal } from './format'
+import { HeatPumpEventLines } from './HeatPumpEventLines'
 import {
   type HeatPumpChartRow,
   type HeatPumpView,
@@ -22,16 +29,24 @@ const rowShort = (r: HeatPumpChartRow) => r.short
 const rowValue = (r: HeatPumpChartRow, key: string) =>
   key === LAST_YEAR_KEY ? r.lastYear : key === OUTDOOR_KEY ? r.outdoorC : (r.kwh[key] ?? null)
 const kwhText = (v: number | null | undefined) => (v == null ? '—' : formatKwhOneDecimal(v))
+// The `events` default: one array, so the marker memo below keeps its identity across renders.
+const NO_EVENTS: readonly HeatPumpEventDto[] = []
+const NO_MARKERS = new Map<string, DayEventMarker[]>()
 
 // The Förbrukning chart (spec "Energi › Värmepumpar"): the units stacked (step 2's colours, name order), last year
 // as an outline beside each month (year view), the hour-weighted outdoor temperature as a line on a right-hand
-// °C axis. A month bar (year view, Totalt) selects that month; the day chart selects nothing.
+// °C axis. A month bar (year view, Totalt) selects that month; the day chart selects nothing. The day chart marks
+// the logged events (step 4a): a ▼ above the day's stack per unit, in its colour, and an event for every unit
+// across the column too.
 export function HeatPumpConsumptionChart({
   view,
   onSelectMonth,
+  events = NO_EVENTS,
 }: {
   view: HeatPumpView
   onSelectMonth: (month: { year: number; month: number }) => void
+  /** Every logged event (newest first); only the day view draws them. */
+  events?: readonly HeatPumpEventDto[]
 }) {
   const { units, kind } = view
   const lastYear = kind === 'year' && view.year !== null ? view.year - 1 : null
@@ -72,6 +87,31 @@ export function HeatPumpConsumptionChart({
       strokeWidth: 1.5,
     }),
     [],
+  )
+  // Events by Stockholm day (string keys: DST- and timezone-proof), only in the day view, where a row's key is its
+  // day. One marker per unit per day; colours as the bars'.
+  const markerMap = useMemo(
+    () =>
+      kind === 'month'
+        ? dayEventMarkers(
+            events,
+            units.map((u) => u.id),
+          )
+        : NO_MARKERS,
+    [kind, events, units],
+  )
+  const markers = useCallback(
+    (row: HeatPumpChartRow): BarMarker[] =>
+      (markerMap.get(row.key) ?? []).map((mk) =>
+        mk.heatPumpId === null
+          ? { key: 'all', color: 'var(--foreground)' }
+          : {
+              key: mk.heatPumpId,
+              seriesKey: mk.heatPumpId,
+              color: heatPumpColor(units, mk.heatPumpId),
+            },
+      ),
+    [markerMap, units],
   )
   // No outdoor value in any row: no line, so no right axis (an empty one would read 0°–1°).
   const hasOutdoor = view.rows.some((r) => r.outdoorC !== null)
@@ -115,11 +155,26 @@ export function HeatPumpConsumptionChart({
         legendClassName="text-sm"
         tooltipTitle={false}
         tooltipClassName="min-w-56 gap-1 border-border px-3 py-2 text-sm [&>div]:gap-1"
-        tooltip={(r) =>
-          r.total === null && r.lastYear === null && r.outdoorC === null ? null : (
-            <HeatPumpTooltip row={r} view={view} lastYear={lastYear} />
+        tooltip={(r) => {
+          const lines = markerMap.get(r.key)
+          // A day without readings (yet) still explains its event, under the day's title.
+          if (r.total === null && r.lastYear === null && r.outdoorC === null) {
+            return lines ? (
+              <>
+                <HeatPumpTooltipTitle row={r} />
+                <HeatPumpEventLines markers={lines} units={units} />
+              </>
+            ) : null
+          }
+          return (
+            <>
+              <HeatPumpTooltip row={r} view={view} lastYear={lastYear} />
+              <HeatPumpEventLines markers={lines} units={units} />
+            </>
           )
-        }
+        }}
+        // Passed in the whole day view, events or not, so the space above the stacks doesn't jump when they load.
+        markers={kind === 'month' ? markers : undefined}
         label={view.chartLabel}
         keyboardHint={selectable ? m.energy_chart_keyboard_hint() : undefined}
         selection={
@@ -151,10 +206,7 @@ function HeatPumpTooltip({
 }) {
   return (
     <>
-      <div className="font-semibold text-sm">
-        {row.title}
-        {row.running ? ` (${m.energy_chart_so_far()})` : ''}
-      </div>
+      <HeatPumpTooltipTitle row={row} />
       {view.units.map((u) => (
         <TooltipRow key={u.id} label={u.name} color={heatPumpColor(view.units, u.id)}>
           {kwhText(row.kwh[u.id])}
@@ -181,5 +233,14 @@ function HeatPumpTooltip({
         </span>
       ) : null}
     </>
+  )
+}
+
+function HeatPumpTooltipTitle({ row }: { row: HeatPumpChartRow }) {
+  return (
+    <div className="font-semibold text-sm">
+      {row.title}
+      {row.running ? ` (${m.energy_chart_so_far()})` : ''}
+    </div>
   )
 }

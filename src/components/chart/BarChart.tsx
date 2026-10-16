@@ -47,6 +47,15 @@ export type LineSeries = {
   strokeWidth?: number
 }
 
+/** A small mark on one category: on top of the stack in a series' colour, or across the whole column. */
+export type BarMarker = {
+  /** Unique within its category (a React key and the `data-marker` hook). */
+  key: string
+  /** A series key: the mark is that series' (told by `color`); undefined: across the column (a dashed line too). */
+  seriesKey?: string
+  color: string
+}
+
 /**
  * A selectable chart must also have a `label`: the label makes it a keyboard
  * stop, and Enter / Space on that stop are its only keyboard path. Without one
@@ -115,9 +124,18 @@ export type BarChartProps<Row> = {
   selection?: BarSelection<Row>
   /** A short label above a category's stack (e.g. a winter loss share); null draws none. */
   barLabel?: (row: Row, index: number) => string | null
+  /**
+   * Marks on a category (logged events); null or [] draws none. Keep its identity across renders. Its headroom is
+   * above the stack only: it doesn't make room for a `barLabel` too (no chart combines them).
+   */
+  markers?: (row: Row, index: number) => readonly BarMarker[] | null
 }
 
 const DOT_R = 3
+const MARKER_W = 8
+const MARKER_MIN_W = 3
+const MARKER_H = 6
+const MARKER_GAP = 2
 
 // One bar chart for the category charts (months, hours): visx shapes on d3
 // scales, the geometry in barLayout.ts. The SVG is visual; a labelled chart is
@@ -152,6 +170,7 @@ export function BarChart<Row>({
   keyboardHint,
   selection,
   barLabel,
+  markers,
 }: BarChartProps<Row>) {
   // No debounce: a resize that wraps the legend re-lays the plot at once,
   // as recharts' ResponsiveContainer did (a stale plot would overlap it).
@@ -202,8 +221,9 @@ export function BarChart<Row>({
     setAnnounced(null)
     setOutline(null)
   }
-  // A label over the tallest bar needs room above the plot.
-  const marginTop = barLabel ? MARGIN.top + tickPx + 6 : MARGIN.top
+  // A label over the tallest bar, and a marker above it, need room above the plot.
+  const marginTop =
+    (barLabel ? MARGIN.top + tickPx + 6 : MARGIN.top) + (markers ? MARKER_H + MARKER_GAP : 0)
   const tickLabel = { fill: 'var(--muted-foreground)', fontSize: tickPx }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `at` is rows + value, both listed
@@ -278,6 +298,13 @@ export function BarChart<Row>({
     minBarPx,
     marginTop,
   ])
+  // The top of a category's stack (its tallest bar, an outline bar beside it included), or the baseline when nothing
+  // is drawn.
+  const stackTop = (i: number) => {
+    if (!geometry) return 0
+    const tops = geometry.rects.filter((r) => r.index === i).map((r) => r.y)
+    return tops.length > 0 ? Math.min(...tops) : geometry.plotH
+  }
 
   const chosen = selection?.selected
   const selected =
@@ -294,10 +321,12 @@ export function BarChart<Row>({
   // The card's anchor: the category's centre, at the top of its tallest bar.
   const anchor = (i: number) => {
     if (!geometry) return { left: 0, top: 0 }
-    const tops = geometry.rects.filter((r) => r.index === i).map((r) => r.y)
+    const tops = [stackTop(i)]
     // The line's dot too, so the card never covers it.
     const dot = line ? at(i, line.key) : null
     if (dot !== null) tops.push((geometry.yRight ?? geometry.y).scale(dot) - DOT_R)
+    // And the category's marks.
+    if ((markers?.(rows[i], i)?.length ?? 0) > 0) tops.push(stackTop(i) - MARKER_GAP - MARKER_H)
     return {
       left: geometry.left + geometry.centres[i],
       top: marginTop + Math.min(geometry.plotH, ...tops),
@@ -564,6 +593,53 @@ export function BarChart<Row>({
                   strokeWidth={2}
                 />
               ))}
+          </g>
+        ) : null}
+        {markers ? (
+          // Visual only (the svg is aria-hidden): the caller's tooltip names what a mark means. After the line, so a
+          // mark stays visible over its dots.
+          <g data-markers pointerEvents="none">
+            {range(count).flatMap((i) => {
+              const list = markers(rows[i], i) ?? []
+              if (list.length === 0) return []
+              const tip = stackTop(i) - MARKER_GAP
+              // Narrowed to the column (the band step), so several marks on a narrow day stay inside it: the mark
+              // shrinks to MARKER_MIN_W, then the gap goes, then the mark shrinks on (the height stays).
+              const step = Math.min(MARKER_W + MARKER_GAP, geometry.x.step() / list.length)
+              const w = Math.min(step, Math.max(MARKER_MIN_W, step - MARKER_GAP))
+              const centre = geometry.centres[i]
+              const first = centre - ((list.length - 1) * step) / 2
+              return list.map((mk, j) => {
+                const cx = first + j * step
+                return (
+                  <g
+                    key={`${i}-${mk.key}`}
+                    data-marker={mk.key}
+                    data-index={i}
+                    data-across={mk.seriesKey === undefined ? true : undefined}
+                  >
+                    {mk.seriesKey === undefined ? (
+                      <line
+                        x1={centre}
+                        x2={centre}
+                        y1={0}
+                        y2={geometry.plotH}
+                        stroke={mk.color}
+                        strokeOpacity={0.6}
+                        strokeDasharray="3 3"
+                      />
+                    ) : null}
+                    {/* ▼ pointing at the category's stack. */}
+                    <path
+                      d={`M${cx - w / 2},${tip - MARKER_H} L${cx + w / 2},${tip - MARKER_H} L${cx},${tip} Z`}
+                      fill={mk.color}
+                      stroke="var(--card)"
+                      strokeWidth={1}
+                    />
+                  </g>
+                )
+              })
+            })}
           </g>
         ) : null}
         {zeroLine ? (

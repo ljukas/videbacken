@@ -8,11 +8,13 @@ import {
 } from '@tanstack/react-router'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
-import { z } from 'zod'
-import { energySearchSchema } from '~/components/energy/energySearch'
 import { formatAgo } from '~/components/evCharging/format'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
-import { heatPumpDaysQuery, heatPumpMonthsQuery } from '~/components/heatPump/heatPumpQueries'
+import {
+  heatPumpDaysQuery,
+  heatPumpEventsQuery,
+  heatPumpMonthsQuery,
+} from '~/components/heatPump/heatPumpQueries'
 import { m } from '~/paraglide/messages'
 import { clickOn, parkPointer, seriesBars } from '~test/browser/chartDom'
 import { makeTestQueryClient } from '~test/browser/render'
@@ -38,14 +40,16 @@ const seedSeptember = (qc: QueryClient) =>
     daysPayload(2026, 9, 15) as never,
   )
 
+// The route's own search schema, read before any test re-points the route (`update` below mutates it).
+const routeSearchSchema = Route.options.validateSearch
+
 // As -energyPage.browser.test.tsx: anything unseeded fails (no /api/rpc in the test server).
-// `validateSearch` stands in for a later step's wider schema (step 4a extends the route's with `dialog`, `eventId`).
 // The route's loader runs (on the client's path: it starts its reads and awaits none).
 async function loadPage(
   path: string,
   prepare: (qc: QueryClient) => void,
   health: Parameters<typeof seedSourcesHealth>[1] = {},
-  validateSearch: unknown = energySearchSchema,
+  { role = 'user' }: { role?: 'user' | 'admin' } = {},
 ) {
   const qc = makeTestQueryClient()
   qc.setDefaultOptions({ queries: { staleTime: Number.POSITIVE_INFINITY, retry: false } })
@@ -60,11 +64,11 @@ async function loadPage(
     id: pathname,
     path: pathname,
     getParentRoute: () => root,
-    validateSearch,
+    validateSearch: routeSearchSchema,
   })
   const router = createRouter({
     routeTree: root.addChildren([Route] as never[]),
-    context: { queryClient: qc, user: { role: 'user' } },
+    context: { queryClient: qc, user: { id: 'u1', role } },
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   await router.load()
@@ -106,18 +110,15 @@ test("a year: month bars with last year's outline; clicking a month opens its da
   await vi.waitFor(() => expect(router.state.location.search).toEqual({ period: '2026-03' }))
 })
 
-test("a period change keeps the page's other search keys (step 4a's dialog state)", async () => {
-  const withDialog = energySearchSchema.extend({ dialog: z.string().optional().catch(undefined) })
-  const { screen, router } = await renderPage(
-    '/energy/heat-pumps?period=2026&dialog=eventNew',
-    (qc) => seedYear(qc),
-    {},
-    withDialog,
+test("a period change keeps the page's other search keys (the event dialogs' state)", async () => {
+  // An open dialog would cover the chart, so the kept key is the dialog's `eventId` on its own.
+  const { screen, router } = await renderPage('/energy/heat-pumps?period=2026&eventId=e1', (qc) =>
+    seedYear(qc),
   )
   await vi.waitFor(() => expect(seriesBars(screen.container, 0).length).toBeGreaterThan(2))
   await clickOn(screen.container, seriesBars(screen.container, 0)[2])
   await vi.waitFor(() =>
-    expect(router.state.location.search).toEqual({ period: '2026-03', dialog: 'eventNew' }),
+    expect(router.state.location.search).toEqual({ period: '2026-03', eventId: 'e1' }),
   )
 })
 
@@ -274,23 +275,44 @@ test('from a year to a month whose days are still loading: the year stays, dimme
   expect(seriesBars(screen.container, 2)).toHaveLength(12) // the year's chart, dimmed
 })
 
+const seedEmpty = (qc: QueryClient) =>
+  seedYear(
+    qc,
+    monthsPayload({
+      units: [],
+      availableYears: [2026],
+      firstReadingDay: null,
+      monthsWithReadings: [],
+      newestMonth: null,
+      months: [],
+      lastYear: [],
+      lastYearSoFar: null,
+    }),
+  )
+
 test('no readings: the empty state', async () => {
-  const { screen } = await renderPage('/energy/heat-pumps', (qc) =>
-    seedYear(
-      qc,
-      monthsPayload({
-        units: [],
-        availableYears: [2026],
-        firstReadingDay: null,
-        monthsWithReadings: [],
-        newestMonth: null,
-        months: [],
-        lastYear: [],
-        lastYearSoFar: null,
-      }),
-    ),
+  const { screen } = await renderPage('/energy/heat-pumps', seedEmpty)
+  await expect.element(screen.getByText(m.heat_pump_empty_title())).toBeVisible()
+})
+
+test('no readings: the events are never asked for', async () => {
+  const { screen, qc } = await renderPage('/energy/heat-pumps', seedEmpty, {}, { role: 'admin' })
+  await expect.element(screen.getByText(m.heat_pump_empty_title())).toBeVisible()
+  const state = qc.getQueryState(heatPumpEventsQuery.queryKey)
+  expect(state?.fetchStatus ?? 'idle').toBe('idle')
+  expect(state?.status ?? 'pending').toBe('pending')
+})
+
+test("no readings: an admin's event dialog link opens nothing and is cleaned", async () => {
+  const { screen, router } = await renderPage(
+    '/energy/heat-pumps?dialog=eventNew',
+    seedEmpty,
+    {},
+    { role: 'admin' },
   )
   await expect.element(screen.getByText(m.heat_pump_empty_title())).toBeVisible()
+  await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
 })
 
 test('a failed read: the heading stays, the alert shows', async () => {
@@ -324,4 +346,142 @@ test('Comfort Cloud\'s health: its alert when unhealthy, its "senast synkad" in 
   await expect
     .element(screen.getByText(m.charging_last_synced({ time: formatAgo(synced) })))
     .toBeVisible()
+})
+
+// Step 4a: Händelser.
+const eventsKey = heatPumpEventsQuery.queryKey
+const SERVICE = {
+  id: 'e1',
+  occurredOn: '2026-09-10',
+  heatPumpId: null,
+  kind: 'service' as const,
+  note: 'Årlig service',
+}
+const seedPage = (events: unknown) => (qc: QueryClient) => {
+  seedYear(qc)
+  seedSeptember(qc)
+  qc.setQueryData(eventsKey, events as never)
+}
+
+test('the events card lists the events, and the day chart marks them', async () => {
+  const { screen } = await renderPage(
+    '/energy/heat-pumps',
+    seedPage([SERVICE]),
+    {},
+    { role: 'admin' },
+  )
+  await expect
+    .element(screen.getByRole('heading', { name: m.heat_pump_events_title() }))
+    .toBeVisible()
+  await expect.element(screen.getByText('Årlig service')).toBeVisible()
+  await vi.waitFor(() =>
+    expect(screen.container.querySelectorAll('[data-marker="all"]')).toHaveLength(1),
+  )
+})
+
+// Review Focus 4.
+test('a member sees the list but no controls, and an admin link is cleaned', async () => {
+  const { screen, router } = await renderPage(
+    '/energy/heat-pumps?dialog=eventNew',
+    seedPage([SERVICE]),
+  )
+  await expect.element(screen.getByText('Årlig service')).toBeVisible()
+  expect(screen.getByRole('button', { name: m.heat_pump_events_add() }).elements()).toHaveLength(0)
+  expect(screen.getByRole('button', { name: /^Åtgärder för/ }).elements()).toHaveLength(0)
+  await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+})
+
+test('an admin opens "Lägg till" through the URL', async () => {
+  const { screen, router } = await renderPage(
+    '/energy/heat-pumps',
+    seedPage([SERVICE]),
+    {},
+    { role: 'admin' },
+  )
+  await screen.getByRole('button', { name: m.heat_pump_events_add() }).click()
+  await expect
+    .element(screen.getByRole('dialog', { name: m.heat_pump_event_dialog_new_title() }))
+    .toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'eventNew' })
+})
+
+test('an edit deep link opens that event', async () => {
+  const { screen } = await renderPage(
+    '/energy/heat-pumps?dialog=eventEdit&eventId=e1',
+    seedPage([SERVICE]),
+    {},
+    { role: 'admin' },
+  )
+  await expect
+    .element(screen.getByRole('dialog', { name: m.heat_pump_event_dialog_edit_title() }))
+    .toBeVisible()
+  await expect
+    .element(screen.getByLabelText(m.heat_pump_event_field_note()))
+    .toHaveValue('Årlig service')
+})
+
+// Review Focus 3.
+test('a deep link to a deleted event is cleaned', async () => {
+  const { router } = await renderPage(
+    '/energy/heat-pumps?dialog=eventDelete&eventId=gone',
+    seedPage([SERVICE]),
+    {},
+    { role: 'admin' },
+  )
+  await vi.waitFor(() => expect(router.state.location.search).not.toHaveProperty('dialog'))
+  expect(router.state.location.search).not.toHaveProperty('eventId')
+})
+
+test('an edit link waits for a refetching list before judging its event gone', async () => {
+  let resolve: (events: unknown) => void = () => {}
+  const { screen, router } = await renderPage(
+    '/energy/heat-pumps?dialog=eventEdit&eventId=e1',
+    (qc) => {
+      seedPage([])(qc) // a stale list from before e1 was logged
+      void qc.fetchQuery({
+        queryKey: eventsKey,
+        queryFn: () => new Promise((r) => (resolve = r)) as never,
+        staleTime: 0,
+      })
+    },
+    {},
+    { role: 'admin' },
+  )
+  await expect
+    .element(screen.getByRole('heading', { name: m.heat_pump_events_title() }))
+    .toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'eventEdit', eventId: 'e1' })
+  resolve([SERVICE])
+  await expect
+    .element(screen.getByRole('dialog', { name: m.heat_pump_event_dialog_edit_title() }))
+    .toBeVisible()
+})
+
+test('events still loading: the card is a skeleton, never "Inga händelser ännu"', async () => {
+  const { screen } = await renderPage('/energy/heat-pumps', (qc) => {
+    seedYear(qc)
+    seedSeptember(qc)
+    void qc.prefetchQuery({ queryKey: eventsKey, queryFn: () => new Promise(() => {}) })
+  })
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-boneyard="heat-pumps-events"]')).not.toBeNull(),
+  )
+  expect(screen.getByText(m.heat_pump_events_empty_title()).elements()).toHaveLength(0)
+})
+
+test('events failed: the alert, no empty state', async () => {
+  const { screen } = await renderPage('/energy/heat-pumps', (qc) => {
+    seedYear(qc)
+    seedSeptember(qc)
+  })
+  await expect.element(screen.getByText(m.heat_pump_events_error_title())).toBeVisible()
+  expect(screen.getByText(m.heat_pump_events_empty_title()).elements()).toHaveLength(0)
+})
+
+test('the dialog keys stay on this route: the shared energy schema has none', async () => {
+  const { energySearchSchema } = await import('~/components/energy/energySearch')
+  expect(energySearchSchema.parse({ dialog: 'eventNew', eventId: 'e1' })).not.toHaveProperty(
+    'dialog',
+  )
 })

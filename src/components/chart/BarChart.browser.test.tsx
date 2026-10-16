@@ -1034,3 +1034,150 @@ test('an outline series draws unfilled bars in its colour and an outlined legend
   expect(swatch?.style.boxShadow).toContain('inset')
   expect(swatch?.style.backgroundColor).toBe('')
 })
+
+const markerNodes = (root: ParentNode) => [...root.querySelectorAll<SVGGElement>('[data-marker]')]
+const markerMark = (node: SVGGElement) => {
+  const path = node.querySelector('path')
+  if (!path) throw new Error('a marker without its mark')
+  return path
+}
+
+test('without markers nothing marker-shaped is drawn', async () => {
+  const { screen } = await render()
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(4))
+  expect(screen.container.querySelector('[data-markers]')).toBeNull()
+})
+
+test('markers draw per category: a series mark above the stack, an across mark with its line', async () => {
+  const { screen } = await render({
+    markers: (r) =>
+      r.label === 'apr'
+        ? [
+            { key: 'all', color: 'black' },
+            { key: 'a', seriesKey: 'a', color: 'red' },
+          ]
+        : r.label === 'feb'
+          ? [{ key: 'b', seriesKey: 'b', color: 'blue' }]
+          : null,
+  })
+  await vi.waitFor(() => expect(markerNodes(screen.container)).toHaveLength(3))
+  const [across, onA] = markerNodes(screen.container).filter((n) => n.dataset.index === '3')
+  expect(across.dataset.marker).toBe('all')
+  expect(across.querySelector('line')).not.toBeNull()
+  expect(onA.querySelector('line')).toBeNull()
+  expect(markerMark(onA).getAttribute('fill')).toBe('red')
+  // Above April's stack: the mark's bottom is at or above the top of April's tallest bar.
+  const aprilTop = Math.min(
+    ...bars(screen.container)
+      .filter((b) => b.getAttribute('data-index') === '3')
+      .map((b) => b.getBoundingClientRect().top),
+  )
+  expect(markerMark(onA).getBoundingClientRect().bottom).toBeLessThanOrEqual(aprilTop + 0.5)
+  // A category without bars (feb, null values) still shows its mark, on the baseline.
+  const feb = markerNodes(screen.container).filter((n) => n.dataset.index === '1')
+  expect(feb).toHaveLength(1)
+  const baseline = (
+    screen.container.querySelector('[data-hover-overlay]') as SVGRectElement
+  ).getBoundingClientRect().bottom
+  expect(markerMark(feb[0]).getBoundingClientRect().bottom).toBeLessThanOrEqual(baseline + 0.5)
+  expect(markerMark(feb[0]).getBoundingClientRect().bottom).toBeGreaterThan(baseline - 4)
+})
+
+test('a mark clears an outline bar beside the stack too', async () => {
+  const { screen } = await render({
+    series: [
+      { key: 'a', label: 'Serie A', color: 'red', stack: 's' },
+      { key: 'b', label: 'Förra året', color: 'gray', outline: true },
+    ],
+    // apr: a 30, b 10; jan: a 10, b 5. Make the outline the taller one on jan.
+    value: (r, k) => (r.label === 'jan' && k === 'b' ? 40 : r[k as 'a' | 'b']),
+    markers: (r) => (r.label === 'jan' ? [{ key: 'a', seriesKey: 'a', color: 'red' }] : null),
+  })
+  await vi.waitFor(() => expect(markerNodes(screen.container)).toHaveLength(1))
+  const outlineTop = seriesBars(screen.container, 1)[0].getBoundingClientRect().top
+  expect(
+    markerMark(markerNodes(screen.container)[0]).getBoundingClientRect().bottom,
+  ).toBeLessThanOrEqual(outlineTop + 0.5)
+})
+
+test('two marks on one category sit side by side', async () => {
+  const { screen } = await render({
+    markers: (r) =>
+      r.label === 'jan'
+        ? [
+            { key: 'a', seriesKey: 'a', color: 'red' },
+            { key: 'b', seriesKey: 'b', color: 'blue' },
+          ]
+        : null,
+  })
+  await vi.waitFor(() => expect(markerNodes(screen.container)).toHaveLength(2))
+  const [left, right] = markerNodes(screen.container).map((n) =>
+    markerMark(n).getBoundingClientRect(),
+  )
+  expect(left.right).toBeLessThanOrEqual(right.left)
+})
+
+test('in a narrow column, several marks shrink to stay inside it, drawn over the line', async () => {
+  const { screen } = await render(
+    {
+      line: { key: 'b', label: 'Serie B', color: 'blue' },
+      markers: (r) =>
+        r.label === 'jan'
+          ? [
+              { key: 'all', color: 'black' },
+              { key: 'a', seriesKey: 'a', color: 'red' },
+              { key: 'b', seriesKey: 'b', color: 'blue' },
+            ]
+          : [{ key: 'all', color: 'black' }],
+    },
+    110,
+  )
+  await vi.waitFor(() => expect(markerNodes(screen.container)).toHaveLength(6))
+  // The across marks' lines sit on the category centres.
+  const centres = markerNodes(screen.container)
+    .filter((n) => n.dataset.across)
+    .map((n) => n.querySelector('line')?.getBoundingClientRect().left ?? Number.NaN)
+  const step = centres[1] - centres[0]
+  expect(step).toBeLessThan(3 * 10) // narrower than three full-size marks
+  const jan = markerNodes(screen.container).filter((n) => n.dataset.index === '0')
+  expect(jan).toHaveLength(3)
+  for (const n of jan) {
+    const box = markerMark(n).getBoundingClientRect()
+    expect(box.left).toBeGreaterThanOrEqual(centres[0] - step / 2 - 0.5)
+    expect(box.right).toBeLessThanOrEqual(centres[0] + step / 2 + 0.5)
+  }
+  // The marks are on top: their group comes after the line's.
+  const lineGroup = screen.container.querySelector('[data-kind="line"]')
+  const markersGroup = screen.container.querySelector('[data-markers]')
+  expect(lineGroup).not.toBeNull()
+  expect(
+    // biome-ignore lint/style/noNonNullAssertion: asserted just above
+    lineGroup!.compareDocumentPosition(markersGroup!) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+})
+
+test('marks leave the bars, axes and tooltip as they were', async () => {
+  // One tree, re-rendered (a second chart after an unmount stays empty in this setup).
+  const { screen, queryClient } = await render()
+  await vi.waitFor(() => expect(bars(screen.container)).toHaveLength(4))
+  const heights = bars(screen.container).map(barHeight)
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>
+      <div style={{ width: 480 }}>
+        <button type="button">before</button>
+        <BarChart {...base} markers={() => [{ key: 'all', color: 'black' }]} />
+      </div>
+    </QueryClientProvider>,
+  )
+  await vi.waitFor(() => expect(markerNodes(screen.container)).toHaveLength(4))
+  // The plot loses only the marks' headroom: every bar keeps its share of the plot.
+  const marked = bars(screen.container).map(barHeight)
+  expect(marked[0]).toBeLessThan(heights[0])
+  marked.forEach((h, i) => {
+    expect(h / marked[0]).toBeCloseTo(heights[i] / heights[0], 3)
+  })
+  expect(xTickLabels(screen.container)).toEqual(['jan', 'feb', 'mar', 'apr'])
+  // The card still opens over the hovered category, above its mark.
+  await hoverBar(screen.container, 1) // apr's a
+  await vi.waitFor(() => expect(tooltipText()).toBe('aprA 30 B 10'))
+})
