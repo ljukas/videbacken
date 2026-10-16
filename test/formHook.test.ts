@@ -8,3 +8,10 @@ it('keeps the phone fields out of the global form hook', () => {
   const hook = readFileSync(new URL('../src/hooks/form.ts', import.meta.url), 'utf8')
   expect(hook).not.toMatch(/PhoneField|phone-input|react-phone-number-input/)
 })
+
+// The note textarea is used by one admin dialog: keep it out of every form's chunk too
+// (heat pump events, plan decision 11). Render it inside AppField and import it directly.
+it('keeps the textarea field out of the global form hook', () => {
+  const hook = readFileSync(new URL('../src/hooks/form.ts', import.meta.url), 'utf8')
+  expect(hook).not.toMatch(/TextareaField/)
+})
