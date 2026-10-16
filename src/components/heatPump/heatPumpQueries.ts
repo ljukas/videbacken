@@ -28,3 +28,11 @@ export const heatPumpDaysQuery = (range: { from: string; to: string }) =>
 /** A month's days; null for a year or Totalt (no day chart). */
 export const heatPumpDaysQueryFor = (period: EnergyPeriod | null) =>
   period?.kind === 'month' ? heatPumpDaysQuery(monthDays(period.year, period.month)) : null
+
+/**
+ * Every logged event, newest first (step 4a). Its key sits under `orpc.heatPump.events.key()`, the prefix the event
+ * dialogs invalidate after a write.
+ */
+export const heatPumpEventsQuery = orpc.heatPump.events.list.queryOptions({
+  staleTime: HEAT_PUMP_STALE_TIME,
+})

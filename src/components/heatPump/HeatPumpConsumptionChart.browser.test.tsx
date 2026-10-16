@@ -1,16 +1,26 @@
 import { beforeEach, expect, test, vi } from 'vitest'
+import type { HeatPumpEventDto } from '~/lib/heatPump/events'
+import { heatPumpColor } from '~/lib/houseEnergy/heatPumpColors'
 import { m } from '~/paraglide/messages'
 import {
+  centre,
   clickOn,
   hoverBar,
   legendLabels,
   lineDots,
+  moveAt,
   parkPointer,
   seriesBars,
   tooltipText,
 } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
-import { allPayload, daysPayload, monthsPayload } from '~test/fixtures/heatPumpView'
+import {
+  allPayload,
+  daysPayload,
+  MATSAL,
+  monthsPayload,
+  OVERVANING,
+} from '~test/fixtures/heatPumpView'
 import { HeatPumpConsumptionChart } from './HeatPumpConsumptionChart'
 import { type HeatPumpView, heatPumpView } from './heatPumpView'
 
@@ -31,10 +41,14 @@ const viewOf = (
   if (!v) throw new Error('no view')
   return v
 }
-const render = (view: HeatPumpView, onSelectMonth = vi.fn()) =>
+const render = (
+  view: HeatPumpView,
+  onSelectMonth = vi.fn(),
+  events?: readonly HeatPumpEventDto[],
+) =>
   renderWithProviders(
     <div style={{ width: 720 }}>
-      <HeatPumpConsumptionChart view={view} onSelectMonth={onSelectMonth} />
+      <HeatPumpConsumptionChart view={view} onSelectMonth={onSelectMonth} events={events} />
     </div>,
   )
 const rightTicks = (root: ParentNode) =>
@@ -110,4 +124,63 @@ test("the tooltip's kWh never break from their number", async () => {
   await vi.waitFor(() => expect(tooltipText()).toMatch(/kWh/))
   expect(tooltipText()).toMatch(/\d\u00a0kWh/)
   expect(tooltipText()).not.toMatch(/ kWh/)
+})
+
+// Step 4a: events on the day chart. September 2026, readings on days 1–15.
+const september = () =>
+  viewOf({ days: daysPayload(2026, 9, 15), period: { kind: 'month', year: 2026, month: 9 } })
+const markerNodes = (root: ParentNode) => [...root.querySelectorAll<SVGGElement>('[data-marker]')]
+const event = (over: Partial<HeatPumpEventDto>): HeatPumpEventDto => ({
+  id: crypto.randomUUID(),
+  occurredOn: '2026-09-10',
+  heatPumpId: null,
+  kind: 'service',
+  note: null,
+  ...over,
+})
+
+test('events mark their days: a unit event in its colour, a both-units event across', async () => {
+  const view = september()
+  const { screen } = await render(view, vi.fn(), [
+    event({ occurredOn: '2026-09-10' }),
+    event({ occurredOn: '2026-09-03', heatPumpId: OVERVANING.id, kind: 'filter' }),
+  ])
+  await vi.waitFor(() => expect(markerNodes(screen.container)).toHaveLength(2))
+  const across = markerNodes(screen.container).find((n) => n.dataset.across)
+  expect(across?.dataset.marker).toBe('all')
+  expect(across?.dataset.index).toBe('9') // the 10th
+  const unit = markerNodes(screen.container).find((n) => !n.dataset.across)
+  expect(unit?.dataset.index).toBe('2') // the 3rd
+  expect(unit?.querySelector('path')?.getAttribute('fill')).toBe(
+    heatPumpColor(view.units, OVERVANING.id),
+  )
+})
+
+test("a marked day's tooltip names the event; a day without readings still explains its event", async () => {
+  const { screen } = await render(september(), vi.fn(), [
+    event({ occurredOn: '2026-09-10' }),
+    event({ occurredOn: '2026-09-20', heatPumpId: MATSAL.id, kind: 'setting' }),
+  ])
+  await hoverBar(screen.container, 9) // Matsal's bar on the 10th
+  await vi.waitFor(() =>
+    expect(tooltipText()).toContain(m.heat_pump_event_tooltip({ kinds: 'Service', unit: 'Båda' })),
+  )
+  // The 20th draws no bar: hover its column's centre, five day steps right of the 15th.
+  const bars = seriesBars(screen.container, 0)
+  const p = centre(bars[13])
+  const q = centre(bars[14])
+  moveAt(screen.container, q.x + 5 * (q.x - p.x), q.y)
+  await vi.waitFor(() =>
+    expect(tooltipText()).toContain(
+      m.heat_pump_event_tooltip({ kinds: 'Inställning', unit: 'Matsal' }),
+    ),
+  )
+})
+
+test('the year view draws no markers', async () => {
+  const { screen } = await render(viewOf({ period: { kind: 'year', year: 2026 } }), vi.fn(), [
+    event({ occurredOn: '2026-09-10' }),
+  ])
+  await vi.waitFor(() => expect(seriesBars(screen.container, 0)).toHaveLength(9))
+  expect(markerNodes(screen.container)).toHaveLength(0)
 })

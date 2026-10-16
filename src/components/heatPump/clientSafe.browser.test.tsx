@@ -11,3 +11,8 @@ test('the heat pump view model and period helpers are importable client-side', a
   expect(typeof (await import('./heatPumpView')).heatPumpView).toBe('function')
   expect(typeof (await import('~/lib/heatPump/period')).monthDays).toBe('function')
 })
+
+test('the event vocabulary is importable client-side', async () => {
+  const mod = await import('~/lib/heatPump/events')
+  expect(typeof mod.dayEventMarkers).toBe('function')
+})

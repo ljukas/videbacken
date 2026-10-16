@@ -44,7 +44,8 @@ type Props = {
 
 // The heat pumps' event log (ADR-0027 decision 10): what was done and when, newest first.
 // Everyone sees it; only admins get add / edit / delete. Empty → the shared Empty (ADR-0016)
-// with the one next action for admins.
+// with the one next action for admins. The admin controls carry `data-no-skeleton`: the page's
+// skeleton capture leaves them out, so a member's skeleton has no button bones.
 export function HeatPumpEvents({ events, units, admin }: Props) {
   return (
     <Card>
@@ -60,6 +61,7 @@ export function HeatPumpEvents({ events, units, admin }: Props) {
               size="sm"
               className="pointer-coarse:h-11"
               onClick={admin.onNew}
+              data-no-skeleton
             >
               <PlusIcon />
               {m.heat_pump_events_add()}
@@ -83,7 +85,12 @@ export function HeatPumpEvents({ events, units, admin }: Props) {
             </EmptyHeader>
             {admin ? (
               <EmptyContent>
-                <Button size="sm" className="pointer-coarse:h-11" onClick={admin.onNew}>
+                <Button
+                  size="sm"
+                  className="pointer-coarse:h-11"
+                  onClick={admin.onNew}
+                  data-no-skeleton
+                >
                   <PlusIcon />
                   {m.heat_pump_events_add()}
                 </Button>
@@ -122,6 +129,7 @@ export function HeatPumpEvents({ events, units, admin }: Props) {
                           size="icon-sm"
                           className="pointer-coarse:size-11 shrink-0"
                           aria-label={m.heat_pump_event_actions_for({ kind, date })}
+                          data-no-skeleton
                         >
                           <MoreVerticalIcon />
                         </Button>
