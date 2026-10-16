@@ -103,8 +103,9 @@ test('hovering near a point shows its day, ΔT and kWh', async () => {
   const c = centre(target)
   moveAt(screen.container, c.x + 5, c.y + 5)
   await vi.waitFor(() => expect(tooltipText()).toContain(m.heat_pump_signature_tooltip_delta()))
-  expect(tooltipText()).toMatch(/12[,.]0\s°C/)
-  expect(tooltipText()).toMatch(/8[,.]0\skWh/)
+  // A no-break space: the number and its unit never wrap apart.
+  expect(tooltipText()).toMatch(/12[,.]0\u00a0°C/)
+  expect(tooltipText()).toMatch(/8[,.]0\u00a0kWh/)
   expect(tooltipText()).toContain(m.heat_pump_signature_before())
 })
 
@@ -118,4 +119,42 @@ test('every point stays inside the plot on a phone', async () => {
     expect(b.left + b.width / 2).toBeGreaterThanOrEqual((plot?.left ?? 0) - 0.5)
     expect(b.left + b.width / 2).toBeLessThanOrEqual((plot?.right ?? 0) + 0.5)
   }
+})
+
+test('a fit line below 0 kWh is clipped to the plot; the axis still starts at 0', async () => {
+  // A real-looking signature: a = −3,40, b = 0,71 crosses 0 near ΔT 4,8 (−1,27 kWh at ΔT 3).
+  const low: SignatureResult = {
+    state: 'not_enough_after',
+    after: 0,
+    needed: 14,
+    points: [pt('2026-01-04', 3, 0.4, 'before'), pt('2026-01-19', 19, 10, 'before')],
+    fit: { a: -3.4, b: 0.71 },
+  }
+  await draw(low)
+  const line = document.querySelector('[data-fit="before"]') as SVGLineElement
+  expect(Number(line.getAttribute('y1'))).toBeGreaterThan(
+    Number(document.querySelector('[data-hover-overlay]')?.getAttribute('height')),
+  )
+  const clipped = line.closest('[clip-path]')
+  const id = clipped?.getAttribute('clip-path')?.match(/^url\(#(.+)\)$/)?.[1] ?? ''
+  const rect = document.getElementById(id)?.querySelector('rect')
+  const overlay = document.querySelector('[data-hover-overlay]')
+  expect(rect?.getAttribute('width')).toBe(overlay?.getAttribute('width'))
+  expect(rect?.getAttribute('height')).toBe(overlay?.getAttribute('height'))
+  const yTicks = q('[data-axis="y"] .visx-axis-tick').map((t) => t.textContent)
+  expect(yTicks[0]).toBe('0')
+})
+
+test('the after line is dashed, and the legend shows each set’s line beside its marker', async () => {
+  await draw(ok)
+  expect(document.querySelector('[data-fit="before"]')?.getAttribute('stroke-dasharray')).toBeNull()
+  expect(document.querySelector('[data-fit="after"]')?.getAttribute('stroke-dasharray')).toBe('6 4')
+  const items = q('[data-slot="signature-legend"] [data-legend-item]')
+  const stroke = (i: number) => items[i].querySelector('line')
+  expect(stroke(0)?.getAttribute('stroke-dasharray')).toBeNull()
+  expect(stroke(0)?.getAttribute('stroke')).toBe('var(--signature-before)')
+  expect(stroke(1)?.getAttribute('stroke-dasharray')).toBe('6 4')
+  expect(stroke(1)?.getAttribute('stroke')).toBe('var(--signature-after)')
+  expect(stroke(2)).toBeNull() // not counted: no line
+  expect(document.querySelector('[data-slot="signature-legend"]')?.className).toMatch(/\btext-sm\b/)
 })

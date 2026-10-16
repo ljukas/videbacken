@@ -4,7 +4,7 @@ import { Group } from '@visx/group'
 import { useParentSize } from '@visx/responsive'
 import { scaleLinear } from 'd3-scale'
 import type * as React from 'react'
-import { useMemo, useRef } from 'react'
+import { useId, useMemo, useRef } from 'react'
 import {
   AXIS_COLOR,
   CHART_MARGIN,
@@ -18,9 +18,10 @@ import {
 } from '~/components/chart/axis'
 import { TooltipRow } from '~/components/chart/ChartParts'
 import { ChartPopover, useChartPopover } from '~/components/evCharging/ChartPopover'
-import { formatDay, formatDecimal, formatOneDecimal } from '~/components/evCharging/format'
+import { formatDay, formatDecimal } from '~/components/evCharging/format'
 import type { SignaturePoint, SignatureResult } from '~/lib/heatPump/signature'
 import { m } from '~/paraglide/messages'
+import { formatCelsius, formatKwhOneDecimal } from './format'
 import { nearestPoint, type Segment, signatureDomains, signatureSegments } from './signatureChart'
 
 /** The whole chart's height, legend included (fixed: switching unit or event moves nothing). */
@@ -33,6 +34,8 @@ export const SIGNATURE_COLORS = {
 const TITLE_GAP = 18
 /** Marker radius: 8 px marks (dataviz). */
 const R = 4
+/** The after line's dash: the two lines differ by more than colour (dataviz). */
+const AFTER_DASH = '6 4'
 
 const setLabel = (p: SignaturePoint) =>
   p.set === 'before' ? m.heat_pump_signature_before() : m.heat_pump_signature_after()
@@ -45,6 +48,7 @@ const setLabel = (p: SignaturePoint) =>
 export function SignatureScatter({ result }: { result: SignatureResult }) {
   // No debounce: a resize re-lays the plot at once (BarChart's rule).
   const { parentRef, width, height: plotBoxH } = useParentSize({ debounceTime: 0 })
+  const clipId = useId()
   const popover = useChartPopover<number>({ followScroll: true })
   const cursor = useRef<number | null>(null)
   const { points } = result
@@ -93,6 +97,7 @@ export function SignatureScatter({ result }: { result: SignatureResult }) {
         y2={geometry.y(s.y2)}
         stroke={SIGNATURE_COLORS[key]}
         strokeWidth={2}
+        strokeDasharray={key === 'after' ? AFTER_DASH : undefined}
         strokeLinecap="round"
         pointerEvents="none"
       />
@@ -108,6 +113,11 @@ export function SignatureScatter({ result }: { result: SignatureResult }) {
       className="block overflow-visible"
     >
       <Group left={geometry.left} top={CHART_MARGIN.top}>
+        {/* The fit lines stop at the plot's edges: a line can dip below 0 kWh at low ΔT, and
+            the axis stays at 0 (kWh can't be negative). The markers are never outside. */}
+        <clipPath id={clipId}>
+          <rect width={geometry.plotW} height={geometry.plotH} />
+        </clipPath>
         <g data-grid>
           <GridRows
             scale={geometry.y}
@@ -117,8 +127,10 @@ export function SignatureScatter({ result }: { result: SignatureResult }) {
             strokeOpacity={0.5}
           />
         </g>
-        {line(segments.before, 'before')}
-        {line(segments.after, 'after')}
+        <g data-fits clipPath={`url(#${clipId})`}>
+          {line(segments.before, 'before')}
+          {line(segments.after, 'after')}
+        </g>
         {points.map((p, i) => {
           const { x, y } = geometry.pixels[i]
           const color = SIGNATURE_COLORS[p.set]
@@ -243,7 +255,7 @@ export function SignatureScatter({ result }: { result: SignatureResult }) {
       {/* Always all three items, so the legend's height never changes with the data. */}
       <div
         data-slot="signature-legend"
-        className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-3"
+        className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-3 text-sm"
       >
         <LegendItem shape="circle" label={m.heat_pump_signature_before()} />
         <LegendItem shape="square" label={m.heat_pump_signature_after()} />
@@ -267,13 +279,13 @@ export function SignatureScatter({ result }: { result: SignatureResult }) {
             <div className="font-medium">{formatDay(points[active].day)}</div>
             <div className="grid gap-1.5">
               <TooltipRow label={m.heat_pump_signature_tooltip_delta()}>
-                {`${formatOneDecimal(points[active].deltaT)} °C`}
+                {formatCelsius(points[active].deltaT)}
               </TooltipRow>
               <TooltipRow
                 label={m.heat_pump_signature_tooltip_kwh()}
                 color={SIGNATURE_COLORS[points[active].set]}
               >
-                {`${formatOneDecimal(points[active].kwh)} kWh`}
+                {formatKwhOneDecimal(points[active].kwh)}
               </TooltipRow>
               <div className="text-muted-foreground">
                 {points[active].extrapolated
@@ -288,22 +300,39 @@ export function SignatureScatter({ result }: { result: SignatureResult }) {
   )
 }
 
+/**
+ * A legend swatch: the set's marker on a short stroke of its line (solid before, the
+ * plot's dash after: dash, marker, dash), so the lines aren't told apart by colour
+ * alone. No stroke for the extrapolated days: they have no line.
+ */
 function LegendItem({ shape, label }: { shape: 'circle' | 'square' | 'hollow'; label: string }) {
+  const color = shape === 'circle' ? SIGNATURE_COLORS.before : SIGNATURE_COLORS.after
   return (
     <div data-legend-item className="flex items-center gap-1.5">
       {/* biome-ignore lint/a11y/noSvgWithoutTitle: decorative swatch; the label beside it names it */}
-      <svg width={10} height={10} aria-hidden className="shrink-0">
+      <svg width={28} height={10} aria-hidden className="shrink-0">
+        {shape === 'hollow' ? null : (
+          <line
+            x1={0}
+            y1={5}
+            x2={28}
+            y2={5}
+            stroke={color}
+            strokeWidth={2}
+            strokeDasharray={shape === 'square' ? AFTER_DASH : undefined}
+          />
+        )}
         {shape === 'circle' ? (
-          <circle cx={5} cy={5} r={4} fill={SIGNATURE_COLORS.before} />
+          <circle cx={14} cy={5} r={4} fill={color} stroke="var(--card)" strokeWidth={1.5} />
         ) : (
           <rect
-            x={1}
+            x={10}
             y={1}
             width={8}
             height={8}
             rx={1}
-            fill={shape === 'hollow' ? 'none' : SIGNATURE_COLORS.after}
-            stroke={SIGNATURE_COLORS.after}
+            fill={shape === 'hollow' ? 'var(--card)' : color}
+            stroke={shape === 'hollow' ? color : 'var(--card)'}
             strokeWidth={1.5}
           />
         )}
