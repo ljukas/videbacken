@@ -44,9 +44,10 @@ test('segments: before over the before points, after over the counted after poin
     after: { x1: 5, y1: 4.05, x2: 18, y2: 9.9 },
   })
   expect(signatureSegments({ ...ok, afterFit: null }).after).toBeNull()
+  // not_enough_after: the before line only.
   expect(
-    signatureSegments({ state: 'not_enough_after', after: 2, needed: 14, points, fit }).after,
-  ).toBeNull()
+    signatureSegments({ state: 'not_enough_after', after: 2, needed: 14, points, fit }),
+  ).toEqual({ before: { x1: 4, y1: 4, x2: 19, y2: 11.5 }, after: null })
   expect(signatureSegments({ state: 'not_enough_before', before: 2, points })).toEqual({
     before: null,
     after: null,

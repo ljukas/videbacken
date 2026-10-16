@@ -64,6 +64,8 @@ describe('qualifyingDays', () => {
     expect(
       daysOf(qualifyingDays([day('2026-10-25', { hours: 25, expectedHours: 25 })], none)),
     ).toEqual(['2026-10-25'])
+    // 24 hours on the 23-hour day: not the day's length, so not trusted either.
+    expect(qualifyingDays([day('2026-03-29', { hours: 24, expectedHours: 24 })], none)).toEqual([])
   })
 
   test('cooling up to 2 % of the day is allowed, more is not', () => {
@@ -135,6 +137,19 @@ describe('events for a unit', () => {
     expect(defaultEventId(later, MATSAL)).toBe('b')
   })
 
+  test('of two services the later; of two other events without a service the later', () => {
+    const services = [
+      event({ id: 's2', occurredOn: '2026-09-01', heatPumpId: MATSAL }),
+      event({ id: 's1', occurredOn: '2026-03-01' }),
+    ]
+    expect(defaultEventId(services, MATSAL)).toBe('s2')
+    const others = [
+      event({ id: 'o1', occurredOn: '2026-03-01', kind: 'setting' }),
+      event({ id: 'o2', occurredOn: '2026-09-01', heatPumpId: MATSAL, kind: 'other' }),
+    ]
+    expect(defaultEventId(others, MATSAL)).toBe('o2')
+  })
+
   test('without a service, the latest event; without events, null', () => {
     const noService = events.filter((e) => e.kind !== 'service')
     expect(defaultEventId(noService, MATSAL)).toBe('m')
@@ -177,6 +192,34 @@ describe('the fetch range', () => {
     expect(range([service, theirs], null).to).toBe('2026-02-10')
   })
 
+  test('an unknown event, or one only the other unit has, throws', () => {
+    const theirs = event({ id: 'svc', occurredOn: '2026-01-20', heatPumpId: OVER })
+    expect(() => range([theirs], null)).toThrow(RangeError)
+    expect(() =>
+      signatureRange({
+        events: [service],
+        heatPumpId: MATSAL,
+        eventId: 'gone',
+        firstReadingDay: null,
+        today: '2026-02-10',
+      }),
+    ).toThrow(RangeError)
+  })
+
+  test('a next event on or after today ends the range today; a same-day second event doesn’t end it', () => {
+    const onToday = event({ id: 'now', occurredOn: '2026-02-10', kind: 'setting' })
+    const later = event({ id: 'later', occurredOn: '2026-03-01', kind: 'setting' })
+    const sameDay = event({
+      id: 'same',
+      occurredOn: '2026-01-20',
+      heatPumpId: MATSAL,
+      kind: 'filter',
+    })
+    expect(range([service, onToday], null).to).toBe('2026-02-10')
+    expect(range([service, later], null).to).toBe('2026-02-10')
+    expect(range([service, sameDay], null).to).toBe('2026-02-10')
+  })
+
   test('chunks of at most HEAT_PUMP_DAYS_MAX days, consecutive, covering the range', () => {
     expect(HEAT_PUMP_DAYS_MAX).toBe(800)
     expect(signatureChunks('2024-12-16', '2026-02-10')).toEqual([
@@ -192,6 +235,14 @@ describe('the fetch range', () => {
       { from: '2026-01-01', to: '2026-01-01' },
     ])
     expect(signatureChunks('2026-01-02', '2026-01-01')).toEqual([])
+    // Exactly 800 days: one chunk; 801: a second chunk of one day.
+    expect(signatureChunks('2024-01-01', addDays('2024-01-01', 799))).toEqual([
+      { from: '2024-01-01', to: addDays('2024-01-01', 799) },
+    ])
+    expect(signatureChunks('2024-01-01', addDays('2024-01-01', 800))).toEqual([
+      { from: '2024-01-01', to: addDays('2024-01-01', 799) },
+      { from: addDays('2024-01-01', 800), to: addDays('2024-01-01', 800) },
+    ])
   })
 })
 
@@ -257,6 +308,40 @@ describe('energySignature', () => {
     expect(r.change).toBeCloseTo(-0.1, 10) // every counted day is still 90 % of its prediction
     const flagged = r.points.filter((p) => p.extrapolated).map((p) => p.day)
     expect(flagged).toEqual(['2026-02-04', '2026-02-05'])
+    // The after line over the counted days only (1,8 + 0,45·ΔT exactly); the two outliers would move it.
+    expect(r.afterFit?.a).toBeCloseTo(1.8, 10)
+    expect(r.afterFit?.b).toBeCloseTo(0.45, 10)
+  })
+
+  test('counted after-days spanning less than 1 °C give no after line; exactly 1 °C gives one', () => {
+    const afterAt = (deltaTs: (i: number) => number) =>
+      run(
+        '2026-01-21',
+        Array.from({ length: 14 }, (_, i): [number, number] => [
+          deltaTs(i),
+          0.9 * (2 + 0.5 * deltaTs(i)),
+        ]),
+      )
+    // ΔT 10 ± 0,25: a span of 0,5 °C.
+    const tight = sig([...BEFORE, ...afterAt((i) => (i % 2 ? 10.25 : 9.75))])
+    expect(tight).toMatchObject({ state: 'ok', afterFit: null })
+    // ΔT 9,5 and 10,5: exactly 1 °C.
+    const one = sig([...BEFORE, ...afterAt((i) => (i % 2 ? 10.5 : 9.5))])
+    expect(one.state).toBe('ok')
+    if (one.state !== 'ok') return
+    expect(one.afterFit?.a).toBeCloseTo(1.8, 10)
+    expect(one.afterFit?.b).toBeCloseTo(0.45, 10)
+  })
+
+  test('the input order doesn’t matter', () => {
+    expect(sig([...AFTER, ...BEFORE])).toEqual(sig([...BEFORE, ...AFTER]))
+  })
+
+  test('no before-days: not_enough_before with 0, and no after-day is called extrapolated', () => {
+    const r = sig(AFTER)
+    expect(r).toMatchObject({ state: 'not_enough_before', before: 0 })
+    expect(r.points).toHaveLength(14)
+    expect(r.points.every((p) => p.set === 'after' && !p.extrapolated)).toBe(true)
   })
 
   test('an off day after the event is no point at all', () => {
@@ -290,6 +375,34 @@ describe('energySignature', () => {
     expect(r.points).toHaveLength(27)
     // The 13 before-days span ΔT 7 … 19: the after-days at ΔT 5 and 6 lie outside.
     expect(r.points.filter((p) => p.extrapolated).map((p) => p.deltaT)).toEqual([5, 6])
+  })
+
+  test('exactly 14 before-days, and a spread of exactly 4 °C, are enough', () => {
+    // The first 14 before-days (ΔT 4 … 17): the after-day at ΔT 18 is outside, 13 counted.
+    expect(sig([...BEFORE.slice(0, 14), ...AFTER])).toMatchObject({
+      state: 'not_enough_after',
+      after: 13,
+    })
+    // 14 days, ΔT 10 … 14 in halves: a span of exactly 4,0 °C.
+    const four = run(
+      '2026-01-06',
+      Array.from({ length: 14 }, (_, i): [number, number] => {
+        const deltaT = 10 + (i % 9) * 0.5
+        return [deltaT, 2 + 0.5 * deltaT]
+      }),
+    )
+    const inside = run(
+      '2026-01-21',
+      Array.from({ length: 14 }, (_, i): [number, number] => {
+        const deltaT = 10 + (i % 9) * 0.5
+        return [deltaT, 0.9 * (2 + 0.5 * deltaT)]
+      }),
+    )
+    const r = sig([...four, ...inside])
+    expect(r).toMatchObject({ state: 'ok', beforeDays: 14, afterDays: 14 })
+    if (r.state !== 'ok') return
+    expect(r.fit.a).toBeCloseTo(2, 10)
+    expect(r.fit.b).toBeCloseTo(0.5, 10)
   })
 
   test('before-days spanning less than 4 °C: not_enough_before', () => {

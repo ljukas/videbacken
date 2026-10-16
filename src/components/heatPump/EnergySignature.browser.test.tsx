@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { expect, test, vi } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import type { HeatPumpEventDto } from '~/lib/heatPump/events'
 import { energySignature, eventsForUnit, type SignatureResult } from '~/lib/heatPump/signature'
@@ -9,7 +9,7 @@ import { m } from '~/paraglide/messages'
 import { tapOn, tooltipText } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { signatureRow, signatureUnitDays } from '~test/fixtures/heatPumpSignature'
-import { EnergySignature } from './EnergySignature'
+import { EnergySignature, signatureReadout } from './EnergySignature'
 import { eventKindLabel } from './eventCopy'
 
 const MATSAL = 'hp-matsal'
@@ -293,4 +293,56 @@ test('touch targets: the unit toggle, the select and the table toggle grow to 44
     expect(coarse(item)).toMatch(/pointer-coarse:min-h-11/)
   expect(coarse(document.querySelector('[role="combobox"]'))).toMatch(/pointer-coarse:min-h-11/)
   expect(coarse(document.querySelector('summary'))).toMatch(/pointer-coarse:min-h-11/)
+})
+
+describe('signatureReadout', () => {
+  const okWith = (change: number, margin = 0.01): SignatureResult => ({
+    state: 'ok',
+    points: [],
+    fit: { a: 2, b: 0.5 },
+    afterFit: null,
+    change,
+    margin,
+    beforeDays: 16,
+    afterDays: 14,
+  })
+  const params = (percent: number, margin: number) => ({
+    event: m.heat_pump_signature_after_service(),
+    percent: pct(percent),
+    margin: pct(margin),
+    after: '14',
+    before: '16',
+  })
+
+  test('a change under half a percent either way reads “no difference”; half a percent is 1 %', () => {
+    expect(signatureReadout(okWith(-0.004), 'service')).toBe(
+      m.heat_pump_signature_same(params(0, 0.01)),
+    )
+    expect(signatureReadout(okWith(0.004), 'service')).toBe(
+      m.heat_pump_signature_same(params(0, 0.01)),
+    )
+    expect(signatureReadout(okWith(0.005), 'service')).toBe(
+      m.heat_pump_signature_higher(params(0.01, 0.01)),
+    )
+  })
+
+  test('the margin is rounded up to a whole percent, 1 % at the least', () => {
+    const margin = (v: number) => signatureReadout(okWith(-0.1, v), 'service')
+    expect(margin(0.0001)).toBe(m.heat_pump_signature_lower(params(0.1, 0.01)))
+    expect(margin(0.01)).toBe(m.heat_pump_signature_lower(params(0.1, 0.01)))
+    expect(margin(0.0101)).toBe(m.heat_pump_signature_lower(params(0.1, 0.02)))
+    expect(margin(0.032)).toBe(m.heat_pump_signature_lower(params(0.1, 0.04)))
+  })
+
+  test('not enough before: the count under 14 days, the spread copy from 14', () => {
+    expect(
+      signatureReadout({ state: 'not_enough_before', before: 13, points: [] }, 'service'),
+    ).toBe(m.heat_pump_signature_not_enough_before({ count: '13', needed: '14' }))
+    const spread = signatureReadout(
+      { state: 'not_enough_before', before: 19, points: [] },
+      'service',
+    )
+    expect(spread).toBe(m.heat_pump_signature_not_enough_before_spread({ span: '4' }))
+    expect(spread).toContain('4')
+  })
 })
