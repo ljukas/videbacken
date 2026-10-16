@@ -116,6 +116,22 @@ test('a note is counted in characters, trimmed, and blank is none', async () => 
   )
 })
 
+test('on update too: a note over 500 characters is NOTE_TOO_LONG and leaves the stored note', async () => {
+  const author = await admin()
+  const event = await createEvent(SERVICE, author, NOW)
+  expect(await codeOf(updateEvent(event.id, { ...SERVICE, note: 'x'.repeat(501) }, NOW))).toBe(
+    'NOTE_TOO_LONG',
+  )
+  expect((await listEvents()).map((e) => e.note)).toEqual(['Årlig service'])
+  // Code points, not UTF-16 units: 500 emoji (1000 units) fit, 501 don't.
+  const emoji = '🙂'.repeat(500)
+  expect((await updateEvent(event.id, { ...SERVICE, note: emoji }, NOW)).note).toBe(emoji)
+  expect(await codeOf(updateEvent(event.id, { ...SERVICE, note: `${emoji}🙂` }, NOW))).toBe(
+    'NOTE_TOO_LONG',
+  )
+  expect((await listEvents()).map((e) => e.note)).toEqual([emoji])
+})
+
 test('an unknown heat pump is UNKNOWN_HEAT_PUMP, on create and on update', async () => {
   const author = await admin()
   expect(await codeOf(createEvent({ ...SERVICE, heatPumpId: MISSING }, author, NOW))).toBe(
@@ -128,11 +144,13 @@ test('an unknown heat pump is UNKNOWN_HEAT_PUMP, on create and on update', async
   expect((await listEvents()).map((e) => e.heatPumpId)).toEqual([null])
 })
 
-test('update replaces the fields and keeps the author', async () => {
+test('update replaces the fields, keeps the author and moves updated_at', async () => {
   const author = await admin()
   const { upstairs } = await units()
   const event = await createEvent(SERVICE, author, NOW)
-  const [before] = await db.select().from(heatPumpEvent).where(eq(heatPumpEvent.id, event.id))
+  // Back-dated (an explicit value wins over $onUpdate), so the check doesn't hang on two clocks agreeing.
+  const longAgo = new Date('2026-01-01T00:00:00Z')
+  await db.update(heatPumpEvent).set({ updatedAt: longAgo }).where(eq(heatPumpEvent.id, event.id))
   const updated = await updateEvent(
     event.id,
     { occurredOn: '2026-10-07', heatPumpId: upstairs, kind: 'filter', note: null },
@@ -147,7 +165,7 @@ test('update replaces the fields and keeps the author', async () => {
   })
   const [after] = await db.select().from(heatPumpEvent).where(eq(heatPumpEvent.id, event.id))
   expect(after.createdBy).toBe(author)
-  expect(after.updatedAt.getTime()).toBeGreaterThanOrEqual(before.updatedAt.getTime())
+  expect(after.updatedAt.getTime()).toBeGreaterThan(longAgo.getTime())
 })
 
 test('update and delete of a missing event are EVENT_NOT_FOUND', async () => {

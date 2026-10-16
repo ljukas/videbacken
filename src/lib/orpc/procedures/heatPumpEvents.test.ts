@@ -129,6 +129,16 @@ test('every event domain error surfaces as its typed code and status', async () 
   await expect(
     call(events.update, { ...SERVICE, id: MISSING }, { context: ctx() }),
   ).rejects.toMatchObject({ code: 'EVENT_NOT_FOUND', status: 404 })
+  const { id } = await call(events.create, SERVICE, { context: ctx() })
+  await expect(
+    call(events.update, { ...SERVICE, id, occurredOn: tomorrow }, { context: ctx() }),
+  ).rejects.toMatchObject({ code: 'FUTURE_DATE', status: 422 })
+  await expect(
+    call(events.update, { ...SERVICE, id, note: 'x'.repeat(501) }, { context: ctx() }),
+  ).rejects.toMatchObject({ code: 'NOTE_TOO_LONG', status: 422 })
+  await expect(
+    call(events.update, { ...SERVICE, id, heatPumpId: MISSING }, { context: ctx() }),
+  ).rejects.toMatchObject({ code: 'UNKNOWN_HEAT_PUMP', status: 422 })
   await expect(call(events.delete, { id: MISSING }, { context: ctx() })).rejects.toMatchObject({
     code: 'EVENT_NOT_FOUND',
     status: 404,
@@ -161,8 +171,21 @@ test('a non-event domain error or an unexpected error propagates untyped', async
   vi.spyOn(heatPumpService, 'createEvent').mockRejectedValueOnce(
     new HeatPumpDomainError('INVALID_READING'),
   )
-  const domain = await call(events.create, SERVICE, { context: ctx() }).catch((e: unknown) => e)
+  const domain = await call(events.create, SERVICE, { context: ctx() }).then(
+    () => 'resolved',
+    (e: unknown) => e,
+  )
+  expect(domain).toBeInstanceOf(Error)
   expect(domain).not.toHaveProperty('defined', true)
+  vi.spyOn(heatPumpService, 'updateEvent').mockRejectedValueOnce(
+    new HeatPumpDomainError('INVALID_READING'),
+  )
+  const onUpdate = await call(events.update, { ...SERVICE, id: MISSING }, { context: ctx() }).then(
+    () => 'resolved',
+    (e: unknown) => e,
+  )
+  expect(onUpdate).toBeInstanceOf(Error)
+  expect(onUpdate).not.toHaveProperty('defined', true)
   vi.spyOn(heatPumpService, 'deleteEvent').mockRejectedValueOnce(new Error('db down'))
   await expect(call(events.delete, { id: MISSING }, { context: ctx() })).rejects.toThrow('db down')
 })
