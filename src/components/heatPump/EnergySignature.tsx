@@ -19,6 +19,7 @@ import {
 } from '~/lib/heatPump/signature'
 import { heatPumpColor } from '~/lib/houseEnergy/heatPumpColors'
 import { getIntlLocale } from '~/lib/i18n/format'
+import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 import { eventKindLabel } from './eventCopy'
 import { SIGNATURE_CHART_HEIGHT, SignatureScatter } from './SignatureScatter'
@@ -92,6 +93,7 @@ export function EnergySignature({
   eventId,
   onEventChange,
   result,
+  failed = false,
 }: {
   units: readonly { id: string; name: string }[]
   unitId: string
@@ -100,6 +102,8 @@ export function EnergySignature({
   eventId: string | null
   onEventChange: (id: string) => void
   result: SignatureResult | null
+  /** A days read failed (the section shows the alert with its retry): the readout says so instead of loading. */
+  failed?: boolean
 }) {
   const headingId = useId()
   const unit = units.find((u) => u.id === unitId)
@@ -186,19 +190,23 @@ export function EnergySignature({
               ) : (
                 <p
                   data-slot="signature-readout"
-                  data-state="loading"
+                  data-state={failed ? 'error' : 'loading'}
                   className={`${READOUT} text-muted-foreground`}
                 >
-                  {m.heat_pump_signature_loading()}
+                  {failed ? m.heat_pump_signature_error_title() : m.heat_pump_signature_loading()}
                 </p>
               )}
               {result ? (
-                <SignatureScatter result={result} />
+                // Keyed per unit and event: an open tooltip (by point index) never moves to another day.
+                <SignatureScatter key={`${unitId}:${event.id}`} result={result} />
               ) : (
                 <div
                   data-slot="signature-chart-placeholder"
                   aria-hidden
-                  className="rounded-lg bg-foreground/8 motion-safe:animate-pulse"
+                  className={cn(
+                    'rounded-lg bg-foreground/8',
+                    !failed && 'motion-safe:animate-pulse',
+                  )}
                   style={{ height: SIGNATURE_CHART_HEIGHT }}
                 />
               )}

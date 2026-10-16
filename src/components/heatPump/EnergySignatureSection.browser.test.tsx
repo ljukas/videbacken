@@ -1,9 +1,11 @@
+import { QueryClientProvider } from '@tanstack/react-query'
+import { renderToString } from 'react-dom/server'
 import { expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import type { HeatPumpEventDto } from '~/lib/heatPump/events'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient, renderWithProviders } from '~test/browser/render'
-import { signatureUnitDays } from '~test/fixtures/heatPumpSignature'
+import { signatureRow, signatureUnitDays } from '~test/fixtures/heatPumpSignature'
 import { EnergySignatureSection } from './EnergySignatureSection'
 import { eventKindLabel } from './eventCopy'
 import { heatPumpDaysQuery, heatPumpEventsQuery, heatPumpMonthsQueryFor } from './heatPumpQueries'
@@ -168,4 +170,109 @@ test('while the events load, the section shows its skeleton and no card', async 
     ).not.toBeNull(),
   )
   expect(readout()).toBeNull()
+})
+
+test('server render while the deferred events load: no card, so no false “no event yet”', async () => {
+  // The loader awaits the months on the server and defers the events: the server renders without them.
+  // SectionSkeleton shows its skeleton only once hydrated, so the section itself must render nothing.
+  const qc = makeTestQueryClient()
+  qc.setQueryData(heatPumpMonthsQueryFor(null).queryKey, months())
+  void qc.prefetchQuery({
+    queryKey: heatPumpEventsQuery.queryKey,
+    queryFn: () => new Promise(() => {}),
+  })
+  const html = renderToString(
+    <QueryClientProvider client={qc}>
+      <EnergySignatureSection today={TODAY} />
+    </QueryClientProvider>,
+  )
+  expect(html).not.toContain('signature-readout')
+  expect(html).not.toContain(m.heat_pump_signature_no_event({ unit: 'Matsal' }))
+})
+
+test('an event whose whole range lies before the first reading reads 0 days, not loading forever', async () => {
+  // The 2024 service (the default: the latest service) is followed by a filter cleaning in 2025, and the first
+  // reading is after both: from 2025-11-01 > to 2025-10-03, no days to fetch.
+  const old: HeatPumpEventDto = {
+    id: 'old',
+    occurredOn: '2024-10-05',
+    heatPumpId: null,
+    kind: 'service',
+    note: null,
+  }
+  const filter: HeatPumpEventDto = {
+    id: 'flt',
+    occurredOn: '2025-10-03',
+    heatPumpId: null,
+    kind: 'filter',
+    note: null,
+  }
+  const qc = makeTestQueryClient()
+  qc.setQueryData(heatPumpMonthsQueryFor(null).queryKey, months('2025-11-01'))
+  qc.setQueryData(heatPumpEventsQuery.queryKey, [filter, old] as never)
+  await renderWithProviders(<EnergySignatureSection today={TODAY} />, { queryClient: qc })
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('not_enough_before'))
+  expect(readout().textContent).toBe(
+    m.heat_pump_signature_not_enough_before({ count: '0', needed: '14' }),
+  )
+})
+
+// The two-chunk range of the test above: a service on 2024-01-10, today 2026-06-01.
+const twoChunks = (second: 'fails' | 'pending') => {
+  const old: HeatPumpEventDto = {
+    id: 'old',
+    occurredOn: '2024-01-10',
+    heatPumpId: null,
+    kind: 'service',
+    note: null,
+  }
+  const qc = makeTestQueryClient()
+  qc.setQueryData(heatPumpMonthsQueryFor(null).queryKey, months('2022-10-01'))
+  qc.setQueryData(heatPumpEventsQuery.queryKey, [old] as never)
+  qc.setQueryData(heatPumpDaysQuery({ from: '2022-12-06', to: '2025-02-12' }).queryKey, {
+    units: [],
+    days: signatureUnitDays(MATSAL, 0.9, '2023-12-25'),
+  } as never)
+  // Unseeded, the second chunk fails (no /api/rpc in the test server).
+  if (second === 'pending')
+    void qc.prefetchQuery({
+      queryKey: heatPumpDaysQuery({ from: '2025-02-13', to: '2026-06-01' }).queryKey,
+      queryFn: () => new Promise(() => {}),
+    })
+  return qc
+}
+
+test('a failed days chunk: the alert with its retry, and the readout says so instead of loading', async () => {
+  const { screen } = await renderWithProviders(<EnergySignatureSection today="2026-06-01" />, {
+    queryClient: twoChunks('fails'),
+  })
+  await expect.element(screen.getByText(m.heat_pump_signature_error_title()).first()).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: m.common_try_again() })).toBeVisible()
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('error'))
+  expect(readout().textContent).toBe(m.heat_pump_signature_error_title())
+  expect(
+    document.querySelector('[data-slot="signature-chart-placeholder"]')?.className,
+  ).not.toMatch(/animate-pulse/)
+})
+
+test('one chunk in, the other still loading: loading, never a verdict from half the days', async () => {
+  await renderWithProviders(<EnergySignatureSection today="2026-06-01" />, {
+    queryClient: twoChunks('pending'),
+  })
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('loading'))
+  // Long enough for a half-days verdict (not_enough_after from chunk one alone) to have rendered.
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  expect(readout().dataset.state).toBe('loading')
+})
+
+test('today is never a complete day: a full-looking today (a manual sync after 23:00) is no point', async () => {
+  const qc = seeded([service])
+  // 24 of 24 hours on today: qualifies on its own, and would pull the change away from −10 %.
+  qc.setQueryData(heatPumpDaysQuery({ from: '2024-12-16', to: TODAY }).queryKey, {
+    units: [],
+    days: [...signatureUnitDays(MATSAL, 0.9), signatureRow(MATSAL, TODAY, 10, 1)],
+  } as never)
+  await renderWithProviders(<EnergySignatureSection today={TODAY} />, { queryClient: qc })
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('ok'))
+  expect(Number(readout().dataset.change)).toBeCloseTo(-0.1, 10)
 })

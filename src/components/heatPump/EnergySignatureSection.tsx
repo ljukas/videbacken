@@ -28,12 +28,13 @@ type DaysChunk = LoadErrorQuery & { data: { days: readonly SignatureDayRow[] } |
 
 // Module-level, so TanStack keeps the combined result while no chunk changes (a stable
 // combine is memoised): the days array, and with it the signature, keeps its identity.
+// No chunks is no days, not loading: an event whose range ends before the first reading
+// (from > to) has nothing to fetch, and its signature is "0 of 14 days".
 function concatChunks(chunks: readonly DaysChunk[]) {
   return {
-    days:
-      chunks.length > 0 && chunks.every((c) => c.data !== undefined)
-        ? chunks.flatMap((c) => c.data?.days ?? [])
-        : null,
+    days: chunks.every((c) => c.data !== undefined)
+      ? chunks.flatMap((c) => c.data?.days ?? [])
+      : null,
     failed: chunks.find(loadFailed) ?? null,
   }
 }
@@ -46,7 +47,9 @@ function concatChunks(chunks: readonly DaysChunk[]) {
 export function EnergySignatureSection({ today: given }: { today?: string } = {}) {
   // Fixed for the page's life: a range that moved at midnight would refetch mid-view.
   const [today] = useState(() => given ?? stockholmDayOf(Date.now()))
-  const months = useQuery(heatPumpMonthsQueryFor(null))
+  // Fixed with it: the default key reads the clock's year, which would change at New Year mid-view.
+  const [monthsQuery] = useState(() => heatPumpMonthsQueryFor(null))
+  const months = useQuery(monthsQuery)
   const events = useQuery(heatPumpEventsQuery)
   const [unitId, setUnitId] = useState<string | null>(null)
   const [chosenEventId, setChosenEventId] = useState<string | null>(null)
@@ -83,13 +86,15 @@ export function EnergySignatureSection({ today: given }: { today?: string } = {}
     () =>
       unit && eventId && chunks.days
         ? energySignature({
-            days: chunks.days.filter((d) => d.heatPumpId === unit.id),
+            // Today is never complete: a sync between 23:00 and midnight stores a partial
+            // hour 23, so today can show every hour and pass with too few kWh.
+            days: chunks.days.filter((d) => d.heatPumpId === unit.id && d.day < today),
             events: eventList,
             heatPumpId: unit.id,
             eventId,
           })
         : null,
-    [unit, eventId, chunks.days, eventList],
+    [unit, eventId, chunks.days, eventList, today],
   )
 
   // Months failing is step 3's alert (its critical read); this section then renders nothing.
@@ -101,7 +106,9 @@ export function EnergySignatureSection({ today: given }: { today?: string } = {}
         loading={!failed && (firstLoadPending(months) || firstLoadPending(events))}
         fallbackHeight="36rem"
       >
-        {unit && !failed ? (
+        {/* Only with the events: the loader defers them, so the server (and the first client
+            render) has none, and an empty list would claim "no event yet". */}
+        {unit && events.data !== undefined && !failed ? (
           <EnergySignature
             units={units}
             unitId={unit.id}
@@ -114,6 +121,7 @@ export function EnergySignatureSection({ today: given }: { today?: string } = {}
             eventId={eventId}
             onEventChange={setChosenEventId}
             result={result}
+            failed={chunks.failed !== null}
           />
         ) : null}
       </SectionSkeleton>

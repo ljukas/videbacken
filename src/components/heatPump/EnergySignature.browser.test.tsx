@@ -1,3 +1,4 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import type { HeatPumpEventDto } from '~/lib/heatPump/events'
@@ -5,6 +6,7 @@ import { energySignature, eventsForUnit, type SignatureResult } from '~/lib/heat
 import { getIntlLocale } from '~/lib/i18n/format'
 import { addDays } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
+import { tapOn, tooltipText } from '~test/browser/chartDom'
 import { renderWithProviders } from '~test/browser/render'
 import { signatureRow, signatureUnitDays } from '~test/fixtures/heatPumpSignature'
 import { EnergySignature } from './EnergySignature'
@@ -171,4 +173,42 @@ test('one unit: no toggle; the table lists every point with its period', async (
   expect(rows.at(-1)?.textContent).toContain(
     m.heat_pump_signature_table_not_counted({ set: m.heat_pump_signature_after() }),
   )
+})
+
+test('switching event closes an open tooltip instead of moving it to another day', async () => {
+  await page.viewport(1440, 900)
+  const older = ev({ id: 'old', occurredOn: '2025-12-20' })
+  const unitEvents = eventsForUnit([older, service], MATSAL)
+  const { screen, queryClient } = await show({ unitEvents }).r
+  await vi.waitFor(() =>
+    expect(document.querySelectorAll('[data-point]').length).toBeGreaterThan(0),
+  )
+  // A tap (touch keeps the card open: there is no pointerleave to close it).
+  tapOn(screen.container, () => document.querySelector('[data-point="2026-01-12"]') as Element)
+  await vi.waitFor(() => expect(tooltipText()).toContain(m.heat_pump_signature_tooltip_delta()))
+  // The other event's result (as a keyboard choice brings it: no tap outside closes the card first).
+  // The same point indices now hold other days. Same providers, so React updates in place.
+  const shifted = signatureUnitDays(MATSAL, 0.9, '2025-12-01')
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>
+      <div style={{ width: 1000 }}>
+        <EnergySignature
+          units={units}
+          unitId={MATSAL}
+          onUnitChange={() => {}}
+          unitEvents={unitEvents}
+          eventId="old"
+          onEventChange={() => {}}
+          result={energySignature({
+            days: shifted,
+            events: [older, service],
+            heatPumpId: MATSAL,
+            eventId: 'old',
+          })}
+          failed={false}
+        />
+      </div>
+    </QueryClientProvider>,
+  )
+  await vi.waitFor(() => expect(tooltipText()).toBe(''))
 })
