@@ -1100,5 +1100,6 @@
   "heat_pump_signature_table_delta": "Indoor − outdoor (°C)",
   "heat_pump_signature_table_kwh": "kWh",
   "heat_pump_signature_table_set": "Period",
-  "heat_pump_signature_table_not_counted": "{set}, not counted"
+  "heat_pump_signature_table_not_counted": "{set}, not counted",
+  "heat_pump_signature_error_title": "The energy signature couldn't be loaded"
 }

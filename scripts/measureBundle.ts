@@ -49,6 +49,7 @@ const WATCHED = [
   'exifreader',
   '@vercel/blob',
   'jose',
+  'simple-statistics',
 ]
 
 function main() {
