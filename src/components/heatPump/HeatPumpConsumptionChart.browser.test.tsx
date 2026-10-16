@@ -177,6 +177,29 @@ test("a marked day's tooltip names the event; a day without readings still expla
   )
 })
 
+test("an event-only day's tooltip has the day's title; a note shows under its event", async () => {
+  const view = september()
+  const { screen } = await render(view, vi.fn(), [
+    event({ occurredOn: '2026-09-10', note: 'Årlig service hos installatören' }),
+    event({ occurredOn: '2026-09-20', heatPumpId: MATSAL.id, kind: 'setting' }),
+  ])
+  await hoverBar(screen.container, 9)
+  await vi.waitFor(() => expect(tooltipText()).toContain('Årlig service hos installatören'))
+  const bars = seriesBars(screen.container, 0)
+  const p = centre(bars[13])
+  const q = centre(bars[14])
+  moveAt(screen.container, q.x + 5 * (q.x - p.x), q.y)
+  await vi.waitFor(() =>
+    expect(tooltipText()).toContain(
+      m.heat_pump_event_tooltip({ kinds: 'Inställning', unit: 'Matsal' }),
+    ),
+  )
+  expect(tooltipText()).toContain(view.rows[19].title)
+  // The tooltip's ▼ is the chart's mark: in the unit's colour.
+  const mark = document.querySelector<HTMLElement>('[data-event-mark]')
+  expect(mark?.style.color).toBe(heatPumpColor(view.units, MATSAL.id))
+})
+
 test('the year view draws no markers', async () => {
   const { screen } = await render(viewOf({ period: { kind: 'year', year: 2026 } }), vi.fn(), [
     event({ occurredOn: '2026-09-10' }),

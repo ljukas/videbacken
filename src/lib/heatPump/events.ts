@@ -34,13 +34,21 @@ export function normalizeNote(note: string | null | undefined): string | null {
   return trimmed === '' ? null : trimmed
 }
 
-/** One marker on the day chart: a day and a unit (null = every unit), with the kinds logged. */
-export type DayEventMarker = { day: string; heatPumpId: string | null; kinds: HeatPumpEventKind[] }
+/**
+ * One marker on the day chart: a day and a unit (null = every unit), with the kinds logged and the
+ * events' notes (those with one, in the events' order).
+ */
+export type DayEventMarker = {
+  day: string
+  heatPumpId: string | null
+  kinds: HeatPumpEventKind[]
+  notes: string[]
+}
 
 /**
  * The day chart's markers, by Stockholm day: one per unit with events that day, "every unit"
  * first, then units in `unitIds` order (the chart's colour order); each kind once, in the
- * events' order. Events for a unit not in `unitIds` are dropped (the chart has no bar for it).
+ * events' order, and every note. Events for a unit not in `unitIds` are dropped (the chart has no bar for it).
  */
 export function dayEventMarkers(
   events: readonly HeatPumpEventDto[],
@@ -53,11 +61,12 @@ export function dayEventMarkers(
     const day = byDay.get(event.occurredOn) ?? []
     let marker = day.find((m) => m.heatPumpId === event.heatPumpId)
     if (!marker) {
-      marker = { day: event.occurredOn, heatPumpId: event.heatPumpId, kinds: [] }
+      marker = { day: event.occurredOn, heatPumpId: event.heatPumpId, kinds: [], notes: [] }
       day.push(marker)
       day.sort((a, b) => rank(a.heatPumpId) - rank(b.heatPumpId))
     }
     if (!marker.kinds.includes(event.kind)) marker.kinds.push(event.kind)
+    if (event.note !== null) marker.notes.push(event.note)
     byDay.set(event.occurredOn, day)
   }
   return byDay

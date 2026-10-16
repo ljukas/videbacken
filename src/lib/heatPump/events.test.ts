@@ -53,15 +53,30 @@ describe('dayEventMarkers', () => {
       [MATSAL, UPSTAIRS],
     )
     expect(markers.get('2026-10-08')).toEqual([
-      { day: '2026-10-08', heatPumpId: null, kinds: ['service'] },
-      { day: '2026-10-08', heatPumpId: MATSAL, kinds: ['setting', 'other'] },
-      { day: '2026-10-08', heatPumpId: UPSTAIRS, kinds: ['filter'] },
+      { day: '2026-10-08', heatPumpId: null, kinds: ['service'], notes: [] },
+      { day: '2026-10-08', heatPumpId: MATSAL, kinds: ['setting', 'other'], notes: [] },
+      { day: '2026-10-08', heatPumpId: UPSTAIRS, kinds: ['filter'], notes: [] },
     ])
   })
   test('a kind logged twice on the same day and unit is listed once', () => {
     const markers = dayEventMarkers([ev({ kind: 'service' }), ev({ kind: 'service' })], [MATSAL])
     expect(markers.get('2026-10-08')).toEqual([
-      { day: '2026-10-08', heatPumpId: null, kinds: ['service'] },
+      { day: '2026-10-08', heatPumpId: null, kinds: ['service'], notes: [] },
+    ])
+  })
+  test("a marker carries its events' notes, in the events' order, each one (no blanks)", () => {
+    const markers = dayEventMarkers(
+      [
+        ev({ kind: 'service', note: 'Årlig service' }),
+        ev({ kind: 'filter', note: null }),
+        ev({ kind: 'service', note: 'Bytte filter' }),
+        ev({ heatPumpId: MATSAL, kind: 'setting', note: '21 °C' }),
+      ],
+      [MATSAL],
+    )
+    expect(markers.get('2026-10-08')?.map((mk) => mk.notes)).toEqual([
+      ['Årlig service', 'Bytte filter'],
+      ['21 °C'],
     ])
   })
   test('an event for a unit the chart does not show draws nothing', () => {

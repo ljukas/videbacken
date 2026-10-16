@@ -157,9 +157,14 @@ export function HeatPumpConsumptionChart({
         tooltipClassName="min-w-56 gap-1 border-border px-3 py-2 text-sm [&>div]:gap-1"
         tooltip={(r) => {
           const lines = markerMap.get(r.key)
-          // A day without readings (yet) still explains its event.
+          // A day without readings (yet) still explains its event, under the day's title.
           if (r.total === null && r.lastYear === null && r.outdoorC === null) {
-            return lines ? <HeatPumpEventLines markers={lines} units={units} /> : null
+            return lines ? (
+              <>
+                <HeatPumpTooltipTitle row={r} />
+                <HeatPumpEventLines markers={lines} units={units} />
+              </>
+            ) : null
           }
           return (
             <>
@@ -201,10 +206,7 @@ function HeatPumpTooltip({
 }) {
   return (
     <>
-      <div className="font-semibold text-sm">
-        {row.title}
-        {row.running ? ` (${m.energy_chart_so_far()})` : ''}
-      </div>
+      <HeatPumpTooltipTitle row={row} />
       {view.units.map((u) => (
         <TooltipRow key={u.id} label={u.name} color={heatPumpColor(view.units, u.id)}>
           {kwhText(row.kwh[u.id])}
@@ -231,5 +233,14 @@ function HeatPumpTooltip({
         </span>
       ) : null}
     </>
+  )
+}
+
+function HeatPumpTooltipTitle({ row }: { row: HeatPumpChartRow }) {
+  return (
+    <div className="font-semibold text-sm">
+      {row.title}
+      {row.running ? ` (${m.energy_chart_so_far()})` : ''}
+    </div>
   )
 }
