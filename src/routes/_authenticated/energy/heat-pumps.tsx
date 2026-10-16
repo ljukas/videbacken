@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { lazy, useCallback, useEffect } from 'react'
 import { z } from 'zod'
 import heatPumpConsumptionBones from '~/bones/heat-pump-consumption.bones.json'
+import heatPumpsEventsBones from '~/bones/heat-pumps-events.bones.json'
 import { EnergyHeading } from '~/components/energy/EnergyHeading'
 import { EnergySummaryCard } from '~/components/energy/EnergySummaryCard'
 import { energySearchSchema, periodOfSearch } from '~/components/energy/energySearch'
@@ -204,7 +205,7 @@ function HeatPumpsPage() {
           <LoadErrorAlert title={m.heat_pump_events_error_title()} query={eventsResult} />
           {/* The card needs the units too: a skeleton while the months load; nothing under their alert. */}
           <SectionSkeleton
-            name="heat-pumps-events"
+            bones={heatPumpsEventsBones}
             loading={
               firstLoadPending(eventsResult) ||
               (units === undefined && firstLoadPending(h.monthsResult))
