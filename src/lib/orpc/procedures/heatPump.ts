@@ -8,6 +8,7 @@ import {
   type HeatPumpReadTimings,
 } from '~/lib/services/heatPump'
 import { daysBetween, isStockholmDay } from '~/lib/time/stockholm'
+import { heatPumpEventsRouter } from './heatPumpEvents'
 
 const day = z.string().refine(isStockholmDay, { message: 'Expected a YYYY-MM-DD day' })
 // isStockholmDay again inside: an object refinement must never reach daysBetween with a bad day (it throws).
@@ -51,4 +52,6 @@ export const heatPumpRouter = {
     }
     return out
   }),
+  // The Händelser log (heat pumps step 4a, ADR-0027 decision 10): list for members, writes admin-only.
+  events: heatPumpEventsRouter,
 }
