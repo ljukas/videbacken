@@ -130,11 +130,56 @@ test('loading: the loading line and a chart-sized placeholder, no chart', async 
   expect(placeholder?.style.height).toBe('300px')
 })
 
-test('no event for the unit: the no-event line and no chart', async () => {
-  await show({ unitEvents: [], eventId: null, result: null }).r
+test('no event for the unit: the no-event line in the same box, no chart', async () => {
+  const { screen } = await show({ unitEvents: [], eventId: null, result: null }).r
   await vi.waitFor(() => expect(readout().dataset.state).toBe('no_event'))
   expect(readout().textContent).toBe(m.heat_pump_signature_no_event({ unit: 'Matsal' }))
   expect(document.querySelector('[data-chart="scatter"]')).toBeNull()
+  // The loaded card's box: a static chart-sized placeholder, the note, the table toggle.
+  const placeholder = document.querySelector<HTMLElement>(
+    '[data-slot="signature-chart-placeholder"]',
+  )
+  expect(placeholder?.style.height).toBe('300px')
+  expect(placeholder?.className).not.toMatch(/animate-pulse/)
+  await expect.element(screen.getByText(m.heat_pump_signature_note())).toBeInTheDocument()
+  await expect.element(screen.getByText(m.energy_flow_table_toggle())).toBeInTheDocument()
+})
+
+test('one live region for every state: the same element, polite and atomic, only its text changes', async () => {
+  const { r } = show({ result: null })
+  const { screen, queryClient } = await r
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('loading'))
+  const region = readout()
+  expect(region.getAttribute('aria-live')).toBe('polite')
+  expect(region.getAttribute('aria-atomic')).toBe('true')
+  const at = (props: Partial<Parameters<typeof EnergySignature>[0]>) =>
+    screen.rerender(
+      <QueryClientProvider client={queryClient}>
+        <div style={{ width: 1000 }}>
+          <EnergySignature
+            units={units}
+            unitId={MATSAL}
+            onUnitChange={() => {}}
+            unitEvents={eventsForUnit([service], MATSAL)}
+            eventId="svc"
+            onEventChange={() => {}}
+            result={null}
+            {...props}
+          />
+        </div>
+      </QueryClientProvider>,
+    )
+  await at({ result: resultOf() })
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('ok'))
+  expect(readout()).toBe(region)
+  await at({ result: null, failed: true })
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('error'))
+  expect(readout()).toBe(region)
+  expect(region.dataset.change).toBeUndefined()
+  await at({ unitEvents: [], eventId: null, result: null })
+  await vi.waitFor(() => expect(readout().dataset.state).toBe('no_event'))
+  expect(readout()).toBe(region)
+  expect(document.querySelectorAll('[data-slot="signature-readout"]')).toHaveLength(1)
 })
 
 test('a summer after the event: 0 of 14 days, hollow after-days, the before line only', async () => {

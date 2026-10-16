@@ -78,13 +78,17 @@ export function signatureReadout(result: SignatureResult, kind: HeatPumpEventKin
   }
 }
 
-const READOUT = 'min-h-[3em] text-pretty'
+// The readout's reserve: room for the longest sentence (sv "…_spread", the ok sentences) at
+// each width, so no state changes the card's height. Measured in Switzer 14 px at the
+// card's text width: 4 lines at 288 px (a 360 px phone), 3 at 326 (390) and at 400 (768,
+// sidebar open), 2 at 452 (820), at 576–703 (640–767) and at 656 (1024), 1 at 912 (1440).
+const READOUT = 'min-h-[4lh] text-pretty sm:min-h-[3lh] lg:min-h-[2lh]'
 
 // The Energisignatur card (step 4b, spec "Energisignatur"). Presentational: the section
 // owns the unit and event state and the reads, and passes the computed result (null while
 // the event's days load). The chart is aria-hidden; the readout and the table are the
-// accessible path. Every state keeps the same box: a reserved readout line, the chart or a
-// same-height placeholder, the note, the table toggle.
+// accessible path. Every state (loading, no event, a failed read, a result) keeps the same
+// box: the reserved readout, the chart or a same-height placeholder, the note, the table toggle.
 export function EnergySignature({
   units,
   unitId,
@@ -109,6 +113,15 @@ export function EnergySignature({
   const unit = units.find((u) => u.id === unitId)
   const event = unitEvents.find((e) => e.id === eventId) ?? null
   if (!unit) return null
+  const shown = event && result ? { event, result } : null
+  const state = shown ? shown.result.state : !event ? 'no_event' : failed ? 'error' : 'loading'
+  const readoutText = shown
+    ? signatureReadout(shown.result, shown.event.kind)
+    : state === 'no_event'
+      ? m.heat_pump_signature_no_event({ unit: unit.name })
+      : state === 'error'
+        ? m.heat_pump_signature_error_title()
+        : m.heat_pump_signature_loading()
 
   return (
     <section aria-labelledby={headingId}>
@@ -170,57 +183,46 @@ export function EnergySignature({
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {!event ? (
-            <p data-slot="signature-readout" data-state="no_event" className={READOUT}>
-              {m.heat_pump_signature_no_event({ unit: unit.name })}
-            </p>
+          {/* One live region in every state: only its text and data-* change, so each new
+              sentence is announced (a region mounted with its text is not). */}
+          <p
+            data-slot="signature-readout"
+            data-state={state}
+            data-change={shown?.result.state === 'ok' ? String(shown.result.change) : undefined}
+            data-margin={shown?.result.state === 'ok' ? String(shown.result.margin) : undefined}
+            aria-live="polite"
+            aria-atomic="true"
+            className={cn(
+              READOUT,
+              shown ? 'font-medium' : state !== 'no_event' && 'text-muted-foreground',
+            )}
+          >
+            {readoutText}
+          </p>
+          {shown ? (
+            // Keyed per unit and event: an open tooltip (by point index) never moves to another day.
+            <SignatureScatter key={`${unitId}:${shown.event.id}`} result={shown.result} />
           ) : (
-            <>
-              {result ? (
-                <p
-                  data-slot="signature-readout"
-                  data-state={result.state}
-                  data-change={result.state === 'ok' ? String(result.change) : undefined}
-                  data-margin={result.state === 'ok' ? String(result.margin) : undefined}
-                  aria-live="polite"
-                  className={`${READOUT} font-medium`}
-                >
-                  {signatureReadout(result, event.kind)}
-                </p>
-              ) : (
-                <p
-                  data-slot="signature-readout"
-                  data-state={failed ? 'error' : 'loading'}
-                  className={`${READOUT} text-muted-foreground`}
-                >
-                  {failed ? m.heat_pump_signature_error_title() : m.heat_pump_signature_loading()}
-                </p>
+            <div
+              data-slot="signature-chart-placeholder"
+              aria-hidden
+              className={cn(
+                'rounded-lg bg-foreground/8',
+                state === 'loading' && 'motion-safe:animate-pulse',
               )}
-              {result ? (
-                // Keyed per unit and event: an open tooltip (by point index) never moves to another day.
-                <SignatureScatter key={`${unitId}:${event.id}`} result={result} />
-              ) : (
-                <div
-                  data-slot="signature-chart-placeholder"
-                  aria-hidden
-                  className={cn(
-                    'rounded-lg bg-foreground/8',
-                    !failed && 'motion-safe:animate-pulse',
-                  )}
-                  style={{ height: SIGNATURE_CHART_HEIGHT }}
-                />
-              )}
-              <p className="max-w-[70ch] text-pretty text-muted-foreground text-sm">
-                {m.heat_pump_signature_note()}
-              </p>
-              <details className="text-sm">
-                <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground focus-visible:border-ring focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">
-                  {m.energy_flow_table_toggle()}
-                </summary>
-                {result ? <SignatureTable points={result.points} /> : null}
-              </details>
-            </>
+              style={{ height: SIGNATURE_CHART_HEIGHT }}
+            />
           )}
+          <p className="max-w-[70ch] text-pretty text-muted-foreground text-sm">
+            {m.heat_pump_signature_note()}
+          </p>
+          {/* Always there, so the box keeps its height; empty until there is a result. */}
+          <details className="text-sm">
+            <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground focus-visible:border-ring focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">
+              {m.energy_flow_table_toggle()}
+            </summary>
+            {shown ? <SignatureTable points={shown.result.points} /> : null}
+          </details>
         </CardContent>
       </Card>
     </section>
