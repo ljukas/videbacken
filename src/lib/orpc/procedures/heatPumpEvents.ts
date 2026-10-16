@@ -27,7 +27,12 @@ const eventInput = z.object({
     .refine(isStockholmDay),
   heatPumpId: z.uuid().nullable(),
   kind: z.enum(HEAT_PUMP_EVENT_KINDS),
-  note: z.string().max(NOTE_INPUT_MAX).nullable(),
+  // Postgres text can't hold a NUL: refused here as a bad request, not a failed insert (a 500).
+  note: z
+    .string()
+    .max(NOTE_INPUT_MAX)
+    .refine((s) => !s.includes('\u0000'))
+    .nullable(),
 })
 
 // Maps an event domain error to its typed oRPC error (code only; the client owns the copy, see

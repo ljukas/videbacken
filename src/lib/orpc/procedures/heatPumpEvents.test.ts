@@ -148,6 +148,7 @@ test.each([
   ['an unknown kind', { kind: 'repair' }],
   ['a heat pump id that is not a uuid', { heatPumpId: 'matsal' }],
   ['an absurdly long note', { note: 'x'.repeat(2001) }],
+  ['a note with a NUL character', { note: 'Årlig\u0000service' }],
 ])('%s is BAD_REQUEST', async (_, override) => {
   await signIn('admin')
   await expect(
