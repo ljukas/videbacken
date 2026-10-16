@@ -166,6 +166,8 @@ function EventForm({
 
   return (
     <form
+      // The date's `max` only steers the picker: a typed future day gets the form's own message, not the browser's.
+      noValidate
       onSubmit={(e) => {
         e.preventDefault()
         form.handleSubmit()
@@ -174,7 +176,9 @@ function EventForm({
       <div className="flex flex-col gap-5">
         <form.AppField
           name="occurredOn"
-          children={(field) => <field.DateField label={m.heat_pump_event_field_date()} autoFocus />}
+          children={(field) => (
+            <field.DateField label={m.heat_pump_event_field_date()} max={today} autoFocus />
+          )}
         />
         <form.AppField
           name="unit"
@@ -199,16 +203,23 @@ function EventForm({
         />
         <form.AppField
           name="note"
-          // The count reads the field's own value, so typing re-renders this field only.
-          children={(field) => (
-            <TextareaField
-              label={m.heat_pump_event_field_note()}
-              description={m.heat_pump_event_note_count({
-                count: String(noteLength(field.state.value.trim())),
-                max: MAX,
-              })}
-            />
-          )}
+          // The count reads the field's own value, so typing re-renders this field only; past the max it turns
+          // destructive.
+          children={(field) => {
+            const count = noteLength(field.state.value.trim())
+            return (
+              <TextareaField
+                label={m.heat_pump_event_field_note()}
+                description={
+                  <span
+                    className={count > HEAT_PUMP_EVENT_NOTE_MAX ? 'text-destructive' : undefined}
+                  >
+                    {m.heat_pump_event_note_count({ count: String(count), max: MAX })}
+                  </span>
+                }
+              />
+            )
+          }}
         />
       </div>
       <ResponsiveDialogFooter className="mt-6">

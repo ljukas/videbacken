@@ -32,6 +32,8 @@ type BaseProps = {
   autoComplete?: string
   placeholder?: string
   autoFocus?: boolean
+  /** The latest value a date input offers (YYYY-MM-DD); the form's validator still checks it. */
+  max?: string
   /** Disabled on top of the always-on disable while the form submits. */
   disabled?: boolean
   inputClassName?: string
@@ -78,6 +80,7 @@ export function TextField({
   autoComplete,
   placeholder,
   autoFocus,
+  max,
   disabled,
   inputClassName,
   inputSize,
@@ -121,6 +124,7 @@ export function TextField({
     autoComplete,
     placeholder,
     autoFocus,
+    max,
     onKeyDown,
     value: field.state.value,
     onBlur: field.handleBlur,

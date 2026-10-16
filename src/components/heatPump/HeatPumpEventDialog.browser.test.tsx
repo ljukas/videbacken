@@ -155,6 +155,36 @@ test('a note over 500 characters is refused in the form; 500 with an emoji is fi
   await vi.waitFor(() => expect(createFn).toHaveBeenCalledOnce())
 })
 
+test('the date picker stops at today; the note grows to a cap, then scrolls', async () => {
+  const { screen } = await renderWithProviders(dialog({ kind: 'new' }))
+  await expect
+    .element(screen.getByLabelText(m.heat_pump_event_field_date()))
+    .toHaveAttribute('max', '2026-10-08')
+  // No app CSS in browser tests: pin the classes.
+  const note = screen.getByLabelText(m.heat_pump_event_field_note()).element()
+  expect(note.className).toContain('max-h-48')
+  expect(note.className).toContain('overflow-y-auto')
+})
+
+test("the note count turns destructive past the max, and stays the note's description", async () => {
+  const { screen } = await renderWithProviders(dialog({ kind: 'new' }))
+  const note = screen.getByLabelText(m.heat_pump_event_field_note())
+  const count = (n: number) =>
+    screen.getByText(m.heat_pump_event_note_count({ count: String(n), max: '500' }))
+  await note.fill('x'.repeat(500))
+  await expect.element(count(500)).toBeVisible()
+  expect(count(500).element().closest('.text-destructive')).toBeNull()
+  await note.fill('x'.repeat(501))
+  await expect.element(count(501)).toBeVisible()
+  expect(count(501).element().closest('.text-destructive')).not.toBeNull()
+  const describedBy = note.element().getAttribute('aria-describedby') ?? ''
+  const description = describedBy
+    .split(' ')
+    .map((id) => document.getElementById(id)?.textContent)
+    .join(' ')
+  expect(description).toContain(m.heat_pump_event_note_count({ count: '501', max: '500' }))
+})
+
 test('editing pre-fills the event and sends its id', async () => {
   const { screen } = await renderWithProviders(dialog({ kind: 'edit', event: EVENT }))
   await expect

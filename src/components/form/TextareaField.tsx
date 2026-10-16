@@ -32,6 +32,8 @@ export function TextareaField({ label, description, placeholder, rows = 3 }: Pro
         id={id}
         name={id}
         rows={rows}
+        // The textarea grows with its content (field-sizing-content): capped, then it scrolls.
+        className="max-h-48 overflow-y-auto"
         placeholder={placeholder}
         value={field.state.value}
         onBlur={field.handleBlur}

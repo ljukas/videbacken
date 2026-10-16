@@ -37,12 +37,18 @@ export function DeleteHeatPumpEventDialog({ open, event: target, units, onOpenCh
   const remove = useMutation(
     orpc.heatPump.events.delete.mutationOptions({
       onSuccess: () => toast.success(m.heat_pump_event_deleted()),
-      onError: (err) =>
+      onError: (err) => {
+        // Already gone (another admin deleted it): what was asked for is done.
+        if (isDefinedError(err) && err.code === 'EVENT_NOT_FOUND') {
+          toast.success(m.heat_pump_event_deleted())
+          return
+        }
         toast.error(
           isDefinedError(err)
             ? heatPumpEventErrorMessage(err.code)
             : m.heat_pump_event_delete_error(),
-        ),
+        )
+      },
       onSettled: () => queryClient.invalidateQueries({ queryKey: orpc.heatPump.events.key() }),
     }),
   )

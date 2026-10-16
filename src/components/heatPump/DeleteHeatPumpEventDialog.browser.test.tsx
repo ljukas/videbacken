@@ -73,13 +73,26 @@ test('cancel deletes nothing', async () => {
   expect(deleteFn).not.toHaveBeenCalled()
 })
 
-test('a failed delete toasts why', async () => {
+test('an event already gone counts as deleted: the deleted toast, no error', async () => {
   deleteFn.mockRejectedValue(new ORPCError('EVENT_NOT_FOUND', { defined: true }))
   const { screen } = await renderWithProviders(
     <DeleteHeatPumpEventDialog open event={EVENT} units={UNITS} onOpenChange={onOpenChange} />,
   )
   await screen.getByRole('button', { name: m.heat_pump_event_delete_action() }).click()
   await vi.waitFor(() =>
-    expect(toastMock.error).toHaveBeenCalledWith(m.heat_pump_event_error_not_found()),
+    expect(toastMock.success).toHaveBeenCalledWith(m.heat_pump_event_deleted()),
   )
+  expect(toastMock.error).not.toHaveBeenCalled()
+})
+
+test('a failed delete toasts the generic message', async () => {
+  deleteFn.mockRejectedValue(new Error('network'))
+  const { screen } = await renderWithProviders(
+    <DeleteHeatPumpEventDialog open event={EVENT} units={UNITS} onOpenChange={onOpenChange} />,
+  )
+  await screen.getByRole('button', { name: m.heat_pump_event_delete_action() }).click()
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.heat_pump_event_delete_error()),
+  )
+  expect(toastMock.success).not.toHaveBeenCalled()
 })
