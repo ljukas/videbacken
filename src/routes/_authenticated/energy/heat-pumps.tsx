@@ -11,6 +11,7 @@ import type { EnergySearchWrite } from '~/components/energy/useEnergyPeriod'
 import { SyncHealthAlert } from '~/components/evCharging/SyncHealthAlert'
 import { useSyncNow } from '~/components/evCharging/SyncNowButton'
 import { syncHealthQuery } from '~/components/evCharging/syncHealth'
+import { EnergySignatureSection } from '~/components/heatPump/EnergySignatureSection'
 import { HeatPumpConsumption } from '~/components/heatPump/HeatPumpConsumption'
 import { HeatPumpEmpty } from '~/components/heatPump/HeatPumpEmpty'
 import { HeatPumpEvents } from '~/components/heatPump/HeatPumpEvents'
@@ -210,6 +211,8 @@ function HeatPumpsPage() {
           {h.period?.kind === 'month' ? (
             <LoadErrorAlert title={m.heat_pump_error_title()} query={h.daysResult} />
           ) : null}
+          {/* Below the fold: its events are deferred in the loader (ADR-0025); its days follow the chosen event. */}
+          <EnergySignatureSection />
           <LoadErrorAlert title={m.heat_pump_events_error_title()} query={eventsResult} />
           {/* The card needs the units too: a skeleton while the months load; nothing under their alert. */}
           <SectionSkeleton
