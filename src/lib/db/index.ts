@@ -34,8 +34,10 @@ export const POOL_MAX_IDLE_AGE_MS = 5 * 60_000
 /**
  * The pool's options.
  * - Everywhere: fail fast instead of waiting forever (node-postgres's default).
- *   A stalled connect or pool checkout errors after 10 s, a query whose reply
- *   never comes after 30 s — well inside Vercel's 300 s function timeout.
+ *   A stalled connect or pool checkout errors after 10 s (a checkout during a
+ *   cold instance's warm-up may first wait as long for a warm-up connection,
+ *   WarmPool), a query whose reply never comes after 30 s — well inside
+ *   Vercel's 300 s function timeout.
  *   Inside a transaction a timed-out query leaves its client busy, so the
  *   rollback can still wait; outside one the client is discarded.
  * - Production: a warm minimum and its maximum idle age (above). Not in dev:

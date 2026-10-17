@@ -77,10 +77,11 @@ the step needs a brainstorm before its plan. A spike (findings only, no code) en
    deployment still builds (its log says `nothing changed … build`). Baseline: 7 of the 15
    production deploys from 2026-10-11 08:10 to 2026-10-12 07:50 UTC were docs-only.
 8. **After step 8 (prod).** On a cold instance's first RPCs, `getSessionMs` drops from 127 to close to warm (≤ 20 ms),
-   and a cold RPC's time from the edge stamp to its log line drops by about as much. Warm lines are unchanged, and no
-   instance holds more than 3 connections after a cold burst. A cold line now starts with `poolTotal` 3 (the warm-up
-   opening), so read cold as `queueMs` > 300 on the new deployment; each new instance logs one `pool warmed`
-   (`opened` 3, `warmMs`) and no `pool warm-up failed`. Locally (built function, a cold burst of three signed-in RPCs,
+   and a cold RPC's time from the edge stamp to its log line drops by about as much. Warm lines are unchanged, and a
+   cold burst of up to 3 RPCs opens no connection beyond the warm-up's 3. A cold line now starts with `poolTotal` 3
+   (the warm-up opening), so read cold as `queueMs` > 300 on the new deployment, near a `pool warmed` line (one per new
+   instance: `opened` 3, `warmMs`; no `pool warm-up failed`). On those lines `poolOpened` includes the warm-up's 3, and
+   `poolWaiting` doesn't count checkouts waiting for the warm-up. Locally (built function, a cold burst of three signed-in RPCs,
    3 runs each) `getSessionMs` went from 16–22 to 11–15 straight to Postgres, and from 291–295 to 230–241 through a
    proxy adding 25 ms per packet: the ~57 ms saved is all of the local module loading. Baseline (prod, 72 h to 2026-10-12 ~18:00 UTC, min / median / max over 49 cold RPCs):
    `getSessionMs` 17 / 127 / 162, module loading before the handler (log time − edge stamp − `queueMs` − `totalMs`)

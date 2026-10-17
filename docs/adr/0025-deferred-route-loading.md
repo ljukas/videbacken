@@ -258,7 +258,9 @@ hands it to `waitUntil`; the request doesn't wait.
   flight (the Gotcha in CLAUDE.md).
 - **Checkouts wait for the warm-up:** module loading stalls the handshakes, so a cold burst's first checkouts can find
   the connections still opening. pg-pool would then open more: no faster, and twice the minimum. `WarmPool` makes a
-  checkout wait for one of them while none is idle.
+  checkout wait, while none is idle, for the next release (a warm-up connection, or one a neighbour is done with).
+  Once a warm-up connect fails, checkouts open their own at once, as without a warm-up. These waits don't show in
+  `poolWaiting` (pg-pool's queue only), and the warm-up's connects count in the first RPCs' `poolOpened`.
 - **Once per instance:** it opens what `min` still lacks; a failure logs `pool warm-up failed` and the next request
   tries again. Success logs `pool warmed` (`opened`, `warmMs`), which marks a cold instance in the logs. Dev and tests
   have no `min`, so nothing happens there.
