@@ -6,15 +6,16 @@
 //
 // Not on each instance's first request any more (server-latency roadmap row 9):
 // a Nitro plugin doing it bundled a second copy of ~/lib/db, and with it a
-// second pool, into every instance. Exits 1 on any failure, so a deploy whose
-// first admin couldn't be seeded fails like one whose migration failed.
+// second pool, into every instance. Bootstrap only: it seeds nothing while an
+// admin is approved (src/lib/seedApprovedEmails.ts). Exits 1 on any failure, so
+// a deploy whose first admin couldn't be seeded fails like a failed migration.
 import { logger } from '~/lib/logger/server'
 
 try {
   // Imported only now: ~/lib/db throws when it loads without a database URL.
   const { seedApprovedEmails } = await import('~/lib/seedApprovedEmails')
-  const { listed, seeded } = await seedApprovedEmails()
-  logger.info('approved-email seed done', { listed, seeded })
+  // `skipped`: the allowlist already approves an admin, so it only bootstraps.
+  logger.info('approved-email seed done', await seedApprovedEmails())
 } catch (error) {
   logger.error('approved-email seed failed', { error })
   process.exit(1)
