@@ -13,8 +13,8 @@
 // connections settle, and the request doesn't wait for them.
 import handler from '@tanstack/react-start/server-entry'
 import { waitUntil } from '@vercel/functions'
-import { warmUpPool } from '~/lib/services/dbPool'
 import { withServerTiming } from '~/lib/serverTiming'
+import { warmUpPool } from '~/lib/services/dbPool'
 import { paraglideMiddleware } from '~/paraglide/server'
 
 export default {

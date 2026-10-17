@@ -1,6 +1,12 @@
 import { Pool, type PoolClient } from 'pg'
 import { expect, test } from 'vitest'
-import { __testClient, POOL_MAX_IDLE_AGE_MS, POOL_WARM_MIN, poolOptions, warmUpPool } from '~/lib/db'
+import {
+  __testClient,
+  POOL_MAX_IDLE_AGE_MS,
+  POOL_WARM_MIN,
+  poolOptions,
+  warmUpPool,
+} from '~/lib/db'
 
 // A dropped reply or a half-open socket must fail fast, not hang the request
 // until Vercel's 300 s timeout (the /charging 504s). node-postgres waits
