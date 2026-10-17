@@ -1,5 +1,5 @@
 import { Pool, type PoolClient } from 'pg'
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import {
   __testClient,
   POOL_MAX_IDLE_AGE_MS,
@@ -7,6 +7,7 @@ import {
   poolOptions,
   warmUpPool,
 } from '~/lib/db'
+import { logger } from '~/lib/logger/server'
 
 // A dropped reply or a half-open socket must fail fast, not hang the request
 // until Vercel's 300 s timeout (the /charging 504s). node-postgres waits
@@ -98,4 +99,28 @@ test('an error on a checked-out client does not throw', async () => {
 test('the app pool never warms up outside production', () => {
   expect(warmUpPool()).toBeUndefined()
   expect(__testClient?.totalCount).toBeLessThanOrEqual(1)
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+// `src/server.ts` hands the promise to `waitUntil`, so it must never reject.
+test('warmUpPool logs a warm-up that opened connections', async () => {
+  const pool = __testClient
+  if (!pool) throw new Error('tests run with the pinned test pool')
+  vi.spyOn(pool, 'warmUp').mockReturnValue(Promise.resolve(3))
+  const info = vi.spyOn(logger, 'info')
+  await expect(warmUpPool()).resolves.toBeUndefined()
+  expect(info).toHaveBeenCalledWith('pool warmed', { opened: 3, warmMs: expect.any(Number) })
+})
+
+test('warmUpPool logs a failed warm-up instead of rejecting', async () => {
+  const pool = __testClient
+  if (!pool) throw new Error('tests run with the pinned test pool')
+  const error = new Error('connect ECONNREFUSED')
+  vi.spyOn(pool, 'warmUp').mockReturnValue(Promise.reject(error))
+  const warn = vi.spyOn(logger, 'warn')
+  await expect(warmUpPool()).resolves.toBeUndefined()
+  expect(warn).toHaveBeenCalledWith('pool warm-up failed', { error })
 })
