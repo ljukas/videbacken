@@ -17,24 +17,36 @@ export const DB_MODULE_MARKER = 'DATABASE_URL (or POSTGRES_URL) environment vari
 // is excluded: it loads when it runs, not with the importer. Bare specifiers
 // (packages) aren't followed: app code is never one.
 export function staticImports(code: string): string[] {
+  // Not after a word character, `$` or `.` (`reimport`, `x.import`); anything else
+  // may precede one in valid ESM, minified (`}import{a}from"./x.mjs"`) included.
   const found = code.matchAll(
-    /(?:^|[\s;])(?:import|export)\s*(?:[^"'();]*?\bfrom\s*)?["'](\.\.?\/[^"']+)["']/g,
+    /(?:^|[^\w$.])(?:import|export)\s*(?:[^"'();]*?\bfrom\s*)?["'](\.\.?\/[^"']+)["']/g,
   )
   return [...new Set([...found].map((match) => match[1]))]
 }
 
-/** Every file the entry loads statically, the entry included (absolute paths). */
-export function staticClosure(entry: string): string[] {
+/**
+ * Every file the entry loads statically, the entry included (absolute paths),
+ * and each static import that doesn't resolve to a file: the walk can't see
+ * past one, so the check fails on it rather than pass blind.
+ */
+export function staticClosure(entry: string): {
+  files: string[]
+  unresolved: { from: string; spec: string }[]
+} {
   const seen = new Set<string>()
+  const unresolved: { from: string; spec: string }[] = []
   const visit = (file: string) => {
-    if (seen.has(file) || !existsSync(file)) return
+    if (seen.has(file)) return
     seen.add(file)
     for (const spec of staticImports(readFileSync(file, 'utf8'))) {
-      visit(resolve(dirname(file), spec))
+      const target = resolve(dirname(file), spec)
+      if (existsSync(target)) visit(target)
+      else unresolved.push({ from: file, spec })
     }
   }
-  visit(resolve(entry))
-  return [...seen]
+  if (existsSync(entry)) visit(resolve(entry))
+  return { files: [...seen], unresolved }
 }
 
 // The built JavaScript modules under `dir`, outside node_modules (traced packages).
@@ -58,10 +70,17 @@ export function checkServerBundle(entry: string): string[] {
       `no module under ${dir} holds the db module's marker: has its error message in src/lib/db/index.ts changed?`,
     ]
   }
-  return staticClosure(entry)
-    .filter(holdsDb)
-    .map(
-      (file) =>
-        `${relative(dir, file)} holds ~/lib/db, and ${relative(dir, entry)} loads it at init`,
-    )
+  const { files, unresolved } = staticClosure(entry)
+  return [
+    ...unresolved.map(
+      ({ from, spec }) =>
+        `${relative(dir, from)} imports ${spec}, which isn't a file: the check can't follow it`,
+    ),
+    ...files
+      .filter(holdsDb)
+      .map(
+        (file) =>
+          `${relative(dir, file)} holds ~/lib/db, and ${relative(dir, entry)} loads it at init`,
+      ),
+  ]
 }

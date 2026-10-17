@@ -31,11 +31,19 @@ describe('staticImports', () => {
     ])
   })
 
-  it('skips dynamic imports and packages', () => {
+  it('finds minified and comment-preceded imports', () => {
+    expect(staticImports('let a=1;}import{b}from"./min.mjs";/* c */import "./after.mjs"')).toEqual([
+      './min.mjs',
+      './after.mjs',
+    ])
+  })
+
+  it('skips dynamic imports, packages and look-alike names', () => {
     const code = [
       'import { Pool } from "pg"',
       'const services = { ssr: lazyService(() => import("./_ssr/ssr.mjs")) }',
       'const { dispatchQueueMessage } = await import("./_chunks/queue2.mjs");',
+      'reimport "./a.mjs"; loader.import "./b.mjs"',
     ].join('\n')
     expect(staticImports(code)).toEqual([])
   })
@@ -62,10 +70,9 @@ describe('checkServerBundle', () => {
     write('_chunks/queue.mjs', 'import "../_ssr/db.mjs"')
     write('_ssr/db.mjs', dbModule)
 
-    expect(staticClosure(join(dir, 'index.mjs')).map((f) => f.slice(dir.length + 1))).toEqual([
-      'index.mjs',
-      '_chunks/lazy.mjs',
-    ])
+    const { files, unresolved } = staticClosure(join(dir, 'index.mjs'))
+    expect(files.map((f) => f.slice(dir.length + 1))).toEqual(['index.mjs', '_chunks/lazy.mjs'])
+    expect(unresolved).toEqual([])
     expect(checkServerBundle(join(dir, 'index.mjs'))).toEqual([])
   })
 
@@ -83,6 +90,15 @@ describe('checkServerBundle', () => {
 
     expect(checkServerBundle(join(dir, 'index.mjs'))).toEqual([
       '_chunks/db.mjs holds ~/lib/db, and index.mjs loads it at init',
+    ])
+  })
+
+  it('fails on a static import it cannot follow', () => {
+    write('index.mjs', 'import "./_chunks/gone.mjs"')
+    write('_ssr/db.mjs', dbModule)
+
+    expect(checkServerBundle(join(dir, 'index.mjs'))).toEqual([
+      "index.mjs imports ./_chunks/gone.mjs, which isn't a file: the check can't follow it",
     ])
   })
 
