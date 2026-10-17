@@ -160,12 +160,50 @@ test('a burst of checkouts during the warm-up opens no more than `min`', async (
   }
 })
 
+// More checkouts than connections: the rest take released ones or open their own.
+test('a burst larger than `min` during the warm-up gets a connection each', async () => {
+  const warm = new WarmPool({ connectionString, min: 3 })
+  try {
+    const warming = warm.warmUp()
+    const clients = await Promise.all(Array.from({ length: 5 }, () => warm.connect()))
+    expect(warm.totalCount).toBe(5)
+    for (const client of clients) client.release()
+    expect(await warming).toBe(3)
+  } finally {
+    await warm.end()
+  }
+})
+
+// A retry after a failed warm-up can find an idle connection past its age.
+test('warmUp() replaces an expired idle connection', async () => {
+  const warm = new WarmPool({ connectionString, min: 3, maxIdleAgeMillis, onIdleCheckout })
+  try {
+    const stalePid = await backendPid(warm)
+    vi.setSystemTime(Date.now() + maxIdleAgeMillis + 1)
+
+    expect(await warm.warmUp()).toBe(2)
+    expect(warm.totalCount).toBe(3)
+    expect(warm.idleCount).toBe(3)
+    expect(onIdleCheckout).toHaveBeenCalledWith(maxIdleAgeMillis + 1, true)
+    const clients = await Promise.all([warm.connect(), warm.connect(), warm.connect()])
+    try {
+      const pids = await Promise.all(clients.map((client) => backendPid(client)))
+      expect(pids).not.toContain(stalePid)
+    } finally {
+      for (const client of clients) client.release()
+    }
+  } finally {
+    await warm.end()
+  }
+})
+
 test('a checkout during a failing warm-up still tries its own connection', async () => {
   const down = new WarmPool({ connectionString: 'postgres://nobody@127.0.0.1:1/none', min: 2 })
   try {
-    const warming = down.warmUp()
-    await expect(down.connect()).rejects.toThrow()
-    await expect(warming).rejects.toThrow()
+    // Both settled together: neither rejection may go unhandled across a tick.
+    const [warming, checkout] = await Promise.allSettled([down.warmUp(), down.connect()])
+    expect(warming.status).toBe('rejected')
+    expect(checkout.status).toBe('rejected')
   } finally {
     await down.end()
   }
