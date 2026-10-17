@@ -1,6 +1,6 @@
 import { Pool, type PoolClient } from 'pg'
 import { expect, test } from 'vitest'
-import { __testClient, POOL_MAX_IDLE_AGE_MS, POOL_WARM_MIN, poolOptions } from '~/lib/db'
+import { __testClient, POOL_MAX_IDLE_AGE_MS, POOL_WARM_MIN, poolOptions, warmUpPool } from '~/lib/db'
 
 // A dropped reply or a half-open socket must fail fast, not hang the request
 // until Vercel's 300 s timeout (the /charging 504s). node-postgres waits
@@ -85,4 +85,11 @@ test('an error on a checked-out client does not throw', async () => {
   } finally {
     client.release()
   }
+})
+
+// The test pool has no warm minimum: a first-request warm-up there would only
+// open connections the pinned single connection can't use.
+test('the app pool never warms up outside production', () => {
+  expect(warmUpPool()).toBeUndefined()
+  expect(__testClient?.totalCount).toBeLessThanOrEqual(1)
 })
