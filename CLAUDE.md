@@ -175,7 +175,9 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
   every mutation uses `adminProcedure`; the **sole exception** is a user managing their **own account**
   (`updateProfile`, `completeOnboarding`, own avatar) scoped to `context.user.id`.
 - **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → admin allowlist rows once per deploy: `bun run db:seed` after the migrations in
-  `vercel-build` (see Non-negotiables) and in `dev:up`. Sign in locally with one of those addresses to bootstrap the first admin.
+  `vercel-build` (see Non-negotiables) and in `dev:up`. **Bootstrap only:** it seeds nothing while the allowlist approves any
+  admin (later admins are invited at `/admin`; locked out with no admin row → redeploy). Sign in locally with one of those
+  addresses to bootstrap the first admin.
 - Admins manage access at `/admin` (invite = add an allowlist row + courtesy email to `/login`;
   revoke = remove approval + soft-delete + revoke sessions; re-invite restores a revoked user).
 
@@ -187,7 +189,7 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
 |---|---|
 | `bun run dev` | Vite dev server on :14600 |
 | `bun run dev:host` | Same, on your LAN IP so a phone on the Wi-Fi can reach auth + storage |
-| `bun run dev:up` / `dev:down` | Whole dev stack: db + queue + mail + storage (`up` also migrates) |
+| `bun run dev:up` / `dev:down` | Whole dev stack: db + queue + mail + storage (`up` also migrates and seeds `INITIAL_ADMIN_EMAILS`) |
 | `bun run dev:worker` | Local BullMQ consumer — **run it, or queued jobs (blurhash, alert emails) never process in dev** |
 | `bun run build` / `typecheck` | Vite build + the client chunk check (`scripts/checkChunkCycles.ts`) + the server entry check (`scripts/checkServerBundle.ts`) + `tsc --noEmit` / types only |
 | `bun run db:{up,down,generate,migrate,seed,studio}` | Postgres on :14620; generate/apply migrations; seed `INITIAL_ADMIN_EMAILS`; Drizzle Studio |
@@ -233,7 +235,8 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 ## Gotchas
 
 - **`vercel env pull` writes prod `DATABASE_URL` into `.env.local`**, which Vite + Drizzle prefer over `.env`.
-  If you run it, delete the `DATABASE_URL*` lines from `.env.local` immediately — otherwise `bun run db:migrate` migrates **production**.
+  If you run it, delete the `DATABASE_URL*` lines from `.env.local` immediately — otherwise `bun run db:migrate` migrates **production**
+  (and `db:seed`, so `dev:up` too, writes to it).
   One-off scripts against prod (`scripts/deriveEnergyMix.ts`) run with `bun --no-env-file` and an inline `DATABASE_URL`, never from env files.
 - **Every Vercel deploy migrates its database:** the `vercel-build` script runs `drizzle-kit migrate` before the build
   (then `bun run db:seed`, the first admins; a failure of either fails the deploy).
@@ -242,8 +245,9 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
   browser bundle and crashes the page. Put shared constants/vocab in a client-safe module (e.g. `integrationHealth.ts`, `spotPrice/zones.ts`); the `clientSafe.browser.test.tsx` tests guard this.
 - **No DB or network I/O at module init or in a Nitro plugin's body.** Work started outside a request isn't
   covered by `waitUntil`; Vercel may suspend the instance with it in flight (logs showed the approved-email
-  seed's connect timing out during the instance's first requests). Do it inside a request: a `request` hook
-  that hands the work to `waitUntil` from `@vercel/functions`.
+  seed's connect timing out during the instance's first requests, when it was a plugin; it now runs at deploy). Do it
+  inside a request: a `request` hook that hands the work to `waitUntil` from `@vercel/functions`, and imports any app
+  code inside the hook (next rule).
 - **A Nitro plugin imports app code inside its hook, never at the top.** Nitro bundles `server/plugins/*` apart
   from the app (`_ssr/`), so a static import loads a second copy on every instance at init; for `~/lib/db` that is a
   second pool (server-latency roadmap row 9). `build` and `vercel-build` fail when the server entry reaches `~/lib/db`

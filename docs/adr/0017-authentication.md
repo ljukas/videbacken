@@ -43,12 +43,15 @@ Columns: `id`, `email` (unique, normalized lowercase), `role`
 function in `src/lib/seedApprovedEmails.ts`, **once per deploy**:
 `bun run db:seed` (`scripts/seedApprovedEmails.ts`) runs in `vercel-build` right
 after `drizzle-kit migrate`, against the same database, and in `dev:up` after the
-local migrations. The seed is idempotent: an email that is already approved keeps
-its row and role. A failure exits 1 and fails the deploy, like a failed migration.
-The table is the runtime source of truth thereafter; editing the env later does
-not change existing rows, but a seed email whose row an admin removed gets an
-admin row again on the next deploy (it did on every new instance before), so
-remove it from the env as well.
+local migrations. **It only bootstraps:** while the allowlist approves any admin
+it seeds nothing, so later admins are invited at `/admin`, and a seed email an
+admin revoked stays revoked (before, every new instance re-added it as an admin).
+An email that is already approved keeps its row and role, and the insert is
+`ON CONFLICT DO NOTHING`, so two builds at once can't fail on the unique email. A
+failure exits 1 and fails the deploy, like a failed migration. The table is the
+runtime source of truth thereafter. **Locked out** (no admin row left, e.g. after
+a restore or a mistaken delete): redeploy, and the seed runs again. A Redeploy
+builds even when nothing changed (`scripts/ignoreBuild.sh`).
 
 *Before the amendment* a Nitro plugin (`server/plugins/seedApprovedEmails.ts`)
 ran the seed on each instance's first request, under `waitUntil` (an init-time
