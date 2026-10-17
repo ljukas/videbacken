@@ -23,7 +23,10 @@ describe('package.json scripts', () => {
 
 describe('scripts/seedApprovedEmails.ts', () => {
   it('exits 1 without a database, so the deploy fails', () => {
-    const env = { ...process.env, INITIAL_ADMIN_EMAILS: 'first-admin@example.se' }
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      INITIAL_ADMIN_EMAILS: 'first-admin@example.se',
+    }
     delete env.DATABASE_URL
     delete env.POSTGRES_URL
     delete env.TEST_SCHEMA
