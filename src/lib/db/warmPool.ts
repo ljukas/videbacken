@@ -28,6 +28,12 @@ export class WarmPool extends Pool {
   readonly #maxIdleAge: number
   readonly #onIdleCheckout: (idleMs: number, expired: boolean) => void
   readonly #releasedAt = new WeakMap<PoolClient, number>()
+  #warmUp: 'pending' | 'running' | 'done' = 'pending'
+  // The warm-up's connects still opening, whether one has failed, and the
+  // checkouts waiting for a connection meanwhile.
+  #warmOpening = 0
+  #warmFailed = false
+  readonly #warmWaiters: Array<() => void> = []
 
   constructor({
     maxIdleAgeMillis = Number.POSITIVE_INFINITY,
@@ -37,7 +43,12 @@ export class WarmPool extends Pool {
     super(config)
     this.#maxIdleAge = maxIdleAgeMillis
     this.#onIdleCheckout = onIdleCheckout
-    this.on('release', (_err, client) => this.#releasedAt.set(client, Date.now()))
+    this.on('release', (_err, client) => {
+      this.#releasedAt.set(client, Date.now())
+      // Emitted before the client goes idle; the waiter resumes after. One at a
+      // time: woken together, all but the first would find it taken and open one.
+      this.#warmWaiters.shift()?.()
+    })
   }
 
   connect(): Promise<PoolClient>
@@ -51,7 +62,66 @@ export class WarmPool extends Pool {
     )
   }
 
-  async #checkoutFresh(): Promise<PoolClient> {
+  /**
+   * Opens the connections `min` still lacks, all at once, releasing each as it
+   * connects (server-latency row 8). Called on an instance's first request, they
+   * open while its route modules load, so the first checkouts take them instead
+   * of each opening one. Module loading stalls their handshakes, so a checkout
+   * may still find them opening: it waits for one (`#checkoutFresh`). Resolves
+   * with how many it opened.
+   *
+   * Undefined when there's nothing to do: no `min` (dev, tests), a warm-up
+   * already in flight, or one that has succeeded. A failed connect rejects once
+   * the others have settled, and the next call tries again.
+   */
+  warmUp(): Promise<number> | undefined {
+    if (this.#warmUp !== 'pending') return undefined
+    const missing = (this.options.min ?? 0) - this.totalCount
+    if (missing <= 0) {
+      this.#warmUp = 'done'
+      return undefined
+    }
+    this.#warmUp = 'running'
+    this.#warmFailed = false
+    // A checkout takes an idle connection before it opens one, so check those out
+    // too. Every connect() starts before any resolves: the rest each open their own.
+    const opening = Array.from({ length: missing + this.idleCount }, () => {
+      this.#warmOpening += 1
+      return this.#checkoutFresh(false)
+        .then(
+          (client) => client.release(),
+          (error: unknown) => {
+            this.#warmFailed = true
+            throw error
+          },
+        )
+        .finally(() => {
+          this.#warmOpening -= 1
+          // After the last connect, or a failed one, no more are worth waiting for.
+          if (this.#warmOpening === 0 || this.#warmFailed) {
+            for (const wake of this.#warmWaiters.splice(0)) wake()
+          }
+        })
+    })
+    return Promise.allSettled(opening).then((results) => {
+      const failed = results.find((result) => result.status === 'rejected')
+      if (failed) {
+        this.#warmUp = 'pending'
+        throw failed.reason
+      }
+      this.#warmUp = 'done'
+      return missing
+    })
+  }
+
+  async #checkoutFresh(waitForWarmUp = true): Promise<PoolClient> {
+    // Opening another connection while the warm-up's are still opening would
+    // leave this checkout no faster and the pool above its minimum, so wait for
+    // a release. Once one of the warm-up's connects fails, the database is
+    // likely down or slow: open our own at once, as without a warm-up.
+    while (waitForWarmUp && this.#warmOpening > 0 && !this.#warmFailed && this.idleCount === 0) {
+      await new Promise<void>((wake) => this.#warmWaiters.push(wake))
+    }
     for (;;) {
       const client = await super.connect()
       const releasedAt = this.#releasedAt.get(client)
