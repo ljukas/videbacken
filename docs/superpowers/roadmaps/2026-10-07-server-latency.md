@@ -16,16 +16,18 @@ start of its session.
 | 5 | Split `evCharging/economy`: the page (tiles, months, years) and a server-paged session list (`economySessions`, slim rows), both keyed by year + scope; `SessionPagination` prefetches pages on hover/focus/touch and the next page eagerly (on `/charging` too). `economy` is 12.8 kB gzip on prod, 97% session rows the page doesn't show | [spec](../specs/2026-10-08-economy-paged-sessions-design.md), [plan](../plans/2026-10-08-server-latency-5-economy-paged-sessions.md) | [#143](https://github.com/ljukas/videbacken/pull/143) | checkpoint passed | 2026-10-11: `economy` + `economySessions` 2.7 kB in DevTools (12.8 before); hovered and next pages render with no request on the click; `economySessions` `totalMs` 24–31 warm against `economy`'s 245. See [checkpoint 5 result](#checkpoint-5-result). |
 | 6 | `economyDailySpotMs` (56–247 ms on prod): `dailyAverageSpot` converted and grouped every slot of the year (24 764 rows, 50 ms in prod `EXPLAIN ANALYZE` on 2026-10-11, all buffer hits: CPU). Now each day's average is stored in `spot_price_day`, written by `replaceDay` in the same transaction as the slots (its only writer) and backfilled by migration; `dailyAverageSpot` reads ~255 rows by PK, and the sync's stored-days probe reads the same table, so a day missing its row is re-fetched. Amends ADR-0020 | [spec](../specs/2026-10-11-spot-price-day-design.md), [plan](../plans/2026-10-11-server-latency-6-spot-price-day.md) | [#148](https://github.com/ljukas/videbacken/pull/148) | checkpoint passed | 2026-10-11: prod `economyDailySpotMs` 5–7 (56–247 before); `economy` `totalMs` 43–57 warm (181 median before). Every stored day equals the old aggregate exactly; figures unchanged (owner). See [checkpoint 6 result](#checkpoint-6-result). |
 | 7 | Skip Vercel builds for docs-only commits (Ignored Build Step: build only when something outside `docs/` and `*.md` changed since `VERCEL_GIT_PREVIOUS_SHA`; build when it is unset). 7 of the 15 prod deploys before 2026-10-12 were docs-only, and every deploy strands open tabs on the old deployment, where each return is cold. `scripts/ignoreBuild.sh` via `vercel.json`; nothing changed (a Redeploy, an empty commit) builds | bounded (in-chat design) | [#161](https://github.com/ljukas/videbacken/pull/161) | checkpoint passed | 2026-10-17: the four docs-only merges since (#162, #165, #167, #169) were canceled by the Ignored Build Step; the five code merges (#163, #164, #166, #168, #170) built and migrated; a Redeploy of #170 built (`nothing changed … build`). See [checkpoint 7 result](#checkpoint-7-result). |
-| 8 | Open the first DB connection while modules load: on an instance's first request, start warming the pool (inside the request, handed to `waitUntil`; no I/O at module init), so the connection overlaps the ~264 ms of first-request module loading instead of following it in `getSession` (127 ms median on a cold instance, 2 warm) | — | — | not started | — |
+| 8 | Open the first DB connection while modules load: on an instance's first request, `src/server.ts` started warming the pool (inside the request, handed to `waitUntil`), so the connections would overlap the ~264 ms of first-request module loading instead of following it in `getSession` (127 ms median on a cold instance, 2 warm). A checkout waited for the warm-up's connections instead of opening more | bounded (in-chat design) | [#173](https://github.com/ljukas/videbacken/pull/173), reverted in REVERT_PR | reverted | 2026-10-17, **failed**: on prod the handshakes made no progress while modules loaded (a warm-up took ~300 ms of loading plus a whole connect), so cold `getSessionMs` stayed at 84–158 on 6 of 8 first requests, and each new instance opened 3 connections instead of about 1. See [checkpoint 8 result](#checkpoint-8-result). |
+| 9 | The DB module is bundled twice: the build puts `~/lib/db` in Nitro's bundle (`index.mjs`: the approved-email seed plugin, the queue consumer) and in the SSR bundle (the app), so each instance has two pools, and the seed's query on every instance's first request opens a connection the app never uses (it then idles with the pool's `min` of 3, held through suspension) | — | — | needs shaping | — |
 
-Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed), then 3 (checkpoint passed), then the row 4 spike (done). From the spike (owner, 2026-10-12): 7, then 8. Parked, not a row: moving tabs off a replaced deployment (shorter skew-protection max age, or the app noticing it is on an old release), which needs shaping; and routing `/api/rpc` past TanStack Start (~60 ms per cold request, est.).
+Order (owner, 2026-10-08): checkpoint 2 (passed), then 5 (checkpoint passed), then 6 (checkpoint passed), then 3 (checkpoint passed), then the row 4 spike (done). From the spike (owner, 2026-10-12): 7, then 8. After checkpoint 8 failed (owner, 2026-10-17): 9. Parked, not a row: moving tabs off a replaced deployment (shorter skew-protection max age, or the app noticing it is on an old release), which needs shaping; and routing `/api/rpc` past TanStack Start (~60 ms per cold request, est.).
 
 The warm pool (keep three pooled connections; removes most `poolOpened` spikes) is client-performance step 8,
 [#135](https://github.com/ljukas/videbacken/pull/135), merged 2026-10-07; its checkpoint lives in
 [that roadmap](./2026-10-05-client-performance.md).
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. `needs shaping` means
-the step needs a brainstorm before its plan. A spike (findings only, no code) ends at `done`.
+the step needs a brainstorm before its plan. A spike (findings only, no code) ends at `done`. A step whose checkpoint
+failed and whose code was taken out again ends at `reverted`.
 
 ## How a session runs a step
 
@@ -251,6 +253,34 @@ unconfirmed. Runtime Logs show a start type per invocation in the dashboard only
   time needs the build's V8 to match the runtime's exactly; not pursued.
 - The rest of `queueMs` (~600 ms of 770) is Vercel starting the instance and Node; the function is 34 MB, half of it
   `sharp`'s libvips. Not measured further.
+
+## Checkpoint 8 result
+
+2026-10-17, after the #173 deploy (merged 19:07:38 UTC, live 19:08:31, deploy `dpl_4PWoxsC8…`). **Failed**; the owner
+chose to revert rather than wait for more natural cold instances.
+
+The warm-up ran as designed: 12 new instances each logged `pool warmed` with `opened` 3, none failed, and warm lines
+were unchanged (`getSessionMs` median 1). But the first RPC on a new instance got no faster. A cold line now starts at
+`poolTotal` 3 (the warm-up connecting), so this counts a line as a first request when it starts at `poolTotal` 0
+(before) or at `poolTotal` 3, `poolIdle` 0 with `poolOpened` ≥ 3 (after):
+
+| | Before (deploy `dpl_3rbm…`, 72 h) | After (deploy `dpl_4PWo…`, owner's visits) |
+|---|---|---|
+| First-request lines | 15 | 8 |
+| `getSessionMs` 16–37 | 4 | 2 (17, 37 at 19:35:09) |
+| `getSessionMs` 84–158 | 11 | 6 (the 19:14:25 burst) |
+| Module loading before the handler | 263–336 | 245–323 |
+
+- **Why:** each warm-up took 370–485 ms (`warmMs`), about the module loading (~300 ms) plus a whole cold connect. So
+  on prod the handshakes made no progress while modules loaded. The likely cause is that most of the loading is
+  synchronous evaluation that blocks the event loop. Locally (the built function, a 25 ms-per-packet proxy) file
+  reads left gaps, and `getSessionMs` dropped by the ~55 ms the local loading took (281–285 to 225–233); prod
+  doesn't leave those gaps.
+- **Cold `getSessionMs` was already bimodal:** the old deployment had first requests at 16–22 ms too, so the two
+  fast lines after the deploy don't show a gain.
+- **The cost:** the 19:14:25 burst of six RPCs started six instances at once, each opening 3 connections (18), where a
+  new instance used to open about one.
+- **What it found:** the pool bundled twice (row 9). Reverted in REVERT_PR; ADR-0025 §5 keeps a note.
 
 ## Baseline (2026-10-07)
 

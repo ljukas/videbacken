@@ -248,6 +248,12 @@ apart. A lone request's first query took 21 ms p50 on a new connection, against 
   changes, and a minimum would keep each old pool's connections open. Tests keep their pinned single connection. The
   `'error'` listener and the timing fields apply everywhere.
 
+*Tried and reverted, 2026-10-17 (server-latency row 8).* Opening the warm connections on an instance's first
+request, so they would open while its route modules load, made the first `getSession` no faster on prod: the
+handshakes made no progress during the ~300 ms of loading, and each new instance opened 3 connections instead of
+about 1. Don't retry it without a way to connect off the main thread; see
+[checkpoint 8](../superpowers/roadmaps/2026-10-07-server-latency.md#checkpoint-8-result).
+
 ### 6. Per-page bundle: a page loads only the code it renders
 
 *Amendment, 2026-10-05 (roadmap step 4).* A page's JS is its route chunk's static import closure, on top of the
