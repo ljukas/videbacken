@@ -34,10 +34,8 @@ export const POOL_MAX_IDLE_AGE_MS = 5 * 60_000
 /**
  * The pool's options.
  * - Everywhere: fail fast instead of waiting forever (node-postgres's default).
- *   A stalled connect or pool checkout errors after 10 s (a checkout during a
- *   cold instance's warm-up may first wait as long for a warm-up connection,
- *   WarmPool), a query whose reply never comes after 30 s — well inside
- *   Vercel's 300 s function timeout.
+ *   A stalled connect or pool checkout errors after 10 s, a query whose reply
+ *   never comes after 30 s — well inside Vercel's 300 s function timeout.
  *   Inside a transaction a timed-out query leaves its client busy, so the
  *   rollback can still wait; outside one the client is discarded.
  * - Production: a warm minimum and its maximum idle age (above). Not in dev:
@@ -77,21 +75,6 @@ pool.on('error', (error) => logger.warn('idle postgres client error', { error })
 // failed the pending query with the same error, which its request logs, so the
 // listener only keeps the event from being unhandled.
 pool.on('connect', (client) => client.on('error', () => {}))
-
-// Opens the warm connections on an instance's first request (server-latency
-// row 8): `src/server.ts` calls it before the request's route modules load,
-// ~264 ms on a cold prod instance, and the connections open meanwhile instead
-// of in its `getSession` (127 ms median). Undefined when there's nothing to do
-// (dev, tests, already warm); never rejects. The `pool warmed` line marks a
-// cold instance in the logs.
-export function warmUpPool(): Promise<void> | undefined {
-  const startedAt = performance.now()
-  return pool.warmUp()?.then(
-    (opened) =>
-      logger.info('pool warmed', { opened, warmMs: Math.round(performance.now() - startedAt) }),
-    (error: unknown) => logger.warn('pool warm-up failed', { error }),
-  )
-}
 
 // The pool's state for the `rpc timing` line (ADR-0025 §5), at a request's
 // start: open connections (connecting ones included), idle ones, and waiting
