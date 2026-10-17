@@ -41,9 +41,11 @@ For *why* a pattern exists, follow the ADR link.
 messages/                       i18n source: sv.json (source of truth) + en.json; flat keys
 project.inlang/                 Paraglide/inlang config (baseLocale sv)
 server/plugins/                 Nitro plugins, registered in vite.config.ts (not auto-discovered):
-                                seedApprovedEmails.ts (first admin), queueConsumer.ts (Vercel Queues → lib/queue)
+                                queueConsumer.ts (Vercel Queues → lib/queue, imported in the hook: see Gotchas)
 scripts/                        patchBetterAuthSchema.mjs (auth:schema), devQueueWorker.ts (dev:worker), loadEnv.ts, LAN-IP helpers,
+                                seedApprovedEmails.ts (db:seed: the first admins, once per deploy in vercel-build + dev:up),
                                 chunkGraph.ts (client chunk import graph + cycle finder), checkChunkCycles.ts (run by `build`),
+                                serverBundle.ts + checkServerBundle.ts (run by `build`: the server entry must not load ~/lib/db),
                                 deriveEnergyMix.ts (one-off energy-mix re-derive; bun --no-env-file + explicit DATABASE_URL),
                                 checkSessionCosts.ts (read-only: stored session costs vs on-read pricing; same invocation),
                                 ignoreBuild.sh (Vercel Ignored Build Step via vercel.json: skips a build when only docs/ and *.md changed)
@@ -63,7 +65,7 @@ src/
   lib/
     auth.ts / authClient.ts     betterAuth() (drizzleAdapter + google + magicLink + admin; allowlist gate) / createAuthClient()
     getSession.ts               server fn wrapping auth.api.getSession()
-    seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (called by server/plugins/seedApprovedEmails.ts)
+    seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (run by scripts/seedApprovedEmails.ts = `bun run db:seed`)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
     db/                         drizzle({ client: pg Pool(DATABASE_URL), schema, casing: 'snake_case' }); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,heatPump,integrationSync,integrationCredential,spotPrice,electricityTariff,sessionCost}.ts + index barrel; houseEnergy.ts also declares the `house_energy_month` materialized view and heatPump.ts the `heat_pump_day` one (custom migrations, `.existing()`) beside `heat_pump`, `heat_pump_reading` and `heat_pump_event`; pgError (unique- and FK-violation mapping, `pgErrorSummary`); connectionString (Supabase env bridge)
     services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, heatPump (its `heatPumpRead.ts` = the Värmepumpar read model over `daySums`/`monthSums`; `unitEnd.ts` = the unit end rule Översikt shares), energyMix, sessionCost (stored cost per session and month: sums, stale ids, guarded write-back; its `invalidate.ts` is the bump leaf every cost-input writer calls in its transaction, ADR-0020 amendment), dbPool (pool gauges for the rpc timing line) — own all DB access + domain rules (ADR-0002)
@@ -172,8 +174,8 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
 - **Two roles:** `user`, `admin`. **Admins mutate, users are read-only:** reads use `protectedProcedure`;
   every mutation uses `adminProcedure`; the **sole exception** is a user managing their **own account**
   (`updateProfile`, `completeOnboarding`, own avatar) scoped to `context.user.id`.
-- **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → admin allowlist rows on each instance's first request (see Non-negotiables for the plugin rule).
-  Sign in locally with one of those addresses to bootstrap the first admin.
+- **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → admin allowlist rows once per deploy: `bun run db:seed` after the migrations in
+  `vercel-build` (see Non-negotiables) and in `dev:up`. Sign in locally with one of those addresses to bootstrap the first admin.
 - Admins manage access at `/admin` (invite = add an allowlist row + courtesy email to `/login`;
   revoke = remove approval + soft-delete + revoke sessions; re-invite restores a revoked user).
 
@@ -187,8 +189,8 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
 | `bun run dev:host` | Same, on your LAN IP so a phone on the Wi-Fi can reach auth + storage |
 | `bun run dev:up` / `dev:down` | Whole dev stack: db + queue + mail + storage (`up` also migrates) |
 | `bun run dev:worker` | Local BullMQ consumer — **run it, or queued jobs (blurhash, alert emails) never process in dev** |
-| `bun run build` / `typecheck` | Vite build + the client chunk check (`scripts/checkChunkCycles.ts`) + `tsc --noEmit` / types only |
-| `bun run db:{up,down,generate,migrate,studio}` | Postgres on :14620; generate/apply migrations; Drizzle Studio |
+| `bun run build` / `typecheck` | Vite build + the client chunk check (`scripts/checkChunkCycles.ts`) + the server entry check (`scripts/checkServerBundle.ts`) + `tsc --noEmit` / types only |
+| `bun run db:{up,down,generate,migrate,seed,studio}` | Postgres on :14620; generate/apply migrations; seed `INITIAL_ADMIN_EMAILS`; Drizzle Studio |
 | `bun run auth:schema` | Regenerate `betterAuth.ts` + patch `timestamptz`/RLS. Idempotent |
 | `bun run queue:{up,down,studio}` / `storage:{up,down}` / `mail:{up,down}` | Local broker / S3 (RustFS) / Mailpit |
 | `bun run email:dev` | React Email preview on :14601 |
@@ -233,7 +235,8 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 - **`vercel env pull` writes prod `DATABASE_URL` into `.env.local`**, which Vite + Drizzle prefer over `.env`.
   If you run it, delete the `DATABASE_URL*` lines from `.env.local` immediately — otherwise `bun run db:migrate` migrates **production**.
   One-off scripts against prod (`scripts/deriveEnergyMix.ts`) run with `bun --no-env-file` and an inline `DATABASE_URL`, never from env files.
-- **Every Vercel deploy migrates its database:** the `vercel-build` script runs `drizzle-kit migrate` before the build.
+- **Every Vercel deploy migrates its database:** the `vercel-build` script runs `drizzle-kit migrate` before the build
+  (then `bun run db:seed`, the first admins; a failure of either fails the deploy).
   A merged migration hits prod on the next production deploy — it can't be "held back".
 - **Client code may only `import type` from services.** A value import pulls `db` → `postgres` → `Buffer` into the
   browser bundle and crashes the page. Put shared constants/vocab in a client-safe module (e.g. `integrationHealth.ts`, `spotPrice/zones.ts`); the `clientSafe.browser.test.tsx` tests guard this.
@@ -241,6 +244,10 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
   covered by `waitUntil`; Vercel may suspend the instance with it in flight (logs showed the approved-email
   seed's connect timing out during the instance's first requests). Do it inside a request: a `request` hook
   that hands the work to `waitUntil` from `@vercel/functions`.
+- **A Nitro plugin imports app code inside its hook, never at the top.** Nitro bundles `server/plugins/*` apart
+  from the app (`_ssr/`), so a static import loads a second copy on every instance at init; for `~/lib/db` that is a
+  second pool (server-latency roadmap row 9). `build` and `vercel-build` fail when the server entry reaches `~/lib/db`
+  (`scripts/checkServerBundle.ts`); `server/plugins/queueConsumer.ts` shows the pattern.
 - **`house_energy_month` is a materialized view of `house_energy_reading`** (ADR-0024): the Energi pages read it,
   and it is only as fresh as its last refresh. Anything that writes readings must call
   `houseEnergy.refreshMonthSums()` afterwards (today only the Emaldo sync, once per run). Tests that write readings and
@@ -284,7 +291,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 - **Never hand-edit `src/lib/db/schema/betterAuth.ts`** — regenerate via `bun run auth:schema`.
 - **Every database change gets a Postgres schema-design review before it merges** — new/altered tables, columns, constraints, indexes, or migrations under `src/lib/db/schema/` / `drizzle/`. The reviewer (a subagent) must load the `supabase-postgres-best-practices` skill and judge the change against the queries that will actually run (indexes, constraints vs. every valid write, types, FK/cascade, evolvability). Run it alongside `migration-guard` (which checks the mechanical migration gotchas); fix or explicitly rule on every finding before code builds on the schema.
 - **All timestamp columns use `timestamp({ withTimezone: true })`** (timestamptz). When drizzle-kit emits an `ALTER ... SET DATA TYPE timestamp with time zone` on existing data, hand-add `USING "<col>" AT TIME ZONE 'UTC'`.
-- **`server/plugins/seedApprovedEmails.ts` must stay registered in `vite.config.ts`'s Nitro `plugins`** — Nitro doesn't auto-discover `server/plugins/*`; unregistered, the first admin never seeds.
+- **`vercel-build` must keep running `bun run db:seed` after `drizzle-kit migrate`** — it seeds `INITIAL_ADMIN_EMAILS` once per deploy; without it a fresh deployment's allowlist stays empty and nobody can sign in (ADR-0017).
 - **Never remove the `arn1` region pin in `vite.config.ts`** (Nitro `vercel.functions.regions`, co-located with the Supabase DB in `eu-north-1`). Without it the region silently falls back to US `iad1`: ~610 ms/RPC instead of ~60 ms. If the DB region moves, change the pin to match.
 - **User-facing text is Paraglide-localized** (`messages/{sv,en}.json`, sv source of truth + default, en key-complete). "Videbacken" stays untranslated. **Route URL paths stay English** (`/users`, `/account`).
 - **File naming:** routes lowercase + TanStack tokens; React components PascalCase in `src/components/<entity>/`; hooks `useX`; `src/components/ui/` kebab-case (shadcn-managed); everything else camelCase.

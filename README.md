@@ -53,8 +53,8 @@ Local magic-link sign-in works out of the box against Mailpit (inbox at http://l
    `src/lib/db/connectionString.ts` bridges to the app. Local dev and CI use the Postgres container.
 3. **Vercel project** — import the repo, set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
    `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `INITIAL_ADMIN_EMAILS` in the project env.
-4. **First admin** — `INITIAL_ADMIN_EMAILS` (CSV) is seeded into the `approved_email` allowlist at
-   server startup. That address can then sign in (Google or magic-link) and invite others from `/admin`.
+4. **First admin** — `INITIAL_ADMIN_EMAILS` (CSV) is seeded into the `approved_email` allowlist on
+   every deploy, after the migrations (`bun run db:seed` in `vercel-build`; locally in `dev:up`). That address can then sign in (Google or magic-link) and invite others from `/admin`.
 
 > Google sign-in cannot be exercised end-to-end without a real OAuth client; everything else
 > (build, types, tests, local magic-link) runs without external credentials.
