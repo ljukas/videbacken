@@ -1,8 +1,8 @@
 // Fails the build when the client chunks are unsafe to ship (ADR-0025 §6): two
 // chunks that import each other, or the entry reaching a chunk group.
 //
-//   bun run build      # = vite build && this script && tsc --noEmit
-//   vercel-build       # = drizzle-kit migrate && vite build && this script && tsc --noEmit
+//   bun run build      # = vite build && this script && bun scripts/checkServerBundle.ts && tsc --noEmit
+//   vercel-build       # = drizzle-kit migrate && bun run db:seed && vite build && this script && …
 //
 // A cycle crashes a page at module init in prod only: dev doesn't chunk, and no
 // test loads the built chunks. See checkChunkGraph in scripts/chunkGraph.ts and the

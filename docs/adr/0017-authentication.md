@@ -38,18 +38,28 @@ Columns: `id`, `email` (unique, normalized lowercase), `role`
 (`isApproved`, `listApproved`, `addApproved`, `removeApproved`, `normalizeEmail`,
 `resolveSignInDecision`).
 
-**Seeding:** `INITIAL_ADMIN_EMAILS` (CSV) is seeded as admin `approved_email`
-rows by the `seedApprovedEmails` function in `src/lib/seedApprovedEmails.ts`,
-invoked from the Nitro plugin `server/plugins/seedApprovedEmails.ts`, which is
-registered explicitly in `vite.config.ts` (this project's Nitro does **not**
-auto-discover `server/plugins/*` — plugins must be listed explicitly). The plugin
-runs the seed on each instance's first request, under `waitUntil` (from
-`@vercel/functions`), not at init: work started outside a request isn't covered
-by `waitUntil`, and Vercel may suspend the instance with it in flight (logs
-showed the init-time seed's connect timing out during the instance's first
-requests). The seed is idempotent and fails soft (logs, never crashes; the next
-request retries). The table is the runtime source of truth thereafter; editing
-the env later does not retroactively change existing rows.
+**Seeding (amended 2026-10-17, server-latency row 9):** `INITIAL_ADMIN_EMAILS`
+(CSV) is seeded as admin `approved_email` rows by the `seedApprovedEmails`
+function in `src/lib/seedApprovedEmails.ts`, **once per deploy**:
+`bun run db:seed` (`scripts/seedApprovedEmails.ts`) runs in `vercel-build` right
+after `drizzle-kit migrate`, against the same database, and in `dev:up` after the
+local migrations. **It only bootstraps:** while the allowlist approves any admin
+it seeds nothing, so later admins are invited at `/admin`, and a seed email an
+admin revoked stays revoked (before, every new instance re-added it as an admin).
+An email that is already approved keeps its row and role, and the insert is
+`ON CONFLICT DO NOTHING`, so two builds at once can't fail on the unique email. A
+failure exits 1 and fails the deploy, like a failed migration. The table is the
+runtime source of truth thereafter. **Locked out** (no admin row left, e.g. after
+a restore or a mistaken delete): redeploy, and the seed runs again. A Redeploy
+builds even when nothing changed (`scripts/ignoreBuild.sh`).
+
+*Before the amendment* a Nitro plugin (`server/plugins/seedApprovedEmails.ts`)
+ran the seed on each instance's first request, under `waitUntil` (an init-time
+seed's connect had timed out when Vercel suspended the instance). Nitro bundles
+its plugins apart from the app, so the plugin's import gave every instance a
+second copy of `~/lib/db` and a second pool, and each new instance spent a
+connection on the seed's queries. Once per deploy is enough: the allowlist only
+needs the first admin before anyone signs in.
 
 ### Roles and the authorization rule
 
@@ -94,5 +104,5 @@ field editable in account settings (not part of onboarding).
 - The admin-only-mutation rule keeps authorization trivial to reason about:
   a reviewer checks that every mutating procedure is `adminProcedure` except the
   two self-account ops.
-- Bootstrapping depends on the seed plugin being registered; that registration
-  is a non-negotiable (see CLAUDE.md).
+- Bootstrapping depends on `vercel-build` running `bun run db:seed` after the
+  migrations; that is a non-negotiable (see CLAUDE.md).

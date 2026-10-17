@@ -5,6 +5,8 @@
 - **Deciders**: Lukas
 - **Decision in one line**: Heavy / deferred work runs on a queue. Producers call `queue.publish(topic, payload)` through `~/lib/effects/queue/`; the same handler in `src/lib/queue/handlers/<topic>.ts` runs in production (Vercel Queues → Nitro `vercel:queue` hook) and in local dev (BullMQ + Redis worker). The adapter is chosen at runtime from env; tests use a `devLog` no-op. **Supersedes the tier-3 / outbox passages in [ADR-0001](./0001-side-effects-architecture.md).**
 
+> **Amended 2026-10-17 — the consumer imports the dispatcher inside its hook** (server-latency roadmap row 9). Nitro bundles `server/plugins/*` apart from the app (`_ssr/`), so the plugin's static `import { dispatchQueueMessage } from '~/lib/queue'` loaded a second copy of the handlers, the services and `~/lib/db` (a second pool) on every instance at init. `server/plugins/queueConsumer.ts` now does `await import('~/lib/queue')` in the `vercel:queue` hook: only an instance that consumes a message loads that copy. A failed import throws, so Vercel redelivers. `build` and `vercel-build` fail if the server entry reaches `~/lib/db` again (`scripts/checkServerBundle.ts`).
+
 > **Amended 2026-09-29 — an awaited publish when the job *is* the outcome.** Fire-and-forget (`.catch()` + warn) stays the default for side jobs whose loss is cosmetic (`blurhash`, `heic_transcode`). The exception: when the queued job **is** the operation's user-visible result and the user can retry, the producer awaits `queue.publish` **without** `.catch()`, so a broker failure fails the request loudly instead of silently dropping the job. Today that's `invite` and `resendInvite` in `src/lib/orpc/procedures/user.ts` (`email_user_invited`). The allowlist row from `inviteUser` is already committed by then, which is fine: the invite shows as pending and the admin retries with Resend.
 
 > **Amended 2026-09-29. Pruned to the current template.** References to features the template removed (documents and the `image_thumbnail` / `pdf_thumbnail` topics with their `imageThumbnail` handler, the `document` procedures, the `realtime` effect, a link to a nonexistent ADR) were removed or replaced with current examples (the `heic_transcode` and `email_integration_sync_alert` topics, `confirmAvatarUpload`). The trigger config path is corrected to `vercel.queues.triggers`. One verification rule was widened to match the code: the `publish('blurhash'` producer check (Verification) now also admits the `heic_transcode` handler, which re-enqueues `blurhash` after transcoding — previously only oRPC procedure files were allowed. No decision changed.
@@ -194,12 +196,13 @@ nitro({
 })
 ```
 
-And the plugin itself is a one-liner over the shared dispatcher:
+And the plugin itself is a one-liner over the shared dispatcher, imported inside the hook (amendment 2026-10-17):
 
 ```ts
 // server/plugins/queueConsumer.ts
 export default definePlugin((nitro) => {
   nitro.hooks.hook('vercel:queue', async ({ message, metadata }) => {
+    const { dispatchQueueMessage } = await import('~/lib/queue')
     await dispatchQueueMessage(metadata.topicName, message, {
       messageId: metadata.messageId,
       deliveryCount: metadata.deliveryCount,

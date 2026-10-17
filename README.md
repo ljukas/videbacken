@@ -23,7 +23,7 @@ cp .env.example .env
 # Generate a secret:  openssl rand -base64 32  → BETTER_AUTH_SECRET
 # Set INITIAL_ADMIN_EMAILS to your address so you become the first admin.
 
-bun run dev:up       # start the docker stack (Postgres :14620, redis, mailpit, storage) + migrate
+bun run dev:up       # start the docker stack (Postgres :14620, redis, mailpit, storage) + migrate + seed the first admin
 bun run dev          # http://localhost:14600
 
 bun run db:studio    # browse the DB at https://local.drizzle.studio
@@ -53,8 +53,9 @@ Local magic-link sign-in works out of the box against Mailpit (inbox at http://l
    `src/lib/db/connectionString.ts` bridges to the app. Local dev and CI use the Postgres container.
 3. **Vercel project** — import the repo, set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
    `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `INITIAL_ADMIN_EMAILS` in the project env.
-4. **First admin** — `INITIAL_ADMIN_EMAILS` (CSV) is seeded into the `approved_email` allowlist at
-   server startup. That address can then sign in (Google or magic-link) and invite others from `/admin`.
+4. **First admin** — `INITIAL_ADMIN_EMAILS` (CSV) is seeded into the `approved_email` allowlist on
+   deploy, after the migrations (`bun run db:seed` in `vercel-build`; locally in `dev:up`), as long as no admin is
+   approved yet. That address can then sign in (Google or magic-link) and invite others from `/admin`.
 
 > Google sign-in cannot be exercised end-to-end without a real OAuth client; everything else
 > (build, types, tests, local magic-link) runs without external credentials.
