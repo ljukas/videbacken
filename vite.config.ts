@@ -89,10 +89,11 @@ export default defineConfig({
           // explicitly so they survive the rolldown bundle (this Nitro setup
           // does NOT auto-discover server/plugins/*).
           // - queueConsumer.ts uses the `vercel:queue` runtime hook.
-          // - seedApprovedEmails.ts seeds INITIAL_ADMIN_EMAILS into
-          //   approved_email on each instance's first request (`request`
-          //   runtime hook) so the first admin can sign in.
-          plugins: ['./server/plugins/queueConsumer.ts', './server/plugins/seedApprovedEmails.ts'],
+          // Nitro bundles plugins apart from the app (its `_ssr/` service), so
+          // a plugin that statically imports app code gives every instance a
+          // second copy of it: never ~/lib/db (a second pool). The build fails
+          // if one does (scripts/checkServerBundle.ts).
+          plugins: ['./server/plugins/queueConsumer.ts'],
           // Build-time: a missing /assets file must 404 uncached on Vercel, not
           // get the SSR page with the one-year immutable asset header.
           modules: [vercelBuildOutput],
