@@ -28,6 +28,7 @@ export class WarmPool extends Pool {
   readonly #maxIdleAge: number
   readonly #onIdleCheckout: (idleMs: number, expired: boolean) => void
   readonly #releasedAt = new WeakMap<PoolClient, number>()
+  #warmUp: 'pending' | 'running' | 'done' = 'pending'
 
   constructor({
     maxIdleAgeMillis = Number.POSITIVE_INFINITY,
@@ -49,6 +50,40 @@ export class WarmPool extends Pool {
       (client) => callback(undefined, client, client.release),
       (err: Error) => callback(err, undefined, () => {}),
     )
+  }
+
+  /**
+   * Opens the connections `min` still lacks, all at once, releasing each as it
+   * connects (server-latency row 8). Called on an instance's first request, they
+   * open while its route modules load, so the first checkouts find them idle
+   * instead of each opening one. Resolves with how many it opened.
+   *
+   * Undefined when there's nothing to do: no `min` (dev, tests), a warm-up
+   * already in flight, or one that has succeeded. A failed connect rejects once
+   * the others have settled, and the next call tries again.
+   */
+  warmUp(): Promise<number> | undefined {
+    if (this.#warmUp !== 'pending') return undefined
+    const missing = (this.options.min ?? 0) - this.totalCount
+    if (missing <= 0) {
+      this.#warmUp = 'done'
+      return undefined
+    }
+    this.#warmUp = 'running'
+    // A checkout takes an idle connection before it opens one, so check those out
+    // too. Every connect() starts before any resolves: the rest each open their own.
+    const opening = Array.from({ length: missing + this.idleCount }, () =>
+      this.connect().then((client) => client.release()),
+    )
+    return Promise.allSettled(opening).then((results) => {
+      const failed = results.find((result) => result.status === 'rejected')
+      if (failed) {
+        this.#warmUp = 'pending'
+        throw failed.reason
+      }
+      this.#warmUp = 'done'
+      return missing
+    })
   }
 
   async #checkoutFresh(): Promise<PoolClient> {

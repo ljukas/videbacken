@@ -70,3 +70,61 @@ test('reports each checkout of an idle connection: its idle time, and whether it
   expect(onIdleCheckout).toHaveBeenCalledWith(maxIdleAgeMillis + 1, true)
   expect(onIdleCheckout).toHaveBeenCalledTimes(2)
 })
+
+// A cold instance's first request opens the warm connections while its route
+// modules load, so the first checkouts find them idle (server-latency row 8).
+test('warmUp() opens connections up to `min` at once and leaves them idle', async () => {
+  const warm = new WarmPool({ connectionString, min: 3 })
+  try {
+    expect(await warm.warmUp()).toBe(3)
+    expect(warm.totalCount).toBe(3)
+    expect(warm.idleCount).toBe(3)
+  } finally {
+    await warm.end()
+  }
+})
+
+test('warmUp() opens only what `min` still lacks, and runs once', async () => {
+  const warm = new WarmPool({ connectionString, min: 3 })
+  try {
+    await warm.query(pidQuery)
+    expect(await warm.warmUp()).toBe(2)
+    expect(warm.totalCount).toBe(3)
+    expect(warm.warmUp()).toBeUndefined()
+  } finally {
+    await warm.end()
+  }
+})
+
+test('warmUp() does nothing without `min` (dev and tests)', async () => {
+  const cold = new WarmPool({ connectionString })
+  try {
+    expect(cold.warmUp()).toBeUndefined()
+    expect(cold.totalCount).toBe(0)
+  } finally {
+    await cold.end()
+  }
+})
+
+test('warmUp() does nothing while a warm-up is still in flight', async () => {
+  const warm = new WarmPool({ connectionString, min: 2 })
+  try {
+    const first = warm.warmUp()
+    expect(warm.warmUp()).toBeUndefined()
+    expect(await first).toBe(2)
+  } finally {
+    await warm.end()
+  }
+})
+
+test('a failed warmUp() rejects, and the next call tries again', async () => {
+  // Port 1: nothing listens, so the connect is refused at once.
+  const down = new WarmPool({ connectionString: 'postgres://nobody@127.0.0.1:1/none', min: 2 })
+  try {
+    await expect(down.warmUp()).rejects.toThrow()
+    expect(down.totalCount).toBe(0)
+    await expect(down.warmUp()).rejects.toThrow()
+  } finally {
+    await down.end()
+  }
+})
