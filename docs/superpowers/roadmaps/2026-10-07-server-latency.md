@@ -82,8 +82,8 @@ the step needs a brainstorm before its plan. A spike (findings only, no code) en
    (the warm-up opening), so read cold as `queueMs` > 300 on the new deployment, near a `pool warmed` line (one per new
    instance: `opened` 3, `warmMs`; no `pool warm-up failed`). On those lines `poolOpened` includes the warm-up's 3, and
    `poolWaiting` doesn't count checkouts waiting for the warm-up. Locally (built function, a cold burst of three signed-in RPCs,
-   3 runs each) `getSessionMs` went from 16–22 to 11–15 straight to Postgres, and from 291–295 to 230–241 through a
-   proxy adding 25 ms per packet: the ~57 ms saved is all of the local module loading. Baseline (prod, 72 h to 2026-10-12 ~18:00 UTC, min / median / max over 49 cold RPCs):
+   3 runs each) `getSessionMs` went from 19–24 to 10–13 straight to Postgres, and from 281–285 to 225–233 through a
+   proxy adding 25 ms per packet: the ~55 ms saved is all of the local module loading (~58 ms). Baseline (prod, 72 h to 2026-10-12 ~18:00 UTC, min / median / max over 49 cold RPCs):
    `getSessionMs` 17 / 127 / 162, module loading before the handler (log time − edge stamp − `queueMs` − `totalMs`)
    246 / 264 / 378, `queueMs` 325 / 770 / 953. Cold instances come by themselves a few times a day; read a few days of lines.
 
