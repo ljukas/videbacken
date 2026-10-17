@@ -248,24 +248,11 @@ apart. A lone request's first query took 21 ms p50 on a new connection, against 
   changes, and a minimum would keep each old pool's connections open. Tests keep their pinned single connection. The
   `'error'` listener and the timing fields apply everywhere.
 
-*Amendment, 2026-10-17 (server-latency row 8; design in
-[the roadmap](../superpowers/roadmaps/2026-10-07-server-latency.md)).* **A new instance opens its warm connections on
-its first request**, while that request's route modules load (~264 ms on prod), not in its `getSession` after them
-(127 ms median on a cold instance, 2 warm). `src/server.ts` calls `warmUpPool()` (through the `dbPool` service) and
-hands it to `waitUntil`; the request doesn't wait.
-
-- **Inside the request, not at module init:** Vercel may suspend an instance with work started outside a request in
-  flight (the Gotcha in CLAUDE.md).
-- **Checkouts wait for the warm-up:** module loading stalls the handshakes, so a cold burst's first checkouts can find
-  the connections still opening. pg-pool would then open more: no faster, and twice the minimum. `WarmPool` makes a
-  checkout wait, while none is idle, for the next release (a warm-up connection, or one a neighbour is done with).
-  Once a warm-up connect fails, checkouts open their own at once, as without a warm-up. These waits don't show in
-  `poolWaiting` (pg-pool's queue only), and the warm-up's connects count in the first RPCs' `poolOpened`.
-- **Once per instance:** it opens what `min` still lacks; a failure logs `pool warm-up failed` and the next request
-  tries again. Success logs `pool warmed` (`opened`, `warmMs`), which marks a cold instance in the logs. Dev and tests
-  have no `min`, so nothing happens there.
-- **Not here:** the build bundles `~/lib/db` twice, so the seed plugin and the queue consumer (Nitro's bundle) use a
-  pool of their own. The app's pool is the one in the SSR bundle, which `src/server.ts` belongs to.
+*Tried and reverted, 2026-10-17 (server-latency row 8).* Opening the warm connections on an instance's first
+request, so they would open while its route modules load, made the first `getSession` no faster on prod: the
+handshakes made no progress during the ~300 ms of loading, and each new instance opened 3 connections instead of
+about 1. Don't retry it without a way to connect off the main thread; see
+[checkpoint 8](../superpowers/roadmaps/2026-10-07-server-latency.md#checkpoint-8-result).
 
 ### 6. Per-page bundle: a page loads only the code it renders
 
