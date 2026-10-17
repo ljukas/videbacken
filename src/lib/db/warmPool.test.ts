@@ -128,3 +128,45 @@ test('a failed warmUp() rejects, and the next call tries again', async () => {
     await down.end()
   }
 })
+
+// Module loading stalls the warm-up's handshakes, so a cold instance's first
+// checkouts find its connections still opening. Opening more would leave the
+// first request no faster and the pool twice its minimum.
+test('a checkout during the warm-up waits for one of its connections', async () => {
+  const warm = new WarmPool({ connectionString, min: 2 })
+  try {
+    const warming = warm.warmUp()
+    const client = await warm.connect()
+    expect(warm.totalCount).toBe(2)
+    client.release()
+    expect(await warming).toBe(2)
+    expect(warm.totalCount).toBe(2)
+  } finally {
+    await warm.end()
+  }
+})
+
+// A cold burst: each of its first checkouts takes a warm-up connection.
+test('a burst of checkouts during the warm-up opens no more than `min`', async () => {
+  const warm = new WarmPool({ connectionString, min: 3 })
+  try {
+    const warming = warm.warmUp()
+    const clients = await Promise.all([warm.connect(), warm.connect(), warm.connect()])
+    expect(warm.totalCount).toBe(3)
+    for (const client of clients) client.release()
+    expect(await warming).toBe(3)
+  } finally {
+    await warm.end()
+  }
+})
+
+test('a checkout during a failing warm-up still tries its own connection', async () => {
+  const down = new WarmPool({ connectionString: 'postgres://nobody@127.0.0.1:1/none', min: 2 })
+  try {
+    const warming = down.warmUp()
+    await expect(down.connect()).rejects.toThrow()
+    await expect(warming).rejects.toThrow()
+  } finally {
+    await down.end()
+  }
+})
