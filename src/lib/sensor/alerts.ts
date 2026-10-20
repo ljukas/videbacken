@@ -46,3 +46,32 @@ export type SensorAlertRuleDto = {
   /** Only silence. */
   silenceHours: number | null
 }
+
+/** The kinds judged against a reading's value (silence is judged on the clock). */
+export const VALUE_ALERT_KINDS = ['temperature', 'humidity', 'battery'] as const
+export type ValueAlertKind = (typeof VALUE_ALERT_KINDS)[number]
+
+/** Why an alert ended. */
+export const SENSOR_ALERT_END_REASONS = ['recovered', 'paused', 'edited', 'deleted'] as const
+export type SensorAlertEndReason = (typeof SENSOR_ALERT_END_REASONS)[number]
+
+export const ALERT_RULES_PER_SENSOR_MAX = 20
+
+/** How far back a rule looks when judging (readings older than this are ignored). */
+export const ALERT_LOOKBACK_MS = 7 * 24 * 60 * 60_000
+
+/** A rule in the viewer's list: firingSince is its open alert's start, null when not firing. */
+export type SensorAlertRuleListItem = SensorAlertRuleDto & { firingSince: Date | null }
+
+/** One history entry: the rule as it was when it fired. */
+export type SensorAlertEventDto = {
+  id: string
+  kind: SensorAlertKind
+  direction: SensorAlertDirection | null
+  threshold: number | null
+  count: number | null
+  silenceHours: number | null
+  startedAt: Date
+  endedAt: Date | null
+  endReason: SensorAlertEndReason | null
+}
