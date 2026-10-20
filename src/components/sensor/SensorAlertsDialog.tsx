@@ -1,6 +1,6 @@
 import { isDefinedError } from '@orpc/client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { BellIcon, PlusIcon } from 'lucide-react'
+import { BellIcon, PencilIcon, PlusIcon } from 'lucide-react'
 import { type RefObject, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { RetryAlert } from '~/components/layout/LoadErrorAlert'
@@ -277,8 +277,8 @@ function RuleList({
   )
 }
 
-// One rule: the row opens it in the form; the switch beside it (not inside: a button can't hold
-// another control) pauses or resumes it, named by the rule so a screen reader tells them apart.
+// One rule: its description, a pencil that opens it in the form, and a switch that pauses or
+// resumes it. Both controls are named by the rule so a screen reader tells the rows apart.
 function RuleRow({ rule, onOpen }: { rule: SensorAlertRuleDto; onOpen: () => void }) {
   const queryClient = useQueryClient()
   const setEnabled = useMutation(
@@ -295,22 +295,26 @@ function RuleRow({ rule, onOpen }: { rule: SensorAlertRuleDto; onOpen: () => voi
   const description = alertRuleDescription(rule)
 
   return (
-    <li className="flex items-center gap-3 rounded-lg border pr-3">
-      <button
-        type="button"
-        data-rule-id={rule.id}
-        onClick={onOpen}
-        className={cn(
-          'min-h-11 flex-1 rounded-l-lg px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50',
-          !enabled && 'text-muted-foreground',
-        )}
-      >
+    <li className="flex items-center gap-1 rounded-lg border py-1 pr-3 pl-3">
+      <span className={cn('min-w-0 flex-1 py-1 text-sm', !enabled && 'text-muted-foreground')}>
         {description}
-      </button>
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        data-rule-id={rule.id}
+        className="size-10 shrink-0"
+        onClick={onOpen}
+        aria-label={m.sensors_alert_edit_named({ description })}
+      >
+        <PencilIcon aria-hidden className="size-4" />
+      </Button>
       <Switch
         checked={enabled}
         onCheckedChange={(next) => setEnabled.mutate({ id: rule.id, enabled: next })}
         aria-label={m.sensors_alert_enabled_named({ description })}
+        className="ml-2"
       />
     </li>
   )

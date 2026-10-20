@@ -1124,6 +1124,7 @@
   "sensors_alert_dialog_description": "Only you get these emails.",
   "sensors_alert_list_label": "Your alerts",
   "sensors_alert_enabled_named": "Alert on: {description}",
+  "sensors_alert_edit_named": "Edit alert: {description}",
   "sensors_alert_new": "New alert",
   "sensors_alert_form_title_new": "New alert",
   "sensors_alert_form_title_edit": "Edit alert",

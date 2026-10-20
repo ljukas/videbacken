@@ -51,6 +51,9 @@ const rule = (over: Partial<SensorAlertRuleDto>): SensorAlertRuleDto => ({
   silenceHours: null,
   ...over,
 })
+// The pencil that opens the humidity rule in the form.
+const EDIT_HUMID = 'Ändra larmet: Luftfuktighet över 80 % · 3 mätningar'
+
 const RULES: SensorAlertRuleDto[] = [
   rule({ id: '00000000-0000-4000-8000-000000000001' }),
   rule({
@@ -145,10 +148,21 @@ test('a failing switch toasts the error', async () => {
   await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalledWith(m.sensors_alert_save_error()))
 })
 
-test('tapping a rule opens it in the form', async () => {
+test("a rule's description is plain text: its pencil is the way in", async () => {
+  const { screen } = await renderDialog()
+  await expect.element(screen.getByText('Luftfuktighet över 80 % · 3 mätningar')).toBeVisible()
+  expect(
+    screen
+      .getByRole('button', { name: 'Luftfuktighet över 80 % · 3 mätningar', exact: true })
+      .elements(),
+  ).toHaveLength(0)
+  await expect.element(screen.getByRole('button', { name: EDIT_HUMID })).toBeVisible()
+})
+
+test('the pencil opens its rule in the form', async () => {
   const onView = vi.fn()
   const { screen } = await renderDialog({ onView })
-  await screen.getByRole('button', { name: 'Luftfuktighet över 80 % · 3 mätningar' }).click()
+  await screen.getByRole('button', { name: EDIT_HUMID }).click()
   expect(onView).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000002')
 })
 
@@ -259,14 +273,12 @@ test('the form takes focus on its heading; back in the list, focus returns to "N
 
 test('back from editing a rule focuses that rule in the list', async () => {
   const { screen } = await renderWithProviders(<Stateful />)
-  await screen.getByRole('button', { name: 'Luftfuktighet över 80 % · 3 mätningar' }).click()
+  await screen.getByRole('button', { name: EDIT_HUMID }).click()
   await expect
     .element(screen.getByRole('heading', { name: m.sensors_alert_form_title_edit() }))
     .toHaveFocus()
   await screen.getByRole('button', { name: m.common_back() }).click()
-  await expect
-    .element(screen.getByRole('button', { name: 'Luftfuktighet över 80 % · 3 mätningar' }))
-    .toHaveFocus()
+  await expect.element(screen.getByRole('button', { name: EDIT_HUMID })).toHaveFocus()
 })
 
 test('Esc in the form returns to the list instead of closing', async () => {
@@ -290,11 +302,10 @@ test('Esc in the list closes the dialog', async () => {
 })
 
 test('a rule left on purpose and opened again still toasts when it vanishes later', async () => {
-  const HUMID = 'Luftfuktighet över 80 % · 3 mätningar'
   const { screen, queryClient } = await renderWithProviders(<Stateful />)
-  await screen.getByRole('button', { name: HUMID }).click()
+  await screen.getByRole('button', { name: EDIT_HUMID }).click()
   await screen.getByRole('button', { name: m.common_back() }).click()
-  await screen.getByRole('button', { name: HUMID }).click()
+  await screen.getByRole('button', { name: EDIT_HUMID }).click()
   await expect
     .element(screen.getByRole('heading', { name: m.sensors_alert_form_title_edit() }))
     .toBeVisible()

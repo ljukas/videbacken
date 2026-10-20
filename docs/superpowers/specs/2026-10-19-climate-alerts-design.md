@@ -174,7 +174,8 @@ bell. Two views that replace each other in one overlay:
    - Caption: "Bara du får dessa mejl."
    - Your rules for this sensor, each with a state dot (red firing / green OK / grey paused), a one-line
      description ("Temperatur under 5 °C · 2 mätningar", "Tyst i 6 h", "Batteri under 20 %"), "sedan 03:10" while
-     firing, and an on/off switch. Tapping a rule opens it in the form view.
+     firing, a pencil (40 px ghost icon button, like the admin's on the tiles) that opens it in the form view, and
+     an on/off switch.
    - "+ Nytt larm" opens an empty form.
    - "Senaste larm": your latest 10 history entries for this sensor (what, from–to, duration; "pågår" while
      firing), with "Visa fler" loading the next 10.

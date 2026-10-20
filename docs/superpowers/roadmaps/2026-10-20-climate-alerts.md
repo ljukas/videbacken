@@ -71,6 +71,8 @@ Each must pass, with the result recorded in the table, before the next step star
   hours ("≈ 2–4 timmar").
 - **Step 1:** with the bell and the admin's pencil (both 40 px, as specified), the tiles go to one column on the
   narrowest phones (card under ~304 px), and the location line sits under the name row, full width.
+- **After step 1 (checkpoint 1):** a rule opens in the form from a pencil button in its row, not by tapping the
+  row's text: the owner found the tappable row unclear on a phone. The description is plain text.
 - **For step 2's plan:** keep the firing state off the rule row (an open `sensor_alert_event` = firing, a partial
   unique index on `rule_id where ended_at is null`; schema review of step 1). Decide whether to cap rules per user
   (security review of step 1: uncapped rules × one webhook = that many emails once).
