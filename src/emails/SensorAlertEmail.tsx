@@ -1,10 +1,7 @@
-import { tz } from '@date-fns/tz'
-import { format } from 'date-fns'
 import { render } from 'react-email'
 import { dateFnsLocaleFor } from '~/lib/i18n/format'
 import type { SensorAlertDirection, ValueAlertKind } from '~/lib/sensor/alerts'
-import { formatAlertDuration } from '~/lib/sensor/alertTime'
-import { STOCKHOLM_TIME_ZONE } from '~/lib/time/stockholm'
+import { formatAlertDayTime, formatAlertDuration } from '~/lib/sensor/alertTime'
 import { m } from '~/paraglide/messages'
 import type { Locale } from '~/paraglide/runtime'
 import { BrandEmailLayout } from './BrandEmailLayout'
@@ -31,27 +28,34 @@ const intlLocale = (locale: Locale) => (locale === 'sv' ? 'sv-SE' : 'en-GB')
 
 const unit = (kind: ValueAlertKind) => (kind === 'temperature' ? ' °C' : ' %')
 
+// `signDisplay: 'negative'`: a value that rounds to zero ("-0.04") is "0,0", never "−0,0".
+
 /** "5 °C", "80 %": the limit in the recipient's number format, at most one decimal. */
 function limitText(p: SensorAlertEmailProps): string {
-  const n = new Intl.NumberFormat(intlLocale(p.locale), { maximumFractionDigits: 1 })
+  const n = new Intl.NumberFormat(intlLocale(p.locale), {
+    maximumFractionDigits: 1,
+    signDisplay: 'negative',
+  })
   return `${n.format(p.threshold)}${unit(p.kind)}`
 }
 
-/** The latest reading: temperature with one decimal, humidity and battery whole. */
+/**
+ * The latest reading: temperature with exactly one decimal, humidity with at most one (a rule
+ * over 80 % firing on 80.4 must not read "80 %"), battery whole.
+ */
 function valueText(p: SensorAlertEmailProps): string {
-  const digits = p.kind === 'temperature' ? 1 : 0
-  const n = new Intl.NumberFormat(intlLocale(p.locale), {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })
+  const digits =
+    p.kind === 'temperature'
+      ? { minimumFractionDigits: 1, maximumFractionDigits: 1 }
+      : p.kind === 'humidity'
+        ? { maximumFractionDigits: 1 }
+        : { maximumFractionDigits: 0 }
+  const n = new Intl.NumberFormat(intlLocale(p.locale), { ...digits, signDisplay: 'negative' })
   return `${n.format(p.value)}${unit(p.kind)}`
 }
 
 const time = (iso: string, locale: Locale) =>
-  format(new Date(iso), 'd MMM HH:mm', {
-    locale: dateFnsLocaleFor(locale),
-    in: tz(STOCKHOLM_TIME_ZONE),
-  })
+  formatAlertDayTime(new Date(iso), dateFnsLocaleFor(locale))
 
 const measureWord = (kind: ValueAlertKind, locale: Locale): string =>
   kind === 'temperature'
@@ -83,15 +87,17 @@ function parts(p: SensorAlertEmailProps) {
   }
 }
 
+/** One line: any whitespace run in it (a CR/LF in a sensor's name too) is one space. */
 function subject(p: SensorAlertEmailProps): string {
   const { name, measure, dir, back, limit, value } = parts(p)
   const { locale } = p
-  if (p.transition === 'fired') {
-    return m.email_sensor_alert_subject_fired({ name, measure, dir, limit }, { locale })
-  }
-  return p.kind === 'battery'
-    ? m.email_sensor_alert_subject_recovered_battery({ name, value }, { locale })
-    : m.email_sensor_alert_subject_recovered({ name, measure, back, limit }, { locale })
+  const text =
+    p.transition === 'fired'
+      ? m.email_sensor_alert_subject_fired({ name, measure, dir, limit }, { locale })
+      : p.kind === 'battery'
+        ? m.email_sensor_alert_subject_recovered_battery({ name, value }, { locale })
+        : m.email_sensor_alert_subject_recovered({ name, measure, back, limit }, { locale })
+  return text.replace(/\s+/g, ' ')
 }
 
 function facts(p: SensorAlertEmailProps): { label: string; value: string }[] {
