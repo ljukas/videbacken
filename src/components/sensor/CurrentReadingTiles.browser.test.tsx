@@ -87,6 +87,30 @@ test('shows each sensor’s location under its name', async () => {
   await expect.element(screen.getByText('Under köket')).toBeVisible()
 })
 
+test('only the name shares its row with the buttons; the location spans the tile below', async () => {
+  await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[{ ...device, displayName: 'NV', location: 'Krypgrunden under köket' }]}
+      isAdmin
+      onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  const location = document.querySelector('[data-slot="sensor-location"]')
+  const name = document.querySelector('li h3')
+  const edit = document.querySelector(
+    `button[aria-label="${m.sensors_edit_device_named({ name: 'NV' })}"]`,
+  )
+  const row = name?.closest('[data-slot="sensor-tile-header"]')
+  expect(row).not.toBeNull()
+  expect(row?.contains(edit ?? null)).toBe(true)
+  expect(row?.contains(location)).toBe(false)
+  // A direct child of the tile: the full width, not a column beside the buttons.
+  expect(location?.parentElement?.tagName).toBe('LI')
+  expect(location?.className).toContain('truncate')
+})
+
 test('a sensor without a location keeps the line when another has one, so figures line up', async () => {
   const { screen } = await renderWithProviders(
     <CurrentReadingTiles
@@ -165,6 +189,11 @@ test('four columns only once the tiles themselves have room, not from a viewport
   // columns: the 30 px temperature overflows. The tiles' own width decides
   // (container query), so two columns until each tile fits its figure.
   const list = document.querySelector('ul')
+  // One column on the narrowest phones (a 320 px viewport leaves a ~256 px card), two from a
+  // 19rem container, four from @2xl.
+  expect(list?.className.split(' ')).toContain('grid-cols-1')
+  expect(list?.className.split(' ')).not.toContain('grid-cols-2')
+  expect(list?.className).toContain('@[19rem]:grid-cols-2')
   expect(list?.className).toContain('@2xl:grid-cols-4')
   expect(list?.className).not.toContain('@xl:grid-cols-4')
   expect(list?.className).not.toContain('md:grid-cols-4')

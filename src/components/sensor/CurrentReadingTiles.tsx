@@ -28,25 +28,22 @@ export function CurrentReadingTiles({
   // figures line up across a row; with none, no blank line.
   const anyLocation = devices.some((d) => d.location)
   return (
-    // Columns follow the tiles' own width (container query), not the viewport:
-    // four only once each tile fits its 30 px figure and still leaves its name
-    // room beside the two 40 px buttons, which a tablet with the sidebar open
-    // doesn't.
+    // Columns follow the tiles' own width (container query), not the viewport.
+    // Each tile must fit its 30 px figure and leave its name room beside the two
+    // 40 px buttons: one column below a 19rem container (a 320 px phone leaves
+    // ~256 px), two from there, four only from @2xl, which a tablet with the
+    // sidebar open doesn't reach.
     <div className="@container">
-      <ul className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
+      <ul className="grid grid-cols-1 gap-3 @[19rem]:grid-cols-2 @2xl:grid-cols-4">
         {devices.map((d) => (
           <li key={d.id} className="flex min-w-0 flex-col rounded-lg border p-3">
-            <div className="flex items-start gap-1">
-              <div className="min-w-0 flex-1">
-                {/* Wraps to two lines rather than collapsing beside the buttons on a phone. */}
-                <h3 className="line-clamp-2 break-words font-medium text-base">{d.displayName}</h3>
-                {anyLocation ? (
-                  <p data-slot="sensor-location" className="truncate text-muted-foreground text-sm">
-                    {/* A non-breaking space keeps an empty line its height. */}
-                    {d.location || ' '}
-                  </p>
-                ) : null}
-              </div>
+            {/* Only the name shares its row with the buttons; the location gets
+                the tile's full width below. */}
+            <div data-slot="sensor-tile-header" className="flex items-start gap-1">
+              {/* Wraps to two lines rather than collapsing beside the buttons on a phone. */}
+              <h3 className="line-clamp-2 min-w-0 flex-1 break-words font-medium text-base">
+                {d.displayName}
+              </h3>
               {/* 40 px targets. The group pulls into the tile's padding (top and
                   right) so the icons line up with the name, not the name with them. */}
               <div className="-mt-2 -mr-2 flex shrink-0 items-start">
@@ -88,6 +85,12 @@ export function CurrentReadingTiles({
                 ) : null}
               </div>
             </div>
+            {anyLocation ? (
+              <p data-slot="sensor-location" className="truncate text-muted-foreground text-sm">
+                {/* A non-breaking space keeps an empty line its height. */}
+                {d.location || ' '}
+              </p>
+            ) : null}
             <div className="mt-2 font-semibold text-3xl tabular-nums">
               {d.latest?.temperatureC != null ? `${d.latest.temperatureC.toFixed(1)}°C` : '—'}
             </div>
