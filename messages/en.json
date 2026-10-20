@@ -1120,6 +1120,7 @@
   "heat_pump_signature_error_title": "The energy signature couldn't be loaded",
   "sensors_alert_error_rule_not_found": "The alert no longer exists",
   "sensors_alert_error_unknown_sensor": "The sensor no longer exists",
+  "sensors_alert_error_too_many": "You already have {max} alerts on this sensor",
   "sensors_alert_dialog_title": "Alerts for {name}",
   "sensors_alert_dialog_description": "Only you get these emails.",
   "sensors_alert_list_label": "Your alerts",

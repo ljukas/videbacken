@@ -1,9 +1,14 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, count, eq, isNull } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import { isForeignKeyViolation } from '~/lib/db/pgError'
-import { sensorAlertRule } from '~/lib/db/schema'
+import { sensorAlertEvent, sensorAlertRule } from '~/lib/db/schema'
 import type { SensorAlertRuleInput } from '~/lib/sensor/alertRuleInput'
-import type { SensorAlertRuleDto } from '~/lib/sensor/alerts'
+import {
+  ALERT_RULES_PER_SENSOR_MAX,
+  type SensorAlertEndReason,
+  type SensorAlertRuleDto,
+  type SensorAlertRuleListItem,
+} from '~/lib/sensor/alerts'
 import { SensorAlertDomainError } from './errors'
 
 // The generated name of the device_id FK (drizzle: <table>_<column>_<ref table>_<ref column>_fk).
@@ -65,14 +70,44 @@ async function mapUnknownSensor<T>(write: () => Promise<T>): Promise<T> {
   }
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+// Ends the rule's open event quietly. The caller holds the owned rule row's lock first (the same
+// lock the evaluation takes), so an evaluation can't re-open the alert in between.
+async function endOpenEvent(tx: Tx, userId: string, ruleId: string, reason: SensorAlertEndReason) {
+  await tx
+    .update(sensorAlertEvent)
+    .set({ endedAt: new Date(), endReason: reason })
+    .where(
+      and(
+        eq(sensorAlertEvent.ruleId, ruleId),
+        eq(sensorAlertEvent.userId, userId),
+        isNull(sensorAlertEvent.endedAt),
+      ),
+    )
+}
+
+// A count-then-insert is enough: a race past the cap by one is harmless, it guards a runaway.
+async function assertRoomOnDevice(tx: Tx, userId: string, deviceId: string) {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(sensorAlertRule)
+    .where(and(eq(sensorAlertRule.userId, userId), eq(sensorAlertRule.deviceId, deviceId)))
+  if (row.n >= ALERT_RULES_PER_SENSOR_MAX) throw new SensorAlertDomainError('TOO_MANY_RULES')
+}
+
 const owned = (userId: string, id: string) =>
   and(eq(sensorAlertRule.id, id), eq(sensorAlertRule.userId, userId))
 
-/** The user's own rules, oldest first. */
-export async function listOwnRules(userId: string): Promise<SensorAlertRuleDto[]> {
+/** The user's own rules, oldest first; firingSince is the open alert's start. */
+export async function listOwnRules(userId: string): Promise<SensorAlertRuleListItem[]> {
   return db
-    .select(DTO)
+    .select({ ...DTO, firingSince: sensorAlertEvent.startedAt })
     .from(sensorAlertRule)
+    .leftJoin(
+      sensorAlertEvent,
+      and(eq(sensorAlertEvent.ruleId, sensorAlertRule.id), isNull(sensorAlertEvent.endedAt)),
+    )
     .where(eq(sensorAlertRule.userId, userId))
     .orderBy(asc(sensorAlertRule.createdAt), asc(sensorAlertRule.id))
 }
@@ -82,43 +117,71 @@ export async function createRule(
   input: SensorAlertRuleInput,
 ): Promise<SensorAlertRuleDto> {
   const values = { ...columns(input), userId }
-  return mapUnknownSensor(async () => {
-    const [row] = await db.insert(sensorAlertRule).values(values).returning(DTO)
-    return row
-  })
+  return mapUnknownSensor(() =>
+    db.transaction(async (tx) => {
+      await assertRoomOnDevice(tx, userId, input.deviceId)
+      const [row] = await tx.insert(sensorAlertRule).values(values).returning(DTO)
+      return row
+    }),
+  )
 }
 
-/** Rewrites every column from the input (the rule may change kind or device); keeps `enabled`. */
+/**
+ * Rewrites every column from the input (the rule may change kind or device); keeps `enabled`.
+ * A change to any defining column ends the rule's open alert (`edited`); identical values don't.
+ */
 export async function updateRule(
   userId: string,
   id: string,
   input: SensorAlertRuleInput,
 ): Promise<SensorAlertRuleDto> {
   const values = columns(input)
-  const row = await mapUnknownSensor(async () => {
-    const [updated] = await db
-      .update(sensorAlertRule)
-      .set(values)
-      .where(owned(userId, id))
-      .returning(DTO)
-    return updated
-  })
-  if (!row) throw new SensorAlertDomainError('RULE_NOT_FOUND')
-  return row
+  return mapUnknownSensor(() =>
+    db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(sensorAlertRule)
+        .where(owned(userId, id))
+        .for('update')
+      if (!current) throw new SensorAlertDomainError('RULE_NOT_FOUND')
+      const changed =
+        current.deviceId !== values.deviceId ||
+        current.kind !== values.kind ||
+        current.direction !== values.direction ||
+        current.threshold !== values.threshold ||
+        current.count !== values.count ||
+        current.silenceHours !== values.silenceHours
+      if (current.deviceId !== values.deviceId) {
+        await assertRoomOnDevice(tx, userId, values.deviceId)
+      }
+      const [row] = await tx
+        .update(sensorAlertRule)
+        .set(values)
+        .where(owned(userId, id))
+        .returning(DTO)
+      if (changed) await endOpenEvent(tx, userId, id, 'edited')
+      return row
+    }),
+  )
 }
 
+/** Pausing ends the rule's open alert (`paused`); resuming starts nothing. */
 export async function setRuleEnabled(
   userId: string,
   id: string,
   enabled: boolean,
 ): Promise<SensorAlertRuleDto> {
-  const [row] = await db
-    .update(sensorAlertRule)
-    .set({ enabled })
-    .where(owned(userId, id))
-    .returning(DTO)
-  if (!row) throw new SensorAlertDomainError('RULE_NOT_FOUND')
-  return row
+  return db.transaction(async (tx) => {
+    // The owned UPDATE locks the row first.
+    const [row] = await tx
+      .update(sensorAlertRule)
+      .set({ enabled })
+      .where(owned(userId, id))
+      .returning(DTO)
+    if (!row) throw new SensorAlertDomainError('RULE_NOT_FOUND')
+    if (!enabled) await endOpenEvent(tx, userId, id, 'paused')
+    return row
+  })
 }
 
 /** Returns the deleted rule's device and kind, for the caller's log line. */
@@ -126,10 +189,15 @@ export async function deleteRule(
   userId: string,
   id: string,
 ): Promise<Pick<SensorAlertRuleDto, 'deviceId' | 'kind'>> {
-  const [deleted] = await db
-    .delete(sensorAlertRule)
-    .where(owned(userId, id))
-    .returning({ deviceId: sensorAlertRule.deviceId, kind: sensorAlertRule.kind })
-  if (!deleted) throw new SensorAlertDomainError('RULE_NOT_FOUND')
-  return deleted
+  return db.transaction(async (tx) => {
+    const [rule] = await tx
+      .select({ deviceId: sensorAlertRule.deviceId, kind: sensorAlertRule.kind })
+      .from(sensorAlertRule)
+      .where(owned(userId, id))
+      .for('update')
+    if (!rule) throw new SensorAlertDomainError('RULE_NOT_FOUND')
+    await endOpenEvent(tx, userId, id, 'deleted')
+    await tx.delete(sensorAlertRule).where(owned(userId, id))
+    return rule
+  })
 }

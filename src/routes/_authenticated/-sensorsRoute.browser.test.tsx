@@ -293,6 +293,7 @@ test('the viewer’s switched-on rules show as a count on the tile bell', async 
     threshold: 30,
     count: 1,
     silenceHours: null,
+    firingSince: null,
   })
   const { screen } = await renderSensors('', (qc) => {
     qc.setQueryData(devicesKey, [device])
@@ -414,6 +415,7 @@ const RULE = {
   threshold: 5,
   count: 2,
   silenceHours: null,
+  firingSince: null,
 }
 
 test.each([

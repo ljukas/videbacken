@@ -10,6 +10,7 @@ import { SensorAlertDomainError, type SensorAlertDomainErrorCode } from '~/lib/s
 const sensorAlertErrors = {
   RULE_NOT_FOUND: { status: 404 },
   UNKNOWN_SENSOR: { status: 422 },
+  TOO_MANY_RULES: { status: 409 },
 } satisfies Record<SensorAlertDomainErrorCode, { status: number }>
 
 const updateInput = sensorAlertRuleInput.and(z.object({ id: z.uuid() }))

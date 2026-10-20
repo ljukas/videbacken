@@ -1120,6 +1120,7 @@
   "heat_pump_signature_error_title": "Energisignaturen kunde inte laddas",
   "sensors_alert_error_rule_not_found": "Larmet finns inte längre",
   "sensors_alert_error_unknown_sensor": "Sensorn finns inte längre",
+  "sensors_alert_error_too_many": "Du har redan {max} larm på den här sensorn",
   "sensors_alert_dialog_title": "Larm för {name}",
   "sensors_alert_dialog_description": "Bara du får dessa mejl.",
   "sensors_alert_list_label": "Dina larm",

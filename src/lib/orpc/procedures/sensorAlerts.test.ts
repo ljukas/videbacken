@@ -88,7 +88,7 @@ test('a user-role caller manages its own rule end to end', async () => {
   expect(rule).toMatchObject({ deviceId: d, kind: 'temperature', enabled: true })
 
   const listed = await call(alerts.list, undefined, { context: ctx() })
-  expect(listed.rules).toEqual([rule])
+  expect(listed.rules).toEqual([{ ...rule, firingSince: null }])
   expect(listed.typicalGapMinutes).toHaveProperty(d)
 
   const updated = await call(
@@ -124,7 +124,9 @@ test("another user can't see or touch a rule", async () => {
   )
 
   mockSession({ id: a.id, email: a.email, role: 'user' })
-  expect((await call(alerts.list, undefined, { context: ctx() })).rules).toEqual([rule])
+  expect((await call(alerts.list, undefined, { context: ctx() })).rules).toEqual([
+    { ...rule, firingSince: null },
+  ])
 })
 
 test('an unknown device is UNKNOWN_SENSOR; a count of 1 is a bad request', async () => {
