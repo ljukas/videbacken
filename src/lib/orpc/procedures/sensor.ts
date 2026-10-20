@@ -25,9 +25,10 @@ const labelField = (max: number) =>
     .transform((v) => v || null)
 
 export const sensorRouter = {
+  // The viewer's own alert rules, not shared sensor data (ADR-0028, ADR-0017's own-account exception).
   alerts: sensorAlertsRouter,
 
-  // Reads — any signed-in (approved) user; the app is read-only for non-admins.
+  // Reads — any signed-in (approved) user; shared sensor data is read-only for non-admins.
   listDevices: protectedProcedure.handler(() => sensorService.listDevices()),
 
   series: protectedProcedure

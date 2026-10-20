@@ -103,8 +103,12 @@ export const sensorAlertsRouter = {
     .input(z.object({ id: z.uuid() }))
     .handler(async ({ input, context, errors }) => {
       try {
-        await sensorAlertService.deleteRule(context.user.id, input.id)
-        context.log.info('user deleted sensor alert rule', { ruleId: input.id })
+        const deleted = await sensorAlertService.deleteRule(context.user.id, input.id)
+        context.log.info('user deleted sensor alert rule', {
+          ruleId: input.id,
+          deviceId: deleted.deviceId,
+          kind: deleted.kind,
+        })
       } catch (err) {
         mapAlertError(err, errors)
       }

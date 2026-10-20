@@ -121,10 +121,15 @@ export async function setRuleEnabled(
   return row
 }
 
-export async function deleteRule(userId: string, id: string): Promise<void> {
-  const deleted = await db
+/** Returns the deleted rule's device and kind, for the caller's log line. */
+export async function deleteRule(
+  userId: string,
+  id: string,
+): Promise<Pick<SensorAlertRuleDto, 'deviceId' | 'kind'>> {
+  const [deleted] = await db
     .delete(sensorAlertRule)
     .where(owned(userId, id))
-    .returning({ id: sensorAlertRule.id })
-  if (deleted.length === 0) throw new SensorAlertDomainError('RULE_NOT_FOUND')
+    .returning({ deviceId: sensorAlertRule.deviceId, kind: sensorAlertRule.kind })
+  if (!deleted) throw new SensorAlertDomainError('RULE_NOT_FOUND')
+  return deleted
 }

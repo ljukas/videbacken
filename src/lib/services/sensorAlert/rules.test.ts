@@ -111,7 +111,7 @@ test('setRuleEnabled toggles and update keeps enabled', async () => {
 test('deleteRule removes the rule', async () => {
   const { a, d1 } = await seed()
   const rule = await createRule(a, temp(d1))
-  await deleteRule(a, rule.id)
+  expect(await deleteRule(a, rule.id)).toEqual({ deviceId: d1, kind: 'temperature' })
   expect(await listOwnRules(a)).toEqual([])
 })
 
