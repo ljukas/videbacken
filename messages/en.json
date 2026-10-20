@@ -1101,5 +1101,7 @@
   "heat_pump_signature_table_kwh": "kWh",
   "heat_pump_signature_table_set": "Period",
   "heat_pump_signature_table_not_counted": "{set}, not counted",
-  "heat_pump_signature_error_title": "The energy signature couldn't be loaded"
+  "heat_pump_signature_error_title": "The energy signature couldn't be loaded",
+  "sensors_alert_error_rule_not_found": "The alert no longer exists",
+  "sensors_alert_error_unknown_sensor": "The sensor no longer exists"
 }

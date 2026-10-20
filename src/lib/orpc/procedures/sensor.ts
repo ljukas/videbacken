@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { adminProcedure, protectedProcedure } from '~/lib/orpc/context'
 import * as sensorService from '~/lib/services/sensor'
 import { SERIES_RANGES, SensorDomainError, type SensorDomainErrorCode } from '~/lib/services/sensor'
+import { sensorAlertsRouter } from './sensorAlerts'
 
 // Only DEVICE_NOT_FOUND is reachable from these procedures — INVALID_MAC is a
 // webhook-ingest concern (never thrown by rename/delete), so it is deliberately
@@ -24,6 +25,8 @@ const labelField = (max: number) =>
     .transform((v) => v || null)
 
 export const sensorRouter = {
+  alerts: sensorAlertsRouter,
+
   // Reads — any signed-in (approved) user; the app is read-only for non-admins.
   listDevices: protectedProcedure.handler(() => sensorService.listDevices()),
 
