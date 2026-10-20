@@ -74,3 +74,16 @@ onboarding and avatar.
 - **Delete confirmation is inline** in the rule form ("Ta bort larmet?" Avbryt / Ta bort), an exception to
   [ADR-0013](./0013-form-presentation-and-dialog-architecture.md)'s centered `AlertDialog` for confirmations: the form
   is already inside an open overlay (a bottom sheet on phones), and a second overlay stacked on it is worse.
+
+## Notes from step 2 (2026-10-20)
+
+- **The open event row is the firing state.** A partial unique index on `rule_id where ended_at is null` allows one
+  open event per rule. Evaluation locks the device's rules (`FOR UPDATE`, ordered by id), then reads open events
+  and writes conditionally. Pause, edit and delete lock the rule row first, then end the event.
+- **At most 20 rules per sensor** (owner). It bounds the emails one reading can cause.
+- **An unchanged save keeps a firing alert** (owner). Only a changed kind, direction, limit, count or hours restarts it.
+- **A recovery ends at the first reading back on the normal side** (owner), not at the last of the x readings.
+- **The switch is named "Bevaka: …"** (owner).
+- **For step 3:** the webhook's end of a device's silence alerts must take the same rule lock as the cron, and the
+  cron re-reads the device's latest reading after taking it (schema review). End silence events through the rule
+  join, or add a `device_id` index on the event table.

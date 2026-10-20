@@ -92,7 +92,7 @@ A rule has a direction (`below`, `above`; battery is always `below`), a limit, a
 - **Fires** when the latest x merged readings are all on the wrong side, and the rule is armed. The alert email
   goes out once; the rule is now *firing*, since the first reading of the earliest of those x groups.
 - **Recovers** when the latest x merged readings are all back on the normal side while firing. The recovery email
-  goes out once; the rule is *armed* again.
+  goes out once; the rule is *armed* again. The alert ends at the first reading back on the normal side.
 - So a value going 4.9 → 5.1 → 4.9 °C with x = 2 sends nothing extra, and a night below freezing sends one email.
 - **Counting includes readings stored before the rule existed.** A rule created while Krypgrund is already
   freezing fires on its next reading if the run is long enough. *(My call.)*
@@ -112,7 +112,7 @@ A rule has a number of hours N (default 6).
 - **States:** `armed` or `firing` (with the time it started), plus `paused` when the user switches the rule off.
 - **Pausing a firing rule** ends its running alert quietly (no email). Switching back on starts counting fresh.
   Readings from before the switch-on still count, same as a new rule. *(My call.)*
-- **Editing a rule** (kind, direction, limit, count, hours) restarts it as if new. A running alert ends quietly.
+- **Editing a rule** (kind, direction, limit, count, hours) restarts it as if new. A running alert ends quietly. Saving without a change keeps it.
   *(My call.)*
 - **Deleting a rule** ends a running alert quietly. Its history stays.
 - **Deleting a sensor** (admin action) deletes its rules and their history. *(My call: the history names a sensor
@@ -191,7 +191,7 @@ bell. Two views that replace each other in one overlay:
 
 **Bounds** (validated on both sides): count **2** to 10 and silence **3** to 72 h. Those minimums are the owner's
 decision: count 1 has no hysteresis, and a silence shorter than the 2-hour cadence would fire every cycle, so
-neither can storm. My calls: temperature limit −40 to 60 °C in 0.5 steps, humidity 1 to 99 %, battery 5 to 95 %.
+neither can storm. At most 20 rules per sensor. My calls: temperature limit −40 to 60 °C in 0.5 steps, humidity 1 to 99 %, battery 5 to 95 %.
 No pre-filled limit for temperature or humidity.
 
 Responsive at desktop, tablet and phone widths; all text in `messages/{sv,en}.json`.
