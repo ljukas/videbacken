@@ -1,6 +1,6 @@
 import { isDefinedError } from '@orpc/client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type RefObject, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '~/components/ui/button'
@@ -157,11 +157,13 @@ type Props = {
   gapMinutes: number | null
   /** Back to the list (Tillbaka, or after a save or delete; `deleted` after a delete). */
   onBack: (result?: 'deleted') => void
+  /** Kept true while a save or delete is on its way (the dialog's Esc waits for it). */
+  busyRef?: RefObject<boolean>
 }
 
 // Create, edit or delete one of the viewer's own alert rules (ADR-0028, ADR-0005). Stays open
 // until a save succeeds; a server error toasts. A rule that is gone returns to the list.
-export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props) {
+export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack, busyRef }: Props) {
   const queryClient = useQueryClient()
   const formSchema = useMemo(() => makeFormSchema(device.id), [device.id])
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -234,6 +236,15 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
     },
   })
   const kind = useStore(form.store, (s) => s.values.kind)
+  const isSubmitting = useStore(form.store, (s) => s.isSubmitting)
+  const busy = isSubmitting || remove.isPending
+  useEffect(() => {
+    if (!busyRef) return
+    busyRef.current = busy
+    return () => {
+      busyRef.current = false
+    }
+  }, [busy, busyRef])
 
   async function deleteRule(id: string) {
     try {

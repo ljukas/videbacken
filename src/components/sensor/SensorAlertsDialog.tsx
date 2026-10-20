@@ -95,11 +95,24 @@ export function SensorAlertsDialog({
   const vanished = open && ruleId !== undefined && own !== undefined && editing === undefined
   const formOpen = currentView === 'new' || editing !== undefined
 
-  // Toast once per vanished id, not on every render until the URL catches up.
+  // Toast once per vanished id, not on every render until the URL catches up. A rule that opens
+  // (again) is news once more when it vanishes.
   const toasted = useRef<string | null>(null)
+  const editingId = editing?.id
+  useEffect(() => {
+    if (editingId !== undefined) toasted.current = null
+  }, [editingId])
+  // A save or delete in flight: Esc waits for it rather than leaving the form under it.
+  const busy = useRef(false)
+  // Read by a save or delete that lands after the dialog closed: it then leaves nothing behind.
+  const isOpen = useRef(open)
+  useEffect(() => {
+    isOpen.current = open
+  }, [open])
   // Back to the list, replacing the form's history entry; `focus` is what the list focuses.
   const listFocus = useRef<ListFocus | null>(null)
   function backToList(focus: ListFocus) {
+    if (!isOpen.current) return
     listFocus.current = focus
     // Leaving on purpose: the rule dropping out of the list on the way (a delete) is no news.
     toasted.current = ruleId ?? null
@@ -123,10 +136,12 @@ export function SensorAlertsDialog({
     >
       <ResponsiveDialogContent
         className="sm:max-w-md"
-        // Esc in the form steps back to the list, like Tillbaka; in the list it closes.
+        // Esc in the form steps back to the list, like Tillbaka (and, like it, not while a save
+        // or delete is on its way); in the list it closes.
         onEscapeKeyDown={(e) => {
           if (!formOpen) return
           e.preventDefault()
+          if (busy.current) return
           backToList(editing ? { ruleId: editing.id } : 'new')
         }}
       >
@@ -145,6 +160,7 @@ export function SensorAlertsDialog({
             device={current}
             rule={editing}
             gapMinutes={typicalGapMinutes?.[current.id] ?? null}
+            busyRef={busy}
             onBack={(result) =>
               backToList(editing && result !== 'deleted' ? { ruleId: editing.id } : 'new')
             }

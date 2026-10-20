@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useHydrated, useRouter } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
-import { lazy, useCallback, useId, useMemo, useRef, useState } from 'react'
+import { lazy, useCallback, useId, useMemo, useState } from 'react'
 import { z } from 'zod'
 import sensorsChipsBones from '~/bones/sensors-chips.bones.json'
 import sensorsHumChartBones from '~/bones/sensors-hum-chart.bones.json'
@@ -63,6 +63,13 @@ const POLLED_RANGES: SeriesRange[] = ['24h', '1w', '1m']
 // The viewer's own rules (bell counts); polled like the tiles. Deferred in the loader:
 // until it arrives, or if it fails, the bells are plain.
 const sensorAlertsQuery = () => orpc.sensor.alerts.list.queryOptions({ refetchInterval: 60_000 })
+
+declare module '@tanstack/history' {
+  interface HistoryState {
+    /** An alerts-dialog form entry pushed from its list: the way back steps back onto the list. */
+    sensorAlertsForm?: true
+  }
+}
 
 export const Route = createFileRoute('/_authenticated/sensors')({
   head: () => ({
@@ -206,25 +213,29 @@ function SensorsPage() {
   }, [alertsData, alertsFailed])
   const editDeviceOpen = isOpen('edit') && dialogDevice !== undefined
   const alertsOpen = isOpen('alerts') && dialogDevice !== undefined
-  // List → form is pushed, so browser Back from the form returns to the list. The way back
-  // (Tillbaka, a save, a delete) must not leave the form in the history, or Back from the list
-  // would reopen it: when we pushed it, step back onto the list's own entry, so the next Back
-  // closes the dialog; otherwise (a deep link into the form) replace it.
-  const formPushed = useRef(false)
+  // List → form is pushed, so browser Back from the form returns to the list; that entry carries
+  // a mark in its history state. The way back (Tillbaka, a save, a delete) must not leave the
+  // form in the history, or Back from the list would reopen it: from a marked entry, step back
+  // onto the list's own entry, so the next Back closes the dialog; from an unmarked one (a deep
+  // link into the form) replace it. The mark lives on the entry, so Back and Forward elsewhere
+  // can't make it stale. Read at call time from the router: a save or delete can land after the
+  // dialog closed (X, the overlay), and must then change nothing.
   const setAlertView = useCallback(
     (view: string, options?: { replace: true }) => {
+      const location = router.state.location
+      if ((location.search as SensorsSearch).dialog !== 'alerts') return
       const replace = options?.replace === true
-      if (replace && formPushed.current) {
-        formPushed.current = false
+      if (replace && location.state.sensorAlertsForm) {
         router.history.back()
         return
       }
-      formPushed.current = !replace && view !== 'list'
+      const toForm = !replace && view !== 'list'
       navigate({
         to: '.',
         search: (s) => ({ ...s, alertId: view === 'list' ? undefined : view }),
         replace,
         resetScroll: false,
+        state: toForm ? (prev) => ({ ...prev, sensorAlertsForm: true }) : undefined,
       })
     },
     [navigate, router],

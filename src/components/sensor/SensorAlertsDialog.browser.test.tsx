@@ -9,7 +9,7 @@ import { SensorAlertsDialog } from './SensorAlertsDialog'
 
 // Mock the oRPC client so a mutation records its payload instead of hitting the network;
 // spreading `opts` keeps the dialog's own onError/onSettled (EditDeviceDialog's idiom).
-const { setEnabledFn, toastMock, mutation } = vi.hoisted(() => ({
+const { setEnabledFn, updateFn, toastMock, mutation } = vi.hoisted(() => ({
   mutation: (fn: (vars: unknown) => unknown) => ({
     mutationOptions: (opts: Record<string, unknown>) => ({
       ...opts,
@@ -17,6 +17,7 @@ const { setEnabledFn, toastMock, mutation } = vi.hoisted(() => ({
     }),
   }),
   setEnabledFn: vi.fn(),
+  updateFn: vi.fn(),
   toastMock: { success: vi.fn(), error: vi.fn() },
 }))
 vi.mock('~/lib/orpc/client', () => ({
@@ -25,7 +26,7 @@ vi.mock('~/lib/orpc/client', () => ({
       alerts: {
         setEnabled: mutation(setEnabledFn),
         create: mutation(vi.fn()),
-        update: mutation(vi.fn()),
+        update: mutation(updateFn),
         delete: mutation(vi.fn()),
         key: () => ['sensor', 'alerts'],
       },
@@ -73,6 +74,7 @@ const RULES: SensorAlertRuleDto[] = [
 
 beforeEach(() => {
   setEnabledFn.mockReset()
+  updateFn.mockReset()
   toastMock.success.mockReset()
   toastMock.error.mockReset()
 })
@@ -225,13 +227,19 @@ test('rules that failed to load say so with a retry, never the empty state', asy
 })
 
 // The dialog as the route drives it: the view lives in state, as it does in the URL.
-function Stateful({ initial = 'list' }: { initial?: string }) {
+function Stateful({
+  initial = 'list',
+  rules = RULES,
+}: {
+  initial?: string
+  rules?: SensorAlertRuleDto[]
+}) {
   const [view, setView] = useState(initial)
   return (
     <SensorAlertsDialog
       open
       device={device}
-      rules={RULES}
+      rules={rules}
       typicalGapMinutes={{ [DEV]: 120 }}
       view={view}
       onView={setView}
@@ -279,4 +287,41 @@ test('Esc in the list closes the dialog', async () => {
   await expect.element(screen.getByRole('button', { name: 'Nytt larm' })).toBeVisible()
   await userEvent.keyboard('{Escape}')
   expect(onClose).toHaveBeenCalledTimes(1)
+})
+
+test('a rule left on purpose and opened again still toasts when it vanishes later', async () => {
+  const HUMID = 'Luftfuktighet över 80 % · 3 mätningar'
+  const { screen, queryClient } = await renderWithProviders(<Stateful />)
+  await screen.getByRole('button', { name: HUMID }).click()
+  await screen.getByRole('button', { name: m.common_back() }).click()
+  await screen.getByRole('button', { name: HUMID }).click()
+  await expect
+    .element(screen.getByRole('heading', { name: m.sensors_alert_form_title_edit() }))
+    .toBeVisible()
+  // Deleted in another tab: the next poll drops it.
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>
+      <Stateful rules={RULES.filter((r) => r.id !== '00000000-0000-4000-8000-000000000002')} />
+    </QueryClientProvider>,
+  )
+  await vi.waitFor(() =>
+    expect(toastMock.error).toHaveBeenCalledWith(m.sensors_alert_error_rule_not_found()),
+  )
+  await expect.element(screen.getByRole('button', { name: 'Nytt larm' })).toBeVisible()
+})
+
+test('Esc while a save is on its way does nothing', async () => {
+  updateFn.mockReturnValue(new Promise(() => {}))
+  const onView = vi.fn()
+  const onClose = vi.fn()
+  const { screen } = await renderDialog({
+    view: '00000000-0000-4000-8000-000000000001',
+    onView,
+    onClose,
+  })
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await vi.waitFor(() => expect(updateFn).toHaveBeenCalled())
+  await userEvent.keyboard('{Escape}')
+  expect(onView).not.toHaveBeenCalled()
+  expect(onClose).not.toHaveBeenCalled()
 })
