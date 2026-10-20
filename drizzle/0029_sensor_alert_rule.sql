@@ -13,7 +13,7 @@ CREATE TABLE "sensor_alert_rule" (
 	CONSTRAINT "sensor_alert_rule_kind_check" CHECK ("sensor_alert_rule"."kind" IN ('temperature', 'humidity', 'battery', 'silence')),
 	CONSTRAINT "sensor_alert_rule_direction_check" CHECK ("sensor_alert_rule"."direction" IS NULL OR "sensor_alert_rule"."direction" IN ('below', 'above')),
 	CONSTRAINT "sensor_alert_rule_shape_check" CHECK (("sensor_alert_rule"."kind" IN ('temperature', 'humidity') AND "sensor_alert_rule"."direction" IS NOT NULL AND "sensor_alert_rule"."threshold" IS NOT NULL AND "sensor_alert_rule"."count" IS NOT NULL AND "sensor_alert_rule"."silence_hours" IS NULL)
-        OR ("sensor_alert_rule"."kind" = 'battery' AND "sensor_alert_rule"."direction" = 'below' AND "sensor_alert_rule"."threshold" IS NOT NULL AND "sensor_alert_rule"."count" IS NOT NULL AND "sensor_alert_rule"."silence_hours" IS NULL)
+        OR ("sensor_alert_rule"."kind" = 'battery' AND "sensor_alert_rule"."direction" IS NOT NULL AND "sensor_alert_rule"."direction" = 'below' AND "sensor_alert_rule"."threshold" IS NOT NULL AND "sensor_alert_rule"."count" IS NOT NULL AND "sensor_alert_rule"."silence_hours" IS NULL)
         OR ("sensor_alert_rule"."kind" = 'silence' AND "sensor_alert_rule"."silence_hours" IS NOT NULL AND "sensor_alert_rule"."direction" IS NULL AND "sensor_alert_rule"."threshold" IS NULL AND "sensor_alert_rule"."count" IS NULL)),
 	CONSTRAINT "sensor_alert_rule_threshold_check" CHECK ("sensor_alert_rule"."threshold" IS NULL
         OR ("sensor_alert_rule"."kind" = 'temperature' AND "sensor_alert_rule"."threshold" BETWEEN -40 AND 60 AND "sensor_alert_rule"."threshold" * 2 = round("sensor_alert_rule"."threshold" * 2))

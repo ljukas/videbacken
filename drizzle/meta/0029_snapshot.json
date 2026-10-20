@@ -1,5 +1,5 @@
 {
-  "id": "e2e92115-f15f-46e4-b7cb-16231d2aa225",
+  "id": "732ee4d9-d3b9-4f15-960f-34b98c39e516",
   "prevId": "7b5fcfed-10b4-47fd-a144-ffe4fed3b8ee",
   "version": "7",
   "dialect": "postgresql",
@@ -2503,7 +2503,7 @@
         },
         "sensor_alert_rule_shape_check": {
           "name": "sensor_alert_rule_shape_check",
-          "value": "(\"sensor_alert_rule\".\"kind\" IN ('temperature', 'humidity') AND \"sensor_alert_rule\".\"direction\" IS NOT NULL AND \"sensor_alert_rule\".\"threshold\" IS NOT NULL AND \"sensor_alert_rule\".\"count\" IS NOT NULL AND \"sensor_alert_rule\".\"silence_hours\" IS NULL)\n        OR (\"sensor_alert_rule\".\"kind\" = 'battery' AND \"sensor_alert_rule\".\"direction\" = 'below' AND \"sensor_alert_rule\".\"threshold\" IS NOT NULL AND \"sensor_alert_rule\".\"count\" IS NOT NULL AND \"sensor_alert_rule\".\"silence_hours\" IS NULL)\n        OR (\"sensor_alert_rule\".\"kind\" = 'silence' AND \"sensor_alert_rule\".\"silence_hours\" IS NOT NULL AND \"sensor_alert_rule\".\"direction\" IS NULL AND \"sensor_alert_rule\".\"threshold\" IS NULL AND \"sensor_alert_rule\".\"count\" IS NULL)"
+          "value": "(\"sensor_alert_rule\".\"kind\" IN ('temperature', 'humidity') AND \"sensor_alert_rule\".\"direction\" IS NOT NULL AND \"sensor_alert_rule\".\"threshold\" IS NOT NULL AND \"sensor_alert_rule\".\"count\" IS NOT NULL AND \"sensor_alert_rule\".\"silence_hours\" IS NULL)\n        OR (\"sensor_alert_rule\".\"kind\" = 'battery' AND \"sensor_alert_rule\".\"direction\" IS NOT NULL AND \"sensor_alert_rule\".\"direction\" = 'below' AND \"sensor_alert_rule\".\"threshold\" IS NOT NULL AND \"sensor_alert_rule\".\"count\" IS NOT NULL AND \"sensor_alert_rule\".\"silence_hours\" IS NULL)\n        OR (\"sensor_alert_rule\".\"kind\" = 'silence' AND \"sensor_alert_rule\".\"silence_hours\" IS NOT NULL AND \"sensor_alert_rule\".\"direction\" IS NULL AND \"sensor_alert_rule\".\"threshold\" IS NULL AND \"sensor_alert_rule\".\"count\" IS NULL)"
         },
         "sensor_alert_rule_threshold_check": {
           "name": "sensor_alert_rule_threshold_check",

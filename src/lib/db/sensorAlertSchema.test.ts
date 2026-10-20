@@ -5,7 +5,7 @@ import { sensorAlertRule, sensorDevice, user } from '~/lib/db/schema'
 import { expectConstraintViolation } from '~test/expectConstraintViolation'
 import { setupDatabase } from '~test/setup'
 
-// Lives in src/lib/db/ (not schema/): drizzle-kit scans the schema directory.
+// Lives in src/lib/db/ beside the other schema tests (e.g. heatPumpEventSchema.test.ts).
 setupDatabase()
 
 async function seed() {
@@ -59,6 +59,16 @@ test('a battery rule with direction above is rejected', async () => {
     db
       .insert(sensorAlertRule)
       .values({ userId, deviceId, kind: 'battery', direction: 'above', threshold: 20, count: 2 }),
+    'sensor_alert_rule_shape_check',
+  )
+})
+
+test('a battery rule without a direction is rejected', async () => {
+  const { userId, deviceId } = await seed()
+  await expectConstraintViolation(
+    db
+      .insert(sensorAlertRule)
+      .values({ userId, deviceId, kind: 'battery', threshold: 20, count: 2 }),
     'sensor_alert_rule_shape_check',
   )
 })

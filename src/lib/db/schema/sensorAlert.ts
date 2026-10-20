@@ -67,7 +67,7 @@ export const sensorAlertRule = pgTable(
     check(
       'sensor_alert_rule_shape_check',
       sql`(${table.kind} IN ('temperature', 'humidity') AND ${table.direction} IS NOT NULL AND ${table.threshold} IS NOT NULL AND ${table.count} IS NOT NULL AND ${table.silenceHours} IS NULL)
-        OR (${table.kind} = 'battery' AND ${table.direction} = 'below' AND ${table.threshold} IS NOT NULL AND ${table.count} IS NOT NULL AND ${table.silenceHours} IS NULL)
+        OR (${table.kind} = 'battery' AND ${table.direction} IS NOT NULL AND ${table.direction} = 'below' AND ${table.threshold} IS NOT NULL AND ${table.count} IS NOT NULL AND ${table.silenceHours} IS NULL)
         OR (${table.kind} = 'silence' AND ${table.silenceHours} IS NOT NULL AND ${table.direction} IS NULL AND ${table.threshold} IS NULL AND ${table.count} IS NULL)`,
     ),
     check(
