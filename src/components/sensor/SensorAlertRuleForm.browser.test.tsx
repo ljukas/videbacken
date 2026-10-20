@@ -29,6 +29,7 @@ vi.mock('~/lib/orpc/client', () => ({
         delete: mutation(deleteFn),
         key: () => ['sensor', 'alerts'],
       },
+      listDevices: { key: () => ['sensor', 'listDevices'] },
     },
   },
 }))
@@ -65,15 +66,17 @@ function renderForm({
   view = 'new',
   gap = 120,
   onView = () => {},
+  sensor = device,
 }: {
   view?: string
   gap?: number | null
   onView?: (view: string) => void
+  sensor?: { id: string; displayName: string }
 } = {}) {
   return renderWithProviders(
     <SensorAlertsDialog
       open
-      device={device}
+      device={sensor}
       rules={[TEMPERATURE, HUMIDITY]}
       typicalGapMinutes={{ [DEV]: gap }}
       view={view}
@@ -280,4 +283,71 @@ test('fixing a field error lets the rule save', async () => {
   await vi.waitFor(() =>
     expect(createFn).toHaveBeenCalledWith(expect.objectContaining({ threshold: -4.5 })),
   )
+})
+
+test('soft keyboards: the temperature limit keeps a minus key (iOS), the rest are whole numbers', async () => {
+  const { screen } = await renderForm()
+  const limit = screen.getByLabelText('Gräns')
+  await expect.element(limit).toHaveAttribute('inputmode', 'text')
+  await expect.element(screen.getByLabelText('I rad')).toHaveAttribute('inputmode', 'numeric')
+  for (const field of [limit, screen.getByLabelText('I rad')]) {
+    await expect.element(field).toHaveAttribute('autocomplete', 'off')
+  }
+  await screen.getByRole('radio', { name: 'Luftfuktighet' }).click()
+  await expect.element(screen.getByLabelText('Gräns')).toHaveAttribute('inputmode', 'numeric')
+  await screen.getByRole('radio', { name: 'Tystnad' }).click()
+  const hours = screen.getByLabelText('Timmar utan mätning')
+  await expect.element(hours).toHaveAttribute('inputmode', 'numeric')
+  await expect.element(hours).toHaveAttribute('autocomplete', 'off')
+})
+
+test('the delete question names the group its buttons sit in', async () => {
+  const { screen } = await renderForm({ view: HUMIDITY.id })
+  await screen.getByRole('button', { name: 'Ta bort' }).click()
+  const group = screen.getByRole('group', { name: 'Ta bort larmet?' })
+  await expect.element(group.getByRole('button', { name: m.common_cancel() })).toHaveFocus()
+  await expect.element(group.getByRole('button', { name: 'Ta bort' })).toBeVisible()
+})
+
+test('"Ta bort" is disabled while a save is on its way', async () => {
+  updateFn.mockReturnValue(new Promise(() => {}))
+  const { screen } = await renderForm({ view: HUMIDITY.id })
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await vi.waitFor(() => expect(updateFn).toHaveBeenCalled())
+  await expect.element(screen.getByRole('button', { name: 'Ta bort' })).toBeDisabled()
+})
+
+test.each([
+  ['an update', HUMIDITY.id],
+  ['a create', 'new'],
+])('%s for a sensor that is gone toasts "Sensorn finns inte längre" and refreshes the sensors', async (_n, view) => {
+  const fn = view === 'new' ? createFn : updateFn
+  fn.mockRejectedValue(new ORPCError('UNKNOWN_SENSOR', { defined: true, status: 422 }))
+  const { screen, queryClient } = await renderForm({ view })
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+  await screen.getByLabelText('Gräns').fill('50')
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('Sensorn finns inte längre'))
+  await vi.waitFor(() =>
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sensor', 'listDevices'] }),
+  )
+})
+
+test('an input the form fields cannot fix (a bad sensor id) toasts the save error, never throws', async () => {
+  const { screen } = await renderForm({ sensor: { id: 'not-a-uuid', displayName: 'Förråd' } })
+  await screen.getByLabelText('Gräns').fill('5')
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalledWith(m.sensors_alert_save_error()))
+  expect(createFn).not.toHaveBeenCalled()
+  await expect.element(screen.getByRole('button', { name: m.common_save() })).toBeEnabled()
+})
+
+test("editing: switching kind away and back restores the rule's own limit", async () => {
+  const { screen } = await renderForm({ view: HUMIDITY.id })
+  await screen.getByRole('radio', { name: 'Batteri' }).click()
+  await expect.element(screen.getByLabelText('Gräns')).toHaveValue('20')
+  await screen.getByRole('radio', { name: 'Temperatur' }).click()
+  await expect.element(screen.getByLabelText('Gräns')).toHaveValue('')
+  await screen.getByRole('radio', { name: 'Luftfuktighet' }).click()
+  await expect.element(screen.getByLabelText('Gräns')).toHaveValue('80')
 })

@@ -1,6 +1,6 @@
 import { isDefinedError } from '@orpc/client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '~/components/ui/button'
@@ -165,6 +165,7 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
   const queryClient = useQueryClient()
   const formSchema = useMemo(() => makeFormSchema(device.id), [device.id])
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const questionId = useId()
   const deleteButton = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   // The view just changed under the user's focus: start them at the form's heading.
@@ -180,6 +181,10 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
     toast.error(code ? sensorAlertErrorMessage(code) : fallback)
     // Gone (deleted in another tab): nothing left to edit.
     if (code === 'RULE_NOT_FOUND') onBack()
+    // The sensor is gone: refresh the roster, and the dialog closes with it.
+    if (code === 'UNKNOWN_SENSOR') {
+      void queryClient.invalidateQueries({ queryKey: orpc.sensor.listDevices.key() })
+    }
   }
   // The bells and the list read this one query.
   const onSettled = () => queryClient.invalidateQueries({ queryKey: orpc.sensor.alerts.key() })
@@ -210,7 +215,14 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
     defaultValues: defaults(rule),
     validators: { onSubmit: formSchema },
     onSubmit: async ({ value }) => {
-      const input = sensorAlertRuleInput.parse(toInput(value, device.id))
+      // The validator has passed the fields; what's left (the kind, the sensor's id) no field can
+      // fix, so it's a failed save, never an uncaught throw.
+      const parsed = sensorAlertRuleInput.safeParse(toInput(value, device.id))
+      if (!parsed.success) {
+        toast.error(m.sensors_alert_save_error())
+        return
+      }
+      const input = parsed.data
       try {
         if (rule) await update.mutateAsync({ ...input, id: rule.id })
         else await create.mutateAsync(input)
@@ -249,9 +261,16 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
         </h3>
         <form.AppField
           name="kind"
-          // A new kind keeps the count; the limit starts over at that kind's default.
+          // A new kind keeps the count; the limit starts over at that kind's default, or, back on
+          // the edited rule's own kind, at the rule's limit.
           listeners={{
-            onChange: ({ value }) => form.setFieldValue('threshold', defaultThreshold(value)),
+            onChange: ({ value }) =>
+              form.setFieldValue(
+                'threshold',
+                value === rule?.kind && rule.threshold != null
+                  ? formatAlertInput(rule.threshold)
+                  : defaultThreshold(value),
+              ),
           }}
           children={(field) => (
             <field.ToggleField
@@ -282,7 +301,11 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
           <form.AppField
             name="silenceHours"
             children={(field) => (
-              <field.NumberField label={m.sensors_alert_field_silence_hours()} />
+              <field.NumberField
+                label={m.sensors_alert_field_silence_hours()}
+                inputMode="numeric"
+                autoComplete="off"
+              />
             )}
           />
         ) : (
@@ -293,6 +316,9 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
                 <field.NumberField
                   label={m.sensors_alert_field_threshold()}
                   suffix={kind === 'temperature' ? '°C' : '%'}
+                  // A temperature can be negative, and iOS's decimal pad has no minus key.
+                  inputMode={kind === 'temperature' ? 'text' : 'numeric'}
+                  autoComplete="off"
                 />
               )}
             />
@@ -307,6 +333,8 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
                     label={m.sensors_alert_field_count()}
                     suffix={m.sensors_alert_count_suffix()}
                     description={hint ?? undefined}
+                    inputMode="numeric"
+                    autoComplete="off"
                   />
                 )
               }}
@@ -315,10 +343,16 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
         )}
       </div>
 
-      <ResponsiveDialogFooter className="mt-6">
+      {/* While asking, the footer is a group named by the question, so it is announced when
+          focus lands on "Avbryt". */}
+      <ResponsiveDialogFooter
+        className="mt-6"
+        role={confirmingDelete && rule ? 'group' : undefined}
+        aria-labelledby={confirmingDelete && rule ? questionId : undefined}
+      >
         {confirmingDelete && rule ? (
           <>
-            <p className="self-center font-medium text-sm sm:mr-auto">
+            <p id={questionId} className="self-center font-medium text-sm sm:mr-auto">
               {m.sensors_alert_delete_confirm()}
             </p>
             <Button
@@ -342,15 +376,22 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
         ) : (
           <form.AppForm>
             {rule ? (
-              <Button
-                ref={deleteButton}
-                type="button"
-                variant="ghost"
-                className="text-destructive hover:text-destructive sm:mr-auto"
-                onClick={() => setConfirmingDelete(true)}
-              >
-                {m.sensors_alert_delete()}
-              </Button>
+              // Inert while a save is on its way, like Tillbaka.
+              <form.Subscribe
+                selector={(state) => state.isSubmitting}
+                children={(isSubmitting) => (
+                  <Button
+                    ref={deleteButton}
+                    type="button"
+                    variant="ghost"
+                    disabled={isSubmitting}
+                    className="text-destructive hover:text-destructive sm:mr-auto"
+                    onClick={() => setConfirmingDelete(true)}
+                  >
+                    {m.sensors_alert_delete()}
+                  </Button>
+                )}
+              />
             ) : null}
             <form.CancelButton onClick={() => onBack()}>{m.common_back()}</form.CancelButton>
             <form.SubmitButton label={m.common_save()} />
