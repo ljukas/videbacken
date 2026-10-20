@@ -1124,6 +1124,7 @@
   "sensors_alert_dialog_description": "Bara du får dessa mejl.",
   "sensors_alert_list_label": "Dina larm",
   "sensors_alert_enabled_named": "Larmet på: {description}",
+  "sensors_alert_edit_named": "Ändra larmet: {description}",
   "sensors_alert_new": "Nytt larm",
   "sensors_alert_form_title_new": "Nytt larm",
   "sensors_alert_form_title_edit": "Ändra larm",
