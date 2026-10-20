@@ -69,7 +69,7 @@ export function CurrentReadingTiles({
                     <Badge
                       variant="secondary"
                       aria-hidden
-                      className="pointer-events-none absolute top-0.5 right-0.5 h-4 min-w-4 px-1 py-0 text-sm leading-none tabular-nums"
+                      className="pointer-events-none absolute top-0.5 right-0.5 h-4 min-w-4 px-1 py-0 text-sm tabular-nums leading-none"
                     >
                       {alertCounts[d.id]}
                     </Badge>
