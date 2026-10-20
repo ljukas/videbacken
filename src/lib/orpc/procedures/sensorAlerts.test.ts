@@ -2,7 +2,7 @@ import { call } from '@orpc/server'
 import { afterEach, expect, test, vi } from 'vitest'
 import { auth } from '~/lib/auth'
 import { db } from '~/lib/db'
-import { sensorDevice, user } from '~/lib/db/schema'
+import { sensorAlertEvent, sensorDevice, user } from '~/lib/db/schema'
 import type { Logger } from '~/lib/logger'
 import { setupDatabase } from '~test/setup'
 import { appRouter } from '../router'
@@ -200,4 +200,91 @@ test('create, update, setEnabled and delete reject anonymous callers', async () 
     call(alerts.setEnabled, { id, enabled: false }, { context: ctx() }),
   ).rejects.toMatchObject(unauthorized)
   await expect(call(alerts.delete, { id }, { context: ctx() })).rejects.toMatchObject(unauthorized)
+})
+
+const BASE = new Date('2026-01-01T00:00:00Z').getTime()
+const eventRow = (
+  userId: string,
+  deviceId: string,
+  minute: number,
+  ruleId: string | null = null,
+) => ({
+  ruleId,
+  userId,
+  deviceId,
+  kind: 'temperature' as const,
+  direction: 'below' as const,
+  threshold: 5,
+  count: 2,
+  startedAt: new Date(BASE + minute * 60_000),
+  endedAt: new Date(BASE + minute * 60_000 + 1000),
+  endReason: 'recovered' as const,
+})
+
+test('list returns firingSince for the rule with an open alert', async () => {
+  const u = await signIn('a')
+  const d = await device()
+  const rule = await call(alerts.create, temp(d), { context: ctx() })
+  const started = new Date(BASE)
+  await db.insert(sensorAlertEvent).values({
+    ...eventRow(u.id, d, 0, rule.id),
+    startedAt: started,
+    endedAt: null,
+    endReason: null,
+  })
+  const listed = await call(alerts.list, undefined, { context: ctx() })
+  expect(listed.rules).toEqual([{ ...rule, firingSince: started }])
+})
+
+test("history returns only the caller's entries for the device and pages with before", async () => {
+  const a = await signIn('a')
+  const d = await device()
+  const [other] = await db
+    .insert(sensorDevice)
+    .values({ mac: 'bbbbbbbbbbbb' })
+    .returning({ id: sensorDevice.id })
+  const [b] = await db
+    .insert(user)
+    .values({ name: 'b', email: 'b@test.videbacken.local', role: 'user' })
+    .returning({ id: user.id })
+  await db
+    .insert(sensorAlertEvent)
+    .values([
+      ...Array.from({ length: 12 }, (_, i) => eventRow(a.id, d, i)),
+      eventRow(b.id, d, 50),
+      eventRow(a.id, other.id, 60),
+    ])
+
+  const timings: Record<string, number> = {}
+  const first = await call(alerts.history, { deviceId: d }, { context: { ...ctx(), timings } })
+  expect(timings).toHaveProperty('alertHistoryMs')
+  expect(first.entries.map((e) => e.startedAt.getTime())).toEqual(
+    Array.from({ length: 10 }, (_, i) => BASE + (11 - i) * 60_000),
+  )
+  expect(first.next).not.toBeNull()
+  const second = await call(
+    alerts.history,
+    { deviceId: d, before: first.next ?? undefined },
+    { context: ctx() },
+  )
+  expect(second.entries.map((e) => e.startedAt.getTime())).toEqual([BASE + 60_000, BASE])
+  expect(second.next).toBeNull()
+})
+
+test('history rejects anonymous callers', async () => {
+  await expect(
+    call(alerts.history, { deviceId: MISSING }, { context: ctx() }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+})
+
+test('the 21st rule on a sensor is TOO_MANY_RULES (409)', async () => {
+  await signIn('a')
+  const d = await device()
+  for (let i = 0; i < 20; i++) {
+    await call(alerts.create, { ...temp(d), threshold: i }, { context: ctx() })
+  }
+  await expect(call(alerts.create, temp(d), { context: ctx() })).rejects.toMatchObject({
+    code: 'TOO_MANY_RULES',
+    status: 409,
+  })
 })

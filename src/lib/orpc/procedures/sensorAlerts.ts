@@ -43,6 +43,24 @@ export const sensorAlertsRouter = {
     return { rules, typicalGapMinutes }
   }),
 
+  history: protectedProcedure
+    .input(
+      z.object({
+        deviceId: z.uuid(),
+        before: z.object({ startedAt: z.date(), id: z.uuid() }).optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const started = performance.now()
+      const page = await sensorAlertService.listOwnHistory(
+        context.user.id,
+        input.deviceId,
+        input.before,
+      )
+      if (context.timings) context.timings.alertHistoryMs = Math.round(performance.now() - started)
+      return page
+    }),
+
   create: protectedProcedure
     .errors(sensorAlertErrors)
     .input(sensorAlertRuleInput)
