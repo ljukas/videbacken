@@ -375,3 +375,32 @@ test("a save from a form that is gone doesn't step the next form back", async ()
     .element(screen.getByRole('heading', { name: m.sensors_alert_form_title_new() }))
     .toBeVisible()
 })
+
+test('closing before the list is up resets the back guard for the next open of that form', async () => {
+  const onView = vi.fn()
+  const { screen, queryClient } = await renderDialog({ view: 'new', onView })
+  const at = (open: boolean) => (
+    <QueryClientProvider client={queryClient}>
+      <SensorAlertsDialog
+        open={open}
+        device={device}
+        rules={RULES}
+        typicalGapMinutes={{ [DEV]: 120 }}
+        view="new"
+        onView={onView}
+        onClose={() => {}}
+      />
+    </QueryClientProvider>
+  )
+  const heading = () => screen.getByRole('heading', { name: m.sensors_alert_form_title_new() })
+  await expect.element(heading()).toHaveFocus()
+  await userEvent.keyboard('{Escape}')
+  expect(onView).toHaveBeenCalledTimes(1)
+  // Closed before the URL reached the list, then a deep link to the same form.
+  await screen.rerender(at(false))
+  await expect.poll(() => screen.getByRole('dialog').elements().length).toBe(0)
+  await screen.rerender(at(true))
+  await expect.element(heading()).toHaveFocus()
+  await userEvent.keyboard('{Escape}')
+  expect(onView).toHaveBeenCalledTimes(2)
+})

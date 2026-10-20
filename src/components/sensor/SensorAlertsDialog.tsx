@@ -111,12 +111,13 @@ export function SensorAlertsDialog({
   }, [open])
   // Back to the list, replacing the form's history entry; `focus` is what the list focuses.
   const listFocus = useRef<ListFocus | null>(null)
-  // The view the way back is leaving, until the list is up: a second Tillbaka or Esc before the
-  // URL catches up must not step back again (past the list, closing the dialog).
+  // The view the way back is leaving, until the list is up or the dialog closes: a second
+  // Tillbaka or Esc before the URL catches up must not step back again (past the list, closing
+  // the dialog). Closed, the kept view never reaches the list, so the close clears it too.
   const leavingFrom = useRef<SensorAlertsView | null>(null)
   useEffect(() => {
-    if (currentView === 'list') leavingFrom.current = null
-  }, [currentView])
+    if (currentView === 'list' || !open) leavingFrom.current = null
+  }, [currentView, open])
   function backToList(focus: ListFocus) {
     if (!isOpen.current || leavingFrom.current === currentView) return
     leavingFrom.current = currentView
