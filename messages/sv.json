@@ -487,6 +487,8 @@
   "onboarding_skip": "Hoppa över",
   "onboarding_step_progress": "Steg {current} av {total}",
   "search_no_results": "Inga träffar.",
+  "sensors_alerts_open_named": "Larm för {name}",
+  "sensors_alerts_open_named_count": "Larm för {name}, {count} aktiva",
   "sensors_battery": "Batteri {pct}%",
   "sensors_chart_empty": "Ingen data i vald period.",
   "sensors_current_heading": "Just nu",

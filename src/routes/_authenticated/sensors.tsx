@@ -30,7 +30,7 @@ import { seo } from '~/utils/seo'
 
 const searchSchema = z.object({
   range: z.enum(SERIES_RANGES).default('24h'),
-  dialog: z.enum(['edit']).optional(),
+  dialog: z.enum(['edit', 'alerts']).optional(),
   deviceId: z.string().optional(),
 })
 type SensorsSearch = z.infer<typeof searchSchema>
@@ -47,6 +47,10 @@ const ADMIN_DIALOG_LOADERS = [loadEditDeviceDialog]
 // Only the shorter ranges poll — a new reading won't visibly move a 1-year daily
 // chart, so longer ranges just refetch on focus/mount.
 const POLLED_RANGES: SeriesRange[] = ['24h', '1w', '1m']
+
+// The viewer's own rules (bell counts); polled like the tiles. Not a loader dependency:
+// until it arrives, or if it fails, the bells are plain.
+const sensorAlertsQuery = () => orpc.sensor.alerts.list.queryOptions({ refetchInterval: 60_000 })
 
 export const Route = createFileRoute('/_authenticated/sensors')({
   head: () => ({
@@ -88,6 +92,7 @@ function SensorsPage() {
     // as the short-range charts (spec §7).
     refetchInterval: 60_000,
   })
+  const alertsResult = useQuery(sensorAlertsQuery())
   const seriesResult = useQuery({
     ...orpc.sensor.series.queryOptions({ input: { range } }),
     refetchInterval: POLLED_RANGES.includes(range) ? 60_000 : false,
@@ -174,6 +179,13 @@ function SensorsPage() {
     color: colorForIndex(i),
   }))
   const editingDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
+  const alertCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const r of loadFailed(alertsResult) ? [] : (alertsResult.data?.rules ?? [])) {
+      if (r.enabled) counts[r.deviceId] = (counts[r.deviceId] ?? 0) + 1
+    }
+    return counts
+  }, [alertsResult])
   const editDeviceOpen = isOpen('edit') && editingDevice !== undefined
 
   // The toggles, the tiles and the charts' colours all need the roster.
@@ -223,6 +235,8 @@ function SensorsPage() {
                   devices={roster}
                   isAdmin={isAdmin}
                   onEdit={(id) => open('edit', { deviceId: id })}
+                  alertCounts={alertCounts}
+                  onOpenAlerts={(id) => open('alerts', { deviceId: id })}
                 />
               </CardContent>
             </Card>

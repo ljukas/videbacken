@@ -487,6 +487,8 @@
   "onboarding_skip": "Skip",
   "onboarding_step_progress": "Step {current} of {total}",
   "search_no_results": "No results.",
+  "sensors_alerts_open_named": "Alerts for {name}",
+  "sensors_alerts_open_named_count": "Alerts for {name}, {count} active",
   "sensors_battery": "Battery {pct}%",
   "sensors_chart_empty": "No data in the selected period.",
   "sensors_current_heading": "Right now",

@@ -21,6 +21,7 @@ import { Route as Sensors } from './sensors'
 type Device = RouterOutputs['sensor']['listDevices'][number]
 
 const devicesKey = orpc.sensor.listDevices.queryOptions().queryKey
+const alertsKey = orpc.sensor.alerts.list.queryOptions().queryKey
 const seriesKey = orpc.sensor.series.queryOptions({ input: { range: '24h' } }).queryKey
 const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)
 
@@ -268,4 +269,46 @@ test('a range switch from an empty range never claims "no data" while the next l
   await screen.getByRole('radio', { name: m.sensors_range_1y() }).click()
   await expect.poll(() => document.querySelectorAll('[aria-busy="true"]').length).toBe(2)
   expect(screen.getByText(m.sensors_chart_empty()).elements()).toHaveLength(0)
+})
+
+test('the viewer’s switched-on rules show as a count on the tile bell', async () => {
+  const rule = (id: string, enabled: boolean) => ({
+    id,
+    deviceId: 'a',
+    kind: 'temperature' as const,
+    enabled,
+    direction: 'above' as const,
+    threshold: 30,
+    count: 1,
+    silenceHours: null,
+  })
+  const { screen } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [device])
+    qc.setQueryData(seriesKey, noSeries)
+    qc.setQueryData(alertsKey, {
+      rules: [rule('r1', true), rule('r2', true), rule('r3', false)],
+      typicalGapMinutes: {},
+    })
+  })
+  await expect
+    .element(
+      screen.getByRole('button', {
+        name: m.sensors_alerts_open_named_count({ name: 'Sensor 34cd', count: 2 }),
+      }),
+    )
+    .toBeVisible()
+})
+
+test('the alerts read failing leaves plain bells, tiles intact', async () => {
+  const { screen } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [device])
+    qc.setQueryData(seriesKey, noSeries)
+    failedOnServer(qc, alertsKey)
+  })
+  await expect.element(screen.getByText('21.7°C')).toBeVisible()
+  await expect
+    .element(
+      screen.getByRole('button', { name: m.sensors_alerts_open_named({ name: 'Sensor 34cd' }) }),
+    )
+    .toBeVisible()
 })

@@ -1,7 +1,9 @@
-import { PencilIcon } from 'lucide-react'
+import { BellIcon, PencilIcon } from 'lucide-react'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { formatDistanceShort } from '~/lib/i18n/format'
 import type { RouterOutputs } from '~/lib/orpc/client'
+import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
 type Device = RouterOutputs['sensor']['listDevices'][number]
@@ -13,10 +15,15 @@ export function CurrentReadingTiles({
   devices,
   isAdmin,
   onEdit,
+  alertCounts,
+  onOpenAlerts,
 }: {
   devices: Device[]
   isAdmin: boolean
   onEdit: (id: string) => void
+  /** The viewer's switched-on rules per device; missing = 0. */
+  alertCounts: Record<string, number>
+  onOpenAlerts: (id: string) => void
 }) {
   // Reserve the location line in every tile once any sensor has one, so the
   // figures line up across a row; with none, no blank line.
@@ -39,18 +46,46 @@ export function CurrentReadingTiles({
                   </p>
                 ) : null}
               </div>
-              {isAdmin ? (
+              {/* The negative margin sits on the group's last button only, so the
+                  name isn't pushed down; 36 px targets keep two fitting a tile. */}
+              <div className="flex shrink-0 items-start">
                 <Button
                   variant="ghost"
                   size="icon"
-                  // 40 px target; the negative margin keeps it from pushing the name down.
-                  className="-mt-2 -mr-2 size-10 shrink-0"
-                  onClick={() => onEdit(d.id)}
-                  aria-label={m.sensors_edit_device_named({ name: d.displayName })}
+                  className={cn('relative size-9', !isAdmin && '-mt-1.5 -mr-1.5')}
+                  onClick={() => onOpenAlerts(d.id)}
+                  aria-label={
+                    (alertCounts[d.id] ?? 0) > 0
+                      ? m.sensors_alerts_open_named_count({
+                          name: d.displayName,
+                          count: alertCounts[d.id] ?? 0,
+                        })
+                      : m.sensors_alerts_open_named({ name: d.displayName })
+                  }
                 >
-                  <PencilIcon aria-hidden className="size-4" />
+                  <BellIcon aria-hidden className="size-4" />
+                  {(alertCounts[d.id] ?? 0) > 0 ? (
+                    <Badge
+                      variant="secondary"
+                      aria-hidden
+                      className="pointer-events-none absolute top-0.5 right-0.5 h-4 min-w-4 px-1 text-sm tabular-nums"
+                    >
+                      {alertCounts[d.id]}
+                    </Badge>
+                  ) : null}
                 </Button>
-              ) : null}
+                {isAdmin ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="-mt-1.5 -mr-1.5 size-9 shrink-0"
+                    onClick={() => onEdit(d.id)}
+                    aria-label={m.sensors_edit_device_named({ name: d.displayName })}
+                  >
+                    <PencilIcon aria-hidden className="size-4" />
+                  </Button>
+                ) : null}
+              </div>
             </div>
             <div className="mt-2 font-semibold text-3xl tabular-nums">
               {d.latest?.temperatureC != null ? `${d.latest.temperatureC.toFixed(1)}°C` : '—'}
