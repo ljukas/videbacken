@@ -325,3 +325,53 @@ test('Esc while a save is on its way does nothing', async () => {
   expect(onView).not.toHaveBeenCalled()
   expect(onClose).not.toHaveBeenCalled()
 })
+
+test('a double Esc steps back once, never past the list', async () => {
+  const onView = vi.fn()
+  const { screen } = await renderDialog({ view: 'new', onView })
+  await expect
+    .element(screen.getByRole('heading', { name: m.sensors_alert_form_title_new() }))
+    .toHaveFocus()
+  // Before the URL (and so the view) catches up, the second press must do nothing.
+  await userEvent.keyboard('{Escape}{Escape}')
+  expect(onView).toHaveBeenCalledTimes(1)
+  expect(onView).toHaveBeenCalledWith('list', { replace: true })
+})
+
+test("a save from a form that is gone doesn't step the next form back", async () => {
+  let land = (_v: unknown) => {}
+  updateFn.mockReturnValue(
+    new Promise((resolve) => {
+      land = resolve
+    }),
+  )
+  const onView = vi.fn()
+  const RULE_1 = '00000000-0000-4000-8000-000000000001'
+  const { screen, queryClient } = await renderDialog({ view: RULE_1, onView })
+  await screen.getByRole('button', { name: m.common_save() }).click()
+  await vi.waitFor(() => expect(updateFn).toHaveBeenCalled())
+  // The user moves on (closed and reopened, then "Nytt larm"): that form replaces this one.
+  await screen.rerender(
+    <QueryClientProvider client={queryClient}>
+      <SensorAlertsDialog
+        open
+        device={device}
+        rules={RULES}
+        typicalGapMinutes={{ [DEV]: 120 }}
+        view="new"
+        onView={onView}
+        onClose={() => {}}
+      />
+    </QueryClientProvider>,
+  )
+  await expect
+    .element(screen.getByRole('heading', { name: m.sensors_alert_form_title_new() }))
+    .toBeVisible()
+  land({ id: RULE_1 })
+  await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalled())
+  await new Promise((r) => setTimeout(r, 50))
+  expect(onView).not.toHaveBeenCalled()
+  await expect
+    .element(screen.getByRole('heading', { name: m.sensors_alert_form_title_new() }))
+    .toBeVisible()
+})

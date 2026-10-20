@@ -64,7 +64,8 @@ const POLLED_RANGES: SeriesRange[] = ['24h', '1w', '1m']
 // until it arrives, or if it fails, the bells are plain.
 const sensorAlertsQuery = () => orpc.sensor.alerts.list.queryOptions({ refetchInterval: 60_000 })
 
-declare module '@tanstack/history' {
+// Through react-router's re-export of HistoryState (our direct dependency, not @tanstack/history).
+declare module '@tanstack/react-router' {
   interface HistoryState {
     /** An alerts-dialog form entry pushed from its list: the way back steps back onto the list. */
     sensorAlertsForm?: true

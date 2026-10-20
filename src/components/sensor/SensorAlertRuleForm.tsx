@@ -163,7 +163,19 @@ type Props = {
 
 // Create, edit or delete one of the viewer's own alert rules (ADR-0028, ADR-0005). Stays open
 // until a save succeeds; a server error toasts. A rule that is gone returns to the list.
-export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack, busyRef }: Props) {
+export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack: leave, busyRef }: Props) {
+  // A save or delete can land after this form is gone (closed, or replaced by another form): its
+  // way back then belongs to no one, and must not step the next form back.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const onBack = (result?: 'deleted') => {
+    if (mounted.current) leave(result)
+  }
   const queryClient = useQueryClient()
   const formSchema = useMemo(() => makeFormSchema(device.id), [device.id])
   const [confirmingDelete, setConfirmingDelete] = useState(false)
