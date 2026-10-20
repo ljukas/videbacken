@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
+import { logger } from '~/lib/logger/server'
 import { evaluateValueRules } from '~/lib/services/sensorAlert'
 import { setupDatabase } from '~test/setup'
 import { handleShellyWebhook, parseShellyQuery } from './shellyWebhook'
@@ -218,12 +219,22 @@ describe('handleShellyWebhook', () => {
 
   test('a failing evaluation still answers 204 with the reading stored', async () => {
     vi.mocked(evaluateValueRules).mockRejectedValueOnce(new Error('boom'))
-    const res = await handleShellyWebhook(
-      new Request(shellyUrl(`token=${TOKEN}&mac=AABBCCDDEEFF&t=20`)),
-    )
-    expect(res.status).toBe(204)
-    await expect(Promise.all(waitUntilPromises)).resolves.toBeDefined()
-    expect(await db.select().from(sensorReading)).toHaveLength(1)
+    const logError = vi.spyOn(logger, 'error')
+    try {
+      const res = await handleShellyWebhook(
+        new Request(shellyUrl(`token=${TOKEN}&mac=AABBCCDDEEFF&t=20`)),
+      )
+      expect(res.status).toBe(204)
+      await expect(Promise.all(waitUntilPromises)).resolves.toBeDefined()
+      const stored = await db.select().from(sensorReading)
+      expect(stored).toHaveLength(1)
+      expect(logError).toHaveBeenCalledWith(
+        'sensor alert evaluation failed',
+        expect.objectContaining({ deviceId: stored[0].deviceId, error: expect.any(Error) }),
+      )
+    } finally {
+      logError.mockRestore()
+    }
   })
 
   test('an invalid mac answers 400 and hands nothing to waitUntil', async () => {

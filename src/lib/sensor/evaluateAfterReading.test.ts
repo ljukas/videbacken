@@ -94,8 +94,13 @@ describe('evaluateAfterReading', () => {
 
   test('resolves when the evaluation fails, publishing nothing', async () => {
     const publish = vi.spyOn(queue, 'publish').mockResolvedValue(undefined as never)
+    const logError = vi.spyOn(logger, 'error')
     // Not a uuid: the query throws.
     await expect(evaluateAfterReading('not-a-uuid', NOW)).resolves.toBeUndefined()
     expect(publish).not.toHaveBeenCalled()
+    expect(logError).toHaveBeenCalledWith(
+      'sensor alert evaluation failed',
+      expect.objectContaining({ deviceId: 'not-a-uuid', error: expect.anything() }),
+    )
   })
 })

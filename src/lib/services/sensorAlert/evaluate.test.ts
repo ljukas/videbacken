@@ -3,7 +3,7 @@ import { Client } from 'pg'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorAlertEvent, sensorDevice, sensorReading, user } from '~/lib/db/schema'
-import { ALERT_LOOKBACK_MS } from '~/lib/sensor/alerts'
+import { ALERT_LOOKBACK_MS, ALERT_READINGS_MAX } from '~/lib/sensor/alerts'
 import { setupDatabase } from '~test/setup'
 import { createRule, evaluateValueRules, setRuleEnabled } from './index'
 
@@ -77,6 +77,9 @@ async function secondConnection() {
 // Waits until some other backend is blocked on a lock, in a query that names the table.
 async function waitForBlockedEvaluation(client: Client, table = 'sensor_alert_rule') {
   for (let i = 0; i < 100; i += 1) {
+    // Inside the caller's transaction pg_stat_activity is a snapshot taken on first read: drop it,
+    // or the evaluation's first statement would be all this ever sees.
+    await client.query('SELECT pg_stat_clear_snapshot()')
     const { rows } = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_stat_activity
        WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid()
@@ -306,5 +309,45 @@ test('readings older than the lookback do not count; no readings fire nothing', 
     [30, 4],
   ])
   expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await events()).toEqual([])
+})
+
+test('only the newest readings are read: a flood on one sensor pushes older ones out', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, below5(d1))
+  // A cold reading an hour ago, then a cold flood of ALERT_READINGS_MAX readings a second apart:
+  // one merged burst. Read in full that is two cold groups (a fire); bounded, the hour-old
+  // reading is never read and one group fires nothing.
+  await readings(d1, [[60, 4]])
+  await db.insert(sensorReading).values(
+    Array.from({ length: ALERT_READINGS_MAX }, (_, i) => ({
+      deviceId: d1,
+      temperatureC: 4,
+      humidityPct: 50,
+      batteryPct: 80,
+      recordedAt: new Date(minutesAgo(20).getTime() + i * 1000),
+    })),
+  )
+  expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await events()).toEqual([])
+})
+
+test('the evaluation takes the sensor before its rules: a sensor delete in flight makes it wait', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, below5(d1))
+  await readings(d1, COLD)
+  const client = await secondConnection()
+  try {
+    // A delete locks the device, then (the cascade) its rules. Waiting on the device, the
+    // evaluation holds no rule lock the delete could need.
+    await client.query('BEGIN')
+    await client.query('DELETE FROM sensor_device WHERE id = $1', [d1])
+    const evaluation = evaluateValueRules(d1, NOW)
+    await waitForBlockedEvaluation(client, 'key share')
+    await client.query('COMMIT')
+    expect(await evaluation).toEqual([])
+  } finally {
+    await client.end()
+  }
   expect(await events()).toEqual([])
 })

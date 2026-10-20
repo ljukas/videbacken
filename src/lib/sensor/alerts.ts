@@ -60,6 +60,12 @@ export const ALERT_RULES_PER_SENSOR_MAX = 20
 /** How far back a rule looks when judging (readings older than this are ignored). */
 export const ALERT_LOOKBACK_MS = 7 * 24 * 60 * 60_000
 
+/**
+ * The most readings (the newest) a rule is judged on: a flood on one MAC can't make every
+ * evaluation read a week. The longest rule needs 10 merged groups, each a burst of a few readings.
+ */
+export const ALERT_READINGS_MAX = 300
+
 /** A rule in the viewer's list: firingSince is its open alert's start, null when not firing. */
 export type SensorAlertRuleListItem = SensorAlertRuleDto & { firingSince: Date | null }
 

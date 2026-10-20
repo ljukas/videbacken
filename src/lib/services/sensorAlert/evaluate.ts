@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import {
   sensorAlertEvent,
@@ -10,6 +10,7 @@ import {
 import { type AlertReading, judgeValueRule, type ValueRule } from '~/lib/sensor/alertJudge'
 import {
   ALERT_LOOKBACK_MS,
+  ALERT_READINGS_MAX,
   type SensorAlertDirection,
   VALUE_ALERT_KINDS,
   type ValueAlertKind,
@@ -35,17 +36,29 @@ export type SensorAlertTransition = {
 }
 
 /**
- * Judges the device's enabled value rules (of non-deleted owners) against its readings of the
- * last ALERT_LOOKBACK_MS, and opens or closes their alerts. One transaction that locks the rule
- * rows first, the same lock the rule mutations take: a pause, edit or delete either commits
- * before (the rule is skipped or judged anew) or waits for the evaluation's commit. Only a write
- * that returned a row becomes a transition.
+ * Judges the device's enabled value rules (of non-deleted owners) against its newest
+ * ALERT_READINGS_MAX readings of the last ALERT_LOOKBACK_MS, and opens or closes their alerts.
+ * One transaction that locks the sensor, then the rule rows, the same rule lock the rule
+ * mutations take: a pause, edit or delete either commits before (the rule is skipped or judged
+ * anew) or waits for the evaluation's commit. Only a write that returned a row becomes a
+ * transition.
  */
 export async function evaluateValueRules(
   deviceId: string,
   now: Date,
 ): Promise<SensorAlertTransition[]> {
   return db.transaction(async (tx) => {
+    // The sensor first, in its own statement. A sensor delete locks the device, then its rules
+    // (the cascade); an event insert's device FK needs KEY SHARE on the device. Locking rules
+    // first and the device at the insert would deadlock with that delete: take them in its order,
+    // so a delete in flight makes the evaluation wait, then find nothing.
+    const [device] = await tx
+      .select({ id: sensorDevice.id })
+      .from(sensorDevice)
+      .where(eq(sensorDevice.id, deviceId))
+      .for('key share')
+    if (!device) return []
+
     const rules = await tx
       .select({
         id: sensorAlertRule.id,
@@ -92,7 +105,8 @@ export async function evaluateValueRules(
       )
     const openByRule = new Map(open.map((e) => [e.ruleId, e]))
 
-    const readings: AlertReading[] = await tx
+    // The newest ones, read newest first and judged oldest first.
+    const newest: AlertReading[] = await tx
       .select({
         recordedAt: sensorReading.recordedAt,
         temperatureC: sensorReading.temperatureC,
@@ -107,7 +121,9 @@ export async function evaluateValueRules(
           lte(sensorReading.recordedAt, now),
         ),
       )
-      .orderBy(asc(sensorReading.recordedAt))
+      .orderBy(desc(sensorReading.recordedAt))
+      .limit(ALERT_READINGS_MAX)
+    const readings = newest.reverse()
 
     const transitions: SensorAlertTransition[] = []
     for (const rule of rules) {
