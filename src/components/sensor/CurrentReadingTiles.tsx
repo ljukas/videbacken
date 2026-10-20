@@ -1,4 +1,4 @@
-import { BellIcon, PencilIcon } from 'lucide-react'
+import { BellIcon, BellRingIcon, PencilIcon } from 'lucide-react'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { formatDistanceShort } from '~/lib/i18n/format'
@@ -77,12 +77,23 @@ export function CurrentReadingTiles({
                           : m.sensors_alerts_open_named({ name: d.displayName })
                     }
                   >
-                    <BellIcon aria-hidden className="size-4" />
+                    {/* A ringing bell while firing: a shape cue besides the colour. */}
+                    {firing > 0 ? (
+                      <BellRingIcon aria-hidden className="size-4" />
+                    ) : (
+                      <BellIcon aria-hidden className="size-4" />
+                    )}
                     {firing > 0 || active > 0 ? (
                       <Badge
                         variant={firing > 0 ? 'destructive' : 'secondary'}
                         aria-hidden
-                        className="pointer-events-none absolute top-0.5 right-0.5 h-4 min-w-4 px-1 py-0 text-sm tabular-nums leading-none"
+                        className={cn(
+                          'pointer-events-none absolute top-0.5 right-0.5 h-4 min-w-4 px-1 py-0 text-sm tabular-nums leading-none',
+                          // Opaque, not the variant's 10 % tint over the bell's stroke. White on
+                          // the light red is ≥ 4.5:1; the dark theme's red is light, so dark text.
+                          firing > 0 &&
+                            'bg-destructive text-white dark:bg-destructive dark:text-background',
+                        )}
                       >
                         {firing > 0 ? firing : active}
                       </Badge>

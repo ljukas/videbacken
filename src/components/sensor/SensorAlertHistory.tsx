@@ -3,8 +3,10 @@ import { useId } from 'react'
 import { Button } from '~/components/ui/button'
 import { Spinner } from '~/components/ui/spinner'
 import { orpc } from '~/lib/orpc/client'
+import type { SensorAlertEventDto } from '~/lib/sensor/alerts'
 import { m } from '~/paraglide/messages'
-import { alertEventPeriod, alertRuleDescription } from './alertRuleCopy'
+import { alertEventPeriodParts, alertRuleDescription } from './alertRuleCopy'
+import { nowrapMessage } from './nowrapMessage'
 
 type Cursor = { startedAt: Date; id: string }
 
@@ -24,13 +26,19 @@ export function SensorAlertHistory({ deviceId, open }: { deviceId: string; open:
   )
   const entries = history.data?.pages.flatMap((p) => p.entries) ?? []
   const failed = history.isError ? (
-    <p className="text-muted-foreground text-sm">{m.sensors_alert_history_failed()}</p>
+    <p role="status" className="text-muted-foreground text-sm">
+      {m.sensors_alert_history_failed()}
+    </p>
   ) : null
 
   if (entries.length === 0) return failed
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-2">
+    <section
+      aria-labelledby={headingId}
+      aria-busy={history.isFetching || undefined}
+      className="flex flex-col gap-2"
+    >
       <h3 id={headingId} className="font-medium text-sm">
         {m.sensors_alert_history_heading()}
       </h3>
@@ -38,7 +46,9 @@ export function SensorAlertHistory({ deviceId, open }: { deviceId: string; open:
         {entries.map((e) => (
           <li key={e.id} className="flex flex-col text-sm">
             <span>{alertRuleDescription(e)}</span>
-            <span className="text-muted-foreground tabular-nums">{alertEventPeriod(e)}</span>
+            <span className="text-muted-foreground tabular-nums">
+              <AlertPeriod event={e} />
+            </span>
           </li>
         ))}
       </ul>
@@ -57,5 +67,19 @@ export function SensorAlertHistory({ deviceId, open }: { deviceId: string; open:
         </Button>
       ) : null}
     </section>
+  )
+}
+
+/** The period with each date and the duration kept on one line; the line wraps between them. */
+function AlertPeriod({ event }: { event: SensorAlertEventDto }) {
+  const { start, end, duration, reason } = alertEventPeriodParts(event)
+  if (end === null || duration === null) {
+    return <>{nowrapMessage(m.sensors_alert_history_ongoing, { start })}</>
+  }
+  return (
+    <>
+      {nowrapMessage(m.sensors_alert_history_period, { start, end, duration })}
+      {reason === null ? null : ` · ${reason}`}
+    </>
   )
 }

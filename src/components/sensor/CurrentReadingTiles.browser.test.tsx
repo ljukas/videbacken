@@ -302,6 +302,10 @@ test('a firing rule turns the bell red: the firing count on a destructive badge,
   const badge = document.querySelector('[data-slot="badge"]')
   expect(badge?.textContent).toBe('1')
   expect(badge?.getAttribute('data-variant')).toBe('destructive')
+  // Opaque, not a tint over the bell; and a ringing bell, a cue besides the colour.
+  expect(badge?.className.split(' ')).toContain('bg-destructive')
+  expect(badge?.className).not.toMatch(/(^| )bg-destructive\/10( |$)/)
+  expect(bell.element().querySelector('svg')?.classList).toContain('lucide-bell-ring')
   expect(document.querySelector('li')?.className).toContain('border-destructive')
 })
 
@@ -324,5 +328,6 @@ test('nothing firing: a neutral bell and tile', async () => {
   expect(document.querySelector('[data-slot="badge"]')?.getAttribute('data-variant')).toBe(
     'secondary',
   )
+  expect(bell.element().querySelector('svg')?.classList).not.toContain('lucide-bell-ring')
   expect(document.querySelector('li')?.className).not.toContain('border-destructive')
 })

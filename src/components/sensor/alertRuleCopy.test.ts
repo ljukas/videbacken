@@ -89,6 +89,7 @@ test('"since" is the time today and the day and time before today, in Stockholm'
   // 00:30 on the 20th in Stockholm is still today, though it is the 19th in UTC.
   expect(formatAlertSince(new Date('2026-10-19T22:30:00Z'), NOW)).toBe('00:30')
   expect(formatAlertSince(new Date('2026-10-19T20:00:00Z'), NOW)).toBe('19 okt. 22:00')
+  expect(formatAlertSince(new Date('2025-10-19T20:00:00Z'), NOW)).toBe('19 okt. 2025 22:00')
 })
 
 const event = (over: Partial<SensorAlertEventDto>): SensorAlertEventDto => ({
@@ -105,21 +106,35 @@ const event = (over: Partial<SensorAlertEventDto>): SensorAlertEventDto => ({
 })
 
 test('a period: the end time alone on the same Stockholm day, then the duration', () => {
-  expect(alertEventPeriod(event({}))).toBe('19 okt. 22:00 – 23:30 · 1 h 30 min')
-  expect(alertEventPeriod(event({ endedAt: new Date('2026-10-20T01:10:00Z') }))).toBe(
+  expect(alertEventPeriod(event({}), NOW)).toBe('19 okt. 22:00 – 23:30 · 1 h 30 min')
+  expect(alertEventPeriod(event({ endedAt: new Date('2026-10-20T01:10:00Z') }), NOW)).toBe(
     '19 okt. 22:00 – 20 okt. 03:10 · 5 h 10 min',
   )
 })
 
+test('a period outside the current Stockholm year shows its year on each date', () => {
+  expect(
+    alertEventPeriod(
+      event({
+        startedAt: new Date('2025-12-31T20:00:00Z'),
+        endedAt: new Date('2026-01-01T01:00:00Z'),
+      }),
+      NOW,
+    ),
+  ).toBe('31 dec. 2025 21:00 – 1 jan. 02:00 · 5 h')
+})
+
 test('an open alert is ongoing; a quiet end says why', () => {
-  expect(alertEventPeriod(event({ endedAt: null, endReason: null }))).toBe('19 okt. 22:00 – pågår')
-  expect(alertEventPeriod(event({ endReason: 'paused' }))).toBe(
+  expect(alertEventPeriod(event({ endedAt: null, endReason: null }), NOW)).toBe(
+    '19 okt. 22:00 – pågår',
+  )
+  expect(alertEventPeriod(event({ endReason: 'paused' }), NOW)).toBe(
     '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (pausad)',
   )
-  expect(alertEventPeriod(event({ endReason: 'edited' }))).toBe(
+  expect(alertEventPeriod(event({ endReason: 'edited' }), NOW)).toBe(
     '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (ändrad)',
   )
-  expect(alertEventPeriod(event({ endReason: 'deleted' }))).toBe(
+  expect(alertEventPeriod(event({ endReason: 'deleted' }), NOW)).toBe(
     '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (borttaget)',
   )
 })

@@ -125,6 +125,39 @@ test('the list names the sensor and shows only its rules, each with a switch', a
   expect(screen.getByRole('switch').elements()).toHaveLength(4)
 })
 
+// Structure only: browser tests run without app.css, so the scroll itself is checked live.
+test('only the rules and the history scroll: the title and "Nytt larm" stay put', async () => {
+  historyFn.mockResolvedValue({
+    entries: [
+      {
+        id: '00000000-0000-4000-8000-0000000000e1',
+        kind: 'temperature',
+        direction: 'below',
+        threshold: 5,
+        count: 2,
+        silenceHours: null,
+        startedAt: new Date('2026-10-19T20:00:00Z'),
+        endedAt: new Date('2026-10-19T21:00:00Z'),
+        endReason: 'recovered',
+      },
+    ],
+    next: null,
+  })
+  const { screen } = await renderDialog()
+  const history = screen.getByRole('heading', { name: m.sensors_alert_history_heading() })
+  await expect.element(history).toBeVisible()
+  const body = screen.getByRole('list', { name: m.sensors_alert_list_label() }).element()
+    .parentElement as HTMLElement
+  expect(body.className).toContain('overflow-y-auto')
+  expect(body.contains(history.element())).toBe(true)
+  const title = screen.getByRole('heading', { name: 'Larm för Förråd' }).element()
+  expect(body.contains(title)).toBe(false)
+  expect(title.className).toContain('break-words')
+  const newButton = screen.getByRole('button', { name: m.sensors_alert_new() }).element()
+  expect(body.contains(newButton)).toBe(false)
+  expect(body.closest('[role="dialog"]')?.contains(newButton)).toBe(true)
+})
+
 test('each switch is named by its rule, so a screen reader tells them apart', async () => {
   const { screen } = await renderDialog()
   await expect
@@ -155,7 +188,10 @@ test('a firing rule says so and since when; the others say on or paused', async 
     ],
   })
   const rows = screen.getByRole('listitem')
-  await expect.element(rows.nth(0).getByText(`sedan ${formatAlertSince(since)}`)).toBeVisible()
+  const firingSince = rows.nth(0).getByText(`sedan ${formatAlertSince(since)}`)
+  await expect.element(firingSince).toBeVisible()
+  // "sedan 03:10" keeps to one line.
+  expect(firingSince.element().className).toContain('whitespace-nowrap')
   // The dot's state, for a screen reader.
   await expect.element(rows.nth(0).getByText('Larmar', { exact: true })).toBeInTheDocument()
   await expect.element(rows.nth(1).getByText('Pausad', { exact: true })).toBeInTheDocument()

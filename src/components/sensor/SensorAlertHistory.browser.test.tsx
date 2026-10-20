@@ -2,7 +2,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import type { SensorAlertEventDto } from '~/lib/sensor/alerts'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
-import { alertEventPeriod } from './alertRuleCopy'
+import { alertEventPeriod, alertEventPeriodParts } from './alertRuleCopy'
 import { SensorAlertHistory } from './SensorAlertHistory'
 
 // The history read through a stand-in for oRPC's infiniteOptions: each page fetch calls
@@ -88,6 +88,12 @@ test('each entry: the rule as it was, its period, and why a quiet end ended', as
   await expect.element(screen.getByText(/ – pågår$/)).toBeVisible()
   await expect.element(screen.getByText('Luftfuktighet över 80 % · 2 mätningar')).toBeVisible()
   await expect.element(screen.getByText(/ · avslutad \(ändrad\)$/)).toBeVisible()
+  // Each date and the duration keep to one line; the period wraps between them.
+  const nowrap = [...document.querySelectorAll('li:nth-child(2) .whitespace-nowrap')].map(
+    (el) => el.textContent,
+  )
+  const { start, end, duration } = alertEventPeriodParts(entry(1))
+  expect(nowrap).toEqual([start, end, duration])
 })
 
 test('no entries: nothing renders', async () => {
@@ -106,9 +112,9 @@ test('a failed load: one muted line', async () => {
   historyFn.mockRejectedValue(new Error('boom'))
   const { screen } = await renderWithProviders(<SensorAlertHistory deviceId={DEV} open />)
   await expect.element(screen.getByText(m.sensors_alert_history_failed())).toBeVisible()
-  expect(screen.getByText(m.sensors_alert_history_failed()).element().className).toContain(
-    'text-muted-foreground',
-  )
+  const line = screen.getByText(m.sensors_alert_history_failed()).element()
+  expect(line.className).toContain('text-muted-foreground')
+  expect(line.getAttribute('role')).toBe('status')
 })
 
 test('closed: no fetch', async () => {

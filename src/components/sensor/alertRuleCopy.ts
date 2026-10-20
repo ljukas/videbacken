@@ -9,7 +9,7 @@ import type {
   SensorAlertKind,
   SensorAlertRuleDto,
 } from '~/lib/sensor/alerts'
-import { formatAlertDuration } from '~/lib/sensor/alertTime'
+import { formatAlertDayTime, formatAlertDuration } from '~/lib/sensor/alertTime'
 import { STOCKHOLM_TIME_ZONE } from '~/lib/time/stockholm'
 import { m } from '~/paraglide/messages'
 
@@ -93,18 +93,18 @@ export function alertCountHint(count: number, gapMinutes: number | null, name: s
 
 const inStockholm = () => ({ in: tz(STOCKHOLM_TIME_ZONE) })
 
-/** "19 okt. 22:00" in Stockholm. */
-function formatAlertDayTime(date: Date): string {
-  return format(date, 'd MMM HH:mm', { locale: getDateFnsLocale(), ...inStockholm() })
-}
-
 function formatAlertTime(date: Date): string {
   return format(date, 'HH:mm', inStockholm())
 }
 
-/** When a firing alert started: "03:10" on today's Stockholm date, else "19 okt. 22:00". */
+/**
+ * When a firing alert started: "03:10" on today's Stockholm date, else "19 okt. 22:00" (with
+ * the year outside the current one).
+ */
 export function formatAlertSince(date: Date, now: Date = new Date()): string {
-  return isSameDay(date, now, inStockholm()) ? formatAlertTime(date) : formatAlertDayTime(date)
+  return isSameDay(date, now, inStockholm())
+    ? formatAlertTime(date)
+    : formatAlertDayTime(date, getDateFnsLocale(), now)
 }
 
 function endReasonLabel(reason: Exclude<SensorAlertEndReason, 'recovered'>): string {
@@ -118,25 +118,49 @@ function endReasonLabel(reason: Exclude<SensorAlertEndReason, 'recovered'>): str
   }
 }
 
+/** A history entry's period, piece by piece (the page keeps each piece on one line). */
+export type AlertEventPeriodParts = {
+  /** "19 okt. 22:00" (with the year outside the current one). */
+  start: string
+  /** The end's time, its day too when it is another Stockholm day; null while open. */
+  end: string | null
+  /** "1 h 30 min"; null while open. */
+  duration: string | null
+  /** Why an end that wasn't a recovery ended (no recovery email went out); else null. */
+  reason: string | null
+}
+
+export function alertEventPeriodParts(
+  event: Pick<SensorAlertEventDto, 'startedAt' | 'endedAt' | 'endReason'>,
+  now: Date = new Date(),
+): AlertEventPeriodParts {
+  const locale = getDateFnsLocale()
+  const start = formatAlertDayTime(event.startedAt, locale, now)
+  if (event.endedAt === null) return { start, end: null, duration: null, reason: null }
+  return {
+    start,
+    end: isSameDay(event.startedAt, event.endedAt, inStockholm())
+      ? formatAlertTime(event.endedAt)
+      : formatAlertDayTime(event.endedAt, locale, now),
+    duration: formatAlertDuration(event.endedAt.getTime() - event.startedAt.getTime()),
+    reason:
+      event.endReason === null || event.endReason === 'recovered'
+        ? null
+        : endReasonLabel(event.endReason),
+  }
+}
+
 /**
- * A history entry's period: "19 okt. 22:00 – 23:30 · 1 h 30 min" (the end's day only when it is
- * another Stockholm day), "19 okt. 22:00 – pågår" while open, and "· avslutad (ändrad)" after an
- * end that wasn't a recovery (no recovery email went out).
+ * A history entry's period as one string: "19 okt. 22:00 – 23:30 · 1 h 30 min" (the end's day
+ * only when it is another Stockholm day), "19 okt. 22:00 – pågår" while open, and
+ * "· avslutat (ändrat)" after an end that wasn't a recovery.
  */
 export function alertEventPeriod(
   event: Pick<SensorAlertEventDto, 'startedAt' | 'endedAt' | 'endReason'>,
+  now: Date = new Date(),
 ): string {
-  const start = formatAlertDayTime(event.startedAt)
-  if (event.endedAt === null) return m.sensors_alert_history_ongoing({ start })
-  const end = isSameDay(event.startedAt, event.endedAt, inStockholm())
-    ? formatAlertTime(event.endedAt)
-    : formatAlertDayTime(event.endedAt)
-  const period = m.sensors_alert_history_period({
-    start,
-    end,
-    duration: formatAlertDuration(event.endedAt.getTime() - event.startedAt.getTime()),
-  })
-  return event.endReason === null || event.endReason === 'recovered'
-    ? period
-    : `${period} · ${endReasonLabel(event.endReason)}`
+  const { start, end, duration, reason } = alertEventPeriodParts(event, now)
+  if (end === null || duration === null) return m.sensors_alert_history_ongoing({ start })
+  const period = m.sensors_alert_history_period({ start, end, duration })
+  return reason === null ? period : `${period} · ${reason}`
 }

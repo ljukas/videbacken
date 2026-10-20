@@ -1,7 +1,7 @@
 import { isDefinedError } from '@orpc/client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { BellIcon, PencilIcon, PlusIcon } from 'lucide-react'
-import { type RefObject, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { RetryAlert } from '~/components/layout/LoadErrorAlert'
 import { Button } from '~/components/ui/button'
@@ -144,8 +144,9 @@ export function SensorAlertsDialog({
       }}
     >
       <ResponsiveDialogContent
-        // "Visa fler" grows the list: on a desktop too, the dialog scrolls rather than overflow the viewport.
-        className="max-h-[90svh] overflow-y-auto sm:max-w-md"
+        // The header and the footer stay put; the body between them scrolls once the rules and
+        // "Senaste larm" outgrow the viewport (desktop and phone sheet alike).
+        className="flex max-h-[calc(100svh-2rem)] flex-col sm:max-w-md"
         // Esc in the form steps back to the list, like Tillbaka (and, like it, not while a save
         // or delete is on its way); in the list it closes.
         onEscapeKeyDown={(e) => {
@@ -155,8 +156,9 @@ export function SensorAlertsDialog({
           backToList(editing ? { ruleId: editing.id } : 'new')
         }}
       >
-        <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>
+        {/* pr-8 keeps a long name clear of the overlay's close button. */}
+        <ResponsiveDialogHeader className="shrink-0 pr-8">
+          <ResponsiveDialogTitle className="text-balance break-words leading-snug">
             {m.sensors_alert_dialog_title({ name: current?.displayName ?? '' })}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
@@ -232,18 +234,22 @@ function RuleList({
   }, [focus, rules])
 
   if (rules === undefined) {
-    return failed ? (
-      <RetryAlert
-        title={m.sensors_alert_rules_failed()}
-        onRetry={() => onRetry?.()}
-        pending={retrying}
-      />
-    ) : (
-      <p className="flex items-center gap-2 text-muted-foreground text-sm">
-        {/* The text says it: the spinner's own "Loading" status would say it twice. */}
-        <Spinner aria-hidden />
-        {m.sensors_alert_rules_loading()}
-      </p>
+    return (
+      <DialogBody>
+        {failed ? (
+          <RetryAlert
+            title={m.sensors_alert_rules_failed()}
+            onRetry={() => onRetry?.()}
+            pending={retrying}
+          />
+        ) : (
+          <p className="flex items-center gap-2 text-muted-foreground text-sm">
+            {/* The text says it: the spinner's own "Loading" status would say it twice. */}
+            <Spinner aria-hidden />
+            {m.sensors_alert_rules_loading()}
+          </p>
+        )}
+      </DialogBody>
     )
   }
 
@@ -259,7 +265,7 @@ function RuleList({
 
   if (rules.length === 0) {
     return (
-      <>
+      <DialogBody>
         <Empty className="rounded-lg border py-6">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -273,20 +279,31 @@ function RuleList({
           <EmptyContent>{newButton}</EmptyContent>
         </Empty>
         {history}
-      </>
+      </DialogBody>
     )
   }
 
   return (
     <>
-      <ul ref={listRef} aria-label={m.sensors_alert_list_label()} className="flex flex-col gap-2">
-        {rules.map((rule) => (
-          <RuleRow key={rule.id} rule={rule} onOpen={() => onOpen(rule.id)} />
-        ))}
-      </ul>
-      {history}
-      <ResponsiveDialogFooter>{newButton}</ResponsiveDialogFooter>
+      <DialogBody>
+        <ul ref={listRef} aria-label={m.sensors_alert_list_label()} className="flex flex-col gap-2">
+          {rules.map((rule) => (
+            <RuleRow key={rule.id} rule={rule} onOpen={() => onOpen(rule.id)} />
+          ))}
+        </ul>
+        {history}
+      </DialogBody>
+      <ResponsiveDialogFooter className="shrink-0">{newButton}</ResponsiveDialogFooter>
     </>
+  )
+}
+
+/** The list view's scrolling middle, between the fixed header and footer. */
+function DialogBody({ children }: { children: ReactNode }) {
+  return (
+    <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4">
+      {children}
+    </div>
   )
 }
 
@@ -335,7 +352,7 @@ function RuleRow({ rule, onOpen }: { rule: SensorAlertRuleListItem; onOpen: () =
         {state === 'firing' && rule.firingSince ? (
           <>
             {' '}
-            <span className="text-destructive">
+            <span className="whitespace-nowrap text-destructive">
               {m.sensors_alert_firing_since({ time: formatAlertSince(rule.firingSince) })}
             </span>
           </>
