@@ -26,6 +26,7 @@ test('shows the latest reading and an admin-only edit button', async () => {
       isAdmin
       onEdit={onEdit}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -45,6 +46,7 @@ test('shows the battery percentage and last-seen line', async () => {
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -62,6 +64,7 @@ test('renders an em-dash when a device has no reading yet', async () => {
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -81,6 +84,7 @@ test('shows each sensor’s location under its name', async () => {
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -94,6 +98,7 @@ test('only the name shares its row with the buttons; the location spans the tile
       isAdmin
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -121,6 +126,7 @@ test('a sensor without a location keeps the line when another has one, so figure
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -135,6 +141,7 @@ test('with no locations at all there is no location line', async () => {
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -148,6 +155,7 @@ test('the readable sizes: 16 px name that wraps to two lines, 14 px detail, 40 p
       isAdmin
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -182,6 +190,7 @@ test('four columns only once the tiles themselves have room, not from a viewport
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -210,6 +219,7 @@ test('every signed-in user gets the alerts bell, and it opens that sensor', asyn
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{}}
+      firingCounts={{}}
       onOpenAlerts={onOpenAlerts}
     />,
   )
@@ -226,6 +236,7 @@ test('a count shows a badge and is part of the bell label', async () => {
       isAdmin
       onEdit={() => {}}
       alertCounts={{ a: 2 }}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -247,6 +258,7 @@ test('a count of 0 shows no badge and the plain bell label', async () => {
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{ a: 0 }}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -261,6 +273,7 @@ test('the badge sits tight in its 16 px pill, so the 14 px number isn’t clippe
       isAdmin={false}
       onEdit={() => {}}
       alertCounts={{ a: 3 }}
+      firingCounts={{}}
       onOpenAlerts={() => {}}
     />,
   )
@@ -269,4 +282,47 @@ test('the badge sits tight in its 16 px pill, so the 14 px number isn’t clippe
   expect(badge?.className.split(' ')).toContain('py-0')
   expect(badge?.className.split(' ')).not.toContain('py-0.5')
   expect(badge?.className).toContain('leading-none')
+})
+
+test('a firing rule turns the bell red: the firing count on a destructive badge, in the label', async () => {
+  const { screen } = await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[{ ...device, displayName: 'Förråd' }]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{ a: 3 }}
+      firingCounts={{ a: 1 }}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  const bell = screen.getByRole('button', { name: 'Larm för Förråd, 1 larmar nu' })
+  await expect.element(bell).toBeVisible()
+  expect(bell.element().className).toContain('text-destructive')
+  // The firing count, not the switched-on one.
+  const badge = document.querySelector('[data-slot="badge"]')
+  expect(badge?.textContent).toBe('1')
+  expect(badge?.getAttribute('data-variant')).toBe('destructive')
+  expect(document.querySelector('li')?.className).toContain('border-destructive')
+})
+
+test('nothing firing: a neutral bell and tile', async () => {
+  const { screen } = await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[{ ...device, displayName: 'Förråd' }]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{ a: 2 }}
+      firingCounts={{ a: 0 }}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  const bell = screen.getByRole('button', {
+    name: m.sensors_alerts_open_named_count({ name: 'Förråd', count: 2 }),
+  })
+  await expect.element(bell).toBeVisible()
+  expect(bell.element().className).not.toContain('text-destructive')
+  expect(document.querySelector('[data-slot="badge"]')?.getAttribute('data-variant')).toBe(
+    'secondary',
+  )
+  expect(document.querySelector('li')?.className).not.toContain('border-destructive')
 })

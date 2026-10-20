@@ -2,14 +2,15 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
-import type { SensorAlertRuleDto } from '~/lib/sensor/alerts'
+import type { SensorAlertRuleListItem } from '~/lib/sensor/alerts'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
+import { formatAlertSince } from './alertRuleCopy'
 import { SensorAlertsDialog } from './SensorAlertsDialog'
 
 // Mock the oRPC client so a mutation records its payload instead of hitting the network;
 // spreading `opts` keeps the dialog's own onError/onSettled (EditDeviceDialog's idiom).
-const { setEnabledFn, updateFn, toastMock, mutation } = vi.hoisted(() => ({
+const { setEnabledFn, updateFn, historyFn, toastMock, mutation } = vi.hoisted(() => ({
   mutation: (fn: (vars: unknown) => unknown) => ({
     mutationOptions: (opts: Record<string, unknown>) => ({
       ...opts,
@@ -18,6 +19,7 @@ const { setEnabledFn, updateFn, toastMock, mutation } = vi.hoisted(() => ({
   }),
   setEnabledFn: vi.fn(),
   updateFn: vi.fn(),
+  historyFn: vi.fn(),
   toastMock: { success: vi.fn(), error: vi.fn() },
 }))
 vi.mock('~/lib/orpc/client', () => ({
@@ -28,6 +30,14 @@ vi.mock('~/lib/orpc/client', () => ({
         create: mutation(vi.fn()),
         update: mutation(updateFn),
         delete: mutation(vi.fn()),
+        // Under the alerts key, as oRPC nests it: invalidating the rules refetches the history.
+        history: {
+          infiniteOptions: ({ input, ...opts }: { input: (p: unknown) => unknown }) => ({
+            ...opts,
+            queryKey: ['sensor', 'alerts', 'history', input(undefined)],
+            queryFn: ({ pageParam }: { pageParam: unknown }) => historyFn(input(pageParam)),
+          }),
+        },
         key: () => ['sensor', 'alerts'],
       },
       listDevices: { key: () => ['sensor', 'listDevices'] },
@@ -40,7 +50,7 @@ const DEV = '00000000-0000-4000-8000-0000000000d1'
 const OTHER_DEV = '00000000-0000-4000-8000-0000000000d2'
 const device = { id: DEV, displayName: 'Förråd' }
 
-const rule = (over: Partial<SensorAlertRuleDto>): SensorAlertRuleDto => ({
+const rule = (over: Partial<SensorAlertRuleListItem>): SensorAlertRuleListItem => ({
   id: '00000000-0000-4000-8000-000000000001',
   deviceId: DEV,
   kind: 'temperature',
@@ -49,12 +59,13 @@ const rule = (over: Partial<SensorAlertRuleDto>): SensorAlertRuleDto => ({
   threshold: 5,
   count: 2,
   silenceHours: null,
+  firingSince: null,
   ...over,
 })
 // The pencil that opens the humidity rule in the form.
 const EDIT_HUMID = 'Ändra larmet: Luftfuktighet över 80 % · 3 mätningar'
 
-const RULES: SensorAlertRuleDto[] = [
+const RULES: SensorAlertRuleListItem[] = [
   rule({ id: '00000000-0000-4000-8000-000000000001' }),
   rule({
     id: '00000000-0000-4000-8000-000000000002',
@@ -78,6 +89,8 @@ const RULES: SensorAlertRuleDto[] = [
 beforeEach(() => {
   setEnabledFn.mockReset()
   updateFn.mockReset()
+  historyFn.mockReset()
+  historyFn.mockResolvedValue({ entries: [], next: null })
   toastMock.success.mockReset()
   toastMock.error.mockReset()
 })
@@ -123,6 +136,79 @@ test('each switch is named by its rule, so a screen reader tells them apart', as
       }),
     )
     .toBeChecked()
+})
+
+test('the switch is named "Bevaka: <rule>"', async () => {
+  const { screen } = await renderDialog({ rules: [rule({})] })
+  await expect
+    .element(screen.getByRole('switch', { name: 'Bevaka: Temperatur under 5 °C · 2 mätningar' }))
+    .toBeChecked()
+})
+
+test('a firing rule says so and since when; the others say on or paused', async () => {
+  const since = new Date(Date.now() - 5 * 60_000)
+  const { screen } = await renderDialog({
+    rules: [
+      rule({ firingSince: since }),
+      rule({ id: '00000000-0000-4000-8000-000000000002', threshold: 0, enabled: false }),
+      rule({ id: '00000000-0000-4000-8000-000000000003', threshold: 10 }),
+    ],
+  })
+  const rows = screen.getByRole('listitem')
+  await expect.element(rows.nth(0).getByText(`sedan ${formatAlertSince(since)}`)).toBeVisible()
+  // The dot's state, for a screen reader.
+  await expect.element(rows.nth(0).getByText('Larmar', { exact: true })).toBeInTheDocument()
+  await expect.element(rows.nth(1).getByText('Pausad', { exact: true })).toBeInTheDocument()
+  await expect.element(rows.nth(2).getByText('På', { exact: true })).toBeInTheDocument()
+  expect(
+    rows
+      .nth(1)
+      .getByText(/^sedan /)
+      .elements(),
+  ).toHaveLength(0)
+  expect(
+    rows
+      .nth(2)
+      .getByText(/^sedan /)
+      .elements(),
+  ).toHaveLength(0)
+  // The switch keeps the rule's own name, not its state.
+  await expect
+    .element(screen.getByRole('switch', { name: 'Bevaka: Temperatur under 5 °C · 2 mätningar' }))
+    .toBeChecked()
+})
+
+test('"Senaste larm" sits under the rules once an entry exists, with no rules too', async () => {
+  historyFn.mockResolvedValue({
+    entries: [
+      {
+        id: '00000000-0000-4000-8000-0000000000e1',
+        kind: 'silence',
+        direction: null,
+        threshold: null,
+        count: null,
+        silenceHours: 6,
+        startedAt: new Date(Date.UTC(2026, 9, 19, 20)),
+        endedAt: null,
+        endReason: null,
+      },
+    ],
+    next: null,
+  })
+  const { screen } = await renderDialog({ rules: [] })
+  await expect.element(screen.getByText('Inga larm än')).toBeVisible()
+  await expect
+    .element(screen.getByRole('heading', { name: m.sensors_alert_history_heading() }))
+    .toBeVisible()
+  expect(historyFn).toHaveBeenCalledWith({ deviceId: DEV, before: undefined })
+})
+
+test('pausing a rule refetches the history too (it ends the alert)', async () => {
+  setEnabledFn.mockResolvedValue({})
+  const { screen } = await renderDialog()
+  await vi.waitFor(() => expect(historyFn).toHaveBeenCalledTimes(1))
+  await screen.getByRole('switch').first().click()
+  await vi.waitFor(() => expect(historyFn).toHaveBeenCalledTimes(2))
 })
 
 test('a paused rule shows its switch off', async () => {
@@ -246,7 +332,7 @@ function Stateful({
   rules = RULES,
 }: {
   initial?: string
-  rules?: SensorAlertRuleDto[]
+  rules?: SensorAlertRuleListItem[]
 }) {
   const [view, setView] = useState(initial)
   return (

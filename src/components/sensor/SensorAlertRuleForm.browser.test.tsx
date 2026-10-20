@@ -1,6 +1,6 @@
 import { ORPCError } from '@orpc/client'
 import { beforeEach, expect, test, vi } from 'vitest'
-import type { SensorAlertRuleDto } from '~/lib/sensor/alerts'
+import type { SensorAlertRuleListItem } from '~/lib/sensor/alerts'
 import { m } from '~/paraglide/messages'
 import { renderWithProviders } from '~test/browser/render'
 import { SensorAlertsDialog } from './SensorAlertsDialog'
@@ -37,7 +37,7 @@ vi.mock('sonner', () => ({ toast: toastMock }))
 
 const DEV = '00000000-0000-4000-8000-0000000000d1'
 const device = { id: DEV, displayName: 'Förråd' }
-const HUMIDITY: SensorAlertRuleDto = {
+const HUMIDITY: SensorAlertRuleListItem = {
   id: '00000000-0000-4000-8000-000000000002',
   deviceId: DEV,
   kind: 'humidity',
@@ -46,8 +46,9 @@ const HUMIDITY: SensorAlertRuleDto = {
   threshold: 80,
   count: 3,
   silenceHours: null,
+  firingSince: null,
 }
-const TEMPERATURE: SensorAlertRuleDto = {
+const TEMPERATURE: SensorAlertRuleListItem = {
   ...HUMIDITY,
   id: '00000000-0000-4000-8000-000000000001',
   kind: 'temperature',

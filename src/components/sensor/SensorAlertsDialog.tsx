@@ -25,10 +25,11 @@ import { Spinner } from '~/components/ui/spinner'
 import { Switch } from '~/components/ui/switch'
 import { orpc } from '~/lib/orpc/client'
 import { sensorAlertErrorMessage } from '~/lib/orpc/sensorAlertErrorMessage'
-import type { SensorAlertRuleDto } from '~/lib/sensor/alerts'
+import type { SensorAlertRuleListItem } from '~/lib/sensor/alerts'
 import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
-import { alertRuleDescription } from './alertRuleCopy'
+import { alertRuleDescription, formatAlertSince } from './alertRuleCopy'
+import { SensorAlertHistory } from './SensorAlertHistory'
 import { SensorAlertRuleForm } from './SensorAlertRuleForm'
 
 export type SensorAlertsDevice = { id: string; displayName: string }
@@ -39,8 +40,8 @@ export type SensorAlertsView = 'list' | 'new' | (string & {})
 type Props = {
   open: boolean
   device: SensorAlertsDevice | undefined
-  /** The viewer's rules (every sensor's); undefined until they load. */
-  rules: readonly SensorAlertRuleDto[] | undefined
+  /** The viewer's rules (every sensor's), each with its open alert's start; undefined until they load. */
+  rules: readonly SensorAlertRuleListItem[] | undefined
   /** The rules failed to load: say so instead of the empty state. */
   rulesFailed?: boolean
   /** Refetch the rules after a failed load. */
@@ -143,7 +144,8 @@ export function SensorAlertsDialog({
       }}
     >
       <ResponsiveDialogContent
-        className="sm:max-w-md"
+        // "Visa fler" grows the list: on a desktop too, the dialog scrolls rather than overflow the viewport.
+        className="max-h-[90svh] overflow-y-auto sm:max-w-md"
         // Esc in the form steps back to the list, like Tillbaka (and, like it, not while a save
         // or delete is on its way); in the list it closes.
         onEscapeKeyDown={(e) => {
@@ -176,6 +178,7 @@ export function SensorAlertsDialog({
         ) : (
           <RuleList
             device={current}
+            open={open}
             rules={own}
             failed={rulesFailed}
             onRetry={onRetryRules}
@@ -192,6 +195,7 @@ export function SensorAlertsDialog({
 
 function RuleList({
   device,
+  open,
   rules,
   failed,
   onRetry,
@@ -201,7 +205,9 @@ function RuleList({
   onNew,
 }: {
   device: SensorAlertsDevice
-  rules: readonly SensorAlertRuleDto[] | undefined
+  /** The dialog is open: the history polls only then. */
+  open: boolean
+  rules: readonly SensorAlertRuleListItem[] | undefined
   failed: boolean
   onRetry: (() => void) | undefined
   retrying: boolean
@@ -248,20 +254,26 @@ function RuleList({
     </Button>
   )
 
+  // Under the rules, with or without any: past alerts outlive a deleted rule.
+  const history = <SensorAlertHistory deviceId={device.id} open={open} />
+
   if (rules.length === 0) {
     return (
-      <Empty className="rounded-lg border py-6">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <BellIcon />
-          </EmptyMedia>
-          <EmptyTitle>{m.sensors_alert_empty_title()}</EmptyTitle>
-          <EmptyDescription>
-            {m.sensors_alert_empty_description({ name: device.displayName })}
-          </EmptyDescription>
-        </EmptyHeader>
-        <EmptyContent>{newButton}</EmptyContent>
-      </Empty>
+      <>
+        <Empty className="rounded-lg border py-6">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <BellIcon />
+            </EmptyMedia>
+            <EmptyTitle>{m.sensors_alert_empty_title()}</EmptyTitle>
+            <EmptyDescription>
+              {m.sensors_alert_empty_description({ name: device.displayName })}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>{newButton}</EmptyContent>
+        </Empty>
+        {history}
+      </>
     )
   }
 
@@ -272,14 +284,16 @@ function RuleList({
           <RuleRow key={rule.id} rule={rule} onOpen={() => onOpen(rule.id)} />
         ))}
       </ul>
+      {history}
       <ResponsiveDialogFooter>{newButton}</ResponsiveDialogFooter>
     </>
   )
 }
 
-// One rule: its description, a pencil that opens it in the form, and a switch that pauses or
+// One rule: a state dot (firing / on / paused, spelled out for a screen reader), its description
+// and, while firing, since when; a pencil that opens it in the form, and a switch that pauses or
 // resumes it. Both controls are named by the rule so a screen reader tells the rows apart.
-function RuleRow({ rule, onOpen }: { rule: SensorAlertRuleDto; onOpen: () => void }) {
+function RuleRow({ rule, onOpen }: { rule: SensorAlertRuleListItem; onOpen: () => void }) {
   const queryClient = useQueryClient()
   const setEnabled = useMutation(
     orpc.sensor.alerts.setEnabled.mutationOptions({
@@ -287,17 +301,45 @@ function RuleRow({ rule, onOpen }: { rule: SensorAlertRuleDto; onOpen: () => voi
         toast.error(
           isDefinedError(err) ? sensorAlertErrorMessage(err.code) : m.sensors_alert_save_error(),
         ),
-      // Awaited, so the switch holds its new position until the list has it.
+      // Awaited, so the switch holds its new position until the list has it. The alerts key
+      // covers the history too: a pause ends an open alert.
       onSettled: () => queryClient.invalidateQueries({ queryKey: orpc.sensor.alerts.key() }),
     }),
   )
   const enabled = setEnabled.isPending ? setEnabled.variables.enabled : rule.enabled
   const description = alertRuleDescription(rule)
+  // A pause on its way ends the alert: the row is paused at once.
+  const state = !enabled ? 'paused' : rule.firingSince ? 'firing' : 'on'
 
   return (
     <li className="flex items-center gap-1 rounded-lg border px-3 py-1">
+      <span
+        aria-hidden
+        data-state={state}
+        className={cn(
+          'mr-1 size-2 shrink-0 rounded-full',
+          state === 'firing' && 'bg-destructive',
+          state === 'on' && 'bg-success',
+          state === 'paused' && 'bg-muted-foreground',
+        )}
+      />
       <span className={cn('min-w-0 flex-1 py-1 text-sm', !enabled && 'text-muted-foreground')}>
+        <span className="sr-only">
+          {state === 'firing'
+            ? m.sensors_alert_state_firing()
+            : state === 'on'
+              ? m.sensors_alert_state_on()
+              : m.sensors_alert_state_paused()}{' '}
+        </span>
         {description}
+        {state === 'firing' && rule.firingSince ? (
+          <>
+            {' '}
+            <span className="text-destructive">
+              {m.sensors_alert_firing_since({ time: formatAlertSince(rule.firingSince) })}
+            </span>
+          </>
+        ) : null}
       </span>
       <Button
         type="button"

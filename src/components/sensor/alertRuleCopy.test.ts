@@ -1,7 +1,12 @@
 import { expect, test } from 'vitest'
-import type { SensorAlertRuleDto } from '~/lib/sensor/alerts'
+import type { SensorAlertEventDto, SensorAlertRuleDto } from '~/lib/sensor/alerts'
 import { m } from '~/paraglide/messages'
-import { alertCountHint, alertRuleDescription } from './alertRuleCopy'
+import {
+  alertCountHint,
+  alertEventPeriod,
+  alertRuleDescription,
+  formatAlertSince,
+} from './alertRuleCopy'
 
 // A no-break space keeps a value on one line with its unit (and "≈" with its number).
 const NB = ' '
@@ -65,4 +70,60 @@ test('the bell label counts its rules in the singular and the plural', () => {
   expect(m.sensors_alerts_open_named_count({ name: 'Garage', count: 1 }, { locale: 'en' })).toBe(
     'Alerts for Garage, 1 active',
   )
+})
+
+test('the bell label says how many rules fire now', () => {
+  expect(m.sensors_alerts_open_named_firing({ name: 'Förråd', count: 1 })).toBe(
+    'Larm för Förråd, 1 larmar nu',
+  )
+  expect(m.sensors_alerts_open_named_firing({ name: 'Garage', count: 2 }, { locale: 'en' })).toBe(
+    'Alerts for Garage, 2 firing now',
+  )
+})
+
+// 12:00 in Stockholm (CEST): the machine's own zone (Stockholm locally, UTC in CI) plays no part.
+const NOW = new Date('2026-10-20T10:00:00Z')
+
+test('"since" is the time today and the day and time before today, in Stockholm', () => {
+  expect(formatAlertSince(new Date('2026-10-20T01:10:00Z'), NOW)).toBe('03:10')
+  // 00:30 on the 20th in Stockholm is still today, though it is the 19th in UTC.
+  expect(formatAlertSince(new Date('2026-10-19T22:30:00Z'), NOW)).toBe('00:30')
+  expect(formatAlertSince(new Date('2026-10-19T20:00:00Z'), NOW)).toBe('19 okt. 22:00')
+})
+
+const event = (over: Partial<SensorAlertEventDto>): SensorAlertEventDto => ({
+  id: 'e',
+  kind: 'temperature',
+  direction: 'below',
+  threshold: 5,
+  count: 2,
+  silenceHours: null,
+  startedAt: new Date('2026-10-19T20:00:00Z'),
+  endedAt: new Date('2026-10-19T21:30:00Z'),
+  endReason: 'recovered',
+  ...over,
+})
+
+test('a period: the end time alone on the same Stockholm day, then the duration', () => {
+  expect(alertEventPeriod(event({}))).toBe('19 okt. 22:00 – 23:30 · 1 h 30 min')
+  expect(alertEventPeriod(event({ endedAt: new Date('2026-10-20T01:10:00Z') }))).toBe(
+    '19 okt. 22:00 – 20 okt. 03:10 · 5 h 10 min',
+  )
+})
+
+test('an open alert is ongoing; a quiet end says why', () => {
+  expect(alertEventPeriod(event({ endedAt: null, endReason: null }))).toBe('19 okt. 22:00 – pågår')
+  expect(alertEventPeriod(event({ endReason: 'paused' }))).toBe(
+    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (pausad)',
+  )
+  expect(alertEventPeriod(event({ endReason: 'edited' }))).toBe(
+    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (ändrad)',
+  )
+  expect(alertEventPeriod(event({ endReason: 'deleted' }))).toBe(
+    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (borttaget)',
+  )
+})
+
+test('a history entry describes the rule as it was', () => {
+  expect(alertRuleDescription(event({}))).toBe(`Temperatur under 5${NB}°C · 2 mätningar`)
 })
