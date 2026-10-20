@@ -34,7 +34,8 @@ merged.
    `docs/superpowers/plans/`, and link it here). Its first task checks that `main` still matches the plan's
    assumptions; fix the plan before building if not.
 3. Follow `docs/feature-workflow.md` from **Phase 3 (Isolate)**: worktree → task-by-task build (schema gate right
-   after a schema task) → step review (core three + every specialist the plan names) → pre-PR gate → PR.
+   after a schema task) → step review (core three + every specialist the plan names) → pre-PR gate → PR. The owner
+   chose **subagent-driven** execution (`superpowers:subagent-driven-development`) on 2026-10-20.
 4. In the same PR, update this roadmap's row: PR link and status `PR open`; after merge, `merged`.
 5. Stop at the end of the step. Don't start the next step in the same session.
 
