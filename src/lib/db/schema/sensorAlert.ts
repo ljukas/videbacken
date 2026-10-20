@@ -35,8 +35,7 @@ const raw = (n: number) => sql.raw(String(n))
 // A user's own alert rule on one climate sensor (ADR-0028). Which columns a kind uses is the
 // `shape` CHECK: temperature/humidity = direction + threshold + count; battery = 'below' +
 // threshold + count; silence = silence_hours only. Bounds come from the client-safe vocabulary
-// so the form, the service and the DB agree. The service owns the rest (one silence rule per
-// device, ownership).
+// so the form, the service and the DB agree. The service owns ownership checks.
 export const sensorAlertRule = pgTable(
   'sensor_alert_rule',
   {
@@ -74,9 +73,9 @@ export const sensorAlertRule = pgTable(
     check(
       'sensor_alert_rule_threshold_check',
       sql`${table.threshold} IS NULL
-        OR (${table.kind} = 'temperature' AND ${table.threshold} BETWEEN ${raw(TEMPERATURE_MIN)} AND ${raw(TEMPERATURE_MAX)})
-        OR (${table.kind} = 'humidity' AND ${table.threshold} BETWEEN ${raw(HUMIDITY_MIN)} AND ${raw(HUMIDITY_MAX)})
-        OR (${table.kind} = 'battery' AND ${table.threshold} BETWEEN ${raw(BATTERY_MIN)} AND ${raw(BATTERY_MAX)})`,
+        OR (${table.kind} = 'temperature' AND ${table.threshold} BETWEEN ${raw(TEMPERATURE_MIN)} AND ${raw(TEMPERATURE_MAX)} AND ${table.threshold} * 2 = round(${table.threshold} * 2))
+        OR (${table.kind} = 'humidity' AND ${table.threshold} BETWEEN ${raw(HUMIDITY_MIN)} AND ${raw(HUMIDITY_MAX)} AND ${table.threshold} = round(${table.threshold}))
+        OR (${table.kind} = 'battery' AND ${table.threshold} BETWEEN ${raw(BATTERY_MIN)} AND ${raw(BATTERY_MAX)} AND ${table.threshold} = round(${table.threshold}))`,
     ),
     check(
       'sensor_alert_rule_count_check',
@@ -86,6 +85,7 @@ export const sensorAlertRule = pgTable(
       'sensor_alert_rule_silence_hours_check',
       sql`${table.silenceHours} IS NULL OR ${table.silenceHours} BETWEEN ${raw(SILENCE_HOURS_MIN)} AND ${raw(SILENCE_HOURS_MAX)}`,
     ),
-    index('sensor_alert_rule_user_device_idx').on(table.userId, table.deviceId),
+    index('sensor_alert_rule_user_idx').on(table.userId, table.createdAt, table.id),
+    index('sensor_alert_rule_device_idx').on(table.deviceId),
   ],
 ).enableRLS()

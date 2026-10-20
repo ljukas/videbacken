@@ -1,5 +1,5 @@
 {
-  "id": "a7ee5cee-d73c-4bec-a396-3f496584e2cf",
+  "id": "e2e92115-f15f-46e4-b7cb-16231d2aa225",
   "prevId": "7b5fcfed-10b4-47fd-a144-ffe4fed3b8ee",
   "version": "7",
   "dialect": "postgresql",
@@ -2418,8 +2418,8 @@
         }
       },
       "indexes": {
-        "sensor_alert_rule_user_device_idx": {
-          "name": "sensor_alert_rule_user_device_idx",
+        "sensor_alert_rule_user_idx": {
+          "name": "sensor_alert_rule_user_idx",
           "columns": [
             {
               "expression": "user_id",
@@ -2427,6 +2427,27 @@
               "asc": true,
               "nulls": "last"
             },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sensor_alert_rule_device_idx": {
+          "name": "sensor_alert_rule_device_idx",
+          "columns": [
             {
               "expression": "device_id",
               "isExpression": false,
@@ -2486,7 +2507,7 @@
         },
         "sensor_alert_rule_threshold_check": {
           "name": "sensor_alert_rule_threshold_check",
-          "value": "\"sensor_alert_rule\".\"threshold\" IS NULL\n        OR (\"sensor_alert_rule\".\"kind\" = 'temperature' AND \"sensor_alert_rule\".\"threshold\" BETWEEN -40 AND 60)\n        OR (\"sensor_alert_rule\".\"kind\" = 'humidity' AND \"sensor_alert_rule\".\"threshold\" BETWEEN 1 AND 99)\n        OR (\"sensor_alert_rule\".\"kind\" = 'battery' AND \"sensor_alert_rule\".\"threshold\" BETWEEN 5 AND 95)"
+          "value": "\"sensor_alert_rule\".\"threshold\" IS NULL\n        OR (\"sensor_alert_rule\".\"kind\" = 'temperature' AND \"sensor_alert_rule\".\"threshold\" BETWEEN -40 AND 60 AND \"sensor_alert_rule\".\"threshold\" * 2 = round(\"sensor_alert_rule\".\"threshold\" * 2))\n        OR (\"sensor_alert_rule\".\"kind\" = 'humidity' AND \"sensor_alert_rule\".\"threshold\" BETWEEN 1 AND 99 AND \"sensor_alert_rule\".\"threshold\" = round(\"sensor_alert_rule\".\"threshold\"))\n        OR (\"sensor_alert_rule\".\"kind\" = 'battery' AND \"sensor_alert_rule\".\"threshold\" BETWEEN 5 AND 95 AND \"sensor_alert_rule\".\"threshold\" = round(\"sensor_alert_rule\".\"threshold\"))"
         },
         "sensor_alert_rule_count_check": {
           "name": "sensor_alert_rule_count_check",

@@ -109,3 +109,30 @@ test('deleting the user deletes their rules', async () => {
   await db.delete(user).where(eq(user.id, userId))
   expect(await db.select().from(sensorAlertRule)).toHaveLength(0)
 })
+
+test('thresholds must sit on their step: temperature halves, humidity and battery whole', async () => {
+  const { userId, deviceId } = await seed()
+  const base = { userId, deviceId, count: 2 }
+  await db.insert(sensorAlertRule).values([
+    { ...base, kind: 'temperature', direction: 'below', threshold: -0.5 },
+    { ...base, kind: 'temperature', direction: 'above', threshold: 4.5 },
+  ])
+  await expectConstraintViolation(
+    db
+      .insert(sensorAlertRule)
+      .values({ ...base, kind: 'temperature', direction: 'below', threshold: 4.3 }),
+    'sensor_alert_rule_threshold_check',
+  )
+  await expectConstraintViolation(
+    db
+      .insert(sensorAlertRule)
+      .values({ ...base, kind: 'humidity', direction: 'above', threshold: 70.5 }),
+    'sensor_alert_rule_threshold_check',
+  )
+  await expectConstraintViolation(
+    db
+      .insert(sensorAlertRule)
+      .values({ ...base, kind: 'battery', direction: 'below', threshold: 20.5 }),
+    'sensor_alert_rule_threshold_check',
+  )
+})
