@@ -155,8 +155,8 @@ type Props = {
   rule: SensorAlertRuleDto | undefined
   /** The sensor's typical gap between merged readings (minutes), for the "I rad" hint. */
   gapMinutes: number | null
-  /** Back to the list (Tillbaka, or after a save or delete). */
-  onBack: () => void
+  /** Back to the list (Tillbaka, or after a save or delete; `deleted` after a delete). */
+  onBack: (result?: 'deleted') => void
 }
 
 // Create, edit or delete one of the viewer's own alert rules (ADR-0028, ADR-0005). Stays open
@@ -166,6 +166,9 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
   const formSchema = useMemo(() => makeFormSchema(device.id), [device.id])
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const deleteButton = useRef<HTMLButtonElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  // The view just changed under the user's focus: start them at the form's heading.
+  useEffect(() => heading.current?.focus(), [])
   const wasConfirming = useRef(false)
   // "Avbryt" on the question puts focus back on "Ta bort" (the button it replaced).
   useEffect(() => {
@@ -194,11 +197,12 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
       onSettled,
     }),
   )
+  // No onSettled here: deleteRule refreshes the list only after leaving the form, so the dialog
+  // never sees the rule vanish while it is still the open view.
   const remove = useMutation(
     orpc.sensor.alerts.delete.mutationOptions({
       onError: (err) =>
         reportError(isDefinedError(err) ? err.code : undefined, m.sensors_alert_delete_error()),
-      onSettled,
     }),
   )
 
@@ -223,10 +227,12 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
     try {
       await remove.mutateAsync({ id })
     } catch {
+      void onSettled()
       return // reported by onError
     }
     toast.success(m.sensors_alert_deleted())
-    onBack()
+    onBack('deleted')
+    void onSettled()
   }
 
   return (
@@ -238,6 +244,9 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
       }}
     >
       <div className="flex flex-col gap-5">
+        <h3 ref={heading} tabIndex={-1} className="font-medium text-base outline-none">
+          {rule ? m.sensors_alert_form_title_edit() : m.sensors_alert_form_title_new()}
+        </h3>
         <form.AppField
           name="kind"
           // A new kind keeps the count; the limit starts over at that kind's default.
@@ -343,7 +352,7 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack }: Props)
                 {m.sensors_alert_delete()}
               </Button>
             ) : null}
-            <form.CancelButton onClick={onBack}>{m.common_back()}</form.CancelButton>
+            <form.CancelButton onClick={() => onBack()}>{m.common_back()}</form.CancelButton>
             <form.SubmitButton label={m.common_save()} />
           </form.AppForm>
         )}

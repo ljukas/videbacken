@@ -102,7 +102,7 @@ test('a new temperature rule: under, "4,5", 2 in a row', async () => {
     }),
   )
   await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Larmet sparat'))
-  expect(onView).toHaveBeenCalledWith('list')
+  expect(onView).toHaveBeenCalledWith('list', { replace: true })
 })
 
 test.each([
@@ -225,7 +225,7 @@ test('"Ta bort" asks once inline, then deletes', async () => {
   await screen.getByRole('button', { name: 'Ta bort' }).click()
   await vi.waitFor(() => expect(deleteFn).toHaveBeenCalledWith({ id: HUMIDITY.id }))
   await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Larmet borttaget'))
-  expect(onView).toHaveBeenCalledWith('list')
+  expect(onView).toHaveBeenCalledWith('list', { replace: true })
 })
 
 test('"Avbryt" on the delete question keeps the rule', async () => {
@@ -249,7 +249,7 @@ test('an update of a rule that is gone toasts "Larmet finns inte längre" and re
   const { screen } = await renderForm({ view: HUMIDITY.id, onView })
   await screen.getByRole('button', { name: m.common_save() }).click()
   await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('Larmet finns inte längre'))
-  expect(onView).toHaveBeenCalledWith('list')
+  expect(onView).toHaveBeenCalledWith('list', { replace: true })
 })
 
 test('any other save failure toasts the generic error and stays in the form', async () => {
@@ -266,7 +266,7 @@ test('"Tillbaka" returns to the list without saving', async () => {
   const onView = vi.fn()
   const { screen } = await renderForm({ onView })
   await screen.getByRole('button', { name: 'Tillbaka' }).click()
-  expect(onView).toHaveBeenCalledWith('list')
+  expect(onView).toHaveBeenCalledWith('list', { replace: true })
   expect(createFn).not.toHaveBeenCalled()
 })
 

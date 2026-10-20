@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { createFileRoute, useHydrated } from '@tanstack/react-router'
+import { createFileRoute, useHydrated, useRouter } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
-import { lazy, useId, useMemo, useState } from 'react'
+import { lazy, useCallback, useId, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import sensorsChipsBones from '~/bones/sensors-chips.bones.json'
 import sensorsHumChartBones from '~/bones/sensors-hum-chart.bones.json'
@@ -60,7 +60,7 @@ const CLEAR_KEYS = ['deviceId', 'alertId'] as const
 // chart, so longer ranges just refetch on focus/mount.
 const POLLED_RANGES: SeriesRange[] = ['24h', '1w', '1m']
 
-// The viewer's own rules (bell counts); polled like the tiles. Not a loader dependency:
+// The viewer's own rules (bell counts); polled like the tiles. Deferred in the loader:
 // until it arrives, or if it fails, the bells are plain.
 const sensorAlertsQuery = () => orpc.sensor.alerts.list.queryOptions({ refetchInterval: 60_000 })
 
@@ -78,6 +78,7 @@ export const Route = createFileRoute('/_authenticated/sensors')({
         orpc.sensor.listDevices.queryOptions(),
         orpc.sensor.series.queryOptions({ input: { range: deps.range } }),
       ],
+      deferred: [sensorAlertsQuery()],
     }),
   component: SensorsPage,
 })
@@ -88,6 +89,7 @@ function SensorsPage() {
   useIdlePreload(isAdmin, ADMIN_DIALOG_LOADERS)
   useIdlePreload(true, ALERTS_DIALOG_LOADERS)
   const navigate = Route.useNavigate()
+  const router = useRouter()
   const range = Route.useSearch({ select: (s) => s.range })
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const deviceId = Route.useSearch({ select: (s) => s.deviceId })
@@ -193,23 +195,40 @@ function SensorsPage() {
     color: colorForIndex(i),
   }))
   const dialogDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
+  const alertsData = alertsResult.data
+  const alertsFailed = loadFailed(alertsResult)
   const alertCounts = useMemo(() => {
     const counts: Record<string, number> = {}
-    for (const r of loadFailed(alertsResult) ? [] : (alertsResult.data?.rules ?? [])) {
+    for (const r of alertsFailed ? [] : (alertsData?.rules ?? [])) {
       if (r.enabled) counts[r.deviceId] = (counts[r.deviceId] ?? 0) + 1
     }
     return counts
-  }, [alertsResult])
+  }, [alertsData, alertsFailed])
   const editDeviceOpen = isOpen('edit') && dialogDevice !== undefined
   const alertsOpen = isOpen('alerts') && dialogDevice !== undefined
-  // A view switch inside the open dialog: pushed, so Back returns to the list.
-  function setAlertView(view: string) {
-    navigate({
-      to: '.',
-      search: (s) => ({ ...s, alertId: view === 'list' ? undefined : view }),
-      resetScroll: false,
-    })
-  }
+  // List → form is pushed, so browser Back from the form returns to the list. The way back
+  // (Tillbaka, a save, a delete) must not leave the form in the history, or Back from the list
+  // would reopen it: when we pushed it, step back onto the list's own entry, so the next Back
+  // closes the dialog; otherwise (a deep link into the form) replace it.
+  const formPushed = useRef(false)
+  const setAlertView = useCallback(
+    (view: string, options?: { replace: true }) => {
+      const replace = options?.replace === true
+      if (replace && formPushed.current) {
+        formPushed.current = false
+        router.history.back()
+        return
+      }
+      formPushed.current = !replace && view !== 'list'
+      navigate({
+        to: '.',
+        search: (s) => ({ ...s, alertId: view === 'list' ? undefined : view }),
+        replace,
+        resetScroll: false,
+      })
+    },
+    [navigate, router],
+  )
 
   // The toggles, the tiles and the charts' colours all need the roster.
   if (devicesFailed) {
@@ -259,7 +278,8 @@ function SensorsPage() {
                   isAdmin={isAdmin}
                   onEdit={(id) => open('edit', { deviceId: id })}
                   alertCounts={alertCounts}
-                  onOpenAlerts={(id) => open('alerts', { deviceId: id })}
+                  // Always the list: a stale alertId in the URL never opens a form.
+                  onOpenAlerts={(id) => open('alerts', { deviceId: id, alertId: undefined })}
                 />
               </CardContent>
             </Card>
@@ -347,9 +367,11 @@ function SensorsPage() {
         <SensorAlertsDialog
           open={alertsOpen}
           device={alertsOpen ? dialogDevice : undefined}
-          rules={loadFailed(alertsResult) ? undefined : alertsResult.data?.rules}
-          rulesFailed={loadFailed(alertsResult)}
-          typicalGapMinutes={alertsResult.data?.typicalGapMinutes}
+          rules={alertsFailed ? undefined : alertsData?.rules}
+          rulesFailed={alertsFailed}
+          onRetryRules={() => void alertsResult.refetch()}
+          retryingRules={alertsResult.isFetching}
+          typicalGapMinutes={alertsData?.typicalGapMinutes}
           view={alertId ?? 'list'}
           onView={setAlertView}
           onClose={close}

@@ -312,3 +312,53 @@ test('the alerts read failing leaves plain bells, tiles intact', async () => {
     )
     .toBeVisible()
 })
+
+const seedAlertsPage = (qc: QueryClient) => {
+  qc.setQueryData(devicesKey, [device])
+  qc.setQueryData(seriesKey, noSeries)
+  qc.setQueryData(alertsKey, { rules: [], typicalGapMinutes: {} })
+}
+const bell = m.sensors_alerts_open_named({ name: 'Sensor 34cd' })
+
+test('the alerts dialog: bell, "Nytt larm", close — the URL keeps no dialog state', async () => {
+  const { screen, router } = await renderSensors('', seedAlertsPage)
+  await screen.getByRole('button', { name: bell }).click()
+  const dialog = screen.getByRole('dialog')
+  await expect.element(dialog.getByRole('button', { name: m.sensors_alert_new() })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'alerts', deviceId: 'a' })
+
+  await dialog.getByRole('button', { name: m.sensors_alert_new() }).click()
+  await expect.element(dialog.getByRole('button', { name: m.common_save() })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ alertId: 'new' })
+
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect.poll(() => screen.getByRole('dialog').elements().length).toBe(0)
+  const search = router.state.location.search as Record<string, unknown>
+  expect(search.dialog).toBeUndefined()
+  expect(search.deviceId).toBeUndefined()
+  expect(search.alertId).toBeUndefined()
+})
+
+test('a bell opens the list even with a stale alertId in the URL', async () => {
+  // Left over from a form whose sensor was deleted, or a hand-edited link.
+  const { screen, router } = await renderSensors('?alertId=new', seedAlertsPage)
+  await screen.getByRole('button', { name: bell }).click()
+  const dialog = screen.getByRole('dialog')
+  await expect.element(dialog.getByRole('button', { name: m.sensors_alert_new() })).toBeVisible()
+  expect(dialog.getByRole('button', { name: m.common_save() }).elements()).toHaveLength(0)
+  expect((router.state.location.search as Record<string, unknown>).alertId).toBeUndefined()
+})
+
+test('back from the form to the list leaves no form behind: browser Back then closes', async () => {
+  const { screen, router } = await renderSensors('', seedAlertsPage)
+  await screen.getByRole('button', { name: bell }).click()
+  const dialog = screen.getByRole('dialog')
+  await dialog.getByRole('button', { name: m.sensors_alert_new() }).click()
+  await dialog.getByRole('button', { name: m.common_back() }).click()
+  await expect.element(dialog.getByRole('button', { name: m.sensors_alert_new() })).toBeVisible()
+  expect((router.state.location.search as Record<string, unknown>).alertId).toBeUndefined()
+
+  router.history.back()
+  await expect.poll(() => screen.getByRole('dialog').elements().length).toBe(0)
+  expect((router.state.location.search as Record<string, unknown>).dialog).toBeUndefined()
+})
