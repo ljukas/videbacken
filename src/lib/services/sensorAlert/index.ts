@@ -1,4 +1,5 @@
 export * from './errors'
+export * from './evaluate'
 export * from './hints'
 export * from './history'
 export * from './rules'
