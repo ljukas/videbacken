@@ -25,3 +25,12 @@ test('the sensor naming helpers are importable client-side', async () => {
   const mod = await import('~/lib/sensor/deviceName')
   expect(mod.fallbackSensorName(null, 'aabbccddeeff')).toBe('Sensor eeff')
 })
+
+test('the alert rule modules are importable client-side', async () => {
+  const alerts = await import('~/lib/sensor/alerts')
+  const groups = await import('~/lib/sensor/alertGroups')
+  const input = await import('~/lib/sensor/alertRuleInput')
+  expect(alerts.SENSOR_ALERT_KINDS).toContain('silence')
+  expect(groups.alertSpanMinutes(2, 120)).toEqual({ lowMin: 120, highMin: 240 })
+  expect(input.sensorAlertRuleInput.safeParse({ kind: 'nope' }).success).toBe(false)
+})

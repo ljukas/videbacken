@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { createFileRoute, useHydrated } from '@tanstack/react-router'
+import { createFileRoute, useHydrated, useRouter } from '@tanstack/react-router'
 import { ThermometerIcon } from 'lucide-react'
-import { lazy, useId, useMemo, useState } from 'react'
+import { lazy, useCallback, useId, useMemo, useState } from 'react'
 import { z } from 'zod'
 import sensorsChipsBones from '~/bones/sensors-chips.bones.json'
 import sensorsHumChartBones from '~/bones/sensors-hum-chart.bones.json'
@@ -30,8 +30,10 @@ import { seo } from '~/utils/seo'
 
 const searchSchema = z.object({
   range: z.enum(SERIES_RANGES).default('24h'),
-  dialog: z.enum(['edit']).optional(),
+  dialog: z.enum(['edit', 'alerts']).optional(),
   deviceId: z.string().optional(),
+  /** The alerts dialog's view: absent = the list, `new` = an empty form, else a rule's id. */
+  alertId: z.string().optional(),
 })
 type SensorsSearch = z.infer<typeof searchSchema>
 type SensorsDialog = NonNullable<SensorsSearch['dialog']>
@@ -44,9 +46,31 @@ const EditDeviceDialog = lazy(() =>
 )
 const ADMIN_DIALOG_LOADERS = [loadEditDeviceDialog]
 
+// Every signed-in user's own alert rules (ADR-0028): loads on first open, warmed when idle.
+const loadSensorAlertsDialog = () => import('~/components/sensor/SensorAlertsDialog')
+const SensorAlertsDialog = lazy(() =>
+  loadSensorAlertsDialog().then((mod) => ({ default: mod.SensorAlertsDialog })),
+)
+const ALERTS_DIALOG_LOADERS = [loadSensorAlertsDialog]
+
+// Closing a dialog clears its sensor and the alerts dialog's view.
+const CLEAR_KEYS = ['deviceId', 'alertId'] as const
+
 // Only the shorter ranges poll — a new reading won't visibly move a 1-year daily
 // chart, so longer ranges just refetch on focus/mount.
 const POLLED_RANGES: SeriesRange[] = ['24h', '1w', '1m']
+
+// The viewer's own rules (bell counts); polled like the tiles. Deferred in the loader:
+// until it arrives, or if it fails, the bells are plain.
+const sensorAlertsQuery = () => orpc.sensor.alerts.list.queryOptions({ refetchInterval: 60_000 })
+
+// Through react-router's re-export of HistoryState (our direct dependency, not @tanstack/history).
+declare module '@tanstack/react-router' {
+  interface HistoryState {
+    /** An alerts-dialog form entry pushed from its list: the way back steps back onto the list. */
+    sensorAlertsForm?: true
+  }
+}
 
 export const Route = createFileRoute('/_authenticated/sensors')({
   head: () => ({
@@ -62,6 +86,7 @@ export const Route = createFileRoute('/_authenticated/sensors')({
         orpc.sensor.listDevices.queryOptions(),
         orpc.sensor.series.queryOptions({ input: { range: deps.range } }),
       ],
+      deferred: [sensorAlertsQuery()],
     }),
   component: SensorsPage,
 })
@@ -70,16 +95,19 @@ function SensorsPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   useIdlePreload(isAdmin, ADMIN_DIALOG_LOADERS)
+  useIdlePreload(true, ALERTS_DIALOG_LOADERS)
   const navigate = Route.useNavigate()
+  const router = useRouter()
   const range = Route.useSearch({ select: (s) => s.range })
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const deviceId = Route.useSearch({ select: (s) => s.deviceId })
+  const alertId = Route.useSearch({ select: (s) => s.alertId })
   const currentHeadingId = useId()
   const historyHeadingId = useId()
   const { isOpen, open, close } = useUrlDialog<SensorsDialog, SensorsSearch>({
     current: dialog,
     navigate,
-    clearKeys: ['deviceId'],
+    clearKeys: CLEAR_KEYS,
   })
 
   const devicesResult = useQuery({
@@ -88,6 +116,7 @@ function SensorsPage() {
     // as the short-range charts (spec §7).
     refetchInterval: 60_000,
   })
+  const alertsResult = useQuery(sensorAlertsQuery())
   const seriesResult = useQuery({
     ...orpc.sensor.series.queryOptions({ input: { range } }),
     refetchInterval: POLLED_RANGES.includes(range) ? 60_000 : false,
@@ -173,8 +202,45 @@ function SensorsPage() {
     displayName: d.displayName,
     color: colorForIndex(i),
   }))
-  const editingDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
-  const editDeviceOpen = isOpen('edit') && editingDevice !== undefined
+  const dialogDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
+  const alertsData = alertsResult.data
+  const alertsFailed = loadFailed(alertsResult)
+  const alertCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const r of alertsFailed ? [] : (alertsData?.rules ?? [])) {
+      if (r.enabled) counts[r.deviceId] = (counts[r.deviceId] ?? 0) + 1
+    }
+    return counts
+  }, [alertsData, alertsFailed])
+  const editDeviceOpen = isOpen('edit') && dialogDevice !== undefined
+  const alertsOpen = isOpen('alerts') && dialogDevice !== undefined
+  // List → form is pushed, so browser Back from the form returns to the list; that entry carries
+  // a mark in its history state. The way back (Tillbaka, a save, a delete) must not leave the
+  // form in the history, or Back from the list would reopen it: from a marked entry, step back
+  // onto the list's own entry, so the next Back closes the dialog; from an unmarked one (a deep
+  // link into the form) replace it. The mark lives on the entry, so Back and Forward elsewhere
+  // can't make it stale. Read at call time from the router: a save or delete can land after the
+  // dialog closed (X, the overlay), and must then change nothing.
+  const setAlertView = useCallback(
+    (view: string, options?: { replace: true }) => {
+      const location = router.state.location
+      if ((location.search as SensorsSearch).dialog !== 'alerts') return
+      const replace = options?.replace === true
+      if (replace && location.state.sensorAlertsForm) {
+        router.history.back()
+        return
+      }
+      const toForm = !replace && view !== 'list'
+      navigate({
+        to: '.',
+        search: (s) => ({ ...s, alertId: view === 'list' ? undefined : view }),
+        replace,
+        resetScroll: false,
+        state: toForm ? (prev) => ({ ...prev, sensorAlertsForm: true }) : undefined,
+      })
+    },
+    [navigate, router],
+  )
 
   // The toggles, the tiles and the charts' colours all need the roster.
   if (devicesFailed) {
@@ -223,6 +289,9 @@ function SensorsPage() {
                   devices={roster}
                   isAdmin={isAdmin}
                   onEdit={(id) => open('edit', { deviceId: id })}
+                  alertCounts={alertCounts}
+                  // Always the list: a stale alertId in the URL never opens a form.
+                  onOpenAlerts={(id) => open('alerts', { deviceId: id, alertId: undefined })}
                 />
               </CardContent>
             </Card>
@@ -298,13 +367,28 @@ function SensorsPage() {
         <LazyDialogMount open={editDeviceOpen}>
           <EditDeviceDialog
             open={editDeviceOpen}
-            device={editingDevice}
+            device={dialogDevice}
             onOpenChange={(o) => {
               if (!o) close()
             }}
           />
         </LazyDialogMount>
       ) : null}
+
+      <LazyDialogMount open={alertsOpen}>
+        <SensorAlertsDialog
+          open={alertsOpen}
+          device={alertsOpen ? dialogDevice : undefined}
+          rules={alertsFailed ? undefined : alertsData?.rules}
+          rulesFailed={alertsFailed}
+          onRetryRules={() => void alertsResult.refetch()}
+          retryingRules={alertsResult.isFetching}
+          typicalGapMinutes={alertsData?.typicalGapMinutes}
+          view={alertId ?? 'list'}
+          onView={setAlertView}
+          onClose={close}
+        />
+      </LazyDialogMount>
     </PageContainer>
   )
 }

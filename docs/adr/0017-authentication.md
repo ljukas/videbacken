@@ -71,6 +71,8 @@ Two roles: `user` and `admin` (Better Auth `admin` plugin).
 - **Sole exception — own account:** a `user` may manage only their own profile
   (`updateProfile`, `completeOnboarding`, own avatar upload), scoped to
   `context.user.id`. They cannot mutate any other/shared data.
+  *Extended by [ADR-0028](./0028-climate-alerts.md):* a user also manages their own climate alert rules
+  (`sensor.alerts.*`, `protectedProcedure` + owner scoping).
 
 ### Invite / revoke (admin only)
 

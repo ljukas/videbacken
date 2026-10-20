@@ -21,7 +21,13 @@ const device: Device = {
 test('shows the latest reading and an admin-only edit button', async () => {
   const onEdit = vi.fn()
   const { screen } = await renderWithProviders(
-    <CurrentReadingTiles devices={[device]} isAdmin onEdit={onEdit} />,
+    <CurrentReadingTiles
+      devices={[device]}
+      isAdmin
+      onEdit={onEdit}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
+    />,
   )
   await expect.element(screen.getByText('21.7°C')).toBeVisible()
   await expect.element(screen.getByText('46%')).toBeVisible()
@@ -34,7 +40,13 @@ test('shows the latest reading and an admin-only edit button', async () => {
 
 test('shows the battery percentage and last-seen line', async () => {
   const { screen } = await renderWithProviders(
-    <CurrentReadingTiles devices={[device]} isAdmin={false} onEdit={() => {}} />,
+    <CurrentReadingTiles
+      devices={[device]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
+    />,
   )
   // Battery + last-seen share one line joined by " · "; match the battery part.
   await expect
@@ -45,7 +57,13 @@ test('shows the battery percentage and last-seen line', async () => {
 test('renders an em-dash when a device has no reading yet', async () => {
   const noReading: Device = { ...device, latest: null }
   const { screen } = await renderWithProviders(
-    <CurrentReadingTiles devices={[noReading]} isAdmin={false} onEdit={() => {}} />,
+    <CurrentReadingTiles
+      devices={[noReading]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
+    />,
   )
   await expect.element(screen.getByText('—').first()).toBeVisible()
   // No edit button for a non-admin.
@@ -62,9 +80,35 @@ test('shows each sensor’s location under its name', async () => {
       devices={[{ ...device, displayName: 'NV', location: 'Under köket' }]}
       isAdmin={false}
       onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
     />,
   )
   await expect.element(screen.getByText('Under köket')).toBeVisible()
+})
+
+test('only the name shares its row with the buttons; the location spans the tile below', async () => {
+  await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[{ ...device, displayName: 'NV', location: 'Krypgrunden under köket' }]}
+      isAdmin
+      onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  const location = document.querySelector('[data-slot="sensor-location"]')
+  const name = document.querySelector('li h3')
+  const edit = document.querySelector(
+    `button[aria-label="${m.sensors_edit_device_named({ name: 'NV' })}"]`,
+  )
+  const row = name?.closest('[data-slot="sensor-tile-header"]')
+  expect(row).not.toBeNull()
+  expect(row?.contains(edit ?? null)).toBe(true)
+  expect(row?.contains(location)).toBe(false)
+  // A direct child of the tile: the full width, not a column beside the buttons.
+  expect(location?.parentElement?.tagName).toBe('LI')
+  expect(location?.className).toContain('truncate')
 })
 
 test('a sensor without a location keeps the line when another has one, so figures line up', async () => {
@@ -76,6 +120,8 @@ test('a sensor without a location keeps the line when another has one, so figure
       ]}
       isAdmin={false}
       onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
     />,
   )
   await expect.element(screen.getByText('Under köket')).toBeVisible()
@@ -84,36 +130,143 @@ test('a sensor without a location keeps the line when another has one, so figure
 
 test('with no locations at all there is no location line', async () => {
   await renderWithProviders(
-    <CurrentReadingTiles devices={[device]} isAdmin={false} onEdit={() => {}} />,
+    <CurrentReadingTiles
+      devices={[device]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
+    />,
   )
   expect(document.querySelectorAll('[data-slot="sensor-location"]')).toHaveLength(0)
 })
 
-test('the readable sizes: 16 px name that truncates, 14 px detail, a 40 px edit button', async () => {
+test('the readable sizes: 16 px name that wraps to two lines, 14 px detail, 40 px buttons', async () => {
   const { screen } = await renderWithProviders(
-    <CurrentReadingTiles devices={[device]} isAdmin onEdit={() => {}} />,
+    <CurrentReadingTiles
+      devices={[device]}
+      isAdmin
+      onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
+    />,
   )
   const name = screen.getByRole('heading', { name: 'Sensor 34cd' })
   await expect.element(name).toBeVisible()
   expect(name.element().className).toContain('text-base')
-  expect(name.element().className).toContain('truncate')
+  // Two buttons leave a phone tile little room: the name wraps (two lines) instead of
+  // collapsing into an ellipsis.
+  expect(name.element().className).toContain('line-clamp-2')
+  expect(name.element().className).not.toContain('truncate')
   const edit = screen.getByRole('button', {
     name: m.sensors_edit_device_named({ name: 'Sensor 34cd' }),
   })
+  const bell = screen.getByRole('button', {
+    name: m.sensors_alerts_open_named({ name: 'Sensor 34cd' }),
+  })
   expect(edit.element().className).toContain('size-10')
+  expect(bell.element().className).toContain('size-10')
+  // The group, not a button, pulls into the tile's padding, so both buttons line up.
+  expect(edit.element().className).not.toMatch(/-m[tr]-/)
+  expect(bell.element().className).not.toMatch(/-m[tr]-/)
+  expect(edit.element().parentElement?.className).toContain('-mt-2')
+  expect(edit.element().parentElement?.className).toContain('-mr-2')
   // No 12 px text left in a tile (browser tests have no app.css: classes, not pixels).
   expect(document.querySelector('li .text-xs')).toBeNull()
 })
 
 test('four columns only once the tiles themselves have room, not from a viewport width', async () => {
   await renderWithProviders(
-    <CurrentReadingTiles devices={[device]} isAdmin={false} onEdit={() => {}} />,
+    <CurrentReadingTiles
+      devices={[device]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={() => {}}
+    />,
   )
   // With the sidebar open, a tablet viewport leaves ~67 px per tile in four
   // columns: the 30 px temperature overflows. The tiles' own width decides
   // (container query), so two columns until each tile fits its figure.
   const list = document.querySelector('ul')
-  expect(list?.className).toContain('@xl:grid-cols-4')
+  // One column on the narrowest phones (a 320 px viewport leaves a ~256 px card), two from a
+  // 19rem container, four from @2xl.
+  expect(list?.className.split(' ')).toContain('grid-cols-1')
+  expect(list?.className.split(' ')).not.toContain('grid-cols-2')
+  expect(list?.className).toContain('@[19rem]:grid-cols-2')
+  expect(list?.className).toContain('@2xl:grid-cols-4')
+  expect(list?.className).not.toContain('@xl:grid-cols-4')
   expect(list?.className).not.toContain('md:grid-cols-4')
   expect(list?.parentElement?.className).toContain('@container')
+})
+
+const bellName = (name: string) => m.sensors_alerts_open_named({ name })
+
+test('every signed-in user gets the alerts bell, and it opens that sensor', async () => {
+  const onOpenAlerts = vi.fn()
+  const { screen } = await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[{ ...device, displayName: 'Förråd' }]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{}}
+      onOpenAlerts={onOpenAlerts}
+    />,
+  )
+  await screen.getByRole('button', { name: bellName('Förråd') }).click()
+  expect(onOpenAlerts).toHaveBeenCalledWith('a')
+  // No badge without switched-on rules.
+  expect(document.querySelector('[data-slot="badge"]')).toBeNull()
+})
+
+test('a count shows a badge and is part of the bell label', async () => {
+  const { screen } = await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[{ ...device, displayName: 'Förråd' }]}
+      isAdmin
+      onEdit={() => {}}
+      alertCounts={{ a: 2 }}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  const bell = screen.getByRole('button', {
+    name: m.sensors_alerts_open_named_count({ name: 'Förråd', count: 2 }),
+  })
+  await expect.element(bell).toBeVisible()
+  expect(document.querySelector('[data-slot="badge"]')?.textContent).toBe('2')
+  // The edit button stays alongside.
+  await expect
+    .element(screen.getByRole('button', { name: m.sensors_edit_device_named({ name: 'Förråd' }) }))
+    .toBeVisible()
+})
+
+test('a count of 0 shows no badge and the plain bell label', async () => {
+  const { screen } = await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[{ ...device, displayName: 'Förråd' }]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{ a: 0 }}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  await expect.element(screen.getByRole('button', { name: bellName('Förråd') })).toBeVisible()
+  expect(document.querySelector('[data-slot="badge"]')).toBeNull()
+})
+
+test('the badge sits tight in its 16 px pill, so the 14 px number isn’t clipped', async () => {
+  await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[device]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{ a: 3 }}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  const badge = document.querySelector('[data-slot="badge"]')
+  // twMerge keeps the last padding: py-0, never the base's py-0.5.
+  expect(badge?.className.split(' ')).toContain('py-0')
+  expect(badge?.className.split(' ')).not.toContain('py-0.5')
+  expect(badge?.className).toContain('leading-none')
 })

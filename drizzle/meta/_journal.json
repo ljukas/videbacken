@@ -204,6 +204,13 @@
       "when": 1792152531413,
       "tag": "0028_heat_pump_event",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792491046653,
+      "tag": "0029_sensor_alert_rule",
+      "breakpoints": true
     }
   ]
 }

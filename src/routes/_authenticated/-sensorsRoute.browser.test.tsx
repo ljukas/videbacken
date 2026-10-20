@@ -7,7 +7,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { renderToString } from 'react-dom/server'
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { orpc, type RouterOutputs } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
@@ -15,12 +15,25 @@ import { xTickLabels } from '~test/browser/chartDom'
 import { makeTestQueryClient } from '~test/browser/render'
 import { Route as Sensors } from './sensors'
 
+// The oRPC link keeps the `fetch` it saw at import, so a test that holds a mutation's request
+// installs the stub before any import. Everything else reaches the real fetch (and so fails).
+const rpc = vi.hoisted(() => {
+  const realFetch = globalThis.fetch.bind(globalThis)
+  const state: { hold: ((url: string) => Promise<Response> | null) | null } = { hold: null }
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input)
+    return state.hold?.(url) ?? realFetch(input, init)
+  }) as typeof fetch
+  return state
+})
+
 // The real page under a bare root (routeTree.gen.ts isn't loaded), with the cache
 // seeded through the oRPC keys. Anything unseeded fails (no /api/rpc in the test
 // server), which is how a failed read is staged. `-` keeps it out of the route tree.
 type Device = RouterOutputs['sensor']['listDevices'][number]
 
 const devicesKey = orpc.sensor.listDevices.queryOptions().queryKey
+const alertsKey = orpc.sensor.alerts.list.queryOptions().queryKey
 const seriesKey = orpc.sensor.series.queryOptions({ input: { range: '24h' } }).queryKey
 const skeleton = (name: string) => document.querySelector(`[data-boneyard="${name}"]`)
 
@@ -268,4 +281,213 @@ test('a range switch from an empty range never claims "no data" while the next l
   await screen.getByRole('radio', { name: m.sensors_range_1y() }).click()
   await expect.poll(() => document.querySelectorAll('[aria-busy="true"]').length).toBe(2)
   expect(screen.getByText(m.sensors_chart_empty()).elements()).toHaveLength(0)
+})
+
+test('the viewer’s switched-on rules show as a count on the tile bell', async () => {
+  const rule = (id: string, enabled: boolean) => ({
+    id,
+    deviceId: 'a',
+    kind: 'temperature' as const,
+    enabled,
+    direction: 'above' as const,
+    threshold: 30,
+    count: 1,
+    silenceHours: null,
+  })
+  const { screen } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [device])
+    qc.setQueryData(seriesKey, noSeries)
+    qc.setQueryData(alertsKey, {
+      rules: [rule('r1', true), rule('r2', true), rule('r3', false)],
+      typicalGapMinutes: {},
+    })
+  })
+  await expect
+    .element(
+      screen.getByRole('button', {
+        name: m.sensors_alerts_open_named_count({ name: 'Sensor 34cd', count: 2 }),
+      }),
+    )
+    .toBeVisible()
+})
+
+test('the alerts read failing leaves plain bells, tiles intact', async () => {
+  const { screen } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [device])
+    qc.setQueryData(seriesKey, noSeries)
+    failedOnServer(qc, alertsKey)
+  })
+  await expect.element(screen.getByText('21.7°C')).toBeVisible()
+  await expect
+    .element(
+      screen.getByRole('button', { name: m.sensors_alerts_open_named({ name: 'Sensor 34cd' }) }),
+    )
+    .toBeVisible()
+})
+
+const seedAlertsPage = (qc: QueryClient) => {
+  qc.setQueryData(devicesKey, [device])
+  qc.setQueryData(seriesKey, noSeries)
+  qc.setQueryData(alertsKey, { rules: [], typicalGapMinutes: {} })
+}
+const bell = m.sensors_alerts_open_named({ name: 'Sensor 34cd' })
+
+test('the alerts dialog: bell, "Nytt larm", close — the URL keeps no dialog state', async () => {
+  const { screen, router } = await renderSensors('', seedAlertsPage)
+  await screen.getByRole('button', { name: bell }).click()
+  const dialog = screen.getByRole('dialog')
+  await expect.element(dialog.getByRole('button', { name: m.sensors_alert_new() })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ dialog: 'alerts', deviceId: 'a' })
+
+  await dialog.getByRole('button', { name: m.sensors_alert_new() }).click()
+  await expect.element(dialog.getByRole('button', { name: m.common_save() })).toBeVisible()
+  expect(router.state.location.search).toMatchObject({ alertId: 'new' })
+
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect.poll(() => screen.getByRole('dialog').elements().length).toBe(0)
+  const search = router.state.location.search as Record<string, unknown>
+  expect(search.dialog).toBeUndefined()
+  expect(search.deviceId).toBeUndefined()
+  expect(search.alertId).toBeUndefined()
+})
+
+test('a bell opens the list even with a stale alertId in the URL', async () => {
+  // Left over from a form whose sensor was deleted, or a hand-edited link.
+  const { screen, router } = await renderSensors('?alertId=new', seedAlertsPage)
+  await screen.getByRole('button', { name: bell }).click()
+  const dialog = screen.getByRole('dialog')
+  await expect.element(dialog.getByRole('button', { name: m.sensors_alert_new() })).toBeVisible()
+  expect(dialog.getByRole('button', { name: m.common_save() }).elements()).toHaveLength(0)
+  expect((router.state.location.search as Record<string, unknown>).alertId).toBeUndefined()
+})
+
+test('back from the form to the list leaves no form behind: browser Back then closes', async () => {
+  const { screen, router } = await renderSensors('', seedAlertsPage)
+  await screen.getByRole('button', { name: bell }).click()
+  const dialog = screen.getByRole('dialog')
+  await dialog.getByRole('button', { name: m.sensors_alert_new() }).click()
+  await dialog.getByRole('button', { name: m.common_back() }).click()
+  await expect.element(dialog.getByRole('button', { name: m.sensors_alert_new() })).toBeVisible()
+  expect((router.state.location.search as Record<string, unknown>).alertId).toBeUndefined()
+
+  router.history.back()
+  await expect.poll(() => screen.getByRole('dialog').elements().length).toBe(0)
+  expect((router.state.location.search as Record<string, unknown>).dialog).toBeUndefined()
+})
+
+const rpcOk = (json: unknown) =>
+  new Response(JSON.stringify({ json }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+
+// Holds the next request to `path` until `release()`, then answers it with oRPC's success body.
+// Meanwhile the rules' refetch (after a save) gets an empty list at once: the test server would
+// leave it hanging.
+afterEach(() => {
+  rpc.hold = null
+})
+function holdRpc(path: string) {
+  let release = () => {}
+  let seen = false
+  rpc.hold = (url) => {
+    if (url.includes('/api/rpc/sensor/alerts/list')) {
+      return Promise.resolve(rpcOk({ rules: [], typicalGapMinutes: {} }))
+    }
+    if (!url.includes(path) || seen) return null
+    seen = true
+    return new Promise<Response>((resolve) => {
+      release = () => resolve(rpcOk({ id: 'r1' }))
+    })
+  }
+  return { release: () => release(), seen: () => seen }
+}
+
+// A save checks the sensor's id is a uuid.
+const SENSOR_ID = '00000000-0000-4000-8000-0000000000d1'
+const RULE = {
+  id: '00000000-0000-4000-8000-000000000001',
+  deviceId: SENSOR_ID,
+  kind: 'temperature' as const,
+  enabled: true,
+  direction: 'below' as const,
+  threshold: 5,
+  count: 2,
+  silenceHours: null,
+}
+
+test.each([
+  ['save', '/sensor/alerts/create'],
+  ['delete', '/sensor/alerts/delete'],
+] as const)('a %s that lands after the dialog closed leaves it closed', async (action, path) => {
+  const { screen, router, qc } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [{ ...device, id: SENSOR_ID }])
+    qc.setQueryData(seriesKey, noSeries)
+    qc.setQueryData(alertsKey, {
+      rules: action === 'delete' ? [RULE] : [],
+      typicalGapMinutes: {},
+    })
+  })
+  const held = holdRpc(path)
+  const bellName =
+    action === 'delete'
+      ? m.sensors_alerts_open_named_count({ name: 'Sensor 34cd', count: 1 })
+      : bell
+  await screen.getByRole('button', { name: bellName }).click()
+  const dialog = screen.getByRole('dialog')
+  if (action === 'save') {
+    await dialog.getByRole('button', { name: m.sensors_alert_new() }).click()
+    await dialog.getByLabelText(m.sensors_alert_field_threshold()).fill('5')
+    await dialog.getByRole('button', { name: m.common_save() }).click()
+  } else {
+    await dialog.getByRole('button', { name: /Temperatur under 5/ }).click()
+    await dialog.getByRole('button', { name: m.sensors_alert_delete() }).click()
+    await dialog.getByRole('button', { name: m.sensors_alert_delete() }).click()
+  }
+  await expect.poll(held.seen).toBe(true)
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect.poll(() => screen.getByRole('dialog').elements().length).toBe(0)
+
+  held.release()
+  // Let the late success run its course: the mutation settles (a save first refetches the
+  // rules), then the way back and any navigation.
+  await expect.poll(() => qc.isMutating(), { timeout: 5000 }).toBe(0)
+  await new Promise((r) => setTimeout(r, 200))
+  expect(screen.getByRole('dialog').elements()).toHaveLength(0)
+  const search = router.state.location.search as Record<string, unknown>
+  expect(search.dialog).toBeUndefined()
+  expect(search.alertId).toBeUndefined()
+})
+
+test('back from a deep-linked form stays on the page, even after Back and Forward elsewhere', async () => {
+  const { screen, router } = await renderSensors(
+    '?dialog=alerts&deviceId=a&alertId=new',
+    seedAlertsPage,
+  )
+  const dialog = screen.getByRole('dialog')
+  await expect.element(dialog.getByRole('button', { name: m.common_save() })).toBeVisible()
+  // Close, reopen, push a form: then Back to the first entry, the deep-linked form.
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await screen.getByRole('button', { name: bell }).click()
+  await screen.getByRole('dialog').getByRole('button', { name: m.sensors_alert_new() }).click()
+  await expect
+    .poll(() => (router.state.location.search as Record<string, unknown>).alertId)
+    .toBe('new')
+  router.history.back()
+  router.history.back()
+  router.history.back()
+  await expect.poll(() => router.history.location.state.__TSR_index).toBe(0)
+  await expect
+    .element(screen.getByRole('dialog').getByRole('button', { name: m.common_save() }))
+    .toBeVisible()
+
+  // Tillbaka has no list entry to step back onto: it turns this entry into the list.
+  await screen.getByRole('dialog').getByRole('button', { name: m.common_back() }).click()
+  await expect
+    .element(screen.getByRole('dialog').getByRole('button', { name: m.sensors_alert_new() }))
+    .toBeVisible()
+  const search = router.state.location.search as Record<string, unknown>
+  expect(search).toMatchObject({ dialog: 'alerts', deviceId: 'a' })
+  expect(search.alertId).toBeUndefined()
+  expect(router.history.location.state.__TSR_index).toBe(0)
 })

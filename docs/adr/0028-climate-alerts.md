@@ -68,3 +68,9 @@ onboarding and avatar.
   webhook or lose the reading.
 - A new hourly cron (`/api/cron/…`) and new queue topic(s).
 - Deleting a sensor now also deletes users' rules and alert history on it.
+
+## Notes from step 1 (2026-10-20)
+
+- **Delete confirmation is inline** in the rule form ("Ta bort larmet?" Avbryt / Ta bort), an exception to
+  [ADR-0013](./0013-form-presentation-and-dialog-architecture.md)'s centered `AlertDialog` for confirmations: the form
+  is already inside an open overlay (a bottom sheet on phones), and a second overlay stacked on it is worse.
