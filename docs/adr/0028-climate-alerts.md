@@ -78,10 +78,20 @@ onboarding and avatar.
 ## Notes from step 2 (2026-10-20)
 
 - **The open event row is the firing state.** A partial unique index on `rule_id where ended_at is null` allows one
-  open event per rule. Evaluation locks the device's rules (`FOR UPDATE`, ordered by id), then reads open events
-  and writes conditionally. Pause, edit and delete lock the rule row first, then end the event.
-- **At most 20 rules per sensor** (owner). It bounds the emails one reading can cause.
-- **An unchanged save keeps a firing alert** (owner). Only a changed kind, direction, limit, count or hours restarts it.
+  open event per rule. Evaluation locks the sensor (`FOR KEY SHARE`), then the device's rules (`FOR UPDATE`, ordered
+  by id), then reads open events and writes conditionally. Pause, edit and delete lock the rule row first, then end
+  the event. The sensor first is a sensor delete's order (device, then its rules by cascade), so a delete in flight
+  makes the evaluation wait and find nothing. A user hard-delete (user, then rules and events) could still deadlock
+  with an evaluation; accepted, because users are soft-deleted.
+- **The readings read is bounded:** the newest `ALERT_READINGS_MAX` (300) readings of the 7-day lookback, so a flood
+  on one MAC can't make every evaluation read a week. The longest rule needs 10 merged groups.
+- **At most 20 rules per user per sensor** (owner). It bounds the emails one reading can cause.
+- **No email cooldown.** A count of at least 2 and 10-minute groups bound a flapping rule to about one alert and
+  recovery pair per 40 minutes, sent to its owner only.
+- **A revoked user's open alert stays open** and resumes on re-invite: the evaluation skips soft-deleted owners
+  without changing their alerts.
+- **An unchanged save keeps a firing alert** (owner). Only a changed sensor, kind, direction, limit, count or hours
+  restarts it.
 - **A recovery ends at the first reading back on the normal side** (owner), not at the last of the x readings.
 - **The switch is named "Bevaka: …"** (owner).
 - **For step 3:** the webhook's end of a device's silence alerts must take the same rule lock as the cron, and the

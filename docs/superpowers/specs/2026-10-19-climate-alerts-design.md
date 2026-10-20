@@ -191,7 +191,7 @@ bell. Two views that replace each other in one overlay:
 
 **Bounds** (validated on both sides): count **2** to 10 and silence **3** to 72 h. Those minimums are the owner's
 decision: count 1 has no hysteresis, and a silence shorter than the 2-hour cadence would fire every cycle, so
-neither can storm. At most 20 rules per sensor. My calls: temperature limit −40 to 60 °C in 0.5 steps, humidity 1 to 99 %, battery 5 to 95 %.
+neither can storm. At most 20 rules per user per sensor. My calls: temperature limit −40 to 60 °C in 0.5 steps, humidity 1 to 99 %, battery 5 to 95 %.
 No pre-filled limit for temperature or humidity.
 
 Responsive at desktop, tablet and phone widths; all text in `messages/{sv,en}.json`.

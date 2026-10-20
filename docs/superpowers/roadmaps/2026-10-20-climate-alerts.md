@@ -76,7 +76,7 @@ Each must pass, with the result recorded in the table, before the next step star
 - **For step 2's plan:** keep the firing state off the rule row (an open `sensor_alert_event` = firing, a partial
   unique index on `rule_id where ended_at is null`; schema review of step 1). Decide whether to cap rules per user
   (security review of step 1: uncapped rules × one webhook = that many emails once).
-- **Step 2:** at most 20 rules per sensor (owner), answering the cap question above.
+- **Step 2:** at most 20 rules per user per sensor (owner), answering the cap question above.
 - **Step 2:** saving a rule without changing it keeps a firing alert (owner); only a changed rule restarts it.
 - **Step 2:** a recovery ends at the first reading back on the normal side (owner).
-- **Step 2:** the switch in the rule form is named "Bevaka: …" (owner).
+- **Step 2:** the switch on each rule row is named "Bevaka: …" (owner).
