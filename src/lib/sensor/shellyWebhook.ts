@@ -1,7 +1,9 @@
+import { waitUntil } from '@vercel/functions'
 import { z } from 'zod'
 import { logger } from '~/lib/logger/server'
 import { secretMatches } from '~/lib/secretMatches'
 import { recordReading, SensorDomainError } from '~/lib/services/sensor'
+import { evaluateAfterReading } from './evaluateAfterReading'
 
 // Shelly interpolates urlencoded values into GET query params. Numbers are
 // optional per-event but range-validated; mac identifies the device. MAC
@@ -90,6 +92,7 @@ export async function handleShellyWebhook(request: Request): Promise<Response> {
       hasHum: parsed.value.humidityPct != null,
       hasName: parsed.value.shellyName != null,
     })
+    waitUntil(evaluateAfterReading(deviceId))
     return new Response(null, { status: 204 })
   } catch (err) {
     // A malformed MAC is caller error, not a server fault → 400.
