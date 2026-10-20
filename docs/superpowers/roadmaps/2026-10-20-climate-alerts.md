@@ -9,7 +9,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1 | Rules: the `sensor_alert_rule` table, own-scoped service and procedures, the bell on each tile (count of your switched-on rules) and the "Larm för …" dialog (list with on/off switches, form with the count hint, delete). Nothing evaluates rules or sends email yet | [plan](../plans/2026-10-20-climate-alerts-1-rules.md) | | not started | |
-| 2 | Value alerts: merged-reading evaluation on the Shelly webhook for temperature, humidity and battery rules; rule state + `sensor_alert_event` history; alert and recovery emails through the queue; the bell's red firing state; "Senaste larm" in the dialog | written when step 2 starts | | not started | |
+| 2 | Value alerts: merged-reading evaluation on the Shelly webhook for temperature, humidity and battery rules; rule state + `sensor_alert_event` history; alert and recovery emails through the queue; the bell's red firing state; the list rows' state dots and "sedan …" (moved from step 1); "Senaste larm" in the dialog | written when step 2 starts | | not started | |
 | 3 | Silence: the hourly cron firing silence rules, recovery on the next webhook, the silence emails | written when step 3 starts | | not started | |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. Steps 2 and 3 are fully
@@ -64,4 +64,13 @@ Each must pass, with the result recorded in the table, before the next step star
 
 ## Changes since the spec
 
-None yet.
+- **Step 1:** the list rows' state dots (red firing / green OK / grey paused) and "sedan …" move to step 2: with
+  nothing evaluated yet, a green "OK" would claim a rule is watched. A paused rule shows in muted text.
+- **Step 1:** deleting a rule confirms inline in the form, not in a stacked `AlertDialog` (recorded in ADR-0028).
+- **Step 1:** the count hint shows minutes while the span's upper end is under 120 min ("≈ 30–60 min"), else whole
+  hours ("≈ 2–4 timmar").
+- **Step 1:** with the bell and the admin's pencil (both 40 px, as specified), the tiles go to one column on the
+  narrowest phones (card under ~304 px), and the location line sits under the name row, full width.
+- **For step 2's plan:** keep the firing state off the rule row (an open `sensor_alert_event` = firing, a partial
+  unique index on `rule_id where ended_at is null`; schema review of step 1). Decide whether to cap rules per user
+  (security review of step 1: uncapped rules × one webhook = that many emails once).

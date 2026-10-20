@@ -67,13 +67,13 @@ src/
     getSession.ts               server fn wrapping auth.api.getSession()
     seedApprovedEmails.ts       seeds INITIAL_ADMIN_EMAILS → approved_email (run by scripts/seedApprovedEmails.ts = `bun run db:seed`)
     orpc/                       context (public/protected/admin procedures + timings), router, client, procedures/
-    db/                         drizzle({ client: pg Pool(DATABASE_URL), schema, casing: 'snake_case' }); schema/{betterAuth,file,approvedEmail,sensor,evCharging,vehicleCharge,vehicleState,houseEnergy,heatPump,integrationSync,integrationCredential,spotPrice,electricityTariff,sessionCost}.ts + index barrel; houseEnergy.ts also declares the `house_energy_month` materialized view and heatPump.ts the `heat_pump_day` one (custom migrations, `.existing()`) beside `heat_pump`, `heat_pump_reading` and `heat_pump_event`; pgError (unique- and FK-violation mapping, `pgErrorSummary`); connectionString (Supabase env bridge)
-    services/                   approvedEmail, user, file, sensor, evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, heatPump (its `heatPumpRead.ts` = the Värmepumpar read model over `daySums`/`monthSums`; `unitEnd.ts` = the unit end rule Översikt shares), energyMix, sessionCost (stored cost per session and month: sums, stale ids, guarded write-back; its `invalidate.ts` is the bump leaf every cost-input writer calls in its transaction, ADR-0020 amendment), dbPool (pool gauges for the rpc timing line) — own all DB access + domain rules (ADR-0002)
+    db/                         drizzle({ client: pg Pool(DATABASE_URL), schema, casing: 'snake_case' }); schema/{betterAuth,file,approvedEmail,sensor,sensorAlert,evCharging,vehicleCharge,vehicleState,houseEnergy,heatPump,integrationSync,integrationCredential,spotPrice,electricityTariff,sessionCost}.ts + index barrel; houseEnergy.ts also declares the `house_energy_month` materialized view and heatPump.ts the `heat_pump_day` one (custom migrations, `.existing()`) beside `heat_pump`, `heat_pump_reading` and `heat_pump_event`; pgError (unique- and FK-violation mapping, `pgErrorSummary`); connectionString (Supabase env bridge)
+    services/                   approvedEmail, user, file, sensor, sensorAlert (a user's own alert rules, every function scoped by `userId`; `hints.ts` = the count hint's typical gap per device, ADR-0028), evCharging, vehicleCharge, integrationSync, integrationCredential, spotPrice, tariff, vehicleState, houseEnergy, heatPump (its `heatPumpRead.ts` = the Värmepumpar read model over `daySums`/`monthSums`; `unitEnd.ts` = the unit end rule Översikt shares), energyMix, sessionCost (stored cost per session and month: sums, stale ids, guarded write-back; its `invalidate.ts` is the bump leaf every cost-input writer calls in its transaction, ADR-0020 amendment), dbPool (pool gauges for the rpc timing line) — own all DB access + domain rules (ADR-0002)
     effects/                    email, storage, queue (lazy.ts selects the adapter once), zaptec, elpris, skoda, emaldo (pulled, fail closed — ADR-0019; emaldo = house energy flows, RC4 + Snappy wire, ADR-0023; keyedAdapter.ts rebuilds their client only when the resolved credentials change, ADR-0026), comfortCloud (Panasonic heat pumps, ADR-0027: Auth0 PKCE password login — tough-cookie jar + htmlparser2 hidden inputs — x-cfc-api-key, UTC hours; facade via keyedAdapter, fail closed), eltariff (keyless catalogue client for the gridTariff watcher), geocoder (keyless Nominatim address search for the home-position picker: proxied, 1 req/s, 10-min cache, no retries, ADR-0026); http.ts + testing/fakeFetch shared by the pulled clients
     credentials/                server-only (ADR-0026): crypto (AES-256-GCM envelope, CREDENTIALS_ENCRYPTION_KEY), env (reads env values; the names live in `integrationCredentials.ts`), cache (60 s stored read), resolve (`resolveCredentials`: stored → env per field)
     queue/                      index.ts: the typed `queueHandlers` table + dispatcher (dispatch.ts), shared by the prod consumer and the dev worker (ADR-0007)
     logger/                     pino on server, console + POST /api/log in browser (ADR-0003)
-    sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe)
+    sensor/                     Shelly webhook handler, climate chart data/ticks, range vocab (client-safe); client-safe alert vocabulary (`alerts.ts`, dependency-free: the schema imports it), merged readings (`alertGroups.ts`, 10-min windows) and the shared rule input (`alertRuleInput.ts`) (ADR-0028)
     evCharging/                 Zaptec sync (sync.ts) + cron; cost read model (costing.ts: reads the stored per-session month sums and prices only stale sessions, writing them back; prices each session's stored solar/battery mix, ADR-0020 amendment, ADR-0023) + `repriceStale.ts` (eager reprice after syncs and tariff edits) over the pure cost/ math; client-safe types, `vehicle.ts` vehicle vocabulary, `paging.ts` session-list paging vocabulary (page sizes, URL params, page links, `pageSlice`), `skodaExport.ts` client-safe MySkoda CSV parser (papaparse lazy-loaded), tariff limits + energy tax (ADR-0019, ADR-0020, ADR-0021)
     vehicleState/               Škoda live-state poll: geofence (home point → boolean), sync + cron (ADR-0022)
     houseEnergy/                Emaldo house-energy readings sync (sync.ts: recent days + backfill, day watermark) + cron (ADR-0019, ADR-0023) — no index barrel;
@@ -163,6 +163,7 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
 | Deferred route loading (loaders await on server only, cached session guard, boneyard-js section skeletons, per-page bundle (§6)) | **0025** |
 | Integration credential store (GUI-set, encrypted in Postgres, per-field over env; charging settings page) | **0026** |
 | Heat pump energy data (Panasonic Comfort Cloud: hourly per unit, Användning on Översikt, energy signature around logged events; read-only) | **0027** |
+| Climate alerts (personal rules per sensor, merged readings, one email per transition; extends 0017's own-account exception) | **0028** |
 
 ---
 
@@ -173,7 +174,7 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
   on first sign-in and its role comes from the `approved_email` row.
 - **Two roles:** `user`, `admin`. **Admins mutate, users are read-only:** reads use `protectedProcedure`;
   every mutation uses `adminProcedure`; the **sole exception** is a user managing their **own account**
-  (`updateProfile`, `completeOnboarding`, own avatar) scoped to `context.user.id`.
+  (`updateProfile`, `completeOnboarding`, own avatar) and **their own alert rules** (`sensor.alerts.*`, ADR-0028), scoped to `context.user.id`.
 - **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → admin allowlist rows once per deploy: `bun run db:seed` after the migrations in
   `vercel-build` (see Non-negotiables) and in `dev:up`. **Bootstrap only:** it seeds nothing while the allowlist approves any
   admin (later admins are invited at `/admin`; locked out with no admin row → redeploy). Sign in locally with one of those
@@ -287,7 +288,7 @@ postgres 14620, redis 14621, smtp 14622, s3 14623.
 
 ## Non-negotiables
 
-- **Auth rules** in [Authentication](#authentication--authorization-adr-0017) are fixed: Google + magic-link only, allowlist-gated, two roles, every mutating procedure `adminProcedure` except own-account.
+- **Auth rules** in [Authentication](#authentication--authorization-adr-0017) are fixed: Google + magic-link only, allowlist-gated, two roles, every mutating procedure `adminProcedure` except own-account (incl. own alert rules, ADR-0028).
 - **All `db` access through services.** No `db.select()` in routes/handlers/auth hooks. See ADR-0002.
 - **File blobs out-of-process.** User file bytes never traverse a Vercel Function; all file access goes through `src/lib/effects/storage/`. See ADR-0006.
 - **oRPC procedures are thin glue.** Gate with `protectedProcedure`/`adminProcedure` (never inline). Better Auth's own `/api/auth/*` routes stay on the Better Auth handler.
