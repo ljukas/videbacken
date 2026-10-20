@@ -58,7 +58,7 @@ type Props = {
   onClose: () => void
 }
 
-/** What takes focus when the list comes back: the edited rule's row, or "Nytt larm". */
+/** What takes focus when the list comes back: the edited rule's pencil, or "Nytt larm". */
 type ListFocus = { ruleId: string } | 'new'
 
 // "Larm för <sensor>" (ADR-0028): the viewer's own rules for one sensor, and the form for one of
@@ -212,17 +212,17 @@ function RuleList({
 }) {
   const listRef = useRef<HTMLUListElement>(null)
   const newRef = useRef<HTMLButtonElement>(null)
-  // Coming back from the form: the edited rule's row (if it is still listed), else "Nytt larm" —
-  // never <body>, where the unmounted form would leave it.
+  // Coming back from the form: the edited rule's pencil (if it is still listed), else
+  // "Nytt larm" — never <body>, where the unmounted form would leave it.
   useEffect(() => {
     const target = focus.current
     if (target === null || rules === undefined) return
     focus.current = null
-    const row =
+    const pencil =
       target === 'new'
         ? null
         : listRef.current?.querySelector<HTMLElement>(`[data-rule-id="${target.ruleId}"]`)
-    ;(row ?? newRef.current)?.focus()
+    ;(pencil ?? newRef.current)?.focus()
   }, [focus, rules])
 
   if (rules === undefined) {
@@ -295,7 +295,7 @@ function RuleRow({ rule, onOpen }: { rule: SensorAlertRuleDto; onOpen: () => voi
   const description = alertRuleDescription(rule)
 
   return (
-    <li className="flex items-center gap-1 rounded-lg border py-1 pr-3 pl-3">
+    <li className="flex items-center gap-1 rounded-lg border px-3 py-1">
       <span className={cn('min-w-0 flex-1 py-1 text-sm', !enabled && 'text-muted-foreground')}>
         {description}
       </span>
@@ -314,7 +314,7 @@ function RuleRow({ rule, onOpen }: { rule: SensorAlertRuleDto; onOpen: () => voi
         checked={enabled}
         onCheckedChange={(next) => setEnabled.mutate({ id: rule.id, enabled: next })}
         aria-label={m.sensors_alert_enabled_named({ description })}
-        className="ml-2"
+        className="ml-3 after:-inset-y-3"
       />
     </li>
   )

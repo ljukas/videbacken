@@ -440,7 +440,7 @@ test.each([
     await dialog.getByLabelText(m.sensors_alert_field_threshold()).fill('5')
     await dialog.getByRole('button', { name: m.common_save() }).click()
   } else {
-    await dialog.getByRole('button', { name: /Temperatur under 5/ }).click()
+    await dialog.getByRole('button', { name: /^Ändra larmet: Temperatur under 5/ }).click()
     await dialog.getByRole('button', { name: m.sensors_alert_delete() }).click()
     await dialog.getByRole('button', { name: m.sensors_alert_delete() }).click()
   }
