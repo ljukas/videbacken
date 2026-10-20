@@ -69,6 +69,8 @@ test("another user's id behaves like a missing id and changes nothing", async ()
   expect(await codeOf(setRuleEnabled(b, rule.id, false))).toBe('RULE_NOT_FOUND')
   expect(await codeOf(deleteRule(b, rule.id))).toBe('RULE_NOT_FOUND')
   expect(await codeOf(updateRule(a, MISSING, temp(d1)))).toBe('RULE_NOT_FOUND')
+  // Not-found wins over the device FK: a stranger learns nothing about the device id.
+  expect(await codeOf(updateRule(b, rule.id, temp(MISSING)))).toBe('RULE_NOT_FOUND')
   expect(await listOwnRules(a)).toEqual([rule])
 })
 

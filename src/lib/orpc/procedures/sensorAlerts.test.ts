@@ -138,3 +138,64 @@ test('an unknown device is UNKNOWN_SENSOR; a count of 1 is a bad request', async
     call(alerts.create, { ...temp(d), count: 1 }, { context: ctx() }),
   ).rejects.toMatchObject({ code: 'BAD_REQUEST', status: 400 })
 })
+
+test('update of an owned rule with a missing device is UNKNOWN_SENSOR', async () => {
+  await signIn('a')
+  const d = await device()
+  const rule = await call(alerts.create, temp(d), { context: ctx() })
+  await expect(
+    call(alerts.update, { ...temp(MISSING), id: rule.id }, { context: ctx() }),
+  ).rejects.toMatchObject({ code: 'UNKNOWN_SENSOR', status: 422 })
+})
+
+test("another user's update with a missing device is RULE_NOT_FOUND, not UNKNOWN_SENSOR", async () => {
+  await signIn('a')
+  const d = await device()
+  const rule = await call(alerts.create, temp(d), { context: ctx() })
+  await signIn('b')
+  await expect(
+    call(alerts.update, { ...temp(MISSING), id: rule.id }, { context: ctx() }),
+  ).rejects.toMatchObject({ code: 'RULE_NOT_FOUND', status: 404 })
+})
+
+test('a kind-changing update returns the unused fields as null', async () => {
+  await signIn('a')
+  const d = await device()
+  const rule = await call(alerts.create, temp(d), { context: ctx() })
+  const updated = await call(
+    alerts.update,
+    { kind: 'silence', deviceId: d, silenceHours: 6, id: rule.id },
+    { context: ctx() },
+  )
+  expect(updated).toMatchObject({
+    id: rule.id,
+    kind: 'silence',
+    silenceHours: 6,
+    direction: null,
+    threshold: null,
+    count: null,
+  })
+})
+
+test('list records the rules and hints timings', async () => {
+  await signIn('a')
+  const timings: Record<string, number> = {}
+  await call(alerts.list, undefined, { context: { ...ctx(), timings } })
+  expect(timings).toHaveProperty('alertRulesMs')
+  expect(timings).toHaveProperty('alertHintsMs')
+})
+
+test('create, update, setEnabled and delete reject anonymous callers', async () => {
+  const id = '11111111-1111-4111-8111-111111111111'
+  const unauthorized = { code: 'UNAUTHORIZED' }
+  await expect(call(alerts.create, temp(MISSING), { context: ctx() })).rejects.toMatchObject(
+    unauthorized,
+  )
+  await expect(
+    call(alerts.update, { ...temp(MISSING), id }, { context: ctx() }),
+  ).rejects.toMatchObject(unauthorized)
+  await expect(
+    call(alerts.setEnabled, { id, enabled: false }, { context: ctx() }),
+  ).rejects.toMatchObject(unauthorized)
+  await expect(call(alerts.delete, { id }, { context: ctx() })).rejects.toMatchObject(unauthorized)
+})
