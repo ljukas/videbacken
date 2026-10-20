@@ -5,6 +5,7 @@ import { blurhashHandler } from './handlers/blurhash'
 import { emailCredentialExpiryHandler } from './handlers/emailCredentialExpiry'
 import { emailGridTariffAvailableHandler } from './handlers/emailGridTariffAvailable'
 import { emailIntegrationSyncAlertHandler } from './handlers/emailIntegrationSyncAlert'
+import { emailSensorAlertHandler } from './handlers/emailSensorAlert'
 import { emailUserInvitedHandler } from './handlers/emailUserInvited'
 import { heicTranscodeHandler } from './handlers/heicTranscode'
 
@@ -23,6 +24,7 @@ export const queueHandlers: QueueHandlerTable = {
   email_integration_sync_alert: emailIntegrationSyncAlertHandler,
   email_grid_tariff_available: emailGridTariffAvailableHandler,
   email_credential_expiry: emailCredentialExpiryHandler,
+  email_sensor_alert: emailSensorAlertHandler,
 }
 
 /**

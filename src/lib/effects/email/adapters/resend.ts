@@ -4,6 +4,7 @@ import { renderGridTariffAvailable } from '~/emails/GridTariffAvailableEmail'
 import { renderIntegrationSyncAlert } from '~/emails/IntegrationSyncAlertEmail'
 import { renderInviteUser } from '~/emails/InviteUserEmail'
 import { renderMagicLink } from '~/emails/MagicLinkEmail'
+import { renderSensorAlert } from '~/emails/SensorAlertEmail'
 import { logger } from '~/lib/logger/server'
 import type { EmailEffects } from '../email'
 
@@ -68,5 +69,18 @@ export const resend: EmailEffects = {
     const result = await getClient().emails.send({ from, to, subject, html, text })
     if (result.error) throw new Error(`Resend send failed: ${result.error.message}`)
     logger.info('credential expiry sent (resend)', { to, source, days, messageId: result.data?.id })
+  },
+  async sendSensorAlert(input) {
+    const { subject, html, text } = await renderSensorAlert(input)
+    const from = process.env.EMAIL_FROM
+    if (!from) throw new Error('EMAIL_FROM is required when RESEND_API_KEY is set')
+    const result = await getClient().emails.send({ from, to: input.to, subject, html, text })
+    if (result.error) throw new Error(`Resend send failed: ${result.error.message}`)
+    logger.info('sensor alert sent (resend)', {
+      to: input.to,
+      transition: input.transition,
+      kind: input.kind,
+      messageId: result.data?.id,
+    })
   },
 }

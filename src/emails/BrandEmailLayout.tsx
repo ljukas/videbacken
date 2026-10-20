@@ -35,6 +35,9 @@ export interface BrandEmailLayoutProps {
   buttonLabel: string
   fallbackText: string
   footer: string
+  // Optional detail rows (a small bordered box) and a muted note, both between the body and the button.
+  facts?: { label: string; value: string }[]
+  note?: string
 }
 
 /**
@@ -53,6 +56,8 @@ export function BrandEmailLayout({
   buttonLabel,
   fallbackText,
   footer,
+  facts,
+  note,
 }: BrandEmailLayoutProps) {
   return (
     <Tailwind config={emailTailwindConfig}>
@@ -90,6 +95,23 @@ export function BrandEmailLayout({
                   </Heading>
                   <Text className="m-0 mt-4 font-14 font-sans text-fg-muted">{body}</Text>
                 </Section>
+
+                {facts && facts.length > 0 ? (
+                  <Section className="mx-auto mt-6 max-w-[420px] rounded-[10px] border border-border border-solid px-4 py-3 text-left">
+                    {facts.map((fact) => (
+                      <Text key={fact.label} className="m-0 py-1 font-14 font-sans text-fg">
+                        <span className="text-fg-muted">{fact.label}: </span>
+                        {fact.value}
+                      </Text>
+                    ))}
+                  </Section>
+                ) : null}
+
+                {note ? (
+                  <Section className="mx-auto mt-4 max-w-[420px]">
+                    <Text className="m-0 font-13 font-sans text-fg-muted">{note}</Text>
+                  </Section>
+                ) : null}
 
                 <Section className="mt-9">
                   <Button

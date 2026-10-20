@@ -23,4 +23,7 @@ export const devLog: EmailEffects = {
   async sendCredentialExpiry({ to, source, expiresAt, days }) {
     logger.info('credential expiry (devLog)', { to, source, expiresAt, days })
   },
+  async sendSensorAlert({ to, transition, kind }) {
+    logger.info('sensor alert (devLog)', { to, transition, kind })
+  },
 }

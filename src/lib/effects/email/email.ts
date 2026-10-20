@@ -1,3 +1,4 @@
+import type { QueuePayloadMap } from '~/lib/effects/queue/queue'
 import type {
   CredentialReminderDays,
   ExpiringCredentialSource,
@@ -66,6 +67,8 @@ export interface EmailEffects {
     days: CredentialReminderDays
     locale: Locale
   }): Promise<void>
+  // Sensor value-alert notice (tier-3): `email_sensor_alert` queue topic, one per transition.
+  sendSensorAlert(input: QueuePayloadMap['email_sensor_alert']): Promise<void>
 }
 
 const getAdapter = lazy(async (): Promise<EmailEffects> => {
@@ -105,5 +108,9 @@ export const email: EmailEffects = {
   async sendCredentialExpiry(input) {
     const adapter = await getAdapter()
     return adapter.sendCredentialExpiry(input)
+  },
+  async sendSensorAlert(input) {
+    const adapter = await getAdapter()
+    return adapter.sendSensorAlert(input)
   },
 }
