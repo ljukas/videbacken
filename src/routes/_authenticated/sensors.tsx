@@ -32,6 +32,8 @@ const searchSchema = z.object({
   range: z.enum(SERIES_RANGES).default('24h'),
   dialog: z.enum(['edit', 'alerts']).optional(),
   deviceId: z.string().optional(),
+  /** The alerts dialog's view: absent = the list, `new` = an empty form, else a rule's id. */
+  alertId: z.string().optional(),
 })
 type SensorsSearch = z.infer<typeof searchSchema>
 type SensorsDialog = NonNullable<SensorsSearch['dialog']>
@@ -43,6 +45,16 @@ const EditDeviceDialog = lazy(() =>
   loadEditDeviceDialog().then((mod) => ({ default: mod.EditDeviceDialog })),
 )
 const ADMIN_DIALOG_LOADERS = [loadEditDeviceDialog]
+
+// Every signed-in user's own alert rules (ADR-0028): loads on first open, warmed when idle.
+const loadSensorAlertsDialog = () => import('~/components/sensor/SensorAlertsDialog')
+const SensorAlertsDialog = lazy(() =>
+  loadSensorAlertsDialog().then((mod) => ({ default: mod.SensorAlertsDialog })),
+)
+const ALERTS_DIALOG_LOADERS = [loadSensorAlertsDialog]
+
+// Closing a dialog clears its sensor and the alerts dialog's view.
+const CLEAR_KEYS = ['deviceId', 'alertId'] as const
 
 // Only the shorter ranges poll — a new reading won't visibly move a 1-year daily
 // chart, so longer ranges just refetch on focus/mount.
@@ -74,16 +86,18 @@ function SensorsPage() {
   const { user } = Route.useRouteContext()
   const isAdmin = user.role === 'admin'
   useIdlePreload(isAdmin, ADMIN_DIALOG_LOADERS)
+  useIdlePreload(true, ALERTS_DIALOG_LOADERS)
   const navigate = Route.useNavigate()
   const range = Route.useSearch({ select: (s) => s.range })
   const dialog = Route.useSearch({ select: (s) => s.dialog })
   const deviceId = Route.useSearch({ select: (s) => s.deviceId })
+  const alertId = Route.useSearch({ select: (s) => s.alertId })
   const currentHeadingId = useId()
   const historyHeadingId = useId()
   const { isOpen, open, close } = useUrlDialog<SensorsDialog, SensorsSearch>({
     current: dialog,
     navigate,
-    clearKeys: ['deviceId'],
+    clearKeys: CLEAR_KEYS,
   })
 
   const devicesResult = useQuery({
@@ -178,7 +192,7 @@ function SensorsPage() {
     displayName: d.displayName,
     color: colorForIndex(i),
   }))
-  const editingDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
+  const dialogDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
   const alertCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const r of loadFailed(alertsResult) ? [] : (alertsResult.data?.rules ?? [])) {
@@ -186,7 +200,16 @@ function SensorsPage() {
     }
     return counts
   }, [alertsResult])
-  const editDeviceOpen = isOpen('edit') && editingDevice !== undefined
+  const editDeviceOpen = isOpen('edit') && dialogDevice !== undefined
+  const alertsOpen = isOpen('alerts') && dialogDevice !== undefined
+  // A view switch inside the open dialog: pushed, so Back returns to the list.
+  function setAlertView(view: string) {
+    navigate({
+      to: '.',
+      search: (s) => ({ ...s, alertId: view === 'list' ? undefined : view }),
+      resetScroll: false,
+    })
+  }
 
   // The toggles, the tiles and the charts' colours all need the roster.
   if (devicesFailed) {
@@ -312,13 +335,26 @@ function SensorsPage() {
         <LazyDialogMount open={editDeviceOpen}>
           <EditDeviceDialog
             open={editDeviceOpen}
-            device={editingDevice}
+            device={dialogDevice}
             onOpenChange={(o) => {
               if (!o) close()
             }}
           />
         </LazyDialogMount>
       ) : null}
+
+      <LazyDialogMount open={alertsOpen}>
+        <SensorAlertsDialog
+          open={alertsOpen}
+          device={alertsOpen ? dialogDevice : undefined}
+          rules={loadFailed(alertsResult) ? undefined : alertsResult.data?.rules}
+          rulesFailed={loadFailed(alertsResult)}
+          typicalGapMinutes={alertsResult.data?.typicalGapMinutes}
+          view={alertId ?? 'list'}
+          onView={setAlertView}
+          onClose={close}
+        />
+      </LazyDialogMount>
     </PageContainer>
   )
 }

@@ -3,6 +3,7 @@ import { useId } from 'react'
 import { Field, FieldDescription, FieldError, FieldLabel } from '~/components/ui/field'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { useFieldContext } from '~/hooks/form'
+import { cn } from '~/lib/utils'
 
 type Option = { value: string; label: string }
 
@@ -10,9 +11,11 @@ type Props = {
   label: string
   description?: string
   options: ReadonlyArray<Option>
+  /** Extra classes on the group, e.g. a 2×2 grid on phones when the labels are long. */
+  className?: string
 }
 
-export function ToggleField({ label, description, options }: Props) {
+export function ToggleField({ label, description, options, className }: Props) {
   const field = useFieldContext<string>()
   const isSubmitting = useStore(field.form.store, (s) => s.isSubmitting)
   const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid
@@ -37,7 +40,7 @@ export function ToggleField({ label, description, options }: Props) {
         disabled={isSubmitting}
         aria-labelledby={labelId}
         aria-invalid={isInvalid}
-        className="w-full"
+        className={cn('w-full', className)}
       >
         {options.map(({ value, label: optLabel }) => (
           <ToggleGroupItem key={value} value={value} className="flex-1">
