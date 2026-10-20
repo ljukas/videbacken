@@ -56,7 +56,7 @@ Each must pass, with the result recorded in the table, before the next step star
    - Desktop, tablet and phone widths: the tile names don't collapse with two icon buttons.
 2. **After step 2 (prod).** A deliberate rule fires on a real reading: one alert email (subject, facts, link),
    the bell turns red, "Senaste larm" shows it as ongoing; editing the rule back ends it quietly (no email), the
-   history entry reads "avslutad (ändrad)". A real recovery email arrives for a rule recovering on its own (a
+   history entry reads "avslutat (ändrat)". A real recovery email arrives for a rule recovering on its own (a
    temporary rule above the current value, then lowered below it by the weather, or the battery rule after a swap).
    Exactly one email per transition in the runtime logs, Förråd bursts included.
 3. **After step 3 (prod).** Batteries out of one sensor: one silence email within an hour after the rule's hours;

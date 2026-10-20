@@ -117,7 +117,7 @@ test('each entry: the rule as it was, its period, and why a quiet end ended', as
   await expect.element(screen.getByText('Temperatur under 5 °C · 2 mätningar')).toBeVisible()
   await expect.element(screen.getByText(/ – pågår$/)).toBeVisible()
   await expect.element(screen.getByText('Luftfuktighet över 80 % · 2 mätningar')).toBeVisible()
-  await expect.element(screen.getByText(/ · avslutad \(ändrad\)$/)).toBeVisible()
+  await expect.element(screen.getByText(/ · avslutat \(ändrat\)$/)).toBeVisible()
   // Each date and the duration keep to one line; the period wraps between them.
   const nowrap = [...document.querySelectorAll('li:nth-child(2) .whitespace-nowrap')].map(
     (el) => el.textContent,

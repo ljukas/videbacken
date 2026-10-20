@@ -129,13 +129,13 @@ test('an open alert is ongoing; a quiet end says why', () => {
     '19 okt. 22:00 – pågår',
   )
   expect(alertEventPeriod(event({ endReason: 'paused' }), NOW)).toBe(
-    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (pausad)',
+    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutat (pausat)',
   )
   expect(alertEventPeriod(event({ endReason: 'edited' }), NOW)).toBe(
-    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (ändrad)',
+    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutat (ändrat)',
   )
   expect(alertEventPeriod(event({ endReason: 'deleted' }), NOW)).toBe(
-    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutad (borttaget)',
+    '19 okt. 22:00 – 23:30 · 1 h 30 min · avslutat (borttaget)',
   )
 })
 

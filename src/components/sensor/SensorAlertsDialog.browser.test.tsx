@@ -194,7 +194,7 @@ test('a firing rule says so and since when; the others say on or paused', async 
   expect(firingSince.element().className).toContain('whitespace-nowrap')
   // The dot's state, for a screen reader.
   await expect.element(rows.nth(0).getByText('Larmar', { exact: true })).toBeInTheDocument()
-  await expect.element(rows.nth(1).getByText('Pausad', { exact: true })).toBeInTheDocument()
+  await expect.element(rows.nth(1).getByText('Pausat', { exact: true })).toBeInTheDocument()
   await expect.element(rows.nth(2).getByText('På', { exact: true })).toBeInTheDocument()
   expect(
     rows
