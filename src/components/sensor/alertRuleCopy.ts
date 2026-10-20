@@ -60,24 +60,21 @@ export function alertRuleDescription(rule: SensorAlertRuleDto): string {
 }
 
 /**
- * What `count` readings in a row mean for this sensor: "≈ 2–4 timmar för Förråd". In minutes while
- * the longer end is under an hour, else both ends in whole hours (the shorter at least 1). Null
- * without a typical gap.
+ * What `count` readings in a row mean for this sensor: "≈ 2–4 timmar för Förråd". Both ends in
+ * minutes while the longer end is under two hours ("≈ 30–60 min", not "≈ 1 timme"), else both in
+ * whole hours (the shorter at least 1); ends that round alike are one number. Null without a
+ * typical gap.
  */
 export function alertCountHint(count: number, gapMinutes: number | null, name: string) {
   if (gapMinutes === null || gapMinutes <= 0) return null
   const { lowMin, highMin } = alertSpanMinutes(count, gapMinutes)
-  if (highMin < 60) {
-    return lowMin === highMin
-      ? m.sensors_alert_count_hint_minutes_single({ value: String(lowMin), name })
-      : m.sensors_alert_count_hint_minutes({ low: String(lowMin), high: String(highMin), name })
+  // A positive gap keeps the ends apart in minutes; only rounding to hours can merge them.
+  if (highMin < 120) {
+    return m.sensors_alert_count_hint_minutes({ low: String(lowMin), high: String(highMin), name })
   }
   const low = Math.max(1, Math.round(lowMin / 60))
   const high = Math.max(low, Math.round(highMin / 60))
-  if (low !== high) {
-    return m.sensors_alert_count_hint_hours({ low: String(low), high: String(high), name })
-  }
-  return low === 1
-    ? m.sensors_alert_count_hint_hour_one({ name })
-    : m.sensors_alert_count_hint_hours_single({ value: String(low), name })
+  return low === high
+    ? m.sensors_alert_count_hint_hours_single({ value: String(low), name })
+    : m.sensors_alert_count_hint_hours({ low: String(low), high: String(high), name })
 }

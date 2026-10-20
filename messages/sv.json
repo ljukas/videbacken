@@ -488,7 +488,21 @@
   "onboarding_step_progress": "Steg {current} av {total}",
   "search_no_results": "Inga träffar.",
   "sensors_alerts_open_named": "Larm för {name}",
-  "sensors_alerts_open_named_count": "Larm för {name}, {count} aktiva",
+  "sensors_alerts_open_named_count": [
+    {
+      "declarations": [
+        "input name",
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Larm för {name}, {countFormatted} aktivt",
+        "countPlural=other": "Larm för {name}, {countFormatted} aktiva"
+      }
+    }
+  ],
   "sensors_battery": "Batteri {pct}%",
   "sensors_chart_empty": "Ingen data i vald period.",
   "sensors_current_heading": "Just nu",
@@ -1129,17 +1143,15 @@
   "sensors_alert_field_silence_hours": "Timmar utan mätning",
   "sensors_alert_field_count": "I rad",
   "sensors_alert_count_suffix": "mätningar",
-  "sensors_alert_count_hint_minutes": "≈ {low}–{high} min för {name}",
-  "sensors_alert_count_hint_minutes_single": "≈ {value} min för {name}",
-  "sensors_alert_count_hint_hours": "≈ {low}–{high} timmar för {name}",
-  "sensors_alert_count_hint_hours_single": "≈ {value} timmar för {name}",
-  "sensors_alert_count_hint_hour_one": "≈ 1 timme för {name}",
-  "sensors_alert_desc_temperature_below": "Temperatur under {threshold} °C · {count} mätningar",
-  "sensors_alert_desc_temperature_above": "Temperatur över {threshold} °C · {count} mätningar",
-  "sensors_alert_desc_humidity_below": "Luftfuktighet under {threshold} % · {count} mätningar",
-  "sensors_alert_desc_humidity_above": "Luftfuktighet över {threshold} % · {count} mätningar",
-  "sensors_alert_desc_battery": "Batteri under {threshold} % · {count} mätningar",
-  "sensors_alert_desc_silence": "Tyst i {hours} h",
+  "sensors_alert_count_hint_minutes": "≈\u00a0{low}–{high}\u00a0min för {name}",
+  "sensors_alert_count_hint_hours": "≈\u00a0{low}–{high}\u00a0timmar för {name}",
+  "sensors_alert_count_hint_hours_single": "≈\u00a0{value}\u00a0timmar för {name}",
+  "sensors_alert_desc_temperature_below": "Temperatur under {threshold}\u00a0°C · {count} mätningar",
+  "sensors_alert_desc_temperature_above": "Temperatur över {threshold}\u00a0°C · {count} mätningar",
+  "sensors_alert_desc_humidity_below": "Luftfuktighet under {threshold}\u00a0% · {count} mätningar",
+  "sensors_alert_desc_humidity_above": "Luftfuktighet över {threshold}\u00a0% · {count} mätningar",
+  "sensors_alert_desc_battery": "Batteri under {threshold}\u00a0% · {count} mätningar",
+  "sensors_alert_desc_silence": "Tyst i {hours}\u00a0h",
   "sensors_alert_delete": "Ta bort",
   "sensors_alert_delete_confirm": "Ta bort larmet?",
   "sensors_alert_saved": "Larmet sparat",

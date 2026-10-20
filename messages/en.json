@@ -488,7 +488,21 @@
   "onboarding_step_progress": "Step {current} of {total}",
   "search_no_results": "No results.",
   "sensors_alerts_open_named": "Alerts for {name}",
-  "sensors_alerts_open_named_count": "Alerts for {name}, {count} active",
+  "sensors_alerts_open_named_count": [
+    {
+      "declarations": [
+        "input name",
+        "input count",
+        "local countPlural = count: plural",
+        "local countFormatted = count: number"
+      ],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Alerts for {name}, {countFormatted} active",
+        "countPlural=other": "Alerts for {name}, {countFormatted} active"
+      }
+    }
+  ],
   "sensors_battery": "Battery {pct}%",
   "sensors_chart_empty": "No data in the selected period.",
   "sensors_current_heading": "Right now",
@@ -1129,17 +1143,15 @@
   "sensors_alert_field_silence_hours": "Hours without a reading",
   "sensors_alert_field_count": "In a row",
   "sensors_alert_count_suffix": "readings",
-  "sensors_alert_count_hint_minutes": "≈ {low}–{high} min for {name}",
-  "sensors_alert_count_hint_minutes_single": "≈ {value} min for {name}",
-  "sensors_alert_count_hint_hours": "≈ {low}–{high} hours for {name}",
-  "sensors_alert_count_hint_hours_single": "≈ {value} hours for {name}",
-  "sensors_alert_count_hint_hour_one": "≈ 1 hour for {name}",
-  "sensors_alert_desc_temperature_below": "Temperature below {threshold} °C · {count} readings",
-  "sensors_alert_desc_temperature_above": "Temperature above {threshold} °C · {count} readings",
-  "sensors_alert_desc_humidity_below": "Humidity below {threshold} % · {count} readings",
-  "sensors_alert_desc_humidity_above": "Humidity above {threshold} % · {count} readings",
-  "sensors_alert_desc_battery": "Battery below {threshold} % · {count} readings",
-  "sensors_alert_desc_silence": "Silent for {hours} h",
+  "sensors_alert_count_hint_minutes": "≈\u00a0{low}–{high}\u00a0min for {name}",
+  "sensors_alert_count_hint_hours": "≈\u00a0{low}–{high}\u00a0hours for {name}",
+  "sensors_alert_count_hint_hours_single": "≈\u00a0{value}\u00a0hours for {name}",
+  "sensors_alert_desc_temperature_below": "Temperature below {threshold}\u00a0°C · {count} readings",
+  "sensors_alert_desc_temperature_above": "Temperature above {threshold}\u00a0°C · {count} readings",
+  "sensors_alert_desc_humidity_below": "Humidity below {threshold}\u00a0% · {count} readings",
+  "sensors_alert_desc_humidity_above": "Humidity above {threshold}\u00a0% · {count} readings",
+  "sensors_alert_desc_battery": "Battery below {threshold}\u00a0% · {count} readings",
+  "sensors_alert_desc_silence": "Silent for {hours}\u00a0h",
   "sensors_alert_delete": "Delete",
   "sensors_alert_delete_confirm": "Delete the alert?",
   "sensors_alert_saved": "Alert saved",
