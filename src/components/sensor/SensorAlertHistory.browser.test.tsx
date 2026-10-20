@@ -76,6 +76,36 @@ test('ten entries, then "Visa fler" fetches the page before the tenth', async ()
   ).toHaveLength(0)
 })
 
+test('"Visa fler" keeps focus while its page loads, then hands it to the first new entry', async () => {
+  const first = Array.from({ length: 10 }, (_, i) => entry(i))
+  let release: (value: unknown) => void = () => {}
+  historyFn.mockImplementation((input: { before?: unknown }) =>
+    input.before === undefined
+      ? Promise.resolve(page(first, first[9]))
+      : new Promise((resolve) => {
+          release = resolve
+        }),
+  )
+  const { screen } = await renderWithProviders(<SensorAlertHistory deviceId={DEV} open />)
+  const more = screen.getByRole('button', { name: m.sensors_alert_history_more() })
+  await expect.element(more).toBeVisible()
+
+  await more.click()
+  await expect.element(more).toHaveAttribute('aria-disabled', 'true')
+  expect(document.activeElement).toBe(more.element())
+  expect(screen.getByRole('region').element().getAttribute('aria-busy')).toBe('true')
+  // A second press while it loads fetches nothing more (a DOM click: the locator waits for enabled).
+  ;(more.element() as HTMLElement).click()
+  expect(historyFn).toHaveBeenCalledTimes(2)
+
+  release(page([entry(10), entry(11)]))
+  await expect.poll(() => screen.getByRole('listitem').elements().length).toBe(12)
+  await expect.poll(() => more.elements().length).toBe(0)
+  await expect
+    .poll(() => document.activeElement)
+    .toBe(screen.getByRole('listitem').nth(10).element())
+})
+
 test('each entry: the rule as it was, its period, and why a quiet end ended', async () => {
   historyFn.mockResolvedValue(
     page([
