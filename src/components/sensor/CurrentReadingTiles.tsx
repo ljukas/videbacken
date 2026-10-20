@@ -3,7 +3,6 @@ import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { formatDistanceShort } from '~/lib/i18n/format'
 import type { RouterOutputs } from '~/lib/orpc/client'
-import { cn } from '~/lib/utils'
 import { m } from '~/paraglide/messages'
 
 type Device = RouterOutputs['sensor']['listDevices'][number]
@@ -30,15 +29,17 @@ export function CurrentReadingTiles({
   const anyLocation = devices.some((d) => d.location)
   return (
     // Columns follow the tiles' own width (container query), not the viewport:
-    // four only once each tile fits its 30 px figure (~140 px), which a tablet
-    // with the sidebar open doesn't leave.
+    // four only once each tile fits its 30 px figure and still leaves its name
+    // room beside the two 40 px buttons, which a tablet with the sidebar open
+    // doesn't.
     <div className="@container">
-      <ul className="grid grid-cols-2 gap-3 @xl:grid-cols-4">
+      <ul className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
         {devices.map((d) => (
           <li key={d.id} className="flex min-w-0 flex-col rounded-lg border p-3">
             <div className="flex items-start gap-1">
               <div className="min-w-0 flex-1">
-                <h3 className="truncate font-medium text-base">{d.displayName}</h3>
+                {/* Wraps to two lines rather than collapsing beside the buttons on a phone. */}
+                <h3 className="line-clamp-2 break-words font-medium text-base">{d.displayName}</h3>
                 {anyLocation ? (
                   <p data-slot="sensor-location" className="truncate text-muted-foreground text-sm">
                     {/* A non-breaking space keeps an empty line its height. */}
@@ -46,13 +47,13 @@ export function CurrentReadingTiles({
                   </p>
                 ) : null}
               </div>
-              {/* The negative margin sits on the group's last button only, so the
-                  name isn't pushed down; 36 px targets keep two fitting a tile. */}
-              <div className="flex shrink-0 items-start">
+              {/* 40 px targets. The group pulls into the tile's padding (top and
+                  right) so the icons line up with the name, not the name with them. */}
+              <div className="-mt-2 -mr-2 flex shrink-0 items-start">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className={cn('relative size-9', !isAdmin && '-mt-1.5 -mr-1.5')}
+                  className="relative size-10"
                   onClick={() => onOpenAlerts(d.id)}
                   aria-label={
                     (alertCounts[d.id] ?? 0) > 0
@@ -68,7 +69,7 @@ export function CurrentReadingTiles({
                     <Badge
                       variant="secondary"
                       aria-hidden
-                      className="pointer-events-none absolute top-0.5 right-0.5 h-4 min-w-4 px-1 text-sm tabular-nums"
+                      className="pointer-events-none absolute top-0.5 right-0.5 h-4 min-w-4 px-1 py-0 text-sm leading-none tabular-nums"
                     >
                       {alertCounts[d.id]}
                     </Badge>
@@ -78,7 +79,7 @@ export function CurrentReadingTiles({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="-mt-1.5 -mr-1.5 size-9 shrink-0"
+                    className="size-10 shrink-0"
                     onClick={() => onEdit(d.id)}
                     aria-label={m.sensors_edit_device_named({ name: d.displayName })}
                   >

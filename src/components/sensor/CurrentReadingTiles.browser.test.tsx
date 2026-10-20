@@ -117,7 +117,7 @@ test('with no locations at all there is no location line', async () => {
   expect(document.querySelectorAll('[data-slot="sensor-location"]')).toHaveLength(0)
 })
 
-test('the readable sizes: 16 px name that truncates, 14 px detail, a 36 px edit button', async () => {
+test('the readable sizes: 16 px name that wraps to two lines, 14 px detail, 40 px buttons', async () => {
   const { screen } = await renderWithProviders(
     <CurrentReadingTiles
       devices={[device]}
@@ -130,11 +130,23 @@ test('the readable sizes: 16 px name that truncates, 14 px detail, a 36 px edit 
   const name = screen.getByRole('heading', { name: 'Sensor 34cd' })
   await expect.element(name).toBeVisible()
   expect(name.element().className).toContain('text-base')
-  expect(name.element().className).toContain('truncate')
+  // Two buttons leave a phone tile little room: the name wraps (two lines) instead of
+  // collapsing into an ellipsis.
+  expect(name.element().className).toContain('line-clamp-2')
+  expect(name.element().className).not.toContain('truncate')
   const edit = screen.getByRole('button', {
     name: m.sensors_edit_device_named({ name: 'Sensor 34cd' }),
   })
-  expect(edit.element().className).toContain('size-9')
+  const bell = screen.getByRole('button', {
+    name: m.sensors_alerts_open_named({ name: 'Sensor 34cd' }),
+  })
+  expect(edit.element().className).toContain('size-10')
+  expect(bell.element().className).toContain('size-10')
+  // The group, not a button, pulls into the tile's padding, so both buttons line up.
+  expect(edit.element().className).not.toMatch(/-m[tr]-/)
+  expect(bell.element().className).not.toMatch(/-m[tr]-/)
+  expect(edit.element().parentElement?.className).toContain('-mt-2')
+  expect(edit.element().parentElement?.className).toContain('-mr-2')
   // No 12 px text left in a tile (browser tests have no app.css: classes, not pixels).
   expect(document.querySelector('li .text-xs')).toBeNull()
 })
@@ -153,7 +165,8 @@ test('four columns only once the tiles themselves have room, not from a viewport
   // columns: the 30 px temperature overflows. The tiles' own width decides
   // (container query), so two columns until each tile fits its figure.
   const list = document.querySelector('ul')
-  expect(list?.className).toContain('@xl:grid-cols-4')
+  expect(list?.className).toContain('@2xl:grid-cols-4')
+  expect(list?.className).not.toContain('@xl:grid-cols-4')
   expect(list?.className).not.toContain('md:grid-cols-4')
   expect(list?.parentElement?.className).toContain('@container')
 })
@@ -196,4 +209,35 @@ test('a count shows a badge and is part of the bell label', async () => {
   await expect
     .element(screen.getByRole('button', { name: m.sensors_edit_device_named({ name: 'Förråd' }) }))
     .toBeVisible()
+})
+
+test('a count of 0 shows no badge and the plain bell label', async () => {
+  const { screen } = await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[{ ...device, displayName: 'Förråd' }]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{ a: 0 }}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  await expect.element(screen.getByRole('button', { name: bellName('Förråd') })).toBeVisible()
+  expect(document.querySelector('[data-slot="badge"]')).toBeNull()
+})
+
+test('the badge sits tight in its 16 px pill, so the 14 px number isn’t clipped', async () => {
+  await renderWithProviders(
+    <CurrentReadingTiles
+      devices={[device]}
+      isAdmin={false}
+      onEdit={() => {}}
+      alertCounts={{ a: 3 }}
+      onOpenAlerts={() => {}}
+    />,
+  )
+  const badge = document.querySelector('[data-slot="badge"]')
+  // twMerge keeps the last padding: py-0, never the base's py-0.5.
+  expect(badge?.className.split(' ')).toContain('py-0')
+  expect(badge?.className.split(' ')).not.toContain('py-0.5')
+  expect(badge?.className).toContain('leading-none')
 })
