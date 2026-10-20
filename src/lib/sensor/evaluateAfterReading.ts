@@ -36,7 +36,7 @@ export async function evaluateAfterReading(deviceId: string, now = new Date()): 
             endedAt: t.endedAt?.toISOString() ?? null,
           })
           .catch((error) =>
-            logger.warn('sensor alert email publish failed', {
+            logger.error('sensor alert email publish failed', {
               ruleId: t.ruleId,
               eventId: t.eventId,
               transition: t.transition,

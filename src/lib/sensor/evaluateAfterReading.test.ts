@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
+import { logger } from '~/lib/logger/server'
 import { createRule } from '~/lib/services/sensorAlert'
 import { setupDatabase } from '~test/setup'
 import { evaluateAfterReading } from './evaluateAfterReading'
@@ -79,10 +80,16 @@ describe('evaluateAfterReading', () => {
       .spyOn(queue, 'publish')
       .mockRejectedValueOnce(new Error('queue down'))
       .mockResolvedValue(undefined as never)
+    const logError = vi.spyOn(logger, 'error')
 
     await expect(evaluateAfterReading(deviceId, NOW)).resolves.toBeUndefined()
 
     expect(publish).toHaveBeenCalledTimes(2)
+    expect(logError).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledWith(
+      'sensor alert email publish failed',
+      expect.objectContaining({ transition: 'fired', error: expect.any(Error) }),
+    )
   })
 
   test('resolves when the evaluation fails, publishing nothing', async () => {
