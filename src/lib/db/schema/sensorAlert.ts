@@ -8,6 +8,7 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 import {
@@ -18,8 +19,10 @@ import {
   HUMIDITY_MAX,
   HUMIDITY_MIN,
   SENSOR_ALERT_DIRECTIONS,
+  SENSOR_ALERT_END_REASONS,
   SENSOR_ALERT_KINDS,
   type SensorAlertDirection,
+  type SensorAlertEndReason,
   type SensorAlertKind,
   SILENCE_HOURS_MAX,
   SILENCE_HOURS_MIN,
@@ -87,5 +90,61 @@ export const sensorAlertRule = pgTable(
     ),
     index('sensor_alert_rule_user_idx').on(table.userId, table.createdAt, table.id),
     index('sensor_alert_rule_device_idx').on(table.deviceId),
+  ],
+).enableRLS()
+
+// One firing of a rule (ADR-0028): open while `ended_at` is null, with the rule's values
+// snapshotted when it fired. `rule_id` goes null when the rule is deleted; no CHECK ties it to
+// `ended_at`, because a sensor or user delete cascades into both tables and the rule's SET NULL
+// may reach an open event before its own cascade delete does. The service writes the snapshot
+// only from a valid rule, so there is no shape CHECK.
+export const sensorAlertEvent = pgTable(
+  'sensor_alert_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ruleId: uuid('rule_id').references(() => sensorAlertRule.id, { onDelete: 'set null' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => sensorDevice.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<SensorAlertKind>().notNull(),
+    direction: text('direction').$type<SensorAlertDirection>(),
+    threshold: real('threshold'),
+    count: integer('count'),
+    silenceHours: integer('silence_hours'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    endReason: text('end_reason').$type<SensorAlertEndReason>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('sensor_alert_event_kind_check', sql`${table.kind} IN (${sqlList(SENSOR_ALERT_KINDS)})`),
+    check(
+      'sensor_alert_event_direction_check',
+      sql`${table.direction} IS NULL OR ${table.direction} IN (${sqlList(SENSOR_ALERT_DIRECTIONS)})`,
+    ),
+    check(
+      'sensor_alert_event_end_reason_check',
+      sql`${table.endReason} IS NULL OR ${table.endReason} IN (${sqlList(SENSOR_ALERT_END_REASONS)})`,
+    ),
+    check(
+      'sensor_alert_event_end_check',
+      sql`(${table.endedAt} IS NULL) = (${table.endReason} IS NULL)`,
+    ),
+    check(
+      'sensor_alert_event_ended_after_started_check',
+      sql`${table.endedAt} IS NULL OR ${table.endedAt} >= ${table.startedAt}`,
+    ),
+    uniqueIndex('sensor_alert_event_open_rule_idx')
+      .on(table.ruleId)
+      .where(sql`${table.endedAt} IS NULL`),
+    index('sensor_alert_event_history_idx').on(
+      table.userId,
+      table.deviceId,
+      table.startedAt.desc(),
+      table.id.desc(),
+    ),
   ],
 ).enableRLS()
