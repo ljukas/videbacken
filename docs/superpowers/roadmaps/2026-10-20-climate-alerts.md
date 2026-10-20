@@ -8,7 +8,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
-| 1 | Rules: the `sensor_alert_rule` table, own-scoped service and procedures, the bell on each tile (count of your switched-on rules) and the "Larm för …" dialog (list with on/off switches, form with the count hint, delete). Nothing evaluates rules or sends email yet | [plan](../plans/2026-10-20-climate-alerts-1-rules.md) | | not started | |
+| 1 | Rules: the `sensor_alert_rule` table, own-scoped service and procedures, the bell on each tile (count of your switched-on rules) and the "Larm för …" dialog (list with on/off switches, form with the count hint, delete). Nothing evaluates rules or sends email yet | [plan](../plans/2026-10-20-climate-alerts-1-rules.md) | [#177](https://github.com/ljukas/videbacken/pull/177) | PR open | |
 | 2 | Value alerts: merged-reading evaluation on the Shelly webhook for temperature, humidity and battery rules; rule state + `sensor_alert_event` history; alert and recovery emails through the queue; the bell's red firing state; the list rows' state dots and "sedan …" (moved from step 1); "Senaste larm" in the dialog | written when step 2 starts | | not started | |
 | 3 | Silence: the hourly cron firing silence rules, recovery on the next webhook, the silence emails | written when step 3 starts | | not started | |
 
