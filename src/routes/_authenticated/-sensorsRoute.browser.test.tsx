@@ -293,6 +293,7 @@ test('the viewer’s switched-on rules show as a count on the tile bell', async 
     threshold: 30,
     count: 1,
     silenceHours: null,
+    firingSince: null,
   })
   const { screen } = await renderSensors('', (qc) => {
     qc.setQueryData(devicesKey, [device])
@@ -309,6 +310,45 @@ test('the viewer’s switched-on rules show as a count on the tile bell', async 
       }),
     )
     .toBeVisible()
+})
+
+test('a firing rule turns its tile bell red with the firing count', async () => {
+  const rule = (id: string, firingSince: Date | null) => ({
+    id,
+    deviceId: 'a',
+    kind: 'temperature' as const,
+    enabled: true,
+    direction: 'above' as const,
+    threshold: 30,
+    count: 2,
+    silenceHours: null,
+    firingSince,
+  })
+  const { screen } = await renderSensors('', (qc) => {
+    qc.setQueryData(devicesKey, [device])
+    qc.setQueryData(seriesKey, noSeries)
+    qc.setQueryData(alertsKey, {
+      rules: [rule('r1', new Date(Date.now() - 600_000)), rule('r2', null)],
+      typicalGapMinutes: {},
+    })
+  })
+  const bell = screen.getByRole('button', {
+    name: m.sensors_alerts_open_named_firing({ name: 'Sensor 34cd', count: 1 }),
+  })
+  await expect.element(bell).toBeVisible()
+  expect(bell.element().querySelector('[data-slot="badge"]')?.textContent).toBe('1')
+})
+
+test("the rules' mutations invalidate the alerts key, which covers the history", async () => {
+  const qc = makeTestQueryClient()
+  const historyKey = orpc.sensor.alerts.history.infiniteOptions({
+    input: (before: { startedAt: Date; id: string } | undefined) => ({ deviceId: 'a', before }),
+    initialPageParam: undefined,
+    getNextPageParam: (last) => last.next ?? undefined,
+  }).queryKey
+  qc.setQueryData(historyKey, { pages: [], pageParams: [] })
+  await qc.invalidateQueries({ queryKey: orpc.sensor.alerts.key() })
+  expect(qc.getQueryState(historyKey)?.isInvalidated).toBe(true)
 })
 
 test('the alerts read failing leaves plain bells, tiles intact', async () => {
@@ -414,6 +454,7 @@ const RULE = {
   threshold: 5,
   count: 2,
   silenceHours: null,
+  firingSince: null,
 }
 
 test.each([

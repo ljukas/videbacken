@@ -4,6 +4,7 @@ import type {
   IntegrationErrorCode,
   IntegrationSource,
 } from '~/lib/integrationHealth'
+import type { SensorAlertDirection, ValueAlertKind } from '~/lib/sensor/alerts'
 import type { Locale } from '~/paraglide/runtime'
 import { lazy } from '../lazy'
 
@@ -25,6 +26,7 @@ export type QueueTopic =
   | 'email_integration_sync_alert'
   | 'email_grid_tariff_available'
   | 'email_credential_expiry'
+  | 'email_sensor_alert'
 
 /**
  * Per-topic payload shape. The blurhash payload carries a `kind` discriminant
@@ -79,6 +81,22 @@ export type QueuePayloadMap = {
     expiresAt: string // ISO
     days: CredentialReminderDays
     locale: Locale
+  }
+  // Sensor value-alert notice (tier-3): published by the Shelly webhook's evaluation after the
+  // transition commits, one per transition (fired / recovered) per rule owner; step 3 widens it
+  // for silence. Carries the sensor's name and numbers, nothing else personal.
+  email_sensor_alert: {
+    to: string
+    locale: Locale
+    transition: 'fired' | 'recovered'
+    sensorName: string
+    kind: ValueAlertKind
+    direction: SensorAlertDirection
+    threshold: number
+    count: number
+    value: number
+    since: string // ISO
+    endedAt: string | null // ISO
   }
 }
 

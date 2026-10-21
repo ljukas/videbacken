@@ -79,3 +79,21 @@ test('sendCredentialExpiry resolves without throwing', async () => {
     }),
   ).resolves.toBeUndefined()
 })
+
+test('sendSensorAlert resolves without throwing', async () => {
+  await expect(
+    email.sendSensorAlert({
+      to: 'gus@test.videbacken.local',
+      locale: 'sv',
+      transition: 'fired',
+      sensorName: 'Förråd',
+      kind: 'temperature',
+      direction: 'below',
+      threshold: 5,
+      count: 2,
+      value: 4.8,
+      since: '2027-01-15T12:00:00Z',
+      endedAt: null,
+    }),
+  ).resolves.toBeUndefined()
+})

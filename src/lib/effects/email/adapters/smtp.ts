@@ -4,6 +4,7 @@ import { renderGridTariffAvailable } from '~/emails/GridTariffAvailableEmail'
 import { renderIntegrationSyncAlert } from '~/emails/IntegrationSyncAlertEmail'
 import { renderInviteUser } from '~/emails/InviteUserEmail'
 import { renderMagicLink } from '~/emails/MagicLinkEmail'
+import { renderSensorAlert } from '~/emails/SensorAlertEmail'
 import { logger } from '~/lib/logger/server'
 import type { EmailEffects } from '../email'
 
@@ -77,5 +78,20 @@ export const smtp: EmailEffects = {
     })
     await getTransport().sendMail({ from: process.env.EMAIL_FROM, to, subject, html, text })
     logger.info('credential expiry sent (smtp)', { to, source, days })
+  },
+  async sendSensorAlert(input) {
+    const { subject, html, text } = await renderSensorAlert(input)
+    await getTransport().sendMail({
+      from: process.env.EMAIL_FROM,
+      to: input.to,
+      subject,
+      html,
+      text,
+    })
+    logger.info('sensor alert sent (smtp)', {
+      to: input.to,
+      transition: input.transition,
+      kind: input.kind,
+    })
   },
 }

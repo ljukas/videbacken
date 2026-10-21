@@ -1,6 +1,8 @@
+import { eq } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { db } from '~/lib/db'
-import { sensorDevice, user } from '~/lib/db/schema'
+import { sensorAlertEvent, sensorDevice, user } from '~/lib/db/schema'
+import { ALERT_RULES_PER_SENSOR_MAX } from '~/lib/sensor/alerts'
 import { deleteDevice } from '~/lib/services/sensor'
 import { setupDatabase } from '~test/setup'
 import {
@@ -58,7 +60,7 @@ test('create returns the rule; only its owner lists it', async () => {
     count: 3,
     silenceHours: null,
   })
-  expect(await listOwnRules(a)).toEqual([rule])
+  expect(await listOwnRules(a)).toEqual([{ ...rule, firingSince: null }])
   expect(await listOwnRules(b)).toEqual([])
 })
 
@@ -71,7 +73,7 @@ test("another user's id behaves like a missing id and changes nothing", async ()
   expect(await codeOf(updateRule(a, MISSING, temp(d1)))).toBe('RULE_NOT_FOUND')
   // Not-found wins over the device FK: a stranger learns nothing about the device id.
   expect(await codeOf(updateRule(b, rule.id, temp(MISSING)))).toBe('RULE_NOT_FOUND')
-  expect(await listOwnRules(a)).toEqual([rule])
+  expect(await listOwnRules(a)).toEqual([{ ...rule, firingSince: null }])
 })
 
 test('update changes the kind and nulls the fields it no longer uses', async () => {
@@ -136,4 +138,93 @@ test('deleting the device removes its rules', async () => {
   await createRule(a, temp(d1))
   await deleteDevice(d1)
   expect(await listOwnRules(a)).toEqual([])
+})
+
+const STARTED = new Date(Date.now() - 3_600_000)
+
+async function fire(userId: string, rule: { id: string; deviceId: string }) {
+  await db.insert(sensorAlertEvent).values({
+    ruleId: rule.id,
+    userId,
+    deviceId: rule.deviceId,
+    kind: 'temperature',
+    direction: 'below',
+    threshold: 17.5,
+    count: 3,
+    startedAt: STARTED,
+  })
+}
+
+const events = () => db.select().from(sensorAlertEvent)
+
+test('listOwnRules shows firingSince of the open event only', async () => {
+  const { a, b, d1 } = await seed()
+  const rule = await createRule(a, temp(d1))
+  expect((await listOwnRules(a))[0].firingSince).toBeNull()
+  await fire(a, rule)
+  expect((await listOwnRules(a))[0].firingSince).toEqual(STARTED)
+  await db.update(sensorAlertEvent).set({ endedAt: new Date(), endReason: 'recovered' })
+  expect((await listOwnRules(a))[0].firingSince).toBeNull()
+  // Another user's open event on the same device doesn't show.
+  await db.insert(sensorAlertEvent).values({
+    ruleId: null,
+    userId: b,
+    deviceId: d1,
+    kind: 'temperature',
+    direction: 'below',
+    threshold: 1,
+    count: 2,
+    startedAt: STARTED,
+  })
+  expect((await listOwnRules(a))[0].firingSince).toBeNull()
+})
+
+test('pausing ends the open event; resuming starts nothing', async () => {
+  const { a, d1 } = await seed()
+  const rule = await createRule(a, temp(d1))
+  await fire(a, rule)
+  await setRuleEnabled(a, rule.id, false)
+  const [ev] = await events()
+  expect(ev.endReason).toBe('paused')
+  expect(ev.endedAt).toBeInstanceOf(Date)
+  await setRuleEnabled(a, rule.id, true)
+  expect(await events()).toHaveLength(1)
+  expect((await listOwnRules(a))[0].firingSince).toBeNull()
+})
+
+test('editing a defining value ends the event; identical values leave it open', async () => {
+  const { a, d1 } = await seed()
+  const rule = await createRule(a, temp(d1))
+  await fire(a, rule)
+  await updateRule(a, rule.id, temp(d1))
+  expect((await events())[0].endedAt).toBeNull()
+  await updateRule(a, rule.id, { ...temp(d1), threshold: 15 })
+  const [ev] = await events()
+  expect(ev.endReason).toBe('edited')
+  expect(ev.endedAt).toBeInstanceOf(Date)
+})
+
+test('deleting a firing rule keeps the event as deleted with no rule; a stranger changes nothing', async () => {
+  const { a, b, d1 } = await seed()
+  const rule = await createRule(a, temp(d1))
+  await fire(a, rule)
+  expect(await codeOf(deleteRule(b, rule.id))).toBe('RULE_NOT_FOUND')
+  expect((await events())[0].endedAt).toBeNull()
+  await deleteRule(a, rule.id)
+  const [ev] = await events()
+  expect(ev.endReason).toBe('deleted')
+  expect(ev.ruleId).toBeNull()
+  expect(
+    await db.select().from(sensorAlertEvent).where(eq(sensorAlertEvent.id, ev.id)),
+  ).toHaveLength(1)
+})
+
+test('the 21st rule on a sensor is refused, on another sensor it is fine', async () => {
+  const { a, d1, d2 } = await seed()
+  for (let i = 0; i < ALERT_RULES_PER_SENSOR_MAX; i++) await createRule(a, temp(d1))
+  expect(await codeOf(createRule(a, temp(d1)))).toBe('TOO_MANY_RULES')
+  await createRule(a, temp(d2))
+  const moving = await createRule(a, temp(d2))
+  expect(await codeOf(updateRule(a, moving.id, temp(d1)))).toBe('TOO_MANY_RULES')
+  expect((await listOwnRules(a)).find((r) => r.id === moving.id)?.deviceId).toBe(d2)
 })

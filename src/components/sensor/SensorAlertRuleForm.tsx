@@ -273,12 +273,15 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack: leave, b
   return (
     <form
       noValidate
+      // In the dialog's column: the fields scroll, the footer stays put.
+      className="flex min-h-0 flex-1 flex-col"
       onSubmit={(e) => {
         e.preventDefault()
         form.handleSubmit()
       }}
     >
-      <div className="flex flex-col gap-5">
+      {/* pb-1: the last field's focus ring isn't clipped by the scroll edge. */}
+      <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-4 pb-1">
         <h3 ref={heading} tabIndex={-1} className="font-medium text-base outline-none">
           {rule ? m.sensors_alert_form_title_edit() : m.sensors_alert_form_title_new()}
         </h3>
@@ -369,7 +372,7 @@ export function SensorAlertRuleForm({ device, rule, gapMinutes, onBack: leave, b
       {/* While asking, the footer is a group named by the question, so it is announced when
           focus lands on "Avbryt". */}
       <ResponsiveDialogFooter
-        className="mt-6"
+        className="mt-5 shrink-0"
         role={confirmingDelete && rule ? 'group' : undefined}
         aria-labelledby={confirmingDelete && rule ? questionId : undefined}
       >

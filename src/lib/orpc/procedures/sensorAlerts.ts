@@ -10,6 +10,7 @@ import { SensorAlertDomainError, type SensorAlertDomainErrorCode } from '~/lib/s
 const sensorAlertErrors = {
   RULE_NOT_FOUND: { status: 404 },
   UNKNOWN_SENSOR: { status: 422 },
+  TOO_MANY_RULES: { status: 409 },
 } satisfies Record<SensorAlertDomainErrorCode, { status: number }>
 
 const updateInput = sensorAlertRuleInput.and(z.object({ id: z.uuid() }))
@@ -41,6 +42,24 @@ export const sensorAlertsRouter = {
     if (context.timings) context.timings.alertRulesMs = Math.round(rulesDone - started)
     return { rules, typicalGapMinutes }
   }),
+
+  history: protectedProcedure
+    .input(
+      z.object({
+        deviceId: z.uuid(),
+        before: z.object({ startedAt: z.date(), id: z.uuid() }).optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const started = performance.now()
+      const page = await sensorAlertService.listOwnHistory(
+        context.user.id,
+        input.deviceId,
+        input.before,
+      )
+      if (context.timings) context.timings.alertHistoryMs = Math.round(performance.now() - started)
+      return page
+    }),
 
   create: protectedProcedure
     .errors(sensorAlertErrors)

@@ -1,8 +1,21 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
+import { logger } from '~/lib/logger/server'
+import { evaluateValueRules } from '~/lib/services/sensorAlert'
 import { setupDatabase } from '~test/setup'
 import { handleShellyWebhook, parseShellyQuery } from './shellyWebhook'
+
+const waitUntilPromises = vi.hoisted((): Promise<unknown>[] => [])
+vi.mock('@vercel/functions', () => ({
+  waitUntil: (p: Promise<unknown>) => {
+    waitUntilPromises.push(p)
+  },
+}))
+vi.mock('~/lib/services/sensorAlert', async (importOriginal) => {
+  const original = await importOriginal<typeof import('~/lib/services/sensorAlert')>()
+  return { ...original, evaluateValueRules: vi.fn(original.evaluateValueRules) }
+})
 
 const TOKEN = 'test-webhook-secret'
 process.env.SHELLY_WEBHOOK_TOKEN = TOKEN
@@ -186,6 +199,49 @@ describe('parseShellyQuery', () => {
 
 describe('handleShellyWebhook', () => {
   setupDatabase()
+
+  // No evaluation may still run when the per-test schema is dropped.
+  afterEach(async () => {
+    await Promise.all(waitUntilPromises.splice(0))
+    vi.mocked(evaluateValueRules).mockClear()
+  })
+
+  test('hands one alert evaluation to waitUntil and answers 204', async () => {
+    const res = await handleShellyWebhook(
+      new Request(shellyUrl(`token=${TOKEN}&mac=AABBCCDDEEFF&t=20`)),
+    )
+    expect(res.status).toBe(204)
+    expect(waitUntilPromises).toHaveLength(1)
+    await Promise.all(waitUntilPromises)
+    const [device] = await db.select().from(sensorDevice)
+    expect(evaluateValueRules).toHaveBeenCalledWith(device.id, expect.any(Date))
+  })
+
+  test('a failing evaluation still answers 204 with the reading stored', async () => {
+    vi.mocked(evaluateValueRules).mockRejectedValueOnce(new Error('boom'))
+    const logError = vi.spyOn(logger, 'error')
+    try {
+      const res = await handleShellyWebhook(
+        new Request(shellyUrl(`token=${TOKEN}&mac=AABBCCDDEEFF&t=20`)),
+      )
+      expect(res.status).toBe(204)
+      await expect(Promise.all(waitUntilPromises)).resolves.toBeDefined()
+      const stored = await db.select().from(sensorReading)
+      expect(stored).toHaveLength(1)
+      expect(logError).toHaveBeenCalledWith(
+        'sensor alert evaluation failed',
+        expect.objectContaining({ deviceId: stored[0].deviceId, error: expect.any(Error) }),
+      )
+    } finally {
+      logError.mockRestore()
+    }
+  })
+
+  test('an invalid mac answers 400 and hands nothing to waitUntil', async () => {
+    const res = await handleShellyWebhook(new Request(shellyUrl(`token=${TOKEN}&mac=zz&t=20`)))
+    expect(res.status).toBe(400)
+    expect(waitUntilPromises).toHaveLength(0)
+  })
 
   test('stores the Shelly name from the webhook', async () => {
     const res = await handleShellyWebhook(

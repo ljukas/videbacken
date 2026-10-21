@@ -9,7 +9,7 @@ self-contained plan. A step starts only when the previous step's checkpoint has 
 | # | Step | Plan | PR | Status | Checkpoint result |
 |---|---|---|---|---|---|
 | 1 | Rules: the `sensor_alert_rule` table, own-scoped service and procedures, the bell on each tile (count of your switched-on rules) and the "Larm för …" dialog (list with on/off switches, form with the count hint, delete). Nothing evaluates rules or sends email yet | [plan](../plans/2026-10-20-climate-alerts-1-rules.md) | [#177](https://github.com/ljukas/videbacken/pull/177) | checkpoint passed | Passed 2026-10-20 on prod. The owner created four rules on a phone (Förråd temperature under 5 °C, battery under 20 % on Förråd, Fack 1 and Fack 3, all count 2; not the script's Fack 1 temperature and Fack 3 silence rules): bells 2 / 1 / 1, the count hint read right, pausing and deleting worked; read-only SQL showed exactly those rows. A plain `user` saw plain bells and none of the owner's rules, and created and deleted its own (no rows left). Tile names stay readable on a phone. Found: editing by tapping a row's text was unclear, fixed with a pencil button in [#178](https://github.com/ljukas/videbacken/pull/178) and rechecked on prod |
-| 2 | Value alerts: merged-reading evaluation on the Shelly webhook for temperature, humidity and battery rules; rule state + `sensor_alert_event` history; alert and recovery emails through the queue; the bell's red firing state; the list rows' state dots and "sedan …" (moved from step 1); "Senaste larm" in the dialog | written when step 2 starts | | not started | |
+| 2 | Value alerts: merged-reading evaluation on the Shelly webhook for temperature, humidity and battery rules; rule state + `sensor_alert_event` history; alert and recovery emails through the queue; the bell's red firing state; the list rows' state dots and "sedan …" (moved from step 1); "Senaste larm" in the dialog | [plan](../plans/2026-10-20-climate-alerts-2-value-alerts.md) | [#180](https://github.com/ljukas/videbacken/pull/180) | PR open | |
 | 3 | Silence: the hourly cron firing silence rules, recovery on the next webhook, the silence emails | written when step 3 starts | | not started | |
 
 Status values: `not started` → `in progress` → `PR open` → `merged` → `checkpoint passed`. Steps 2 and 3 are fully
@@ -56,7 +56,7 @@ Each must pass, with the result recorded in the table, before the next step star
    - Desktop, tablet and phone widths: the tile names don't collapse with two icon buttons.
 2. **After step 2 (prod).** A deliberate rule fires on a real reading: one alert email (subject, facts, link),
    the bell turns red, "Senaste larm" shows it as ongoing; editing the rule back ends it quietly (no email), the
-   history entry reads "avslutad (ändrad)". A real recovery email arrives for a rule recovering on its own (a
+   history entry reads "avslutat (ändrat)". A real recovery email arrives for a rule recovering on its own (a
    temporary rule above the current value, then lowered below it by the weather, or the battery rule after a swap).
    Exactly one email per transition in the runtime logs, Förråd bursts included.
 3. **After step 3 (prod).** Batteries out of one sensor: one silence email within an hour after the rule's hours;
@@ -76,3 +76,7 @@ Each must pass, with the result recorded in the table, before the next step star
 - **For step 2's plan:** keep the firing state off the rule row (an open `sensor_alert_event` = firing, a partial
   unique index on `rule_id where ended_at is null`; schema review of step 1). Decide whether to cap rules per user
   (security review of step 1: uncapped rules × one webhook = that many emails once).
+- **Step 2:** at most 20 rules per user per sensor (owner), answering the cap question above.
+- **Step 2:** saving a rule without changing it keeps a firing alert (owner); only a changed rule restarts it.
+- **Step 2:** a recovery ends at the first reading back on the normal side (owner).
+- **Step 2:** the switch on each rule row is named "Bevaka: …" (owner).

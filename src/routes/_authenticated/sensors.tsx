@@ -205,12 +205,15 @@ function SensorsPage() {
   const dialogDevice = deviceId ? roster.find((d) => d.id === deviceId) : undefined
   const alertsData = alertsResult.data
   const alertsFailed = loadFailed(alertsResult)
-  const alertCounts = useMemo(() => {
-    const counts: Record<string, number> = {}
+  // Per sensor, the viewer's switched-on rules and those firing now (an open alert).
+  const { alertCounts, firingCounts } = useMemo(() => {
+    const active: Record<string, number> = {}
+    const firing: Record<string, number> = {}
     for (const r of alertsFailed ? [] : (alertsData?.rules ?? [])) {
-      if (r.enabled) counts[r.deviceId] = (counts[r.deviceId] ?? 0) + 1
+      if (r.enabled) active[r.deviceId] = (active[r.deviceId] ?? 0) + 1
+      if (r.firingSince) firing[r.deviceId] = (firing[r.deviceId] ?? 0) + 1
     }
-    return counts
+    return { alertCounts: active, firingCounts: firing }
   }, [alertsData, alertsFailed])
   const editDeviceOpen = isOpen('edit') && dialogDevice !== undefined
   const alertsOpen = isOpen('alerts') && dialogDevice !== undefined
@@ -290,6 +293,7 @@ function SensorsPage() {
                   isAdmin={isAdmin}
                   onEdit={(id) => open('edit', { deviceId: id })}
                   alertCounts={alertCounts}
+                  firingCounts={firingCounts}
                   // Always the list: a stale alertId in the URL never opens a form.
                   onOpenAlerts={(id) => open('alerts', { deviceId: id, alertId: undefined })}
                 />

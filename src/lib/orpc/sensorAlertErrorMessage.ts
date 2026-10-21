@@ -1,3 +1,4 @@
+import { ALERT_RULES_PER_SENSOR_MAX } from '~/lib/sensor/alerts'
 import type { SensorAlertDomainErrorCode } from '~/lib/services/sensorAlert'
 import { m } from '~/paraglide/messages'
 
@@ -9,5 +10,7 @@ export function sensorAlertErrorMessage(code: SensorAlertDomainErrorCode): strin
       return m.sensors_alert_error_rule_not_found()
     case 'UNKNOWN_SENSOR':
       return m.sensors_alert_error_unknown_sensor()
+    case 'TOO_MANY_RULES':
+      return m.sensors_alert_error_too_many({ max: String(ALERT_RULES_PER_SENSOR_MAX) })
   }
 }
