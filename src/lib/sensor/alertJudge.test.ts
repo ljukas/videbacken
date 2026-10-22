@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { type AlertReading, judgeValueRule, type ValueRule } from './alertJudge'
+import { type AlertReading, judgeSilenceRule, judgeValueRule, type ValueRule } from './alertJudge'
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 9, 1) + minutes * 60_000)
 const temp = (c: number | null, minutes: number): AlertReading => ({
@@ -102,5 +102,36 @@ describe('judgeValueRule', () => {
       }))
     expect(judgeValueRule(rule, false, hum([81, 82])).action).toBe('fire')
     expect(judgeValueRule(rule, true, hum([80, 80])).action).toBe('recover')
+  })
+})
+
+describe('judgeSilenceRule', () => {
+  const now = new Date(Date.UTC(2026, 9, 22, 12))
+  const ago = (ms: number) => new Date(now.getTime() - ms)
+  const HOUR = 3_600_000
+
+  test('no reading at all never fires or recovers', () => {
+    expect(judgeSilenceRule(6, null, null, now)).toEqual({ action: 'none' })
+    expect(judgeSilenceRule(6, ago(HOUR), null, now)).toEqual({ action: 'none' })
+  })
+
+  test('more than N hours is strict', () => {
+    expect(judgeSilenceRule(6, null, ago(6 * HOUR), now)).toEqual({ action: 'none' })
+    const last = ago(6 * HOUR + 1)
+    expect(judgeSilenceRule(6, null, last, now)).toEqual({ action: 'fire', since: last })
+  })
+
+  test('open: still silent until a reading arrives after the start', () => {
+    const t = ago(7 * HOUR)
+    expect(judgeSilenceRule(6, t, t, now)).toEqual({ action: 'none' })
+    expect(judgeSilenceRule(6, t, new Date(t.getTime() + 1000), now)).toEqual({
+      action: 'recover',
+    })
+  })
+
+  test('no bound on how old the last reading is', () => {
+    const old = ago(30 * 24 * HOUR)
+    expect(judgeSilenceRule(6, ago(HOUR), old, now)).toEqual({ action: 'none' })
+    expect(judgeSilenceRule(6, null, old, now)).toEqual({ action: 'fire', since: old })
   })
 })

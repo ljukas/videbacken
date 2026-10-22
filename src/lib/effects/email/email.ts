@@ -67,7 +67,8 @@ export interface EmailEffects {
     days: CredentialReminderDays
     locale: Locale
   }): Promise<void>
-  // Sensor value-alert notice (tier-3): `email_sensor_alert` queue topic, one per transition.
+  // Sensor alert notice, value or silence (tier-3): `email_sensor_alert` queue topic, one per
+  // transition.
   sendSensorAlert(input: QueuePayloadMap['email_sensor_alert']): Promise<void>
 }
 

@@ -90,14 +90,18 @@ export type QueuePayloadMap = {
     locale: Locale
     transition: 'fired' | 'recovered'
     sensorName: string
-    kind: ValueAlertKind
-    direction: SensorAlertDirection
-    threshold: number
-    count: number
-    value: number
-    since: string // ISO
+    since: string // ISO (a silence alert starts at the last reading)
     endedAt: string | null // ISO
-  }
+  } & (
+    | {
+        kind: ValueAlertKind
+        direction: SensorAlertDirection
+        threshold: number
+        count: number
+        value: number
+      }
+    | { kind: 'silence'; silenceHours: number }
+  )
 }
 
 /**

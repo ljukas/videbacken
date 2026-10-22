@@ -55,3 +55,32 @@ export function judgeValueRule(
     ? { action: 'recover', endedAt: last[0].at, value }
     : { action: 'none' }
 }
+
+export type SilenceJudgement =
+  | { action: 'none' }
+  | { action: 'fire'; since: Date } // since = lastReadingAt
+  | { action: 'recover' } // the caller finds the first reading after the open start
+
+const HOUR_MS = 3_600_000
+
+/**
+ * Silence rule: armed, fires when the last reading is more than `silenceHours` old (exactly N
+ * hours is not yet silent). Open, recovers once a reading is newer than the open start; the
+ * caller looks that reading up. No reading ever means nothing to judge.
+ */
+export function judgeSilenceRule(
+  silenceHours: number,
+  openStartedAt: Date | null,
+  lastReadingAt: Date | null,
+  now: Date,
+): SilenceJudgement {
+  if (!lastReadingAt) return { action: 'none' }
+  if (openStartedAt) {
+    return lastReadingAt.getTime() > openStartedAt.getTime()
+      ? { action: 'recover' }
+      : { action: 'none' }
+  }
+  return now.getTime() - lastReadingAt.getTime() > silenceHours * HOUR_MS
+    ? { action: 'fire', since: lastReadingAt }
+    : { action: 'none' }
+}

@@ -33,6 +33,7 @@ import { Route as ApiCronComfortCloudSyncRouteImport } from './routes/api/cron/c
 import { Route as ApiCronElprisSyncRouteImport } from './routes/api/cron/elpris-sync'
 import { Route as ApiCronEmaldoSyncRouteImport } from './routes/api/cron/emaldo-sync'
 import { Route as ApiCronGridTariffCatalogueRouteImport } from './routes/api/cron/grid-tariff-catalogue'
+import { Route as ApiCronSensorSilenceRouteImport } from './routes/api/cron/sensor-silence'
 import { Route as ApiCronSkodaSyncRouteImport } from './routes/api/cron/skoda-sync'
 import { Route as ApiCronZaptecSyncRouteImport } from './routes/api/cron/zaptec-sync'
 import { Route as ApiRpcSplatRouteImport } from './routes/api/rpc/$'
@@ -168,6 +169,11 @@ const ApiCronGridTariffCatalogueRoute =
     path: '/api/cron/grid-tariff-catalogue',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCronSensorSilenceRoute = ApiCronSensorSilenceRouteImport.update({
+  id: '/api/cron/sensor-silence',
+  path: '/api/cron/sensor-silence',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronSkodaSyncRoute = ApiCronSkodaSyncRouteImport.update({
   id: '/api/cron/skoda-sync',
   path: '/api/cron/skoda-sync',
@@ -216,6 +222,7 @@ export interface FileRoutesByFullPath {
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
+  '/api/cron/sensor-silence': typeof ApiCronSensorSilenceRoute
   '/api/cron/skoda-sync': typeof ApiCronSkodaSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
@@ -245,6 +252,7 @@ export interface FileRoutesByTo {
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
+  '/api/cron/sensor-silence': typeof ApiCronSensorSilenceRoute
   '/api/cron/skoda-sync': typeof ApiCronSkodaSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
@@ -277,6 +285,7 @@ export interface FileRoutesById {
   '/api/cron/elpris-sync': typeof ApiCronElprisSyncRoute
   '/api/cron/emaldo-sync': typeof ApiCronEmaldoSyncRoute
   '/api/cron/grid-tariff-catalogue': typeof ApiCronGridTariffCatalogueRoute
+  '/api/cron/sensor-silence': typeof ApiCronSensorSilenceRoute
   '/api/cron/skoda-sync': typeof ApiCronSkodaSyncRoute
   '/api/cron/zaptec-sync': typeof ApiCronZaptecSyncRoute
   '/api/rpc/$': typeof ApiRpcSplatRoute
@@ -309,6 +318,7 @@ export interface FileRouteTypes {
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
+    | '/api/cron/sensor-silence'
     | '/api/cron/skoda-sync'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
@@ -338,6 +348,7 @@ export interface FileRouteTypes {
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
+    | '/api/cron/sensor-silence'
     | '/api/cron/skoda-sync'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
@@ -369,6 +380,7 @@ export interface FileRouteTypes {
     | '/api/cron/elpris-sync'
     | '/api/cron/emaldo-sync'
     | '/api/cron/grid-tariff-catalogue'
+    | '/api/cron/sensor-silence'
     | '/api/cron/skoda-sync'
     | '/api/cron/zaptec-sync'
     | '/api/rpc/$'
@@ -390,6 +402,7 @@ export interface RootRouteChildren {
   ApiCronElprisSyncRoute: typeof ApiCronElprisSyncRoute
   ApiCronEmaldoSyncRoute: typeof ApiCronEmaldoSyncRoute
   ApiCronGridTariffCatalogueRoute: typeof ApiCronGridTariffCatalogueRoute
+  ApiCronSensorSilenceRoute: typeof ApiCronSensorSilenceRoute
   ApiCronSkodaSyncRoute: typeof ApiCronSkodaSyncRoute
   ApiCronZaptecSyncRoute: typeof ApiCronZaptecSyncRoute
   ApiRpcSplatRoute: typeof ApiRpcSplatRoute
@@ -566,6 +579,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronGridTariffCatalogueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/sensor-silence': {
+      id: '/api/cron/sensor-silence'
+      path: '/api/cron/sensor-silence'
+      fullPath: '/api/cron/sensor-silence'
+      preLoaderRoute: typeof ApiCronSensorSilenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/skoda-sync': {
       id: '/api/cron/skoda-sync'
       path: '/api/cron/skoda-sync'
@@ -665,6 +685,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCronElprisSyncRoute: ApiCronElprisSyncRoute,
   ApiCronEmaldoSyncRoute: ApiCronEmaldoSyncRoute,
   ApiCronGridTariffCatalogueRoute: ApiCronGridTariffCatalogueRoute,
+  ApiCronSensorSilenceRoute: ApiCronSensorSilenceRoute,
   ApiCronSkodaSyncRoute: ApiCronSkodaSyncRoute,
   ApiCronZaptecSyncRoute: ApiCronZaptecSyncRoute,
   ApiRpcSplatRoute: ApiRpcSplatRoute,

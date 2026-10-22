@@ -3,7 +3,7 @@ import { db } from '~/lib/db'
 import { sensorDevice, sensorReading, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
 import { logger } from '~/lib/logger/server'
-import { createRule } from '~/lib/services/sensorAlert'
+import { createRule, evaluateDeviceSilence } from '~/lib/services/sensorAlert'
 import { setupDatabase } from '~test/setup'
 import { evaluateAfterReading } from './evaluateAfterReading'
 
@@ -90,6 +90,42 @@ describe('evaluateAfterReading', () => {
       'sensor alert email publish failed',
       expect.objectContaining({ transition: 'fired', error: expect.any(Error) }),
     )
+  })
+
+  test('a new reading recovers a firing silence alert and publishes one silence email', async () => {
+    const [u] = await db
+      .insert(user)
+      .values([{ name: 'a', email: 'a@test.videbacken.local' }])
+      .returning({ id: user.id })
+    const [device] = await db
+      .insert(sensorDevice)
+      .values([{ mac: 'bbbbbbbbbbbb', name: 'Frysen' }])
+      .returning({ id: sensorDevice.id })
+    const reading = (m: number) => ({
+      deviceId: device.id,
+      temperatureC: 4,
+      humidityPct: 50,
+      batteryPct: 80,
+      recordedAt: minutesAgo(m),
+    })
+    await db.insert(sensorReading).values(reading(8 * 60))
+    await createRule(u.id, { kind: 'silence', deviceId: device.id, silenceHours: 6 })
+    expect(await evaluateDeviceSilence(device.id, NOW)).toHaveLength(1)
+    await db.insert(sensorReading).values(reading(1))
+    const publish = vi.spyOn(queue, 'publish').mockResolvedValue(undefined as never)
+
+    await evaluateAfterReading(device.id, NOW)
+
+    expect(publish).toHaveBeenCalledTimes(1)
+    const [, payload] = publish.mock.calls[0]
+    expect(payload).toMatchObject({
+      kind: 'silence',
+      silenceHours: 6,
+      transition: 'recovered',
+      since: minutesAgo(8 * 60).toISOString(),
+      endedAt: minutesAgo(1).toISOString(),
+    })
+    expect(payload).not.toHaveProperty('value')
   })
 
   test('resolves when the evaluation fails, publishing nothing', async () => {

@@ -158,6 +158,9 @@ export default defineConfig({
                 // 2026-09-30 amendment), same secret gate. Monthly, the 1st at
                 // 06:00 UTC (src/lib/gridTariff/catalogueCheckCron.ts).
                 { path: '/api/cron/grid-tariff-catalogue', schedule: '0 6 1 * *' },
+                // Climate silence alerts hourly at :15 — clear of :00, :07/:22/:37/:52, :20, :30
+                // and :45 (ADR-0028, src/lib/sensor/silenceCron.ts).
+                { path: '/api/cron/sensor-silence', schedule: '15 * * * *' },
               ],
             },
             // Subscribes the Vercel preset's queue handler to each topic.

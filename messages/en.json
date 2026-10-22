@@ -1200,5 +1200,12 @@
   "email_sensor_alert_note": "You won't get more emails about this until {measure} is back {back} {limit}.",
   "email_sensor_alert_button": "Open Climate",
   "email_sensor_alert_fallback": "If the button doesn't work, copy and paste the following link into your browser:",
-  "email_sensor_alert_footer": "You're getting this email because you set up this alert. Pause or delete it under the bell on {name} in Climate."
+  "email_sensor_alert_footer": "You're getting this email because you set up this alert. Pause or delete it under the bell on {name} in Climate.",
+  "email_sensor_alert_silence_subject_fired": "⚠️ {name} hasn't reported in {hours} hours",
+  "email_sensor_alert_silence_subject_recovered": "✅ {name} is reporting again",
+  "email_sensor_alert_silence_body_fired": "{name} hasn't sent a reading since {lastAt}, longer than your limit of {hours} hours.",
+  "email_sensor_alert_silence_body_recovered": "{name} is reporting again after {duration} without readings.",
+  "email_sensor_alert_silence_fact_limit_value": "{hours} hours without a reading",
+  "email_sensor_alert_silence_fact_period": "Without readings",
+  "email_sensor_alert_silence_note": "You won't get more emails about this until {name} reports again."
 }

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading } from '~/lib/db/schema'
 import { logger } from '~/lib/logger/server'
-import { evaluateValueRules } from '~/lib/services/sensorAlert'
+import { evaluateReading } from '~/lib/services/sensorAlert'
 import { setupDatabase } from '~test/setup'
 import { handleShellyWebhook, parseShellyQuery } from './shellyWebhook'
 
@@ -14,7 +14,7 @@ vi.mock('@vercel/functions', () => ({
 }))
 vi.mock('~/lib/services/sensorAlert', async (importOriginal) => {
   const original = await importOriginal<typeof import('~/lib/services/sensorAlert')>()
-  return { ...original, evaluateValueRules: vi.fn(original.evaluateValueRules) }
+  return { ...original, evaluateReading: vi.fn(original.evaluateReading) }
 })
 
 const TOKEN = 'test-webhook-secret'
@@ -203,7 +203,7 @@ describe('handleShellyWebhook', () => {
   // No evaluation may still run when the per-test schema is dropped.
   afterEach(async () => {
     await Promise.all(waitUntilPromises.splice(0))
-    vi.mocked(evaluateValueRules).mockClear()
+    vi.mocked(evaluateReading).mockClear()
   })
 
   test('hands one alert evaluation to waitUntil and answers 204', async () => {
@@ -214,11 +214,11 @@ describe('handleShellyWebhook', () => {
     expect(waitUntilPromises).toHaveLength(1)
     await Promise.all(waitUntilPromises)
     const [device] = await db.select().from(sensorDevice)
-    expect(evaluateValueRules).toHaveBeenCalledWith(device.id, expect.any(Date))
+    expect(evaluateReading).toHaveBeenCalledWith(device.id, expect.any(Date))
   })
 
   test('a failing evaluation still answers 204 with the reading stored', async () => {
-    vi.mocked(evaluateValueRules).mockRejectedValueOnce(new Error('boom'))
+    vi.mocked(evaluateReading).mockRejectedValueOnce(new Error('boom'))
     const logError = vi.spyOn(logger, 'error')
     try {
       const res = await handleShellyWebhook(

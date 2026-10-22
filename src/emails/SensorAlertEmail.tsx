@@ -1,4 +1,5 @@
 import { render } from 'react-email'
+import type { QueuePayloadMap } from '~/lib/effects/queue/queue'
 import { dateFnsLocaleFor } from '~/lib/i18n/format'
 import type { SensorAlertDirection, ValueAlertKind } from '~/lib/sensor/alerts'
 import { formatAlertDayTime, formatAlertDuration } from '~/lib/sensor/alertTime'
@@ -6,20 +7,10 @@ import { m } from '~/paraglide/messages'
 import type { Locale } from '~/paraglide/runtime'
 import { BrandEmailLayout } from './BrandEmailLayout'
 
-export interface SensorAlertEmailProps {
-  to: string
-  // Explicit: rendered by the queue worker, outside any request (ADR-0008).
-  locale: Locale
-  transition: 'fired' | 'recovered'
-  sensorName: string
-  kind: ValueAlertKind
-  direction: SensorAlertDirection
-  threshold: number
-  count: number
-  value: number
-  since: string // ISO
-  endedAt: string | null // ISO
-}
+export type SensorAlertEmailProps = QueuePayloadMap['email_sensor_alert']
+
+type ValueProps = Extract<SensorAlertEmailProps, { kind: ValueAlertKind }>
+type SilenceProps = Extract<SensorAlertEmailProps, { kind: 'silence' }>
 
 // The button points at Klimat (BrandEmailLayout also takes the logo's origin from it).
 const actionUrl = () => `${process.env.BETTER_AUTH_URL}/sensors`
@@ -31,7 +22,7 @@ const unit = (kind: ValueAlertKind) => (kind === 'temperature' ? ' °C' : ' %')
 // `signDisplay: 'negative'`: a value that rounds to zero ("-0.04") is "0,0", never "−0,0".
 
 /** "5 °C", "80 %": the limit in the recipient's number format, at most one decimal. */
-function limitText(p: SensorAlertEmailProps): string {
+function limitText(p: ValueProps): string {
   const n = new Intl.NumberFormat(intlLocale(p.locale), {
     maximumFractionDigits: 1,
     signDisplay: 'negative',
@@ -43,7 +34,7 @@ function limitText(p: SensorAlertEmailProps): string {
  * The latest reading: temperature with exactly one decimal, humidity with at most one (a rule
  * over 80 % firing on 80.4 must not read "80 %"), battery whole.
  */
-function valueText(p: SensorAlertEmailProps): string {
+function valueText(p: ValueProps): string {
   const digits =
     p.kind === 'temperature'
       ? { minimumFractionDigits: 1, maximumFractionDigits: 1 }
@@ -72,7 +63,7 @@ const dirWord = (direction: SensorAlertDirection, locale: Locale): string =>
 const upperFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** Everything the copy interpolates, derived once. */
-function parts(p: SensorAlertEmailProps) {
+function parts(p: ValueProps) {
   const { locale, direction } = p
   const measure = measureWord(p.kind, locale)
   return {
@@ -88,7 +79,7 @@ function parts(p: SensorAlertEmailProps) {
 }
 
 /** One line: any whitespace run in it (a CR/LF in a sensor's name too) is one space. */
-function subject(p: SensorAlertEmailProps): string {
+function valueSubject(p: ValueProps): string {
   const { name, measure, dir, back, limit, value } = parts(p)
   const { locale } = p
   const text =
@@ -100,7 +91,7 @@ function subject(p: SensorAlertEmailProps): string {
   return text.replace(/\s+/g, ' ')
 }
 
-function facts(p: SensorAlertEmailProps): { label: string; value: string }[] {
+function valueFacts(p: ValueProps): { label: string; value: string }[] {
   const { locale, direction } = p
   const { dir, limit, value } = parts(p)
   const latest = {
@@ -140,7 +131,83 @@ function facts(p: SensorAlertEmailProps): { label: string; value: string }[] {
   ]
 }
 
+const silenceDuration = (p: SilenceProps) =>
+  formatAlertDuration(new Date(p.endedAt ?? p.since).getTime() - new Date(p.since).getTime())
+
+/** One line, like `valueSubject`. */
+function silenceSubject(p: SilenceProps): string {
+  const { sensorName: name, silenceHours: hours, locale } = p
+  const text =
+    p.transition === 'fired'
+      ? m.email_sensor_alert_silence_subject_fired({ name, hours }, { locale })
+      : m.email_sensor_alert_silence_subject_recovered({ name }, { locale })
+  return text.replace(/\s+/g, ' ')
+}
+
+function silenceFacts(p: SilenceProps): { label: string; value: string }[] {
+  const { locale, silenceHours: hours } = p
+  if (p.transition === 'fired') {
+    return [
+      { label: m.email_sensor_alert_fact_latest({}, { locale }), value: time(p.since, locale) },
+      {
+        label: m.email_sensor_alert_fact_limit({}, { locale }),
+        value: m.email_sensor_alert_silence_fact_limit_value({ hours }, { locale }),
+      },
+    ]
+  }
+  return [
+    {
+      label: m.email_sensor_alert_silence_fact_period({}, { locale }),
+      value: m.email_sensor_alert_fact_period_value(
+        {
+          since: time(p.since, locale),
+          endedAt: time(p.endedAt ?? p.since, locale),
+          duration: silenceDuration(p),
+        },
+        { locale },
+      ),
+    },
+  ]
+}
+
+function subject(p: SensorAlertEmailProps): string {
+  return p.kind === 'silence' ? silenceSubject(p) : valueSubject(p)
+}
+
+function SilenceAlertEmail(props: SilenceProps) {
+  const { locale, sensorName: name, silenceHours: hours } = props
+  const fired = props.transition === 'fired'
+  const sentence = fired
+    ? m.email_sensor_alert_silence_body_fired(
+        { name, lastAt: time(props.since, locale), hours },
+        { locale },
+      )
+    : m.email_sensor_alert_silence_body_recovered(
+        { name, duration: silenceDuration(props) },
+        { locale },
+      )
+  return (
+    <BrandEmailLayout
+      locale={locale}
+      actionUrl={actionUrl()}
+      preview={sentence}
+      heading={
+        fired
+          ? m.email_sensor_alert_heading_fired({ name }, { locale })
+          : m.email_sensor_alert_heading_recovered({ name }, { locale })
+      }
+      body={sentence}
+      facts={silenceFacts(props)}
+      note={fired ? m.email_sensor_alert_silence_note({ name }, { locale }) : undefined}
+      buttonLabel={m.email_sensor_alert_button({}, { locale })}
+      fallbackText={m.email_sensor_alert_fallback({}, { locale })}
+      footer={m.email_sensor_alert_footer({ name }, { locale })}
+    />
+  )
+}
+
 export const SensorAlertEmail = (props: SensorAlertEmailProps) => {
+  if (props.kind === 'silence') return <SilenceAlertEmail {...props} />
   const { locale, transition } = props
   const { name, measure, Measure, dir, back, limit, count } = parts(props)
   const fired = transition === 'fired'
@@ -161,7 +228,7 @@ export const SensorAlertEmail = (props: SensorAlertEmailProps) => {
           : m.email_sensor_alert_heading_recovered({ name }, { locale })
       }
       body={sentence}
-      facts={facts(props)}
+      facts={valueFacts(props)}
       note={fired ? m.email_sensor_alert_note({ measure, back, limit }, { locale }) : undefined}
       buttonLabel={m.email_sensor_alert_button({}, { locale })}
       fallbackText={m.email_sensor_alert_fallback({}, { locale })}
