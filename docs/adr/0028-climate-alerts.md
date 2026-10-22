@@ -97,3 +97,24 @@ onboarding and avatar.
 - **For step 3:** the webhook's end of a device's silence alerts must take the same rule lock as the cron, and the
   cron re-reads the device's latest reading after taking it (schema review). End silence events through the rule
   join, or add a `device_id` index on the event table.
+
+## Notes from step 3 (2026-10-22)
+
+- **A silence alert starts at the sensor's last reading** (owner), not when the rule's hours ran out, so "sedan …",
+  the history and the recovery email show the whole gap ("18:00 – 02:30 · 8 h 30 min"). It ends at the first reading
+  after that start, read from `started_at + 1 ms`: `started_at` is a millisecond JS date while `recorded_at` is stored to
+  the microsecond, and a plain `>` would find the last reading itself.
+- **The last reading has no lookback bound,** unlike the value rules' 7 days: a sensor dead for weeks still fires with
+  its real last reading. Neither silence read stops at `now` either. The cron takes `now` once at the start of its
+  run, and a reading stored since then means the sensor is heard, not silent.
+- **Both paths judge silence with one helper.** A reading's evaluation locks every enabled rule of the device (the
+  silence rules too) and ends an open silence alert within seconds. The hourly cron (`/api/cron/sensor-silence`, :15)
+  locks only the device's silence rules, which are a subset in the same id order, so the two can't deadlock. It
+  re-reads the latest reading after taking the locks, fires, and also recovers any alert a failed reading
+  evaluation left open. One device failing in the cron is logged and counted; the others still run.
+- **Accepted edges.** A reading that is still committing while the cron reads can be missed: the cron fires, and the
+  reading's evaluation recovers it at once. That makes one pair of emails, and the two can be queued in either order
+  within milliseconds. An edit, or a pause and resume, during an outage ends the alert quietly, and the next cron
+  run re-fires it with the same start, because earlier readings count as for a new rule. A user hard-delete can
+  deadlock with the cron as it can with a reading's evaluation (users are soft-deleted); the device counts as
+  failed and is retried the next hour.

@@ -29,8 +29,9 @@ Vitest (node).
   the history and the recovery email show the whole gap ("18:00 – 02:30 · 8 h 30 min").
 - **Recovers** when the rule has an open event and the device has a reading newer than its `started_at`;
   `ended_at` = the **first** reading after `started_at` (`recorded_at > started_at`), reason `recovered`.
-- `lastReadingAt` is the device's newest reading at or before `now`, with **no lookback bound**: a sensor dead for
-  three weeks still fires with its real last reading. The step 2 value lookback (7 days, ≤ 300 readings) is unchanged.
+- `lastReadingAt` is the device's newest reading, with **no lookback bound**: a sensor dead for three weeks still
+  fires with its real last reading. *(Amended during Task 2: neither silence read stops at `now`, because the cron
+  takes `now` once at the start of its run and a reading stored since then means the sensor is heard.)* The step 2 value lookback (7 days, ≤ 300 readings) is unchanged.
 - **Both paths judge silence:** the cron (fire, plus recovery as a backstop when a webhook's evaluation failed) and
   every reading's evaluation (recovery within seconds). One helper, one judge.
 - **Lock order** (ADR-0028 step 2 notes): sensor `FOR KEY SHARE`, then rules `FOR UPDATE OF sensor_alert_rule`
@@ -139,10 +140,10 @@ export function judgeSilenceRule(
 - Shape: a private rule-lock helper (device `FOR KEY SHARE`, then the device's enabled rules of non-deleted owners,
   optionally limited to `['silence']`, joined to `user` and `sensorDevice`, ordered by id, `FOR UPDATE OF
   sensor_alert_rule`) and a private `judgeSilenceRules(tx, deviceId, silenceRules, openByRule, now)` used by both
-  entry points. It reads `lastReadingAt` = `max(recorded_at)` of the device `<= now` (no lookback). Per rule it
+  entry points. It reads `lastReadingAt` = `max(recorded_at)` of the device (no lookback, no `now` bound: see Global Constraints). Per rule it
   calls the judge. A fire inserts the snapshot event (`kind 'silence'`, `silenceHours`, direction / threshold /
   count null, `started_at = since`) with step 2's `onConflictDoNothing`. A recovery reads `min(recorded_at)` of
-  the device `> started_at` and `<= now`, clamps it to at least `started_at` like the value path, and updates
+  the device from `started_at + 1 ms` (`recorded_at` is µs, `started_at` a ms date; amended after the live check), clamps it to at least `started_at` like the value path, and updates
   `WHERE id AND ended_at IS NULL`. `evaluateReading` reads value readings only when a value rule exists.
 
 - [ ] **Step 1: Write the failing tests** (step 2's `seed`, `readings`, `secondConnection` helpers; a silence rule `{ kind: 'silence', deviceId, silenceHours: 6 }`):
