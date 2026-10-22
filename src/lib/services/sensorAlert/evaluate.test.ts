@@ -574,32 +574,67 @@ test('a reading evaluation judges value and silence rules in one call', async ()
   expect(await events()).toHaveLength(2)
 })
 
-test('two concurrent cron evaluations fire once', async () => {
+// The orders a competing writer can take against a cron that waits on the rule lock. The app pool
+// has one connection in tests, so `Promise.all` would only run them one after the other.
+test('a reading committed while the cron waits on the lock: the cron finds the sensor heard', async () => {
   const { a, d1 } = await seed()
-  await createRule(a, silent6(d1))
+  const rule = await createRule(a, silent6(d1))
   await readings(d1, [[420, 20]])
-  const results = await Promise.all([
-    evaluateDeviceSilence(d1, NOW),
-    evaluateDeviceSilence(d1, NOW),
-  ])
-  expect(results.flat()).toHaveLength(1)
-  expect(await events()).toHaveLength(1)
+  const pid = await appPid()
+  const client = await secondConnection()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
+    const evaluation = evaluateDeviceSilence(d1, NOW)
+    await waitForBlockedEvaluation(client, pid)
+    await client.query(
+      `INSERT INTO sensor_reading (device_id, temperature_c, humidity_pct, battery_pct, recorded_at)
+       VALUES ($1, 20, 50, 80, $2)`,
+      [d1, minutesAgo(1)],
+    )
+    await client.query('COMMIT')
+    expect(await evaluation).toEqual([])
+  } finally {
+    await client.end()
+  }
+  expect(await events()).toEqual([])
 })
 
-test('the cron and a returning sensor at once leave no open alert', async () => {
+test('an alert opened while the cron waits on the lock: the cron opens no second one', async () => {
+  const { a, d1 } = await seed()
+  const rule = await createRule(a, silent6(d1))
+  await readings(d1, [[420, 20]])
+  const pid = await appPid()
+  const client = await secondConnection()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
+    const evaluation = evaluateDeviceSilence(d1, NOW)
+    await waitForBlockedEvaluation(client, pid)
+    // What a competing cron run writes before it commits.
+    await client.query(
+      `INSERT INTO sensor_alert_event (rule_id, user_id, device_id, kind, silence_hours, started_at)
+       VALUES ($1, $2, $3, 'silence', 6, $4)`,
+      [rule.id, a, d1, minutesAgo(420)],
+    )
+    await client.query('COMMIT')
+    expect(await evaluation).toEqual([])
+  } finally {
+    await client.end()
+  }
+  expect(await openEvents()).toHaveLength(1)
+})
+
+test('the cron fires first, then the returning reading recovers it', async () => {
   const { a, d1 } = await seed()
   await createRule(a, silent6(d1))
   await readings(d1, [[420, 20]])
-  // Whichever takes the device first: the cron fires and the reading recovers, or the reading
-  // lands first and the cron finds the sensor heard.
-  const results = await Promise.all([
-    evaluateDeviceSilence(d1, NOW),
-    readings(d1, [[1, 20]]).then(() => evaluateReading(d1, NOW)),
+  const [fired] = await evaluateDeviceSilence(d1, NOW)
+  expect(fired).toMatchObject({ transition: 'fired' })
+  await readings(d1, [[1, 20]])
+  expect(await evaluateReading(d1, NOW)).toEqual([
+    expect.objectContaining({ transition: 'recovered', eventId: fired.eventId }),
   ])
-  const all = results.flat()
-  const fired = all.filter((t) => t.transition === 'fired').length
-  const recovered = all.filter((t) => t.transition === 'recovered').length
-  expect(fired).toBe(recovered)
   expect(await openEvents()).toEqual([])
 })
 
