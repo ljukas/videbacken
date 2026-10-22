@@ -80,17 +80,24 @@ async function secondConnection() {
   return client
 }
 
-// Waits until some other backend is blocked on a lock, in a query that names the table.
-async function waitForBlockedEvaluation(client: Client, table = 'sensor_alert_rule') {
+// The app pool's one connection in tests: the backend the evaluation runs on. Read before the
+// evaluation starts, while the connection is free.
+async function appPid() {
+  const { rows } = await db.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
+  return rows[0].pid
+}
+
+// Waits until the app's connection (`appPid`) is blocked on a lock, in a query that names the
+// table. Only that backend: other test workers share the database and block on their own locks.
+async function waitForBlockedEvaluation(client: Client, pid: number, table = 'sensor_alert_rule') {
   for (let i = 0; i < 100; i += 1) {
     // Inside the caller's transaction pg_stat_activity is a snapshot taken on first read: drop it,
     // or the evaluation's first statement would be all this ever sees.
     await client.query('SELECT pg_stat_clear_snapshot()')
     const { rows } = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_stat_activity
-       WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid()
-         AND datname = current_database() AND query ILIKE $1`,
-      [`%${table}%`],
+       WHERE pid = $1 AND wait_event_type = 'Lock' AND query ILIKE $2`,
+      [pid, `%${table}%`],
     )
     if (rows[0].n > 0) return
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -175,12 +182,13 @@ test('an evaluation waiting on the lock sees the event a competing evaluation op
   const { a, d1 } = await seed()
   const rule = await createRule(a, below5(d1))
   await readings(d1, COLD)
+  const pid = await appPid()
   const client = await secondConnection()
   try {
     await client.query('BEGIN')
     await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
     const evaluation = evaluateReading(d1, NOW)
-    await waitForBlockedEvaluation(client)
+    await waitForBlockedEvaluation(client, pid)
     // What the competing evaluation writes before it commits.
     await client.query(
       `INSERT INTO sensor_alert_event (rule_id, user_id, device_id, kind, direction, threshold, count, started_at)
@@ -199,6 +207,7 @@ test('an uncommitted event insert, lock or not, holds the evaluation back until 
   const { a, d1 } = await seed()
   const rule = await createRule(a, below5(d1))
   await readings(d1, COLD)
+  const pid = await appPid()
   const client = await secondConnection()
   try {
     // No explicit rule lock: the event's rule_id FK takes a KEY SHARE lock on the rule row, which
@@ -210,7 +219,7 @@ test('an uncommitted event insert, lock or not, holds the evaluation back until 
       [rule.id, a, d1, minutesAgo(150)],
     )
     const evaluation = evaluateReading(d1, NOW)
-    await waitForBlockedEvaluation(client)
+    await waitForBlockedEvaluation(client, pid)
     await client.query('COMMIT')
     expect(await evaluation).toEqual([])
   } finally {
@@ -241,12 +250,13 @@ test('a pause committed while the evaluation waits on the lock wins', async () =
   const { a, d1 } = await seed()
   const rule = await createRule(a, below5(d1))
   await readings(d1, COLD)
+  const pid = await appPid()
   const client = await secondConnection()
   try {
     await client.query('BEGIN')
     await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
     const evaluation = evaluateReading(d1, NOW)
-    await waitForBlockedEvaluation(client)
+    await waitForBlockedEvaluation(client, pid)
     await client.query('UPDATE sensor_alert_rule SET enabled = false WHERE id = $1', [rule.id])
     await client.query('COMMIT')
     expect(await evaluation).toEqual([])
@@ -273,12 +283,13 @@ test('a delete committed while the evaluation waits on the lock leaves no open e
   const rule = await createRule(a, below5(d1))
   await readings(d1, COLD)
   expect(await evaluateReading(d1, NOW)).toHaveLength(1)
+  const pid = await appPid()
   const client = await secondConnection()
   try {
     await client.query('BEGIN')
     await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
     const evaluation = evaluateReading(d1, NOW)
-    await waitForBlockedEvaluation(client)
+    await waitForBlockedEvaluation(client, pid)
     // What deleteRule does under the lock.
     await client.query(
       `UPDATE sensor_alert_event SET ended_at = now(), end_reason = 'deleted'
@@ -342,6 +353,7 @@ test('the evaluation takes the sensor before its rules: a sensor delete in fligh
   const { a, d1 } = await seed()
   await createRule(a, below5(d1))
   await readings(d1, COLD)
+  const pid = await appPid()
   const client = await secondConnection()
   try {
     // A delete locks the device, then (the cascade) its rules. Waiting on the device, the
@@ -349,7 +361,7 @@ test('the evaluation takes the sensor before its rules: a sensor delete in fligh
     await client.query('BEGIN')
     await client.query('DELETE FROM sensor_device WHERE id = $1', [d1])
     const evaluation = evaluateReading(d1, NOW)
-    await waitForBlockedEvaluation(client, 'key share')
+    await waitForBlockedEvaluation(client, pid, 'key share')
     await client.query('COMMIT')
     expect(await evaluation).toEqual([])
   } finally {
@@ -606,12 +618,13 @@ test('a pause committed while the cron waits on the lock wins', async () => {
   const { a, d1 } = await seed()
   const rule = await createRule(a, silent6(d1))
   await readings(d1, [[420, 20]])
+  const pid = await appPid()
   const client = await secondConnection()
   try {
     await client.query('BEGIN')
     await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
     const evaluation = evaluateDeviceSilence(d1, NOW)
-    await waitForBlockedEvaluation(client)
+    await waitForBlockedEvaluation(client, pid)
     await client.query('UPDATE sensor_alert_rule SET enabled = false WHERE id = $1', [rule.id])
     await client.query('COMMIT')
     expect(await evaluation).toEqual([])
@@ -625,12 +638,13 @@ test('the cron takes the sensor before its rules: a sensor delete in flight make
   const { a, d1 } = await seed()
   await createRule(a, silent6(d1))
   await readings(d1, [[420, 20]])
+  const pid = await appPid()
   const client = await secondConnection()
   try {
     await client.query('BEGIN')
     await client.query('DELETE FROM sensor_device WHERE id = $1', [d1])
     const evaluation = evaluateDeviceSilence(d1, NOW)
-    await waitForBlockedEvaluation(client, 'key share')
+    await waitForBlockedEvaluation(client, pid, 'key share')
     await client.query('COMMIT')
     expect(await evaluation).toEqual([])
   } finally {
