@@ -5,7 +5,13 @@ import { db } from '~/lib/db'
 import { sensorAlertEvent, sensorDevice, sensorReading, user } from '~/lib/db/schema'
 import { ALERT_LOOKBACK_MS, ALERT_READINGS_MAX } from '~/lib/sensor/alerts'
 import { setupDatabase } from '~test/setup'
-import { createRule, evaluateValueRules, setRuleEnabled } from './index'
+import {
+  createRule,
+  evaluateDeviceSilence,
+  evaluateReading,
+  listSilenceDeviceIds,
+  setRuleEnabled,
+} from './index'
 
 setupDatabase()
 
@@ -97,7 +103,7 @@ test('a breach fires once with the owner, the name and the snapshot; then recove
   const rule = await createRule(a, below5(d1))
   await readings(d1, COLD)
 
-  const fired = await evaluateValueRules(d1, NOW)
+  const fired = await evaluateReading(d1, NOW)
   expect(fired).toEqual([
     {
       transition: 'fired',
@@ -130,10 +136,10 @@ test('a breach fires once with the owner, the name and the snapshot; then recove
       endReason: null,
     }),
   ])
-  expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
 
   await readings(d1, WARM)
-  const recovered = await evaluateValueRules(d1, NOW)
+  const recovered = await evaluateReading(d1, NOW)
   expect(recovered).toEqual([
     {
       transition: 'recovered',
@@ -153,14 +159,14 @@ test('a breach fires once with the owner, the name and the snapshot; then recove
   const [ended] = await events()
   expect(ended.endedAt).toEqual(minutesAgo(60))
   expect(ended.endReason).toBe('recovered')
-  expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
 })
 
 test('two concurrent evaluations fire once', async () => {
   const { a, d1 } = await seed()
   await createRule(a, below5(d1))
   await readings(d1, COLD)
-  const results = await Promise.all([evaluateValueRules(d1, NOW), evaluateValueRules(d1, NOW)])
+  const results = await Promise.all([evaluateReading(d1, NOW), evaluateReading(d1, NOW)])
   expect(results.flat()).toHaveLength(1)
   expect(await events()).toHaveLength(1)
 })
@@ -173,7 +179,7 @@ test('an evaluation waiting on the lock sees the event a competing evaluation op
   try {
     await client.query('BEGIN')
     await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
-    const evaluation = evaluateValueRules(d1, NOW)
+    const evaluation = evaluateReading(d1, NOW)
     await waitForBlockedEvaluation(client)
     // What the competing evaluation writes before it commits.
     await client.query(
@@ -203,7 +209,7 @@ test('an uncommitted event insert, lock or not, holds the evaluation back until 
        VALUES ($1, $2, $3, 'temperature', 'below', 5, 2, $4)`,
       [rule.id, a, d1, minutesAgo(150)],
     )
-    const evaluation = evaluateValueRules(d1, NOW)
+    const evaluation = evaluateReading(d1, NOW)
     await waitForBlockedEvaluation(client)
     await client.query('COMMIT')
     expect(await evaluation).toEqual([])
@@ -213,19 +219,19 @@ test('an uncommitted event insert, lock or not, holds the evaluation back until 
   expect(await events()).toHaveLength(1)
 })
 
-test('paused, silence and soft-deleted owners do not fire; a deleted owner keeps its open event', async () => {
+test('paused rules, a recently heard silence rule and soft-deleted owners do not fire; a deleted owner keeps its open event', async () => {
   const { a, b, d1 } = await seed()
   const paused = await createRule(a, below5(d1))
   await setRuleEnabled(a, paused.id, false)
   await createRule(a, { kind: 'silence', deviceId: d1, silenceHours: 3 })
   const ofB = await createRule(b, below5(d1))
   await readings(d1, COLD)
-  const fired = await evaluateValueRules(d1, NOW)
+  const fired = await evaluateReading(d1, NOW)
   expect(fired.map((t) => t.ruleId)).toEqual([ofB.id])
 
   await db.update(user).set({ deletedAt: NOW }).where(eq(user.id, b))
   await readings(d1, WARM)
-  expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
   const all = await events()
   expect(all).toHaveLength(1)
   expect(all[0]).toMatchObject({ ruleId: ofB.id, endedAt: null, endReason: null })
@@ -239,7 +245,7 @@ test('a pause committed while the evaluation waits on the lock wins', async () =
   try {
     await client.query('BEGIN')
     await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
-    const evaluation = evaluateValueRules(d1, NOW)
+    const evaluation = evaluateReading(d1, NOW)
     await waitForBlockedEvaluation(client)
     await client.query('UPDATE sensor_alert_rule SET enabled = false WHERE id = $1', [rule.id])
     await client.query('COMMIT')
@@ -254,11 +260,11 @@ test('a pause after a fire ends the alert and a re-evaluation stays quiet', asyn
   const { a, d1 } = await seed()
   const rule = await createRule(a, below5(d1))
   await readings(d1, COLD)
-  expect(await evaluateValueRules(d1, NOW)).toHaveLength(1)
+  expect(await evaluateReading(d1, NOW)).toHaveLength(1)
   await setRuleEnabled(a, rule.id, false)
   const [ended] = await events()
   expect(ended.endReason).toBe('paused')
-  expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
   expect(await openEvents()).toEqual([])
 })
 
@@ -266,12 +272,12 @@ test('a delete committed while the evaluation waits on the lock leaves no open e
   const { a, d1 } = await seed()
   const rule = await createRule(a, below5(d1))
   await readings(d1, COLD)
-  expect(await evaluateValueRules(d1, NOW)).toHaveLength(1)
+  expect(await evaluateReading(d1, NOW)).toHaveLength(1)
   const client = await secondConnection()
   try {
     await client.query('BEGIN')
     await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
-    const evaluation = evaluateValueRules(d1, NOW)
+    const evaluation = evaluateReading(d1, NOW)
     await waitForBlockedEvaluation(client)
     // What deleteRule does under the lock.
     await client.query(
@@ -294,21 +300,21 @@ test('a rule created after the cold readings fires on the next evaluation', asyn
   const { a, d1 } = await seed()
   await readings(d1, COLD)
   const rule = await createRule(a, below5(d1))
-  const fired = await evaluateValueRules(d1, NOW)
+  const fired = await evaluateReading(d1, NOW)
   expect(fired).toEqual([expect.objectContaining({ transition: 'fired', ruleId: rule.id })])
 })
 
 test('readings older than the lookback do not count; no readings fire nothing', async () => {
   const { a, d1 } = await seed()
   await createRule(a, below5(d1))
-  expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
   const lookbackMinutes = ALERT_LOOKBACK_MS / 60_000
   await readings(d1, [
     [lookbackMinutes + 60, 4],
     [lookbackMinutes + 1, 4],
     [30, 4],
   ])
-  expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
   expect(await events()).toEqual([])
 })
 
@@ -328,7 +334,7 @@ test('only the newest readings are read: a flood on one sensor pushes older ones
       recordedAt: new Date(minutesAgo(20).getTime() + i * 1000),
     })),
   )
-  expect(await evaluateValueRules(d1, NOW)).toEqual([])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
   expect(await events()).toEqual([])
 })
 
@@ -342,7 +348,262 @@ test('the evaluation takes the sensor before its rules: a sensor delete in fligh
     // evaluation holds no rule lock the delete could need.
     await client.query('BEGIN')
     await client.query('DELETE FROM sensor_device WHERE id = $1', [d1])
-    const evaluation = evaluateValueRules(d1, NOW)
+    const evaluation = evaluateReading(d1, NOW)
+    await waitForBlockedEvaluation(client, 'key share')
+    await client.query('COMMIT')
+    expect(await evaluation).toEqual([])
+  } finally {
+    await client.end()
+  }
+  expect(await events()).toEqual([])
+})
+
+// --- Silence rules -------------------------------------------------------------------------
+
+const silent6 = (deviceId: string) => ({ kind: 'silence' as const, deviceId, silenceHours: 6 })
+const MONTH_MINUTES = 30 * 24 * 60
+
+test('a sensor silent past the rule fires once from its last reading, with the snapshot', async () => {
+  const { a, d1 } = await seed()
+  const rule = await createRule(a, silent6(d1))
+  await readings(d1, [
+    [600, 20],
+    [420, 20],
+  ])
+
+  const fired = await evaluateDeviceSilence(d1, NOW)
+  expect(fired).toEqual([
+    {
+      transition: 'fired',
+      ruleId: rule.id,
+      eventId: expect.any(String),
+      to: 'a@test.videbacken.local',
+      sensorName: 'Frysen',
+      kind: 'silence',
+      silenceHours: 6,
+      since: minutesAgo(420),
+      endedAt: null,
+    },
+  ])
+  expect(await events()).toEqual([
+    expect.objectContaining({
+      id: fired[0].eventId,
+      ruleId: rule.id,
+      userId: a,
+      deviceId: d1,
+      kind: 'silence',
+      direction: null,
+      threshold: null,
+      count: null,
+      silenceHours: 6,
+      startedAt: minutesAgo(420),
+      endedAt: null,
+      endReason: null,
+    }),
+  ])
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([])
+  expect(await events()).toHaveLength(1)
+})
+
+test('a sensor heard within the hours, or never heard, does not fire', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, silent6(d1))
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([])
+  await readings(d1, [[300, 20]])
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([])
+  expect(await events()).toEqual([])
+})
+
+test('a sensor silent beyond the value lookback fires from its real last reading', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, silent6(d1))
+  await readings(d1, [[MONTH_MINUTES, 20]])
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([
+    expect.objectContaining({
+      transition: 'fired',
+      kind: 'silence',
+      since: minutesAgo(MONTH_MINUTES),
+    }),
+  ])
+})
+
+test('the next reading recovers the alert at the first reading after the gap', async () => {
+  const { a, d1 } = await seed()
+  const rule = await createRule(a, silent6(d1))
+  await readings(d1, [[MONTH_MINUTES, 20]])
+  const [fired] = await evaluateDeviceSilence(d1, NOW)
+
+  await readings(d1, [
+    [2, 20],
+    [1, 20],
+  ])
+  expect(await evaluateReading(d1, NOW)).toEqual([
+    {
+      transition: 'recovered',
+      ruleId: rule.id,
+      eventId: fired.eventId,
+      to: 'a@test.videbacken.local',
+      sensorName: 'Frysen',
+      kind: 'silence',
+      silenceHours: 6,
+      since: minutesAgo(MONTH_MINUTES),
+      endedAt: minutesAgo(2),
+    },
+  ])
+  const [ended] = await events()
+  expect(ended).toMatchObject({ endedAt: minutesAgo(2), endReason: 'recovered' })
+  expect(await evaluateReading(d1, NOW)).toEqual([])
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([])
+})
+
+test('the cron recovers an alert a reading did not (the backstop)', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, silent6(d1))
+  await readings(d1, [[420, 20]])
+  const [fired] = await evaluateDeviceSilence(d1, NOW)
+  // The readings' own evaluation failed: only the cron sees them.
+  await readings(d1, [
+    [2, 20],
+    [1, 20],
+  ])
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([
+    expect.objectContaining({
+      transition: 'recovered',
+      eventId: fired.eventId,
+      kind: 'silence',
+      since: minutesAgo(420),
+      endedAt: minutesAgo(2),
+    }),
+  ])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
+  expect(await openEvents()).toEqual([])
+})
+
+test('a paused silence rule and a soft-deleted owner are skipped by both entry points', async () => {
+  const { a, b, d1 } = await seed()
+  const paused = await createRule(a, silent6(d1))
+  await setRuleEnabled(a, paused.id, false)
+  const ofB = await createRule(b, silent6(d1))
+  await readings(d1, [[420, 20]])
+  expect((await evaluateDeviceSilence(d1, NOW)).map((t) => t.ruleId)).toEqual([ofB.id])
+
+  await db.update(user).set({ deletedAt: NOW }).where(eq(user.id, b))
+  await readings(d1, [[1, 20]])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([])
+  const all = await events()
+  expect(all).toHaveLength(1)
+  expect(all[0]).toMatchObject({ ruleId: ofB.id, endedAt: null, endReason: null })
+})
+
+test('the silence devices are those with an enabled silence rule of a non-deleted user', async () => {
+  const { a, b, d1 } = await seed()
+  const [d2, d3, d4] = await db
+    .insert(sensorDevice)
+    .values([{ mac: 'bbbbbbbbbbbb' }, { mac: 'cccccccccccc' }, { mac: 'dddddddddddd' }])
+    .returning({ id: sensorDevice.id })
+  await createRule(a, silent6(d1))
+  await createRule(b, silent6(d1))
+  const paused = await createRule(a, silent6(d2.id))
+  await setRuleEnabled(a, paused.id, false)
+  await createRule(a, below5(d3.id))
+  await createRule(b, silent6(d4.id))
+  await db.update(user).set({ deletedAt: NOW }).where(eq(user.id, b))
+  expect(await listSilenceDeviceIds()).toEqual([d1])
+})
+
+test('a reading evaluation judges value and silence rules in one call', async () => {
+  const { a, d1 } = await seed()
+  const value = await createRule(a, below5(d1))
+  const silence = await createRule(a, silent6(d1))
+  await readings(d1, [
+    [480, 4.9],
+    [450, 4.8],
+  ])
+  const transitions = await evaluateReading(d1, NOW)
+  expect(transitions).toHaveLength(2)
+  expect(transitions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ transition: 'fired', ruleId: value.id, kind: 'temperature' }),
+      expect.objectContaining({
+        transition: 'fired',
+        ruleId: silence.id,
+        kind: 'silence',
+        since: minutesAgo(450),
+      }),
+    ]),
+  )
+  expect(await events()).toHaveLength(2)
+})
+
+test('two concurrent cron evaluations fire once', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, silent6(d1))
+  await readings(d1, [[420, 20]])
+  const results = await Promise.all([
+    evaluateDeviceSilence(d1, NOW),
+    evaluateDeviceSilence(d1, NOW),
+  ])
+  expect(results.flat()).toHaveLength(1)
+  expect(await events()).toHaveLength(1)
+})
+
+test('the cron and a returning sensor at once leave no open alert', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, silent6(d1))
+  await readings(d1, [[420, 20]])
+  // Whichever takes the device first: the cron fires and the reading recovers, or the reading
+  // lands first and the cron finds the sensor heard.
+  const results = await Promise.all([
+    evaluateDeviceSilence(d1, NOW),
+    readings(d1, [[1, 20]]).then(() => evaluateReading(d1, NOW)),
+  ])
+  const all = results.flat()
+  const fired = all.filter((t) => t.transition === 'fired').length
+  const recovered = all.filter((t) => t.transition === 'recovered').length
+  expect(fired).toBe(recovered)
+  expect(await openEvents()).toEqual([])
+})
+
+test('a cron whose clock predates a reading already evaluated does not fire', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, silent6(d1))
+  await readings(d1, [[420, 20]])
+  // The reading arrives and is evaluated while the cron, started earlier, works on other devices.
+  await readings(d1, [[1, 20]])
+  expect(await evaluateReading(d1, NOW)).toEqual([])
+  expect(await evaluateDeviceSilence(d1, minutesAgo(2))).toEqual([])
+  expect(await events()).toEqual([])
+})
+
+test('a pause committed while the cron waits on the lock wins', async () => {
+  const { a, d1 } = await seed()
+  const rule = await createRule(a, silent6(d1))
+  await readings(d1, [[420, 20]])
+  const client = await secondConnection()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT id FROM sensor_alert_rule WHERE id = $1 FOR UPDATE', [rule.id])
+    const evaluation = evaluateDeviceSilence(d1, NOW)
+    await waitForBlockedEvaluation(client)
+    await client.query('UPDATE sensor_alert_rule SET enabled = false WHERE id = $1', [rule.id])
+    await client.query('COMMIT')
+    expect(await evaluation).toEqual([])
+  } finally {
+    await client.end()
+  }
+  expect(await events()).toEqual([])
+})
+
+test('the cron takes the sensor before its rules: a sensor delete in flight makes it wait', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, silent6(d1))
+  await readings(d1, [[420, 20]])
+  const client = await secondConnection()
+  try {
+    await client.query('BEGIN')
+    await client.query('DELETE FROM sensor_device WHERE id = $1', [d1])
+    const evaluation = evaluateDeviceSilence(d1, NOW)
     await waitForBlockedEvaluation(client, 'key share')
     await client.query('COMMIT')
     expect(await evaluation).toEqual([])

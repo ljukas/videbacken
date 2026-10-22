@@ -1,19 +1,21 @@
 import { queue } from '~/lib/effects'
 import { logger } from '~/lib/logger/server'
-import { evaluateValueRules } from '~/lib/services/sensorAlert'
+import { evaluateReading } from '~/lib/services/sensorAlert'
 import { baseLocale } from '~/paraglide/runtime'
 
 /**
- * Judges the device's value alert rules after a stored reading and emails each transition. Never
+ * Judges the device's alert rules after a stored reading and emails each transition. Never
  * rejects: an alerting problem must not fail the webhook, which has already stored the reading.
  * The emails are published after the evaluation's transaction has committed, each with its own
  * catch so one failure doesn't stop the others.
  */
 export async function evaluateAfterReading(deviceId: string, now = new Date()): Promise<void> {
   try {
-    const transitions = await evaluateValueRules(deviceId, now)
+    const transitions = await evaluateReading(deviceId, now)
+    // Only value alerts have an email payload yet; the silence email comes with the payload union.
+    const valueTransitions = transitions.filter((t) => t.kind !== 'silence')
     await Promise.all(
-      transitions.map((t) => {
+      valueTransitions.map((t) => {
         logger.info('sensor alert transition', {
           ruleId: t.ruleId,
           eventId: t.eventId,
