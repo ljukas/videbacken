@@ -669,6 +669,18 @@ test('a pause committed while the cron waits on the lock wins', async () => {
   expect(await events()).toEqual([])
 })
 
+test('a pause after the cron fired ends the alert and the next cron stays quiet', async () => {
+  const { a, d1 } = await seed()
+  const rule = await createRule(a, silent6(d1))
+  await readings(d1, [[420, 20]])
+  expect(await evaluateDeviceSilence(d1, NOW)).toHaveLength(1)
+  await setRuleEnabled(a, rule.id, false)
+  const [ended] = await events()
+  expect(ended.endReason).toBe('paused')
+  expect(await openEvents()).toEqual([])
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([])
+})
+
 test('the cron takes the sensor before its rules: a sensor delete in flight makes it wait', async () => {
   const { a, d1 } = await seed()
   await createRule(a, silent6(d1))
