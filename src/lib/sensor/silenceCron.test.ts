@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { db } from '~/lib/db'
 import { sensorDevice, sensorReading, user } from '~/lib/db/schema'
 import { queue } from '~/lib/effects'
+import type { Logger } from '~/lib/logger'
 import { logger } from '~/lib/logger/server'
 import * as sensorAlert from '~/lib/services/sensorAlert'
 import { setupDatabase } from '~test/setup'
@@ -53,9 +54,13 @@ async function seedSilentDevices() {
 }
 
 let publish: ReturnType<typeof vi.spyOn>
+// The handler logs through a request child of the shared logger: this one.
+let log: { [K in keyof Logger]: ReturnType<typeof vi.fn> }
 beforeEach(() => {
   vi.stubEnv('CRON_SECRET', SECRET)
   publish = vi.spyOn(queue, 'publish').mockResolvedValue(undefined as never)
+  log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: vi.fn() }
+  vi.spyOn(logger, 'child').mockReturnValue(log as Logger)
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -93,7 +98,6 @@ test('two silent devices fire once each; a second run fires nothing', async () =
 
 test("one device's evaluation throwing is logged and the others still run", async () => {
   const [first] = await seedSilentDevices()
-  const logError = vi.spyOn(logger, 'error')
   const real = vi.mocked(sensorAlert.evaluateDeviceSilence).getMockImplementation()
   vi.mocked(sensorAlert.evaluateDeviceSilence).mockImplementation((id, now) =>
     id === first ? Promise.reject(new Error('boom')) : (real as NonNullable<typeof real>)(id, now),
@@ -102,16 +106,19 @@ test("one device's evaluation throwing is logged and the others still run", asyn
   expect(res.status).toBe(200)
   expect(await res.json()).toEqual({ devices: 2, failed: 1, fired: 1, recovered: 0 })
   expect(publish).toHaveBeenCalledTimes(1)
-  expect(logError).toHaveBeenCalledWith(
+  expect(log.error).toHaveBeenCalledWith(
     'sensor silence evaluation failed',
     expect.objectContaining({ deviceId: first }),
+  )
+  expect(log.info).toHaveBeenCalledWith(
+    'sensor silence check',
+    expect.objectContaining({ devices: 2, failed: 1, fired: 1, recovered: 0 }),
   )
 })
 
 test('a failing device listing is a 500 with its log', async () => {
-  const logError = vi.spyOn(logger, 'error')
   vi.mocked(sensorAlert.listSilenceDeviceIds).mockRejectedValueOnce(new Error('db down'))
   const res = await handleSilenceCron(authed())
   expect(res.status).toBe(500)
-  expect(logError).toHaveBeenCalledWith('sensor silence check failed', expect.anything())
+  expect(log.error).toHaveBeenCalledWith('sensor silence check failed', expect.anything())
 })

@@ -1,5 +1,6 @@
 import { verifyCronSecret } from '~/lib/integrations/cron'
-import { logger } from '~/lib/logger/server'
+import type { Logger } from '~/lib/logger'
+import { createRequestLogger } from '~/lib/logger/server'
 import { evaluateDeviceSilence, listSilenceDeviceIds } from '~/lib/services/sensorAlert'
 import { publishAlertTransitions } from './publishAlertTransitions'
 
@@ -13,9 +14,10 @@ export type SilenceCheckSummary = {
 /**
  * Judges every device with an enabled silence rule, one at a time (ADR-0028). A device whose
  * evaluation throws is logged and counted; the others still run. Everything is awaited here:
- * the emails are published before the cron answers.
+ * the emails are published before the cron answers. Logs through the request's `log`; the
+ * transitions' own lines stay on the shared logger, as on the webhook path.
  */
-export async function checkSilence(now: Date): Promise<SilenceCheckSummary> {
+export async function checkSilence(now: Date, log: Logger): Promise<SilenceCheckSummary> {
   const started = Date.now()
   const deviceIds = await listSilenceDeviceIds()
   let failed = 0
@@ -31,11 +33,11 @@ export async function checkSilence(now: Date): Promise<SilenceCheckSummary> {
       await publishAlertTransitions(deviceId, transitions)
     } catch (error) {
       failed++
-      logger.error('sensor silence evaluation failed', { deviceId, error })
+      log.error('sensor silence evaluation failed', { deviceId, error })
     }
   }
   const summary = { devices: deviceIds.length, failed, fired, recovered }
-  logger.info('sensor silence check', { ...summary, durationMs: Date.now() - started })
+  log.info('sensor silence check', { ...summary, durationMs: Date.now() - started })
   return summary
 }
 
@@ -44,10 +46,11 @@ export async function handleSilenceCron(request: Request): Promise<Response> {
   if (!verifyCronSecret(request.headers.get('authorization'), process.env.CRON_SECRET)) {
     return new Response(null, { status: 401 })
   }
+  const { log } = createRequestLogger(request)
   try {
-    return Response.json(await checkSilence(new Date()))
+    return Response.json(await checkSilence(new Date(), log))
   } catch (error) {
-    logger.error('sensor silence check failed', { error })
+    log.error('sensor silence check failed', { error })
     return new Response(null, { status: 500 })
   }
 }
