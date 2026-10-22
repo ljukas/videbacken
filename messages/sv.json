@@ -1200,5 +1200,12 @@
   "email_sensor_alert_note": "Du får inga fler mejl om det här förrän {measure} är tillbaka {back} {limit}.",
   "email_sensor_alert_button": "Öppna Klimat",
   "email_sensor_alert_fallback": "Om knappen inte fungerar, kopiera och klistra in följande länk i din webbläsare:",
-  "email_sensor_alert_footer": "Du får det här mejlet för att du har ställt in larmet. Pausa eller ta bort det under klockan på {name} i Klimat."
+  "email_sensor_alert_footer": "Du får det här mejlet för att du har ställt in larmet. Pausa eller ta bort det under klockan på {name} i Klimat.",
+  "email_sensor_alert_silence_subject_fired": "⚠️ {name} har inte hört av sig på {hours} timmar",
+  "email_sensor_alert_silence_subject_recovered": "✅ {name} hör av sig igen",
+  "email_sensor_alert_silence_body_fired": "{name} har inte skickat någon mätning sedan {lastAt}, längre än din gräns på {hours} timmar.",
+  "email_sensor_alert_silence_body_recovered": "{name} hör av sig igen efter {duration} utan mätningar.",
+  "email_sensor_alert_silence_fact_limit_value": "{hours} timmar utan mätning",
+  "email_sensor_alert_silence_fact_period": "Utan mätningar",
+  "email_sensor_alert_silence_note": "Du får inga fler mejl om det här förrän {name} hör av sig igen."
 }

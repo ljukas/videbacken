@@ -109,3 +109,63 @@ test('the subject is one line, and the name is escaped in the HTML', async () =>
   expect(html).toContain('&lt;b&gt;')
   expect(html).not.toContain('<b>x</b>')
 })
+
+const SILENCE: SensorAlertEmailProps = {
+  to: 'a@test.videbacken.local',
+  locale: 'sv',
+  transition: 'fired',
+  sensorName: 'Fack 3',
+  kind: 'silence',
+  silenceHours: 6,
+  since: '2027-01-15T17:00:00Z', // 18:00 Stockholm
+  endedAt: null,
+}
+
+test('the fired silence mail', async () => {
+  const { subject, html, text } = await renderSensorAlert(SILENCE)
+  expect(subject).toBe('⚠️ Fack 3 har inte hört av sig på 6 timmar')
+  for (const out of [html, text]) {
+    expect(out).toContain(
+      'Fack 3 har inte skickat någon mätning sedan 15 jan. 18:00, längre än din gräns på 6 timmar.',
+    )
+    expect(out).toContain('6 timmar utan mätning')
+    expect(out).toContain('Du får inga fler mejl om det här förrän Fack 3 hör av sig igen.')
+    expect(out).toContain('/sensors')
+  }
+  expect(text).toContain('Senaste mätning: 15 jan. 18:00')
+  expect(text).toContain('Din gräns: 6 timmar utan mätning')
+})
+
+test('the recovered silence mail has the gap and its duration', async () => {
+  const { subject, text } = await renderSensorAlert({
+    ...SILENCE,
+    transition: 'recovered',
+    endedAt: '2027-01-16T01:30:00Z',
+  })
+  expect(subject).toBe('✅ Fack 3 hör av sig igen')
+  expect(text).toContain('Fack 3 hör av sig igen efter 8 h 30 min utan mätningar.')
+  expect(text).toContain('Utan mätningar: 15 jan. 18:00 – 16 jan. 02:30 (8 h 30 min)')
+  expect(text).not.toContain('Du får inga fler mejl')
+})
+
+test('English silence mail', async () => {
+  const { subject, text } = await renderSensorAlert({ ...SILENCE, locale: 'en' })
+  expect(subject).toBe("⚠️ Fack 3 hasn't reported in 6 hours")
+  expect(text).toContain("Fack 3 hasn't sent a reading since")
+  expect(text).toContain('6 hours without a reading')
+  expect(text).toContain("You won't get more emails about this until Fack 3 reports again.")
+  const rec = await renderSensorAlert({
+    ...SILENCE,
+    locale: 'en',
+    transition: 'recovered',
+    endedAt: '2027-01-16T01:30:00Z',
+  })
+  expect(rec.subject).toBe('✅ Fack 3 is reporting again')
+  expect(rec.text).toContain('Without readings:')
+})
+
+test('a CR/LF in the name keeps the silence subject on one line', async () => {
+  const { subject } = await renderSensorAlert({ ...SILENCE, sensorName: 'Fack\r\nBcc: a@b' })
+  expect(subject).not.toMatch(/[\r\n]/)
+  expect(subject).toBe('⚠️ Fack Bcc: a@b har inte hört av sig på 6 timmar')
+})
