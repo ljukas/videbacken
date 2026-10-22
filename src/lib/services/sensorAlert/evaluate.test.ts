@@ -426,6 +426,17 @@ test('a sensor heard within the hours, or never heard, does not fire', async () 
   expect(await events()).toEqual([])
 })
 
+test('two silence rules on one sensor: only the one whose hours have passed fires', async () => {
+  const { a, d1 } = await seed()
+  const three = await createRule(a, { kind: 'silence', deviceId: d1, silenceHours: 3 })
+  await createRule(a, { kind: 'silence', deviceId: d1, silenceHours: 12 })
+  await readings(d1, [[300, 20]])
+  expect(await evaluateDeviceSilence(d1, NOW)).toEqual([
+    expect.objectContaining({ transition: 'fired', ruleId: three.id, silenceHours: 3 }),
+  ])
+  expect(await events()).toEqual([expect.objectContaining({ ruleId: three.id })])
+})
+
 test('a sensor silent beyond the value lookback fires from its real last reading', async () => {
   const { a, d1 } = await seed()
   await createRule(a, silent6(d1))

@@ -96,6 +96,34 @@ test('two silent devices fire once each; a second run fires nothing', async () =
   expect(publish).toHaveBeenCalledTimes(2)
 })
 
+test('a run recovers an alert a reading did not (the backstop) and mails it', async () => {
+  const [first] = await seedSilentDevices()
+  await handleSilenceCron(authed())
+  publish.mockClear()
+  // A reading whose own evaluation failed: only the cron sees it.
+  const heard = new Date(Date.now() - 60_000)
+  await db.insert(sensorReading).values({
+    deviceId: first,
+    temperatureC: 5,
+    humidityPct: 50,
+    batteryPct: 80,
+    recordedAt: heard,
+  })
+  const res = await handleSilenceCron(authed())
+  expect(await res.json()).toEqual({ devices: 2, failed: 0, fired: 0, recovered: 1 })
+  expect(publish).toHaveBeenCalledTimes(1)
+  expect(publish).toHaveBeenCalledWith('email_sensor_alert', {
+    to: 'a@test.videbacken.local',
+    locale: 'sv',
+    transition: 'recovered',
+    sensorName: 'Frysen',
+    kind: 'silence',
+    silenceHours: 6,
+    since: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/),
+    endedAt: heard.toISOString(),
+  })
+})
+
 test("one device's evaluation throwing is logged and the others still run", async () => {
   const [first] = await seedSilentDevices()
   const real = vi.mocked(sensorAlert.evaluateDeviceSilence).getMockImplementation()

@@ -161,6 +161,7 @@ test('English silence mail', async () => {
     endedAt: '2027-01-16T01:30:00Z',
   })
   expect(rec.subject).toBe('✅ Fack 3 is reporting again')
+  expect(rec.text).toContain('Fack 3 is reporting again after 8 h 30 min without readings.')
   expect(rec.text).toContain('Without readings:')
 })
 
