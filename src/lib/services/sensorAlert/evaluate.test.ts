@@ -456,6 +456,32 @@ test('the next reading recovers the alert at the first reading after the gap', a
   expect(await evaluateDeviceSilence(d1, NOW)).toEqual([])
 })
 
+test('a last reading stored at sub-millisecond precision does not recover its own alert', async () => {
+  const { a, d1 } = await seed()
+  await createRule(a, silent6(d1))
+  // As the webhook stores it: `recorded_at` defaults to now(), in microseconds, while the alert's
+  // start comes back through a JS Date in milliseconds.
+  await db.execute(sql`
+    INSERT INTO sensor_reading (device_id, temperature_c, humidity_pct, battery_pct, recorded_at)
+    VALUES (${d1}, 20, 50, 80, ${minutesAgo(510).toISOString()}::timestamptz + interval '467 microseconds')`)
+  const { rows } = await db.execute<{ us: number }>(
+    sql`SELECT (extract(microseconds FROM recorded_at)::int % 1000) AS us FROM sensor_reading`,
+  )
+  expect(rows[0].us).not.toBe(0)
+  const [fired] = await evaluateDeviceSilence(d1, NOW)
+  expect(fired).toMatchObject({ transition: 'fired', since: minutesAgo(510) })
+
+  await readings(d1, [[1, 20]])
+  expect(await evaluateReading(d1, NOW)).toEqual([
+    expect.objectContaining({
+      transition: 'recovered',
+      eventId: fired.eventId,
+      since: minutesAgo(510),
+      endedAt: minutesAgo(1),
+    }),
+  ])
+})
+
 test('the cron recovers an alert a reading did not (the backstop)', async () => {
   const { a, d1 } = await seed()
   await createRule(a, silent6(d1))

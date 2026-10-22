@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, max, min, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, lte, max, min, sql } from 'drizzle-orm'
 import { db } from '~/lib/db'
 import {
   sensorAlertEvent,
@@ -292,13 +292,20 @@ async function judgeSilenceRules(
         })
       }
     } else if (judgement.action === 'recover' && open) {
+      // From a millisecond past the start: `recorded_at` keeps microseconds but the start came
+      // back through a JS Date, so `> startedAt` would find the last reading before the gap
+      // itself (stored at .172467, read back as .172) and recover the alert at its own start.
       const [{ first }] = await tx
         .select({ first: min(sensorReading.recordedAt) })
         .from(sensorReading)
         .where(
-          and(eq(sensorReading.deviceId, deviceId), gt(sensorReading.recordedAt, open.startedAt)),
+          and(
+            eq(sensorReading.deviceId, deviceId),
+            gte(sensorReading.recordedAt, new Date(open.startedAt.getTime() + 1)),
+          ),
         )
-      // The judge saw a newer reading under the device lock, so this finds one.
+      // The judge saw a newer reading; the device lock doesn't hold readings still, so it may be
+      // gone (deleted since): then there is nothing to recover at.
       if (!first) continue
       const endedAt = await recoverEvent(tx, open, first)
       if (endedAt) {
