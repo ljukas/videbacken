@@ -1,5 +1,13 @@
 import { Link, linkOptions, useMatchRoute } from '@tanstack/react-router'
-import { HomeIcon, SearchIcon, SunIcon, ThermometerIcon, UsersIcon, ZapIcon } from 'lucide-react'
+import {
+  HomeIcon,
+  SearchIcon,
+  ShieldIcon,
+  SunIcon,
+  ThermometerIcon,
+  UsersIcon,
+  ZapIcon,
+} from 'lucide-react'
 import { useCommandPalette } from '~/components/command/useCommandPalette'
 import { Wordmark } from '~/components/Logo'
 import {
@@ -25,8 +33,8 @@ import { m } from '~/paraglide/messages'
 // label is a message function rather than a string: module scope evaluates
 // once per process, but the active locale is per request/render. `link` picks the
 // props a view's Link gets: charging views share the page filter (year, vehicle),
-// energy views the period, settings is admin-only and unscoped. Every item carries
-// both `link` and `adminOnly`, so each array keeps one shape.
+// energy views the period, admin pages are unscoped. Every item carries `adminOnly`
+// and every sub-item `link` too, so each array keeps one shape.
 const chargingSubItems = linkOptions([
   { to: '/charging', label: m.nav_charging_overview, link: 'charging', adminOnly: false },
   {
@@ -41,12 +49,6 @@ const chargingSubItems = linkOptions([
     link: 'charging',
     adminOnly: false,
   },
-  {
-    to: '/charging/settings',
-    label: m.nav_charging_settings_short,
-    link: 'unscoped',
-    adminOnly: true,
-  },
 ])
 
 const energySubItems = linkOptions([
@@ -55,22 +57,47 @@ const energySubItems = linkOptions([
   { to: '/energy/heat-pumps', label: m.nav_energy_heat_pumps, link: 'energy', adminOnly: false },
 ])
 
+// The admin section: every screen only admins may open (ADR-0017), under the
+// /admin layout's guard. A member never sees the section.
+const adminSubItems = linkOptions([
+  { to: '/admin/settings', label: m.nav_admin_settings_short, link: 'unscoped', adminOnly: true },
+])
+
 const mainNavItems = linkOptions([
-  { to: '/', label: m.nav_home, icon: HomeIcon },
-  { to: '/sensors', label: m.nav_sensors, icon: ThermometerIcon },
+  { to: '/', label: m.nav_home, icon: HomeIcon, adminOnly: false },
+  { to: '/sensors', label: m.nav_sensors, icon: ThermometerIcon, adminOnly: false },
   {
     to: '/charging',
     label: m.nav_charging,
     icon: ZapIcon,
     subItems: chargingSubItems,
     link: 'charging',
+    adminOnly: false,
   },
-  { to: '/energy', label: m.nav_energy, icon: SunIcon, subItems: energySubItems, link: 'energy' },
-  { to: '/users', label: m.nav_users, icon: UsersIcon },
+  {
+    to: '/energy',
+    label: m.nav_energy,
+    icon: SunIcon,
+    subItems: energySubItems,
+    link: 'energy',
+    adminOnly: false,
+  },
+  { to: '/users', label: m.nav_users, icon: UsersIcon, adminOnly: false },
+  {
+    to: '/admin',
+    label: m.nav_admin,
+    icon: ShieldIcon,
+    subItems: adminSubItems,
+    link: 'unscoped',
+    adminOnly: true,
+  },
 ])
 
 type NavItem = (typeof mainNavItems)[number]
-type NavSubItem = (typeof chargingSubItems)[number] | (typeof energySubItems)[number]
+type NavSubItem =
+  | (typeof chargingSubItems)[number]
+  | (typeof energySubItems)[number]
+  | (typeof adminSubItems)[number]
 
 // Links into a section with sub-views. Link sets aria-current itself from its
 // own match, prefix by default, so it must be exact or /charging (and /energy)
@@ -174,7 +201,9 @@ export function AppSidebar({ role }: { role?: string | null } = {}) {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu className="gap-1">{mainNavItems.map(renderItem)}</SidebarMenu>
+            <SidebarMenu className="gap-1">
+              {mainNavItems.filter((item) => isAdmin || !item.adminOnly).map(renderItem)}
+            </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

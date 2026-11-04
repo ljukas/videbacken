@@ -64,13 +64,6 @@ export const NAVIGATE_COMMANDS = linkOptions([
     adminOnly: false,
   },
   {
-    to: '/charging/settings',
-    label: m.nav_charging_settings,
-    keywords: m.cmd_kw_charging_settings,
-    icon: SettingsIcon,
-    adminOnly: true,
-  },
-  {
     to: '/energy',
     label: m.nav_energy,
     keywords: m.cmd_kw_energy,
@@ -97,6 +90,13 @@ export const NAVIGATE_COMMANDS = linkOptions([
     keywords: m.cmd_kw_users,
     icon: UsersIcon,
     adminOnly: false,
+  },
+  {
+    to: '/admin/settings',
+    label: m.nav_admin_settings,
+    keywords: m.cmd_kw_admin_settings,
+    icon: SettingsIcon,
+    adminOnly: true,
   },
 ])
 
