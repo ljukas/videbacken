@@ -61,7 +61,7 @@ src/
     api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), emaldo-sync.ts hourly at :45, comfort-cloud-sync.ts every 6 h at :20, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly, sensor-silence.ts hourly at :15 (climate silence alerts, ADR-0028))
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
-    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging/{index,patterns,economy,settings (admin-only: Datakällor + tariffs + credentials (key button per source, Elnätsavtal card; the Škoda home position has a map picker))}, energy/{index (Översikt),battery,heat-pumps (Värmepumpar)}, sensors
+    _authenticated/             index (dashboard), users, account/{index,profile}, admin (layout: the admin-only guard) + admin/{index (→ settings),settings (Datakällor + tariffs + credentials (key button per source, Elnätsavtal card; the Škoda home position has a map picker))}, charging/{index,patterns,economy,settings (redirect → /admin/settings, kept for already-sent emails)}, energy/{index (Översikt),battery,heat-pumps (Värmepumpar)}, sensors
   lib/
     auth.ts / authClient.ts     betterAuth() (drizzleAdapter + google + magicLink + admin; allowlist gate) / createAuthClient()
     getSession.ts               server fn wrapping auth.api.getSession()
