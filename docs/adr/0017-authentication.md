@@ -44,7 +44,7 @@ function in `src/lib/seedApprovedEmails.ts`, **once per deploy**:
 `bun run db:seed` (`scripts/seedApprovedEmails.ts`) runs in `vercel-build` right
 after `drizzle-kit migrate`, against the same database, and in `dev:up` after the
 local migrations. **It only bootstraps:** while the allowlist approves any admin
-it seeds nothing, so later admins are invited at `/admin`, and a seed email an
+it seeds nothing, so later admins are invited at `/users`, and a seed email an
 admin revoked stays revoked (before, every new instance re-added it as an admin).
 An email that is already approved keeps its row and role, and the insert is
 `ON CONFLICT DO NOTHING`, so two builds at once can't fail on the unique email. A

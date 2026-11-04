@@ -1175,9 +1175,9 @@ describe('secrets', () => {
 describe('adapter selection', () => {
   const creds = { username: 'u', password: 'p' }
   const NOT_CONFIGURED =
-    'Zaptec client is not configured (set it under Charging → Settings or as ZAPTEC_USERNAME / ZAPTEC_PASSWORD)'
+    'Zaptec client is not configured (set it under Admin → Settings or as ZAPTEC_USERNAME / ZAPTEC_PASSWORD)'
   const UNREADABLE =
-    'Stored Zaptec credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings'
+    'Stored Zaptec credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Admin → Settings'
 
   test('notConfigured throws not_configured from every method', async () => {
     expect(await caught(notConfigured.chargers())).toMatchObject({

@@ -12,7 +12,7 @@ export interface GridTariffAvailableEmailProps {
   locale: Locale
 }
 
-// The button points at the charging settings page, where the tariff periods live.
+// The button points at the admin settings page, where the tariff periods live.
 // Same origin rule as `IntegrationSyncAlertEmail`: BETTER_AUTH_URL, no prop.
 const actionUrl = () => `${process.env.BETTER_AUTH_URL}/admin/settings`
 

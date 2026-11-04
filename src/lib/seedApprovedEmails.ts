@@ -9,7 +9,7 @@ import { addApprovedIfMissing, hasApprovedAdmin, normalizeEmail } from './servic
 // (scripts/seedApprovedEmails.ts) in `vercel-build` and `dev:up` (ADR-0017).
 //
 // Bootstrap only: while the allowlist approves any admin it seeds nothing, so
-// admins add admins at /admin and a revoked seed email stays revoked. An
+// admins add admins at /users and a revoked seed email stays revoked. An
 // allowlist left with no admin (a lockout) is seeded again on the next deploy.
 // An email that is already approved keeps its row and role.
 export async function seedApprovedEmails(): Promise<{

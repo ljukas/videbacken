@@ -140,7 +140,7 @@ appear in an empty state.
 - `src/components/ui/empty.tsx` — the shared `Empty` composition (the seam).
 - `src/components/evCharging/SessionList.tsx` — `Empty` + admin CTA in place of the table.
 - `src/components/evCharging/TariffCard.tsx` — `Empty` + admin CTA inside the card.
-- `src/routes/_authenticated/charging.tsx` — threads `onSync` (admins only); `charging/settings.tsx` threads the tariff `admin.onNew`.
+- `src/routes/_authenticated/charging.tsx` — threads `onSync` (admins only); `admin/settings.tsx` threads the tariff `admin.onNew`.
 - `src/components/evCharging/RecentRunsTable.tsx` — reference sub-scope empty (no CTA).
 - `messages/{sv,en}.json` — empty-state titles/descriptions and CTA labels.
 - `docs/adr/0015-visual-identity-and-design-language.md` — owns the brand token, logo mark, and illustration art

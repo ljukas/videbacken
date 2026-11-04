@@ -33,7 +33,7 @@ describe('seedApprovedEmails', () => {
   it('only bootstraps: once an admin is approved, a revoked seed email stays revoked', async () => {
     process.env.INITIAL_ADMIN_EMAILS = 'owner@example.se,former@example.se'
     await seedApprovedEmails()
-    // An admin revokes one of the seeded emails at /admin.
+    // An admin revokes one of the seeded emails at /users.
     await removeApproved('former@example.se')
 
     // The next deploy seeds nothing.

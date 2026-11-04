@@ -18,7 +18,7 @@ export interface CredentialExpiryEmailProps {
   locale: Locale
 }
 
-// The button points at the charging settings page (the Škoda source's tile;
+// The button points at the admin settings page (the Škoda source's tile;
 // BrandEmailLayout also takes the logo's origin from it).
 const actionUrl = () => `${process.env.BETTER_AUTH_URL}/admin/settings`
 
