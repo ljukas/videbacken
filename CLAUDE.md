@@ -61,7 +61,7 @@ src/
     api/cron/                   secret-gated cron entrypoints (zaptec-sync.ts hourly, skoda-sync.ts every 15 min (:07 offset), emaldo-sync.ts hourly at :45, comfort-cloud-sync.ts every 6 h at :20, elpris-sync.ts 12:30+15:30 UTC, grid-tariff-catalogue.ts monthly, sensor-silence.ts hourly at :15 (climate silence alerts, ADR-0028))
     api/webhooks/shelly.ts      public Shelly H&T sensor webhook (GET, `token` query param = SHELLY_WEBHOOK_TOKEN)
     _authenticated.tsx          pathless guard → /login (also bounces soft-deleted users)
-    _authenticated/             index (dashboard), users, account/{index,profile}, admin, charging/{index,patterns,economy,settings (admin-only: Datakällor + tariffs + credentials (key button per source, Elnätsavtal card; the Škoda home position has a map picker))}, energy/{index (Översikt),battery,heat-pumps (Värmepumpar)}, sensors
+    _authenticated/             index (dashboard), users, account/{index,profile}, admin (layout: the admin-only guard) + admin/{index (→ settings),settings (Datakällor + tariffs + credentials (key button per source, Elnätsavtal card; the Škoda home position has a map picker))}, charging/{index,patterns,economy,settings (redirect → /admin/settings, kept for already-sent emails)}, energy/{index (Översikt),battery,heat-pumps (Värmepumpar)}, sensors
   lib/
     auth.ts / authClient.ts     betterAuth() (drizzleAdapter + google + magicLink + admin; allowlist gate) / createAuthClient()
     getSession.ts               server fn wrapping auth.api.getSession()
@@ -161,7 +161,7 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
 | Solar-aware charging cost (Emaldo energy mix, battery pool, cash + solar value) | **0023** |
 | House energy pages (on-read monthly aggregates, loss + self-sufficiency definitions) | **0024** |
 | Deferred route loading (loaders await on server only, cached session guard, boneyard-js section skeletons, per-page bundle (§6)) | **0025** |
-| Integration credential store (GUI-set, encrypted in Postgres, per-field over env; charging settings page) | **0026** |
+| Integration credential store (GUI-set, encrypted in Postgres, per-field over env; admin settings page) | **0026** |
 | Heat pump energy data (Panasonic Comfort Cloud: hourly per unit, Användning on Översikt, energy signature around logged events; read-only) | **0027** |
 | Climate alerts (personal rules per sensor, merged readings, one email per transition; extends 0017's own-account exception) | **0028** |
 
@@ -177,9 +177,9 @@ config/ (client chunk groups, ADR-0025 §6), drizzle/, compose.yaml, vite.config
   (`updateProfile`, `completeOnboarding`, own avatar) and **their own alert rules** (`sensor.alerts.*`, ADR-0028), scoped to `context.user.id`.
 - **Seed:** `INITIAL_ADMIN_EMAILS` (CSV) → admin allowlist rows once per deploy: `bun run db:seed` after the migrations in
   `vercel-build` (see Non-negotiables) and in `dev:up`. **Bootstrap only:** it seeds nothing while the allowlist approves any
-  admin (later admins are invited at `/admin`; locked out with no admin row → redeploy). Sign in locally with one of those
+  admin (later admins are invited at `/users`; locked out with no admin row → redeploy). Sign in locally with one of those
   addresses to bootstrap the first admin.
-- Admins manage access at `/admin` (invite = add an allowlist row + courtesy email to `/login`;
+- Admins manage access at `/users` (invite = add an allowlist row + courtesy email to `/login`;
   revoke = remove approval + soft-delete + revoke sessions; re-invite restores a revoked user).
 
 ---

@@ -79,7 +79,7 @@ export const Route = createFileRoute('/_authenticated/charging/')({
   }),
   // ADR-0025: the server waits for what renders at the top; the client waits
   // for nothing (sections show skeletons). The sessions bring their costs. The
-  // data sources' tiles and histories live on /charging/settings.
+  // data sources' tiles and histories live on /admin/settings.
   loader: async ({ context: { queryClient }, deps, location }) => {
     // The session list's page is deliberately not a loader dep: a dep change
     // blocks the navigation on this whole loader (every prefetch below), so a
@@ -123,7 +123,7 @@ function ChargingPage() {
   const sessionPageSize = Route.useSearch({ select: (s) => s.size ?? DEFAULT_SESSION_PAGE_SIZE })
   const syncNow = useSyncNow()
   // Only for the cost display (whether to price, and the notice): the tariff
-  // card and its dialogs live on /charging/settings.
+  // card and its dialogs live on /admin/settings.
   const tariffsResult = useQuery(orpc.tariff.list.queryOptions())
   const tariffs = tariffsResult.data
 

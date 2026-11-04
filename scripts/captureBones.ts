@@ -24,12 +24,12 @@ import './loadEnv'
 
 const ORIGIN = process.env.BONES_ORIGIN ?? 'http://localhost:14610'
 const MAILPIT = 'http://localhost:14602'
-// Signs in as the first admin, so /charging/settings (Datakällor, the tariff card) captures too.
+// Signs in as the first admin, so /admin/settings (Datakällor, the tariff card) captures too.
 const DEFAULT_PATHS = [
   '/charging',
   '/charging/economy',
   '/charging/patterns',
-  '/charging/settings',
+  '/admin/settings',
   '/energy',
   '/energy/battery',
   '/energy/heat-pumps',

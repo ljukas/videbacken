@@ -17,7 +17,7 @@ export type SourceEntry = {
   actions?: ReactNode
 }
 
-// Admin-only "Datakällor" on the charging settings page (/charging/settings):
+// Admin-only "Datakällor" on the admin settings page (/admin/settings):
 // every integration the charging pages read, at a glance, with its own sync and
 // history. Failures still interrupt at the top of /charging
 // (SyncHealthAlert); this is the calm overview + diagnostics. One history

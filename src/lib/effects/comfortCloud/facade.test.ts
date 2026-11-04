@@ -31,11 +31,11 @@ describe('adapter selection', () => {
     const cases = [
       [
         'not_configured',
-        'Comfort Cloud client is not configured (set it under Charging → Settings or as PANASONIC_USER / PANASONIC_PASSWORD)',
+        'Comfort Cloud client is not configured (set it under Admin → Settings or as PANASONIC_USER / PANASONIC_PASSWORD)',
       ],
       [
         'credentials_unreadable',
-        'Stored Comfort Cloud credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings',
+        'Stored Comfort Cloud credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Admin → Settings',
       ],
     ] as const
     for (const [code, message] of cases) {

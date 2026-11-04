@@ -156,38 +156,49 @@ test("charging links match exactly, ignoring the views' own params, and keep the
   expect(linkProps.get(`/sensors|${m.nav_sensors()}`)?.activeOptions).toBeUndefined()
 })
 
-test('admins get Inställningar under Laddning', async () => {
+test('admins get an Admin section with Inställningar, and Laddning has no settings', async () => {
   const { screen } = await renderSidebar('admin')
   await expect
-    .element(screen.getByRole('link', { name: m.nav_charging_settings_short(), exact: true }))
-    .toHaveAttribute('href', '/charging/settings')
+    .element(screen.getByRole('link', { name: m.nav_admin(), exact: true }))
+    .toHaveAttribute('href', '/admin')
+  expect(subLink(screen, m.nav_admin_settings_short(), '/admin/settings')).toBeTruthy()
+  // The only settings link is the admin one.
+  expect(
+    screen.getByRole('link', { name: m.nav_admin_settings_short(), exact: true }).elements(),
+  ).toHaveLength(1)
 })
 
-test('members do not see Inställningar', async () => {
+test('members see no Admin section', async () => {
   const { screen } = await renderSidebar('user')
   expect(subLink(screen, m.nav_charging_overview(), '/charging')).toBeTruthy()
+  expect(screen.getByRole('link', { name: m.nav_admin(), exact: true }).elements()).toHaveLength(0)
   expect(
-    screen.getByRole('link', { name: m.nav_charging_settings_short(), exact: true }).elements(),
+    screen.getByRole('link', { name: m.nav_admin_settings_short(), exact: true }).elements(),
   ).toHaveLength(0)
 })
 
-test('the settings link is exact and carries no page filter', async () => {
+test('the admin links are exact and carry no page filter', async () => {
   current.path = '/charging'
   await renderSidebar('admin')
-  const props = linkProps.get(`/charging/settings|${m.nav_charging_settings_short()}`)
-  expect(props?.activeOptions).toEqual({ exact: true, includeSearch: false })
-  // A clean URL: the year and vehicle scope belong to the views, not to settings.
-  const search = props?.search as (prev: object) => object
-  expect(search({ year: 2025, vehicle: 'other' })).toEqual({})
+  for (const key of [
+    `/admin|${m.nav_admin()}`,
+    `/admin/settings|${m.nav_admin_settings_short()}`,
+  ]) {
+    const props = linkProps.get(key)
+    expect(props?.activeOptions, key).toEqual({ exact: true, includeSearch: false })
+    // A clean URL: the year and vehicle scope belong to the charging views.
+    const search = props?.search as (prev: object) => object
+    expect(search({ year: 2025, vehicle: 'other' }), key).toEqual({})
+  }
 })
 
-test('on /charging/settings only Inställningar (and Laddning) is active', async () => {
-  current.path = '/charging/settings'
+test('on /admin/settings only Inställningar and Admin are active', async () => {
+  current.path = '/admin/settings'
   const { screen } = await renderSidebar('admin')
   const link = (name: string) => screen.getByRole('link', { name, exact: true }).element()
-  expect(active(link(m.nav_charging_settings_short()))).toBe(true)
-  expect(active(subLink(screen, m.nav_charging_overview(), '/charging'))).toBe(false)
-  expect(active(link(m.nav_charging()))).toBe(true)
+  expect(active(subLink(screen, m.nav_admin_settings_short(), '/admin/settings'))).toBe(true)
+  expect(active(link(m.nav_admin()))).toBe(true)
+  expect(active(link(m.nav_charging()))).toBe(false)
 })
 
 test('lists the energy views as sub-items under Energi', async () => {

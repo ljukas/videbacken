@@ -7,7 +7,7 @@ test('with no tariff, an admin is asked to add the fees and gets a link to the n
   const { screen } = await renderWithRouter(<CostNotice reason="noTariff" canAddTariff />)
   await expect.element(screen.getByText(m.charging_cost_notice_setup_admin())).toBeVisible()
   const link = screen.getByRole('link', { name: m.charging_cost_notice_setup_action() })
-  await expect.element(link).toHaveAttribute('href', '/charging/settings?dialog=tariffNew')
+  await expect.element(link).toHaveAttribute('href', '/admin/settings?dialog=tariffNew')
   // AlertDescription underlines links; the settings link is button-styled.
   await expect.element(link).toHaveClass('no-underline!')
 })

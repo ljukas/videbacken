@@ -323,3 +323,14 @@ peer destination holding the data sources and tariffs, not an in-page subpage of
 revisit from the 2026-09-30 amendment is consciously deferred while the section stays at four items; members
 still see three. See [ADR-0026](0026-integration-credential-store.md) and the
 [charging settings design](../superpowers/specs/2026-10-05-charging-settings-design.md).
+
+## Amendment 2026-11-04: an Admin section
+
+Admin-only screens get their own sidebar section, **Admin** (shield icon, `/admin`), shown only to admins, with
+the screens as sub-items like Laddning and Energi. Today it holds one, "Inställningar" (`/admin/settings`), which
+leaves Laddning: the page covers every data source (Emaldo, Comfort Cloud and the grid agreement too), not only
+charging, and a member's sections no longer hide an admin-only sub-item. The `/admin` layout route's `beforeLoad`
+is the one guard for everything under it (ADR-0017); `/admin` alone redirects to its first page while there is
+no admin overview. `/charging/settings` stays as a redirect that keeps its query, because emails sent before the
+move link there. Pages a member can also open (Användare) stay in the main list. See the
+[plan](../superpowers/plans/2026-11-04-admin-section.md).

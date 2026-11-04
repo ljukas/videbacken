@@ -270,7 +270,7 @@ test.each([
   )
   await expect
     .element(screen.getByRole('link', { name: m.charging_settings_link() }))
-    .toHaveAttribute('href', '/charging/settings')
+    .toHaveAttribute('href', '/admin/settings')
 })
 
 test.each([
@@ -289,7 +289,7 @@ test.each([
   const link = screen.getByRole('link', {
     name: m.charging_source_action_label({ action, source: integrationSourceName(source) }),
   })
-  await expect.element(link).toHaveAttribute('href', expect.stringContaining('/charging/settings?'))
+  await expect.element(link).toHaveAttribute('href', expect.stringContaining('/admin/settings?'))
   await expect.element(link).toHaveAttribute('href', expect.stringContaining('dialog=credentials'))
   await expect.element(link).toHaveAttribute('href', expect.stringContaining(`source=${source}`))
 })
@@ -306,7 +306,7 @@ test('elpris never deep-links', async () => {
   )
   await expect
     .element(screen.getByRole('link', { name: m.charging_settings_link() }))
-    .toHaveAttribute('href', '/charging/settings')
+    .toHaveAttribute('href', '/admin/settings')
 })
 
 test('no settings link for a member, or without the prop', async () => {

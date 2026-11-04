@@ -36,7 +36,7 @@ test('the 7-day reminder has its own subject', async () => {
   expect(subject).toBe('Sista påminnelsen: Škoda-nyckeln går ut den 15 januari 2027')
 })
 
-// nav_charging_settings_short per locale (m.x() without a locale is always sv).
+// nav_admin_settings_short per locale (m.x() without a locale is always sv).
 const settingsWord = { sv: 'Inställningar', en: 'Settings' } as const
 
 test('says how to renew, in html and text, both locales', async () => {
@@ -50,7 +50,7 @@ test('says how to renew, in html and text, both locales', async () => {
     for (const out of [html, text]) {
       expect(out).toContain('https://go.skoda.eu/api-keys')
       expect(out).not.toContain('SKODA_API_KEY')
-      expect(out).toContain('/charging/settings')
+      expect(out).toContain('/admin/settings')
       expect(out).toContain(settingsWord[locale])
     }
   }

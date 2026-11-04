@@ -522,7 +522,7 @@ test('Översikt, tariffs still loading: no "set up a tariff" notice', async () =
   await expect.element(radio(screen, m.charging_vehicle_scope_all())).toBeVisible()
   // Positive signals first: the totals' skeleton (hydrated, tariffs pending) and the
   // sessions' empty state (the page rendered past its reads). The tariff card and
-  // Datakällor live on /charging/settings (see -settingsPage.browser.test.tsx).
+  // Datakällor live on /admin/settings (see admin/-settingsPage.browser.test.tsx).
   await expect.poll(() => skeleton('charging-totals')).not.toBeNull()
   await expect.element(screen.getByText(m.charging_sessions_empty_title())).toBeVisible()
   expect(screen.getByText(m.charging_cost_notice_setup_admin()).elements()).toHaveLength(0)
@@ -1213,7 +1213,7 @@ test('Översikt: the scope filter sits above the totals, the chart above the ses
   const sessions = screen.getByRole('heading', { name: m.charging_sessions_heading() }).element()
   expect(precedes(scopeEl, totals)).toBe(true)
   expect(precedes(chartTitle, sessions)).toBe(true)
-  // The tariffs and the data sources moved to /charging/settings.
+  // The tariffs and the data sources moved to /admin/settings.
   expect(screen.getByRole('heading', { name: m.charging_tariff_title() }).elements()).toHaveLength(
     0,
   )

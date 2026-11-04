@@ -4,9 +4,9 @@ import { ComfortCloudError } from '../errors'
 
 const MESSAGES: Record<UnavailableCode, string> = {
   not_configured:
-    'Comfort Cloud client is not configured (set it under Charging → Settings or as PANASONIC_USER / PANASONIC_PASSWORD)',
+    'Comfort Cloud client is not configured (set it under Admin → Settings or as PANASONIC_USER / PANASONIC_PASSWORD)',
   credentials_unreadable:
-    'Stored Comfort Cloud credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Charging → Settings',
+    'Stored Comfort Cloud credentials are unreadable (CREDENTIALS_ENCRYPTION_KEY missing or changed); enter them again under Admin → Settings',
 }
 
 // `not_configured` when either field is missing (and under VITEST),
