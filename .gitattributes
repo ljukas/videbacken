@@ -1,0 +1,19 @@
+# LF everywhere, whatever core.autocrlf says (Biome also writes LF: biome.json formatter.lineEnding).
+* text=auto eol=lf
+
+# Binaries: never normalized, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.heic binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.gz binary
+*.zip binary
+*.pdf binary
