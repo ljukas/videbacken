@@ -17,10 +17,15 @@ import { orpc } from '~/lib/orpc/client'
 import { m } from '~/paraglide/messages'
 import { makeTestQueryClient } from '~test/browser/render'
 import { seedSourcesHealth } from '~test/browser/syncHealth'
+import { Route as AdminLayout } from '../admin'
+import { Route as OldSettings } from '../charging/settings'
+import { Route as AdminIndex } from './index'
 import { Route as Settings } from './settings'
 
-// The real settings page mounted under a bare root (routeTree.gen.ts isn't
-// loaded), next to a stub overview the admin gate redirects to. The cache is
+// The real settings page mounted under the real /admin layout (its admin guard)
+// and a bare root (routeTree.gen.ts isn't loaded), next to the /admin index and
+// the old /charging/settings redirects and a stub home the guard sends a member
+// to. The cache is
 // seeded through the oRPC-generated keys; anything unseeded fails (the test
 // server has no /api/rpc), which is how a failed read is staged. The `-` prefix
 // keeps this file out of the route tree.
@@ -90,6 +95,8 @@ async function renderSettings(
     adminReads?: boolean
     // Runs after the seed, before the loader: e.g. hold a read pending.
     prepare?: (qc: QueryClient) => void
+    // The URL opened, before `search`: the page itself unless a redirect is under test.
+    path?: '/admin/settings' | '/admin' | '/charging/settings'
   } = {},
 ) {
   const qc = makeTestQueryClient()
@@ -99,20 +106,31 @@ async function renderSettings(
   const root = createRootRouteWithContext<{ queryClient: QueryClient; user: unknown }>()({
     component: Outlet,
   })
-  const overviewStub = createRoute({
+  const homeStub = createRoute({
     getParentRoute: () => root,
-    path: '/charging',
-    component: () => <p>overview stub</p>,
+    path: '/',
+    component: () => <p>home stub</p>,
   })
-  ;(Settings as unknown as { update: (o: unknown) => void }).update({
+  const update = (route: unknown, o: object) =>
+    (route as { update: (o: unknown) => void }).update(o)
+  update(AdminLayout, { id: '/admin', path: '/admin', getParentRoute: () => root })
+  update(Settings, { id: '/settings', path: 'settings', getParentRoute: () => AdminLayout })
+  update(AdminIndex, { id: '/', path: '/', getParentRoute: () => AdminLayout })
+  update(OldSettings, {
     id: '/charging/settings',
     path: '/charging/settings',
     getParentRoute: () => root,
   })
   const router = createRouter({
-    routeTree: root.addChildren([overviewStub, Settings as never]),
+    routeTree: root.addChildren([
+      homeStub,
+      AdminLayout.addChildren([Settings, AdminIndex] as never) as never,
+      OldSettings as never,
+    ]),
     context: { queryClient: qc, user: { role: opts.role ?? 'admin' } },
-    history: createMemoryHistory({ initialEntries: [`/charging/settings${search}`] }),
+    history: createMemoryHistory({
+      initialEntries: [`${opts.path ?? '/admin/settings'}${search}`],
+    }),
   })
   await router.load()
   const screen = await render(
@@ -129,7 +147,7 @@ const historyTitle = (source: string) => m.charging_source_dialog_title({ source
 test('an admin gets the heading, the Datakällor panel and the tariff card, in that order', async () => {
   const { screen } = await renderSettings('')
   await expect
-    .element(screen.getByRole('heading', { name: m.charging_settings_title(), level: 1 }))
+    .element(screen.getByRole('heading', { name: m.admin_settings_title(), level: 1 }))
     .toBeVisible()
   const sources = screen.getByRole('heading', sourcesHeading)
   await expect.element(sources).toBeVisible()
@@ -144,17 +162,44 @@ test('an admin gets the heading, the Datakällor panel and the tariff card, in t
     .toBeVisible()
 })
 
-test('a household member is redirected to the overview, with no settings UI', async () => {
+test.each([
+  '/admin/settings',
+  '/charging/settings',
+  '/admin',
+] as const)('a household member opening %s is sent home, with no settings UI', async (path) => {
   // The admin-only reads are left unseeded, so a fired read would leave a cache entry.
-  const { screen, router, qc } = await renderSettings('', { role: 'user', adminReads: false })
-  await expect.element(screen.getByText('overview stub')).toBeVisible()
+  const { screen, router, qc } = await renderSettings('', {
+    role: 'user',
+    adminReads: false,
+    path,
+  })
+  await expect.element(screen.getByText('home stub')).toBeVisible()
   expect(qc.getQueryState(runsKey)).toBeUndefined()
   expect(qc.getQueryState(credentialsKey)).toBeUndefined()
   expect(
     qc.getQueryState(orpc.evCharging.vehicleRecordCoverage.queryOptions().queryKey),
   ).toBeUndefined()
-  expect(router.state.location.pathname).toBe('/charging')
+  expect(router.state.location.pathname).toBe('/')
   expect(screen.getByRole('heading', sourcesHeading).elements()).toHaveLength(0)
+})
+
+test('/admin opens the settings page', async () => {
+  const { screen, router } = await renderSettings('', { path: '/admin' })
+  await expect
+    .element(screen.getByRole('heading', { name: m.admin_settings_title(), level: 1 }))
+    .toBeVisible()
+  expect(router.state.location.pathname).toBe('/admin/settings')
+})
+
+test('the old /charging/settings link moves to /admin/settings and keeps its dialog', async () => {
+  const { screen, router } = await renderSettings('?dialog=credentials&source=skoda', {
+    path: '/charging/settings',
+  })
+  await expect
+    .element(screen.getByRole('dialog', { name: credentialsTitle('skoda') }))
+    .toBeVisible()
+  expect(router.state.location.pathname).toBe('/admin/settings')
+  expect(router.state.location.search).toEqual({ dialog: 'credentials', source: 'skoda' })
 })
 
 test('the Škoda tile shows the car log, and ?dialog=vehicleImport opens the import', async () => {

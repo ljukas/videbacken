@@ -22,7 +22,7 @@ const ASSETS = '.output/public/assets'
 // Route chunk name prefixes (TanStack names a split route chunk after its file).
 const PAGES: Record<string, string> = {
   '/charging': 'charging',
-  '/charging/settings': 'settings',
+  '/admin/settings': 'settings',
   '/charging/economy': 'economy',
   '/charging/patterns': 'patterns',
   '/charging/sessions/$id': '_sessionId',

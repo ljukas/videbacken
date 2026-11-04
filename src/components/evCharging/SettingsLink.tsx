@@ -4,7 +4,7 @@ import { Button } from '~/components/ui/button'
 import type { CredentialSource } from '~/lib/integrationCredentials'
 import { m } from '~/paraglide/messages'
 
-// "Go fix it there": the charging settings page (admins only) holds every data
+// "Go fix it there": the admin settings page (/admin/settings) holds every data
 // source, its sync and history, and the tariffs. Sized like SyncNowButton so the
 // two sit side by side in an alert's action row.
 export function SettingsLink({
@@ -19,12 +19,7 @@ export function SettingsLink({
   return (
     <Button asChild size="sm" variant="outline">
       {/* AlertDescription underlines every link; this one is a button. */}
-      <Link
-        className="no-underline!"
-        to="/charging/settings"
-        search={search}
-        aria-label={ariaLabel}
-      >
+      <Link className="no-underline!" to="/admin/settings" search={search} aria-label={ariaLabel}>
         {children ?? m.charging_settings_link()}
       </Link>
     </Button>

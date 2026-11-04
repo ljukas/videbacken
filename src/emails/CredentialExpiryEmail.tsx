@@ -20,7 +20,7 @@ export interface CredentialExpiryEmailProps {
 
 // The button points at the charging settings page (the Škoda source's tile;
 // BrandEmailLayout also takes the logo's origin from it).
-const actionUrl = () => `${process.env.BETTER_AUTH_URL}/charging/settings`
+const actionUrl = () => `${process.env.BETTER_AUTH_URL}/admin/settings`
 
 /** "15 januari 2027" / "15 January 2027", the Stockholm calendar date. */
 function expiryDate(iso: string, locale: Locale): string {

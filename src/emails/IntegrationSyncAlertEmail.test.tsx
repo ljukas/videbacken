@@ -48,7 +48,7 @@ test('renderIntegrationSyncAlert returns the English failing/recovered subjects'
   expect(recovered.subject).toBe('Zaptec sync is working again')
 })
 
-test('renderIntegrationSyncAlert embeds the /charging/settings link in both html and text, for both transitions', async () => {
+test('renderIntegrationSyncAlert embeds the /admin/settings link in both html and text, for both transitions', async () => {
   const [failing, recovered] = await Promise.all([
     renderIntegrationSyncAlert({
       source: 'zaptec',
@@ -63,10 +63,10 @@ test('renderIntegrationSyncAlert embeds the /charging/settings link in both html
       locale: 'en',
     }),
   ])
-  expect(failing.html).toContain('/charging/settings')
-  expect(failing.text).toContain('/charging/settings')
-  expect(recovered.html).toContain('/charging/settings')
-  expect(recovered.text).toContain('/charging/settings')
+  expect(failing.html).toContain('/admin/settings')
+  expect(failing.text).toContain('/admin/settings')
+  expect(recovered.html).toContain('/admin/settings')
+  expect(recovered.text).toContain('/admin/settings')
 })
 
 test('renderIntegrationSyncAlert includes the code-specific explanation when failing', async () => {

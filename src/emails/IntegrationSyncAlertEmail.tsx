@@ -23,7 +23,7 @@ export interface IntegrationSyncAlertEmailProps {
 // (unlike the invite/magic-link emails' one-time URLs), so the origin comes
 // straight from BETTER_AUTH_URL rather than a prop. See CLAUDE.md's env var
 // table.
-const actionUrl = () => `${process.env.BETTER_AUTH_URL}/charging/settings`
+const actionUrl = () => `${process.env.BETTER_AUTH_URL}/admin/settings`
 
 export const IntegrationSyncAlertEmail = ({
   source,
